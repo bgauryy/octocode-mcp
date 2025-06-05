@@ -159,7 +159,7 @@ export async function viewGitHubRepositoryInfo(
 
   return withCache(cacheKey, async () => {
     try {
-      const owner = params.owner || 'wix-private';
+      const owner = params.owner || '';
       const command = `gh repo view ${owner}/${params.repo}`;
       const content = execSync(command, { encoding: 'utf-8' });
 
@@ -208,8 +208,8 @@ ${output}
 - fetch_github_file_content
 - view_repository
 
-Example: If you see 'wix-private' in the list above, use owner: 'wix-private' to filter results to that organization.
-If failed to search code / repo by owner use no owner filter`,
+Example: If you see a private repository in the list above, use the organization name as the 'owner' to filter results to that organization.
+If the search for code or repositories by owner fails, try searching without an owner filter`,
           },
         ],
         isError: false,

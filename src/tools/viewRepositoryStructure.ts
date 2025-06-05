@@ -13,13 +13,13 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       owner: z
         .string()
         .describe(
-          `Filter by repository owner/organization (e.g., 'wix-private') get from ${TOOL_NAMES.GET_USER_ORGANIZATIONS} tool`
+          `Specify the repository owner/organization. This can be obtained using the appropriate tool for fetching user organizations.`
         ),
       repo: z.string().describe('The name of the GitHub repository'),
       branch: z
         .string()
         .describe(
-          `🔴 MANDATORY: Specify the branch to explore (e.g., 'main', 'master', 'develop'). Must be obtained from ${TOOL_NAMES.VIEW_REPOSITORY} first. Never explore without explicit branch specification.`
+          `MANDATORY: Specify the branch to explore (e.g., 'main', 'master', 'develop'). Must be obtained from ${TOOL_NAMES.VIEW_REPOSITORY} first. Never explore without explicit branch specification.`
         ),
       path: z
         .string()

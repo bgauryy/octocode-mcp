@@ -19,7 +19,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .string()
         .optional()
         .describe(
-          "Filter by repository owner/organization (e.g., 'wix-private') get from get_user_organizations tool"
+          "Filter by repository owner/organization (e.g., 'example-org') obtained from the appropriate tool for fetching user organizations"
         ),
       repo: z
         .string()

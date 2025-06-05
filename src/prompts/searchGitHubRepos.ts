@@ -3,7 +3,7 @@ import { TOOL_NAMES } from '../tools/contstants';
 export const SEARCH_GITHUB_REPOS_DESCRIPTION = `GitHub repository search with progressive discovery methodology.
 
 **AUTO-TRIGGER CONDITIONS:**
-- Company mentions: "I work at Wix", "our team", "company codebase"
+- Organization mentions: "I work at [Company Name]", "our team", "organization codebase"
 - Private repository indicators: "internal code", "team repositories"
 → Auto-call ${TOOL_NAMES.GET_USER_ORGANIZATIONS}
 

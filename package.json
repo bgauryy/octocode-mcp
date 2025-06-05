@@ -1,5 +1,5 @@
 {
-  "name": "octocode",
+  "name": "octocode-mcp",
   "version": "1.0.0",
   "main": "build/index.js",
   "license": "MIT",
@@ -20,8 +20,6 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "commander": "^12.1.0",
-    "lodash": "^4.17.21",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
     "zod": "^3.24.4"
@@ -31,7 +29,6 @@
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-typescript": "^12.1.2",
-    "@types/lodash": "^4.17.16",
     "@types/node": "^22.15.29",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",

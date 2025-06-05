@@ -2,12 +2,11 @@ export const GET_USER_ORGANIZATIONS_DESCRIPTION = `Get list of GitHub organizati
 
 **AUTOMATIC TRIGGERS:**
 Auto-trigger when users mention:
-- Company/employer context: "I work at Wix", "our team", "company codebase"
+- Company/employer context: "I work at [Company Name]", "our team", "company codebase"
 - Private repositories: "internal code", "team repositories"  
 - Enterprise context: "at work", "enterprise setup"
 
-**ORGANIZATION MATCHING:**
-- "Wix" → "wix-private", "wix", "wix-incubator"
+**ORGANIZATION MATCHING Examples:**
 - "Facebook" → "facebook", "meta"
 - "Google" → "google", "googlecloudplatform"
 - "Microsoft" → "microsoft", "azure"

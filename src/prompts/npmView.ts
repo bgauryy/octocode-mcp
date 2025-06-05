@@ -19,7 +19,7 @@ Repository context + package metadata for intelligent code search
 **EXAMPLES:**
 - "react" → github.com/facebook/react → Code search in React repo
 - "lodash" → github.com/lodash/lodash → Extract utility implementations  
-- "@wix/some-lib" → Private repo discovery → Organizational code analysis
+- "@org/some-lib" → Private repo discovery → Organizational code analysis
 
 **SUCCESS CRITERIA:**
 Accurate repository mapping that enables battle-tested code extraction

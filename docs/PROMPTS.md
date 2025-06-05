@@ -1,4 +1,4 @@
-# Full Prompts Collection for MCP GitHub & NPM Tools
+# Full Prompts examples for MCP GitHub & NPM Tools
 
 ## Package Discovery & Analysis Prompts
 
@@ -135,3 +135,152 @@
 ### Performance Regression Analysis
 - "How do teams prevent and detect performance regressions? Find performance monitoring implementations, analyze regression testing patterns, show continuous performance monitoring approaches, and find discussions about performance budgets and alerting strategies"
 - "What tools and techniques are most effective for bundle size monitoring? Find bundle analysis implementations, analyze size regression detection patterns, show automated bundle optimization approaches, and find discussions about bundle size impact on user experience"
+
+## Topic-Based Ecosystem Discovery
+
+### Technology Landscape Mapping
+- "Map the entire React ecosystem: find all React-related topics, discover emerging patterns, analyze contributor networks, and identify trending libraries and tools in the React community"
+- "What are the trending topics in modern web development? Find featured GitHub topics, analyze repository growth patterns, and identify emerging technologies gaining community adoption"
+- "Explore the TypeScript ecosystem: find TypeScript-related topics, analyze type definition patterns across popular libraries, and discover utility libraries that extend TypeScript's capabilities"
+- "What topics are emerging in the AI/ML space? Find machine learning and AI topics, analyze recent repository growth, and identify trending frameworks and tools"
+
+### Cross-Language Ecosystem Analysis
+- "Compare container orchestration approaches across languages: find Kubernetes-related topics and repositories in Go, Python, and Node.js ecosystems, analyze implementation patterns, and compare community adoption"
+- "How do different programming languages approach functional programming? Find functional programming topics across Haskell, JavaScript, Rust, and Scala repositories, compare implementation patterns, and analyze community discussions"
+- "Analyze testing philosophy across ecosystems: find testing-related topics in different language communities, compare testing frameworks and patterns, and identify cross-pollination of ideas"
+
+## Community & Contributor Analysis
+
+### Expert Discovery & Knowledge Networks
+- "Who are the leading contributors to open-source security tools? Find security-focused users, analyze their repositories and contributions, and discover their expertise areas and collaboration patterns"
+- "Map the network of GraphQL experts: find GraphQL contributors across major repositories, analyze their contributions to different GraphQL tools, and identify knowledge sharing patterns in the community"
+- "Who are the performance optimization experts in the JavaScript ecosystem? Find contributors who focus on performance, analyze their optimization techniques, and discover their tools and methodologies"
+- "Identify the key contributors to accessibility in web development: find accessibility experts, analyze their repositories and discussions, and discover best practices and tools they advocate"
+
+### Community Health & Governance Analysis
+- "How do successful open-source projects handle community governance? Find projects with strong community engagement, analyze their contributor guidelines and code of conduct, and study their conflict resolution processes"
+- "What makes a project maintainer-friendly? Analyze repositories with high contributor satisfaction, find their onboarding processes, and identify patterns in successful contributor experience"
+- "How do major projects handle security vulnerability disclosure? Find security policies across popular repositories, analyze vulnerability response patterns, and compare disclosure timelines and communication strategies"
+
+## NPM Ecosystem Deep Analysis
+
+### Package Evolution & Trends
+- "Track the evolution of React state management: search for state management packages over time, analyze download trends, and find migration discussions between different solutions like Redux, Zustand, and Valtio"
+- "What are the emerging patterns in Node.js utility libraries? Find trending utility packages, analyze their implementation approaches, and identify new paradigms in JavaScript utility development"
+- "How has the TypeScript ecosystem evolved? Find TypeScript-related packages, track the growth of type definition libraries, and analyze the adoption of TypeScript-first libraries vs JavaScript libraries with types"
+- "Analyze the micro-frontend ecosystem: find micro-frontend packages and tools, analyze implementation patterns, and discover emerging approaches to application composition"
+
+### Dependency & Security Analysis
+- "What are the most critical security vulnerabilities in the NPM ecosystem? Find packages with recent security updates, analyze vulnerability patterns, and identify common security issues across the ecosystem"
+- "How do popular packages handle breaking changes? Find packages with major version updates, analyze their migration guides and breaking change discussions, and identify best practices for API evolution"
+- "What are the dependency patterns in modern JavaScript applications? Analyze popular packages' dependency trees, find packages that are heavily depended upon, and identify potential supply chain risks"
+
+## Discussion-Based Learning & Knowledge Discovery
+
+### Technical Decision Making
+- "How do teams decide between competing technologies? Find discussions comparing React vs Vue, analyze decision criteria, and discover real-world factors that influence technology choices"
+- "What are the ongoing debates in web development? Find active discussions about architectural decisions, performance trade-offs, and development practices, and analyze different perspectives from the community"
+- "How do organizations approach technical debt? Find discussions about refactoring strategies, analyze technical debt management approaches, and discover tools and processes for code quality improvement"
+
+### Learning Resource Discovery
+- "Find the best learning resources for advanced React patterns: discover tutorial discussions, find recommended learning paths from experts, and identify hands-on projects that teach complex React concepts"
+- "What are the recommended practices for Node.js at scale? Find discussions about Node.js performance, analyze scaling strategies, and discover tools and patterns used in production environments"
+- "How do developers learn modern DevOps practices? Find discussions about learning paths, analyze recommended tools and technologies, and discover hands-on learning resources for infrastructure and deployment"
+
+## Trend Analysis & Future Prediction
+
+### Technology Adoption Patterns
+- "What technologies are gaining momentum in 2024? Analyze repository creation patterns, find emerging topics with growing communities, and identify technologies transitioning from experimental to production-ready"
+- "How do new JavaScript frameworks gain adoption? Track the lifecycle of recent frameworks, analyze their community growth patterns, and identify factors that contribute to successful framework adoption"
+- "What are the emerging patterns in full-stack development? Find discussions about modern full-stack architectures, analyze the adoption of new tools and patterns, and identify trends in developer workflow"
+
+### Industry Evolution Analysis
+- "How is the developer experience evolving? Find discussions about DX improvements, analyze tool evolution patterns, and identify emerging approaches to developer productivity and satisfaction"
+- "What are the trends in web performance optimization? Find recent performance optimization discussions, analyze new tools and techniques, and identify evolving best practices for web performance"
+- "How is the open-source landscape changing? Analyze funding models for open-source projects, find discussions about sustainability, and identify new approaches to open-source project management"
+
+## Quality & Best Practices Discovery
+
+### Code Quality Patterns
+- "What are the emerging code quality standards? Find repositories with exemplary code quality, analyze their standards and practices, and discover tools and processes that maintain high code quality"
+- "How do successful projects maintain backwards compatibility? Find long-lived projects with stable APIs, analyze their compatibility strategies, and discover patterns for evolving APIs without breaking changes"
+- "What testing strategies work best for different types of projects? Find projects with comprehensive test suites, analyze their testing approaches, and compare testing strategies across different domains and technologies"
+
+### Documentation & Developer Experience
+- "What makes great API documentation? Find repositories with excellent documentation, analyze their documentation patterns, and discover tools and approaches that create outstanding developer experiences"
+- "How do successful projects onboard new contributors? Find projects with strong contributor communities, analyze their onboarding processes, and identify patterns that encourage community participation"
+- "What are the best practices for open-source project maintenance? Find well-maintained projects, analyze their maintenance workflows, and discover sustainable approaches to project stewardship"
+
+## Cross-Platform & Multi-Language Analysis
+
+### Architecture Pattern Comparison
+- "How do different ecosystems approach microservices? Compare microservice implementations across Go, Java, Node.js, and Python ecosystems, analyze architectural patterns, and identify cross-ecosystem learning opportunities"
+- "What are the common patterns in API design across languages? Find API frameworks and libraries across different ecosystems, compare design philosophies, and identify universal principles in API development"
+- "How do different languages handle concurrency and parallelism? Analyze concurrency patterns in Go, Rust, JavaScript, and Python, compare performance characteristics, and identify optimal use cases for each approach"
+
+### Tool Chain Evolution
+- "How are build tools evolving across different ecosystems? Compare build tool evolution in JavaScript, Rust, Go, and Python, analyze performance improvements, and identify cross-pollination of ideas"
+- "What are the emerging patterns in developer tooling? Find discussions about developer experience improvements, analyze tool adoption patterns, and identify trends in developer workflow optimization"
+- "How do different ecosystems approach package management? Compare package managers across ecosystems, analyze their approaches to dependency resolution and security, and identify best practices that transcend language boundaries"
+
+## Advanced Developer Scenarios & Real-World Debugging
+
+### Multi-Repository Architecture Challenges
+- "We have 50+ microservices and are experiencing cascading failures. Find implementations of circuit breakers, bulkheads, and timeout patterns across repositories, analyze failure isolation strategies, and show how teams debug distributed system failures in production"
+- "Our monorepo build times are getting out of control (45+ minutes). Find build optimization strategies in large monorepos, analyze incremental build patterns, and show how teams implement effective caching and parallelization"
+- "We're seeing inconsistent behavior across our microservices that share common libraries. Find versioning strategies for shared libraries, analyze dependency management in multi-repo setups, and show how teams handle breaking changes across services"
+- "Our GraphQL federation is causing N+1 queries across multiple services. Find GraphQL federation optimization patterns, analyze DataLoader implementations across federated schemas, and show resolver optimization strategies in distributed GraphQL architectures"
+
+### Memory Leaks & Performance Hell
+- "Our Node.js services are experiencing gradual memory leaks that only appear after days in production. Find memory profiling strategies for long-running Node.js processes, analyze garbage collection optimization patterns, and show debugging techniques for production memory issues"
+- "React app performance degrades after users navigate through multiple pages - memory not being released. Find React memory leak patterns, analyze component cleanup strategies, and show debugging techniques for SPA memory management"
+- "Our TypeScript compilation is taking 10+ minutes and consuming 8GB+ RAM. Find TypeScript performance optimization strategies, analyze project reference patterns for large codebases, and show compilation optimization techniques"
+- "Production API response times degrade from 100ms to 5+ seconds under load. Find API performance debugging strategies, analyze database query optimization patterns, and show load testing and profiling techniques for production systems"
+
+### Dependency Hell & Version Conflicts
+- "We can't upgrade React because 20+ packages depend on different React versions. Find React upgrade strategies in large codebases, analyze dependency resolution patterns, and show migration techniques for complex dependency trees"
+- "Our package-lock.json conflicts are causing different behavior in dev vs production. Find deterministic dependency resolution strategies, analyze lockfile management in team environments, and show CI/CD patterns for consistent builds"
+- "Security vulnerabilities in nested dependencies are blocking our deployment. Find dependency vulnerability management strategies, analyze security update patterns in production systems, and show automated security patching approaches"
+- "We have diamond dependency conflicts causing runtime errors in production. Find dependency resolution debugging techniques, analyze module resolution patterns, and show strategies for resolving complex dependency conflicts"
+
+### Cross-Team Integration Nightmares
+- "Teams are breaking each other's services with API changes despite having contracts. Find API versioning strategies in microservices, analyze contract testing patterns, and show breaking change management across teams"
+- "Our shared component library changes break multiple teams' applications unexpectedly. Find component library versioning strategies, analyze semantic versioning patterns for UI libraries, and show backward compatibility techniques"
+- "Database schema migrations are causing downtime across multiple services. Find zero-downtime migration strategies, analyze database versioning patterns, and show coordination techniques for multi-service database updates"
+- "Our CI/CD pipeline is flaky - tests pass locally but fail in CI 30% of the time. Find CI/CD debugging strategies, analyze test environment consistency patterns, and show flaky test identification and resolution techniques"
+
+### Legacy Code & Technical Debt Disasters
+- "We have a 500k+ line JavaScript codebase we need to migrate to TypeScript gradually. Find incremental TypeScript migration strategies, analyze large codebase transformation patterns, and show team coordination approaches for gradual migrations"
+- "Our legacy PHP/Java backend needs to be incrementally replaced while maintaining uptime. Find strangler fig pattern implementations, analyze legacy system modernization strategies, and show incremental migration techniques"
+- "We have critical business logic buried in untested legacy code that we're afraid to touch. Find legacy code characterization techniques, analyze safe refactoring patterns, and show test introduction strategies for legacy systems"
+- "Our webpack config is 2000+ lines and nobody understands it anymore. Find webpack optimization and simplification strategies, analyze build system migration patterns, and show configuration management techniques for complex build setups"
+
+### Production Incident Response & Debugging
+- "We're getting 500 errors in production but can't reproduce them locally. Find production debugging strategies, analyze error tracking and monitoring patterns, and show techniques for debugging issues that only occur in production"
+- "Our Kubernetes pods are randomly dying and we can't figure out why. Find Kubernetes debugging strategies, analyze pod failure investigation patterns, and show monitoring and logging techniques for container orchestration issues"
+- "Database deadlocks are occurring randomly in our high-traffic application. Find database deadlock debugging strategies, analyze query optimization patterns, and show monitoring techniques for database performance issues"
+- "Our CDN is serving stale content but our cache invalidation looks correct. Find CDN cache management strategies, analyze cache invalidation patterns, and show debugging techniques for distributed caching issues"
+
+### Advanced Security & Compliance Issues
+- "We discovered a security vulnerability that affects 15+ repositories across our organization. Find vulnerability response strategies, analyze cross-repository security patching patterns, and show coordination techniques for organization-wide security updates"
+- "Our authentication service is intermittently failing for some users. Find authentication debugging strategies, analyze session management patterns, and show monitoring techniques for auth system reliability"
+- "GDPR compliance requires us to implement data deletion across 30+ microservices. Find data deletion strategies in distributed systems, analyze compliance implementation patterns, and show audit trail techniques for regulatory requirements"
+- "Our API rate limiting is being bypassed and we're getting DDoS attacks. Find rate limiting implementation strategies, analyze DDoS protection patterns, and show API security hardening techniques"
+
+### Complex State Management & Data Consistency
+- "User actions in our React app sometimes result in inconsistent UI state. Find React state management debugging strategies, analyze state synchronization patterns, and show techniques for maintaining UI consistency in complex applications"
+- "Our real-time features (WebSockets) are causing state conflicts between multiple browser tabs. Find real-time state synchronization strategies, analyze conflict resolution patterns, and show multi-tab state management techniques"
+- "Database transactions are timing out under load causing data inconsistency. Find database transaction optimization strategies, analyze distributed transaction patterns, and show techniques for maintaining data consistency under high load"
+- "Our event sourcing implementation is causing replay issues and inconsistent projections. Find event sourcing debugging strategies, analyze event replay patterns, and show techniques for maintaining consistency in event-driven systems"
+
+### Advanced Testing & Quality Assurance
+- "Our end-to-end tests are flaky and take 2+ hours to run. Find E2E test optimization strategies, analyze test parallelization patterns, and show techniques for reliable and fast integration testing"
+- "Test coverage reports show 90% but we still have bugs in production. Find meaningful test coverage strategies, analyze test quality patterns, and show techniques for writing tests that actually prevent bugs"
+- "Our performance tests don't reflect real-world performance issues. Find performance testing strategies, analyze load testing patterns, and show techniques for realistic performance validation"
+- "We can't test our microservices integration locally without spinning up 20+ services. Find microservices testing strategies, analyze service virtualization patterns, and show techniques for efficient local development testing"
+
+### Advanced Deployment & Infrastructure Issues
+- "Our blue-green deployments are causing brief downtime during DNS switches. Find zero-downtime deployment strategies, analyze traffic routing patterns, and show techniques for seamless production deployments"
+- "Docker builds are taking 30+ minutes and consuming too much CI/CD resources. Find Docker optimization strategies, analyze container build patterns, and show techniques for efficient containerization"
+- "Our Terraform state is getting corrupted and causing infrastructure drift. Find infrastructure as code management strategies, analyze state management patterns, and show techniques for reliable infrastructure automation"
+- "Auto-scaling is triggering too aggressively causing cost spikes and instability. Find auto-scaling optimization strategies, analyze resource management patterns, and show techniques for cost-effective scaling policies"

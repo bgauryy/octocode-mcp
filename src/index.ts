@@ -5,7 +5,7 @@ import { registerAllTools } from './tools/registerAllTools';
 
 const server = new McpServer(
   {
-    name: 'colombus-assistant-mcp',
+    name: 'octocode-mcp',
     version: '1.0.0',
     description: `Code question assistant: Find, analyze, and explore any code in GitHub repositories and npm packages.
        Use for code examples, implementations, debugging, and understanding how libraries work.`,

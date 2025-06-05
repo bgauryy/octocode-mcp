@@ -10,22 +10,92 @@
 [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
 </div>
 
+## Features
 
+### For Developers
+- **Code Discovery**: Find implementations, patterns, and examples across repositories
+- **Cross-Repository Investigation**: Trace code patterns, dependencies, and implementations across multiple repositories
+- **Dependency Analysis**: Understand package relationships and find alternative libraries
+- **Deep Dependency Insights**: Map transitive dependencies, version conflicts, and security vulnerabilities
+- **Bug Investigation**: Track issues, commits, and pull requests related to specific problems
+- **Advanced Bug Hunting**: Correlate bugs across repositories, find recurring patterns, and trace root causes
+- **Learning & Reference**: Access community discussions, documentation, and best practices
+- **Architecture Understanding**: Explore repository structures and analyze codebases
+- **Historical Code Analysis**: Understand code evolution through commit history and PR reviews
+
+### For Engineering Managers
+- **Repository Status Evaluation**: Assess the current status and health of repositories
+- **Technology Assessment**: Evaluate libraries, frameworks, and tools adoption
+- **Cross-Team Collaboration Analysis**: Track contributions, knowledge sharing, and code reuse patterns
+- **Knowledge Management**: Discover internal resources, documentation, and established patterns
+- **Competitive Analysis**: Research similar projects and industry trends
+- **Risk & Compliance Management**: Identify security vulnerabilities, licensing issues, and maintenance gaps
+- **Strategic Planning**: Analyze technology trends, migration patterns, and adoption metrics
 
 ## What it Does
 
-- 🤖 **NLP Understanding**: Leverage NLP to gain insights from code and documentation
-- 🔍 **Research in NPM and GitHub**: Conduct comprehensive research across NPM packages and GitHub repositories
-- 📄 **Documentation Creation**: Generate documentation from any source or content
-- 🔐 **Secure Access**: Integrated authentication for GitHub and Yarn
-- ⚡ **Optimized Performance**: Built-in caching, rate limiting, and configurable results
-- 🐞 **Bug Understanding**: Understand bugs in multiple repositories
-- 🌐 **Remote Code Analysis**: Perform analysis on remote code anywhere
+### 🔍 **Comprehensive Code Discovery & Analysis**
+- **GitHub Code Search**: Find specific implementations, functions, and patterns across repositories
+- **Repository Exploration**: Navigate project structures, fetch complete source files, and understand architectures
+- **Cross-Repository Investigation**: Trace code patterns, dependencies, and implementations across multiple repositories
+- **Branch Intelligence**: Automatic branch detection (main/master/develop/trunk) with fallback mechanisms
+
+### 📦 **NPM & Package Ecosystem**
+- **NPM Package Analysis**: Get detailed package information, dependencies, and metadata
+- **NPM Registry Search**: Discover packages by functionality and keywords
+- **Package-to-Repository Mapping**: Automatic linking from NPM packages to their GitHub repositories
+- **Dependency Graph Analysis**: Understand package relationships and find alternatives
+
+### 🔎 **GitHub Ecosystem Search**
+- **Repository Discovery**: Find relevant projects by keywords, language, topics, stars, and activity
+- **Development History**: Track code evolution through commits, pull requests, and releases
+- **Issue & Bug Tracking**: Discover bugs, feature requests, and community-driven solutions
+- **Pull Request Analysis**: Review implementation approaches, code quality, and merge patterns
+
+### 👥 **Community & Collaboration**
+- **GitHub Discussions**: Access Q&A, tutorials, and community wisdom
+- **User & Organization Discovery**: Find experts, contributors, and active developers
+- **Team Collaboration Analysis**: Track contributions, knowledge sharing, and code reuse patterns
+- **Organization Intelligence**: Automatic detection and access to private repositories
+
+### 🏷️ **Technology & Topic Exploration**
+- **Topic Discovery**: Explore trending technologies and ecosystems with community validation
+- **Technology Assessment**: Evaluate libraries, frameworks, and tools adoption
+- **Featured Content**: Access GitHub-curated and community-maintained topics
+
+### 🔐 **Security & Access Management**
+- **Secure Authentication**: Integrated GitHub CLI and NPM authentication
+- **Private Repository Access**: Organization-aware access control for enterprise environments
+- **Local Execution**: All operations run locally using your existing permissions
+- **No Data Sharing**: Ensures privacy and security of your code and credentials
+
+### ⚡ **Performance & Intelligence**
+- **Built-in Caching**: Intelligent result caching with configurable timeouts
+- **Rate Limiting**: Prevents API quota exhaustion with smart request management
+- **Progressive Search**: Adaptive search strategies from broad to specific
+- **Configurable Results**: Optimized result limits for different use cases
+
+### 🐞 **Advanced Bug Analysis**
+- **Multi-Repository Bug Understanding**: Correlate issues across related repositories
+- **Historical Bug Analysis**: Track bug patterns and resolution strategies
+- **Security Vulnerability Tracking**: Identify and analyze security-related issues
+- **Root Cause Analysis**: Trace bugs through commit history and discussions
+
+### 🌐 **Remote Code Analysis**
+- **Cross-Platform Analysis**: Analyze code from any accessible repository
+- **Architecture Understanding**: Explore and document system architectures
+- **Code Quality Assessment**: Evaluate code patterns and implementation quality
+- **Documentation Generation**: Create comprehensive documentation from any source
+
+### 📊 **Enterprise & Management Features**
+- **Repository Health Assessment**: Evaluate maintenance status and activity levels
+- **Compliance & Licensing**: Audit licenses and compliance across repositories
+- **Developer Productivity Insights**: Analyze contribution patterns and team efficiency
+- **Strategic Technology Planning**: Research adoption trends and migration patterns
 
 ## How It Works
 
-This tool relies on the `gh` CLI along with the `npm` CLI and string prompts to gather information based on the permissions of the user. All operations are performed locally, ensuring that no data needs to be shared externally with the tool. This approach leverages the user's existing access rights and configurations to provide insights and analysis without compromising security or privacy.
-
+This tool utilizes the `gh` CLI along with the `yarn` CLI and strong prompts to collect information based on the user's permissions. All operations are executed locally, ensuring that no data is shared externally with the tool. This method takes advantage of the user's existing access rights and configurations to deliver insights and analysis without compromising security or privacy.
 
 ## Table of Contents
 
@@ -75,7 +145,7 @@ gh auth login
    {
      "name": "octocode-mcp",
      "command": "npx", 
-     "args": ["octocode"]
+     "args": ["octocode-mcp"]
    }
    ```
 
@@ -86,32 +156,6 @@ Ensure your `.npmrc` files are properly configured
 npm config list
 npm whoami  # Verify authentication for private registries
 ```
-
-### GitHub and NPM Access
-
-This tool leverages your GitHub and NPM access to perform comprehensive searches across repositories and packages. By utilizing your authenticated sessions, it ensures that searches are conducted with the appropriate permissions and access levels, providing you with accurate and relevant results. Make sure your GitHub CLI and NPM configurations are correctly set up and authenticated to fully utilize these capabilities.
-
-## Features
-
-### For Developers
-- **Code Discovery**: Find implementations, patterns, and examples across repositories
-- **Cross-Repository Investigation**: Trace code patterns, dependencies, and implementations across multiple repositories
-- **Dependency Analysis**: Understand package relationships and find alternative libraries
-- **Deep Dependency Insights**: Map transitive dependencies, version conflicts, and security vulnerabilities
-- **Bug Investigation**: Track issues, commits, and pull requests related to specific problems
-- **Advanced Bug Hunting**: Correlate bugs across repositories, find recurring patterns, and trace root causes
-- **Learning & Reference**: Access community discussions, documentation, and best practices
-- **Architecture Understanding**: Explore repository structures and analyze codebases
-- **Historical Code Analysis**: Understand code evolution through commit history and PR reviews
-
-### For Engineering Managers
-- **Repository Status Evaluation**: Assess the current status and health of repositories
-- **Technology Assessment**: Evaluate libraries, frameworks, and tools adoption
-- **Cross-Team Collaboration Analysis**: Track contributions, knowledge sharing, and code reuse patterns
-- **Knowledge Management**: Discover internal resources, documentation, and established patterns
-- **Competitive Analysis**: Research similar projects and industry trends
-- **Risk & Compliance Management**: Identify security vulnerabilities, licensing issues, and maintenance gaps
-- **Strategic Planning**: Analyze technology trends, migration patterns, and adoption metrics
 
 ## Available Tools
 

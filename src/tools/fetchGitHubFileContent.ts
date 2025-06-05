@@ -13,7 +13,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
       owner: z
         .string()
         .describe(
-          `Filter by repository owner/organization (e.g., 'wix-private') get from ${TOOL_NAMES.GET_USER_ORGANIZATIONS} tool`
+          `Filter by repository owner/organization (e.g., 'example-org') get from ${TOOL_NAMES.GET_USER_ORGANIZATIONS} tool`
         ),
       repo: z.string().describe('The name of the GitHub repository'),
       branch: z

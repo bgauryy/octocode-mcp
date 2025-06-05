@@ -13,7 +13,7 @@ export function registerViewRepositoryTool(server: McpServer) {
       owner: z
         .string()
         .describe(
-          "Filter by repository owner/organization (e.g., 'wix-private')"
+          "Filter by repository owner/organization (e.g., 'example-org')"
         ),
       repo: z
         .string()
