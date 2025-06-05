@@ -1,21 +1,31 @@
 # Octocode MCP
 
+**Octocode MCP** is a robust Model Context Protocol (MCP) server designed for comprehensive code discovery and analysis across various platforms. It offers advanced search functionalities, enabling efficient exploration of both internal/public codebases and the expansive GitHub ecosystem using NPM capabilities for more insights.
+
 <div >
-  <img src="./assets/logo.png" alt="Wix Code Search MCP Logo" width="500" height="700">
+  <img src="./assets/logo.png" width="500" height="700">
 
   [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./package.json)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
 </div>
 
-A comprehensive MCP (Model Context Protocol) server for code discovery and analysis across multiple platforms. This server provides powerful search capabilities for both internal codebase and the broader GitHub ecosystem.
+
 
 ## What it Does
 
-- 🔍 **Multi-Platform Code Search**: Search across GitHub repositories, commits, issues, and pull requests
-- 📁 **Content Analysis**: Fetch complete file content and analyze NPM packages
-- 🔐 **Secure Access**: Integrated authentication for GitHub and NPM
+- 🤖 **NLP Understanding**: Leverage NLP to gain insights from code and documentation
+- 🔍 **Research in NPM and GitHub**: Conduct comprehensive research across NPM packages and GitHub repositories
+- 📄 **Documentation Creation**: Generate documentation from any source or content
+- 🔐 **Secure Access**: Integrated authentication for GitHub and Yarn
 - ⚡ **Optimized Performance**: Built-in caching, rate limiting, and configurable results
+- 🐞 **Bug Understanding**: Understand bugs in multiple repositories
+- 🌐 **Remote Code Analysis**: Perform analysis on remote code anywhere
+
+## How It Works
+
+This tool relies on the `gh` CLI along with the `npm` CLI and string prompts to gather information based on the permissions of the user. All operations are performed locally, ensuring that no data needs to be shared externally with the tool. This approach leverages the user's existing access rights and configurations to provide insights and analysis without compromising security or privacy.
+
 
 ## Table of Contents
 
@@ -196,9 +206,6 @@ A misconfigured `.npmrc` file can lead to various issues, such as authentication
 By following these steps, you can identify and resolve issues related to a misconfigured `.npmrc` file, ensuring smooth package management operations.
 
 ### Prefered models
-
-### Support
-For issues and feature requests, please use the internal Wix support channels
 
 ## License
 
