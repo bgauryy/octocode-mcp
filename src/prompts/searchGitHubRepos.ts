@@ -1,6 +1,8 @@
 import { TOOL_NAMES } from '../tools/contstants';
 
 export const SEARCH_GITHUB_REPOS_DESCRIPTION = `GitHub repository search with progressive discovery methodology.
+- **RELATED TOOLS:**
+  - ${TOOL_NAMES.SEARCH_GITHUB_TOPICS}: Essential for topic-based search (e.g. "react", "typescript", "nodejs", "rag")  and more discovery
 
 **AUTO-TRIGGER CONDITIONS:**
 - Organization mentions: "I work at [Company Name]", "our team", "organization codebase"

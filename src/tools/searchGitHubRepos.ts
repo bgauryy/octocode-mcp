@@ -50,7 +50,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .describe('Result order (default: desc for newest first)'),
       size: z.string().optional().describe('Filter by size in KB'),
       sort: z
-        .enum(['forks', 'help-wanted-issues', 'stars', 'updated'])
+        .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
         .optional()
         .default('updated')
         .describe('Sort criteria (default: updated for recent activity)'),
