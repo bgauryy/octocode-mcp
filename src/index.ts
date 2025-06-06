@@ -1,20 +1,24 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { PROMPT_SYSTEM_PROMPT } from './prompts/systemPrompt';
-import { registerSearchGitHubCodeTool } from './tools/searchGitHubCode';
-import { registerFetchGitHubFileContentTool } from './tools/fetchGitHubFileContent';
-import { registerViewRepositoryTool } from './tools/viewRepository';
-import { registerNpmViewTool } from './tools/npmView';
-import { registerSearchGitHubReposTool } from './tools/searchGitHubRepos';
-import { registerSearchGitHubCommitsTool } from './tools/searchGitHubCommits';
-import { registerSearchGitHubPullRequestsTool } from './tools/searchGitHubPullRequests';
-import { registerGetUserOrganizationsTool } from './tools/getUserOrganizations';
-import { registerNpmSearchTool } from './tools/npmSearch';
-import { registerViewRepositoryStructureTool } from './tools/viewRepositoryStructure';
-import { registerSearchGitHubIssuesTool } from './tools/searchGitHubIssues';
-import { registerSearchGitHubDiscussionsTool } from './tools/searchGitHubDiscussions';
-import { registerSearchGitHubTopicsTool } from './tools/searchGitHubTopics';
-import { registerSearchGitHubUsersTool } from './tools/searchGitHubUsers';
+import { PROMPT_SYSTEM_PROMPT } from './mcp/tools/descriptions/systemPrompt';
+import { registerSearchGitHubCodeTool } from './mcp/tools/searchGitHubCode';
+import { registerFetchGitHubFileContentTool } from './mcp/tools/fetchGitHubFileContent';
+import { registerViewRepositoryTool } from './mcp/tools/viewRepository';
+import { registerNpmViewTool } from './mcp/tools/npmView';
+import { registerSearchGitHubReposTool } from './mcp/tools/searchGitHubRepos';
+import { registerSearchGitHubCommitsTool } from './mcp/tools/searchGitHubCommits';
+import { registerSearchGitHubPullRequestsTool } from './mcp/tools/searchGitHubPullRequests';
+import { registerGetUserOrganizationsTool } from './mcp/tools/getUserOrganizations';
+import { registerNpmSearchTool } from './mcp/tools/npmSearch';
+import { registerViewRepositoryStructureTool } from './mcp/tools/viewRepositoryStructure';
+import { registerSearchGitHubIssuesTool } from './mcp/tools/searchGitHubIssues';
+import { registerSearchGitHubDiscussionsTool } from './mcp/tools/searchGitHubDiscussions';
+import { registerSearchGitHubTopicsTool } from './mcp/tools/searchGitHubTopics';
+import { registerSearchGitHubUsersTool } from './mcp/tools/searchGitHubUsers';
+import { registerAnalyzeCodePrompt } from './mcp/prompts/analyzeCode';
+import { registerComparePackagesPrompt } from './mcp/prompts/comparePackages';
+import { registerGithubStatusResource } from './mcp/resources/githubStatus';
+import { registerUsageGuideResource } from './mcp/resources/usageGuide';
 
 const server = new McpServer(
   {
@@ -26,6 +30,8 @@ const server = new McpServer(
   {
     capabilities: {
       tools: {},
+      resources: {},
+      prompts: {},
     },
     instructions: `
     #PROMPT_SYSTEM_PROMPT
@@ -34,6 +40,8 @@ const server = new McpServer(
 );
 
 registerAllTools(server);
+registerResources(server);
+registerPrompts(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
@@ -61,4 +69,14 @@ function registerAllTools(server: McpServer) {
   registerSearchGitHubDiscussionsTool(server);
   registerSearchGitHubTopicsTool(server);
   registerSearchGitHubUsersTool(server);
+}
+
+function registerPrompts(server: McpServer) {
+  registerAnalyzeCodePrompt(server);
+  registerComparePackagesPrompt(server);
+}
+
+function registerResources(server: McpServer) {
+  registerGithubStatusResource(server);
+  registerUsageGuideResource(server);
 }
