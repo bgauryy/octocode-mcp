@@ -18,6 +18,7 @@ import { registerSearchGitHubUsersTool } from './mcp/tools/searchGitHubUsers';
 import { registerAnalyzeCodePrompt } from './mcp/prompts/analyzeCode';
 import { registerComparePackagesPrompt } from './mcp/prompts/comparePackages';
 import { registerGithubStatusResource } from './mcp/resources/githubStatus';
+import { registerNpmStatusResource } from './mcp/resources/npmStatus';
 import { registerUsageGuideResource } from './mcp/resources/usageGuide';
 
 const server = new McpServer(
@@ -78,5 +79,6 @@ function registerPrompts(server: McpServer) {
 
 function registerResources(server: McpServer) {
   registerGithubStatusResource(server);
+  registerNpmStatusResource(server);
   registerUsageGuideResource(server);
 }
