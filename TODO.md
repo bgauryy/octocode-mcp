@@ -1,0 +1,3 @@
+- functional tests
+- prompts tests
+- Sanitize inputs
