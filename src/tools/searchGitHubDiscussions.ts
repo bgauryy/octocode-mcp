@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubDiscussionsSearchParams } from '../types';
 import { TOOL_NAMES } from './contstants';
-import { searchGitHubDiscussions } from '../impl';
 import { SEARCH_GITHUB_DISCUSSIONS_DESCRIPTION } from '../prompts/searchGitHubDiscussions';
+import { searchGitHubDiscussions } from '../impl/github';
 
 export function registerSearchGitHubDiscussionsTool(server: McpServer) {
   server.tool(

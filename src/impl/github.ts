@@ -1,8 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { exec, execSync } from 'child_process';
-import { promisify } from 'util';
-import NodeCache from 'node-cache';
-import crypto from 'crypto';
+import { execSync } from 'child_process';
+import { generateCacheKey, withCache } from './cache';
 import {
   GithubFetchRequestParams,
   GitHubCodeSearchParams,
@@ -13,48 +11,13 @@ import {
   GitHubReposSearchParams,
   GitHubReposSearchResult,
   GitHubSearchResult,
-  NpmRepositoryResult,
-  NpmSearchParams,
   GitHubRepositoryStructureParams,
   GitHubRepositoryStructureResult,
   GitHubIssuesSearchParams,
   GitHubDiscussionsSearchParams,
   GitHubTopicsSearchParams,
   GitHubUsersSearchParams,
-} from './types';
-
-const execAsync = promisify(exec);
-const cache = new NodeCache({
-  stdTTL: 3600, // 1 hour cache
-  checkperiod: 600, // Check for expired keys every 10 minutes
-});
-
-function generateCacheKey(prefix: string, params: any): string {
-  const paramString = JSON.stringify(params, Object.keys(params).sort());
-  const hash = crypto.createHash('md5').update(paramString).digest('hex');
-  return `${prefix}:${hash}`;
-}
-
-async function withCache(
-  cacheKey: string,
-  operation: () => Promise<CallToolResult>
-): Promise<CallToolResult> {
-  // Check if result exists in cache
-  const cachedResult = cache.get<CallToolResult>(cacheKey);
-  if (cachedResult) {
-    return cachedResult;
-  }
-
-  // Execute operation
-  const result = await operation();
-
-  // Only cache successful responses
-  if (!result.isError) {
-    cache.set(cacheKey, result);
-  }
-
-  return result;
-}
+} from '../types';
 
 export async function searchGitHubCode(
   params: GitHubCodeSearchParams
@@ -253,58 +216,6 @@ export async function fetchGitHubFileContent(
       return createErrorResult('Failed to retrieve file content', error);
     }
   });
-}
-
-export async function npmView(packageName: string): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('npm-view', { packageName });
-
-  return withCache(cacheKey, async () => {
-    try {
-      const { stdout } = await execAsync(
-        `npm view ${packageName} repository.url repository.directory dependencies devdependencies peerDependencies version --json`
-      );
-      const result: NpmRepositoryResult = JSON.parse(stdout);
-      return createSuccessResult(result);
-    } catch (error) {
-      return createErrorResult(
-        'Failed to get npm repository information',
-        error
-      );
-    }
-  });
-}
-
-export async function npmSearch(
-  args: NpmSearchParams
-): Promise<CallToolResult> {
-  const { query, json = true, searchlimit = 20 } = args;
-  let command = `npm search "${query}" --searchlimit=${searchlimit}`;
-  if (json) {
-    command += ' --json';
-  }
-
-  try {
-    const { stdout, stderr } = await execAsync(command);
-    if (stderr) {
-      return {
-        content: [{ type: 'text', text: `Error searching NPM: ${stderr}` }],
-        isError: true,
-      };
-    }
-    return {
-      content: [{ type: 'text', text: stdout }],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Failed to execute npm search: ${(error as Error).message}`,
-        },
-      ],
-      isError: true,
-    };
-  }
 }
 
 export async function viewRepositoryStructure(

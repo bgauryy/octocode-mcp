@@ -1,7 +1,20 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { PROMPT_SYSTEM_PROMPT } from './prompts/systemPrompt';
-import { registerAllTools } from './tools/registerAllTools';
+import { registerSearchGitHubCodeTool } from './tools/searchGitHubCode';
+import { registerFetchGitHubFileContentTool } from './tools/fetchGitHubFileContent';
+import { registerViewRepositoryTool } from './tools/viewRepository';
+import { registerNpmViewTool } from './tools/npmView';
+import { registerSearchGitHubReposTool } from './tools/searchGitHubRepos';
+import { registerSearchGitHubCommitsTool } from './tools/searchGitHubCommits';
+import { registerSearchGitHubPullRequestsTool } from './tools/searchGitHubPullRequests';
+import { registerGetUserOrganizationsTool } from './tools/getUserOrganizations';
+import { registerNpmSearchTool } from './tools/npmSearch';
+import { registerViewRepositoryStructureTool } from './tools/viewRepositoryStructure';
+import { registerSearchGitHubIssuesTool } from './tools/searchGitHubIssues';
+import { registerSearchGitHubDiscussionsTool } from './tools/searchGitHubDiscussions';
+import { registerSearchGitHubTopicsTool } from './tools/searchGitHubTopics';
+import { registerSearchGitHubUsersTool } from './tools/searchGitHubUsers';
 
 const server = new McpServer(
   {
@@ -20,7 +33,6 @@ const server = new McpServer(
   }
 );
 
-// Register all tools
 registerAllTools(server);
 
 const transport = new StdioServerTransport();
@@ -33,3 +45,20 @@ process.on('SIGINT', async () => {
 process.stdin.on('close', async () => {
   server.close();
 });
+
+function registerAllTools(server: McpServer) {
+  registerSearchGitHubCodeTool(server);
+  registerFetchGitHubFileContentTool(server);
+  registerViewRepositoryTool(server);
+  registerNpmViewTool(server);
+  registerSearchGitHubReposTool(server);
+  registerSearchGitHubCommitsTool(server);
+  registerSearchGitHubPullRequestsTool(server);
+  registerGetUserOrganizationsTool(server);
+  registerNpmSearchTool(server);
+  registerViewRepositoryStructureTool(server);
+  registerSearchGitHubIssuesTool(server);
+  registerSearchGitHubDiscussionsTool(server);
+  registerSearchGitHubTopicsTool(server);
+  registerSearchGitHubUsersTool(server);
+}

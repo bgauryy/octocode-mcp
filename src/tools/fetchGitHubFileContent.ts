@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GithubFetchRequestParams } from '../types';
 import { TOOL_NAMES } from './contstants';
-import { fetchGitHubFileContent } from '../impl';
 import { FETCH_GITHUB_FILE_CONTENT_DESCRIPTION } from '../prompts/fetchGitHubFileContent';
+import { fetchGitHubFileContent } from '../impl/github';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.tool(

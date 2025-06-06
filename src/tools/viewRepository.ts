@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubRepositoryViewParams } from '../types';
 import { TOOL_NAMES } from './contstants';
-import { viewGitHubRepositoryInfo } from '../impl';
 import { VIEW_REPOSITORY_DESCRIPTION } from '../prompts/viewRepository';
+import { viewGitHubRepositoryInfo } from '../impl/github';
 
 export function registerViewRepositoryTool(server: McpServer) {
   server.tool(

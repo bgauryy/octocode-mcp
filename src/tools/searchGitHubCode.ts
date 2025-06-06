@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCodeSearchParams } from '../types';
 import { TOOL_NAMES } from './contstants';
-import { searchGitHubCode } from '../impl';
 import { SEARCH_GITHUB_CODE_DESCRIPTION } from '../prompts/searchGitHubCode';
+import { searchGitHubCode } from '../impl/github';
 
 export function registerSearchGitHubCodeTool(server: McpServer) {
   server.tool(
