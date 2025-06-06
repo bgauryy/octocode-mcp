@@ -26,41 +26,85 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         .describe(
           "Filter by specific repository name (e.g., 'cli/cli'). Note: Always do exploratory search without repo filter first"
         ),
-      author: z.string().optional().describe('Filter by issue author'),
+      app: z.string().optional().describe('Filter by GitHub App author'),
+      archived: z
+        .boolean()
+        .optional()
+        .describe('Filter based on the repository archived state'),
       assignee: z.string().optional().describe('Filter by assignee'),
-      mentions: z.string().optional().describe('Filter based on user mentions'),
+      author: z.string().optional().describe('Filter by issue author'),
+      closed: z.string().optional().describe('Filter on closed at date'),
       commenter: z
         .string()
         .optional()
         .describe('Filter based on comments by user'),
+      comments: z.number().optional().describe('Filter on number of comments'),
+      created: z
+        .string()
+        .optional()
+        .describe(
+          "Filter based on created at date (e.g., '>2022-01-01', '<2023-12-31')"
+        ),
+      includePrs: z
+        .boolean()
+        .optional()
+        .describe('Include pull requests in results'),
+      interactions: z
+        .number()
+        .optional()
+        .describe('Filter on number of reactions and comments'),
       involves: z
         .string()
         .optional()
         .describe('Filter based on involvement of user'),
-      state: z
-        .enum(['open', 'closed'])
-        .optional()
-        .describe('Filter based on issue state'),
       labels: z
         .string()
         .optional()
         .describe(
           "Filter by labels (e.g., 'bug', 'enhancement', 'documentation')"
         ),
-      milestone: z.string().optional().describe('Filter by milestone'),
-      project: z.string().optional().describe('Filter by project'),
       language: z
         .string()
         .optional()
         .describe('Filter based on the coding language'),
-      created: z
+      locked: z
+        .boolean()
+        .optional()
+        .describe('Filter on locked conversation status'),
+      match: z
+        .enum(['title', 'body', 'comments'])
+        .optional()
+        .describe('Restrict search to specific field of issue'),
+      mentions: z.string().optional().describe('Filter based on user mentions'),
+      milestone: z.string().optional().describe('Filter by milestone title'),
+      noAssignee: z.boolean().optional().describe('Filter on missing assignee'),
+      noLabel: z.boolean().optional().describe('Filter on missing label'),
+      noMilestone: z
+        .boolean()
+        .optional()
+        .describe('Filter on missing milestone'),
+      noProject: z.boolean().optional().describe('Filter on missing project'),
+      project: z
         .string()
         .optional()
-        .describe(
-          "Filter based on created date (e.g., '>2022-01-01', '<2023-12-31')"
-        ),
-      updated: z.string().optional().describe('Filter on last updated date'),
-      closed: z.string().optional().describe('Filter on closed date'),
+        .describe('Filter on project board owner/number'),
+      reactions: z
+        .number()
+        .optional()
+        .describe('Filter on number of reactions'),
+      state: z
+        .enum(['open', 'closed'])
+        .optional()
+        .describe('Filter based on issue state'),
+      teamMentions: z
+        .string()
+        .optional()
+        .describe('Filter based on team mentions'),
+      updated: z.string().optional().describe('Filter on last updated at date'),
+      visibility: z
+        .enum(['public', 'private', 'internal'])
+        .optional()
+        .describe('Filter based on repository visibility'),
       limit: z
         .number()
         .optional()
@@ -69,16 +113,17 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       sort: z
         .enum([
           'comments',
+          'created',
+          'interactions',
           'reactions',
           'reactions-+1',
           'reactions--1',
-          'reactions-smile',
-          'reactions-thinking_face',
           'reactions-heart',
+          'reactions-smile',
           'reactions-tada',
-          'interactions',
-          'created',
+          'reactions-thinking_face',
           'updated',
+          'best-match',
         ])
         .optional()
         .describe('Sort issues by specified criteria'),

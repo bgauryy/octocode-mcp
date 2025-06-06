@@ -720,19 +720,37 @@ function buildGitHubIssuesSearchCommand(
 
   if (params.owner) command += ` --owner ${params.owner}`;
   if (params.repo) command += ` --repo ${params.repo}`;
+  if (params.app) command += ` --app ${params.app}`;
+  if (params.archived !== undefined)
+    command += ` --archived ${params.archived}`;
   if (params.author) command += ` --author ${params.author}`;
   if (params.assignee) command += ` --assignee ${params.assignee}`;
-  if (params.mentions) command += ` --mentions ${params.mentions}`;
-  if (params.commenter) command += ` --commenter ${params.commenter}`;
-  if (params.involves) command += ` --involves ${params.involves}`;
-  if (params.state) command += ` --state ${params.state}`;
-  if (params.labels) command += ` --labels ${params.labels}`;
-  if (params.milestone) command += ` --milestone ${params.milestone}`;
-  if (params.project) command += ` --project ${params.project}`;
-  if (params.language) command += ` --language ${params.language}`;
-  if (params.created) command += ` --created ${params.created}`;
-  if (params.updated) command += ` --updated ${params.updated}`;
   if (params.closed) command += ` --closed ${params.closed}`;
+  if (params.commenter) command += ` --commenter ${params.commenter}`;
+  if (params.comments !== undefined)
+    command += ` --comments ${params.comments}`;
+  if (params.created) command += ` --created ${params.created}`;
+  if (params.includePrs !== undefined) command += ` --include-prs`;
+  if (params.interactions !== undefined)
+    command += ` --interactions ${params.interactions}`;
+  if (params.involves) command += ` --involves ${params.involves}`;
+  if (params.label) command += ` --label ${params.label}`;
+  if (params.language) command += ` --language ${params.language}`;
+  if (params.locked !== undefined) command += ` --locked ${params.locked}`;
+  if (params.match) command += ` --match ${params.match}`;
+  if (params.mentions) command += ` --mentions ${params.mentions}`;
+  if (params.milestone) command += ` --milestone ${params.milestone}`;
+  if (params.noAssignee !== undefined) command += ` --no-assignee`;
+  if (params.noLabel !== undefined) command += ` --no-label`;
+  if (params.noMilestone !== undefined) command += ` --no-milestone`;
+  if (params.noProject !== undefined) command += ` --no-project`;
+  if (params.project) command += ` --project ${params.project}`;
+  if (params.reactions !== undefined)
+    command += ` --reactions ${params.reactions}`;
+  if (params.state) command += ` --state ${params.state}`;
+  if (params.teamMentions) command += ` --team-mentions ${params.teamMentions}`;
+  if (params.updated) command += ` --updated ${params.updated}`;
+  if (params.visibility) command += ` --visibility ${params.visibility}`;
   if (params.limit) command += ` --limit ${params.limit}`;
   if (params.sort) command += ` --sort ${params.sort}`;
   if (params.order) command += ` --order ${params.order}`;

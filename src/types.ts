@@ -194,32 +194,47 @@ export interface GitHubIssuesSearchParams {
   query: string;
   owner?: string;
   repo?: string;
+  app?: string;
+  archived?: boolean;
   author?: string;
   assignee?: string;
   mentions?: string;
   commenter?: string;
+  comments?: number;
   involves?: string;
+  includePrs?: boolean;
+  interactions?: number;
   state?: 'open' | 'closed';
-  labels?: string;
+  label?: string;
   milestone?: string;
   project?: string;
   language?: string;
+  locked?: boolean;
+  match?: 'title' | 'body' | 'comments';
+  noAssignee?: boolean;
+  noLabel?: boolean;
+  noMilestone?: boolean;
+  noProject?: boolean;
+  reactions?: number;
+  teamMentions?: string;
+  visibility?: 'public' | 'private' | 'internal';
   created?: string;
   updated?: string;
   closed?: string;
   limit?: number;
   sort?:
     | 'comments'
+    | 'created'
+    | 'interactions'
     | 'reactions'
     | 'reactions-+1'
     | 'reactions--1'
-    | 'reactions-smile'
-    | 'reactions-thinking_face'
     | 'reactions-heart'
+    | 'reactions-smile'
     | 'reactions-tada'
-    | 'interactions'
-    | 'created'
-    | 'updated';
+    | 'reactions-thinking_face'
+    | 'updated'
+    | 'best-match';
   order?: 'asc' | 'desc';
 }
 
