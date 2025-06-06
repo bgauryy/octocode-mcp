@@ -124,112 +124,163 @@ function processRateLimit(
   };
 }
 
-export function registerGithubStatusResource(server: McpServer) {
-  server.resource(
-    'github-login-and-rate-limit',
-    'github://login-and-rate-limit',
-    async uri => {
-      try {
-        // Check GitHub CLI version
-        const ghVersion = execSync('gh --version', {
-          encoding: 'utf-8',
-        }).trim();
+// Dedicated GitHub Rate Limit Resource
+export function registerGithubRateLimitResource(server: McpServer) {
+  server.resource('github-rate-limits', 'github://rate-limits', async uri => {
+    try {
+      const rateLimitData = execSync('gh api rate_limit', {
+        encoding: 'utf-8',
+      });
+      const rateLimit: GitHubRateLimitResponse = JSON.parse(rateLimitData);
+      const rateLimitInfo = processRateLimit(rateLimit);
 
-        let isAuthenticated = false;
-        let authError = null;
-
-        try {
-          // gh auth status outputs to stderr, capture it
-          execSync('gh auth status', {
-            encoding: 'utf-8',
-          });
-        } catch (e) {
-          // gh auth status always outputs to stderr, so we expect this "error"
-          const error = e as any;
-          if (error.stderr) {
-            const output = error.stderr.toString().trim();
-            // Only check if authenticated, don't expose user details
-            isAuthenticated = output.includes('✓ Logged in');
-            if (!isAuthenticated) {
-              authError = 'Not authenticated';
-            }
-          } else {
-            authError = 'Unable to check authentication status';
-          }
-        }
-
-        let rateLimitInfo: ProcessedRateLimit | { error: string } = {
-          error: 'Unknown',
-        };
-        try {
-          const rateLimitData = execSync('gh api rate_limit', {
-            encoding: 'utf-8',
-          });
-          const rateLimit: GitHubRateLimitResponse = JSON.parse(rateLimitData);
-          rateLimitInfo = processRateLimit(rateLimit);
-        } catch (e) {
-          rateLimitInfo = {
-            error:
-              'Unable to check rate limit - authentication may be required',
-          };
-        }
-
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              mimeType: 'application/json',
-              text: JSON.stringify(
-                {
-                  status: 'GitHub API integration via CLI - LIVE STATUS',
-                  description:
-                    'Real-time GitHub API status including authentication and rate limits for different API endpoints',
-                  gh_version: ghVersion,
-                  authenticated: isAuthenticated,
-                  auth_error: authError,
-                  rate_limits: rateLimitInfo,
-                  usage_notes: {
-                    primary_api:
-                      'Used for most GitHub operations (repos, issues, PRs, etc.)',
-                    search_api:
-                      'Used for searching repositories, code, issues, users',
-                    code_search:
-                      'Dedicated endpoint for code search operations (most restrictive)',
-                    graphql_api: 'Used for GraphQL queries',
-                    status_meanings: {
-                      healthy: 'All APIs have sufficient remaining requests',
-                      limited:
-                        'Some APIs are running low on requests (< 10 remaining)',
-                      exhausted: 'One or more APIs have no remaining requests',
-                    },
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                status: 'GitHub API Rate Limits - LIVE STATUS',
+                description:
+                  'Real-time GitHub API rate limit status for all endpoints',
+                rate_limits: rateLimitInfo,
+                usage_notes: {
+                  primary_api:
+                    'Used for most GitHub operations (repos, issues, PRs, etc.)',
+                  search_api:
+                    'Used for searching repositories, code, issues, users',
+                  code_search:
+                    'Dedicated endpoint for code search operations (most restrictive)',
+                  graphql_api: 'Used for GraphQL queries',
+                  status_meanings: {
+                    healthy: 'All APIs have sufficient remaining requests',
+                    limited:
+                      'Some APIs are running low on requests (< 10 remaining)',
+                    exhausted: 'One or more APIs have no remaining requests',
                   },
-                  timestamp: new Date().toISOString(),
                 },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              mimeType: 'application/json',
-              text: JSON.stringify(
-                {
-                  status: 'GitHub API integration via CLI - ERROR',
-                  error: (error as Error).message,
-                  timestamp: new Date().toISOString(),
+                recommendations: {
+                  healthy: 'All APIs ready for use',
+                  limited: 'Consider prioritizing essential requests only',
+                  exhausted:
+                    'Wait until reset time or use alternative approaches',
                 },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
+                timestamp: new Date().toISOString(),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                status: 'GitHub API Rate Limits - ERROR',
+                error: (error as Error).message,
+                message:
+                  'Unable to check rate limits - authentication may be required',
+                timestamp: new Date().toISOString(),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
     }
-  );
+  });
+}
+
+// GitHub Authentication Status Resource
+export function registerGithubStatusResource(server: McpServer) {
+  server.resource('github-auth-status', 'github://auth-status', async uri => {
+    try {
+      // Check GitHub CLI version
+      const ghVersion = execSync('gh --version', {
+        encoding: 'utf-8',
+      }).trim();
+
+      let isAuthenticated = false;
+      let authError = null;
+
+      try {
+        // gh auth status outputs to stderr, capture it
+        execSync('gh auth status', {
+          encoding: 'utf-8',
+        });
+      } catch (e) {
+        // gh auth status always outputs to stderr, so we expect this "error"
+        const error = e as any;
+        if (error.stderr) {
+          const output = error.stderr.toString().trim();
+          // Only check if authenticated, don't expose user details
+          isAuthenticated = output.includes('✓ Logged in');
+          if (!isAuthenticated) {
+            authError = 'Not authenticated';
+          }
+        } else {
+          authError = 'Unable to check authentication status';
+        }
+      }
+
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                status: 'GitHub Authentication Status - LIVE STATUS',
+                description:
+                  'GitHub CLI authentication status and version information',
+                gh_version: ghVersion,
+                authenticated: isAuthenticated,
+                auth_error: authError,
+                setup_instructions: {
+                  not_authenticated: [
+                    'Run: gh auth login',
+                    'Follow the interactive prompts to authenticate',
+                    'Choose your preferred authentication method',
+                  ],
+                  verification: [
+                    'Run: gh auth status',
+                    'Should show "✓ Logged in" if successful',
+                  ],
+                },
+                timestamp: new Date().toISOString(),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                status: 'GitHub Authentication Status - ERROR',
+                error: (error as Error).message,
+                message: 'GitHub CLI may not be installed or accessible',
+                timestamp: new Date().toISOString(),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  });
 }

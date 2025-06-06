@@ -17,7 +17,10 @@ import { registerSearchGitHubTopicsTool } from './mcp/tools/searchGitHubTopics';
 import { registerSearchGitHubUsersTool } from './mcp/tools/searchGitHubUsers';
 import { registerAnalyzeCodePrompt } from './mcp/prompts/analyzeCode';
 import { registerComparePackagesPrompt } from './mcp/prompts/comparePackages';
-import { registerGithubStatusResource } from './mcp/resources/githubStatus';
+import {
+  registerGithubStatusResource,
+  registerGithubRateLimitResource,
+} from './mcp/resources/githubStatus';
 import { registerNpmStatusResource } from './mcp/resources/npmStatus';
 import { registerUsageGuideResource } from './mcp/resources/usageGuide';
 
@@ -79,6 +82,7 @@ function registerPrompts(server: McpServer) {
 
 function registerResources(server: McpServer) {
   registerGithubStatusResource(server);
+  registerGithubRateLimitResource(server);
   registerNpmStatusResource(server);
   registerUsageGuideResource(server);
 }
