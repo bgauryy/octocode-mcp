@@ -13,7 +13,7 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
       query: z
         .string()
         .describe(
-          "The search query to find topics (e.g., 'machine learning', 'react', 'devops', 'blockchain')"
+          "The search query to find topics (e.g., 'MCP', 'react', 'Github', 'blockchain')"
         ),
       owner: z
         .string()
