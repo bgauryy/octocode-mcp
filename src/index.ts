@@ -23,6 +23,7 @@ import {
 } from './mcp/resources/githubStatus';
 import { registerNpmStatusResource } from './mcp/resources/npmStatus';
 import { registerUsageGuideResource } from './mcp/resources/usageGuide';
+import { registerSearchGitHubCodeInstructionsResource } from './mcp/resources/searchGitHubCodeInstructions';
 
 const server = new McpServer(
   {
@@ -85,4 +86,5 @@ function registerResources(server: McpServer) {
   registerGithubRateLimitResource(server);
   registerNpmStatusResource(server);
   registerUsageGuideResource(server);
+  registerSearchGitHubCodeInstructionsResource(server);
 }

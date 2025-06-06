@@ -10,7 +10,11 @@ export function registerSearchGitHubCodeTool(server: McpServer) {
     TOOL_NAMES.SEARCH_GITHUB_CODE,
     SEARCH_GITHUB_CODE_DESCRIPTION,
     {
-      query: z.string().describe('Search query for code'),
+      query: z
+        .string()
+        .describe(
+          'Search query for code. Supports GitHub advanced syntax. see resource "search-github-code-instructions"'
+        ),
       owner: z.string().describe('Repository owner/organization'),
       repo: z
         .string()
@@ -24,7 +28,24 @@ export function registerSearchGitHubCodeTool(server: McpServer) {
       language: z.string().optional().describe('Programming language filter'),
       filename: z.string().optional().describe('Filename filter'),
       extension: z.string().optional().describe('File extension filter'),
-      match: z.enum(['file', 'path']).optional().describe('Search scope'),
+      path: z
+        .string()
+        .optional()
+        .describe('File path filter (directory or path pattern)'),
+      in: z
+        .enum(['file', 'path', 'file,path'])
+        .optional()
+        .describe(
+          'Search scope: file (contents only), path (file paths only), or file,path (both)'
+        ),
+      size: z
+        .string()
+        .optional()
+        .describe('File size filter (e.g., ">1000", "<500", "100")'),
+      match: z
+        .enum(['file', 'path'])
+        .optional()
+        .describe('Search scope restriction'),
       limit: z
         .number()
         .optional()
