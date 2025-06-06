@@ -19,7 +19,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
       branch: z
         .string()
         .describe(
-          `RECOMMENDED: The branch of the repository (e.g., "main", "master", "dev"). If branch doesn't exist, automatically tries common alternatives (main/master/develop/trunk) and finally default branch. Get from ${TOOL_NAMES.VIEW_REPOSITORY} for best results.`
+          `The default branch of the repository. branch name MUST be obtained from ${TOOL_NAMES.VIEW_REPOSITORY} tool`
         ),
       filePath: z
         .string()
