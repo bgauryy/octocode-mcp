@@ -2,20 +2,99 @@
 
 **AI-Powered GitHub Research Assistant for Code Discovery**
 
-
 <div>
-  <img src="./assets/logo.png" width="400" height="560">
+  <img src="./assets/logo.png">
   
   [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
 </div>
 
-## 🚀 A New Take on Code Discovery
+## 📋 Table of Contents
 
-### Differences Between Traditional GitHub MCPs and Octocode MCP
+- [✨ Overview](#-overview)
+  - [A New Take on Code Discovery MCP](#a-new-take-on-code-discovery-mcp)
+  - [🧠 AI-First Architecture](#-ai-first-architecture)
+  - [🔄 Intelligent Tool Chaining](#-intelligent-tool-chaining)
+  - [🎯 Smart Discovery Features](#-smart-discovery-features)
+- [💡 Background & Motivation](#-background--motivation)
+  - [🔄 A Tool That Built Itself](#-a-tool-that-built-itself)
+  - [🎯 Innovation: NPM-Driven Repository Discovery](#-innovation-npm-driven-repository-discovery)
+- [🌟 Example Use Cases](#-example-use-cases)
+- [🎯 Features](#-features)
+  - [For Developers](#for-developers)
+  - [For Engineering Managers](#for-engineering-managers)
+- [🛠 Available Tools](#-available-tools)
+  - [🔍 GitHub Code & Repository Search](#-github-code--repository-search)
+  - [📦 NPM & Package Ecosystem](#-npm--package-ecosystem)
+  - [📋 Development History & Collaboration](#-development-history--collaboration)
+  - [👥 User & Organization Management](#-user--organization-management)
+  - [🎯 Smart Features](#-smart-features)
+- [📚 Usage Examples](#-usage-examples)
+  - [Basic Code Discovery](#basic-code-discovery)
+  - [Advanced Research](#advanced-research)
+  - [Learning & Documentation](#learning--documentation)
+  - [Historical Analysis](#historical-analysis)
+  - [Code Review & Improvement](#code-review--improvement)
+- [💡 Tips for Effective Usage](#-tips-for-effective-usage)
+  - [🎯 Search Strategy Tips](#-search-strategy-tips)
+  - [📚 Documentation & Knowledge Management](#-documentation--knowledge-management)
+  - [⚡ Performance & Limitations](#-performance--limitations)
+  - [🔗 Cross-Repository Analysis](#-cross-repository-analysis)
+  - [🎨 Advanced Use Cases](#-advanced-use-cases)
+  - [🚀 Pro Tips](#-pro-tips)
+- [🛠 Installation & Setup](#-installation--setup)
+  - [🚀 Works Out Of The Box (OOTB) - Any Environment!](#-works-out-of-the-box-ootb---any-environment)
+  - [Step 1: Install Prerequisites](#step-1-install-prerequisites)
+  - [Step 2: Authentication Setup](#step-2-authentication-setup)
+  - [Step 3: MCP Configuration](#step-3-mcp-configuration)
+  - [🎉 That's It! Ready To Use](#-thats-it-ready-to-use)
+  - [🌟 Alternative Installation Options](#-alternative-installation-options)
+- [🔒 Privacy & Local Operation](#-privacy--local-operation)
+- [🔒 Why Different Than Static PAT](#-why-different-than-static-pat)
+- [License](#license)
+- [⚙️ Advanced Configuration](#️-advanced-configuration)
+  - [Rate Limiting & Performance](#rate-limiting--performance)
+  - [Authentication Management](#authentication-management)
+  - [NPM Configuration](#npm-configuration)
+- [🎯 Best Practices](#-best-practices)
+  - [Search Strategy](#search-strategy)
+  - [Performance Optimization](#performance-optimization)
+  - [Tool Chaining Best Practices](#tool-chaining-best-practices)
+- [🐛 Troubleshooting](#-troubleshooting)
+  - [Authentication Issues](#authentication-issues)
+  - [Common Issues](#common-issues)
+  - [NPM Configuration Issues](#npm-configuration-issues)
+  - [Misconfigured .npmrc File](#misconfigured-npmrc-file)
+  - [Development Setup](#development-setup)
+- [Disclaimer](#disclaimer)
+
+## ✨ Overview
+
+### A New Take on Code Discovery MCP
+
+**Differences Between Traditional GitHub MCPs and Octocode MCP:**
 - **Octocode MCP** = AI-Powered Research Assistant for Code Discovery
 - **Traditional GitHub MCPs** = Traditional API Wrapper for CRUD Operations
+
+### 🧠 **AI-First Architecture**
+- **Chain-of-Thought Reasoning Framework**: 6-step reasoning methodology built into prompts
+- **Teaching Methodology Integration**: AI education built into tool descriptions  
+- **Context-aware Search Optimization**: Quality validation pipelines for code discovery
+- **Automatic Query Optimization**: Single-word prioritization strategy ("RAG" → "Ranking" not "RAG Ranking")
+
+### 🔄 **Intelligent Tool Chaining**
+- **Automatic Organization Detection**: Smart tool chaining based on context
+- **Package-to-Repository Mapping**: NPM mentions trigger automatic repository discovery
+- **Cross-validation Workflows**: Multi-step research flows with tool interconnection
+- **Progressive Search Refinement**: Phase-based search refinement (Broad → Pattern → Precise)
+
+### 🎯 **Smart Discovery Features**
+- **Semantic Landscape Mapping**: `search_github_topics` for ecosystem understanding
+- **Community Knowledge Discovery**: `search_github_discussions` for Q&A and tutorials
+- **Evolution Tracking**: `search_github_commits` for code history analysis
+- **Private Repository Discovery**: `get_user_organizations` for enterprise access
+- **Package Ecosystem Discovery**: `npm_search` and `npm_view` integration
 
 ## 💡 Background & Motivation
 
@@ -56,27 +135,6 @@ This methodology improved search result quality by leveraging the NPM ecosystem'
 
 *Note: This is a personal side project and not an official Wix product.*
 
-## ✨ Overview of Octocode MCP
-
-### 🧠 **AI-First Architecture**
-- **Chain-of-Thought Reasoning Framework**: 6-step reasoning methodology built into prompts
-- **Teaching Methodology Integration**: AI education built into tool descriptions  
-- **Context-aware Search Optimization**: Quality validation pipelines for code discovery
-- **Automatic Query Optimization**: Single-word prioritization strategy ("RAG" → "Ranking" not "RAG Ranking")
-
-### 🔄 **Intelligent Tool Chaining**
-- **Automatic Organization Detection**: Smart tool chaining based on context
-- **Package-to-Repository Mapping**: NPM mentions trigger automatic repository discovery
-- **Cross-validation Workflows**: Multi-step research flows with tool interconnection
-- **Progressive Search Refinement**: Phase-based search refinement (Broad → Pattern → Precise)
-
-### 🎯 **Smart Discovery Features**
-- **Semantic Landscape Mapping**: `search_github_topics` for ecosystem understanding
-- **Community Knowledge Discovery**: `search_github_discussions` for Q&A and tutorials
-- **Evolution Tracking**: `search_github_commits` for code history analysis
-- **Private Repository Discovery**: `get_user_organizations` for enterprise access
-- **Package Ecosystem Discovery**: `npm_search` and `npm_view` integration
-
 ## 🌟 Example Use Cases
 
 **AI agents can now ask questions like:**
@@ -88,19 +146,173 @@ This methodology improved search result quality by leveraging the NPM ecosystem'
 - *"Make docs of lodash"*
 - *"Show progress of React project in the recent 5 years"*
 - *"How is Vue rendering architecture different than React? Check from code"*
+- *"Create development docs and guides about how wix ai gateway works"*
+- *"How does SOME_REPOSITORY work?"*
+- *"Summarise the main PRs on project X"*
+- *"How do Vue and React render components? Which approach is more optimized?"*
 
-## 📋 Table of Contents
+## 🎯 Features
 
-- [Installation & Setup](#installation--setup)
-- [Why Better Than Static PAT](#why-better-than-static-pat)
-- [Features](#features)
-- [Available Tools](#available-tools)
-- [Usage Examples](#usage-examples)
-- [Advanced Configuration](#advanced-configuration)
-- [Best Practices](#best-practices)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
+### For Developers
+- **🔍 Intelligent Code Discovery**: Find implementations, patterns, and examples with AI-guided search
+- **🔗 Cross-Repository Investigation**: Trace code patterns, dependencies, and implementations across multiple repositories
+- **🏢 Cross-Organization Dependencies**: Understand dependencies and relationships across different organizations and teams
+- **📚 Library & API Understanding**: Deep dive into libraries and APIs with examples from both internal and external repositories
+- **🔎 Specific Code Usage Search**: Find exact code patterns, function implementations, and usage examples
+- **🏷️ Topic Understanding**: Explore and understand technology topics, trends, and ecosystems
+- **🏗️ Big Project Analysis**: Comprehensive analysis of large-scale projects and their architecture
+  - *"Create development docs and guides about how wix ai gateway works"*
+  - *"How does SOME_REPOSITORY work?"*
+- **📈 Project Progress Analysis**: Track and summarize project evolution and key changes
+  - *"Summarise the main PRs on project X"*
+- **🔬 Cross-Repository Analysis**: Compare approaches and implementations across different projects
+  - *"How do Vue and React render components? Which approach is more optimized?"*
+- **📦 Smart Dependency Analysis**: Understand package relationships and find alternative libraries with automatic NPM integration
+- **🐛 Advanced Bug Investigation**: Track issues, commits, and pull requests with multi-repository correlation
+- **📚 Learning & Reference**: Access community discussions, documentation, and best practices with context-aware recommendations
+- **🏗️ Architecture Understanding**: Explore repository structures and analyze codebases with intelligent navigation
+- **📈 Historical Code Analysis**: Understand code evolution through commit history and PR reviews
+- **💡 Code Insights**: Extract insights from code patterns, repository structures, and development practices
+
+### For Engineering Managers
+- **📊 Repository Health Assessment**: Assess the current status and health of repositories with comprehensive metrics
+- **⚖️ Technology Assessment**: Evaluate libraries, frameworks, and tools adoption with trend analysis
+- **🤝 Cross-Team Collaboration Analysis**: Track contributions, knowledge sharing, and code reuse patterns
+- **💡 Knowledge Management**: Discover internal resources, documentation, and established patterns
+- **📈 Competitive Analysis**: Research similar projects and industry trends with automated discovery
+- **🛡️ Risk & Compliance Management**: Identify security vulnerabilities, licensing issues, and maintenance gaps
+- **📋 Strategic Planning**: Analyze technology trends, migration patterns, and adoption metrics
+
+## 🛠 Available Tools
+
+### 🔍 **GitHub Code & Repository Search**
+- **`search_github_code`**: Find specific implementations, functions, and patterns with semantic search
+- **`search_github_repos`**: Progressive repository discovery with intelligent filtering  
+- **`fetch_github_file_content`**: Extract complete working code with full context
+- **`view_repository_structure`**: Strategic repository exploration for code analysis
+- **`view_repository`**: Discover default branch information (mandatory first step)
+
+### 📦 **NPM & Package Ecosystem**
+- **`npm_view`**: Transform package names into GitHub repositories for code analysis
+- **`npm_search`**: Search NPM registry for packages by keywords with intelligent optimization
+- **Package-to-Repository Mapping**: Automatic linking from NPM packages to their GitHub repositories
+
+### 📋 **Development History & Collaboration**
+- **`search_github_commits`**: Advanced GitHub commits search for development history analysis
+- **`search_github_pull_requests`**: Code review and feature analysis with quality focus
+- **`search_github_issues`**: Problem discovery and solution research with pattern analysis
+- **`search_github_discussions`**: Community knowledge discovery for Q&A and tutorials
+
+### 👥 **User & Organization Management**
+- **`search_github_users`**: Advanced developer and organization discovery
+- **`get_user_organizations`**: Automatic private repository discovery for enterprise environments
+- **`search_github_topics`**: Vital foundation tool for effective GitHub discovery
+
+### 🎯 **Smart Features**
+- **Automatic Query Optimization**: Built-in search strategy optimization
+- **Chain-of-Thought Reasoning**: 6-step reasoning methodology for complex queries
+- **Teaching Methodology Integration**: AI education built into tool descriptions
+- **Progressive Search Refinement**: Phase-based search from broad to precise
+- **Cross-validation Workflows**: Multi-step research flows with tool interconnection
+
+## 📚 Usage Examples
+
+### Basic Code Discovery
+```bash
+# Find React hooks implementations
+"Show me examples of custom React hooks for data fetching"
+
+# Explore API patterns
+"How do popular libraries implement rate limiting? Show code examples"
+```
+
+### Advanced Research
+```bash
+# Deep architectural analysis
+"From code and PRs, how did React implement concurrent rendering?"
+
+# Cross-repository investigation
+"Show the langchain code examples from my organization"
+```
+
+### Learning & Documentation
+```bash
+# Best practices discovery
+"Best ways from code examples to use routing in Next.js"
+
+# Documentation generation
+"Make docs of lodash based on actual implementation"
+```
+
+### Historical Analysis
+```bash
+# Project evolution tracking
+"Show progress of React project in the recent 5 years"
+
+# Comparative analysis
+"How is Vue rendering architecture different than React? Check from code"
+```
+
+### Code Review & Improvement
+```bash
+# Code analysis and suggestions
+"Show examples of usage of this API: import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'; Look at my code and suggest how I can improve it"
+```
+
+## 💡 Tips for Effective Usage
+
+### 🎯 **Search Strategy Tips**
+- **🔍 Be Specific**: Use specific library names, repository URLs, or exact function names for better results
+  - Good: *"Show me how the `useEffect` hook works in React"*
+  - Better: *"Show me `useEffect` cleanup patterns in facebook/react repository"*
+
+- **🎭 Deep Analysis Requires Multiple Prompts**: Most comprehensive analysis will require more than one prompt
+  - Start broad, then drill down into specific areas of interest
+  - Use follow-up questions to explore different aspects
+
+### 📚 **Documentation & Knowledge Management**
+- **📝 Create Documentation**: Create documentation of topics important to you and reference it from Cursor or chat sessions
+  - *"Create a comprehensive guide about Next.js routing based on real examples"*
+  - Then use that documentation as reference for future development
+
+- **🔄 Iterative Learning**: Use the tool to build knowledge progressively
+  - Session 1: "What is server-side rendering?"
+  - Session 2: "Show me SSR implementations in Next.js"
+  - Session 3: "Compare SSR vs SSG in production applications"
+
+### ⚡ **Performance & Limitations**
+- **🚦 Rate Limiting Awareness**: GitHub has API rate limits for file fetching
+  - This tool has optimizations to manage rate limits efficiently
+  - **Not designed for bulk operations** like *"show all files in my org using XYZ"*
+  - Focus on targeted analysis rather than exhaustive scans
+
+- **🎯 Quality Over Quantity**: Better to get precise, high-quality results than overwhelming amounts of data
+  - Use filters and specific queries to narrow down results
+  - Combine multiple focused searches rather than one broad search
+
+### 🔗 **Cross-Repository Analysis**
+- **🏢 Organization Context**: Mention your organization or company for internal repository access
+  - *"Show authentication patterns used in our team's repositories"*
+  - The tool will automatically detect and use your organization access
+
+- **📦 Package-Based Discovery**: Mention specific packages to trigger automatic repository discovery
+  - *"How does the lodash library implement debouncing?"* → Automatically finds and analyzes lodash repository
+
+### 🎨 **Advanced Use Cases**
+- **🔬 Comparative Analysis**: Compare different approaches across repositories
+  - *"How do GraphQL implementations differ between Apollo and Relay?"*
+
+- **📈 Evolution Tracking**: Understand how projects evolved over time
+  - *"Show the major architectural changes in React over the past 2 years"*
+
+- **🛠️ Implementation Patterns**: Find real-world usage patterns
+  - *"Show me production examples of microservices communication patterns"*
+
+### 🚀 **Pro Tips**
+- **🔧 Combine Tools**: Use multiple MCP tools together for comprehensive analysis
+- **📊 Context Building**: Build context over multiple interactions for deeper insights
+- **🎯 Focus Areas**: Target specific areas of interest rather than general exploration
+- **📱 Real Examples**: Always ask for real code examples rather than theoretical explanations
 
 ## 🛠 Installation & Setup
 
@@ -170,7 +382,7 @@ npm config list
 npm whoami  # Verify authentication
 ```
 
-### Step 3: MCP Configuration**
+### Step 3: MCP Configuration
 
 **This is the only configuration you need!** Add this to your MCP client configuration:
 
@@ -258,101 +470,9 @@ npm install -g octocode-mcp
 ✅ **No Token Management**: GitHub CLI handles all authentication automatically  
 ✅ **Better Security**: No tokens stored in files or transmitted  
 
-## 🎯 Features
+## License
 
-### For Developers
-- **🔍 Intelligent Code Discovery**: Find implementations, patterns, and examples with AI-guided search
-- **🔗 Cross-Repository Investigation**: Trace code patterns, dependencies, and implementations across multiple repositories
-- **📦 Smart Dependency Analysis**: Understand package relationships and find alternative libraries with automatic NPM integration
-- **🐛 Advanced Bug Investigation**: Track issues, commits, and pull requests with multi-repository correlation
-- **📚 Learning & Reference**: Access community discussions, documentation, and best practices with context-aware recommendations
-- **🏗️ Architecture Understanding**: Explore repository structures and analyze codebases with intelligent navigation
-- **📈 Historical Code Analysis**: Understand code evolution through commit history and PR reviews
-
-### For Engineering Managers
-- **📊 Repository Health Assessment**: Assess the current status and health of repositories with comprehensive metrics
-- **⚖️ Technology Assessment**: Evaluate libraries, frameworks, and tools adoption with trend analysis
-- **🤝 Cross-Team Collaboration Analysis**: Track contributions, knowledge sharing, and code reuse patterns
-- **💡 Knowledge Management**: Discover internal resources, documentation, and established patterns
-- **📈 Competitive Analysis**: Research similar projects and industry trends with automated discovery
-- **🛡️ Risk & Compliance Management**: Identify security vulnerabilities, licensing issues, and maintenance gaps
-- **📋 Strategic Planning**: Analyze technology trends, migration patterns, and adoption metrics
-
-## 🛠 Available Tools
-
-### 🔍 **GitHub Code & Repository Search**
-- **`search_github_code`**: Find specific implementations, functions, and patterns with semantic search
-- **`search_github_repos`**: Progressive repository discovery with intelligent filtering  
-- **`fetch_github_file_content`**: Extract complete working code with full context
-- **`view_repository_structure`**: Strategic repository exploration for code analysis
-- **`view_repository`**: Discover default branch information (mandatory first step)
-
-### 📦 **NPM & Package Ecosystem**
-- **`npm_view`**: Transform package names into GitHub repositories for code analysis
-- **`npm_search`**: Search NPM registry for packages by keywords with intelligent optimization
-- **Package-to-Repository Mapping**: Automatic linking from NPM packages to their GitHub repositories
-
-### 📋 **Development History & Collaboration**
-- **`search_github_commits`**: Advanced GitHub commits search for development history analysis
-- **`search_github_pull_requests`**: Code review and feature analysis with quality focus
-- **`search_github_issues`**: Problem discovery and solution research with pattern analysis
-- **`search_github_discussions`**: Community knowledge discovery for Q&A and tutorials
-
-### 👥 **User & Organization Management**
-- **`search_github_users`**: Advanced developer and organization discovery
-- **`get_user_organizations`**: Automatic private repository discovery for enterprise environments
-- **`search_github_topics`**: Vital foundation tool for effective GitHub discovery
-
-### 🎯 **Smart Features**
-- **Automatic Query Optimization**: Built-in search strategy optimization
-- **Chain-of-Thought Reasoning**: 6-step reasoning methodology for complex queries
-- **Teaching Methodology Integration**: AI education built into tool descriptions
-- **Progressive Search Refinement**: Phase-based search from broad to precise
-- **Cross-validation Workflows**: Multi-step research flows with tool interconnection
-
-## 📚 Usage Examples
-
-### Basic Code Discovery
-```bash
-# Find React hooks implementations
-"Show me examples of custom React hooks for data fetching"
-
-# Explore API patterns
-"How do popular libraries implement rate limiting? Show code examples"
-```
-
-### Advanced Research
-```bash
-# Deep architectural analysis
-"From code and PRs, how did React implement concurrent rendering?"
-
-# Cross-repository investigation
-"Show the langchain code examples from my organization"
-```
-
-### Learning & Documentation
-```bash
-# Best practices discovery
-"Best ways from code examples to use routing in Next.js"
-
-# Documentation generation
-"Make docs of lodash based on actual implementation"
-```
-
-### Historical Analysis
-```bash
-# Project evolution tracking
-"Show progress of React project in the recent 5 years"
-
-# Comparative analysis
-"How is Vue rendering architecture different than React? Check from code"
-```
-
-### Code Review & Improvement
-```bash
-# Code analysis and suggestions
-"Show examples of usage of this API: import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'; Look at my code and suggest how I can improve it"
-```
+MIT License - See [LICENSE](./LICENSE.md) for details.
 
 ## ⚙️ Advanced Configuration
 
@@ -442,7 +562,6 @@ npm login
 3. **View configuration**: `npm config list`
 4. **Test after changes**: `yarn install` or `npm install`
 
-
 ### Development Setup
 ```bash
 # Clone repository
@@ -465,8 +584,16 @@ yarn build
 
 ```
 
-## License
+## Disclaimer
 
-MIT License - See [LICENSE](./LICENSE.md) for details.
+**This is a personal side project** developed to solve real-world code discovery challenges. While functional and useful, please keep in mind:
+
+- **🚧 Work in Progress**: Some improvements and optimizations are still needed
+- **🎯 Intentionally Lean**: Designed to be simple and lightweight - no unnecessary overhead or complexity
+- **🔬 Experimental**: As with any side project, expect occasional rough edges and areas for improvement
 
 ---
+
+
+
+

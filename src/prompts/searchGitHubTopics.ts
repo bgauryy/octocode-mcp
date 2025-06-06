@@ -14,9 +14,9 @@ export const SEARCH_GITHUB_TOPICS_DESCRIPTION = `**VITAL FOUNDATION TOOL** for e
 3. **Quality validation** → featured topics = GitHub-promoted, curated = community-maintained
 
 **SEARCH STRATEGY:**
-- Start simple: "react", "docker", "cli"
-- Combine when needed: "machine-learning python"
-- Avoid complex phrases: keep focused and discoverable
+1. **Single Terms First**: "MCP", "RAG", "react", "docker", "cli"
+2. **Progressive Discovery**: Start basic and make several queries if needed
+3. **Avoid Combined Terms**: API works better with individual terms than complex phrases
 
 **EXAMPLES:**
 - Search "javascript" → find topics like "typescript", "nodejs", "frontend"
