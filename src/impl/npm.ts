@@ -1,33 +1,49 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { generateCacheKey, withCache } from './cache';
+import { generateCacheKey, withCache } from '../utils/cache';
+import { executeNpmCommand, CommandBuilder } from '../utils/exec';
 import { NpmRepositoryResult, NpmSearchParams } from '../types';
-
-const execAsync = promisify(exec);
 
 export async function npmView(packageName: string): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('npm-view', { packageName });
 
   return withCache(cacheKey, async () => {
     try {
-      const { stdout } = await execAsync(
-        `npm view ${packageName} name version description keywords homepage repository bugs license author maintainers dependencies devDependencies peerDependencies scripts engines dist.tarball dist.unpackedSize --json`
-      );
-      const result: NpmRepositoryResult = JSON.parse(stdout);
+      const { command, args } = CommandBuilder.npmView(packageName);
+      const result = await executeNpmCommand(command, args, {
+        json: true,
+        cache: true,
+      });
+
+      if (result.isError) {
+        return result;
+      }
+
+      // Parse the result from the executed command
+      const commandOutput = JSON.parse(result.content[0].text as string);
+      const npmData: NpmRepositoryResult = commandOutput.result;
 
       let popularityData = '';
       try {
-        const { stdout: weeklyDownloads } = await execAsync(
-          `npm view ${packageName} --json | jq -r '.time | keys | length'`
-        );
-        popularityData = `Package versions released: ${weeklyDownloads.trim()}`;
+        // Get version count as popularity indicator
+        const versionsResult = await executeNpmCommand('view', [
+          packageName,
+          'time',
+          '--json',
+        ]);
+        if (!versionsResult.isError) {
+          const versionsOutput = JSON.parse(
+            versionsResult.content[0].text as string
+          );
+          const timeData = versionsOutput.result;
+          const versionCount = Object.keys(timeData).length - 2; // Subtract 'created' and 'modified'
+          popularityData = `Package versions released: ${versionCount}`;
+        }
       } catch {
         // Popularity data is optional
       }
 
       const enhancedResult = {
-        ...result,
+        ...npmData,
         popularityInfo: popularityData,
         lastAnalyzed: new Date().toISOString(),
       };
@@ -46,55 +62,52 @@ export async function npmSearch(
   args: NpmSearchParams
 ): Promise<CallToolResult> {
   const { query, json = true, searchlimit = 50 } = args;
-  let command = `npm search "${query}" --searchlimit=${searchlimit}`;
-  if (json) {
-    command += ' --json';
-  }
 
   try {
-    const { stdout, stderr } = await execAsync(command);
-    if (stderr) {
-      return {
-        content: [{ type: 'text', text: `Error searching NPM: ${stderr}` }],
-        isError: true,
-      };
+    const { command, args: cmdArgs } = CommandBuilder.npmSearch(query, {
+      limit: searchlimit,
+      json,
+    });
+
+    const result = await executeNpmCommand(command, cmdArgs, {
+      json,
+      cache: true,
+    });
+
+    if (result.isError) {
+      return result;
     }
 
     if (json) {
       try {
-        const results = JSON.parse(stdout);
+        const commandOutput = JSON.parse(result.content[0].text as string);
+        const searchResults = commandOutput.result;
+
         const enhancedResults = {
           searchQuery: query,
-          resultCount: results.length,
+          resultCount: Array.isArray(searchResults) ? searchResults.length : 0,
           searchLimitApplied: searchlimit,
-          results: results,
+          results: searchResults,
           searchTips:
-            results.length === 0
+            !searchResults ||
+            (Array.isArray(searchResults) && searchResults.length === 0)
               ? "Try broader terms like 'react', 'cli', or 'typescript'"
-              : results.length >= searchlimit
+              : Array.isArray(searchResults) &&
+                  searchResults.length >= searchlimit
                 ? 'Results limited. Use more specific terms to narrow down.'
                 : 'Good result set size for analysis.',
           timestamp: new Date().toISOString(),
         };
         return createSuccessResult(enhancedResults);
-      } catch {
+      } catch (parseError) {
         // Fallback to raw output if JSON parsing fails
+        return result;
       }
     }
 
-    return {
-      content: [{ type: 'text', text: stdout }],
-    };
+    return result;
   } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Failed to execute npm search: ${(error as Error).message}`,
-        },
-      ],
-      isError: true,
-    };
+    return createErrorResult('Failed to execute npm search', error);
   }
 }
 
@@ -105,29 +118,28 @@ export async function npmPackageStats(
 
   return withCache(cacheKey, async () => {
     try {
+      // Execute multiple commands in parallel using executeNpmCommand
       const commands = [
-        `npm view ${packageName} time --json`,
-        `npm view ${packageName} versions --json`,
-        `npm view ${packageName} dist-tags --json`,
+        executeNpmCommand('view', [packageName, 'time', '--json']),
+        executeNpmCommand('view', [packageName, 'versions', '--json']),
+        executeNpmCommand('view', [packageName, 'dist-tags', '--json']),
       ];
 
-      const results = await Promise.allSettled(
-        commands.map(cmd => execAsync(cmd))
-      );
+      const results = await Promise.allSettled(commands);
 
       const stats = {
         packageName,
         releaseHistory:
-          results[0].status === 'fulfilled'
-            ? JSON.parse(results[0].value.stdout)
+          results[0].status === 'fulfilled' && !results[0].value.isError
+            ? JSON.parse(results[0].value.content[0].text as string).result
             : null,
         versions:
-          results[1].status === 'fulfilled'
-            ? JSON.parse(results[1].value.stdout)
+          results[1].status === 'fulfilled' && !results[1].value.isError
+            ? JSON.parse(results[1].value.content[0].text as string).result
             : null,
         distTags:
-          results[2].status === 'fulfilled'
-            ? JSON.parse(results[2].value.stdout)
+          results[2].status === 'fulfilled' && !results[2].value.isError
+            ? JSON.parse(results[2].value.content[0].text as string).result
             : null,
         analyzedAt: new Date().toISOString(),
       };

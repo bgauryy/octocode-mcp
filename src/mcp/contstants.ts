@@ -18,6 +18,30 @@ export const TOOL_NAMES = {
   GITHUB_ADVANCED_SEARCH: 'github_advanced_search',
 } as const;
 
+export const RESOURCE_NAMES = {
+  // Help & Quick Start
+  USAGE_GUIDE: 'usage-guide',
+  CAPABILITIES_DISCOVERY: 'capabilities-discovery',
+
+  // Authentication & Status
+  GITHUB_AUTH_STATUS: 'github-auth-status',
+  GITHUB_RATE_LIMITS: 'github-rate-limits',
+  NPM_STATUS: 'npm-status',
+
+  // Search & Discovery
+  SEARCH_GITHUB_CODE_INSTRUCTIONS: 'search-github-code-instructions',
+  SEARCH_CONTEXT: 'search-context',
+  QUERY_EXPANSION: 'query-expansion',
+
+  // Workflow Intelligence
+  TOOL_ORCHESTRATION: 'tool-orchestration',
+  REPOSITORY_INTELLIGENCE: 'repository-intelligence',
+
+  // Productivity & Export
+  CODE_EXPORT: 'code-export',
+  ERROR_DIAGNOSTICS: 'error-diagnostics',
+} as const;
+
 export const INDEX_MAP = {
   CRITICAL: '#CRITICAL#',
   SUCCESS: '#SUCCESS#',

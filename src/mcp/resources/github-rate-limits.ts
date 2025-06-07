@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
-import { execSync } from 'child_process';
+import { executeGitHubCommand } from '../../utils/exec';
 
 interface GitHubRateLimit {
   limit: number;
@@ -59,10 +59,37 @@ interface GitHubRateLimitResponse {
 export function registerGithubRateLimitResource(server: McpServer) {
   server.resource('github-rate-limits', 'github://rate-limits', async uri => {
     try {
-      const rateLimitData = execSync('gh api rate_limit', {
-        encoding: 'utf-8',
-      });
-      const rateLimit: GitHubRateLimitResponse = JSON.parse(rateLimitData);
+      // Use safe GitHub command execution for API calls
+      const rateLimitResult = await executeGitHubCommand(
+        'api',
+        ['rate_limit'],
+        {
+          timeout: 10000,
+          cache: false,
+        }
+      );
+
+      if (rateLimitResult.isError) {
+        const errorText = String(
+          rateLimitResult.content[0]?.text || 'Failed to fetch rate limits'
+        );
+        throw new Error(errorText);
+      }
+
+      // Extract and parse the rate limit data
+      const content = String(rateLimitResult.content[0]?.text || '');
+      if (!content) {
+        throw new Error('No rate limit data received');
+      }
+
+      let rateLimit: GitHubRateLimitResponse;
+      try {
+        const parsed = JSON.parse(content);
+        rateLimit = parsed.result || parsed;
+      } catch {
+        rateLimit = JSON.parse(content);
+      }
+
       const rateLimitInfo = processRateLimit(rateLimit);
 
       return {

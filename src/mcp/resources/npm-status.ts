@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { execSync } from 'child_process';
+import { executeNpmCommand } from '../../utils/exec';
 
 // Sanitize output to remove potential tokens
 function sanitizeOutput(output: string): string {
@@ -24,42 +24,43 @@ function sanitizeOutput(output: string): string {
   );
 }
 
-// Whitelist of safe npm commands
-const SAFE_NPM_COMMANDS = [
-  'npm --version',
-  'node --version',
-  'npm config get registry',
-  'npm ping',
-  'npm whoami',
-] as const;
-
-// Execute npm command safely without exposing tokens
-function safeExecSync(command: string): string {
-  // Validate command is in whitelist
-  if (!SAFE_NPM_COMMANDS.includes(command as any)) {
-    throw new Error(`Command not allowed: ${command}`);
-  }
-
+// Execute npm command safely using the safe implementation
+async function safeNpmCommand(
+  command: string,
+  args: string[] = []
+): Promise<string> {
   try {
-    const output = execSync(command, {
-      encoding: 'utf-8',
+    const result = await executeNpmCommand(command, args, {
       timeout: 10000, // 10 second timeout
-      // Don't inherit environment variables that might contain tokens
-      env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        // Explicitly exclude all potential token environment variables
-        NPM_TOKEN: undefined,
-        NPM_AUTH_TOKEN: undefined,
-        NPM_CONFIG_AUTHTOKEN: undefined,
-        NPM_CONFIG_TOKEN: undefined,
-        NPM_CONFIG__AUTH: undefined,
-        NPM_CONFIG__AUTHTOKEN: undefined,
-        _AUTH_TOKEN: undefined,
-        _AUTHTOKEN: undefined,
-      },
-    }).trim();
-    return sanitizeOutput(output);
+      cache: false, // Don't cache status commands
+    });
+
+    if (result.isError) {
+      const errorText = String(result.content[0]?.text || 'Command failed');
+      // Don't return the full error message as it might contain sensitive info
+      if (errorText.includes('timeout')) {
+        return 'Command timed out';
+      }
+      if (errorText.includes('ENOENT')) {
+        return 'Command not found';
+      }
+      return 'Command failed';
+    }
+
+    // Extract the result from the successful response
+    const content = String(result.content[0]?.text || '');
+    if (content) {
+      try {
+        const parsed = JSON.parse(content);
+        const output = parsed.result || content;
+        return sanitizeOutput(String(output).trim());
+      } catch {
+        // If JSON parsing fails, sanitize the raw content
+        return sanitizeOutput(content.trim());
+      }
+    }
+
+    return 'No output';
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     // Don't return the full error message as it might contain sensitive info
@@ -76,19 +77,19 @@ function safeExecSync(command: string): string {
 export function registerNpmStatusResource(server: McpServer) {
   server.resource('npm-status', 'npm://status', async uri => {
     try {
-      // Get versions
-      const npmVersion = safeExecSync('npm --version');
-      const nodeVersion = safeExecSync('node --version');
+      // Get versions using safe commands
+      const npmVersion = await safeNpmCommand('version', []);
+      const nodeVersion = process.version; // Use process.version instead of exec
 
       // Get registry
-      const registryUrl = safeExecSync('npm config get registry');
+      const registryUrl = await safeNpmCommand('config', ['get', 'registry']);
 
       // Check registry connectivity
-      const pingOutput = safeExecSync('npm ping');
+      const pingOutput = await safeNpmCommand('ping', []);
 
       // Check authentication - just determine if authenticated, don't expose username
       let authStatus = 'Not authenticated';
-      const whoamiOutput = safeExecSync('npm whoami');
+      const whoamiOutput = await safeNpmCommand('whoami', []);
 
       // Parse npm whoami output
       if (

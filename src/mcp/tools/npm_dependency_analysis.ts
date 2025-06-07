@@ -1,12 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { generateCacheKey, withCache } from '../../impl/cache';
+import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-
-const execAsync = promisify(exec);
+import { executeNpmCommand } from '../../utils/exec';
 
 export const NPM_DEPENDENCY_ANALYSIS_DESCRIPTION = `Comprehensive npm package dependency analysis and security assessment.
 
@@ -42,52 +39,49 @@ async function analyzeDependencies(
 
   return withCache(cacheKey, async () => {
     try {
-      // Create temporary directory for analysis
-      const tmpDir = `/tmp/npm-analysis-${Date.now()}`;
-      await execAsync(`mkdir -p ${tmpDir}`);
-
-      try {
-        // Initialize package.json and install for analysis
-        await execAsync(`cd ${tmpDir} && npm init -y`);
-        await execAsync(
-          `cd ${tmpDir} && npm install ${packageName} --package-lock-only`
-        );
-
-        // Run multiple analysis commands
-        const commands = [
-          `cd ${tmpDir} && npm audit --json`,
-          `cd ${tmpDir} && npm list --json --depth=0`,
-          `cd ${tmpDir} && npm outdated --json || true`,
-          `cd ${tmpDir} && npm view ${packageName} bundlesize --json || echo '{}'`,
-        ];
-
-        const results = await Promise.allSettled(
-          commands.map(cmd => execAsync(cmd))
-        );
-
-        const analysis = {
-          packageName,
-          audit: parseResult(results[0], 'audit'),
-          dependencies: parseResult(results[1], 'dependencies'),
-          outdated: parseResult(results[2], 'outdated'),
-          bundleInfo: parseResult(results[3], 'bundle'),
-          recommendations: generateRecommendations(results),
-          analyzedAt: new Date().toISOString(),
-        };
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(analysis, null, 2),
-            },
+      // Use safe npm commands through the exec implementation
+      const commands = [
+        { command: 'audit', args: [packageName, '--json'] },
+        {
+          command: 'view',
+          args: [
+            packageName,
+            'dependencies',
+            'devDependencies',
+            'peerDependencies',
+            '--json',
           ],
-          isError: false,
-        };
-      } finally {
-        // Cleanup
-        await execAsync(`rm -rf ${tmpDir}`).catch(() => {});
-      }
+        },
+        { command: 'view', args: [packageName, 'bundlesize', '--json'] },
+      ];
+
+      const results = await Promise.allSettled(
+        commands.map(async ({ command, args }) => {
+          return await executeNpmCommand(command, args, {
+            json: true,
+            cache: true,
+          });
+        })
+      );
+
+      const analysis = {
+        packageName,
+        audit: extractResult(results[0], 'audit'),
+        dependencies: extractResult(results[1], 'dependencies'),
+        bundleInfo: extractResult(results[2], 'bundle'),
+        recommendations: generateRecommendations(results, packageName),
+        analyzedAt: new Date().toISOString(),
+      };
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(analysis, null, 2),
+          },
+        ],
+        isError: false,
+      };
     } catch (error) {
       return {
         content: [
@@ -102,32 +96,41 @@ async function analyzeDependencies(
   });
 }
 
-function parseResult(result: PromiseSettledResult<any>, type: string): any {
-  if (result.status === 'fulfilled') {
+function extractResult(result: PromiseSettledResult<any>, type: string): any {
+  if (result.status === 'fulfilled' && result.value && !result.value.isError) {
     try {
-      return JSON.parse(result.value.stdout);
+      const content = result.value.content[0]?.text;
+      if (content) {
+        const parsed = JSON.parse(content);
+        return parsed.result || parsed;
+      }
     } catch {
       return {
         error: `Failed to parse ${type} data`,
-        raw: result.value.stdout,
+        raw: result.value,
       };
     }
   }
-  return { error: `Command failed for ${type}` };
+  return {
+    error: `Command failed for ${type}`,
+    details:
+      result.status === 'rejected' ? result.reason?.message : 'Unknown error',
+  };
 }
 
 function generateRecommendations(
-  results: PromiseSettledResult<any>[]
+  results: PromiseSettledResult<any>[],
+  packageName: string
 ): string[] {
   const recommendations: string[] = [];
 
   // Analyze audit results
-  if (results[0].status === 'fulfilled') {
+  const auditResult = extractResult(results[0], 'audit');
+  if (auditResult && !auditResult.error) {
     try {
-      const audit = JSON.parse(results[0].value.stdout);
-      if (audit.metadata?.vulnerabilities?.total > 0) {
+      if (auditResult.metadata?.vulnerabilities?.total > 0) {
         recommendations.push(
-          `🔒 Security: Found ${audit.metadata.vulnerabilities.total} vulnerabilities. Run 'npm audit fix' to address.`
+          `🔒 Security: Found ${auditResult.metadata.vulnerabilities.total} vulnerabilities in ${packageName}.`
         );
       }
     } catch {
@@ -136,32 +139,20 @@ function generateRecommendations(
   }
 
   // Analyze dependencies
-  if (results[1].status === 'fulfilled') {
+  const depsResult = extractResult(results[1], 'dependencies');
+  if (depsResult && !depsResult.error) {
     try {
-      const deps = JSON.parse(results[1].value.stdout);
-      const depCount = Object.keys(deps.dependencies || {}).length;
-      if (depCount > 10) {
+      const depCount =
+        Object.keys(depsResult.dependencies || {}).length +
+        Object.keys(depsResult.devDependencies || {}).length +
+        Object.keys(depsResult.peerDependencies || {}).length;
+      if (depCount > 20) {
         recommendations.push(
           `📦 Dependencies: Large dependency tree (${depCount} packages). Consider alternatives.`
         );
       }
     } catch {
       // Ignore parsing errors - dependency data is optional
-    }
-  }
-
-  // Analyze outdated packages
-  if (results[2].status === 'fulfilled') {
-    try {
-      const outdated = JSON.parse(results[2].value.stdout);
-      const outdatedCount = Object.keys(outdated || {}).length;
-      if (outdatedCount > 0) {
-        recommendations.push(
-          `⬆️ Updates: ${outdatedCount} dependencies have newer versions available.`
-        );
-      }
-    } catch {
-      // Ignore parsing errors - outdated data is optional
     }
   }
 
