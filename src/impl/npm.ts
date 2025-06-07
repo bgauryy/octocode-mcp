@@ -12,10 +12,27 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
   return withCache(cacheKey, async () => {
     try {
       const { stdout } = await execAsync(
-        `npm view ${packageName} repository.url repository.directory dependencies devdependencies peerDependencies version --json`
+        `npm view ${packageName} name version description keywords homepage repository bugs license author maintainers dependencies devDependencies peerDependencies scripts engines dist.tarball dist.unpackedSize --json`
       );
       const result: NpmRepositoryResult = JSON.parse(stdout);
-      return createSuccessResult(result);
+      
+      let popularityData = '';
+      try {
+        const { stdout: weeklyDownloads } = await execAsync(
+          `npm view ${packageName} --json | jq -r '.time | keys | length'`
+        );
+        popularityData = `Package versions released: ${weeklyDownloads.trim()}`;
+      } catch {
+        // Popularity data is optional
+      }
+
+      const enhancedResult = {
+        ...result,
+        popularityInfo: popularityData,
+        lastAnalyzed: new Date().toISOString()
+      };
+
+      return createSuccessResult(enhancedResult);
     } catch (error) {
       return createErrorResult(
         'Failed to get npm repository information',
@@ -28,7 +45,7 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
 export async function npmSearch(
   args: NpmSearchParams
 ): Promise<CallToolResult> {
-  const { query, json = true, searchlimit = 20 } = args;
+  const { query, json = true, searchlimit = 50 } = args;
   let command = `npm search "${query}" --searchlimit=${searchlimit}`;
   if (json) {
     command += ' --json';
@@ -42,6 +59,28 @@ export async function npmSearch(
         isError: true,
       };
     }
+
+    if (json) {
+      try {
+        const results = JSON.parse(stdout);
+        const enhancedResults = {
+          searchQuery: query,
+          resultCount: results.length,
+          searchLimitApplied: searchlimit,
+          results: results,
+          searchTips: results.length === 0 
+            ? "Try broader terms like 'react', 'cli', or 'typescript'" 
+            : results.length >= searchlimit 
+              ? "Results limited. Use more specific terms to narrow down."
+              : "Good result set size for analysis.",
+          timestamp: new Date().toISOString()
+        };
+        return createSuccessResult(enhancedResults);
+      } catch {
+        // Fallback to raw output if JSON parsing fails
+      }
+    }
+
     return {
       content: [{ type: 'text', text: stdout }],
     };
@@ -56,6 +95,36 @@ export async function npmSearch(
       isError: true,
     };
   }
+}
+
+export async function npmPackageStats(packageName: string): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('npm-stats', { packageName });
+
+  return withCache(cacheKey, async () => {
+    try {
+      const commands = [
+        `npm view ${packageName} time --json`,
+        `npm view ${packageName} versions --json`,
+        `npm view ${packageName} dist-tags --json`
+      ];
+
+      const results = await Promise.allSettled(
+        commands.map(cmd => execAsync(cmd))
+      );
+
+      const stats = {
+        packageName,
+        releaseHistory: results[0].status === 'fulfilled' ? JSON.parse(results[0].value.stdout) : null,
+        versions: results[1].status === 'fulfilled' ? JSON.parse(results[1].value.stdout) : null,
+        distTags: results[2].status === 'fulfilled' ? JSON.parse(results[2].value.stdout) : null,
+        analyzedAt: new Date().toISOString()
+      };
+
+      return createSuccessResult(stats);
+    } catch (error) {
+      return createErrorResult('Failed to get npm package statistics', error);
+    }
+  });
 }
 
 function createSuccessResult(data: any): CallToolResult {

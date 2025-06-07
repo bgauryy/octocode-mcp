@@ -13,6 +13,9 @@ export const TOOL_NAMES = {
   SEARCH_GITHUB_DISCUSSIONS: 'search_github_discussions',
   SEARCH_GITHUB_TOPICS: 'search_github_topics',
   SEARCH_GITHUB_USERS: 'search_github_users',
+  NPM_PACKAGE_STATS: 'npm_package_stats',
+  NPM_DEPENDENCY_ANALYSIS: 'npm_dependency_analysis',
+  GITHUB_ADVANCED_SEARCH: 'github_advanced_search',
 } as const;
 
 export const INDEX_MAP = {

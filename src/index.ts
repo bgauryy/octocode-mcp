@@ -55,6 +55,10 @@ function registerAllTools(server: McpServer) {
   Tools.registerSearchGitHubDiscussionsTool(server);
   Tools.registerSearchGitHubTopicsTool(server);
   Tools.registerSearchGitHubUsersTool(server);
+  // Enhanced npm and GitHub tools
+  Tools.registerNpmPackageStatsTool(server);
+  Tools.registerNpmDependencyAnalysisTool(server);
+  Tools.registerGitHubAdvancedSearchTool(server);
 }
 
 // Register all prompts
