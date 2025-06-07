@@ -7,7 +7,7 @@ export const SEARCH_GITHUB_REPOS_DESCRIPTION = `GitHub repository search with pr
 **AUTO-TRIGGER CONDITIONS:**
 - Organization mentions: "I work at [Company Name]", "our team", "organization codebase"
 - Private repository indicators: "internal code", "team repositories"
-→ Auto-call ${TOOL_NAMES.GET_USER_ORGANIZATIONS}
+-> Auto-call ${TOOL_NAMES.GET_USER_ORGANIZATIONS}
 
 **SEARCH STRATEGY:**
 1. **Start Ultra-Lean**: Single technical terms ("react", "cli", "docker")
@@ -20,9 +20,9 @@ export const SEARCH_GITHUB_REPOS_DESCRIPTION = `GitHub repository search with pr
 - Phase 3: Specific combinations only when necessary
 
 **CONTEXT DETECTION:**
-- Organization context → Auto-call ${TOOL_NAMES.GET_USER_ORGANIZATIONS}
-- Package mentions → Use ${TOOL_NAMES.NPM_VIEW} first
-- General queries → Start without owner filter
+- Organization context -> Auto-call ${TOOL_NAMES.GET_USER_ORGANIZATIONS}
+- Package mentions -> Use ${TOOL_NAMES.NPM_VIEW} first
+- General queries -> Start without owner filter
 
 **FILTERING STRATEGY:**
 - Owner filter: Most effective for scoping results

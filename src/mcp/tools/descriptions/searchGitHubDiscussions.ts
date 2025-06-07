@@ -6,8 +6,8 @@ export const SEARCH_GITHUB_DISCUSSIONS_DESCRIPTION = `GitHub discussions search 
 Access community Q&A, tutorials, and best practices for learning and problem-solving.
 
 **DISCOVERY WORKFLOW:**
-1. Use ${TOOL_NAMES.NPM_VIEW} for packages → get repo URL
-2. Use ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for projects → get owner/repo  
+1. Use ${TOOL_NAMES.NPM_VIEW} for packages -> get repo URL
+2. Use ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for projects -> get owner/repo  
 3. Search discussions with discovered owner/repo context
 
 **SEARCH STRATEGY:**

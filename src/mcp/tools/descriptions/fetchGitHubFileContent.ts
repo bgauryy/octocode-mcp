@@ -27,7 +27,7 @@ Transform search results into actionable implementations. Search tools find file
 
 **ENHANCED AUTO-RECOVERY:**
 Tries multiple fallback strategies:
-1. Specified branch → main → master → develop → trunk (with ref parameter)
+1. Specified branch -> main -> master -> develop -> trunk (with ref parameter)
 2. If all fail: Try without ref parameter (uses repository default branch)
 Handles incorrect branch info from ${TOOL_NAMES.VIEW_REPOSITORY} and GitHub API limitations.
 

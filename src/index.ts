@@ -1,27 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { PROMPT_SYSTEM_PROMPT } from './mcp/tools/descriptions/systemPrompt';
-import { registerSearchGitHubCodeTool } from './mcp/tools/searchGitHubCode';
-import { registerFetchGitHubFileContentTool } from './mcp/tools/fetchGitHubFileContent';
-import { registerViewRepositoryTool } from './mcp/tools/viewRepository';
-import { registerNpmViewTool } from './mcp/tools/npmView';
-import { registerSearchGitHubReposTool } from './mcp/tools/searchGitHubRepos';
-import { registerSearchGitHubCommitsTool } from './mcp/tools/searchGitHubCommits';
-import { registerSearchGitHubPullRequestsTool } from './mcp/tools/searchGitHubPullRequests';
-import { registerGetUserOrganizationsTool } from './mcp/tools/getUserOrganizations';
-import { registerNpmSearchTool } from './mcp/tools/npmSearch';
-import { registerViewRepositoryStructureTool } from './mcp/tools/viewRepositoryStructure';
-import { registerSearchGitHubIssuesTool } from './mcp/tools/searchGitHubIssues';
-import { registerSearchGitHubDiscussionsTool } from './mcp/tools/searchGitHubDiscussions';
-import { registerSearchGitHubTopicsTool } from './mcp/tools/searchGitHubTopics';
-import { registerSearchGitHubUsersTool } from './mcp/tools/searchGitHubUsers';
-import { registerAnalyzeCodePrompt } from './mcp/prompts/analyzeCode';
-import { registerComparePackagesPrompt } from './mcp/prompts/comparePackages';
-import { registerNpmStatusResource } from './mcp/resources/npm-status';
-import { registerUsageGuideResource } from './mcp/resources/usage-guide';
-import { registerSearchGitHubCodeInstructionsResource } from './mcp/resources/search-github-code-instructions';
-import { registerGithubStatusResource } from './mcp/resources/github-auth-status';
-import { registerGithubRateLimitResource } from './mcp/resources/github-rate-limits';
+import * as Tools from './mcp/tools/index.js';
+import * as Prompts from './mcp/prompts/index.js';
+import * as Resources from './mcp/resources/index.js';
 
 const server = new McpServer(
   {
@@ -57,32 +39,42 @@ process.stdin.on('close', async () => {
   server.close();
 });
 
+// Register all tools
 function registerAllTools(server: McpServer) {
-  registerSearchGitHubCodeTool(server);
-  registerFetchGitHubFileContentTool(server);
-  registerViewRepositoryTool(server);
-  registerNpmViewTool(server);
-  registerSearchGitHubReposTool(server);
-  registerSearchGitHubCommitsTool(server);
-  registerSearchGitHubPullRequestsTool(server);
-  registerGetUserOrganizationsTool(server);
-  registerNpmSearchTool(server);
-  registerViewRepositoryStructureTool(server);
-  registerSearchGitHubIssuesTool(server);
-  registerSearchGitHubDiscussionsTool(server);
-  registerSearchGitHubTopicsTool(server);
-  registerSearchGitHubUsersTool(server);
+  Tools.registerSearchGitHubCodeTool(server);
+  Tools.registerFetchGitHubFileContentTool(server);
+  Tools.registerViewRepositoryTool(server);
+  Tools.registerNpmViewTool(server);
+  Tools.registerSearchGitHubReposTool(server);
+  Tools.registerSearchGitHubCommitsTool(server);
+  Tools.registerSearchGitHubPullRequestsTool(server);
+  Tools.registerGetUserOrganizationsTool(server);
+  Tools.registerNpmSearchTool(server);
+  Tools.registerViewRepositoryStructureTool(server);
+  Tools.registerSearchGitHubIssuesTool(server);
+  Tools.registerSearchGitHubDiscussionsTool(server);
+  Tools.registerSearchGitHubTopicsTool(server);
+  Tools.registerSearchGitHubUsersTool(server);
 }
 
+// Register all prompts
 function registerPrompts(server: McpServer) {
-  registerAnalyzeCodePrompt(server);
-  registerComparePackagesPrompt(server);
+  Prompts.registerAnalyzeCodePrompt(server);
+  Prompts.registerComparePackagesPrompt(server);
 }
 
+// Register all resources
 function registerResources(server: McpServer) {
-  registerGithubStatusResource(server);
-  registerGithubRateLimitResource(server);
-  registerNpmStatusResource(server);
-  registerUsageGuideResource(server);
-  registerSearchGitHubCodeInstructionsResource(server);
+  Resources.registerUsageGuideResource(server);
+  Resources.registerGithubStatusResource(server);
+  Resources.registerGithubRateLimitResource(server);
+  Resources.registerNpmStatusResource(server);
+  Resources.registerSearchGitHubCodeInstructionsResource(server);
+  Resources.registerSearchContextResource(server);
+  Resources.registerToolOrchestrationResource(server);
+  Resources.registerCodeExportResource(server);
+  Resources.registerCapabilitiesDiscoveryResource(server);
+  Resources.registerQueryExpansionResource(server);
+  Resources.registerRepositoryIntelligenceResource(server);
+  Resources.registerErrorDiagnosticsResource(server);
 }

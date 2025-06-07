@@ -52,9 +52,9 @@ export const SEARCH_GITHUB_CODE_DESCRIPTION = `Advanced code discovery engine fo
 
 **🔄 ADAPTIVE RESULT PROCESSING:**
 - **1-15 results**: Extract all via \`${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT}\`
-- **16-50 results**: Quality filter → extract top 10
-- **51-200 results**: Add qualifiers → re-search
-- **200+ results**: Use specific syntax → targeted extraction
+- **16-50 results**: Quality filter -> extract top 10
+- **51-200 results**: Add qualifiers -> re-search
+- **200+ results**: Use specific syntax -> targeted extraction
 
 **REQUIREMENTS:**
 - **MANDATORY**: Always use \`${TOOL_NAMES.VIEW_REPOSITORY}\` first for branch discovery

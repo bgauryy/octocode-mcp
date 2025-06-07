@@ -13,7 +13,7 @@ export const SEARCH_GITHUB_USERS_DESCRIPTION = `Advanced GitHub users and organi
 - Recruitment and network expansion
 
 **SEARCH METHODOLOGY:**
-- **Phase 1**: Technology terms ("react", "python", "kubernetes") → analyze activity
+- **Phase 1**: Technology terms ("react", "python", "kubernetes") -> analyze activity
 - **Phase 2**: Add context (location filters, experience indicators)
 - **Phase 3**: Specialized search (specific skills + activity filters)
 

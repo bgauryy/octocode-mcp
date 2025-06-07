@@ -8,10 +8,10 @@ export const SEARCH_GITHUB_TOPICS_DESCRIPTION = `**VITAL FOUNDATION TOOL** for e
 - **Repository Filters**: Use topic names directly in ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for precise targeting
 - **Ecosystem Mapping**: Understand technology landscapes with 100M+ repositories of production code
 
-**CRITICAL WORKFLOW - Topics → Repositories:**
-1. **Search topics first** → discover proper terminology (e.g., "machine-learning" not "AI")
-2. **Use topic names as filters** → in ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for targeted results
-3. **Quality validation** → featured topics = GitHub-promoted, curated = community-maintained
+**CRITICAL WORKFLOW - Topics -> Repositories:**
+1. **Search topics first** -> discover proper terminology (e.g., "machine-learning" not "AI")
+2. **Use topic names as filters** -> in ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for targeted results
+3. **Quality validation** -> featured topics = GitHub-promoted, curated = community-maintained
 
 **SEARCH STRATEGY:**
 1. **Single Terms First**: "MCP", "RAG", "react", "docker", "cli"
@@ -19,9 +19,9 @@ export const SEARCH_GITHUB_TOPICS_DESCRIPTION = `**VITAL FOUNDATION TOOL** for e
 3. **Avoid Combined Terms**: API works better with individual terms than complex phrases
 
 **EXAMPLES:**
-- Search "javascript" → find topics like "typescript", "nodejs", "frontend"
-- Use discovered topics → search repos with topic:"typescript" for quality examples
-- Featured topics → guaranteed high-quality repository collections
+- Search "javascript" -> find topics like "typescript", "nodejs", "frontend"
+- Use discovered topics -> search repos with topic:"typescript" for quality examples
+- Featured topics -> guaranteed high-quality repository collections
 
 **RESULT OPTIMIZATION:**
 - 1-10 results: IDEAL for deep analysis

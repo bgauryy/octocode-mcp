@@ -11,7 +11,7 @@ export const NPM_SEARCH_DESCRIPTION = `Search NPM registry for packages by keywo
 - Finding alternatives to known packages
 
 **SEARCH PATTERNS:**
-- Good: "react" → "cli" → "react cli" (if specific combination needed)
+- Good: "react" -> "cli" -> "react cli" (if specific combination needed)
 - Poor: "react command line interface tools" (too complex, likely zero results)
 
 **RESULT OPTIMIZATION:**

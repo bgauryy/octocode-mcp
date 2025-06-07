@@ -13,7 +13,7 @@ export const SEARCH_GITHUB_ISSUES_DESCRIPTION = `Advanced GitHub issues search f
 - Development planning and quality assurance
 
 **SEARCH METHODOLOGY:**
-- **Phase 1**: Core discovery ("authentication", "error") → understand patterns
+- **Phase 1**: Core discovery ("authentication", "error") -> understand patterns
 - **Phase 2**: Context expansion ("authentication JWT", "error handling")
 - **Phase 3**: Solution focus ("authentication bug resolved")
 

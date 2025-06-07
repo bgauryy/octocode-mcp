@@ -9,7 +9,7 @@ Before ANY GitHub operations, check these resources for intelligent API usage:
 
 1. **GITHUB AUTHENTICATION**: Read \`github://auth-status\` resource
    - Verify \`authenticated: true\` before GitHub operations
-   - If \`authenticated: false\` → Guide user: "Run \`gh auth login\` first"
+   - If \`authenticated: false\` -> Guide user: "Run \`gh auth login\` first"
    - Check \`gh_version\` for CLI availability
 
 2. **GITHUB RATE LIMITS**: Read \`github://rate-limits\` resource
@@ -18,7 +18,7 @@ Before ANY GitHub operations, check these resources for intelligent API usage:
      * \`code_search\`: Most restrictive (10/hour) - use sparingly
      * \`search_api\`: Repository/user searches (30/hour)
      * \`primary_api\`: Standard operations (5000/hour)
-   - If \`status: "exhausted"\` → Wait until \`next_reset\` time
+   - If \`status: "exhausted"\` -> Wait until \`next_reset\` time
    - Follow \`recommendations\` for current status
 
 3. **SMART OPERATION PLANNING:**
@@ -28,7 +28,7 @@ Before ANY GitHub operations, check these resources for intelligent API usage:
    - Display reset times for user planning
 
 **🎯 RESOURCE-AWARE RESEARCH STRATEGY:**
-- Check resources → Plan tool usage → Execute research → Validate findings
+- Check resources -> Plan tool usage -> Execute research -> Validate findings
 - Adapt search complexity based on available API calls
 - Prioritize most effective tools when limits are constrained
 
@@ -52,21 +52,21 @@ Before ANY GitHub operations, check these resources for intelligent API usage:
 **🔍 MULTI-STEP RESEARCH FLOWS:**
 
 **EXPLORATORY DISCOVERY:**
-1. **Resource Check** → GitHub auth/limits verification
-2. ${TOOL_NAMES.SEARCH_GITHUB_TOPICS} → Semantic landscape mapping
-3. ${TOOL_NAMES.SEARCH_GITHUB_REPOS} → Repository ecosystem analysis
-4. ${TOOL_NAMES.SEARCH_GITHUB_CODE} → Implementation pattern discovery
+1. **Resource Check** -> GitHub auth/limits verification
+2. ${TOOL_NAMES.SEARCH_GITHUB_TOPICS} -> Semantic landscape mapping
+3. ${TOOL_NAMES.SEARCH_GITHUB_REPOS} -> Repository ecosystem analysis
+4. ${TOOL_NAMES.SEARCH_GITHUB_CODE} -> Implementation pattern discovery
 5. Cross-validation via ${TOOL_NAMES.SEARCH_GITHUB_ISSUES} + ${TOOL_NAMES.SEARCH_GITHUB_PULL_REQUESTS}
 
 **DEEP IMPLEMENTATION ANALYSIS:**
-1. **Resource Check** → Verify API capacity for deep analysis
-2. ${TOOL_NAMES.VIEW_REPOSITORY} → Context establishment
-3. ${TOOL_NAMES.VIEW_REPOSITORY_STRUCTURE} → Architecture understanding
-4. ${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT} → Core implementation extraction
-5. ${TOOL_NAMES.SEARCH_GITHUB_COMMITS} → Evolution tracking
+1. **Resource Check** -> Verify API capacity for deep analysis
+2. ${TOOL_NAMES.VIEW_REPOSITORY} -> Context establishment
+3. ${TOOL_NAMES.VIEW_REPOSITORY_STRUCTURE} -> Architecture understanding
+4. ${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT} -> Core implementation extraction
+5. ${TOOL_NAMES.SEARCH_GITHUB_COMMITS} -> Evolution tracking
 
 **COMPARATIVE RESEARCH:**
-1. **Resource Check** → Plan multi-repository analysis scope
+1. **Resource Check** -> Plan multi-repository analysis scope
 2. Parallel repository analysis across multiple solutions
 3. Cross-reference implementation approaches
 4. Analyze trade-offs via issue/PR discussions
@@ -86,9 +86,9 @@ Before ANY GitHub operations, check these resources for intelligent API usage:
 - **Exhausted**: Defer GitHub operations, use cached/npm alternatives
 
 **PROGRESSIVE COMPLEXITY:**
-- **Simple Query**: Resource check → Single tool → immediate results
-- **Medium Query**: Resource check → 2-3 tools → comparative analysis  
-- **Complex Query**: Resource check → Full research flow → comprehensive investigation
+- **Simple Query**: Resource check -> Single tool -> immediate results
+- **Medium Query**: Resource check -> 2-3 tools -> comparative analysis  
+- **Complex Query**: Resource check -> Full research flow -> comprehensive investigation
 
 **DYNAMIC STOPPING CRITERIA:**
 - **High Confidence**: 3+ quality examples with validation

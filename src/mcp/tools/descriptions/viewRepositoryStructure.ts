@@ -28,7 +28,7 @@ export const VIEW_REPOSITORY_STRUCTURE_DESCRIPTION = `Strategic repository explo
 
 **ENHANCED BRANCH FALLBACK:** 
 Automatically tries multiple fallback strategies:
-1. Specified branch → main → master → develop → trunk (with ref parameter)
+1. Specified branch -> main -> master -> develop -> trunk (with ref parameter)
 2. If all fail: Try without ref parameter (uses repository default branch)
 Handles branch discovery failures gracefully with comprehensive error reporting.
 

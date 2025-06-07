@@ -7,9 +7,9 @@ Auto-trigger when users mention:
 - Enterprise context: "at work", "enterprise setup"
 
 **ORGANIZATION MATCHING Examples:**
-- "Facebook" → "facebook", "meta"
-- "Google" → "google", "googlecloudplatform"
-- "Microsoft" → "microsoft", "azure"
+- "Facebook" -> "facebook", "meta"
+- "Google" -> "google", "googlecloudplatform"
+- "Microsoft" -> "microsoft", "azure"
 
 **WORKFLOW:**
 1. Call this tool first when organizational context detected
