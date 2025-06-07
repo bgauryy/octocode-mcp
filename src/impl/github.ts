@@ -139,13 +139,102 @@ export async function searchGitHubRepos(
 
       // Extract the actual content from the exec result
       const execResult = JSON.parse(result.content[0].text as string);
-      const content = execResult.result;
+      const rawContent = execResult.result;
+
+      // Parse JSON results and provide structured analysis
+      let repositories = [];
+      const analysis = {
+        totalFound: 0,
+        languages: new Set<string>(),
+        avgStars: 0,
+        recentlyUpdated: 0,
+        topStarred: [] as any[],
+      };
+
+      try {
+        // Parse JSON response from GitHub CLI
+        repositories = JSON.parse(rawContent);
+
+        if (Array.isArray(repositories) && repositories.length > 0) {
+          analysis.totalFound = repositories.length;
+
+          // Analyze repository data
+          let totalStars = 0;
+          const now = new Date();
+          const thirtyDaysAgo = new Date(
+            now.getTime() - 30 * 24 * 60 * 60 * 1000
+          );
+
+          repositories.forEach(repo => {
+            // Collect languages
+            if (repo.language) {
+              analysis.languages.add(repo.language);
+            }
+
+            // Calculate average stars (use correct field name)
+            if (repo.stargazersCount) {
+              totalStars += repo.stargazersCount;
+            }
+
+            // Count recently updated repositories (use correct field name)
+            if (repo.updatedAt) {
+              const updatedDate = new Date(repo.updatedAt);
+              if (updatedDate > thirtyDaysAgo) {
+                analysis.recentlyUpdated++;
+              }
+            }
+          });
+
+          analysis.avgStars =
+            repositories.length > 0
+              ? Math.round(totalStars / repositories.length)
+              : 0;
+
+          // Get top starred repositories (limit to top 5)
+          analysis.topStarred = repositories
+            .sort((a, b) => (b.stargazersCount || 0) - (a.stargazersCount || 0))
+            .slice(0, 5)
+            .map(repo => ({
+              name: repo.fullName || repo.name,
+              stars: repo.stargazersCount || 0,
+              description: repo.description || 'No description',
+              language: repo.language || 'Unknown',
+              url: repo.url,
+              forks: repo.forksCount || 0,
+              isPrivate: repo.isPrivate || false,
+              updatedAt: repo.updatedAt,
+            }));
+        }
+      } catch (parseError) {
+        // If JSON parsing fails, fall back to raw text processing
+        console.warn(
+          'Failed to parse repository JSON, using raw text:',
+          parseError
+        );
+      }
 
       const repoResult: GitHubReposSearchResult = {
         searchType: 'repos',
         query: params.query || '',
-        results: content,
-        rawOutput: content,
+        results: rawContent,
+        rawOutput: rawContent,
+        // Add enhanced metadata
+        ...(repositories.length > 0 && {
+          metadata: {
+            totalRepositories: analysis.totalFound,
+            languages: Array.from(analysis.languages).slice(0, 10), // Top 10 languages
+            averageStars: analysis.avgStars,
+            recentlyUpdated: analysis.recentlyUpdated,
+            topRepositories: analysis.topStarred,
+            searchParams: {
+              query: params.query,
+              owner: params.owner,
+              language: params.language,
+              stars: params.stars,
+              updated: params.updated,
+            },
+          },
+        }),
       };
 
       return createSuccessResult(repoResult);
@@ -217,7 +306,7 @@ ${output}
 
  IMPORTANT: Use any of these organization names as the 'owner' parameter in other search tools:
 - search_github_code
-- search_github_repos  
+- search_github_repos
 - search_github_commits
 - search_github_pull_requests
 - fetch_github_file_content
@@ -610,66 +699,104 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
   command: string;
   args: string[];
 } {
+  let query = params.query || '';
+
+  // MANDATORY: Add repo qualifier when owner and repo are provided
+  if (params.owner && params.repo) {
+    // Check if query already contains repo: qualifier
+    if (!query.includes('repo:')) {
+      query = `${query} repo:${params.owner}/${params.repo}`.trim();
+    }
+  }
+
   // Enhanced query processing for GitHub advanced syntax
-  const processedQuery = processAdvancedSearchQuery(params.query || '');
+  const processedQuery = processAdvancedSearchQuery(query);
+
   const args = ['code', processedQuery];
 
-  if (params.owner) args.push(`--owner=${params.owner}`);
-  if (params.repo) args.push(`--repo=${params.repo}`);
+  // CLI-supported flags (these have direct CLI flag support)
+  // Note: owner flag is less reliable than repo: qualifier in query
+  if (params.owner && !params.repo) {
+    // Only use --owner flag when we don't have a specific repo
+    args.push(`--owner=${params.owner}`);
+  }
   if (params.language) args.push(`--language=${params.language}`);
   if (params.filename) args.push(`--filename=${params.filename}`);
   if (params.extension) args.push(`--extension=${params.extension}`);
-  if (params.path) args.push(`--path=${params.path}`);
-  if (params.in) args.push(`--in=${params.in}`);
-  if (params.size) args.push(`--size=${params.size}`);
-  if (params.match) args.push(`--match=${params.match}`);
   if (params.limit) args.push(`--limit=${params.limit}`);
 
   return { command: 'search', args };
 }
 
 /**
- * Enhanced query processing for GitHub advanced search syntax:
- * - Preserves boolean operations (AND, OR, NOT)
- * - Maintains quoted strings for exact matches
- * - Handles regex patterns (/pattern/)
- * - Supports qualifiers within the query
- * - Preserves GitHub search syntax
+ * Enhanced query processing with BOOLEAN OPERATORS PRIORITY for GitHub advanced search:
+ * - PRIORITIZES Boolean operations (AND, OR, NOT) for multi-term queries
+ * - Automatically uses AND for precise multi-term searches
+ * - Preserves existing Boolean operations and advanced syntax
+ * - Handles quoted strings for exact matches
+ * - Supports regex patterns (/pattern/)
+ * - Single words: exact matching with quotes
+ * - Multi words: EXPLICIT AND for precision
  */
 function processAdvancedSearchQuery(query: string): string {
   if (!query) return '""';
 
-  // Preserve query if it contains GitHub qualifiers or advanced syntax
+  const trimmed = query.trim();
+
+  // Preserve query if it already contains Boolean operators
+  const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(query);
+  if (hasBooleanOps) {
+    return trimmed;
+  }
+
+  // Preserve query if it contains other GitHub qualifiers or advanced syntax
   const hasQualifiers =
     /\b(language|path|filename|extension|in|size|user|org|repo):/i.test(query);
-  const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(query);
   const hasRegex = /\/.*\//.test(query);
   const hasQuotes = /"[^"]*"/.test(query);
   const hasParentheses = /\([^)]*\)/.test(query);
 
-  // If query contains advanced syntax, preserve it as-is (no additional quotes)
-  if (hasQualifiers || hasBooleanOps || hasRegex || hasParentheses) {
-    return query.trim();
+  // If query contains advanced syntax (but no Boolean ops), preserve it as-is
+  if (hasQualifiers || hasRegex || hasParentheses) {
+    return trimmed;
   }
 
   // If query is already properly quoted, preserve it
-  if (hasQuotes && query.trim().startsWith('"') && query.trim().endsWith('"')) {
-    return query.trim();
+  if (hasQuotes && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed;
   }
 
-  // For simple queries, add quotes for exact matching
-  const trimmed = query.trim();
-  return `"${trimmed}"`;
+  const words = trimmed.split(/\s+/).filter(word => word.length > 0);
+
+  // SINGLE WORD: Use quotes for exact matching
+  if (words.length === 1) {
+    return `"${trimmed}"`;
+  }
+
+  // MULTI WORD: PRIORITIZE BOOLEAN AND FOR PRECISION
+  // Convert "useState hooks" to "useState AND hooks" for surgical precision
+  return words.join(' AND ');
 }
 
 function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
   command: string;
   args: string[];
 } {
-  const args = ['commits', `"${params.query}"`];
+  let query = params.query || '';
 
-  if (params.owner) args.push(`--owner=${params.owner}`);
-  if (params.repo) args.push(`--repo=${params.repo}`);
+  // MANDATORY: Add repo qualifier when owner and repo are provided
+  if (params.owner && params.repo) {
+    // Check if query already contains repo: qualifier
+    if (!query.includes('repo:')) {
+      query = `${query} repo:${params.owner}/${params.repo}`.trim();
+    }
+  }
+
+  const args = ['commits', `"${query}"`];
+
+  // Only use individual flags when we don't have specific repo
+  if (params.owner && !params.repo) args.push(`--owner=${params.owner}`);
+  if (params.repo && !params.owner) args.push(`--repo=${params.repo}`);
   if (params.author) args.push(`--author=${params.author}`);
   if (params.committer) args.push(`--committer=${params.committer}`);
   if (params.authorDate) args.push(`--author-date=${params.authorDate}`);
@@ -697,10 +824,21 @@ function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
 function buildGitHubPullRequestsSearchCommand(
   params: GitHubPullRequestsSearchParams
 ): { command: string; args: string[] } {
-  const args = ['prs', `"${params.query}"`];
+  let query = params.query || '';
 
-  if (params.owner) args.push(`--owner=${params.owner}`);
-  if (params.repo) args.push(`--repo=${params.repo}`);
+  // MANDATORY: Add repo qualifier when owner and repo are provided
+  if (params.owner && params.repo) {
+    // Check if query already contains repo: qualifier
+    if (!query.includes('repo:')) {
+      query = `${query} repo:${params.owner}/${params.repo}`.trim();
+    }
+  }
+
+  const args = ['prs', `"${query}"`];
+
+  // Only use individual flags when we don't have specific repo
+  if (params.owner && !params.repo) args.push(`--owner=${params.owner}`);
+  if (params.repo && !params.owner) args.push(`--repo=${params.repo}`);
   if (params.author) args.push(`--author=${params.author}`);
   if (params.assignee) args.push(`--assignee=${params.assignee}`);
   if (params.mentions) args.push(`--mentions=${params.mentions}`);
@@ -715,7 +853,7 @@ function buildGitHubPullRequestsSearchCommand(
   if (params.language) args.push(`--language=${params.language}`);
   if (params.created) args.push(`--created=${params.created}`);
   if (params.updated) args.push(`--updated=${params.updated}`);
-  if (params.merged) args.push(`--merged=${params.merged}`);
+  if (params.mergedAt) args.push(`--merged-at=${params.mergedAt}`);
   if (params.closed) args.push(`--closed=${params.closed}`);
   if (params.draft !== undefined) args.push(`--draft=${params.draft}`);
   if (params.limit) args.push(`--limit=${params.limit}`);
@@ -729,9 +867,15 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   command: string;
   args: string[];
 } {
-  // Process query to use single-word strategy for repository discovery
+  // Process query to use multi-word strategy for repository discovery
   const processedQuery = processSimpleSearchQuery(params.query || '');
   const args = ['repos', processedQuery];
+
+  // Add JSON output with specific fields for structured data parsing
+  args.push(
+    '--json',
+    'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount'
+  );
 
   if (params.owner) args.push(`--owner=${params.owner}`);
   if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
@@ -769,11 +913,10 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
 /**
  * Simple search query processing for repository discovery:
- * - Prioritize single terms over combined searches
- * - "RAG" stays as "RAG" (single word search)
- * - "RAG Ranking" becomes "RAG" (use first term only for initial search)
- * - Only combine terms when explicitly needed after initial searches
- * - Preserve quoted phrases as-is for exact matches
+ * - Single terms: "react" -> "react" (quoted for exact match)
+ * - Multi-word: "react hooks" -> "react hooks" (preserve all terms)
+ * - Already quoted: preserve as-is
+ * - GitHub API handles multi-word queries naturally with AND behavior
  */
 function processSimpleSearchQuery(query: string): string {
   if (!query) return '""';
@@ -790,33 +933,41 @@ function processSimpleSearchQuery(query: string): string {
     return query.trim();
   }
 
-  // Plain text query - PRIORITIZE SINGLE WORDS for progressive search
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .filter(term => term.length > 0);
+  // Plain text query - preserve all terms for GitHub's natural AND behavior
+  const trimmed = query.trim();
+  const terms = trimmed.split(/\s+/).filter(term => term.length > 0);
 
   if (terms.length === 0) return '""';
 
-  // FOR PROGRESSIVE SEARCH: Use only the first term initially
-  // This implements the "RAG" then "Ranking" strategy instead of "RAG Ranking"
+  // Single term: quote for exact matching
   if (terms.length === 1) {
     return `"${terms[0]}"`;
   }
 
-  // For multiple terms, prioritize the first term (most important)
-  // This encourages users to do separate searches: "RAG" first, then "Ranking"
-  return `"${terms[0]}"`;
+  // Multi-word: GitHub CLI handles this naturally with AND behavior
+  // "react hooks" searches for repos containing both "react" AND "hooks"
+  return `"${trimmed}"`;
 }
 
 function buildGitHubIssuesSearchCommand(params: GitHubIssuesSearchParams): {
   command: string;
   args: string[];
 } {
-  const args = ['issues', `"${params.query}"`];
+  let query = params.query || '';
 
-  if (params.owner) args.push(`--owner=${params.owner}`);
-  if (params.repo) args.push(`--repo=${params.repo}`);
+  // MANDATORY: Add repo qualifier when owner and repo are provided
+  if (params.owner && params.repo) {
+    // Check if query already contains repo: qualifier
+    if (!query.includes('repo:')) {
+      query = `${query} repo:${params.owner}/${params.repo}`.trim();
+    }
+  }
+
+  const args = ['issues', `"${query}"`];
+
+  // Only use individual flags when we don't have specific repo
+  if (params.owner && !params.repo) args.push(`--owner=${params.owner}`);
+  if (params.repo && !params.owner) args.push(`--repo=${params.repo}`);
   if (params.app) args.push(`--app=${params.app}`);
   if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
   if (params.author) args.push(`--author=${params.author}`);
@@ -882,6 +1033,11 @@ function buildGitHubTopicsAPICommand(params: GitHubTopicsSearchParams): {
   // Add pagination parameters
   const limit = params.limit || 30;
   queryParams.push(`per_page=${limit}`);
+
+  // Add owner parameter if provided
+  if (params.owner) {
+    queryParams.push(`owner=${encodeURIComponent(params.owner)}`);
+  }
 
   if (params.sort) queryParams.push(`sort=${params.sort}`);
   if (params.order) queryParams.push(`order=${params.order}`);

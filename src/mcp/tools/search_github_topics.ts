@@ -13,12 +13,13 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
       query: z
         .string()
         .describe(
-          "The search query to find topics (e.g., 'MCP', 'react', 'Github', 'blockchain')"
+          "The search query to find topics (e.g., 'react', 'react+typescript', 'machine-learning')"
         ),
       owner: z
         .string()
+        .optional()
         .describe(
-          "Filter by repository owner/organization (e.g., 'example-org') obtained from the appropriate tool for fetching user organizations"
+          "Optional: Filter by repository owner/organization (e.g., 'facebook', 'microsoft'). Leave empty for global exploratory search - recommended for discovery."
         ),
       featured: z
         .boolean()

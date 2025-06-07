@@ -28,49 +28,6 @@ const ALLOWED_GH_COMMANDS = [
   'help', // General help command
 ] as const;
 
-// More precise blocked patterns - only critical security risks
-const BLOCKED_PATTERNS = [
-  // File system dangers
-  /rm\s+-rf/,
-  /sudo/,
-  /chmod/,
-  /chown/,
-  /dd\s+if=/,
-  />\s*\/dev/,
-
-  // Command chaining dangers
-  /&&.*rm/,
-  /;\s*rm/,
-  /\|\s*rm/,
-
-  // Shell injection dangers
-  /\|\s*sh\s/, // more precise - requires space after sh
-  /\|\s*bash\s/, // more precise - requires space after bash
-  /curl.*\|\s*sh/,
-  /wget.*\|\s*sh/,
-
-  // Code execution dangers (more specific)
-  /\beval\s*\(/, // eval followed by opening parenthesis
-  /\bexec\s*\(/, // exec followed by opening parenthesis
-  /\bsystem\s*\(/, // system followed by opening parenthesis
-
-  // Process substitution
-  /\$\(/,
-  /`[^`]*`/,
-
-  // Redirection to sensitive locations
-  />\s*\/etc/,
-  />\s*\/usr/,
-  />\s*\/bin/,
-  />\s*\/sbin/,
-
-  // Network dangers
-  /nc\s+-l/, // netcat listen
-  /python.*-c/, // python code execution
-  /node.*-e/, // node code execution
-  /ruby.*-e/, // ruby code execution
-];
-
 type CommandType = 'npm' | 'gh';
 type ExecOptions = {
   timeout?: number;
@@ -95,26 +52,14 @@ interface CommandExecutor {
 class NpmExecutor implements CommandExecutor {
   private readonly allowedCommands = ALLOWED_NPM_COMMANDS;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   validate(command: string, args: string[]): boolean {
-    if (!this.allowedCommands.includes(command as any)) {
-      return false;
-    }
-
-    // Check for dangerous patterns
-    const fullCommand = `npm ${command} ${args.join(' ')}`;
-    return !BLOCKED_PATTERNS.some(pattern => pattern.test(fullCommand));
+    return this.allowedCommands.includes(command as any);
   }
 
   sanitize(args: string[]): string[] {
-    return args
-      .map(arg => {
-        // Remove potentially dangerous characters
-        return arg
-          .replace(/[;&|`$(){}[\]<>]/g, '')
-          .replace(/--[^a-zA-Z0-9-]/g, '')
-          .trim();
-      })
-      .filter(arg => arg.length > 0);
+    // Return args as-is without modification
+    return args;
   }
 
   async execute(
@@ -202,33 +147,14 @@ class NpmExecutor implements CommandExecutor {
 class GitHubExecutor implements CommandExecutor {
   private readonly allowedCommands = ALLOWED_GH_COMMANDS;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   validate(command: string, args: string[]): boolean {
-    if (!this.allowedCommands.includes(command as any)) {
-      return false;
-    }
-
-    // Check for dangerous patterns
-    const fullCommand = `gh ${command} ${args.join(' ')}`;
-    return !BLOCKED_PATTERNS.some(pattern => pattern.test(fullCommand));
+    return this.allowedCommands.includes(command as any);
   }
 
   sanitize(args: string[]): string[] {
-    return args
-      .map(arg => {
-        // Special handling for GraphQL queries - preserve their syntax
-        if (arg.startsWith('query=')) {
-          // For GraphQL queries, only remove the most dangerous characters
-          // but preserve $ which is essential for GraphQL variables
-          return arg.replace(/[;&|`]/g, '').trim();
-        }
-
-        // Remove potentially dangerous characters but preserve GitHub-specific syntax
-        return arg
-          .replace(/[;&|`$(){}[\]<>]/g, '')
-          .replace(/--[^a-zA-Z0-9-]/g, '')
-          .trim();
-      })
-      .filter(arg => arg.length > 0);
+    // Return args as-is without modification
+    return args;
   }
 
   async execute(

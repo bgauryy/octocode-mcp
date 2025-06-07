@@ -10,7 +10,11 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     TOOL_NAMES.SEARCH_GITHUB_REPOS,
     SEARCH_GITHUB_REPOS_DESCRIPTION,
     {
-      query: z.string().describe('Search query for repositories'),
+      query: z
+        .string()
+        .describe(
+          'Search query for repositories. Supports both single terms ("react") and multi-word searches ("react hooks")'
+        ),
       owner: z.string().describe('Repository owner/organization'),
       archived: z.boolean().optional().describe('Filter archived state'),
       created: z.string().optional().describe('Filter by created date'),

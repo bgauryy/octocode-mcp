@@ -42,7 +42,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .optional()
         .describe('Filter on user or team requested to review'),
       state: z
-        .enum(['open', 'closed', 'merged'])
+        .enum(['open', 'closed'])
         .optional()
         .describe('Filter based on state'),
       head: z.string().optional().describe('Filter on head branch name'),
@@ -58,7 +58,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           "Filter based on created at date (e.g., '>2022-01-01', '<2023-12-31')"
         ),
       updated: z.string().optional().describe('Filter on last updated at date'),
-      merged: z.string().optional().describe('Filter on merged at date'),
+      mergedAt: z.string().optional().describe('Filter on merged at date'),
       closed: z.string().optional().describe('Filter on closed at date'),
       draft: z.boolean().optional().describe('Filter based on draft state'),
       limit: z

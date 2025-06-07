@@ -13,59 +13,50 @@ export function registerSearchGitHubCodeTool(server: McpServer) {
       query: z
         .string()
         .describe(
-          'Search query for code. Supports GitHub advanced syntax. see resource "search-github-code-instructions"'
+          'Search query for code. Will automatically add repo:owner/repository qualifier for repository-specific search. Supports GitHub advanced syntax including qualifiers, boolean operations, and multi-word searches.'
         ),
-      owner: z.string().describe('Repository owner/organization'),
+      owner: z
+        .string()
+        .describe(
+          'Repository owner/organization (REQUIRED). Used to construct repo:owner/repository qualifier for repository-specific search.'
+        ),
       repo: z
         .string()
-        .optional()
-        .describe('Repository name (often too restrictive)'),
-      branch: z
-        .string()
         .describe(
-          'Branch for workflow documentation (required but not used by CLI)'
+          'Repository name (REQUIRED). Used with owner to construct repo:owner/repository qualifier for repository-specific search.'
         ),
-      language: z.string().optional().describe('Programming language filter'),
-      filename: z.string().optional().describe('Filename filter'),
-      extension: z.string().optional().describe('File extension filter'),
-      path: z
+      language: z
         .string()
-        .optional()
-        .describe('File path filter (directory or path pattern)'),
-      in: z
-        .enum(['file', 'path', 'file,path'])
         .optional()
         .describe(
-          'Search scope: file (contents only), path (file paths only), or file,path (both)'
+          'Filter by programming language (e.g., "javascript", "typescript", "python")'
         ),
-      size: z
+      filename: z
         .string()
         .optional()
-        .describe('File size filter (e.g., ">1000", "<500", "100")'),
-      match: z
-        .enum(['file', 'path'])
+        .describe('Filter by filename (e.g., "package.json", "README.md")'),
+      extension: z
+        .string()
         .optional()
-        .describe('Search scope restriction'),
+        .describe('Filter by file extension (e.g., "js", "ts", "py")'),
       limit: z
         .number()
         .optional()
-        .default(50)
-        .describe('Maximum results (default: 50)'),
+        .default(30)
+        .describe('Maximum number of results to return (default: 30)'),
     },
-    async (args: GitHubCodeSearchParams) => {
-      try {
-        return await searchGitHubCode(args);
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub code: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    async args => {
+      const params: GitHubCodeSearchParams = {
+        query: args.query,
+        owner: args.owner,
+        repo: args.repo,
+        language: args.language,
+        filename: args.filename,
+        extension: args.extension,
+        limit: args.limit,
+      };
+
+      return await searchGitHubCode(params);
     }
   );
 }

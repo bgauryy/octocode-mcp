@@ -88,7 +88,6 @@ async function performAdvancedSearch(
         searchGitHubCode({
           query,
           owner: owner || '',
-          branch: 'main', // We'll use main as default, tools will fallback
           language,
           limit,
         })
@@ -117,7 +116,7 @@ async function performAdvancedSearch(
         searchGitHubPullRequests({
           query,
           owner: owner || '',
-          state: 'merged', // Focus on merged PRs for implemented solutions
+          state: 'closed', // Focus on closed PRs (includes merged) for implemented solutions
           limit,
           sort: 'reactions',
           order: 'desc',
@@ -175,7 +174,7 @@ async function performAdvancedSearch(
 
         if (type === 'pullRequests') {
           analysis.insights.push(
-            `Found implementation examples in merged pull requests`
+            `Found implementation examples in closed pull requests`
           );
           analysis.recommendations.push(
             `🔄 Examine PR descriptions and code changes for implementation patterns`
