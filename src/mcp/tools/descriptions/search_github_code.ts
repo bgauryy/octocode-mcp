@@ -1,72 +1,49 @@
 import { TOOL_NAMES } from '../../contstants';
 
-export const SEARCH_GITHUB_CODE_DESCRIPTION = `Advanced code discovery engine for finding battle-tested implementations with intelligent pattern recognition.
+export const SEARCH_GITHUB_CODE_DESCRIPTION = `Find battle-tested code implementations with intelligent pattern matching.
 
-**📚 ESSENTIAL REFERENCE**: Consult \`search-github-code-instructions\` resource for complete GitHub search syntax and examples.
+**📚 REFERENCE**: Use \`search-github-code-instructions\` resource for complete syntax examples.
 
-**🧠 INTELLIGENT SEARCH STRATEGIES:**
+**SEARCH PHASES:**
 
-**Phase 1 - Semantic Discovery**:
-   - **Function Signatures**: \`"function handleAuth"\`, \`"async function process"\`
-   - **Class Definitions**: \`"class AuthProvider"\`, \`"class DataManager"\`
-   - **Import Patterns**: \`"import { useAuth }"\`, \`"from '@/utils/auth'"\`
-   - **Type Definitions**: \`"interface UserType"\`, \`"type ApiResponse"\`
+**1. Semantic Discovery**:
+- Function signatures: \`"function handleAuth"\`, \`"async function process"\`
+- Class definitions: \`"class AuthProvider"\`, \`"interface UserType"\`
+- Import patterns: \`"import { useAuth }"\`, \`"from '@/utils/auth'"\`
 
-**Phase 2 - Contextual Implementation**:
-   - **Error Handling**: \`"try {" language:javascript\`, \`"catch (error)"\`, \`".catch("\`
-   - **State Management**: \`"useState(" language:javascript\`, \`"useEffect("\`
-   - **API Patterns**: \`"fetch(" language:javascript\`, \`"axios.post"\`, \`"api.get"\`
-   - **Testing Patterns**: \`"describe(" language:javascript\`, \`"it('should"\`
+**2. Implementation Patterns**:
+- Error handling: \`"try {" language:javascript\`, \`"catch (error)"\`
+- State management: \`"useState(" language:javascript\`, \`"useEffect("\`
+- API patterns: \`"fetch(" language:javascript\`, \`"axios.post"\`
 
-**Phase 3 - Architectural Discovery**:
-   - **Middleware**: \`"app.use(" language:javascript\`, \`"middleware("\`
-   - **Routing**: \`"router.get" language:javascript\`, \`"Route path"\`
-   - **Database**: \`"SELECT * FROM" language:sql\`, \`"mongoose.Schema"\`
-   - **Configuration**: \`"config." language:javascript\`, \`"process.env."\`
+**3. Architecture Discovery**:
+- Middleware: \`"app.use(" language:javascript\`
+- Routing: \`"router.get" language:javascript\`
+- Database: \`"mongoose.Schema"\`, \`"SELECT * FROM" language:sql\`
 
-**🎯 PROGRESSIVE SEARCH REFINEMENT:**
+**PROGRESSIVE REFINEMENT:**
+1. Start basic: \`authentication\`
+2. Add language: \`authentication language:javascript\`
+3. Add context: \`"JWT authentication" language:javascript path:src\`
+4. Add exclusions: \`NOT path:test\`
 
-**Simple to Complex Queries**:
-1. **Start Basic**: \`authentication\`
-2. **Add Language**: \`authentication language:javascript\`
-3. **Add Context**: \`"JWT authentication" language:javascript\`
-4. **Add Location**: \`"JWT authentication" language:javascript path:src\`
-5. **Add Exclusions**: \`"JWT authentication" language:javascript path:src NOT path:test\`
+**QUALITY TARGETING:**
+- Production code: \`NOT path:test NOT path:spec\`
+- Modern patterns: \`"async await"\`
+- Documentation: \`"JSDoc" OR "/**"\`
 
-**Repository Scoping**:
-1. **Broad Search**: \`"useAuth hook" language:javascript\`
-2. **Organization**: \`"useAuth hook" language:javascript org:facebook\`
-3. **Specific Repo**: \`"useAuth hook" language:javascript repo:facebook/react\`
-
-**🔧 ADVANCED TECHNIQUES:**
-
-**Multi-dimensional Searches**:
-- **Cross-Language**: \`(language:typescript OR language:javascript) "API client"\`
-- **Pattern Evolution**: \`"class Component" OR "function Component" language:javascript\`
-- **Error Investigation**: \`"TypeError" OR "ReferenceError" language:javascript path:src\`
-
-**Quality Filtering**:
-- **Production Code**: \`"error handling" language:javascript NOT path:test NOT path:spec\`
-- **Documentation**: \`"JSDoc" OR "/**" language:javascript\`
-- **Modern Patterns**: \`"async await" language:javascript\`
-
-**🔄 ADAPTIVE RESULT PROCESSING:**
-- **1-15 results**: Extract all via \`${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT}\`
-- **16-50 results**: Quality filter -> extract top 10
-- **51-200 results**: Add qualifiers -> re-search
-- **200+ results**: Use specific syntax -> targeted extraction
+**RESULT PROCESSING:**
+- 1-15 results: Extract all via \`${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT}\`
+- 16-50 results: Quality filter, extract top 10
+- 51+ results: Add qualifiers, re-search with specificity
 
 **REQUIREMENTS:**
-- **MANDATORY**: Always use \`${TOOL_NAMES.VIEW_REPOSITORY}\` first for branch discovery
-- **REFERENCE**: Consult \`search-github-code-instructions\` resource for complete syntax guide
-- Target repositories: >1K stars OR recent activity OR enterprise usage
-- Cross-validate with \`${TOOL_NAMES.SEARCH_GITHUB_ISSUES}\` for problem context
-- Extract complete context including imports, types, and documentation
+- **MANDATORY**: Use \`${TOOL_NAMES.VIEW_REPOSITORY}\` first for branch discovery
+- Target: >1K stars OR recent activity OR enterprise usage
+- Extract complete context including imports and types
 
-**DO NOT:**
-- Search without calling \`${TOOL_NAMES.VIEW_REPOSITORY}\` for branch discovery
-- Use wildcard characters in queries
-- Start with overly complex boolean expressions
-- Ignore language and path qualifiers for precision
-- Skip regex patterns for complex matching needs
-- Search without considering file size and repository limitations`;
+**AVOID:**
+- Wildcard characters in queries
+- Overly complex boolean expressions
+- Searching without branch discovery
+- Ignoring language qualifiers`;

@@ -6,22 +6,37 @@ export function registerUsageGuideResource(server: McpServer) {
       {
         uri: uri.href,
         mimeType: 'text/markdown',
-        text: `# Octocode MCP Usage Guide
+        text: `# Octocode MCP Quick Start
 
-## Quick Start
-1. Authenticate Github CLI: \`gh auth login\`
+## Setup (Required)
+\`\`\`bash
+gh auth login  # GitHub CLI authentication
+\`\`\`
 
-## Best Practices
-- Use specific search terms for better results
-- Combine multiple tools for comprehensive analysis
-- Check repository structure before fetching files
-- Use organization filters for private repos
-- Deep dive using several prompts
+## Core Workflow
+1. **Check Auth**: Read \`github://auth-status\` and \`github://rate-limits\`
+2. **Discover**: Use topics → repositories → code progression  
+3. **Extract**: Get complete implementations, not just descriptions
+4. **Validate**: Cross-reference multiple sources
 
-## Tool Categories
-- **Search Tools**: Find repositories, code, issues, PRs
-- **Content Tools**: Fetch files, view repo structure
-- **npm Tools**: Search packages, view package info
+## Essential Tools
+- **\`search_github_topics\`**: Find technology ecosystems
+- **\`search_github_repos\`**: Discover quality projects
+- **\`view_repository\`**: Get branch info (required first!)
+- **\`search_github_code\`**: Find specific implementations
+- **\`fetch_github_file_content\`**: Extract complete code
+- **\`npm_view\`**: Package metadata and repo links
+
+## Search Strategy
+- Start broad → narrow down
+- Use language filters early
+- Check rate limits before intensive operations
+- Extract working code, not just descriptions
+
+## Quick Examples
+- Package research: \`npm_view\` → \`view_repository\` → \`search_github_code\`
+- Problem solving: \`search_github_topics\` → \`search_github_issues\` → \`search_github_code\`
+- Code discovery: \`search_github_repos\` → \`view_repository\` → \`fetch_github_file_content\`
 
 Generated: ${new Date().toISOString()}`,
       },

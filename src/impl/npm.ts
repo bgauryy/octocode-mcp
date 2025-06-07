@@ -15,7 +15,7 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
         `npm view ${packageName} name version description keywords homepage repository bugs license author maintainers dependencies devDependencies peerDependencies scripts engines dist.tarball dist.unpackedSize --json`
       );
       const result: NpmRepositoryResult = JSON.parse(stdout);
-      
+
       let popularityData = '';
       try {
         const { stdout: weeklyDownloads } = await execAsync(
@@ -29,7 +29,7 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
       const enhancedResult = {
         ...result,
         popularityInfo: popularityData,
-        lastAnalyzed: new Date().toISOString()
+        lastAnalyzed: new Date().toISOString(),
       };
 
       return createSuccessResult(enhancedResult);
@@ -68,12 +68,13 @@ export async function npmSearch(
           resultCount: results.length,
           searchLimitApplied: searchlimit,
           results: results,
-          searchTips: results.length === 0 
-            ? "Try broader terms like 'react', 'cli', or 'typescript'" 
-            : results.length >= searchlimit 
-              ? "Results limited. Use more specific terms to narrow down."
-              : "Good result set size for analysis.",
-          timestamp: new Date().toISOString()
+          searchTips:
+            results.length === 0
+              ? "Try broader terms like 'react', 'cli', or 'typescript'"
+              : results.length >= searchlimit
+                ? 'Results limited. Use more specific terms to narrow down.'
+                : 'Good result set size for analysis.',
+          timestamp: new Date().toISOString(),
         };
         return createSuccessResult(enhancedResults);
       } catch {
@@ -97,7 +98,9 @@ export async function npmSearch(
   }
 }
 
-export async function npmPackageStats(packageName: string): Promise<CallToolResult> {
+export async function npmPackageStats(
+  packageName: string
+): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('npm-stats', { packageName });
 
   return withCache(cacheKey, async () => {
@@ -105,7 +108,7 @@ export async function npmPackageStats(packageName: string): Promise<CallToolResu
       const commands = [
         `npm view ${packageName} time --json`,
         `npm view ${packageName} versions --json`,
-        `npm view ${packageName} dist-tags --json`
+        `npm view ${packageName} dist-tags --json`,
       ];
 
       const results = await Promise.allSettled(
@@ -114,10 +117,19 @@ export async function npmPackageStats(packageName: string): Promise<CallToolResu
 
       const stats = {
         packageName,
-        releaseHistory: results[0].status === 'fulfilled' ? JSON.parse(results[0].value.stdout) : null,
-        versions: results[1].status === 'fulfilled' ? JSON.parse(results[1].value.stdout) : null,
-        distTags: results[2].status === 'fulfilled' ? JSON.parse(results[2].value.stdout) : null,
-        analyzedAt: new Date().toISOString()
+        releaseHistory:
+          results[0].status === 'fulfilled'
+            ? JSON.parse(results[0].value.stdout)
+            : null,
+        versions:
+          results[1].status === 'fulfilled'
+            ? JSON.parse(results[1].value.stdout)
+            : null,
+        distTags:
+          results[2].status === 'fulfilled'
+            ? JSON.parse(results[2].value.stdout)
+            : null,
+        analyzedAt: new Date().toISOString(),
       };
 
       return createSuccessResult(stats);
