@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCommitsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_COMMITS_DESCRIPTION } from './descriptions/searchGitHubCommits';
+import { SEARCH_GITHUB_COMMITS_DESCRIPTION } from './descriptions/search_github_commits';
 import { searchGitHubCommits } from '../../impl/github';
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {

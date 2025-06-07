@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
-import { GET_USER_ORGANIZATIONS_DESCRIPTION } from './descriptions/getUserOrganizations';
+import { GET_USER_ORGANIZATIONS_DESCRIPTION } from './descriptions/get_user_organizations';
 import { getUserOrganizations } from '../../impl/github';
 
 export function registerGetUserOrganizationsTool(server: McpServer) {

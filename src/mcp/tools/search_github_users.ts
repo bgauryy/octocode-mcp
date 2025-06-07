@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubUsersSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_USERS_DESCRIPTION } from './descriptions/searchGitHubUsers';
+import { SEARCH_GITHUB_USERS_DESCRIPTION } from './descriptions/search_github_users';
 import { searchGitHubUsers } from '../../impl/github';
 
 export function registerSearchGitHubUsersTool(server: McpServer) {
