@@ -22,8 +22,9 @@ export function registerSearchGitHubCodeTool(server: McpServer) {
         ),
       repo: z
         .string()
+        .optional()
         .describe(
-          'Repository name (REQUIRED). Used with owner to construct repo:owner/repository qualifier for repository-specific search.'
+          'Repository name (OPTIONAL). When provided with owner, searches within specific repo:owner/repository. When omitted, searches across all repositories for the specified owner/organization.'
         ),
       language: z
         .string()

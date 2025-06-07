@@ -151,12 +151,12 @@ export function registerCapabilitiesDiscoveryResource(server: McpServer) {
                 'Error troubleshooting and diagnostic workflows',
             },
             essential_workflows: [
-              'Check auth → Use topics → Find repos → Get code',
-              'npm_view → view_repository → search_github_code → fetch_file_content',
-              'search_github_topics → search_github_repos → view_repository',
-              'search_github_issues → search_github_pull_requests → search_github_code',
+              'Check auth → **ALWAYS search topics first** → NPM discovery → Get code',
+              'search_github_topics → npm_search → npm_view → view_repository → search_github_code → fetch_file_content',
+              '**MANDATORY**: search_github_topics → npm_search → view_repository',
+              'search_github_topics → npm_search → search_github_issues → search_github_pull_requests',
               'npm_dependency_analysis → npm_package_stats → npm_view',
-              'get_user_organizations → search_github_repos → view_repository_structure',
+              'get_user_organizations → search_github_topics → npm_search → view_repository_structure',
             ],
             key_resources: [
               'github://auth-status - Check GitHub authentication',
@@ -165,26 +165,35 @@ export function registerCapabilitiesDiscoveryResource(server: McpServer) {
               'help://usage - Quick start and essential workflows',
               'help://tools - Complete capabilities catalog',
               'search-github-code-instructions - Advanced search syntax',
-              'tool-orchestration - Workflow optimization guidance',
+              'tool-orchestration - **NPM-first, topics-mandatory** workflow optimization guidance',
               'error-diagnostics - Troubleshooting and error resolution',
             ],
             quick_reference: {
               mandatory_first_steps: [
                 'Check github://auth-status for authentication',
                 'Check github://rate-limits for API quota',
+                '**ALWAYS start with search_github_topics** - never skip',
+                'Use npm_search and npm_view before GitHub repo search',
                 'Use view_repository before any file operations',
               ],
               high_impact_tools: [
-                TOOL_NAMES.SEARCH_GITHUB_TOPICS,
-                TOOL_NAMES.SEARCH_GITHUB_REPOS,
+                TOOL_NAMES.SEARCH_GITHUB_TOPICS, // **MANDATORY FIRST**
+                TOOL_NAMES.NPM_SEARCH, // **PRIMARY DISCOVERY**
+                TOOL_NAMES.NPM_VIEW, // **PRIMARY DISCOVERY**
                 TOOL_NAMES.VIEW_REPOSITORY,
                 TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT,
                 TOOL_NAMES.GITHUB_ADVANCED_SEARCH,
               ],
               progressive_discovery: [
-                'Topics → Repositories → Code → Implementation',
-                'Broad search → Specific filters → Quality validation',
-                'Multiple sources → Cross-reference → Confidence',
+                '**Topics → NPM → Code → Implementation**',
+                '**Single-term searches → NPM discovery → Targeted extraction**',
+                'Multiple NPM sources → Cross-reference → Confidence',
+              ],
+              search_strategy_priorities: [
+                '1. MANDATORY: search_github_topics (never skip)',
+                '2. PRIMARY: npm_search and npm_view (minimize GitHub API)',
+                '3. TARGETED: search_github_code with owner/repo from NPM',
+                '4. LAST RESORT: search_github_repos (single terms only)',
               ],
             },
             timestamp: new Date().toISOString(),
