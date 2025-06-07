@@ -215,6 +215,13 @@ class GitHubExecutor implements CommandExecutor {
   sanitize(args: string[]): string[] {
     return args
       .map(arg => {
+        // Special handling for GraphQL queries - preserve their syntax
+        if (arg.startsWith('query=')) {
+          // For GraphQL queries, only remove the most dangerous characters
+          // but preserve $ which is essential for GraphQL variables
+          return arg.replace(/[;&|`]/g, '').trim();
+        }
+
         // Remove potentially dangerous characters but preserve GitHub-specific syntax
         return arg
           .replace(/[;&|`$(){}[\]<>]/g, '')
@@ -237,7 +244,18 @@ class GitHubExecutor implements CommandExecutor {
     }
 
     const sanitizedArgs = this.sanitize(args);
-    const fullCommand = `gh ${command} ${sanitizedArgs.join(' ')}`;
+
+    // Properly quote arguments that contain special characters
+    const quotedArgs = sanitizedArgs.map(arg => {
+      // If argument contains special characters that need shell quoting, wrap in single quotes
+      if (/[(){}[\]<>!$&|;'"` ]/.test(arg)) {
+        // Escape any single quotes in the argument and wrap in single quotes
+        return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+      }
+      return arg;
+    });
+
+    const fullCommand = `gh ${command} ${quotedArgs.join(' ')}`;
 
     const cacheKey = options.cache
       ? generateCacheKey('gh-exec', { command, args: sanitizedArgs })

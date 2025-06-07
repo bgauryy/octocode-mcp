@@ -541,33 +541,59 @@ export async function searchGitHubDiscussions(
         rawOutput: content,
       };
 
-      // Parse the response to check if we have any discussions
+      // Parse the response to provide helpful context
       try {
         const parsedContent = JSON.parse(content);
-        const discussionCount =
-          parsedContent?.data?.search?.discussionCount || 0;
 
-        // If no discussions found and we have a specific owner, provide helpful context
-        if (discussionCount === 0 && params.owner) {
-          const scopeInfo = params.repo
-            ? `repository "${params.owner}/${params.repo}"`
-            : `organization "${params.owner}"`;
+        // Handle repository-specific response
+        if (parsedContent?.data?.repository?.discussions) {
+          const discussions = parsedContent.data.repository.discussions;
+          const discussionCount = discussions.totalCount || 0;
 
-          searchResult.results = JSON.stringify(
-            {
-              ...parsedContent,
-              searchInfo: {
-                message: `No discussions found in ${scopeInfo}. This search was scoped to ${params.owner} only and did not search other organizations. The repository may not have discussions enabled.`,
-                searchScope: params.repo
-                  ? `repo:${params.owner}/${params.repo}`
-                  : `org:${params.owner}`,
-                query: params.query,
-                discussionCount: 0,
+          if (discussionCount === 0 && params.owner && params.repo) {
+            searchResult.results = JSON.stringify(
+              {
+                ...parsedContent,
+                searchInfo: {
+                  message: `No discussions found in repository "${params.owner}/${params.repo}". The repository may not have discussions enabled or there are no discussions matching the criteria.`,
+                  searchScope: `repo:${params.owner}/${params.repo}`,
+                  query: params.query,
+                  discussionCount: 0,
+                  repositorySpecific: true,
+                },
               },
-            },
-            null,
-            2
-          );
+              null,
+              2
+            );
+          }
+        }
+        // Handle search API response
+        else if (parsedContent?.data?.search) {
+          const discussionCount =
+            parsedContent.data.search.discussionCount || 0;
+
+          if (discussionCount === 0 && params.owner) {
+            const scopeInfo = params.repo
+              ? `repository "${params.owner}/${params.repo}"`
+              : `organization "${params.owner}"`;
+
+            searchResult.results = JSON.stringify(
+              {
+                ...parsedContent,
+                searchInfo: {
+                  message: `No discussions found in ${scopeInfo}. This search was scoped to ${params.owner} only and did not search other organizations. The repository may not have discussions enabled.`,
+                  searchScope: params.repo
+                    ? `repo:${params.owner}/${params.repo}`
+                    : `org:${params.owner}`,
+                  query: params.query,
+                  discussionCount: 0,
+                  globalSearch: !params.repo,
+                },
+              },
+              null,
+              2
+            );
+          }
         }
       } catch (parseError) {
         // If we can't parse the JSON, just return the original result
@@ -911,50 +937,75 @@ function buildGitHubUsersAPICommand(params: GitHubUsersSearchParams): {
 function buildGitHubDiscussionsAPICommand(
   params: GitHubDiscussionsSearchParams
 ): { command: string; args: string[] } {
-  // GitHub Discussions search is not available via REST API
-  // We'll use GraphQL API through gh api graphql
-  const query = `
-    query($searchQuery: String!, $first: Int!) {
-      search(query: $searchQuery, type: DISCUSSION, first: $first) {
-        discussionCount
-        edges {
-          node {
-            ... on Discussion {
-              title
-              body
-              url
-              createdAt
-              updatedAt
-              author {
-                login
-              }
-              repository {
-                nameWithOwner
-              }
-              category {
+  // Build search query
+  const searchQuery = params.query || '';
+  const limit = params.limit || 30;
+
+  // If we have both owner and repo, use repository-specific discussions API
+  if (params.owner && params.repo) {
+    const query = `query($owner: String!, $repo: String!, $first: Int!) {
+      repository(owner: $owner, name: $repo) {
+        discussions(first: $first) {
+          totalCount
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            title
+            body
+            url
+            createdAt
+            updatedAt
+            author {
+              login
+              ... on User {
                 name
               }
-              answerChosenAt
+            }
+            repository {
+              nameWithOwner
+              url
+            }
+            category {
+              name
+              slug
+            }
+            answerChosenAt
+            isAnswered
+            upvoteCount
+            comments {
+              totalCount
             }
           }
         }
       }
-    }
-  `;
+    }`;
 
-  // Build search query
-  const searchQuery = params.query || '';
+    return {
+      command: 'api',
+      args: [
+        'graphql',
+        '--field',
+        `query=${query}`,
+        '--field',
+        `owner=${params.owner}`,
+        '--field',
+        `repo=${params.repo}`,
+        '--field',
+        `first=${limit}`,
+      ],
+    };
+  }
+
+  // For global search or organization-only search, use the search API
   const queryParts = [searchQuery];
 
-  // Always scope to specific repo if both owner and repo are provided
-  if (params.repo && params.owner) {
-    queryParts.push(`repo:${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    // If only owner is specified, search within that owner's organization
-    // This prevents fallback to user's organizations when searching for specific packages
+  if (params.owner && !params.repo) {
+    // Search within organization
     queryParts.push(`org:${params.owner}`);
   }
-  // If no owner is specified, search globally (current behavior)
 
   if (params.author) queryParts.push(`author:${params.author}`);
   if (params.category) queryParts.push(`category:"${params.category}"`);
@@ -965,17 +1016,58 @@ function buildGitHubDiscussionsAPICommand(
   if (params.updated) queryParts.push(`updated:${params.updated}`);
 
   const finalQuery = queryParts.join(' ').trim();
-  const limit = params.limit || 30;
+
+  const searchQueryGql = `query($searchQuery: String!, $first: Int!) {
+    search(query: $searchQuery, type: DISCUSSION, first: $first) {
+      discussionCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          ... on Discussion {
+            id
+            title
+            body
+            url
+            createdAt
+            updatedAt
+            author {
+              login
+              ... on User {
+                name
+              }
+            }
+            repository {
+              nameWithOwner
+              url
+            }
+            category {
+              name
+              slug
+            }
+            answerChosenAt
+            isAnswered
+            upvoteCount
+            comments {
+              totalCount
+            }
+          }
+        }
+      }
+    }
+  }`;
 
   return {
     command: 'api',
     args: [
       'graphql',
-      '-f',
-      `query=${query}`,
-      '-f',
+      '--field',
+      `query=${searchQueryGql}`,
+      '--field',
       `searchQuery=${finalQuery}`,
-      '-F',
+      '--field',
       `first=${limit}`,
     ],
   };
