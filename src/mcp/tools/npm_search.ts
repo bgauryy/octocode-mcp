@@ -14,11 +14,6 @@ export function registerNpmSearchTool(server: McpServer) {
         .describe(
           "The search term(s) to find packages on NPM. Multiple terms can be space-separated (e.g., 'react query client'). Supports regex if term starts with /."
         ),
-      json: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe('Output search results in JSON format. Defaults to true.'),
       searchlimit: z
         .number()
         .optional()
@@ -26,8 +21,20 @@ export function registerNpmSearchTool(server: McpServer) {
         .describe(
           'Maximum number of search results to return. Defaults to 50.'
         ),
+      json: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe('Output search results in JSON format. Defaults to true.'),
     },
-    async (args: { query: string; json?: boolean; searchlimit?: number }) => {
+    {
+      title: 'Search NPM Packages',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    async (args: { query: string; searchlimit?: number; json?: boolean }) => {
       try {
         return await npmSearch(args);
       } catch (error) {
@@ -35,7 +42,7 @@ export function registerNpmSearchTool(server: McpServer) {
           content: [
             {
               type: 'text',
-              text: `Failed to search NPM: ${(error as Error).message}`,
+              text: `Failed to search npm packages: ${(error as Error).message}`,
             },
           ],
           isError: true,

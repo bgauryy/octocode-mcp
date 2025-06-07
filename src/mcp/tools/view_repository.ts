@@ -21,6 +21,13 @@ export function registerViewRepositoryTool(server: McpServer) {
           "The name of the GitHub repository to view (e.g. 'premium-ai-playground')"
         ),
     },
+    {
+      title: 'View GitHub Repository',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: GitHubRepositoryViewParams) => {
       try {
         return await viewGitHubRepositoryInfo(args);

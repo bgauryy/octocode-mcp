@@ -29,6 +29,13 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           'The path within the repository to view the structure from. Defaults to the root of the repository. Allows for iterative exploration of the repository structure.'
         ),
     },
+    {
+      title: 'View Repository Structure',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: GitHubRepositoryStructureParams) => {
       try {
         return await viewRepositoryStructure(args);

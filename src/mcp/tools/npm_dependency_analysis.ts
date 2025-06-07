@@ -176,6 +176,13 @@ export function registerNpmDependencyAnalysisTool(server: McpServer) {
           "The name of the npm package to analyze dependencies for (e.g., 'react', 'express', '@types/node')"
         ),
     },
+    {
+      title: 'NPM Dependency Analysis',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: { packageName: string }) => {
       return await analyzeDependencies(args.packageName);
     }

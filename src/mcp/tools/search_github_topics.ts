@@ -41,11 +41,6 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
         .describe(
           "Filter based on topic creation date (e.g., '>2022-01-01', '<2023-12-31')"
         ),
-      limit: z
-        .number()
-        .optional()
-        .default(50)
-        .describe('Maximum number of topics to return (default: 50)'),
       sort: z
         .enum(['featured', 'repositories', 'created', 'updated'])
         .optional()
@@ -55,6 +50,18 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
         .optional()
         .default('desc')
         .describe('Order of results returned (default: desc)'),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe('Maximum number of topics to return (default: 50)'),
+    },
+    {
+      title: 'Search GitHub Topics',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
     },
     async (args: GitHubTopicsSearchParams) => {
       try {

@@ -15,6 +15,13 @@ export function registerNpmViewTool(server: McpServer) {
           "The name of the npm package to analyze (e.g., 'react', '@types/node', 'lodash')"
         ),
     },
+    {
+      title: 'View NPM Package',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: { packageName: string }) => {
       try {
         return await npmView(args.packageName);

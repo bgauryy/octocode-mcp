@@ -88,6 +88,13 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .default('desc')
         .describe('Order of results returned (default: desc)'),
     },
+    {
+      title: 'Search GitHub Pull Requests',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: GitHubPullRequestsSearchParams) => {
       try {
         return await searchGitHubPullRequests(args);

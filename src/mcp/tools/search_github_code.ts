@@ -13,51 +13,55 @@ export function registerSearchGitHubCodeTool(server: McpServer) {
       query: z
         .string()
         .describe(
-          'Search query for code. Will automatically add repo:owner/repository qualifier for repository-specific search. Supports GitHub advanced syntax including qualifiers, boolean operations, and multi-word searches.'
+          "The search query to find relevant code. You should reuse the user's exact query/most recent message with their wording unless there is a clear reason not to."
         ),
       owner: z
         .string()
         .describe(
-          'Repository owner/organization (REQUIRED). Used to construct repo:owner/repository qualifier for repository-specific search.'
+          "Filter by repository owner/organization (e.g., 'example-org') get from get_user_organizations tool"
         ),
-      repo: z
+      repo: z.string().optional().describe('The name of the GitHub repository'),
+      extension: z
         .string()
         .optional()
-        .describe(
-          'Repository name (OPTIONAL). When provided with owner, searches within specific repo:owner/repository. When omitted, searches across all repositories for the specified owner/organization.'
-        ),
+        .describe('Filter by file extension (e.g., "js", "ts", "py")'),
+      filename: z
+        .string()
+        .optional()
+        .describe('Filter by filename (e.g., "package.json", "README.md")'),
       language: z
         .string()
         .optional()
         .describe(
           'Filter by programming language (e.g., "javascript", "typescript", "python")'
         ),
-      filename: z
-        .string()
-        .optional()
-        .describe('Filter by filename (e.g., "package.json", "README.md")'),
-      extension: z
-        .string()
-        .optional()
-        .describe('Filter by file extension (e.g., "js", "ts", "py")'),
       limit: z
         .number()
         .optional()
         .default(30)
         .describe('Maximum number of results to return (default: 30)'),
     },
-    async args => {
-      const params: GitHubCodeSearchParams = {
-        query: args.query,
-        owner: args.owner,
-        repo: args.repo,
-        language: args.language,
-        filename: args.filename,
-        extension: args.extension,
-        limit: args.limit,
-      };
-
-      return await searchGitHubCode(params);
+    {
+      title: 'Search GitHub Code',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    async (args: GitHubCodeSearchParams) => {
+      try {
+        return await searchGitHubCode(args);
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to search GitHub code: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
     }
   );
 }

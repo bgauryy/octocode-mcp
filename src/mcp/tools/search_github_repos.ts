@@ -66,6 +66,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .optional()
         .describe('Filter by visibility'),
     },
+    {
+      title: 'Search GitHub Repositories',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: GitHubReposSearchParams) => {
       try {
         return await searchGitHubRepos(args);

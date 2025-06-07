@@ -56,11 +56,6 @@ export function registerSearchGitHubDiscussionsTool(server: McpServer) {
           "Filter based on created date (e.g., '>2022-01-01', '<2023-12-31')"
         ),
       updated: z.string().optional().describe('Filter on last updated date'),
-      limit: z
-        .number()
-        .optional()
-        .default(50)
-        .describe('Maximum number of discussions to return (default: 50)'),
       sort: z
         .enum([
           'comments',
@@ -82,6 +77,18 @@ export function registerSearchGitHubDiscussionsTool(server: McpServer) {
         .optional()
         .default('desc')
         .describe('Order of results returned (default: desc)'),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe('Maximum number of discussions to return (default: 50)'),
+    },
+    {
+      title: 'Search GitHub Discussions',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
     },
     async (args: GitHubDiscussionsSearchParams) => {
       try {

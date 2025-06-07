@@ -25,6 +25,13 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         .string()
         .describe('The path to the file within the repository'),
     },
+    {
+      title: 'Fetch GitHub File Content',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: GithubFetchRequestParams) => {
       try {
         return await fetchGitHubFileContent(args);

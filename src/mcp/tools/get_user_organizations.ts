@@ -15,6 +15,13 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
         .default(50)
         .describe('Maximum number of organizations to list (default: 50)'),
     },
+    {
+      title: 'Get User Organizations',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: { limit?: number }) => {
       try {
         return await getUserOrganizations(args);

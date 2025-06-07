@@ -50,15 +50,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
       hash: z.string().optional().describe('Filter by commit hash'),
       parent: z.string().optional().describe('Filter by parent hash'),
       tree: z.string().optional().describe('Filter by tree hash'),
-      visibility: z
-        .enum(['public', 'private', 'internal'])
-        .optional()
-        .describe('Filter based on repository visibility'),
-      limit: z
-        .number()
-        .optional()
-        .default(50)
-        .describe('Maximum number of commits to return (default: 50)'),
       sort: z
         .enum(['author-date', 'committer-date', 'best-match'])
         .optional()
@@ -69,6 +60,22 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .optional()
         .default('desc')
         .describe('Order of commits returned (default: desc for newest first)'),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe('Maximum number of commits to return (default: 50)'),
+      visibility: z
+        .enum(['public', 'private', 'internal'])
+        .optional()
+        .describe('Filter based on repository visibility'),
+    },
+    {
+      title: 'Search GitHub Commits',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
     },
     async (args: GitHubCommitsSearchParams) => {
       try {

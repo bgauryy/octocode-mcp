@@ -266,6 +266,13 @@ export function registerGitHubAdvancedSearchTool(server: McpServer) {
           'Programming language filter (e.g., "javascript", "python", "go")'
         ),
     },
+    {
+      title: 'GitHub Advanced Search',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
     async (args: AdvancedSearchParams) => {
       return await performAdvancedSearch(args);
     }

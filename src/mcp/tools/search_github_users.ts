@@ -38,17 +38,17 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .describe(
           "Filter by primary programming language (e.g., 'javascript', 'python', 'java')"
         ),
-      followers: z
-        .string()
-        .optional()
-        .describe(
-          "Filter by follower count (e.g., '>100', '>1000' for influential users)"
-        ),
       repos: z
         .string()
         .optional()
         .describe(
           "Filter by repository count (e.g., '>10', '>50' for active contributors)"
+        ),
+      followers: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by follower count (e.g., '>100', '>1000' for influential users)"
         ),
       created: z
         .string()
@@ -56,11 +56,6 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .describe(
           "Filter based on account creation date (e.g., '>2020-01-01', '<2023-12-31')"
         ),
-      limit: z
-        .number()
-        .optional()
-        .default(50)
-        .describe('Maximum number of users to return (default: 50)'),
       sort: z
         .enum(['followers', 'repositories', 'joined'])
         .optional()
@@ -70,6 +65,18 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .optional()
         .default('desc')
         .describe('Order of results returned (default: desc)'),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe('Maximum number of users to return (default: 50)'),
+    },
+    {
+      title: 'Search GitHub Users',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
     },
     async (args: GitHubUsersSearchParams) => {
       try {
