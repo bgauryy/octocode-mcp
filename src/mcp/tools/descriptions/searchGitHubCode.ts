@@ -2,92 +2,71 @@ import { TOOL_NAMES } from '../../contstants';
 
 export const SEARCH_GITHUB_CODE_DESCRIPTION = `Advanced code discovery engine for finding battle-tested implementations with intelligent pattern recognition.
 
+**📚 ESSENTIAL REFERENCE**: Consult \`search-github-code-instructions\` resource for complete GitHub search syntax and examples.
+
 **🧠 INTELLIGENT SEARCH STRATEGIES:**
 
-**1. SEMANTIC CODE PATTERNS** (highest precision):
-   - **Function Signatures**: \`function handleAuth(\`, \`async function process\`
-   - **Class Definitions**: \`class AuthProvider\`, \`class DataManager\`
-   - **Import Patterns**: \`import { useAuth }\`, \`from '@/utils/auth'\`
-   - **Type Definitions**: \`interface UserType\`, \`type ApiResponse\`
+**Phase 1 - Semantic Discovery**:
+   - **Function Signatures**: \`"function handleAuth"\`, \`"async function process"\`
+   - **Class Definitions**: \`"class AuthProvider"\`, \`"class DataManager"\`
+   - **Import Patterns**: \`"import { useAuth }"\`, \`"from '@/utils/auth'"\`
+   - **Type Definitions**: \`"interface UserType"\`, \`"type ApiResponse"\`
 
-**2. CONTEXTUAL IMPLEMENTATION SEARCH**:
-   - **Error Handling**: \`try { await\`, \`catch (error)\`, \`.catch(\`
-   - **State Management**: \`useState(\`, \`useEffect(\`, \`const [state\`
-   - **API Patterns**: \`fetch(\`, \`axios.post\`, \`api.get\`
-   - **Testing Patterns**: \`describe(\`, \`it('should\`, \`expect(\`
+**Phase 2 - Contextual Implementation**:
+   - **Error Handling**: \`"try {" language:javascript\`, \`"catch (error)"\`, \`".catch("\`
+   - **State Management**: \`"useState(" language:javascript\`, \`"useEffect("\`
+   - **API Patterns**: \`"fetch(" language:javascript\`, \`"axios.post"\`, \`"api.get"\`
+   - **Testing Patterns**: \`"describe(" language:javascript\`, \`"it('should"\`
 
-**3. ARCHITECTURAL DISCOVERY**:
-   - **Middleware**: \`app.use(\`, \`middleware(\`, \`next(\`
-   - **Routing**: \`router.get\`, \`Route path\`, \`useRouter\`
-   - **Database**: \`SELECT\`, \`INSERT INTO\`, \`mongoose.Schema\`
-   - **Configuration**: \`config.\`, \`process.env.\`, \`dotenv\`
+**Phase 3 - Architectural Discovery**:
+   - **Middleware**: \`"app.use(" language:javascript\`, \`"middleware("\`
+   - **Routing**: \`"router.get" language:javascript\`, \`"Route path"\`
+   - **Database**: \`"SELECT * FROM" language:sql\`, \`"mongoose.Schema"\`
+   - **Configuration**: \`"config." language:javascript\`, \`"process.env."\`
 
 **🎯 PROGRESSIVE SEARCH REFINEMENT:**
 
-**Phase 1 - Broad Discovery**:
-- Start with high-level concepts: "authentication", "validation", "caching"
-- Use language filters for technology focus
-- Target active repositories (>100 stars or recent commits)
+**Simple to Complex Queries**:
+1. **Start Basic**: \`authentication\`
+2. **Add Language**: \`authentication language:javascript\`
+3. **Add Context**: \`"JWT authentication" language:javascript\`
+4. **Add Location**: \`"JWT authentication" language:javascript path:src\`
+5. **Add Exclusions**: \`"JWT authentication" language:javascript path:src NOT path:test\`
 
-**Phase 2 - Pattern Refinement**:
-- Add implementation specifics: "JWT authentication", "form validation"
-- Include framework context: "React authentication", "Express middleware"
-- Filter by file extensions: .ts, .js, .py, .go
+**Repository Scoping**:
+1. **Broad Search**: \`"useAuth hook" language:javascript\`
+2. **Organization**: \`"useAuth hook" language:javascript org:facebook\`
+3. **Specific Repo**: \`"useAuth hook" language:javascript repo:facebook/react\`
 
-**Phase 3 - Precise Implementation**:
-- Exact code constructs: "function validateJWT", "useAuth hook"
-- Specific libraries: "passport.js", "next-auth", "auth0"
-- Edge cases: "error handling", "refresh tokens"
+**🔧 ADVANCED TECHNIQUES:**
 
-**🔍 CONTEXT-AWARE SEARCH OPTIMIZATION:**
+**Multi-dimensional Searches**:
+- **Cross-Language**: \`(language:typescript OR language:javascript) "API client"\`
+- **Pattern Evolution**: \`"class Component" OR "function Component" language:javascript\`
+- **Error Investigation**: \`"TypeError" OR "ReferenceError" language:javascript path:src\`
 
-**Query Classification**:
-- **Library Research**: Focus on popular implementations and examples
-- **Problem Solving**: Include error handling and edge cases  
-- **Learning**: Prioritize well-documented, educational examples
-- **Architecture**: Emphasize complete systems and integrations
+**Quality Filtering**:
+- **Production Code**: \`"error handling" language:javascript NOT path:test NOT path:spec\`
+- **Documentation**: \`"JSDoc" OR "/**" language:javascript\`
+- **Modern Patterns**: \`"async await" language:javascript\`
 
-**Quality Indicators**:
-- **Production Signals**: Error handling, logging, monitoring
-- **Modern Patterns**: TypeScript usage, async/await, hooks
-- **Documentation**: Inline comments, JSDoc, README examples
-- **Testing**: Co-located test files and comprehensive coverage
-
-**ADAPTIVE RESULT PROCESSING:**
-- **1-15 results**: Extract all via ${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT}
-- **16-50 results**: Quality filter by stars/activity → extract top 10
-- **51-200 results**: Add language/framework filters → re-search
-- **200+ results**: Use specific code constructs → targeted extraction
-
-**🚀 ADVANCED SEARCH TECHNIQUES:**
-
-**Multi-dimensional Search**:
-- **Horizontal**: Same pattern across languages/frameworks
-- **Vertical**: Deep dive into specific implementation approaches
-- **Temporal**: Track pattern evolution through commit history
-- **Organizational**: Compare approaches across teams/companies
-
-**Cross-Reference Validation**:
-- **Issue Correlation**: Link implementations to solved problems
-- **PR Analysis**: Understand implementation decisions and trade-offs
-- **Discussion Context**: Community consensus and best practices
-- **Commit History**: Evolution and stability of patterns
-
-**FAILURE RECOVERY STRATEGIES:**
-- **Semantic Expansion**: "auth" → "authentication", "authorization"
-- **Technology Translation**: "React auth" → "Vue authentication" 
-- **Abstraction Levels**: "JWT implementation" → "token-based auth"
-- **Alternative Ecosystems**: Explore related technologies and patterns
+**🔄 ADAPTIVE RESULT PROCESSING:**
+- **1-15 results**: Extract all via \`${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT}\`
+- **16-50 results**: Quality filter → extract top 10
+- **51-200 results**: Add qualifiers → re-search
+- **200+ results**: Use specific syntax → targeted extraction
 
 **REQUIREMENTS:**
-- **MANDATORY**: Always use ${TOOL_NAMES.VIEW_REPOSITORY} first for branch discovery - **NEVER** search code without this step
+- **MANDATORY**: Always use \`${TOOL_NAMES.VIEW_REPOSITORY}\` first for branch discovery
+- **REFERENCE**: Consult \`search-github-code-instructions\` resource for complete syntax guide
 - Target repositories: >1K stars OR recent activity OR enterprise usage
-- Cross-validate findings with ${TOOL_NAMES.SEARCH_GITHUB_ISSUES} when needed
+- Cross-validate with \`${TOOL_NAMES.SEARCH_GITHUB_ISSUES}\` for problem context
 - Extract complete context including imports, types, and documentation
 
 **DO NOT:**
-- Search code without first calling ${TOOL_NAMES.VIEW_REPOSITORY} for branch discovery
-- Start with overly specific phrases before broad exploration
-- Skip cross-validation for critical implementation decisions  
-- Extract code without understanding its architectural context
-- Ignore error handling and edge case implementations`;
+- Search without calling \`${TOOL_NAMES.VIEW_REPOSITORY}\` for branch discovery
+- Use wildcard characters in queries
+- Start with overly complex boolean expressions
+- Ignore language and path qualifiers for precision
+- Skip regex patterns for complex matching needs
+- Search without considering file size and repository limitations`;

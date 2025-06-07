@@ -463,8 +463,8 @@ export async function searchGitHubDiscussions(
 }
 
 function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): string {
-  // Apply progressive single-word search strategy for optimal discovery
-  const processedQuery = processSearchQuery(params.query || '');
+  // Enhanced query processing for GitHub advanced syntax
+  const processedQuery = processAdvancedSearchQuery(params.query || '');
   let command = `gh search code ${processedQuery}`;
 
   if (params.owner) command += ` --owner ${params.owner}`;
@@ -472,6 +472,9 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): string {
   if (params.language) command += ` --language ${params.language}`;
   if (params.filename) command += ` --filename ${params.filename}`;
   if (params.extension) command += ` --extension ${params.extension}`;
+  if (params.path) command += ` --path ${params.path}`;
+  if (params.in) command += ` --in ${params.in}`;
+  if (params.size) command += ` --size ${params.size}`;
   if (params.match) command += ` --match ${params.match}`;
   if (params.limit) command += ` --limit ${params.limit}`;
 
@@ -479,45 +482,36 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): string {
 }
 
 /**
- * Process search query to implement progressive single-word search strategy:
- * - Prioritize single terms over combined searches
- * - "RAG" stays as "RAG" (single word search)
- * - "RAG Ranking" becomes "RAG" (use first term only for initial search)
- * - Only combine terms when explicitly needed after initial searches
- * - Preserve quoted phrases as-is for exact matches
+ * Enhanced query processing for GitHub advanced search syntax:
+ * - Preserves boolean operations (AND, OR, NOT)
+ * - Maintains quoted strings for exact matches
+ * - Handles regex patterns (/pattern/)
+ * - Supports qualifiers within the query
+ * - Preserves GitHub search syntax
  */
-function processSearchQuery(query: string): string {
+function processAdvancedSearchQuery(query: string): string {
   if (!query) return '""';
 
-  // Check if query is already properly quoted single term
-  const singleQuotedPattern = /^"[^"]*"$/;
-  if (singleQuotedPattern.test(query.trim())) {
+  // Preserve query if it contains GitHub qualifiers or advanced syntax
+  const hasQualifiers = /\b(language|path|filename|extension|in|size|user|org|repo):/i.test(query);
+  const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(query);
+  const hasRegex = /\/.*\//.test(query);
+  const hasQuotes = /"[^"]*"/.test(query);
+  const hasParentheses = /\([^)]*\)/.test(query);
+
+  // If query contains advanced syntax, preserve it as-is (no additional quotes)
+  if (hasQualifiers || hasBooleanOps || hasRegex || hasParentheses) {
     return query.trim();
   }
 
-  // Check if query is multiple quoted terms (advanced search)
-  const multipleQuotedPattern = /^(\s*"[^"]+"\s*)+$/;
-  if (multipleQuotedPattern.test(query.trim())) {
+  // If query is already properly quoted, preserve it
+  if (hasQuotes && query.trim().startsWith('"') && query.trim().endsWith('"')) {
     return query.trim();
   }
 
-  // Plain text query - PRIORITIZE SINGLE WORDS for progressive search
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .filter(term => term.length > 0);
-
-  if (terms.length === 0) return '""';
-
-  // FOR PROGRESSIVE SEARCH: Use only the first term initially
-  // This implements the "RAG" then "Ranking" strategy instead of "RAG Ranking"
-  if (terms.length === 1) {
-    return `"${terms[0]}"`;
-  }
-
-  // For multiple terms, prioritize the first term (most important)
-  // This encourages users to do separate searches: "RAG" first, then "Ranking"
-  return `"${terms[0]}"`;
+  // For simple queries, add quotes for exact matching
+  const trimmed = query.trim();
+  return `"${trimmed}"`;
 }
 
 function buildGitHubCommitsSearchCommand(
@@ -585,8 +579,8 @@ function buildGitHubPullRequestsSearchCommand(
 function buildGitHubReposSearchCommand(
   params: GitHubReposSearchParams
 ): string {
-  // Process query to use single-word strategy
-  const processedQuery = processSearchQuery(params.query || '');
+  // Process query to use single-word strategy for repository discovery
+  const processedQuery = processSimpleSearchQuery(params.query || '');
   let command = `gh search repos ${processedQuery}`;
 
   if (params.owner) command += ` --owner ${params.owner}`;
@@ -622,6 +616,48 @@ function buildGitHubReposSearchCommand(
   if (params.visibility) command += ` --visibility ${params.visibility}`;
 
   return command;
+}
+
+/**
+ * Simple search query processing for repository discovery:
+ * - Prioritize single terms over combined searches
+ * - "RAG" stays as "RAG" (single word search)
+ * - "RAG Ranking" becomes "RAG" (use first term only for initial search)
+ * - Only combine terms when explicitly needed after initial searches
+ * - Preserve quoted phrases as-is for exact matches
+ */
+function processSimpleSearchQuery(query: string): string {
+  if (!query) return '""';
+
+  // Check if query is already properly quoted single term
+  const singleQuotedPattern = /^"[^"]*"$/;
+  if (singleQuotedPattern.test(query.trim())) {
+    return query.trim();
+  }
+
+  // Check if query is multiple quoted terms (advanced search)
+  const multipleQuotedPattern = /^(\s*"[^"]+"\s*)+$/;
+  if (multipleQuotedPattern.test(query.trim())) {
+    return query.trim();
+  }
+
+  // Plain text query - PRIORITIZE SINGLE WORDS for progressive search
+  const terms = query
+    .trim()
+    .split(/\s+/)
+    .filter(term => term.length > 0);
+
+  if (terms.length === 0) return '""';
+
+  // FOR PROGRESSIVE SEARCH: Use only the first term initially
+  // This implements the "RAG" then "Ranking" strategy instead of "RAG Ranking"
+  if (terms.length === 1) {
+    return `"${terms[0]}"`;
+  }
+
+  // For multiple terms, prioritize the first term (most important)
+  // This encourages users to do separate searches: "RAG" first, then "Ranking"
+  return `"${terms[0]}"`;
 }
 
 function buildGitHubIssuesSearchCommand(

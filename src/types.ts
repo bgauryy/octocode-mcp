@@ -29,6 +29,9 @@ export interface GitHubCodeSearchParams extends BaseSearchParams {
   language?: string;
   filename?: string;
   extension?: string;
+  path?: string;
+  in?: 'file' | 'path' | 'file,path';
+  size?: string;
   match?: 'file' | 'path';
 }
 
