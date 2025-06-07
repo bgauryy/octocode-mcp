@@ -1,0 +1,73 @@
+
+
+----
+
+// search github code 
+- list of qieries
+{
+  "query": "useState",
+  "owner": "facebook",
+  "repo": "react",
+  "branch": "main",
+  "language": "javascript",
+  "limit": 20
+}
+no results
+
+
+
+{
+  "query": "hook",
+  "owner": "facebook",
+  "branch": "main",
+  "language": "javascript",
+  "path": "packages/react/src"
+}
+
+Failed to search GitHub code: Command failed: gh search code "hook" --owner facebook --language javascript --path packages/react/src --limit 50
+unknown flag: --path
+
+Usage:  gh search code <query> [flags]
+
+Flags:
+      --extension string   Filter on file extension
+      --filename string    Filter on filename
+  -q, --jq expression      Filter JSON output using a jq expression
+      --json fields        Output JSON with the specified fields
+      --language string    Filter results by language
+  -L, --limit int          Maximum number of code results to fetch (default 30)
+      --match strings      Restrict search to file contents or file path: {file|path}
+      --owner strings      Filter on owner
+  -R, --repo strings       Filter on repository
+      --size string        Filter on size range, in kilobytes
+  -t, --template string    Format JSON output using a Go template; see "gh help formatting"
+  -w, --web                Open the search query in the web browser
+  
+
+  ---
+
+
+  safe commands
+
+  // Instead of direct execSync with user input
+const safeExecGhCommand = (command: string, args: string[] = []): string => {
+  const allowedCommands = ['auth', 'api', 'repo', 'pr', 'issue'];
+  const [baseCommand, ...restArgs] = command.split(' ');
+  
+  if (!allowedCommands.includes(baseCommand)) {
+    throw new Error(`Command not allowed: ${baseCommand}`);
+  }
+  
+  // Use array form to prevent injection
+  return execSync(`gh ${baseCommand}`, {
+    encoding: 'utf-8',
+    timeout: 10000,
+    input: args.join(' ')
+  }).trim();
+};
+
+---
+
+safe commands:
+
+execSync

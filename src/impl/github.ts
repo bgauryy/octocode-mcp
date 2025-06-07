@@ -493,7 +493,8 @@ function processAdvancedSearchQuery(query: string): string {
   if (!query) return '""';
 
   // Preserve query if it contains GitHub qualifiers or advanced syntax
-  const hasQualifiers = /\b(language|path|filename|extension|in|size|user|org|repo):/i.test(query);
+  const hasQualifiers =
+    /\b(language|path|filename|extension|in|size|user|org|repo):/i.test(query);
   const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(query);
   const hasRegex = /\/.*\//.test(query);
   const hasQuotes = /"[^"]*"/.test(query);

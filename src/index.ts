@@ -17,13 +17,11 @@ import { registerSearchGitHubTopicsTool } from './mcp/tools/searchGitHubTopics';
 import { registerSearchGitHubUsersTool } from './mcp/tools/searchGitHubUsers';
 import { registerAnalyzeCodePrompt } from './mcp/prompts/analyzeCode';
 import { registerComparePackagesPrompt } from './mcp/prompts/comparePackages';
-import {
-  registerGithubStatusResource,
-  registerGithubRateLimitResource,
-} from './mcp/resources/githubStatus';
-import { registerNpmStatusResource } from './mcp/resources/npmStatus';
-import { registerUsageGuideResource } from './mcp/resources/usageGuide';
-import { registerSearchGitHubCodeInstructionsResource } from './mcp/resources/searchGitHubCodeInstructions';
+import { registerNpmStatusResource } from './mcp/resources/npm-status';
+import { registerUsageGuideResource } from './mcp/resources/usage-guide';
+import { registerSearchGitHubCodeInstructionsResource } from './mcp/resources/search-github-code-instructions';
+import { registerGithubStatusResource } from './mcp/resources/github-auth-status';
+import { registerGithubRateLimitResource } from './mcp/resources/github-rate-limits';
 
 const server = new McpServer(
   {
