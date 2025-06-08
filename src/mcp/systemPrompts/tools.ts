@@ -31,50 +31,91 @@ Perform parallel searches across GitHub dimensions to understand complete techno
 
 **INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for terminology discovery.`,
 
-  [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**Comprehensive dependency analysis** - Security audit, license check, and optimization guidance for npm packages.
+  [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security and metadata analysis** - Essential for package evaluation and private organization detection.
 
 **PURPOSE:**
-Analyze package dependencies for security vulnerabilities, license compliance, and bundle optimization.
+Analyze package dependencies, security vulnerabilities, and organizational context for informed package adoption decisions.
 
 **ANALYSIS CAPABILITIES:**
 - **Security Audit** - Vulnerability scanning and risk assessment
 - **Dependency Tree** - Complete dependency graph with versions
 - **License Analysis** - License compatibility and legal considerations
 - **Bundle Impact** - Package size impact on applications
+- **Organization Detection** - Identify private/organizational packages (@wix/, @company/)
 - **Update Recommendations** - Outdated dependencies and available fixes
 
-**WHEN TO USE:**
+**WHEN TO USE (HIGH PRIORITY):**
+- **ALWAYS** after ${TOOL_NAMES.NPM_GET_PACKAGE} for complete assessment
 - Pre-installation security review
 - Dependency audit for existing projects
+- Private organization package analysis
 - License compliance checking
 - Bundle size optimization planning
+
+**ORGANIZATIONAL CONTEXT:**
+- **Private Packages** - Detect @company/ scoped packages
+- **Enterprise Context** - Identify internal tooling and dependencies
+- **Security Assessment** - Corporate security policy compliance
 
 **KEY INSIGHTS:**
 - Known vulnerabilities with severity scores
 - Security advisories and available fixes
 - Alternative package suggestions
 - Performance impact assessment
+- Organizational package patterns
 
-**INTEGRATION:** Use with ${TOOL_NAMES.NPM_GET_PACKAGE} for complete package assessment.`,
+**SMART FALLBACKS:**
+- No vulnerability data → Focus on maintenance indicators
+- Private packages → Check organization access via ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- Rate limits → Cache analysis results
 
-  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `**NPM registry search** - Discover packages by keywords with intelligent search strategies.
+**INTEGRATION:** **MANDATORY** use with ${TOOL_NAMES.NPM_GET_PACKAGE} for complete package assessment.`,
+
+  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `**PRIMARY DISCOVERY TOOL** - Main entry point for package and repository discovery.
 
 **PURPOSE:**  
-Find relevant npm packages using keyword-based discovery with optimization guidance.
+Find relevant npm packages using keyword-based discovery - **FIRST STEP** in most workflows.
 
-**SEARCH STRATEGY:**
-1. **Start Simple** - Single terms: \`"react"\`, \`"cli"\`
+IN case the user mentions a package name, you should use this tool to find the package.
+
+E.g. 
+import {
+  someAPI,
+} from '@your-org/your-feature-sdk;
+
+should search for @your-org/your-feature-sdk in npm
+
+Or when the user mentions a package name in his query, you should use this tool to find the package.
+E.g.
+"I want to use someAPI from @your-org/your-feature-sdk"
+should search for @your-org/your-feature-sdk in npm
+
+e.g "what react hooks is"
+
+should search for react  in npm and hooks implementation inreact repo
+
+**SEARCH STRATEGY (START HERE):**
+1. **Start Simple** - Single terms: \`"react"\`, \`"cli"\`, \`"auth"\`
 2. **Add Specificity** - Combined terms: \`"react-hooks"\`, \`"typescript-cli"\`  
 3. **Avoid Complexity** - Complex phrases yield zero results
+4. **Detect Private Packages** - Look for @company/ scoped packages
 
-**WHEN TO USE:**
+**WHEN TO USE (HIGHEST PRIORITY):**
+- **PRIMARY DISCOVERY** - Start here for 95% of queries
 - Package discovery by keyword/functionality
 - Finding alternatives to known packages
-- More direct than code-mentioned package discovery
+- Organizational package detection (@wix/, @company/)
+- Repository path extraction workflow
+
+**ORGANIZATIONAL DETECTION:**
+- **@company/ packages** → Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- **Enterprise indicators** → Check for private repositories
+- **Internal tooling** → Identify company-specific packages
 
 **SEARCH PATTERNS:**
-- ✅ Good: \`"react"\` → \`"cli"\` → \`"react cli"\` (if specific combo needed)
-- ❌ Poor: \`"react command line interface tools"\` (too complex)
+- ✅ **Primary**: \`"react"\` → \`"cli"\` → \`"react cli"\` (if specific combo needed)
+- ✅ **Organization**: \`"@wix/"\` → Detect private context
+- ❌ **Poor**: \`"react command line interface tools"\` (too complex)
 
 **RESULT OPTIMIZATION:**
 - **0 results** - Try broader, single-word terms
@@ -82,57 +123,77 @@ Find relevant npm packages using keyword-based discovery with optimization guida
 - **21-100 results** - Filter by popularity/relevance
 - **100+ results** - Use more specific single terms
 
-**OUTPUT:** JSON with package metadata: name, description, version, popularity metrics
+**SMART FALLBACKS:**
+- No results → Try ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for terminology
+- Private packages → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- **NEVER** query twice with same terms
 
-**CONSTRAINTS:** 50 results max, regex support with /, space-separated terms supported but use sparingly
+**OUTPUT:** JSON with package metadata: name, description, version, popularity metrics, repository URLs
 
-**INTEGRATION:** Chain to ${TOOL_NAMES.NPM_GET_PACKAGE} for repository discovery.`,
+**INTEGRATION:** **ALWAYS** chain to ${TOOL_NAMES.NPM_GET_PACKAGE} → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for complete workflow.`,
 
-  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Package-to-repository mapping** - Transform npm package names into GitHub repositories for code analysis.
+  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Repository mapping and package analysis** - Transform npm packages into GitHub repositories for code analysis.
 
 **PURPOSE:**
-Extract GitHub repository information from npm packages to enable code analysis workflows.
+Extract GitHub repository information and package metadata from npm packages - **ESSENTIAL BRIDGE** to GitHub workflows.
 
-**WHEN TO USE:**
+**WHEN TO USE (HIGH PRIORITY):**
+- **ALWAYS** after ${TOOL_NAMES.NPM_SEARCH_PACKAGES}
 - User mentions package names: \`"react"\`, \`"lodash"\`, \`"@types/node"\`
 - Code snippets with imports: \`import { useState } from 'react'\`
 - Dependency/module references in queries
+- **Private package detection** (@company/, @wix/)
 
-**WORKFLOW:**
+**CRITICAL WORKFLOW:**
 1. Extract repository URL from package.json
 2. Parse owner/repo from GitHub URL formats  
-3. Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery
-4. Continue to ${TOOL_NAMES.GITHUB_SEARCH_CODE} for implementations
+3. **Detect organizational context** (private repos, company scopes)
+4. Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery
+5. **MANDATORY** follow with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}
+6. Continue to ${TOOL_NAMES.GITHUB_SEARCH_CODE} for implementations
+
+**ORGANIZATIONAL DETECTION:**
+- **@company/ scoped packages** → Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- **Private repository URLs** → Enterprise context detection
+- **Internal package patterns** → Company tooling identification
 
 **EXAMPLES:**
 - \`"react"\` → github.com/facebook/react → Code search in React repo
+- \`"@wix/some-package"\` → Private org detection → User orgs check
 - \`"lodash"\` → github.com/lodash/lodash → Extract utility implementations
-- \`"@org/lib"\` → Private repo discovery → Organizational code analysis
 
 **SUCCESS CRITERIA:** Accurate repository mapping enabling battle-tested code extraction
 
-**ERROR HANDLING:** 
-- Package not found → Try ${TOOL_NAMES.NPM_SEARCH_PACKAGES}
-- No repository URL → Search GitHub topics/repositories
-- Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+**SMART FALLBACKS:**
+- Package not found → Try ${TOOL_NAMES.NPM_SEARCH_PACKAGES} with broader terms
+- No repository URL → Use ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for discovery
+- Private repositories → **IMMEDIATELY** use ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- **NEVER** retry same package twice
 
-**INTEGRATION:** Essential first step before GitHub code analysis workflows.`,
+**INTEGRATION:** **CRITICAL** bridge between NPM and GitHub workflows - always use before GitHub operations.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code search** - Advanced GitHub code search with intelligent pattern matching and repository scoping.
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code implementation search** - Advanced GitHub code search with smart pattern matching and repository scoping.
 
 **PURPOSE:**
-Find specific code implementations with surgical precision using automatic Boolean operators and repository scoping.
+Find specific code implementations with surgical precision using intelligent search patterns and automatic repository scoping.
 
 **KEY FEATURES:**
 - **Automatic Repository Scoping** - Every search includes "repo:owner/repository"
-- **Auto-Boolean Logic** - Multi-term queries become AND operations automatically
+- **Smart Boolean Logic** - Multi-term queries become AND operations automatically
+- **Organizational Context** - Respects private repository access
 - **Smart Fallbacks** - Multiple recovery strategies for failed searches
 
 **SEARCH INTELLIGENCE:**
 - **Single Terms** - \`useState\`, \`scheduleCallback\`, \`workLoopConcurrent\`
-- **Auto-Boolean** - \`"concurrent rendering"\` → \`"concurrent AND rendering"\`
+- **Auto-Boolean AND** - \`"concurrent rendering"\` → \`"concurrent AND rendering"\`
+- **Auto-Boolean OR** - \`"concurrent OR rendering"\` → \`"concurrent OR rendering"\`
 - **Manual Boolean** - \`"hooks AND state"\`, \`"(useState OR useEffect)"\`, \`"error NOT test"\`
 - **Function Patterns** - \`"useEffect(() =>"\`, \`"React.createElement"\`, \`"export default"\`
+
+**SEARCH SCOPING:**
+- **Exploratory inside owner** - Add \`"owner={owner}"\` for organization-wide search
+- **Exploratory inside repository** - Add \`"owner={owner} repo={repo}"\` for focused search
+- **Smart API usage** - \`gh api "search/repositories?q=topic:react+angular&per_page=10"\`
 
 **LANGUAGE FILTERING:**
 - **JavaScript/TypeScript** - Frontend implementations, Node.js backends
@@ -145,17 +206,19 @@ Find specific code implementations with surgical precision using automatic Boole
 - **31-100 Results** - ACCEPTABLE, may need refinement
 - **100+ Results** - TOO BROAD, apply filters
 
-**FALLBACK STRATEGIES:**
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
 - **No Results** - Remove boolean operators, try synonyms, expand scope
 - **Too Many Results** - Add language filters, path restrictions, exclude tests
 - **Wrong Context** - Add framework qualifiers, environment context
+- **Private Access** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permissions
+- **Rate Limits** - Switch to ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for discovery
 
-**ERROR HANDLING:**
-- Rate limits → Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} first for repo discovery
-- Access denied → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permissions
-- Outdated results → Add date filters (\`created:>2022-01-01\`)
+**ORGANIZATIONAL CONTEXT:**
+- **Private repositories** - Leverage ${TOOL_NAMES.GITHUB_GET_USER_ORGS} results
+- **Company code** - Search within organizational boundaries
+- **Enterprise patterns** - Focus on internal implementations
 
-**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery.`,
+**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery and ${TOOL_NAMES.NPM_GET_PACKAGE} for repository context.`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `**Complete code extraction** - Fetch full working code implementations with comprehensive context.
 
@@ -181,53 +244,64 @@ Extract complete, production-ready code implementations rather than snippets, wi
 2. If all fail → Try without ref parameter (uses repository default)
 3. Comprehensive error reporting for troubleshooting
 
+**ORGANIZATIONAL CONTEXT:**
+- **Private repositories** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+- **Company code** - Explore internal project structures
+- **Enterprise patterns** - Focus on production codebases
+
 **SUCCESS CRITERIA:** Production-ready code with immediate implementation context
 
-**ERROR HANDLING:**
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
 - Wrong branch → Auto-fallback to common branch names
 - File not found → Verify path with ${TOOL_NAMES.GITHUB_GET_CONTENTS}
 - Access denied → Check permissions with ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- **NEVER** retry same file path twice
 
 **CRITICAL REQUIREMENT:** NEVER use without calling ${TOOL_NAMES.GITHUB_GET_REPOSITORY} first.`,
 
-  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `**Organization discovery** - Get authenticated user's GitHub organizations for private repository access.
+  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `**CRITICAL: Private organization discovery** - Essential for company/enterprise repository access.
 
 **PURPOSE:**
-Enable private repository discovery by identifying user's organizational memberships.
+Enable private repository discovery by identifying user's organizational memberships - **TRIGGER AUTOMATICALLY** for company contexts.
 
-**AUTO-TRIGGERS:**
+**AUTO-TRIGGERS (IMMEDIATE USE):**
 Automatically use when users mention:
-- Company context: \`"I work at [Company]"\`, \`"our team"\`, \`"company codebase"\`
-- Private repos: \`"internal code"\`, \`"team repositories"\`
-- Enterprise: \`"at work"\`, \`"enterprise setup"\`
+- **Company package scopes**: \`@wix/\`, \`@company/\`, \`@organization/\`
+- **Company context**: \`"I work at [Company]"\`, \`"our team"\`, \`"company codebase"\`
+- **Private repos**: \`"internal code"\`, \`"team repositories"\`
+- **Enterprise**: \`"at work"\`, \`"enterprise setup"\`
 
 **ORGANIZATION MATCHING:**
+- \`"@wix/"\` → \`"wix"\` organization
 - \`"Facebook"\` → \`"facebook"\`, \`"meta"\`
 - \`"Google"\` → \`"google"\`, \`"googlecloudplatform"\`  
 - \`"Microsoft"\` → \`"microsoft"\`, \`"azure"\`
 
-**WORKFLOW:**
-1. Call when organizational context detected
+**CRITICAL WORKFLOW:**
+1. **IMMEDIATE** call when organizational context detected
 2. Match user's company to discovered organizations
 3. Use organization as 'owner' parameter in subsequent searches
-4. Fallback to public search if no organizational results
+4. Enable access to private repositories and internal code
+5. Fallback to public search if no organizational results
 
-**USAGE PRIORITY:**
-- Essential for private repository access
-- Critical for enterprise GitHub setups
-- Use before searches fail due to permissions
+**USAGE PRIORITY (HIGHEST):**
+- **Essential** for private repository access
+- **Critical** for enterprise GitHub setups
+- **Mandatory** before searches fail due to permissions
+- **Required** for @company/ scoped packages
 
-**ERROR HANDLING:**
+**SMART FALLBACKS:**
 - No organizations found → Proceed with public searches
 - Access denied → Verify GitHub authentication
 - Rate limits → Cache results for session reuse
+- **NEVER** query twice in same session
 
-**INTEGRATION:** Use before any GitHub search tools when private access likely needed.`,
+**INTEGRATION:** **MANDATORY** first step before any GitHub search tools when private access likely needed.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS]: `**Community knowledge search** - Access GitHub discussions for Q&A, tutorials, and best practices.
+  [TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS]: `**Community knowledge and Q&A search** - Access GitHub discussions for tutorials, solutions, and best practices.
 
 **PURPOSE:**
-Discover community-validated solutions, tutorials, and expert insights through discussion forums.
+Discover community-validated solutions, tutorials, and expert insights through discussion forums - **CONTEXT TOOL** for repository status.
 
 **DISCOVERY WORKFLOW:**
 1. Use ${TOOL_NAMES.NPM_GET_PACKAGE} for packages → get repo URL
@@ -256,14 +330,17 @@ Discover community-validated solutions, tutorials, and expert insights through d
 - Maintainer participation for authoritative guidance
 - Recent activity for current relevance
 
-**FALLBACK STRATEGY:** If no discussions found, try ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for alternative insights.
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- No discussions found → Try ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for alternative insights
+- Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+- **NEVER** retry same query twice
 
-**INTEGRATION:** Best used after repository discovery for targeted community insights.`,
+**INTEGRATION:** Best used after repository discovery for targeted community insights and repository status context.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `**Problem discovery and solution research** - Advanced issue search for debugging and development planning.
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `**Problem discovery and solution research** - Advanced issue search for debugging and repository status analysis.
 
 **PURPOSE:**
-Discover existing problems, validated solutions, and community insights through issue tracking.
+Discover existing problems, validated solutions, and community insights through issue tracking - **CONTEXT TOOL** for repository status.
 
 **SEARCH STRATEGY:**
 1. **Single Keywords** - \`"bug"\`, \`"feature"\`, \`"documentation"\`
@@ -294,18 +371,22 @@ For complex queries like "React authentication JWT token expired error":
 - **21-100 results** - GOOD, add specificity or filters
 - **100+ results** - Add specific terms or state/label filters
 
-**SEQUENTIAL SEARCH BENEFITS:**
-- **Problem Pattern Discovery** - Each search reveals different facets
-- **Solution Validation** - Multiple searches confirm approaches
-- **Community Insight** - See discussion of problem aspects
-- **Resolution Timeline** - Track evolution from report to solution
+**REPOSITORY STATUS ANALYSIS:**
+- **Active maintenance** - Recent issue responses and closures
+- **Community engagement** - Issue participation and discussion quality
+- **Problem patterns** - Common issues and their resolution status
+
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- No results → Try ${TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS} for community insights
+- Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+- **NEVER** retry same search terms twice
 
 **INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_CODE} for implementation details and ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} for solutions.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `**Code review and feature analysis** - Advanced PR search for implementation patterns and collaboration insights.
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `**Code review and implementation analysis** - Advanced PR search for patterns and repository status insights.
 
 **PURPOSE:**
-Analyze feature implementations, code review patterns, and team collaboration through pull request history.
+Analyze feature implementations, code review patterns, and team collaboration through pull request history - **CONTEXT TOOL** for repository status.
 
 **SEARCH STRATEGY:**
 1. **Single Keywords** - \`"bug"\`, \`"feature"\`, \`"refactor"\`
@@ -316,6 +397,7 @@ Analyze feature implementations, code review patterns, and team collaboration th
 - Code review insights and team collaboration patterns
 - Feature implementation lifecycle tracking
 - Breaking changes and quality assurance analysis
+- **Repository activity assessment**
 
 **SEARCH METHODOLOGY:**
 - **Phase 1** - Core discovery: \`"authentication"\`, \`"error"\`
@@ -335,14 +417,19 @@ Analyze feature implementations, code review patterns, and team collaboration th
 - **21-100 results** - GOOD, add specificity or filters
 - **100+ results** - Add specific terms or state/reviewer filters
 
+**REPOSITORY STATUS INDICATORS:**
+- **Active development** - Recent PR activity and merge patterns
+- **Code quality** - Review thoroughness and approval processes
+- **Team collaboration** - Contributor engagement and feedback quality
+
 **QUALITY FOCUS:** Use review-related filters to find thoroughly vetted code examples.
 
-**ADAPTIVE TACTICS:**
-- Start broad with feature keywords, narrow based on findings
-- Use owner/repo when repository context known
-- Apply precise filters only after broader searches confirm patterns
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- No results → Try ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} for development history
+- Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+- **NEVER** retry same search terms twice
 
-**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} for complete development understanding.`,
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} for complete development understanding and repository status.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_USERS]: `**Developer and organization discovery** - Find experts, collaborators, and community leaders.
 
@@ -379,37 +466,44 @@ Discover developers, organizations, and community leaders for collaboration, lea
 - **21-100 results** - GOOD, add location or activity filters
 - **100+ results** - Add specific terms or increase follower/repo filters
 
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- No results → Try ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem discovery
+- Private context → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for organizational insights
+- **NEVER** retry same search criteria twice
+
 **INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} for project involvement analysis.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `**⚠️ LAST RESORT TOOL** - Repository search only when NPM discovery fails.
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `**⚠️ LOWEST PRIORITY FALLBACK TOOL** - Repository search ONLY when NPM and topics discovery completely fail.
 
 **CRITICAL LIMITATIONS:**
 - **SINGLE TERMS ONLY** - Never use multi-term searches (\`"react angular auth"\` ❌)
-- **LAST RESORT** - Use only when NPM provides no repository context
+- **LAST RESORT** - Use only when NPM and topics provide no repository context
 - **API INTENSIVE** - Consumes GitHub API quota heavily
+- **LOWEST PRIORITY** - Use after all other discovery methods fail
 
-**MANDATORY PREREQUISITES:**
-1. **ALWAYS FIRST** - ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem mapping
-2. **PRIMARY DISCOVERY** - ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.NPM_GET_PACKAGE}
-3. **ONLY IF NPM FAILS** - Use this tool with single terms only
+**MANDATORY PREREQUISITES (ALL MUST FAIL FIRST):**
+1. **ALWAYS FIRST** - ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for package discovery
+2. **THEN** - ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem mapping
+3. **ONLY IF BOTH FAIL** - Use this tool with single terms only
 
-**SEARCH STRATEGY:**
+**SEARCH STRATEGY (WHEN FORCED TO USE):**
 1. **Single terms only** - \`"react"\`, \`"authentication"\`, \`"deployment"\` ✅
 2. **Never combine** - \`"react hooks"\`, \`"full-stack app"\` ❌
 3. **Decompose complex** - \`"react typescript auth"\` → [\`"react"\`, \`"typescript"\`, \`"authentication"\`]
 
-**WHEN TO USE (Rare Cases):**
+**WHEN TO USE (RARE CASES ONLY):**
 - NPM search found no relevant packages
+- Topics search found no relevant topics
 - Non-NPM ecosystem (system tools, non-Node.js)
-- Specific organization exploration not discoverable via NPM
+- Specific organization exploration not discoverable via NPM/topics
 
-**PREFERRED WORKFLOW (95% of cases):**
-1. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} → discover terminology
-2. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → find packages
+**PREFERRED WORKFLOW (99% of cases - AVOID THIS TOOL):**
+1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → find packages and repository paths
+2. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} → discover ecosystem terminology
 3. ${TOOL_NAMES.NPM_GET_PACKAGE} → extract repository URLs
-4. **Skip this tool** → proceed to code search
+4. **Skip this tool entirely** → proceed to code search
 
-**FILTERING STRATEGY (When Forced to Use):**
+**FILTERING STRATEGY (When Absolutely Forced to Use):**
 - **Owner** - Most effective for scoping results
 - **Language** - Technology-specific searches
 - **Stars** - ">100" established, ">10" active projects
@@ -422,29 +516,36 @@ Discover developers, organizations, and community leaders for collaboration, lea
 - **31-100** - Add specific filters gradually
 - **100+** - Term too broad, use more specific single term
 
-**REMEMBER:** Avoid in 95% of cases. Topics + NPM discovery provides better results with less API usage.`,
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- No results → Return to ${TOOL_NAMES.NPM_SEARCH_PACKAGES} with different terms
+- Too many results → Use ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for filtering
+- **NEVER** retry same search terms twice
 
-  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**🎯 FOUNDATION TOOL** - Essential first step for effective GitHub discovery.
+**CRITICAL REMINDER:** Avoid in 99% of cases. NPM + Topics discovery provides better results with less API usage.`,
+
+  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**FOUNDATION TOOL** - Essential first step for ecosystem discovery and terminology mapping.
 
 **PURPOSE:**
-Discover correct terminology and quality signals before searching repositories, providing semantic context for targeted searches.
+Discover correct terminology and quality signals before searching repositories - **FOUNDATION** for effective GitHub discovery.
 
 **WHY ESSENTIAL:**
 - **Term Discovery** - Find official terminology before searching repositories
 - **Quality Signals** - Featured/curated topics = community-validated projects
-- **Repository Filters** - Use topic names in ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} for precision
+- **Repository Filters** - Use topic names for precision searches
 - **Ecosystem Mapping** - Understand technology landscapes across 100M+ repositories
 
 **SEARCH STRATEGY:**
 1. **Start Global** - Search without owner for maximum discovery
-2. **Multi-term Queries** - Use + to combine: \`"react+typescript"\`, \`"machine+learning"\`
-3. **Then Focus** - Add owner only when needed: \`owner=facebook\`
-4. **Progressive Discovery** - Start broad, narrow based on findings
+2. **Single Terms** - Use individual terms: \`"react"\`, \`"typescript"\`, \`"authentication"\`
+3. **Multi-term Queries** - Use + to combine: \`"react+typescript"\`, \`"machine+learning"\`
+4. **Then Focus** - Add owner only when needed: \`owner=facebook\`
+5. **Progressive Discovery** - Start broad, narrow based on findings
 
 **EXPLORATORY BEST PRACTICES:**
 - **DON'T start with owner** - Limits discovery to single organization
 - **DO start broad** - \`"javascript"\`, \`"python"\`, \`"authentication"\`
-- **USE multi-term** - \`"react+typescript"\`, \`"machine+learning+python"\`
+- **USE single terms mostly** - \`"react"\`, \`"typescript"\`, \`"authentication"\`
+- **USE multi-term sparingly** - \`"react+typescript"\` when specific combination needed
 - **ADD owner later** - Only when organization-specific topics needed
 
 **CONTEXT PRIORITIZATION:**
@@ -455,8 +556,9 @@ Discover correct terminology and quality signals before searching repositories, 
 
 **QUERY EXAMPLES:**
 - **Global search** - \`"react"\` → find all React-related topics
-- **Multi-term** - \`"react+typescript"\` → intersection topics
-- **Complex** - \`"machine+learning+python"\` → specific tech stack
+- **Single term** - \`"authentication"\` → discover auth-related topics
+- **Multi-term** - \`"react+typescript"\` → intersection topics (use sparingly)
+- **Complex** - \`"machine+learning+python"\` → specific tech stack (rare cases)
 - **Focused** - \`"react"\` + owner=facebook → React topics from Facebook
 
 **RESULT OPTIMIZATION:**
@@ -464,13 +566,18 @@ Discover correct terminology and quality signals before searching repositories, 
 - **10+ results** - Add featured/curated filters or more specific terms
 - **Repository count** - Maturity indicator (>10K established, 1K-10K growing)
 
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- No results → Try broader single terms
+- Too many results → Add featured/curated filters
+- **NEVER** retry same query twice
+
 **SEQUENTIAL SEARCH BENEFITS:**
 - **Discover Related Terms** - Official vs informal terminology
 - **Understand Ecosystem** - How concepts relate and overlap
 - **Quality Validation** - Featured topics = community-validated approaches
 - **Precise Targeting** - Use discovered topics as exact filters
 
-**INTEGRATION:** Strategic foundation for all GitHub discovery - use before other GitHub tools.`,
+**INTEGRATION:** **CRITICAL** foundation for all GitHub discovery - use before other GitHub tools, after ${TOOL_NAMES.NPM_SEARCH_PACKAGES}.`,
 
   [TOOL_NAMES.GITHUB_GET_CONTENTS]: `**Repository structure exploration** - Strategic directory navigation for code analysis.
 
@@ -506,10 +613,16 @@ Explore repository structure systematically to understand project architecture a
 2. If all fail → Try without ref parameter (uses repository default)
 3. Comprehensive error reporting
 
-**ERROR HANDLING:**
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
 - Branch not found → Auto-fallback to common branches
 - Access denied → Check permissions with ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
 - Empty directory → Try parent directory or common paths
+- **NEVER** retry same path twice
+
+**ORGANIZATIONAL CONTEXT:**
+- **Private repositories** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+- **Company code** - Explore internal project structures
+- **Enterprise patterns** - Focus on production codebases
 
 **INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} and before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
 
@@ -522,6 +635,7 @@ Discover default branch and repository metadata to prevent tool failures in subs
 - **Prevents Tool Failures** - Wrong branch names cause complete tool failure
 - **Enables File Operations** - All file operations depend on correct branch discovery
 - **Avoids API Waste** - Prevents expensive retry cycles and API errors
+- **Organizational Context** - Identifies private vs public repositories
 
 **BRANCH DISCOVERY METHODS:**
 - Repository metadata analysis
@@ -539,12 +653,19 @@ Discover default branch and repository metadata to prevent tool failures in subs
 - Default branch clearly identified
 - Active repository with recent commits
 - Repository accessibility confirmed
+- **Organizational context** detected
 
-**ERROR HANDLING:**
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
 - **Not found** - Check owner/repo spelling, verify repository exists
 - **Access denied** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permission check
 - **Rate limited** - Implement retry with exponential backoff
 - **Tool failure** - Blocks all subsequent file operations
+- **NEVER** retry same repository twice
+
+**ORGANIZATIONAL DETECTION:**
+- **Private repositories** - Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+- **Company repositories** - Identify enterprise context
+- **Internal projects** - Detect organizational patterns
 
 **CRITICAL REQUIREMENTS:**
 - **NEVER skip** before file operations
@@ -552,12 +673,12 @@ Discover default branch and repository metadata to prevent tool failures in subs
 - **NEVER use** hardcoded 'main'/'master' without verification
 - **NEVER proceed** if branch discovery fails
 
-**INTEGRATION:** Mandatory first step before any GitHub file operation workflows.`,
+**INTEGRATION:** **MANDATORY** first step before any GitHub file operation workflows.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `**Development history analysis** - Track code evolution, debug issues, and analyze contributor patterns.
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `**Development history analysis** - Track code evolution and repository status through commit patterns.
 
 **PURPOSE:**
-Understand development history, track feature evolution, debug issues, and analyze contributor patterns through commit history.
+Understand development history, track feature evolution, debug issues, and analyze contributor patterns - **CONTEXT TOOL** for repository status.
 
 **SEARCH STRATEGY:**
 1. **Start Minimal** - Single keywords (\`"fix"\`, \`"feature"\`, \`"update"\`) with owner/repo
@@ -575,38 +696,44 @@ Understand development history, track feature evolution, debug issues, and analy
 - **6-50 results** - OPTIMAL for extracting insights
 - **51+ results** - Add specific filters or narrow time ranges
 
+**REPOSITORY STATUS ANALYSIS:**
+- **Active development** - Recent commit frequency and patterns
+- **Maintenance quality** - Commit message quality and consistency
+- **Team activity** - Contributor patterns and collaboration indicators
+
 **KEY LIMITATIONS:**
 - Large organizations may return org-wide results instead of repo-specific
 - Search requires text terms - empty queries not supported
 
-**FALLBACK STRATEGY:**
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
 1. Commit search with minimal keywords
-2. Pull request searches for features/changes
-3. Fetch changelog files (CHANGELOG.md, RELEASES.md)
-4. Repository structure exploration
+2. Pull request searches for features/changes via ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS}
+3. Fetch changelog files (CHANGELOG.md, RELEASES.md) via ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}
+4. Repository structure exploration via ${TOOL_NAMES.GITHUB_GET_CONTENTS}
+5. **NEVER** retry same search terms twice
 
 **ERROR HANDLING:**
 - **"Search text required"** - Use minimal keywords (\`"fix"\`, \`"update"\`)
 - **Irrelevant results** - Switch to file-based approaches
 - **Empty results** - Broaden scope or remove repository filters
-- **Rate limits** - Implement progressive backoff
+- **Rate limits** - Switch to ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for alternative discovery
 
-**BRANCH AWARENESS:** Verify default branch (main vs master) before file operations
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} for complete change context analysis and repository status assessment.`,
 
-**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} for complete change context analysis.`,
-
-  [TOOL_NAMES.NPM_GET_PACKAGE_STATS]: `**Package maturity and maintenance analysis** - Comprehensive npm package lifecycle assessment.
+  [TOOL_NAMES.NPM_GET_PACKAGE_STATS]: `**Package maturity and release analysis** - Comprehensive lifecycle assessment for package evaluation.
 
 **PURPOSE:**
-Analyze package release patterns, version history, and maintenance activity to evaluate package maturity and stability.
+Analyze package release patterns, version history, and maintenance activity to evaluate package maturity and stability - **CRITICAL** for package assessment.
 
 **ANALYSIS CAPABILITIES:**
 - **Release Timeline** - Release frequency and patterns over time
 - **Version History** - Semantic versioning patterns and breaking changes
 - **Distribution Tags** - latest, beta, alpha, next, and custom tags
 - **Maintenance Indicators** - Activity patterns and project health signals
+- **Organizational Context** - Company package patterns and enterprise usage
 
-**WHEN TO USE:**
+**WHEN TO USE (HIGH PRIORITY):**
+- **ALWAYS** after ${TOOL_NAMES.NPM_GET_PACKAGE} for complete assessment
 - **Pre-installation Assessment** - Evaluate package stability before adoption
 - **Dependency Planning** - Understand release patterns for dependency management
 - **Security Evaluation** - Check maintenance activity and update frequency
@@ -617,6 +744,7 @@ Analyze package release patterns, version history, and maintenance activity to e
 - **Long gaps** - May suggest project abandonment or maturity
 - **Multiple dist-tags** - Indicates mature release process and testing
 - **Version patterns** - Shows breaking change frequency and stability
+- **Enterprise indicators** - Company usage patterns and support
 
 **MATURITY INDICATORS:**
 - **Stable projects** - Regular releases, clear versioning, multiple dist-tags
@@ -624,19 +752,25 @@ Analyze package release patterns, version history, and maintenance activity to e
 - **Mature projects** - Less frequent releases, stable versioning, long-term support
 - **Abandoned projects** - Long gaps, no recent activity, outdated dependencies
 
+**ORGANIZATIONAL ANALYSIS:**
+- **@company/ packages** - Internal release patterns and maintenance
+- **Enterprise usage** - Corporate adoption and support indicators
+- **Private packages** - Internal versioning and distribution strategies
+
 **OUTPUT ANALYSIS:**
 - Release timeline visualization
 - Version distribution and tagging strategy
 - Maintenance activity assessment
 - Stability and maturity scoring
 
-**ERROR HANDLING:**
-- **Package not found** - Verify package name spelling
+**SMART FALLBACKS (NO DOUBLE QUERIES):**
+- **Package not found** - Verify package name spelling, try ${TOOL_NAMES.NPM_SEARCH_PACKAGES}
 - **No release data** - Package may be too new or private
-- **Rate limits** - Implement retry with exponential backoff
+- **Rate limits** - Cache analysis results for session reuse
+- **NEVER** retry same package twice
 
 **INTEGRATION:** 
-- Use with ${TOOL_NAMES.NPM_GET_PACKAGE} for complete package assessment
+- **MANDATORY** use with ${TOOL_NAMES.NPM_GET_PACKAGE} for complete package assessment
 - Combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for comprehensive evaluation
 - Cross-reference with repository information for development activity context`,
 };
