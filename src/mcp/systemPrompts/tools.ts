@@ -186,9 +186,15 @@ Find specific code implementations with surgical precision using intelligent sea
 **SEARCH INTELLIGENCE:**
 - **Single Terms** - \`useState\`, \`scheduleCallback\`, \`workLoopConcurrent\`
 - **Auto-Boolean AND** - \`"concurrent rendering"\` → \`"concurrent AND rendering"\`
-- **Auto-Boolean OR** - \`"concurrent OR rendering"\` → \`"concurrent OR rendering"\`
-- **Manual Boolean** - \`"hooks AND state"\`, \`"(useState OR useEffect)"\`, \`"error NOT test"\`
+- **Simple Boolean OR** - \`"useState OR useEffect"\` → \`"useState OR useEffect"\`
+- **Simple Boolean AND** - \`"hooks AND state"\` → \`"hooks AND state"\`
+- **Simple Boolean NOT** - \`"error NOT test"\` → \`"error NOT test"\`
 - **Function Patterns** - \`"useEffect(() =>"\`, \`"React.createElement"\`, \`"export default"\`
+
+**⚠️ CRITICAL LIMITATIONS:**
+- **NO Parentheses Support** - GitHub API rejects \`(useState OR useEffect)\`, \`(term1 AND term2)\`
+- **NO Complex Grouping** - Expressions like \`(useState OR useEffect) AND hooks\` cause API errors
+- **Simple Boolean Only** - Use \`term1 OR term2\` or \`term1 AND term2\` without parentheses
 
 **SEARCH SCOPING:**
 - **Exploratory inside owner** - Add \`"owner={owner}"\` for organization-wide search
@@ -210,6 +216,8 @@ Find specific code implementations with surgical precision using intelligent sea
 - **No Results** - Remove boolean operators, try synonyms, expand scope
 - **Too Many Results** - Add language filters, path restrictions, exclude tests
 - **Wrong Context** - Add framework qualifiers, environment context
+- **Parentheses Error** - Remove parentheses: \`(useState OR useEffect)\` → \`useState OR useEffect\`
+- **Complex Boolean Error** - Simplify to separate searches or use multiple queries
 - **Private Access** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permissions
 - **Rate Limits** - Switch to ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for discovery
 

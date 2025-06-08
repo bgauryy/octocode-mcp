@@ -747,14 +747,32 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
  * - Supports regex patterns (/pattern/)
  * - Single words: exact matching with quotes
  * - Multi words: EXPLICIT AND for precision
+ * - REMOVES parentheses completely to prevent GitHub API errors
  */
 function processAdvancedSearchQuery(query: string): string {
   if (!query) return '""';
 
   const trimmed = query.trim();
 
-  // Preserve query if it already contains Boolean operators
-  const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(query);
+  // CRITICAL: Remove ALL parentheses - GitHub Code Search API doesn't support them
+  const hasParentheses = /[()]/.test(trimmed);
+  if (hasParentheses) {
+    // Strategy: Remove parentheses and simplify boolean expressions
+    const simplified = trimmed
+      // Remove opening and closing parentheses
+      .replace(/[()]/g, '')
+      // Clean up extra spaces
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    console.warn(
+      `Removed parentheses from query: "${trimmed}" → "${simplified}"`
+    );
+    return simplified;
+  }
+
+  // Preserve query if it already contains Boolean operators (without parentheses)
+  const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(trimmed);
   if (hasBooleanOps) {
     return trimmed;
   }
@@ -764,10 +782,9 @@ function processAdvancedSearchQuery(query: string): string {
     /\b(language|path|filename|extension|in|size|user|org|repo):/i.test(query);
   const hasRegex = /\/.*\//.test(query);
   const hasQuotes = /"[^"]*"/.test(query);
-  const hasParentheses = /\([^)]*\)/.test(query);
 
   // If query contains advanced syntax (but no Boolean ops), preserve it as-is
-  if (hasQualifiers || hasRegex || hasParentheses) {
+  if (hasQualifiers || hasRegex) {
     return trimmed;
   }
 

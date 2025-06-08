@@ -16,6 +16,10 @@ const searchGitHubCodeSchema = z.object({
       val => !/javascript:|data:|vbscript:/i.test(val),
       'Security: Script protocols not allowed'
     )
+    .refine(
+      val => !/\([^)]*\b(OR|AND|NOT)\b[^)]*\)/i.test(val),
+      'GitHub API Error: Parenthetical boolean expressions like "(term1 OR term2)" are not supported. Use "term1 OR term2" instead.'
+    )
     .describe(
       "The search query to find relevant code. You should reuse the user's exact query/most recent message with their wording unless there is a clear reason not to."
     ),
@@ -101,6 +105,44 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           };
         }
 
+        // Validate and handle parenthetical boolean expressions
+        const hasParentheses = /[()]/.test(args.query);
+        if (hasParentheses) {
+          const hasBooleanInParens = /\([^)]*\b(OR|AND|NOT)\b[^)]*\)/i.test(
+            args.query
+          );
+          if (hasBooleanInParens) {
+            // Provide immediate helpful error with alternative
+            const simplified = args.query
+              .replace(/[()]/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `❌ Complex boolean expressions with parentheses are not supported by GitHub API.
+
+🔍 Your query: "${args.query}"
+✅ Try instead: "${simplified}"
+
+💡 GitHub Code Search API limitations:
+- ❌ (useState OR useEffect) AND hooks
+- ✅ useState OR useEffect hooks
+- ❌ (term1 AND term2) OR term3  
+- ✅ term1 AND term2 OR term3
+
+Alternative search strategies:
+1. Use multiple simple searches: "useState OR useEffect" then "hooks"
+2. Use file extension filters: extension=ts, extension=js
+3. Use path filters with qualifiers: path:src, path:components`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+
         return await searchGitHubCode(args);
       } catch (error) {
         // Enhanced error handling with context
@@ -118,6 +160,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         } else if (errorMessage.includes('not found')) {
           suggestion =
             ' Suggestion: Verify repository/owner names and try broader search terms.';
+        } else if (
+          errorMessage.includes('unable to parse query') ||
+          errorMessage.includes('ERROR_TYPE_QUERY_PARSING_FATAL')
+        ) {
+          suggestion =
+            ' Suggestion: Simplify boolean expressions. Use "term1 OR term2" instead of "(term1 OR term2) AND term3".';
         }
 
         return {
