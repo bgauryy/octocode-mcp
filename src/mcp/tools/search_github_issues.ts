@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubIssuesSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_ISSUES_DESCRIPTION } from './descriptions/search_github_issues';
+import { SEARCH_GITHUB_ISSUES_DESCRIPTION } from '../systemPrompts/tools';
 import { searchGitHubIssues } from '../../impl/github';
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {

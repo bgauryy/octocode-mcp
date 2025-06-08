@@ -4,33 +4,7 @@ import { TOOL_NAMES } from '../contstants';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeNpmCommand } from '../../utils/exec';
-
-export const NPM_DEPENDENCY_ANALYSIS_DESCRIPTION = `Comprehensive npm package dependency analysis and security assessment.
-
-**ANALYSIS CAPABILITIES:**
-- **Dependency Tree**: Complete dependency graph with versions
-- **Security Audit**: Vulnerability scanning and risk assessment  
-- **License Analysis**: License compatibility and legal considerations
-- **Bundle Size**: Package size impact on applications
-- **Outdated Dependencies**: Version update recommendations
-
-**SECURITY INSIGHTS:**
-- Known vulnerabilities in dependencies
-- Security advisories and fixes available
-- Dependency risk scoring
-- Transitive dependency analysis
-
-**OPTIMIZATION GUIDANCE:**
-- Bundle size optimization opportunities
-- Alternative package suggestions
-- Dependency consolidation possibilities
-- Performance impact assessment
-
-**USE CASES:**
-- Pre-installation security review
-- Dependency audit for existing projects  
-- License compliance checking
-- Bundle size optimization planning`;
+import { NPM_DEPENDENCY_ANALYSIS_DESCRIPTION } from '../systemPrompts/tools';
 
 async function analyzeDependencies(
   packageName: string

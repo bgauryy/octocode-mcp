@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_CODE_DESCRIPTION } from './descriptions/search_github_code';
+import { SEARCH_GITHUB_CODE_DESCRIPTION } from '../systemPrompts/tools';
 import { GitHubCodeSearchParams } from '../../types';
 import { searchGitHubCode } from '../../impl/github';
 

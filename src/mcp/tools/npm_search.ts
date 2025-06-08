@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
-import { NPM_SEARCH_DESCRIPTION } from './descriptions/npm_search';
+import { NPM_SEARCH_DESCRIPTION } from '../systemPrompts/tools';
 import { npmSearch } from '../../impl/npm';
 
 export function registerNpmSearchTool(server: McpServer) {

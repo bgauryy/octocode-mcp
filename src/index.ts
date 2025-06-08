@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { PROMPT_SYSTEM_PROMPT } from './mcp/tools/descriptions/systemPrompt';
+import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts/instructions';
 import * as Tools from './mcp/tools/index.js';
 import * as Resources from './mcp/resources/index.js';
 

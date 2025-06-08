@@ -8,39 +8,7 @@ import {
   searchGitHubPullRequests,
 } from '../../impl/github';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-
-export const GITHUB_ADVANCED_SEARCH_DESCRIPTION = `Multi-dimensional GitHub search combining repositories, code, issues, and pull requests for comprehensive analysis.
-
-**SEARCH STRATEGY:**
-Performs parallel searches across multiple GitHub dimensions to provide complete ecosystem understanding:
-
-1. **Repository Discovery**: Find relevant repositories by topic/technology
-2. **Code Implementation**: Locate actual code examples and patterns  
-3. **Issue Analysis**: Understand common problems and solutions
-4. **PR Reviews**: See implementation patterns and best practices
-
-**INTELLIGENT AGGREGATION:**
-- Cross-references results between search types
-- Identifies high-quality repositories with active maintenance
-- Highlights repositories with both good documentation and implementation examples
-- Provides consolidated insights across all search dimensions
-
-**OPTIMIZATION FEATURES:**
-- Automatic query refinement for each search type
-- Quality filtering based on repository activity and stars
-- Result prioritization using multiple signals
-- Comprehensive analysis with actionable insights
-
-**USE CASES:**
-- Technology research and ecosystem analysis
-- Finding production-ready implementations
-- Understanding community best practices  
-- Identifying maintained and well-documented projects
-
-**EXAMPLE WORKFLOWS:**
-- "react hooks" → repositories, implementations, common issues, PR patterns
-- "authentication jwt" → libraries, code examples, security discussions, implementation PRs
-- "docker deployment" → tools, configuration examples, troubleshooting, deployment strategies`;
+import { GITHUB_ADVANCED_SEARCH_DESCRIPTION } from '../systemPrompts/tools';
 
 interface AdvancedSearchParams {
   query: string;

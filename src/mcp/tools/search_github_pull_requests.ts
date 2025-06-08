@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubPullRequestsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_PULL_REQUESTS_DESCRIPTION } from './descriptions/search_github_pull_requests';
+import { SEARCH_GITHUB_PULL_REQUESTS_DESCRIPTION } from '../systemPrompts/tools';
 import { searchGitHubPullRequests } from '../../impl/github';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {

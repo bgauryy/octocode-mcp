@@ -1,4 +1,4 @@
-import { TOOL_NAMES, RESOURCE_NAMES } from '../../contstants';
+import { TOOL_NAMES, RESOURCE_NAMES } from '../contstants';
 
 export const PROMPT_SYSTEM_PROMPT = `You are an expert code discovery assistant with advanced error recovery and context awareness. Find production-ready implementations from GitHub/npm repositories using systematic research.
 
