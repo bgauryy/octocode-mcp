@@ -4,7 +4,7 @@ import { TOOL_NAMES } from '../contstants';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeNpmCommand } from '../../utils/exec';
-import { NPM_DEPENDENCY_ANALYSIS_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 async function analyzeDependencies(
   packageName: string
@@ -141,8 +141,8 @@ function generateRecommendations(
 
 export function registerNpmDependencyAnalysisTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.NPM_DEPENDENCY_ANALYSIS,
-    NPM_DEPENDENCY_ANALYSIS_DESCRIPTION,
+    TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES],
     {
       packageName: z
         .string()

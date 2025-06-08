@@ -1,20 +1,29 @@
 export const TOOL_NAMES = {
-  SEARCH_GITHUB_CODE: 'search_github_code',
-  FETCH_GITHUB_FILE_CONTENT: 'fetch_github_file_content',
-  VIEW_REPOSITORY: 'view_repository',
-  NPM_VIEW: 'npm_view',
-  SEARCH_GITHUB_REPOS: 'search_github_repos',
-  SEARCH_GITHUB_COMMITS: 'search_github_commits',
-  SEARCH_GITHUB_PULL_REQUESTS: 'search_github_pull_requests',
-  GET_USER_ORGANIZATIONS: 'get_user_organizations',
-  NPM_SEARCH: 'npm_search',
-  VIEW_REPOSITORY_STRUCTURE: 'view_repository_structure',
-  SEARCH_GITHUB_ISSUES: 'search_github_issues',
-  SEARCH_GITHUB_DISCUSSIONS: 'search_github_discussions',
-  SEARCH_GITHUB_TOPICS: 'search_github_topics',
-  SEARCH_GITHUB_USERS: 'search_github_users',
-  NPM_PACKAGE_STATS: 'npm_package_stats',
-  NPM_DEPENDENCY_ANALYSIS: 'npm_dependency_analysis',
+  // GitHub Search API (/search/*)
+  GITHUB_SEARCH_CODE: 'github_search_code',
+  GITHUB_SEARCH_REPOSITORIES: 'github_search_repositories',
+  GITHUB_SEARCH_COMMITS: 'github_search_commits',
+  GITHUB_SEARCH_ISSUES: 'github_search_issues',
+  GITHUB_SEARCH_PULL_REQUESTS: 'github_search_pull_requests',
+  GITHUB_SEARCH_DISCUSSIONS: 'github_search_discussions',
+  GITHUB_SEARCH_TOPICS: 'github_search_topics',
+  GITHUB_SEARCH_USERS: 'github_search_users',
+
+  // GitHub Repository API (/repos/*)
+  GITHUB_GET_REPOSITORY: 'github_get_repository',
+  GITHUB_GET_CONTENTS: 'github_get_contents',
+  GITHUB_GET_FILE_CONTENT: 'github_get_file_content',
+
+  // GitHub Users API (/user/*)
+  GITHUB_GET_USER_ORGS: 'github_get_user_organizations',
+
+  // npm Registry API
+  NPM_SEARCH_PACKAGES: 'npm_search_packages',
+  NPM_GET_PACKAGE: 'npm_get_package',
+  NPM_GET_PACKAGE_STATS: 'npm_get_package_stats',
+  NPM_ANALYZE_DEPENDENCIES: 'npm_analyze_dependencies',
+
+  // Advanced/Composite Operations
   GITHUB_ADVANCED_SEARCH: 'github_advanced_search',
 } as const;
 
@@ -29,7 +38,7 @@ export const RESOURCE_NAMES = {
   NPM_STATUS: 'npm-status',
 
   // Search & Discovery
-  SEARCH_GITHUB_CODE_INSTRUCTIONS: 'search-github-code-instructions',
+  GITHUB_SEARCH_CODE_INSTRUCTIONS: 'github-search-code-instructions',
   SEARCH_CONTEXT: 'search-context',
   QUERY_EXPANSION: 'query-expansion',
 

@@ -3,23 +3,23 @@ import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { fetchGitHubFileContent } from '../../impl/github';
 import { GithubFetchRequestParams } from '../../types';
-import { FETCH_GITHUB_FILE_CONTENT_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT,
-    FETCH_GITHUB_FILE_CONTENT_DESCRIPTION,
+    TOOL_NAMES.GITHUB_GET_FILE_CONTENT,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_FILE_CONTENT],
     {
       owner: z
         .string()
         .describe(
-          `Filter by repository owner/organization (e.g., 'example-org') get from ${TOOL_NAMES.GET_USER_ORGANIZATIONS} tool`
+          `Filter by repository owner/organization (e.g., 'example-org') get from ${TOOL_NAMES.GITHUB_GET_USER_ORGS} tool`
         ),
       repo: z.string().describe('The name of the GitHub repository'),
       branch: z
         .string()
         .describe(
-          `The default branch of the repository. branch name MUST be obtained from ${TOOL_NAMES.VIEW_REPOSITORY} tool`
+          `The default branch of the repository. branch name MUST be obtained from ${TOOL_NAMES.GITHUB_GET_REPOSITORY} tool`
         ),
       filePath: z
         .string()

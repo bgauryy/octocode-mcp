@@ -2,13 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubIssuesSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_ISSUES_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubIssues } from '../../impl/github';
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.SEARCH_GITHUB_ISSUES,
-    SEARCH_GITHUB_ISSUES_DESCRIPTION,
+    TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_ISSUES],
     {
       query: z
         .string()

@@ -1,4 +1,4 @@
-export { registerSearchGitHubCodeTool } from './search_github_code.js';
+export { registerGitHubSearchCodeTool } from './search_github_code.js';
 export { registerFetchGitHubFileContentTool } from './fetch_github_file_content.js';
 export { registerViewRepositoryTool } from './view_repository.js';
 export { registerNpmViewTool } from './npm_view.js';
@@ -12,7 +12,6 @@ export { registerSearchGitHubIssuesTool } from './search_github_issues.js';
 export { registerSearchGitHubDiscussionsTool } from './search_github_discussions.js';
 export { registerSearchGitHubTopicsTool } from './search_github_topics.js';
 export { registerSearchGitHubUsersTool } from './search_github_users.js';
-// New enhanced tools
 export { registerNpmPackageStatsTool } from './npm_package_stats.js';
 export { registerNpmDependencyAnalysisTool } from './npm_dependency_analysis.js';
 export { registerGitHubAdvancedSearchTool } from './github_advanced_search.js';

@@ -1,767 +1,642 @@
 import { TOOL_NAMES } from '../contstants';
 
-export const GITHUB_ADVANCED_SEARCH_DESCRIPTION = `Multi-dimensional GitHub search combining repositories, code, issues, and pull requests for comprehensive analysis.
+export const TOOL_DESCRIPTIONS = {
+  [TOOL_NAMES.GITHUB_ADVANCED_SEARCH]: `**Multi-dimensional GitHub search** - Combines repositories, code, issues, and pull requests for comprehensive analysis.
+
+**PURPOSE:**
+Perform parallel searches across GitHub dimensions to understand complete technology ecosystems.
 
 **SEARCH STRATEGY:**
-Performs parallel searches across multiple GitHub dimensions to provide complete ecosystem understanding:
+1. **Repository Discovery** - Find relevant projects by topic/technology
+2. **Code Implementation** - Locate actual usage patterns and examples  
+3. **Issue Analysis** - Understand common problems and solutions
+4. **PR Review** - See implementation patterns and best practices
 
-1. **Repository Discovery**: Find relevant repositories by topic/technology
-2. **Code Implementation**: Locate actual code examples and patterns  
-3. **Issue Analysis**: Understand common problems and solutions
-4. **PR Reviews**: See implementation patterns and best practices
+**WHEN TO USE:**
+- Technology research and ecosystem analysis
+- Finding production-ready implementations  
+- Understanding community best practices
+- Identifying maintained, well-documented projects
 
-**INTELLIGENT AGGREGATION:**
+**KEY FEATURES:**
 - Cross-references results between search types
-- Identifies high-quality repositories with active maintenance
-- Highlights repositories with both good documentation and implementation examples
-- Provides consolidated insights across all search dimensions
-
-**OPTIMIZATION FEATURES:**
-- Automatic query refinement for each search type
 - Quality filtering based on repository activity and stars
 - Result prioritization using multiple signals
-- Comprehensive analysis with actionable insights
-
-**USE CASES:**
-- Technology research and ecosystem analysis
-- Finding production-ready implementations
-- Understanding community best practices  
-- Identifying maintained and well-documented projects
+- Consolidated insights across all dimensions
 
 **EXAMPLE WORKFLOWS:**
-- "react hooks" → repositories, implementations, common issues, PR patterns
-- "authentication jwt" → libraries, code examples, security discussions, implementation PRs
-- "docker deployment" → tools, configuration examples, troubleshooting, deployment strategies`;
+- \`"react hooks"\` → repositories, implementations, common issues, PR patterns
+- \`"authentication jwt"\` → libraries, code examples, security discussions, PRs
+- \`"docker deployment"\` → tools, configs, troubleshooting, strategies
 
-export const NPM_DEPENDENCY_ANALYSIS_DESCRIPTION = `Comprehensive npm package dependency analysis and security assessment.
+**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for terminology discovery.`,
+
+  [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**Comprehensive dependency analysis** - Security audit, license check, and optimization guidance for npm packages.
+
+**PURPOSE:**
+Analyze package dependencies for security vulnerabilities, license compliance, and bundle optimization.
 
 **ANALYSIS CAPABILITIES:**
-- **Dependency Tree**: Complete dependency graph with versions
-- **Security Audit**: Vulnerability scanning and risk assessment  
-- **License Analysis**: License compatibility and legal considerations
-- **Bundle Size**: Package size impact on applications
-- **Outdated Dependencies**: Version update recommendations
+- **Security Audit** - Vulnerability scanning and risk assessment
+- **Dependency Tree** - Complete dependency graph with versions
+- **License Analysis** - License compatibility and legal considerations
+- **Bundle Impact** - Package size impact on applications
+- **Update Recommendations** - Outdated dependencies and available fixes
 
-**SECURITY INSIGHTS:**
-- Known vulnerabilities in dependencies
-- Security advisories and fixes available
-- Dependency risk scoring
-- Transitive dependency analysis
+**WHEN TO USE:**
+- Pre-installation security review
+- Dependency audit for existing projects
+- License compliance checking
+- Bundle size optimization planning
 
-**OPTIMIZATION GUIDANCE:**
-- Bundle size optimization opportunities
+**KEY INSIGHTS:**
+- Known vulnerabilities with severity scores
+- Security advisories and available fixes
 - Alternative package suggestions
-- Dependency consolidation possibilities
 - Performance impact assessment
 
-**USE CASES:**
-- Pre-installation security review
-- Dependency audit for existing projects  
-- License compliance checking
-- Bundle size optimization planning`;
+**INTEGRATION:** Use with ${TOOL_NAMES.NPM_GET_PACKAGE} for complete package assessment.`,
 
-export const NPM_SEARCH_DESCRIPTION = `Search NPM registry for packages by keywords using "npm search <term>".
+  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `**NPM registry search** - Discover packages by keywords with intelligent search strategies.
+
+**PURPOSE:**  
+Find relevant npm packages using keyword-based discovery with optimization guidance.
 
 **SEARCH STRATEGY:**
-1. Start with single technology terms ("react", "cli")  
-2. Add specificity only if needed ("react-hooks", "typescript-cli")
-3. Avoid complex phrases - they yield zero results
+1. **Start Simple** - Single terms: \`"react"\`, \`"cli"\`
+2. **Add Specificity** - Combined terms: \`"react-hooks"\`, \`"typescript-cli"\`  
+3. **Avoid Complexity** - Complex phrases yield zero results
 
 **WHEN TO USE:**
-- Pure discovery of packages on NPM registry by keyword
-- More direct than discovering packages mentioned in code
+- Package discovery by keyword/functionality
 - Finding alternatives to known packages
+- More direct than code-mentioned package discovery
 
 **SEARCH PATTERNS:**
-- Good: "react" -> "cli" -> "react cli" (if specific combination needed)
-- Poor: "react command line interface tools" (too complex, likely zero results)
+- ✅ Good: \`"react"\` → \`"cli"\` → \`"react cli"\` (if specific combo needed)
+- ❌ Poor: \`"react command line interface tools"\` (too complex)
 
 **RESULT OPTIMIZATION:**
-- 0 results: Try broader, single-word terms
-- 1-20 results: IDEAL - analyze thoroughly
-- 21-100 results: GOOD - filter by popularity/relevance  
-- 100+ results: Too broad - use more specific single terms
+- **0 results** - Try broader, single-word terms
+- **1-20 results** - IDEAL for thorough analysis
+- **21-100 results** - Filter by popularity/relevance
+- **100+ results** - Use more specific single terms
 
-**OUTPUT FORMAT:**
-JSON format with package metadata including name, description, version, and popularity metrics
+**OUTPUT:** JSON with package metadata: name, description, version, popularity metrics
 
-**CONSTRAINTS:**
-- Maximum 50 results by default
-- Supports regex patterns when query starts with /
-- Multiple space-separated terms supported but use sparingly`;
+**CONSTRAINTS:** 50 results max, regex support with /, space-separated terms supported but use sparingly
 
-export const NPM_VIEW_DESCRIPTION = `Transform package names into GitHub repositories for code analysis.
+**INTEGRATION:** Chain to ${TOOL_NAMES.NPM_GET_PACKAGE} for repository discovery.`,
+
+  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Package-to-repository mapping** - Transform npm package names into GitHub repositories for code analysis.
+
+**PURPOSE:**
+Extract GitHub repository information from npm packages to enable code analysis workflows.
 
 **WHEN TO USE:**
-- User mentions package names ("react", "lodash", "@types/node")
-- Code snippets with imports: import { useState } from 'react'
-- Dependency/module references in user queries
+- User mentions package names: \`"react"\`, \`"lodash"\`, \`"@types/node"\`
+- Code snippets with imports: \`import { useState } from 'react'\`
+- Dependency/module references in queries
 
 **WORKFLOW:**
 1. Extract repository URL from package.json
-2. Parse owner/repo from GitHub URL formats
-3. Chain to ${TOOL_NAMES.VIEW_REPOSITORY} for branch discovery
-4. Continue to ${TOOL_NAMES.SEARCH_GITHUB_CODE} for implementations
-
-**OUTPUT:**
-Repository context + package metadata for intelligent code search
+2. Parse owner/repo from GitHub URL formats  
+3. Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery
+4. Continue to ${TOOL_NAMES.GITHUB_SEARCH_CODE} for implementations
 
 **EXAMPLES:**
-- "react" -> github.com/facebook/react -> Code search in React repo
-- "lodash" -> github.com/lodash/lodash -> Extract utility implementations  
-- "@org/some-lib" -> Private repo discovery -> Organizational code analysis
+- \`"react"\` → github.com/facebook/react → Code search in React repo
+- \`"lodash"\` → github.com/lodash/lodash → Extract utility implementations
+- \`"@org/lib"\` → Private repo discovery → Organizational code analysis
 
-**SUCCESS CRITERIA:**
-Accurate repository mapping that enables battle-tested code extraction
+**SUCCESS CRITERIA:** Accurate repository mapping enabling battle-tested code extraction
 
-**DO NOT:**
-- Skip package-to-repository mapping when packages are mentioned
-- Assume package names without verification
-- Use for non-npm package references`;
+**ERROR HANDLING:** 
+- Package not found → Try ${TOOL_NAMES.NPM_SEARCH_PACKAGES}
+- No repository URL → Search GitHub topics/repositories
+- Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
 
-export const SEARCH_GITHUB_CODE_DESCRIPTION = `Advanced GitHub code search with intelligent pattern matching, mandatory repository scoping, and smart fallback strategies.
+**INTEGRATION:** Essential first step before GitHub code analysis workflows.`,
 
-**MANDATORY REPOSITORY SCOPING:**
-Every search automatically includes "repo:owner/repository" for surgical precision:
-- Eliminates noise from unrelated repositories
-- Guarantees results from target codebase only
-- Enables deep analysis of specific implementations
-
-**🔥 AUTOMATIC BOOLEAN OPERATORS PRIORITY:**
-Multi-term queries automatically use Boolean AND for maximum precision:
-- **Auto-Enhanced**: \`useState hooks\` → \`useState AND hooks\`
-- **Preserved**: \`useState OR useEffect\` → \`useState OR useEffect\` (unchanged)
-- **Intelligent**: Single terms get exact matching, multi-terms get Boolean precision
-- **Surgical Accuracy**: Every multi-word search becomes a precise Boolean query
-
-**SOPHISTICATED SEARCH INTELLIGENCE:**
-Supports complex query patterns with battle-tested accuracy:
-- **Single Terms**: \`useState\`, \`scheduleCallback\`, \`workLoopConcurrent\`
-- **Auto-Boolean Multi-Terms**: \`concurrent rendering\` → \`concurrent AND rendering\`
-- **Function Patterns**: \`useEffect(() =>\`, \`React.createElement\`, \`export default\`
-- **🔥 POWERFUL BOOLEAN OPERATORS**: \`hooks AND state\`, \`(useState OR useEffect)\`, \`error NOT warning\`
-- **Technical Implementations**: Complex internal function names and patterns
-
-**BOOLEAN SEARCH MASTERY:**
-Unlock advanced code discovery with automatic and manual logical operators:
-- **AUTO-AND**: Multi-word queries automatically become AND operations
-- **Manual AND**: \`authentication AND jwt\` - Explicit intersecting concepts
-- **OR**: \`useState OR useEffect\` - Multiple hook patterns  
-- **NOT**: \`error NOT test\` - Exclude test files from error handling
-- **Grouping**: \`(react OR vue) AND typescript\` - Complex logic combinations
-- **🎯 Game-Changer**: All multi-term searches become precision Boolean queries
-
-**LANGUAGE-AWARE FILTERING:**
-- **JavaScript**: Frontend implementations, Node.js backends
-- **TypeScript**: Type definitions, interfaces, advanced patterns
-- **Extension Filtering**: \`.ts\`, \`.js\`, \`.jsx\`, \`.tsx\` files
-
-**PROVEN SEARCH METHODOLOGIES:**
-✅ **Single Term Discovery**: Core functions and exports
-✅ **Auto-Boolean Multi-Terms**: Feature implementations with AND precision  
-✅ **Pattern Matching**: Arrow functions, hooks, class patterns
-✅ **🎯 Boolean Combinations**: Complex logical queries with laser accuracy
-✅ **Technical Deep-Dive**: Internal scheduler, reconciler code
-✅ **Interface Discovery**: TypeScript definitions and contracts
-✅ **Language Scoping**: Technology-specific implementations
-
-**ENTERPRISE-GRADE ACCURACY:**
-- **File Context**: Complete file paths with line-level precision
-- **Implementation Focus**: Actual source code, not documentation
-- **Quality Results**: React core, scheduler, reconciler implementations
-- **Zero False Positives**: Repository scoping eliminates irrelevant matches
-
-**INTELLIGENT FALLBACK STRATEGIES:**
-
-**No Results Found (0 results):**
-- **Broaden Query**: Remove boolean operators, try individual terms
-- **Alternative Terms**: Use synonyms ("auth" → "authentication", "config" → "configuration")
-- **Expand Scope**: Remove language/extension filters
-- **Path Exploration**: Remove path restrictions, search entire repository
-- **Case Variations**: Try different casing ("React" → "react")
-
-**Too Many Results (100+ results):**
-- **Add Specificity**: Include language filter (\`language:typescript\`)
-- **Path Restrictions**: Focus on source code (\`path:src\`)
-- **File Type Filtering**: Use extension filter (\`extension:ts\`)
-- **Exclude Patterns**: Add NOT operators (\`component NOT test\`)
-- **Date Constraints**: Recent implementations (\`created:>2023-01-01\`)
-
-**Wrong Context Results:**
-- **Framework Qualifiers**: Add specific framework terms (\`react component\`)
-- **Environment Context**: Specify runtime (\`nodejs express\`)
-- **Use Case Context**: Add purpose (\`production deployment\`)
-- **Architecture Context**: Include pattern (\`microservice api\`)
-
-**Outdated/Legacy Results:**
-- **Date Filtering**: Recent code (\`created:>2022-01-01\`)
-- **Activity Sorting**: Sort by recent updates
-- **Modern Patterns**: Include current framework versions
-- **Maintenance Check**: Look for active repositories
-
-**Rate Limit Mitigation:**
-- **NPM-First Strategy**: Use npm_search to discover repositories first
-- **Targeted Searches**: Use discovered owner/repo for precise targeting
-- **Batch Processing**: Group related searches efficiently
-- **Cache Utilization**: Leverage built-in response caching
-
-**Authentication/Access Issues:**
-- **Public Alternatives**: Search public repositories with similar patterns
-- **Organization Discovery**: Use get_user_organizations to check access
-- **Scope Verification**: Ensure proper GitHub CLI authentication
-- **Fallback Repositories**: Use popular open-source alternatives
-
-**POWERFUL USE CASES:**
-- **Architecture Analysis**: Study React's concurrent rendering implementation
-- **API Discovery**: Find actual usage patterns of complex functions
-- **Pattern Learning**: Expert TypeScript interface structures
-- **Implementation Deep-Dive**: Scheduler, reconciler, fiber logic
-- **Migration Planning**: Breaking changes and new APIs
-
-**RESULT OPTIMIZATION GUIDE:**
-- **1-10 Results**: IDEAL - Deep analysis opportunity
-- **11-30 Results**: GOOD - Manageable scope for review
-- **31-100 Results**: ACCEPTABLE - May need refinement
-- **100+ Results**: TOO BROAD - Apply filters and restrictions
-
-**SEARCH PRECISION:**
-Transforms code discovery from guesswork into pinpoint accuracy. Every multi-term query automatically becomes a Boolean AND operation for maximum relevance with intelligent fallback strategies for any scenario.`;
-
-export const FETCH_GITHUB_FILE_CONTENT_DESCRIPTION = `Extract complete working code with full context - the core of code analysis.
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code search** - Advanced GitHub code search with intelligent pattern matching and repository scoping.
 
 **PURPOSE:**
-Extract complete, working code implementations rather than code snippets.
+Find specific code implementations with surgical precision using automatic Boolean operators and repository scoping.
 
-**CRITICAL FOR SEARCH EXPANSION:**
-Transform search results into actionable implementations. Search tools find files - this tool extracts the complete, working code with full context needed for implementation.
+**KEY FEATURES:**
+- **Automatic Repository Scoping** - Every search includes "repo:owner/repository"
+- **Auto-Boolean Logic** - Multi-term queries become AND operations automatically
+- **Smart Fallbacks** - Multiple recovery strategies for failed searches
 
-**MANDATORY WORKFLOW:**
-1. **ALWAYS** Use ${TOOL_NAMES.VIEW_REPOSITORY} first to discover the correct default branch
-2. Find files with ${TOOL_NAMES.SEARCH_GITHUB_CODE}  
+**SEARCH INTELLIGENCE:**
+- **Single Terms** - \`useState\`, \`scheduleCallback\`, \`workLoopConcurrent\`
+- **Auto-Boolean** - \`"concurrent rendering"\` → \`"concurrent AND rendering"\`
+- **Manual Boolean** - \`"hooks AND state"\`, \`"(useState OR useEffect)"\`, \`"error NOT test"\`
+- **Function Patterns** - \`"useEffect(() =>"\`, \`"React.createElement"\`, \`"export default"\`
+
+**LANGUAGE FILTERING:**
+- **JavaScript/TypeScript** - Frontend implementations, Node.js backends
+- **Extension Filtering** - \`.ts\`, \`.js\`, \`.jsx\`, \`.tsx\` files
+- **Path Filtering** - \`path:src\`, \`path:lib\` for focused searches
+
+**RESULT OPTIMIZATION:**
+- **1-10 Results** - IDEAL for deep analysis
+- **11-30 Results** - GOOD, manageable scope
+- **31-100 Results** - ACCEPTABLE, may need refinement
+- **100+ Results** - TOO BROAD, apply filters
+
+**FALLBACK STRATEGIES:**
+- **No Results** - Remove boolean operators, try synonyms, expand scope
+- **Too Many Results** - Add language filters, path restrictions, exclude tests
+- **Wrong Context** - Add framework qualifiers, environment context
+
+**ERROR HANDLING:**
+- Rate limits → Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} first for repo discovery
+- Access denied → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permissions
+- Outdated results → Add date filters (\`created:>2022-01-01\`)
+
+**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery.`,
+
+  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `**Complete code extraction** - Fetch full working code implementations with comprehensive context.
+
+**PURPOSE:**
+Extract complete, production-ready code implementations rather than snippets, with all necessary context.
+
+**CRITICAL WORKFLOW:**
+1. **MANDATORY** - Use ${TOOL_NAMES.GITHUB_GET_REPOSITORY} first for branch discovery
+2. Find files with ${TOOL_NAMES.GITHUB_SEARCH_CODE}
 3. Extract complete implementations with this tool
 4. Follow dependency chains to related files
 
-**CRITICAL REQUIREMENT:**
-**NEVER** use this tool without first calling ${TOOL_NAMES.VIEW_REPOSITORY} to get the correct branch information. Wrong branch names cause complete tool failure.
-
 **WHAT TO FETCH:**
-- **Core implementations**: Main functions/classes with complete logic
-- **Dependencies**: Files referenced in imports/exports paths
-- **Configuration**: package.json, tsconfig.json, webpack.config.js, etc.
-- **Documentation**: README.md, API docs, usage examples
-- **Tests**: For usage patterns and validation
-- **Related utilities**: Helper functions and shared modules
+- **Core Implementations** - Main functions/classes with complete logic
+- **Dependencies** - Files referenced in imports/exports
+- **Configuration** - package.json, tsconfig.json, webpack.config.js
+- **Documentation** - README.md, API docs, usage examples
+- **Tests** - Usage patterns and validation examples
+- **Utilities** - Helper functions and shared modules
 
-**ENHANCED AUTO-RECOVERY:**
-Tries multiple fallback strategies:
-1. Specified branch -> main -> master -> develop -> trunk (with ref parameter)
-2. If all fail: Try without ref parameter (uses repository default branch)
-Handles incorrect branch info from ${TOOL_NAMES.VIEW_REPOSITORY} and GitHub API limitations.
+**AUTO-RECOVERY SYSTEM:**
+1. Specified branch → main → master → develop → trunk
+2. If all fail → Try without ref parameter (uses repository default)
+3. Comprehensive error reporting for troubleshooting
 
-**SUCCESS CRITERIA:**
-Production-ready code with all necessary context for immediate implementation.
+**SUCCESS CRITERIA:** Production-ready code with immediate implementation context
 
-**DO NOT:**
-- Extract incomplete snippets without context
-- Skip dependency files or configuration
-- Use this tool without first calling ${TOOL_NAMES.VIEW_REPOSITORY}
-- Assume branch names without verification`;
+**ERROR HANDLING:**
+- Wrong branch → Auto-fallback to common branch names
+- File not found → Verify path with ${TOOL_NAMES.GITHUB_GET_CONTENTS}
+- Access denied → Check permissions with ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
 
-export const GET_USER_ORGANIZATIONS_DESCRIPTION = `Get list of GitHub organizations for the authenticated user to enable private repository discovery.
+**CRITICAL REQUIREMENT:** NEVER use without calling ${TOOL_NAMES.GITHUB_GET_REPOSITORY} first.`,
 
-**AUTOMATIC TRIGGERS:**
-Auto-trigger when users mention:
-- Company/employer context: "I work at [Company Name]", "our team", "company codebase"
-- Private repositories: "internal code", "team repositories"  
-- Enterprise context: "at work", "enterprise setup"
+  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `**Organization discovery** - Get authenticated user's GitHub organizations for private repository access.
 
-**ORGANIZATION MATCHING Examples:**
-- "Facebook" -> "facebook", "meta"
-- "Google" -> "google", "googlecloudplatform"
-- "Microsoft" -> "microsoft", "azure"
+**PURPOSE:**
+Enable private repository discovery by identifying user's organizational memberships.
+
+**AUTO-TRIGGERS:**
+Automatically use when users mention:
+- Company context: \`"I work at [Company]"\`, \`"our team"\`, \`"company codebase"\`
+- Private repos: \`"internal code"\`, \`"team repositories"\`
+- Enterprise: \`"at work"\`, \`"enterprise setup"\`
+
+**ORGANIZATION MATCHING:**
+- \`"Facebook"\` → \`"facebook"\`, \`"meta"\`
+- \`"Google"\` → \`"google"\`, \`"googlecloudplatform"\`  
+- \`"Microsoft"\` → \`"microsoft"\`, \`"azure"\`
 
 **WORKFLOW:**
-1. Call this tool first when organizational context detected
-2. Match user's company to found organizations
-3. Use selected organization as 'owner' parameter in subsequent searches
+1. Call when organizational context detected
+2. Match user's company to discovered organizations
+3. Use organization as 'owner' parameter in subsequent searches
 4. Fallback to public search if no organizational results
 
 **USAGE PRIORITY:**
 - Essential for private repository access
 - Critical for enterprise GitHub setups
-- Use before repository searches fail due to permissions
-- Combine with npmView for private organization packages
+- Use before searches fail due to permissions
 
-**DO NOT:**
-- Skip organization-scoped search when company context is clear
-- Use public search first when private repositories are likely
-- Ignore organizational context in user queries`;
+**ERROR HANDLING:**
+- No organizations found → Proceed with public searches
+- Access denied → Verify GitHub authentication
+- Rate limits → Cache results for session reuse
 
-export const SEARCH_GITHUB_DISCUSSIONS_DESCRIPTION = `GitHub discussions search for community knowledge discovery.
+**INTEGRATION:** Use before any GitHub search tools when private access likely needed.`,
 
-**CORE PURPOSE:**
-Access community Q&A, tutorials, and best practices for learning and problem-solving.
+  [TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS]: `**Community knowledge search** - Access GitHub discussions for Q&A, tutorials, and best practices.
+
+**PURPOSE:**
+Discover community-validated solutions, tutorials, and expert insights through discussion forums.
 
 **DISCOVERY WORKFLOW:**
-1. Use ${TOOL_NAMES.NPM_VIEW} for packages -> get repo URL
-2. Use ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for projects -> get owner/repo  
-3. Search discussions with discovered owner/repo context
+1. Use ${TOOL_NAMES.NPM_GET_PACKAGE} for packages → get repo URL
+2. Use ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} for projects → get owner/repo
+3. Search discussions with discovered context
 
 **SEARCH STRATEGY:**
-1. **Start Lean**: Single keywords ("help", "tutorial", "authentication")
-2. **Build Complexity**: Combinations if needed ("help deployment")
-3. **Avoid Complex**: Don't start with full phrases
-
-**RESULT TARGETS:**
-- 1-15 results: IDEAL - Deep analysis opportunities
-- 16-50 results: GOOD - Manageable scope
-- 51-100 results: BROAD - Add category filters
-- 100+ results: TOO GENERIC - Refine terms
+1. **Start Simple** - Single keywords: \`"help"\`, \`"tutorial"\`, \`"authentication"\`
+2. **Build Complexity** - Combinations: \`"help deployment"\`, \`"tutorial setup"\`
+3. **Avoid Complexity** - Don't start with full phrases
 
 **KEY FILTERS:**
-- **Answered**: True for validated solutions
-- **Category**: Q&A, General, Show and Tell
-- **Author/maintainer**: For authoritative responses
-- **Date filters**: Recent vs historical discussions
+- **Answered: true** - Validated solutions with accepted answers
+- **Category** - "Q&A", "General", "Show and Tell"
+- **Author/Maintainer** - Authoritative responses from project maintainers
+- **Date Filters** - Recent vs historical discussions
 
-**SEARCH PATTERNS:**
-- **Problem solving**: "deployment help", "authentication tutorial"
-- **Best practices**: "testing patterns", "architecture decisions"
-- **Community insights**: "performance tips", "migration guide"
+**RESULT TARGETS:**
+- **1-15 results** - IDEAL for deep analysis
+- **16-50 results** - GOOD, manageable scope
+- **51-100 results** - BROAD, add category filters
+- **100+ results** - TOO GENERIC, refine terms
 
 **QUALITY INDICATORS:**
 - Answered discussions for validated solutions
 - Maintainer participation for authoritative guidance
 - Recent activity for current relevance
 
-**FALLBACK STRATEGY:**
-If no discussions found, try ${TOOL_NAMES.SEARCH_GITHUB_ISSUES} for alternative community insights.
+**FALLBACK STRATEGY:** If no discussions found, try ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for alternative insights.
 
-**OUTPUT:** Community-validated knowledge and solutions for development challenges.`;
+**INTEGRATION:** Best used after repository discovery for targeted community insights.`,
 
-export const SEARCH_GITHUB_ISSUES_DESCRIPTION = `Advanced GitHub issues search for problem discovery and solution research.
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `**Problem discovery and solution research** - Advanced issue search for debugging and development planning.
+
+**PURPOSE:**
+Discover existing problems, validated solutions, and community insights through issue tracking.
 
 **SEARCH STRATEGY:**
-1. **Single Keywords First**: "bug", "feature", "documentation"
-2. **Then Combine**: "bug fix", "feature request" (only if needed)
-3. **Never Start Complex**: Avoid "critical performance bug in production"
+1. **Single Keywords** - \`"bug"\`, \`"feature"\`, \`"documentation"\`
+2. **Then Combine** - \`"bug fix"\`, \`"feature request"\` (if needed)
+3. **Never Complex** - Avoid \`"critical performance bug in production"\`
 
-**MULTI-TERM ISSUE SEARCH BREAKDOWN:**
-For complex problem queries like "React authentication JWT token expired error":
-1. **Prioritize by Problem Hierarchy**:
-   - **Core Issue**: "authentication" (primary problem domain)
-   - **Technology Context**: "React" (framework/technology)
-   - **Specific Problem**: "token expired" (exact error condition)
-   - **Implementation Detail**: "JWT" (technical specifics)
-
-2. **Sequential Search Strategy**:
-   - Search 1: "authentication" → broad problem discovery
-   - Search 2: "authentication" + label:bug → focus on known issues  
-   - Search 3: "token expired" → specific error patterns
-   - Search 4: "JWT" → implementation-specific issues
-
-3. **Problem-Solution Mapping**:
-   - **Problem Discovery**: Start with error/symptom terms
-   - **Solution Research**: Look for "closed" issues with same problems
-   - **Best Practice Validation**: Cross-reference multiple issue resolutions
-   - **Community Patterns**: Identify recurring issues and solutions
-
-**CONTEXT PRIORITIZATION FOR ISSUES:**
-- **Error/Problem Terms** first: "error", "bug", "failure", "timeout"
-- **Functional Areas** second: "authentication", "deployment", "API"
-- **Technology Stack** third: "React", "Node", "Docker"
-- **Specific Details** last: "JWT", "OAuth", "Redis"
-
-**CORE PURPOSE:**
-- Problem discovery and existing issue research
-- Solution research and community insights
-- Development planning and quality assurance
+**PROBLEM HIERARCHY APPROACH:**
+For complex queries like "React authentication JWT token expired error":
+1. **Core Issue** - \`"authentication"\` (primary problem domain)
+2. **Technology Context** - \`"React"\` (framework/technology)
+3. **Specific Problem** - \`"token expired"\` (exact error condition)
+4. **Implementation Detail** - \`"JWT"\` (technical specifics)
 
 **SEARCH METHODOLOGY:**
-- **Phase 1**: Core discovery ("authentication", "error") -> understand patterns
-- **Phase 2**: Context expansion ("authentication JWT", "error handling")
-- **Phase 3**: Solution focus ("authentication bug resolved")
+- **Phase 1** - Core discovery: \`"authentication"\`, \`"error"\` → understand patterns
+- **Phase 2** - Context expansion: \`"authentication JWT"\`, \`"error handling"\`
+- **Phase 3** - Solution focus: \`"authentication bug resolved"\`
+
+**KEY FILTERS:**
+- **State** - "open" for current issues, "closed" for resolved patterns
+- **Labels** - "bug", "enhancement", "documentation" for severity
+- **Author/Assignee** - Track specific contributors or maintainers
+- **Date Filters** - Recent issues or historical analysis
 
 **RESULT TARGETS:**
-- 0 results: Try broader terms, remove filters
-- 1-20 results: IDEAL - Deep analysis of patterns and solutions
-- 21-100 results: GOOD - Add specificity or filters
-- 100+ results: Add specific terms or state/label filters
+- **0 results** - Try broader terms, remove filters
+- **1-20 results** - IDEAL for pattern analysis
+- **21-100 results** - GOOD, add specificity or filters
+- **100+ results** - Add specific terms or state/label filters
 
-**TERM SELECTION:**
-- Actual error messages: "TypeError", "404", "connection refused"
-- Status indicators: "open", "closed", "resolved", "duplicate"
-- Impact levels: "critical", "bug", "enhancement", "question"
-- Component names: "API", "frontend", "database", "deployment"
+**SEQUENTIAL SEARCH BENEFITS:**
+- **Problem Pattern Discovery** - Each search reveals different facets
+- **Solution Validation** - Multiple searches confirm approaches
+- **Community Insight** - See discussion of problem aspects
+- **Resolution Timeline** - Track evolution from report to solution
 
-**FILTERING STRATEGY:**
-- State filter: "open" for current issues, "closed" for resolved patterns
-- Label filter: Severity ("bug", "enhancement", "documentation")
-- Assignee filter: Issues handled by specific maintainers
-- Author filter: Track issues from particular users
-- Date filters: Recent issues or historical analysis
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_CODE} for implementation details and ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} for solutions.`,
 
-**SEQUENTIAL SEARCH BENEFITS FOR ISSUES:**
-- **Problem Pattern Discovery**: Each search reveals different problem facets
-- **Solution Validation**: Multiple searches confirm resolution approaches
-- **Community Insight**: See how different aspects of problems are discussed
-- **Resolution Timeline**: Track problem evolution from report to solution
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `**Code review and feature analysis** - Advanced PR search for implementation patterns and collaboration insights.
 
-**CROSS-REFERENCE APPROACH:**
-- Combine with ${TOOL_NAMES.SEARCH_GITHUB_CODE} for implementation details
-- Use with ${TOOL_NAMES.SEARCH_GITHUB_COMMITS} for fix implementations
-- Cross-reference with ${TOOL_NAMES.SEARCH_GITHUB_PULL_REQUESTS} for solutions
-- Explore ${TOOL_NAMES.SEARCH_GITHUB_DISCUSSIONS} for community insights
-
-**PATTERN ANALYSIS:** Focus on issue resolution patterns and community feedback for development insights.`;
-
-export const SEARCH_GITHUB_PULL_REQUESTS_DESCRIPTION = `Advanced GitHub pull requests search for code review and feature analysis.
+**PURPOSE:**
+Analyze feature implementations, code review patterns, and team collaboration through pull request history.
 
 **SEARCH STRATEGY:**
-1. **Single Keywords First**: "bug", "feature", "refactor" 
-2. **Then Combine**: "bug fix", "feature implementation" (only if needed)
-3. **Never Start Complex**: Avoid phrases like "comprehensive bug fix implementation"
+1. **Single Keywords** - \`"bug"\`, \`"feature"\`, \`"refactor"\`
+2. **Then Combine** - \`"bug fix"\`, \`"feature implementation"\` (if needed)
+3. **Never Complex** - Avoid \`"comprehensive bug fix implementation"\`
 
-**CORE PURPOSE:**
+**CORE APPLICATIONS:**
 - Code review insights and team collaboration patterns
 - Feature implementation lifecycle tracking
 - Breaking changes and quality assurance analysis
 
 **SEARCH METHODOLOGY:**
-- **Phase 1**: Core discovery with fundamental terms ("authentication", "error")
-- **Phase 2**: Add context ("authentication JWT", "error handling")  
-- **Phase 3**: Solution focus ("authentication bug fixed")
+- **Phase 1** - Core discovery: \`"authentication"\`, \`"error"\`
+- **Phase 2** - Add context: \`"authentication JWT"\`, \`"error handling"\`
+- **Phase 3** - Solution focus: \`"authentication bug fixed"\`
+
+**KEY FILTERS:**
+- **State** - "open" for current work, "closed" for completed features
+- **Draft** - false for completed features, true for work-in-progress
+- **Author/Reviewer** - Understand team collaboration patterns
+- **Branch Filters** - Release and feature branch workflows
+- **Language** - Focus on specific technology stacks
 
 **RESULT TARGETS:**
-- 0 results: Try broader terms, remove filters
-- 1-20 results: IDEAL - Deep analysis of patterns and solutions
-- 21-100 results: GOOD - Add specificity or filters
-- 100+ results: Add specific terms or state/reviewer filters
+- **0 results** - Try broader terms, remove filters
+- **1-20 results** - IDEAL for pattern analysis
+- **21-100 results** - GOOD, add specificity or filters
+- **100+ results** - Add specific terms or state/reviewer filters
 
-**FILTERING BEST PRACTICES:**
-- State filter: "open" for current issues, "closed" for resolved patterns
-- Author/reviewer filters: Understand team collaboration
-- Draft filter: Work-in-progress vs completed features
-- Branch filters: Release and feature branch workflows
-- Language filter: Focus on specific technology stacks
+**QUALITY FOCUS:** Use review-related filters to find thoroughly vetted code examples.
 
 **ADAPTIVE TACTICS:**
 - Start broad with feature keywords, narrow based on findings
-- Use owner/repo parameters when repository context is known
-- Widen scope if targeted searches yield insufficient results
+- Use owner/repo when repository context known
 - Apply precise filters only after broader searches confirm patterns
 
-**CROSS-REFERENCE STRATEGY:**
-- Combine with ${TOOL_NAMES.SEARCH_GITHUB_COMMITS} for complete development understanding
-- Use with ${TOOL_NAMES.SEARCH_GITHUB_CODE} for current implementations
-- Cross-reference with ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for similar patterns
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} for complete development understanding.`,
 
-**QUALITY FOCUS:** Use review-related filters to find thoroughly vetted code examples.`;
+  [TOOL_NAMES.GITHUB_SEARCH_USERS]: `**Developer and organization discovery** - Find experts, collaborators, and community leaders.
 
-export const SEARCH_GITHUB_USERS_DESCRIPTION = `Advanced GitHub users and organizations search for developer discovery.
+**PURPOSE:**
+Discover developers, organizations, and community leaders for collaboration, learning, and recruitment.
 
 **SEARCH STRATEGY:**
-1. **Single Criteria First**: "react", "python", location
-2. **Then Combine**: "react javascript", location + language
-3. **Never Start Complex**: Avoid "senior react typescript developer with 5+ years"
-
-**CORE PURPOSE:**
-- Expert discovery and community building
-- Collaboration and learning opportunities
-- Recruitment and network expansion
+1. **Single Criteria** - \`"react"\`, \`"python"\`, location
+2. **Then Combine** - \`"react javascript"\`, location + language
+3. **Never Complex** - Avoid \`"senior react typescript developer with 5+ years"\`
 
 **SEARCH METHODOLOGY:**
-- **Phase 1**: Technology terms ("react", "python", "kubernetes") -> analyze activity
-- **Phase 2**: Add context (location filters, experience indicators)
-- **Phase 3**: Specialized search (specific skills + activity filters)
+- **Phase 1** - Technology terms: \`"react"\`, \`"python"\`, \`"kubernetes"\` → analyze activity
+- **Phase 2** - Add context: location filters, experience indicators
+- **Phase 3** - Specialized search: specific skills + activity filters
 
-**RESULT TARGETS:**
-- 0 results: Try broader terms, remove filters
-- 1-20 results: IDEAL - Analyze profiles for expertise
-- 21-100 results: GOOD - Add location or activity filters
-- 100+ results: Add specific terms or increase follower/repo filters
-
-**TERM SELECTION:**
-- Technology: "javascript", "python", "golang", "rust"
-- Frameworks: "react", "vue", "django", "spring"
-- Roles: "devops", "frontend", "backend", "fullstack"
-- Context: "startup", "enterprise", "opensource"
-
-**FILTERING STRATEGY:**
-- Type: "user" for individuals, "org" for organizations
-- Location: Find developers in specific regions
-- Language: Search by primary programming language
-- Followers: Find influential developers (">100", ">1000")
-- Repos: Find active contributors (">10", ">50")
-- Date: Recent activity or long-standing members
+**KEY FILTERS:**
+- **Type** - "user" for individuals, "org" for organizations
+- **Location** - Find developers in specific regions
+- **Language** - Primary programming language
+- **Followers** - Influential developers (">100", ">1000")
+- **Repos** - Active contributors (">10", ">50")
+- **Date** - Recent activity or established members
 
 **DISCOVERY PATTERNS:**
-- **Technology Experts**: Language + high follower count
-- **Local Developers**: Location + technology
-- **Open Source Contributors**: High repo count + specific tech
-- **Industry Leaders**: Follower count + years of activity
+- **Technology Experts** - Language + high follower count
+- **Local Developers** - Location + technology
+- **Open Source Contributors** - High repo count + specific tech
+- **Industry Leaders** - High followers + years of activity
 
-**CROSS-REFERENCE STRATEGY:**
-- Find repository contributors and maintainers
-- Combine with ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for project involvement
-- Explore user repositories for learning opportunities
+**RESULT TARGETS:**
+- **0 results** - Try broader terms, remove filters
+- **1-20 results** - IDEAL for profile analysis
+- **21-100 results** - GOOD, add location or activity filters
+- **100+ results** - Add specific terms or increase follower/repo filters
 
-**OUTPUT:** Developer and organization discovery for networking, learning, and collaboration.`;
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} for project involvement analysis.`,
 
-export const SEARCH_GITHUB_REPOS_DESCRIPTION = `**⚠️ LAST RESORT TOOL** - Use only when NPM discovery provides no repository context.
-
-**MANDATORY PREREQUISITES:**
-1. **ALWAYS FIRST**: ${TOOL_NAMES.SEARCH_GITHUB_TOPICS} - ecosystem mapping (never skip)
-2. **PRIMARY DISCOVERY**: ${TOOL_NAMES.NPM_SEARCH} and ${TOOL_NAMES.NPM_VIEW} - extract repository URLs
-3. **ONLY IF NPM FAILS**: Use this tool as last resort with single terms only
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `**⚠️ LAST RESORT TOOL** - Repository search only when NPM discovery fails.
 
 **CRITICAL LIMITATIONS:**
-- **SINGLE TERMS ONLY**: Never use multi-term searches ("react angular auth" ❌)
-- **LAST RESORT**: Use only when NPM provides no repository context
-- **API INTENSIVE**: Consumes GitHub API quota - NPM discovery is preferred
+- **SINGLE TERMS ONLY** - Never use multi-term searches (\`"react angular auth"\` ❌)
+- **LAST RESORT** - Use only when NPM provides no repository context
+- **API INTENSIVE** - Consumes GitHub API quota heavily
 
-**MANDATORY SEARCH STRATEGY:**
-1. **Single terms only**: "react", "authentication", "deployment" ✅
-2. **Never combine**: "react hooks", "full-stack app", "microservices api" ❌
-3. **Decompose complex queries**: "react typescript auth" → ["react", "typescript", "authentication"]
+**MANDATORY PREREQUISITES:**
+1. **ALWAYS FIRST** - ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem mapping
+2. **PRIMARY DISCOVERY** - ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.NPM_GET_PACKAGE}
+3. **ONLY IF NPM FAILS** - Use this tool with single terms only
+
+**SEARCH STRATEGY:**
+1. **Single terms only** - \`"react"\`, \`"authentication"\`, \`"deployment"\` ✅
+2. **Never combine** - \`"react hooks"\`, \`"full-stack app"\` ❌
+3. **Decompose complex** - \`"react typescript auth"\` → [\`"react"\`, \`"typescript"\`, \`"authentication"\`]
 
 **WHEN TO USE (Rare Cases):**
 - NPM search found no relevant packages
-- Need repositories outside NPM ecosystem (e.g., system tools, non-Node.js)
-- Specific organization exploration when not discoverable via NPM
+- Non-NPM ecosystem (system tools, non-Node.js)
+- Specific organization exploration not discoverable via NPM
 
 **PREFERRED WORKFLOW (95% of cases):**
-1. ${TOOL_NAMES.SEARCH_GITHUB_TOPICS} → discover terminology
-2. ${TOOL_NAMES.NPM_SEARCH} → find relevant packages
-3. ${TOOL_NAMES.NPM_VIEW} → extract repository URLs from package.json
-4. Skip this tool entirely → proceed to code search
-
-**SINGLE-TERM SEARCH EXAMPLES:**
-- ✅ "react" → broad React ecosystem
-- ✅ "authentication" → auth-related projects  
-- ✅ "deployment" → deployment tools
-- ❌ "react authentication" → use NPM discovery instead
-- ❌ "full-stack framework" → too complex, use topics + NPM
+1. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} → discover terminology
+2. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → find packages
+3. ${TOOL_NAMES.NPM_GET_PACKAGE} → extract repository URLs
+4. **Skip this tool** → proceed to code search
 
 **FILTERING STRATEGY (When Forced to Use):**
-- **Owner**: Most effective for scoping results
-- **Language**: Technology-specific searches
-- **Stars**: ">100" established, ">10" active projects
-- **Updated**: Recent activity (">2023-01-01")
+- **Owner** - Most effective for scoping results
+- **Language** - Technology-specific searches
+- **Stars** - ">100" established, ">10" active projects
+- **Updated** - Recent activity (">2023-01-01")
 
 **RESULT OPTIMIZATION:**
-- 0 results: Try broader single terms, remove filters
-- 1-10: **IDEAL** - Deep analysis opportunity
-- 11-30: **GOOD** - Add language/star filters
-- 31-100: Add specific filters gradually
-- 100+: Term too broad - use more specific single term
+- **0 results** - Try broader single terms, remove filters
+- **1-10** - IDEAL for deep analysis
+- **11-30** - GOOD, add language/star filters
+- **31-100** - Add specific filters gradually
+- **100+** - Term too broad, use more specific single term
 
-**API CONSERVATION RULES:**
-- Check rate limits before use
-- Prefer NPM discovery (60% less API usage)
-- Use only when absolutely necessary
-- Single searches reduce API consumption
+**REMEMBER:** Avoid in 95% of cases. Topics + NPM discovery provides better results with less API usage.`,
 
-**EXAMPLES OF PROPER USAGE:**
-- Last resort search: "kubernetes" (after NPM fails to provide K8s repos)
-- Organization-specific: "cli" --owner=github (when GitHub's CLI tools needed)
-- Non-NPM ecosystem: "rust" --language=rust (when looking for Rust projects)
-
-**REMEMBER**: This tool should be avoided in 95% of cases. Topics + NPM discovery provides better results with less API usage.`;
-
-export const SEARCH_GITHUB_TOPICS_DESCRIPTION = `**VITAL FOUNDATION TOOL** for effective GitHub discovery - provides semantic context that makes all other GitHub searches targeted and successful.
-
-**WHY ESSENTIAL:**
-- **Term Discovery**: Find correct terminology and keywords before searching repositories
-- **Quality Signals**: Featured/curated topics = community-validated, battle-tested projects
-- **Repository Filters**: Use topic names directly in ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for precise targeting
-- **Ecosystem Mapping**: Understand technology landscapes with 100M+ repositories of production code
-
-**CRITICAL WORKFLOW - Topics -> Repositories:**
-1. **Search topics first** -> discover proper terminology (e.g., "machine-learning" not "AI")
-2. **Use topic names as filters** -> in ${TOOL_NAMES.SEARCH_GITHUB_REPOS} for targeted results
-3. **Quality validation** -> featured topics = GitHub-promoted, curated = community-maintained
-
-**SEARCH STRATEGY:**
-1. **Start Global**: Search without owner for maximum discovery ("react", "react+typescript")
-2. **Multi-term Queries**: Use + to combine terms ("machine+learning", "react+hooks")
-3. **Then Focus**: Add owner only when needed for specific exploration ("owner=facebook")
-4. **Progressive Discovery**: Start broad, then narrow based on findings
-
-**EXPLORATORY SEARCH BEST PRACTICES:**
-- **DON'T start with owner** - limits discovery to single organization
-- **DO start with broad terms** - "javascript", "python", "authentication"
-- **USE multi-term searches** - "react+typescript", "machine+learning+python"
-- **ADD owner later** - only when you need organization-specific topics
-
-**MULTI-CONCEPT TOPIC DISCOVERY:**
-For complex domains like "machine learning authentication systems":
-1. **Start Broad**: "machine+learning" (discover the ecosystem)
-2. **Add Context**: "authentication" (find security-related topics)
-3. **Combine**: "machine+learning+authentication" (specific intersection)
-4. **Focus**: Add owner only if needed for specific organization context
-
-**CONTEXT PRIORITIZATION FOR TOPICS:**
-- **Technology Domains** first: "javascript", "python", "machine-learning"
-- **Functional Areas** second: "authentication", "deployment", "testing"  
-- **Combined Concepts** third: "react+hooks", "python+machine-learning"
-- **Specific Tools/Libraries** last: "tensorflow", "pytorch", "nextjs"
-
-**QUERY EXAMPLES:**
-- Global search: "react" -> find all React-related topics
-- Multi-term: "react+typescript" -> find intersection topics
-- Complex: "machine+learning+python" -> specific technology stack
-- Focused: "react" + owner=facebook -> React topics from Facebook
-
-**RESULT OPTIMIZATION:**
-- 1-10 results: IDEAL for deep analysis
-- 10+ results: Add featured/curated filters or more specific terms
-- Use repository count as maturity indicator (>10K = established, 1K-10K = growing)
-
-**SEQUENTIAL SEARCH BENEFITS:**
-- **Discover Related Terms**: Find official terminology vs informal terms
-- **Understand Ecosystem**: See how concepts relate and overlap
-- **Quality Validation**: Featured topics = community-validated approaches
-- **Precise Targeting**: Use discovered topics as exact filters in repo searches
-
-**OUTPUT:** Strategic foundation for all GitHub discovery - transforms random searches into targeted, quality-focused repository discovery.`;
-
-export const VIEW_REPOSITORY_STRUCTURE_DESCRIPTION = `Strategic repository exploration for code analysis.
-
-**CRITICAL REQUIREMENT:**
-**MANDATORY:** Must use ${TOOL_NAMES.VIEW_REPOSITORY} FIRST to get branch. **NEVER** explore repository structure without explicit branch discovery.
-
-**EXPLORATION PHASES:**
-1. **Root Analysis**: Project type (package.json, requirements.txt), README, docs, config files
-2. **Source Discovery**: Navigate src/, lib/, components/, utils/, types/  
-3. **Validation**: Explore test/, examples/, demos/ directories
-
-**DIRECTORY PRIORITIES:**
-- HIGH: src/, lib/, components/, utils/, types/ (Core implementations)
-- MEDIUM: docs/, examples/, config/ (Context/documentation) 
-- TEST: test/, __tests__/, spec/ (Quality/patterns)
-
-**NAVIGATION STRATEGY:**
-- Start with root for project overview
-- Target core implementation directories
-- Extract promising files via ${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT}
-- Cross-reference with tests for usage patterns
-
-**RESULT TARGETS:**
-- 1-10 results: IDEAL - Focused exploration
-- 11-50 results: MANAGEABLE - Prioritize by conventions
-- 50+ results: TOO BROAD - Explore subdirectories
-
-**ENHANCED BRANCH FALLBACK:** 
-Automatically tries multiple fallback strategies:
-1. Specified branch -> main -> master -> develop -> trunk (with ref parameter)
-2. If all fail: Try without ref parameter (uses repository default branch)
-Handles branch discovery failures gracefully with comprehensive error reporting.
-
-**OUTPUT:** Architectural map to guide intelligent code extraction.
-
-**NEVER:**
-- Explore without calling ${TOOL_NAMES.VIEW_REPOSITORY} first
-- Use hardcoded branch names without verification
-- Assume default branch names across repositories`;
-
-export const VIEW_REPOSITORY_DESCRIPTION = `**CRITICAL: Required first step** - discovers default branch to prevent tool failures.
+  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**🎯 FOUNDATION TOOL** - Essential first step for effective GitHub discovery.
 
 **PURPOSE:**
-Extract repository metadata and default branch information for all subsequent GitHub operations.
+Discover correct terminology and quality signals before searching repositories, providing semantic context for targeted searches.
+
+**WHY ESSENTIAL:**
+- **Term Discovery** - Find official terminology before searching repositories
+- **Quality Signals** - Featured/curated topics = community-validated projects
+- **Repository Filters** - Use topic names in ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} for precision
+- **Ecosystem Mapping** - Understand technology landscapes across 100M+ repositories
+
+**SEARCH STRATEGY:**
+1. **Start Global** - Search without owner for maximum discovery
+2. **Multi-term Queries** - Use + to combine: \`"react+typescript"\`, \`"machine+learning"\`
+3. **Then Focus** - Add owner only when needed: \`owner=facebook\`
+4. **Progressive Discovery** - Start broad, narrow based on findings
+
+**EXPLORATORY BEST PRACTICES:**
+- **DON'T start with owner** - Limits discovery to single organization
+- **DO start broad** - \`"javascript"\`, \`"python"\`, \`"authentication"\`
+- **USE multi-term** - \`"react+typescript"\`, \`"machine+learning+python"\`
+- **ADD owner later** - Only when organization-specific topics needed
+
+**CONTEXT PRIORITIZATION:**
+1. **Technology Domains** - \`"javascript"\`, \`"python"\`, \`"machine-learning"\`
+2. **Functional Areas** - \`"authentication"\`, \`"deployment"\`, \`"testing"\`
+3. **Combined Concepts** - \`"react+hooks"\`, \`"python+machine-learning"\`
+4. **Specific Tools** - \`"tensorflow"\`, \`"pytorch"\`, \`"nextjs"\`
+
+**QUERY EXAMPLES:**
+- **Global search** - \`"react"\` → find all React-related topics
+- **Multi-term** - \`"react+typescript"\` → intersection topics
+- **Complex** - \`"machine+learning+python"\` → specific tech stack
+- **Focused** - \`"react"\` + owner=facebook → React topics from Facebook
+
+**RESULT OPTIMIZATION:**
+- **1-10 results** - IDEAL for deep analysis
+- **10+ results** - Add featured/curated filters or more specific terms
+- **Repository count** - Maturity indicator (>10K established, 1K-10K growing)
+
+**SEQUENTIAL SEARCH BENEFITS:**
+- **Discover Related Terms** - Official vs informal terminology
+- **Understand Ecosystem** - How concepts relate and overlap
+- **Quality Validation** - Featured topics = community-validated approaches
+- **Precise Targeting** - Use discovered topics as exact filters
+
+**INTEGRATION:** Strategic foundation for all GitHub discovery - use before other GitHub tools.`,
+
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `**Repository structure exploration** - Strategic directory navigation for code analysis.
+
+**PURPOSE:**
+Explore repository structure systematically to understand project architecture and locate key implementation files.
+
+**CRITICAL REQUIREMENT:**
+**MANDATORY** - Use ${TOOL_NAMES.GITHUB_GET_REPOSITORY} FIRST for branch discovery. Never explore without explicit branch information.
+
+**EXPLORATION PHASES:**
+1. **Root Analysis** - Project type (package.json, requirements.txt), README, docs, config
+2. **Source Discovery** - Navigate src/, lib/, components/, utils/, types/
+3. **Validation** - Explore test/, examples/, demos/ directories
+
+**DIRECTORY PRIORITIES:**
+- **HIGH PRIORITY** - src/, lib/, components/, utils/, types/ (core implementations)
+- **MEDIUM PRIORITY** - docs/, examples/, config/ (context/documentation)
+- **VALIDATION** - test/, __tests__/, spec/ (quality/patterns)
+
+**NAVIGATION STRATEGY:**
+1. Start with root for project overview
+2. Target core implementation directories
+3. Extract promising files via ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}
+4. Cross-reference with tests for usage patterns
+
+**RESULT TARGETS:**
+- **1-10 results** - IDEAL for focused exploration
+- **11-50 results** - MANAGEABLE, prioritize by conventions
+- **50+ results** - TOO BROAD, explore subdirectories
+
+**AUTO-RECOVERY SYSTEM:**
+1. Specified branch → main → master → develop → trunk
+2. If all fail → Try without ref parameter (uses repository default)
+3. Comprehensive error reporting
+
+**ERROR HANDLING:**
+- Branch not found → Auto-fallback to common branches
+- Access denied → Check permissions with ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+- Empty directory → Try parent directory or common paths
+
+**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} and before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
+
+  [TOOL_NAMES.GITHUB_GET_REPOSITORY]: `**🚨 CRITICAL FIRST STEP** - Required before all GitHub file operations.
+
+**PURPOSE:**
+Discover default branch and repository metadata to prevent tool failures in subsequent operations.
 
 **WHY CRITICAL:**
-- Wrong branch names cause complete tool failure
-- All file operations depend on correct branch discovery
-- Prevents expensive retry cycles and API errors
+- **Prevents Tool Failures** - Wrong branch names cause complete tool failure
+- **Enables File Operations** - All file operations depend on correct branch discovery
+- **Avoids API Waste** - Prevents expensive retry cycles and API errors
 
-**BRANCH DISCOVERY:**
+**BRANCH DISCOVERY METHODS:**
 - Repository metadata analysis
 - README badge parsing for branch references
 - License/CI badge URL analysis
+- Default branch detection
 
 **REQUIRED BEFORE:**
-- ${TOOL_NAMES.SEARCH_GITHUB_CODE} (needs branch context)
-- ${TOOL_NAMES.VIEW_REPOSITORY_STRUCTURE} (directory exploration)
-- ${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT} (file operations)
+- ${TOOL_NAMES.GITHUB_SEARCH_CODE} (needs branch context)
+- ${TOOL_NAMES.GITHUB_GET_CONTENTS} (directory exploration)
+- ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} (file operations)
 
 **SUCCESS INDICATORS:**
-- Repository info retrieved successfully
+- Repository information retrieved successfully
 - Default branch clearly identified
 - Active repository with recent commits
+- Repository accessibility confirmed
 
 **ERROR HANDLING:**
-- Not found: Check owner/repo spelling
-- Access denied: Use ${TOOL_NAMES.GET_USER_ORGANIZATIONS} for permissions
-- Tool failure blocks all subsequent file operations
+- **Not found** - Check owner/repo spelling, verify repository exists
+- **Access denied** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permission check
+- **Rate limited** - Implement retry with exponential backoff
+- **Tool failure** - Blocks all subsequent file operations
 
-**NEVER:**
-- Skip before file operations
-- Assume default branch names
-- Use hardcoded 'main'/'master' without verification
-- Proceed if branch discovery fails`;
+**CRITICAL REQUIREMENTS:**
+- **NEVER skip** before file operations
+- **NEVER assume** default branch names
+- **NEVER use** hardcoded 'main'/'master' without verification
+- **NEVER proceed** if branch discovery fails
 
-export const SEARCH_GITHUB_COMMITS_DESCRIPTION = `Advanced GitHub commits search for development history analysis.
+**INTEGRATION:** Mandatory first step before any GitHub file operation workflows.`,
 
-**CORE PURPOSE:**
-Track code evolution, debug issues, analyze contributor patterns, and understand development history.
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `**Development history analysis** - Track code evolution, debug issues, and analyze contributor patterns.
+
+**PURPOSE:**
+Understand development history, track feature evolution, debug issues, and analyze contributor patterns through commit history.
 
 **SEARCH STRATEGY:**
-1. **Start Minimal**: Single keywords ("fix", "feature", "update") + owner/repo context
-2. **Progressive Expansion**: Add specific terms based on findings
-3. **Apply Filters**: Author, date ranges only when patterns emerge
+1. **Start Minimal** - Single keywords (\`"fix"\`, \`"feature"\`, \`"update"\`) with owner/repo
+2. **Progressive Expansion** - Add specific terms based on findings
+3. **Apply Filters** - Author, date ranges only when patterns emerge
 
 **SEARCH PATTERNS:**
-- **General exploration**: "fix" or "update" with owner/repo -> activity overview
-- **Feature tracking**: Single feature keyword -> expand with related terms
-- **Bug investigation**: "bug" or "fix" -> narrow by time/author
-- **Attribution**: Keywords + author filter -> contribution analysis
+- **General exploration** - \`"fix"\` or \`"update"\` with owner/repo → activity overview
+- **Feature tracking** - Single feature keyword → expand with related terms
+- **Bug investigation** - \`"bug"\` or \`"fix"\` → narrow by time/author
+- **Attribution analysis** - Keywords + author filter → contribution analysis
 
 **RESULT TARGETS:**
-- 0-5 results: Try broader terms, remove filters
-- 6-50 results: OPTIMAL - Extract insights
-- 51+ results: Add specific filters or narrow time ranges
+- **0-5 results** - Try broader terms, remove filters
+- **6-50 results** - OPTIMAL for extracting insights
+- **51+ results** - Add specific filters or narrow time ranges
 
-**CRITICAL LIMITATIONS:**
+**KEY LIMITATIONS:**
 - Large organizations may return org-wide results instead of repo-specific
-- If irrelevant results: Switch to alternative approaches (changelog files, PR search)
+- Search requires text terms - empty queries not supported
 
 **FALLBACK STRATEGY:**
 1. Commit search with minimal keywords
-2. Pull request searches for features/changes  
+2. Pull request searches for features/changes
 3. Fetch changelog files (CHANGELOG.md, RELEASES.md)
 4. Repository structure exploration
 
-**BRANCH AWARENESS:** Verify default branch (main vs master) before file fetching
-
 **ERROR HANDLING:**
-- "Search text required" -> Use minimal keywords ("fix", "update")
-- Irrelevant results -> Switch to file-based approaches
-- Empty results -> Broaden scope or remove repository filters
+- **"Search text required"** - Use minimal keywords (\`"fix"\`, \`"update"\`)
+- **Irrelevant results** - Switch to file-based approaches
+- **Empty results** - Broaden scope or remove repository filters
+- **Rate limits** - Implement progressive backoff
 
-**INTEGRATION:** Combine with ${TOOL_NAMES.FETCH_GITHUB_FILE_CONTENT} for complete change context.`;
+**BRANCH AWARENESS:** Verify default branch (main vs master) before file operations
 
-export const NPM_PACKAGE_STATS_DESCRIPTION = `Advanced npm package analysis providing release history, version information, and distribution tags.
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} for complete change context analysis.`,
+
+  [TOOL_NAMES.NPM_GET_PACKAGE_STATS]: `**Package maturity and maintenance analysis** - Comprehensive npm package lifecycle assessment.
+
+**PURPOSE:**
+Analyze package release patterns, version history, and maintenance activity to evaluate package maturity and stability.
+
+**ANALYSIS CAPABILITIES:**
+- **Release Timeline** - Release frequency and patterns over time
+- **Version History** - Semantic versioning patterns and breaking changes
+- **Distribution Tags** - latest, beta, alpha, next, and custom tags
+- **Maintenance Indicators** - Activity patterns and project health signals
 
 **WHEN TO USE:**
-- Analyze package release patterns and maintenance activity
-- Check version history and stability
-- Understand package distribution strategy (alpha, beta, latest tags)
-- Evaluate package maturity for production use
+- **Pre-installation Assessment** - Evaluate package stability before adoption
+- **Dependency Planning** - Understand release patterns for dependency management
+- **Security Evaluation** - Check maintenance activity and update frequency
+- **Production Readiness** - Assess package maturity for production use
 
-**ANALYSIS PROVIDED:**
-- Release timeline and frequency
-- Version history and semantic versioning patterns  
-- Distribution tags (latest, beta, alpha, etc.)
-- Package maintenance indicators
+**KEY INSIGHTS:**
+- **Frequent releases** - May indicate active development or instability
+- **Long gaps** - May suggest project abandonment or maturity
+- **Multiple dist-tags** - Indicates mature release process and testing
+- **Version patterns** - Shows breaking change frequency and stability
 
-**EXAMPLE INSIGHTS:**
-- Frequent releases may indicate active development
-- Long gaps between releases may suggest abandonment
-- Multiple dist-tags suggest mature release process
-- Version patterns show breaking change frequency
+**MATURITY INDICATORS:**
+- **Stable projects** - Regular releases, clear versioning, multiple dist-tags
+- **Active development** - Frequent releases, recent activity, beta/alpha tags
+- **Mature projects** - Less frequent releases, stable versioning, long-term support
+- **Abandoned projects** - Long gaps, no recent activity, outdated dependencies
 
-**INTEGRATION:**
-- Combine with npm_view for complete package assessment
-- Use before adding dependencies to evaluate stability
-- Cross-reference with repository information for full context`;
+**OUTPUT ANALYSIS:**
+- Release timeline visualization
+- Version distribution and tagging strategy
+- Maintenance activity assessment
+- Stability and maturity scoring
+
+**ERROR HANDLING:**
+- **Package not found** - Verify package name spelling
+- **No release data** - Package may be too new or private
+- **Rate limits** - Implement retry with exponential backoff
+
+**INTEGRATION:** 
+- Use with ${TOOL_NAMES.NPM_GET_PACKAGE} for complete package assessment
+- Combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for comprehensive evaluation
+- Cross-reference with repository information for development activity context`,
+};

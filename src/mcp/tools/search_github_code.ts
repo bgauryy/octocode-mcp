@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_CODE_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { GitHubCodeSearchParams } from '../../types';
 import { searchGitHubCode } from '../../impl/github';
 
@@ -74,10 +74,10 @@ const searchGitHubCodeSchema = z.object({
     .describe('Maximum number of results to return (default: 30)'),
 });
 
-export function registerSearchGitHubCodeTool(server: McpServer) {
+export function registerGitHubSearchCodeTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.SEARCH_GITHUB_CODE,
-    SEARCH_GITHUB_CODE_DESCRIPTION,
+    TOOL_NAMES.GITHUB_SEARCH_CODE,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
     searchGitHubCodeSchema.shape,
     {
       title: 'Search GitHub Code',

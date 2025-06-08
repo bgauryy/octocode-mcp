@@ -2,13 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubDiscussionsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_DISCUSSIONS_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubDiscussions } from '../../impl/github';
 
 export function registerSearchGitHubDiscussionsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.SEARCH_GITHUB_DISCUSSIONS,
-    SEARCH_GITHUB_DISCUSSIONS_DESCRIPTION,
+    TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS],
     {
       query: z
         .string()

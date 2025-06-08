@@ -2,12 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { npmPackageStats } from '../../impl/npm';
-import { NPM_PACKAGE_STATS_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 export function registerNpmPackageStatsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.NPM_PACKAGE_STATS,
-    NPM_PACKAGE_STATS_DESCRIPTION,
+    TOOL_NAMES.NPM_GET_PACKAGE_STATS,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_GET_PACKAGE_STATS],
     {
       packageName: z
         .string()

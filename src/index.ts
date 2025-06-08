@@ -39,7 +39,7 @@ process.stdin.on('close', async () => {
 
 // Register all tools
 function registerAllTools(server: McpServer) {
-  Tools.registerSearchGitHubCodeTool(server);
+  Tools.registerGitHubSearchCodeTool(server);
   Tools.registerFetchGitHubFileContentTool(server);
   Tools.registerViewRepositoryTool(server);
   Tools.registerNpmViewTool(server);
@@ -53,7 +53,6 @@ function registerAllTools(server: McpServer) {
   Tools.registerSearchGitHubDiscussionsTool(server);
   Tools.registerSearchGitHubTopicsTool(server);
   Tools.registerSearchGitHubUsersTool(server);
-  // Enhanced npm and GitHub tools
   Tools.registerNpmPackageStatsTool(server);
   Tools.registerNpmDependencyAnalysisTool(server);
   Tools.registerGitHubAdvancedSearchTool(server);
@@ -65,9 +64,5 @@ function registerResources(server: McpServer) {
   Resources.registerGithubStatusResource(server);
   Resources.registerGithubRateLimitResource(server);
   Resources.registerNpmStatusResource(server);
-  Resources.registerSearchGitHubCodeInstructionsResource(server);
-  Resources.registerSearchContextResource(server);
-  Resources.registerToolOrchestrationResource(server);
-  Resources.registerCapabilitiesDiscoveryResource(server);
   Resources.registerRepositoryIntelligenceResource(server);
 }

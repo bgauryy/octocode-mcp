@@ -8,7 +8,7 @@ import {
   searchGitHubPullRequests,
 } from '../../impl/github';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { GITHUB_ADVANCED_SEARCH_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 interface AdvancedSearchParams {
   query: string;
@@ -194,7 +194,7 @@ async function performAdvancedSearch(
 export function registerGitHubAdvancedSearchTool(server: McpServer) {
   server.tool(
     TOOL_NAMES.GITHUB_ADVANCED_SEARCH,
-    GITHUB_ADVANCED_SEARCH_DESCRIPTION,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_ADVANCED_SEARCH],
     {
       query: z
         .string()

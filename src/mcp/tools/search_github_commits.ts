@@ -3,12 +3,12 @@ import z from 'zod';
 import { GitHubCommitsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { searchGitHubCommits } from '../../impl/github';
-import { SEARCH_GITHUB_COMMITS_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.SEARCH_GITHUB_COMMITS,
-    SEARCH_GITHUB_COMMITS_DESCRIPTION,
+    TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
     {
       query: z
         .string()

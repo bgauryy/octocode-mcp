@@ -2,13 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubReposSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { SEARCH_GITHUB_REPOS_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubRepos } from '../../impl/github';
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.SEARCH_GITHUB_REPOS,
-    SEARCH_GITHUB_REPOS_DESCRIPTION,
+    TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
     {
       query: z
         .string()

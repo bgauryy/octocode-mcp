@@ -2,12 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { getUserOrganizations } from '../../impl/github';
-import { GET_USER_ORGANIZATIONS_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 export function registerGetUserOrganizationsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GET_USER_ORGANIZATIONS,
-    GET_USER_ORGANIZATIONS_DESCRIPTION,
+    TOOL_NAMES.GITHUB_GET_USER_ORGS,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_USER_ORGS],
     {
       limit: z
         .number()

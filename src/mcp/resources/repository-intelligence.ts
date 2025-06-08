@@ -7,12 +7,6 @@ interface QualityMetric {
   calculation: string;
 }
 
-// interface RepositoryScore {
-//   overall: number;
-//   breakdown: Record<string, number>;
-//   factors: Record<string, string>;
-// }
-
 async function generateRepositoryIntelligence() {
   return {
     quality_assessment: {

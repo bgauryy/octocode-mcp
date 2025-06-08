@@ -2,13 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubRepositoryViewParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
-import { VIEW_REPOSITORY_DESCRIPTION } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { viewGitHubRepositoryInfo } from '../../impl/github';
 
 export function registerViewRepositoryTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.VIEW_REPOSITORY,
-    VIEW_REPOSITORY_DESCRIPTION,
+    TOOL_NAMES.GITHUB_GET_REPOSITORY,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_REPOSITORY],
     {
       owner: z
         .string()
