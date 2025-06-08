@@ -5,8 +5,5 @@ export { registerNpmStatusResource } from './npm-status.js';
 export { registerSearchGitHubCodeInstructionsResource } from './search-github-code-instructions.js';
 export { registerSearchContextResource } from './search-context.js';
 export { registerToolOrchestrationResource } from './tool-orchestration.js';
-export { registerCodeExportResource } from './code-export.js';
 export { registerCapabilitiesDiscoveryResource } from './capabilities-discovery.js';
-export { registerQueryExpansionResource } from './query-expansion.js';
 export { registerRepositoryIntelligenceResource } from './repository-intelligence.js';
-export { registerErrorDiagnosticsResource } from './error-diagnostics.js';

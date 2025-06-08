@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { PROMPT_SYSTEM_PROMPT } from './mcp/tools/descriptions/systemPrompt';
 import * as Tools from './mcp/tools/index.js';
-import * as Prompts from './mcp/prompts/index.js';
 import * as Resources from './mcp/resources/index.js';
 
 const server = new McpServer(
@@ -26,7 +25,6 @@ const server = new McpServer(
 
 registerAllTools(server);
 registerResources(server);
-registerPrompts(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
@@ -61,12 +59,6 @@ function registerAllTools(server: McpServer) {
   Tools.registerGitHubAdvancedSearchTool(server);
 }
 
-// Register all prompts
-function registerPrompts(server: McpServer) {
-  Prompts.registerAnalyzeCodePrompt(server);
-  Prompts.registerComparePackagesPrompt(server);
-}
-
 // Register all resources
 function registerResources(server: McpServer) {
   Resources.registerUsageGuideResource(server);
@@ -76,9 +68,6 @@ function registerResources(server: McpServer) {
   Resources.registerSearchGitHubCodeInstructionsResource(server);
   Resources.registerSearchContextResource(server);
   Resources.registerToolOrchestrationResource(server);
-  Resources.registerCodeExportResource(server);
   Resources.registerCapabilitiesDiscoveryResource(server);
-  Resources.registerQueryExpansionResource(server);
   Resources.registerRepositoryIntelligenceResource(server);
-  Resources.registerErrorDiagnosticsResource(server);
 }

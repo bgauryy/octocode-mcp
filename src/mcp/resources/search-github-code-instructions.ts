@@ -1,10 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { TOOL_NAMES } from '../contstants';
 
 export function registerSearchGitHubCodeInstructionsResource(
   server: McpServer
 ) {
   server.resource(
-    'search-github-code-instructions',
+    `${TOOL_NAMES.SEARCH_GITHUB_CODE}-instructions`,
     'help://github-code-search',
     async uri => ({
       contents: [

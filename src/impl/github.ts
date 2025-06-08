@@ -341,7 +341,17 @@ export async function fetchGitHubFileContent(
 
   return withCache(cacheKey, async () => {
     try {
-      const apiPath = `/repos/${params.owner}/${params.repo}/contents/${params.filePath}?ref=${params.branch}`;
+      let apiPath = `/repos/${params.owner}/${params.repo}/contents/${params.filePath}`;
+
+      // Only add ref parameter if branch is provided and is not master or main
+      if (
+        params.branch &&
+        params.branch !== 'master' &&
+        params.branch !== 'main'
+      ) {
+        apiPath += `?ref=${params.branch}`;
+      }
+
       const args = [apiPath, '--jq', '.content'];
       const result = await executeGitHubCommand('api', args, { cache: false });
 
