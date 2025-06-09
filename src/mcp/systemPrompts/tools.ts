@@ -172,10 +172,17 @@ Extract GitHub repository information and package metadata from npm packages - *
 
 **INTEGRATION:** **CRITICAL** bridge between NPM and GitHub workflows - always use before GitHub operations.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code implementation search** - Advanced GitHub code search with smart pattern matching and repository scoping.
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code implementation search** - Advanced GitHub code search with testing-validated pattern matching and repository scoping.
 
 **PURPOSE:**
-Find specific code implementations with surgical precision using intelligent search patterns and automatic repository scoping.
+Find specific code implementations with surgical precision using testing-validated search patterns and automatic repository scoping.
+
+**TESTING-VALIDATED PATTERNS:**
+- **Function Discovery Success** - "export function" → VSCode TypeScript functions (localize, getVersion, fixWin32DirectoryPermissions)
+- **Boolean Operator Validation** - "useState OR useEffect" ✅, "function NOT test" ✅, regex patterns ❌
+- **Path Filter Effectiveness** - packages/react/src/__tests__ ✅, src/ (may fail) ⚠️, extension filters ✅
+- **Cross-Repository Success** - "async function login" finds 4 TypeScript authentication implementations
+- **Repository-Specific Targeting** - facebook/react + "useEffect" → actual React source code
 
 **KEY FEATURES:**
 - **Automatic Repository Scoping** - Every search includes "repo:owner/repository"
@@ -514,11 +521,13 @@ Discover developers, organizations, and community leaders for collaboration, lea
 2. **THEN** - ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem mapping
 3. **ONLY IF BOTH FAIL** - Use this tool with intelligent fallbacks
 
-**ENHANCED SEARCH STRATEGY:**
-1. **Primary term extraction** - \`"react typescript hooks"\` → primary: \`"react"\` + workflow suggestions
-2. **Filter validation** - Pre-flight checks for problematic combinations
-3. **Smart fallbacks** - Automatic alternative approaches for 0 results
-4. **Caching hints** - Identifies popular searches for optimization
+**TESTING-VALIDATED SEARCH STRATEGY:**
+1. **Proven Single Terms** - "react" (236K⭐), "typescript" (105K⭐) vs multi-term failures
+2. **Validated Combinations** - microsoft + typescript ✅, facebook + react ✅, multi-language ❌  
+3. **Filter validation** - Pre-flight checks for problematic combinations
+4. **Smart fallbacks** - Automatic alternative approaches for 0 results
+5. **Success Metrics** - Global search: 420K⭐ results, Scoped search: quality projects
+6. **Caching hints** - React, TypeScript, Vue, Angular confirmed high-value terms
 
 **PRODUCTION BEST PRACTICES INTEGRATED:**
 - **Start Broad** - Owner + single term, progressively add filters

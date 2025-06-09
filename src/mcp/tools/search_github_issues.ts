@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubIssuesSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { searchGitHubIssues } from '../../impl/github';
+import { searchGitHubIssues } from '../../impl/github/searchGitHubIssues';
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
@@ -12,11 +12,13 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     {
       query: z
         .string()
+        .min(1, 'Search query is required and cannot be empty')
         .describe(
           "The search query to find issues (e.g., 'bug fix', 'feature request', 'documentation')"
         ),
       owner: z
         .string()
+        .min(1, 'Owner is required and cannot be empty')
         .describe(
           "Filter by repository owner/organization (e.g., 'example-org')"
         ),

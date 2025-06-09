@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubDiscussionsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { searchGitHubDiscussions } from '../../impl/github';
+import { searchGitHubDiscussions } from '../../impl/github/searchGitHubDiscussions';
 
 export function registerSearchGitHubDiscussionsTool(server: McpServer) {
   server.tool(
@@ -12,6 +12,7 @@ export function registerSearchGitHubDiscussionsTool(server: McpServer) {
     {
       query: z
         .string()
+        .min(1, 'Search query cannot be empty')
         .describe(
           "The search query to find discussions (e.g., 'deployment help', 'authentication tutorial', 'best practices')"
         ),
@@ -92,6 +93,19 @@ export function registerSearchGitHubDiscussionsTool(server: McpServer) {
     },
     async (args: GitHubDiscussionsSearchParams) => {
       try {
+        // Validate required query parameter
+        if (!args.query || args.query.trim() === '') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Search query is required for GitHub discussions search.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
         return await searchGitHubDiscussions(args);
       } catch (error) {
         return {

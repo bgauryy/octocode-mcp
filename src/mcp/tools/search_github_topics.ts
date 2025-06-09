@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubTopicsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { searchGitHubTopics } from '../../impl/github';
+import { searchGitHubTopics } from '../../impl/github/searchGitHubTopics';
 
 export function registerSearchGitHubTopicsTool(server: McpServer) {
   server.tool(
@@ -12,6 +12,7 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
     {
       query: z
         .string()
+        .min(1, 'Search query is required and cannot be empty')
         .describe(
           "The search query to find topics (e.g., 'react', 'react+typescript', 'machine-learning')"
         ),

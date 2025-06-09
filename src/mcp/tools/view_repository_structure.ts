@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubRepositoryStructureParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { viewRepositoryStructure } from '../../impl/github';
+import { viewRepositoryStructure } from '../../impl/github/viewRepositoryStructure';
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.tool(

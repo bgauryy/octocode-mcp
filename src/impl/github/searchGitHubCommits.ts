@@ -1,16 +1,20 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubCommitsSearchParams, GitHubSearchResult } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import {
-  createErrorResult,
-  createSuccessResult,
-  needsQuoting,
-} from '../github';
+import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
 
 export async function searchGitHubCommits(
   params: GitHubCommitsSearchParams
 ): Promise<CallToolResult> {
+  // Validate required query parameter
+  if (!params.query || params.query.trim() === '') {
+    return createErrorResult(
+      'Search query required',
+      new Error('GitHub commit search requires a non-empty query parameter')
+    );
+  }
+
   const cacheKey = generateCacheKey('gh-commits', params);
 
   return withCache(cacheKey, async () => {

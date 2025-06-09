@@ -1,11 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubCodeSearchParams, GitHubSearchResult } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import {
-  createErrorResult,
-  createSuccessResult,
-  needsQuoting,
-} from '../github';
+import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
 
 export async function searchGitHubCode(
@@ -48,9 +44,14 @@ export async function searchGitHubCode(
 
           // Analyze code search results
           codeResults.forEach((result: any) => {
-            // Collect repositories
-            if (result.repository?.fullName) {
-              analysis.repositories.add(result.repository.fullName);
+            // Collect repositories (try multiple possible field names)
+            const repoName =
+              result.repository?.fullName ||
+              result.repository?.nameWithOwner ||
+              result.repository?.name ||
+              'Unknown';
+            if (repoName !== 'Unknown') {
+              analysis.repositories.add(repoName);
             }
 
             // Collect languages from file extensions and repository info
@@ -64,12 +65,15 @@ export async function searchGitHubCode(
 
             // Build top matches with better context
             analysis.topMatches.push({
-              repository: result.repository?.fullName || 'Unknown',
+              repository: repoName,
               path: result.path || '',
               url: result.url || '',
               matchCount: result.textMatches?.length || 0,
               language: result.repository?.language || 'Unknown',
-              stars: result.repository?.stargazersCount || 0,
+              stars:
+                result.repository?.stargazersCount ||
+                result.repository?.stargazers_count ||
+                0,
             });
           });
 

@@ -1,11 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubReposSearchParams, GitHubReposSearchResult } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import {
-  createErrorResult,
-  createSuccessResult,
-  needsQuoting,
-} from '../github';
+import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
 
 export async function searchGitHubRepos(

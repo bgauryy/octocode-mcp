@@ -1,20 +1,17 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import {
-  GitHubPullRequestsSearchParams,
-  GitHubSearchResult,
-} from '../../types';
-import { generateCacheKey, withCache } from '../../utils/cache';
-import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
+import { generateCacheKey, withCache } from '../../utils/cache';
+import { GitHubSearchResult, GitHubIssuesSearchParams } from '../../types';
+import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 
-export async function searchGitHubPullRequests(
-  params: GitHubPullRequestsSearchParams
+export async function searchGitHubIssues(
+  params: GitHubIssuesSearchParams
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-prs', params);
+  const cacheKey = generateCacheKey('gh-issues', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const { command, args } = buildGitHubPullRequestsSearchCommand(params);
+      const { command, args } = buildGitHubIssuesSearchCommand(params);
       const result = await executeGitHubCommand(command, args, {
         cache: false,
       });
@@ -28,7 +25,7 @@ export async function searchGitHubPullRequests(
       const content = execResult.result;
 
       const searchResult: GitHubSearchResult = {
-        searchType: 'prs',
+        searchType: 'issues',
         query: params.query || '',
         results: content,
         rawOutput: content,
@@ -36,14 +33,15 @@ export async function searchGitHubPullRequests(
 
       return createSuccessResult(searchResult);
     } catch (error) {
-      return createErrorResult('Failed to search GitHub pull requests', error);
+      return createErrorResult('Failed to search GitHub issues', error);
     }
   });
 }
 
-export function buildGitHubPullRequestsSearchCommand(
-  params: GitHubPullRequestsSearchParams
-): { command: string; args: string[] } {
+function buildGitHubIssuesSearchCommand(params: GitHubIssuesSearchParams): {
+  command: string;
+  args: string[];
+} {
   // Build query following GitHub CLI patterns
   const queryParts: string[] = [];
 
@@ -63,26 +61,38 @@ export function buildGitHubPullRequestsSearchCommand(
   // Construct query string
   const queryString = queryParts.filter(part => part.length > 0).join(' ');
 
-  const args = ['prs', queryString];
+  const args = ['issues', queryString];
 
   // Add individual flags for additional qualifiers
+  if (params.app) args.push(`--app=${params.app}`);
+  if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
   if (params.author) args.push(`--author=${params.author}`);
   if (params.assignee) args.push(`--assignee=${params.assignee}`);
-  if (params.mentions) args.push(`--mentions=${params.mentions}`);
-  if (params.commenter) args.push(`--commenter=${params.commenter}`);
-  if (params.involves) args.push(`--involves=${params.involves}`);
-  if (params.reviewedBy) args.push(`--reviewed-by=${params.reviewedBy}`);
-  if (params.reviewRequested)
-    args.push(`--review-requested=${params.reviewRequested}`);
-  if (params.state) args.push(`--state=${params.state}`);
-  if (params.head) args.push(`--head=${params.head}`);
-  if (params.base) args.push(`--base=${params.base}`);
-  if (params.language) args.push(`--language=${params.language}`);
-  if (params.created) args.push(`--created=${params.created}`);
-  if (params.updated) args.push(`--updated=${params.updated}`);
-  if (params.merged) args.push(`--merged=${params.merged}`);
   if (params.closed) args.push(`--closed=${params.closed}`);
-  if (params.draft !== undefined) args.push(`--draft=${params.draft}`);
+  if (params.commenter) args.push(`--commenter=${params.commenter}`);
+  if (params.comments !== undefined) args.push(`--comments=${params.comments}`);
+  if (params.created) args.push(`--created=${params.created}`);
+  if (params.includePrs !== undefined) args.push(`--include-prs`);
+  if (params.interactions !== undefined)
+    args.push(`--interactions=${params.interactions}`);
+  if (params.involves) args.push(`--involves=${params.involves}`);
+  if (params.labels) args.push(`--label=${params.labels}`);
+  if (params.language) args.push(`--language=${params.language}`);
+  if (params.locked !== undefined) args.push(`--locked=${params.locked}`);
+  if (params.match) args.push(`--match=${params.match}`);
+  if (params.mentions) args.push(`--mentions=${params.mentions}`);
+  if (params.milestone) args.push(`--milestone=${params.milestone}`);
+  if (params.noAssignee !== undefined) args.push(`--no-assignee`);
+  if (params.noLabel !== undefined) args.push(`--no-label`);
+  if (params.noMilestone !== undefined) args.push(`--no-milestone`);
+  if (params.noProject !== undefined) args.push(`--no-project`);
+  if (params.project) args.push(`--project=${params.project}`);
+  if (params.reactions !== undefined)
+    args.push(`--reactions=${params.reactions}`);
+  if (params.state) args.push(`--state=${params.state}`);
+  if (params.teamMentions) args.push(`--team-mentions=${params.teamMentions}`);
+  if (params.updated) args.push(`--updated=${params.updated}`);
+  if (params.visibility) args.push(`--visibility=${params.visibility}`);
   if (params.limit) args.push(`--limit=${params.limit}`);
   if (params.sort) args.push(`--sort=${params.sort}`);
   if (params.order) args.push(`--order=${params.order}`);

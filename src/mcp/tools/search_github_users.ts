@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubUsersSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { searchGitHubUsers } from '../../impl/github';
+import { searchGitHubUsers } from '../../impl/github/searchGitHubUsers';
 
 export function registerSearchGitHubUsersTool(server: McpServer) {
   server.tool(
@@ -12,11 +12,13 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
     {
       query: z
         .string()
+        .min(1, 'Search query is required and cannot be empty')
         .describe(
           "The search query to find users/organizations (e.g., 'react developer', 'python', 'machine learning')"
         ),
       owner: z
         .string()
+        .min(1, 'Owner is required and cannot be empty')
         .describe(
           "Filter by repository owner/organization (e.g., 'example-org') obtained from the appropriate tool for fetching user organizations"
         ),

@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { npmView } from '../../impl/npm';
+import { npmView } from '../../impl/npm/npmView';
 
 export function registerNpmViewTool(server: McpServer) {
   server.tool(

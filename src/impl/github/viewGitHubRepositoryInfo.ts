@@ -4,7 +4,7 @@ import {
   GitHubRepositoryViewResult,
 } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { createErrorResult, createSuccessResult } from '../github';
+import { createErrorResult, createSuccessResult } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
 
 export async function viewGitHubRepositoryInfo(
