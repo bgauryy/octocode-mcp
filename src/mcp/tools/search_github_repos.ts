@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubReposSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { searchGitHubRepos } from '../../impl/github';
+import { searchGitHubRepos } from '../../impl/github/searchGitHubRepos';
 
 // Security validation function
 function sanitizeInput(input: string): string {

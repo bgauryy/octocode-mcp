@@ -32,7 +32,6 @@ async function analyzeDependencies(
       const results = await Promise.allSettled(
         commands.map(async ({ command, args }) => {
           return await executeNpmCommand(command, args, {
-            json: true,
             cache: true,
           });
         })

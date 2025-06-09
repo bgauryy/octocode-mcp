@@ -183,18 +183,20 @@ Find specific code implementations with surgical precision using intelligent sea
 - **Organizational Context** - Respects private repository access
 - **Smart Fallbacks** - Multiple recovery strategies for failed searches
 
-**SEARCH INTELLIGENCE:**
-- **Single Terms** - \`useState\`, \`scheduleCallback\`, \`workLoopConcurrent\`
-- **Auto-Boolean AND** - \`"concurrent rendering"\` → \`"concurrent AND rendering"\`
-- **Simple Boolean OR** - \`"useState OR useEffect"\` → \`"useState OR useEffect"\`
-- **Simple Boolean AND** - \`"hooks AND state"\` → \`"hooks AND state"\`
-- **Simple Boolean NOT** - \`"error NOT test"\` → \`"error NOT test"\`
-- **Function Patterns** - \`"useEffect(() =>"\`, \`"React.createElement"\`, \`"export default"\`
+**BOOLEAN OPERATIONS:**
+- **Default AND Behavior** - Adjacent terms use AND: \`"sparse index"\` = \`"sparse AND index"\`
+- **OR Operations** - \`"useState OR useEffect"\` for either/or searches
+- **NOT Operations** - \`"error NOT test"\` or \`"fatal error" NOT path:__testing__\` for exclusions
+- **Parentheses Support** - \`(language:javascript OR language:typescript) AND NOT path:"/tests/"\`
+- **Case Sensitivity** - Default: case-insensitive. Case-sensitive: \`/(?-i)True/\`
 
-**⚠️ CRITICAL LIMITATIONS:**
-- **NO Parentheses Support** - GitHub API rejects \`(useState OR useEffect)\`, \`(term1 AND term2)\`
-- **NO Complex Grouping** - Expressions like \`(useState OR useEffect) AND hooks\` cause API errors
-- **Simple Boolean Only** - Use \`term1 OR term2\` or \`term1 AND term2\` without parentheses
+**SEARCH PATTERNS:**
+- **Single Terms** - \`useState\`, \`scheduleCallback\`, \`workLoopConcurrent\`
+- **Function Patterns** - \`"useEffect(() =>"\`, \`"React.createElement"\`, \`"export default"\`
+- **Path Qualifiers** - \`path:src\`, \`path:components\`, \`NOT path:__testing__\`
+- **Language Qualifiers** - \`language:javascript\`, \`language:typescript\`
+- **Extension Qualifiers** - \`extension:js\`, \`extension:ts\`
+- **Complex Expressions** - \`(language:ruby OR language:python) AND NOT path:"/tests/"\`
 
 **SEARCH SCOPING:**
 - **Exploratory inside owner** - Add \`"owner={owner}"\` for organization-wide search
@@ -216,8 +218,8 @@ Find specific code implementations with surgical precision using intelligent sea
 - **No Results** - Remove boolean operators, try synonyms, expand scope
 - **Too Many Results** - Add language filters, path restrictions, exclude tests
 - **Wrong Context** - Add framework qualifiers, environment context
-- **Parentheses Error** - Remove parentheses: \`(useState OR useEffect)\` → \`useState OR useEffect\`
-- **Complex Boolean Error** - Simplify to separate searches or use multiple queries
+- **Query Parse Error** - Check boolean syntax, ensure proper qualifier formatting
+- **Complex Expressions** - Break into simpler queries or use path/language qualifiers
 - **Private Access** - Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for permissions
 - **Rate Limits** - Switch to ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for discovery
 

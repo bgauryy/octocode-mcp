@@ -29,6 +29,9 @@ export interface GitHubCodeSearchParams extends BaseSearchParams {
   language?: string;
   filename?: string;
   extension?: string;
+  path?: string;
+  match?: 'file' | 'path';
+  branch?: string;
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
@@ -58,6 +61,7 @@ export interface GitHubPullRequestsSearchParams
   head?: string;
   base?: string;
   language?: string;
+  merged?: string;
   mergedAt?: string;
   draft?: boolean;
   reviewedBy?: string;
@@ -118,9 +122,25 @@ export interface GitHubSearchResult {
     | 'topics'
     | 'users';
   query: string;
+  actualQuery?: string; // The actual constructed query sent to GitHub CLI
   totalCount?: number;
-  results: string;
+  results: string | any[];
   rawOutput: string;
+  analysis?: {
+    summary: string;
+    repositories?: string[];
+    languages?: string[];
+    fileTypes?: string[];
+    topMatches?: Array<{
+      repository: string;
+      path: string;
+      url: string;
+      score: number;
+      matchCount: number;
+      language: string;
+      stars: number;
+    }>;
+  };
 }
 
 export interface GitHubReposSearchResult {
@@ -228,6 +248,7 @@ export interface GitHubIssuesSearchParams {
   interactions?: number;
   state?: 'open' | 'closed';
   label?: string;
+  labels?: string;
   milestone?: string;
   project?: string;
   language?: string;

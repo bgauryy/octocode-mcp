@@ -14,4 +14,3 @@ export { registerSearchGitHubTopicsTool } from './search_github_topics.js';
 export { registerSearchGitHubUsersTool } from './search_github_users.js';
 export { registerNpmPackageStatsTool } from './npm_package_stats.js';
 export { registerNpmDependencyAnalysisTool } from './npm_dependency_analysis.js';
-export { registerGitHubAdvancedSearchTool } from './github_advanced_search.js';

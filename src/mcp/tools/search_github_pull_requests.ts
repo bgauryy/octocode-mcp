@@ -3,7 +3,7 @@ import z from 'zod';
 import { GitHubPullRequestsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
-import { searchGitHubPullRequests } from '../../impl/github';
+import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(

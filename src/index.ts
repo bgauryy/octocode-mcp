@@ -55,7 +55,6 @@ function registerAllTools(server: McpServer) {
   Tools.registerSearchGitHubUsersTool(server);
   Tools.registerNpmPackageStatsTool(server);
   Tools.registerNpmDependencyAnalysisTool(server);
-  Tools.registerGitHubAdvancedSearchTool(server);
 }
 
 // Register all resources

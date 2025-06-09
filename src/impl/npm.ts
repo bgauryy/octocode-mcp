@@ -1,6 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../utils/cache';
-import { executeNpmCommand, CommandBuilder } from '../utils/exec';
+import { executeNpmCommand } from '../utils/exec';
 import { NpmRepositoryResult, NpmSearchParams } from '../types';
 
 export async function npmView(packageName: string): Promise<CallToolResult> {
@@ -8,9 +8,7 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
 
   return withCache(cacheKey, async () => {
     try {
-      const { command, args } = CommandBuilder.npmView(packageName);
-      const result = await executeNpmCommand(command, args, {
-        json: true,
+      const result = await executeNpmCommand('view', [packageName, '--json'], {
         cache: true,
       });
 
@@ -64,13 +62,10 @@ export async function npmSearch(
   const { query, json = true, searchlimit = 50 } = args;
 
   try {
-    const { command, args: cmdArgs } = CommandBuilder.npmSearch(query, {
-      limit: searchlimit,
-      json,
-    });
+    const args = [`"${query}"`, `--searchlimit=${searchlimit}`];
+    if (json) args.push('--json');
 
-    const result = await executeNpmCommand(command, cmdArgs, {
-      json,
+    const result = await executeNpmCommand('search', args, {
       cache: true,
     });
 
