@@ -52,13 +52,18 @@ export const TOOL_DESCRIPTIONS = {
 
 **INTEGRATION:** MANDATORY first step when private access likely needed`,
 
-  [TOOL_NAMES.GITHUB_GET_REPOSITORY]: `**CRITICAL FIRST STEP** - Required before all GitHub file operations.
+  [TOOL_NAMES.GITHUB_GET_REPOSITORY]: `**CRITICAL FIRST STEP** - Required before all GitHub file operations, but ONLY after discovery.
 
 **PURPOSE:** Discover default branch and repository metadata to prevent tool failures.
 
+**MANDATORY PREREQUISITES:** Repository owner/name MUST be discovered first through:
+1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.NPM_GET_PACKAGE} (for packages)
+2. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} (for ecosystem discovery)  
+3. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} (last resort)
+
 **REQUIRED BEFORE:** ${TOOL_NAMES.GITHUB_SEARCH_CODE}, ${TOOL_NAMES.GITHUB_GET_CONTENTS}, ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}
 
-**CRITICAL:** NEVER skip before file operations, NEVER assume branch names, NEVER proceed if branch discovery fails`,
+**CRITICAL:** NEVER call with guessed repository names. ALWAYS use discovery workflow first.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code search** - Advanced search with automatic repository scoping.
 
@@ -74,11 +79,15 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `**Complete code extraction** - Fetch full working implementations.
 
-**CRITICAL WORKFLOW:** MANDATORY ${TOOL_NAMES.GITHUB_GET_REPOSITORY} first → Find files with ${TOOL_NAMES.GITHUB_SEARCH_CODE} → Extract with this tool
+**CRITICAL WORKFLOW:** MANDATORY discovery → ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → Find files with ${TOOL_NAMES.GITHUB_SEARCH_CODE} or ${TOOL_NAMES.GITHUB_GET_CONTENTS} → Extract with this tool
 
 **AUTO-RECOVERY:** Specified branch → main → master → develop → trunk → try without ref
 
-**ORGANIZATIONAL CONTEXT:** Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access`,
+**ENHANCED ERROR HANDLING:** Provides detailed guidance when files don't exist, with alternative discovery methods
+
+**ORGANIZATIONAL CONTEXT:** Private repositories → Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+
+**CRITICAL:** NEVER guess file paths. Use structure exploration or code search first.`,
 
   [TOOL_NAMES.GITHUB_GET_CONTENTS]: `**Repository structure exploration** - Strategic directory navigation.
 
@@ -138,7 +147,7 @@ export const TOOL_DESCRIPTIONS = {
 
 **MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
 
-**CRITICAL:** npm_search_packages → topics workflow provides superior results for 95% of use cases`,
+**CRITICAL:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results for 95% of use cases`,
 
   [TOOL_NAMES.NPM_GET_PACKAGE_STATS]: `**Package maturity analysis** - Lifecycle assessment for package evaluation.
 
