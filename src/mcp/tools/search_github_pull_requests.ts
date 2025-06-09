@@ -12,6 +12,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     {
       query: z
         .string()
+        .min(1, 'Search query is required and cannot be empty')
         .describe(
           "The search query to find pull requests (e.g., 'bug fix', 'feature implementation', 'code review')"
         ),

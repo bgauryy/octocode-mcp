@@ -12,6 +12,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
     {
       query: z
         .string()
+        .min(1, 'Search query cannot be empty')
         .describe(
           "The search query to find commits - start with single keyword (e.g., 'bug', 'refactor', 'feature'). Cannot be empty as GitHub requires search text for commit searches."
         ),
@@ -79,6 +80,19 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
     },
     async (args: GitHubCommitsSearchParams) => {
       try {
+        // Validate required query parameter
+        if (!args.query || args.query.trim() === '') {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Search query is required for GitHub commit search. GitHub requires search text for commit searches.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
         return await searchGitHubCommits(args);
       } catch (error) {
         return {

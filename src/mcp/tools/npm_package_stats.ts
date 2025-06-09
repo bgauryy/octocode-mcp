@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
-import { npmPackageStats } from '../../impl/npm';
+import { npmPackageStats } from '../../impl/npm/npmPackageStats';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 export function registerNpmPackageStatsTool(server: McpServer) {

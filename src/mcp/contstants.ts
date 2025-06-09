@@ -1,7 +1,7 @@
 export const TOOL_NAMES = {
   // GitHub Search API (/search/*)
   GITHUB_SEARCH_CODE: 'github_search_code',
-  GITHUB_SEARCH_REPOSITORIES: 'github_search_repositories',
+  GITHUB_SEARCH_REPOS: 'github_search_repositories',
   GITHUB_SEARCH_COMMITS: 'github_search_commits',
   GITHUB_SEARCH_ISSUES: 'github_search_issues',
   GITHUB_SEARCH_PULL_REQUESTS: 'github_search_pull_requests',
