@@ -208,6 +208,17 @@ Find specific code implementations with surgical precision using intelligent sea
 - **Extension Filtering** - \`.ts\`, \`.js\`, \`.jsx\`, \`.tsx\` files
 - **Path Filtering** - \`path:src\`, \`path:lib\` for focused searches
 
+**⚠️ CRITICAL PATH FILTERING WARNING:**
+Path filters depend on actual repository structure - **verify directory exists first!**
+- **React**: Uses \`path:packages\` (NOT \`path:src\`)
+- **Next.js**: Uses \`path:examples\`, \`path:packages\`, \`path:docs\`
+- **VSCode**: Uses \`path:src\`, \`path:extensions\` 
+- **Node.js**: Uses \`path:lib\`, \`path:src\`, \`path:test\`
+- **Angular**: Uses \`path:packages\`, \`path:aio\`
+- **Vue**: Uses \`path:packages\`, \`path:src\`
+
+**COMMON MISTAKE**: Using \`path:src\` on repositories that don't have a top-level \`src\` directory will return zero results even with valid search terms. Always check repository structure or use broader paths first.
+
 **RESULT OPTIMIZATION:**
 - **1-10 Results** - IDEAL for deep analysis
 - **11-30 Results** - GOOD, manageable scope
@@ -216,6 +227,7 @@ Find specific code implementations with surgical precision using intelligent sea
 
 **SMART FALLBACKS (NO DOUBLE QUERIES):**
 - **No Results** - Remove boolean operators, try synonyms, expand scope
+- **Zero Results with Path Filter** - Remove \`path:\` qualifier or try \`path:packages\`, \`path:lib\` instead of \`path:src\`
 - **Too Many Results** - Add language filters, path restrictions, exclude tests
 - **Wrong Context** - Add framework qualifiers, environment context
 - **Query Parse Error** - Check boolean syntax, ensure proper qualifier formatting
