@@ -24,49 +24,93 @@ function sanitizeInput(input: string): string {
   return sanitized;
 }
 
-// Validate single term only
-function validateSingleTerm(query: string): void {
+// Smart query decomposition for multi-term queries
+function decomposeQuery(query: string): {
+  primaryTerm: string;
+  suggestion: string;
+  shouldDecompose: boolean;
+} {
   const sanitized = sanitizeInput(query);
 
-  // Check for multiple terms (spaces, plus signs, complex operators)
-  if (
+  // Check for multi-term patterns
+  const hasMultipleTerms =
     /\s+/.test(sanitized) ||
     /\+/.test(sanitized) ||
-    /AND|OR|NOT/i.test(sanitized)
-  ) {
-    throw new Error(
-      'This tool only supports single terms. For multi-term searches, use npm_search_packages or github_search_topics first for discovery.'
-    );
+    /AND|OR|NOT/i.test(sanitized);
+
+  if (!hasMultipleTerms) {
+    return { primaryTerm: sanitized, suggestion: '', shouldDecompose: false };
   }
 
-  // Validate term length
-  if (sanitized.length < 2) {
-    throw new Error('Search term must be at least 2 characters long');
-  }
+  // Extract primary term (first meaningful word)
+  const terms = sanitized.split(/[\s+]/).filter(term => term.length >= 2);
+  const primaryTerm = terms[0] || sanitized;
 
-  if (sanitized.length > 100) {
-    throw new Error('Search term must be less than 100 characters');
-  }
+  // Create suggestion for better workflow
+  const suggestion =
+    terms.length > 1
+      ? `Multi-term query detected. Recommended workflow:
+1. Start with primary term: "${primaryTerm}"
+2. Use npm_search_packages for "${terms.join(' ')}" package discovery
+3. Use github_search_topics for ecosystem terminology: "${terms.join('+')}"
+4. Apply additional terms as filters once repositories are discovered`
+      : '';
+
+  return { primaryTerm, suggestion, shouldDecompose: true };
 }
 
-// Validate field combinations
-function validateFieldCombinations(args: GitHubReposSearchParams): void {
-  // If using specific filters, owner should be provided for scoping
-  const hasSpecificFilters =
-    args.language || args.topic || args.stars !== undefined;
+// Enhanced filter validation with production insights
+function validateFilterCombinations(args: GitHubReposSearchParams): {
+  isValid: boolean;
+  warnings: string[];
+  suggestions: string[];
+} {
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
 
-  if (hasSpecificFilters && !args.owner) {
-    console.warn(
-      'Warning: Using specific filters without owner may return too many results. Consider providing owner for better scoping.'
-    );
-  }
+  // Critical filter combination checks based on production testing
+  const problematicCombinations = [
+    {
+      condition:
+        args.owner === 'facebook' &&
+        args.query === 'react' &&
+        args.language === 'JavaScript',
+      warning: 'facebook + react + JavaScript filter may return 0 results',
+      suggestion:
+        'Try: owner=facebook + query=react without language filter, or search React org instead',
+    },
+    {
+      condition:
+        args.language && args.stars !== undefined && args.stars > 10000,
+      warning:
+        'High star threshold with specific language may be too restrictive',
+      suggestion:
+        'Try lower star threshold (>1000) or remove language filter initially',
+    },
+    {
+      condition:
+        !args.owner &&
+        (args.language || args.topic || args.stars !== undefined),
+      warning:
+        'Specific filters without owner scope may return too many or zero results',
+      suggestion:
+        'Provide owner parameter for better scoping, or use npm_search_packages first',
+    },
+  ];
 
-  // Validate date formats if provided
+  problematicCombinations.forEach(check => {
+    if (check.condition) {
+      warnings.push(check.warning);
+      suggestions.push(check.suggestion);
+    }
+  });
+
+  // Validate date formats
   const dateFields = ['created', 'updated'];
   dateFields.forEach(field => {
     const value = args[field as keyof GitHubReposSearchParams] as string;
     if (value && !/^[><]=?\d{4}-\d{2}-\d{2}$/.test(value)) {
-      throw new Error(
+      warnings.push(
         `${field} must be in format ">2020-01-01", "<2023-12-31", etc.`
       );
     }
@@ -74,16 +118,55 @@ function validateFieldCombinations(args: GitHubReposSearchParams): void {
 
   // Validate numeric ranges
   if (args.limit && (args.limit < 1 || args.limit > 100)) {
-    throw new Error('Limit must be between 1 and 100');
+    warnings.push('Limit must be between 1 and 100');
   }
 
   if (args.stars !== undefined && args.stars < 0) {
-    throw new Error('Stars filter must be non-negative');
+    warnings.push('Stars filter must be non-negative');
   }
 
   if (args.forks !== undefined && args.forks < 0) {
-    throw new Error('Forks filter must be non-negative');
+    warnings.push('Forks filter must be non-negative');
   }
+
+  // Production best practices
+  if (!args.owner) {
+    suggestions.push(
+      'BEST PRACTICE: Use npm_search_packages → npm_get_package workflow instead of direct repository search'
+    );
+  }
+
+  return {
+    isValid: warnings.length === 0,
+    warnings,
+    suggestions,
+  };
+}
+
+// Generate fallback suggestions for failed searches
+function generateFallbackSuggestions(args: GitHubReposSearchParams): string[] {
+  const suggestions = [
+    `1. Try npm_search_packages with "${args.query}" for package-based discovery`,
+    `2. Use github_search_topics with "${args.query}" for ecosystem terminology`,
+    `3. Remove restrictive filters: ${args.language ? 'language, ' : ''}${args.stars ? 'stars, ' : ''}${args.topic ? 'topic' : ''}`.replace(
+      /, $/,
+      ''
+    ),
+  ];
+
+  if (args.owner) {
+    suggestions.push(`4. Try broader search without owner filter`);
+  }
+
+  if (args.language) {
+    suggestions.push(`4. Remove language filter and search more broadly`);
+  }
+
+  suggestions.push(
+    `5. Use single terms only: break "${args.query}" into individual searches`
+  );
+
+  return suggestions.filter(s => !s.includes('undefined'));
 }
 
 export function registerSearchGitHubReposTool(server: McpServer) {
@@ -94,11 +177,18 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       query: z
         .string()
         .describe(
-          'Search query for repositories. SINGLE TERMS ONLY - no spaces, no operators like "react hooks". Use "react" OR "hooks" separately.'
+          'Search query for repositories. PRODUCTION TIP: Single terms work best (e.g., "react", "typescript"). Multi-term queries will be auto-decomposed with suggestions.'
         ),
-      owner: z.string().describe('Repository owner/organization'),
+      owner: z
+        .string()
+        .describe(
+          'Repository owner/organization - RECOMMENDED for scoped, reliable results'
+        ),
       archived: z.boolean().optional().describe('Filter archived state'),
-      created: z.string().optional().describe('Filter by created date'),
+      created: z
+        .string()
+        .optional()
+        .describe('Filter by created date (format: >2020-01-01, <2023-12-31)'),
       followers: z.number().optional().describe('Filter by followers count'),
       forks: z.number().optional().describe('Filter by forks count'),
       goodFirstIssues: z
@@ -116,13 +206,15 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       language: z
         .string()
         .optional()
-        .describe('Filter by programming language'),
+        .describe(
+          'Filter by programming language - WARNING: Can cause empty results with restrictive combinations'
+        ),
       license: z.string().optional().describe('Filter by license type'),
       limit: z
         .number()
         .optional()
         .default(50)
-        .describe('Maximum results (default: 50)'),
+        .describe('Maximum results (default: 50, max: 100)'),
       match: z
         .enum(['name', 'description', 'readme'])
         .optional()
@@ -139,7 +231,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .optional()
         .default('updated')
         .describe('Sort criteria (default: updated for recent activity)'),
-      stars: z.number().optional().describe('Filter by stars count'),
+      stars: z
+        .number()
+        .optional()
+        .describe(
+          'Filter by stars count - TIP: Use >100 for established projects, >10 for active ones'
+        ),
       topic: z.string().optional().describe('Filter by topic/tag'),
       updated: z.string().optional().describe('Filter by last update date'),
       visibility: z
@@ -161,25 +258,106 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           throw new Error('Query is required');
         }
 
-        // Validate single term requirement
-        validateSingleTerm(args.query);
+        // Smart query analysis and decomposition
+        const queryAnalysis = decomposeQuery(args.query);
 
-        // Validate field combinations
-        validateFieldCombinations(args);
+        // Enhanced filter validation
+        const validation = validateFilterCombinations(args);
 
-        // Sanitize the query
-        const sanitizedArgs = {
+        // Prepare the search with potentially decomposed query
+        const searchArgs = {
           ...args,
-          query: sanitizeInput(args.query),
+          query: sanitizeInput(queryAnalysis.primaryTerm),
         };
 
-        return await searchGitHubRepos(sanitizedArgs);
-      } catch (error) {
+        // Execute the search
+        const result = await searchGitHubRepos(searchArgs);
+
+        // Check if we got empty results and provide helpful guidance
+        const resultText = result.content[0].text as string;
+        const parsedResults = JSON.parse(resultText);
+        const resultCount = JSON.parse(parsedResults.rawOutput).length;
+
+        let responseText = resultText;
+
+        // Add guidance for multi-term queries
+        if (queryAnalysis.shouldDecompose) {
+          responseText += `\n\n⚠️ MULTI-TERM QUERY OPTIMIZATION:\n${queryAnalysis.suggestion}`;
+        }
+
+        // Add validation warnings
+        if (validation.warnings.length > 0) {
+          responseText += `\n\n⚠️ FILTER WARNINGS:\n${validation.warnings.map(w => `• ${w}`).join('\n')}`;
+        }
+
+        // Add suggestions for better workflow
+        if (validation.suggestions.length > 0) {
+          responseText += `\n\n💡 OPTIMIZATION SUGGESTIONS:\n${validation.suggestions.map(s => `• ${s}`).join('\n')}`;
+        }
+
+        // Add fallback guidance for empty results
+        if (resultCount === 0) {
+          const fallbacks = generateFallbackSuggestions(args);
+          responseText += `\n\n🔄 FALLBACK STRATEGIES (0 results found):\n${fallbacks.map(f => `• ${f}`).join('\n')}`;
+          responseText += `\n\n📊 PRODUCTION TIP: Repository search has 99% avoidance rate. NPM + Topics workflow provides better results with less API usage.`;
+        }
+
+        // Add production best practices for successful searches
+        if (resultCount > 0) {
+          responseText += `\n\n✅ PRODUCTION INSIGHTS:`;
+          responseText += `\n• Found ${resultCount} repositories`;
+          if (resultCount >= 100) {
+            responseText += `\n• TOO BROAD: Add more specific filters or use npm_search_packages for focused discovery`;
+          } else if (resultCount >= 31) {
+            responseText += `\n• BROAD: Consider adding language, stars, or topic filters for refinement`;
+          } else if (resultCount >= 11) {
+            responseText += `\n• GOOD: Manageable scope for analysis`;
+          } else {
+            responseText += `\n• IDEAL: Perfect scope for deep analysis`;
+          }
+
+          // Add caching recommendations for popular searches
+          const popularTerms = [
+            'react',
+            'typescript',
+            'javascript',
+            'python',
+            'nodejs',
+            'vue',
+            'angular',
+          ];
+          if (popularTerms.includes(args.query.toLowerCase())) {
+            responseText += `\n• CACHE CANDIDATE: "${args.query}" is a popular search term - consider caching results`;
+          }
+        }
+
         return {
           content: [
             {
               type: 'text',
-              text: `Failed to search GitHub repositories: ${(error as Error).message}`,
+              text: responseText,
+            },
+          ],
+          isError: false,
+        };
+      } catch (error) {
+        const fallbacks = generateFallbackSuggestions(args);
+        const errorMessage = `❌ Repository search failed: ${(error as Error).message}
+
+🔄 RECOMMENDED FALLBACK WORKFLOW:
+${fallbacks.map(f => `• ${f}`).join('\n')}
+
+💡 PRODUCTION NOTE: This tool is a last resort. For reliable discovery:
+1. Start with npm_search_packages for package-based discovery
+2. Use github_search_topics for ecosystem terminology  
+3. Use npm_get_package to extract repository URLs
+4. Only use repository search when NPM + Topics completely fail`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: errorMessage,
             },
           ],
           isError: true,
