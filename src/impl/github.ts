@@ -1,15 +1,8 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { execSync } from 'child_process';
-import { generateCacheKey, withCache } from './cache';
+import { executeGitHubCommand } from '../utils/exec';
+import { generateCacheKey, withCache } from '../utils/cache';
 import {
   GithubFetchRequestParams,
-  GitHubCodeSearchParams,
-  GitHubCommitsSearchParams,
-  GitHubPullRequestsSearchParams,
-  GitHubRepositoryViewParams,
-  GitHubRepositoryViewResult,
-  GitHubReposSearchParams,
-  GitHubReposSearchResult,
   GitHubSearchResult,
   GitHubRepositoryStructureParams,
   GitHubRepositoryStructureResult,
@@ -19,127 +12,6 @@ import {
   GitHubUsersSearchParams,
 } from '../types';
 
-export async function searchGitHubCode(
-  params: GitHubCodeSearchParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-code', params);
-
-  return withCache(cacheKey, async () => {
-    try {
-      const command = buildGitHubCodeSearchCommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
-
-      const result: GitHubSearchResult = {
-        searchType: 'code',
-        query: params.query || '',
-        results: content,
-        rawOutput: content,
-      };
-
-      return createSuccessResult(result);
-    } catch (error) {
-      return createErrorResult('Failed to search GitHub code', error);
-    }
-  });
-}
-
-export async function searchGitHubCommits(
-  params: GitHubCommitsSearchParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-commits', params);
-
-  return withCache(cacheKey, async () => {
-    try {
-      const command = buildGitHubCommitsSearchCommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
-
-      const result: GitHubSearchResult = {
-        searchType: 'commits',
-        query: params.query || '',
-        results: content,
-        rawOutput: content,
-      };
-
-      return createSuccessResult(result);
-    } catch (error) {
-      return createErrorResult('Failed to search GitHub commits', error);
-    }
-  });
-}
-
-export async function searchGitHubPullRequests(
-  params: GitHubPullRequestsSearchParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-prs', params);
-
-  return withCache(cacheKey, async () => {
-    try {
-      const command = buildGitHubPullRequestsSearchCommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
-
-      const result: GitHubSearchResult = {
-        searchType: 'prs',
-        query: params.query || '',
-        results: content,
-        rawOutput: content,
-      };
-
-      return createSuccessResult(result);
-    } catch (error) {
-      return createErrorResult('Failed to search GitHub pull requests', error);
-    }
-  });
-}
-
-export async function searchGitHubRepos(
-  params: GitHubReposSearchParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-repos', params);
-
-  return withCache(cacheKey, async () => {
-    try {
-      const command = buildGitHubReposSearchCommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
-
-      const result: GitHubReposSearchResult = {
-        searchType: 'repos',
-        query: params.query || '',
-        results: content,
-        rawOutput: content,
-      };
-
-      return createSuccessResult(result);
-    } catch (error) {
-      return createErrorResult('Failed to search GitHub repositories', error);
-    }
-  });
-}
-
-export async function viewGitHubRepositoryInfo(
-  params: GitHubRepositoryViewParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-repo-view', params);
-
-  return withCache(cacheKey, async () => {
-    try {
-      const owner = params.owner || '';
-      const command = `gh repo view ${owner}/${params.repo}`;
-      const content = execSync(command, { encoding: 'utf-8' });
-
-      const result: GitHubRepositoryViewResult = {
-        owner,
-        repo: params.repo,
-        repositoryInfo: content,
-        rawOutput: content,
-      };
-
-      return createSuccessResult(result);
-    } catch (error) {
-      return createErrorResult('Failed to view GitHub repository', error);
-    }
-  });
-}
-
 export async function getUserOrganizations(params: {
   limit?: number;
 }): Promise<CallToolResult> {
@@ -148,12 +20,16 @@ export async function getUserOrganizations(params: {
   return withCache(cacheKey, async () => {
     try {
       const limit = params.limit || 30;
-      const command = `gh org list --limit ${limit}`;
+      const args = ['list', `--limit=${limit}`];
+      const result = await executeGitHubCommand('org', args, { cache: false });
 
-      const output = execSync(command, {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      if (result.isError) {
+        return result;
+      }
+
+      // Extract the actual content from the exec result
+      const execResult = JSON.parse(result.content[0].text as string);
+      const output = execResult.result;
 
       return {
         content: [
@@ -165,7 +41,7 @@ ${output}
 
  IMPORTANT: Use any of these organization names as the 'owner' parameter in other search tools:
 - search_github_code
-- search_github_repos  
+- search_github_repos
 - search_github_commits
 - search_github_pull_requests
 - fetch_github_file_content
@@ -200,14 +76,39 @@ export async function fetchGitHubFileContent(
 
   return withCache(cacheKey, async () => {
     try {
-      const command = `gh api /repos/${params.owner}/${params.repo}/contents/${params.filePath}?ref=${params.branch} --jq .content | base64 -d`;
-      const content = execSync(command, { encoding: 'utf-8' });
+      let apiPath = `/repos/${params.owner}/${params.repo}/contents/${params.filePath}`;
+
+      // Add ref parameter if branch is provided
+      if (params.branch) {
+        apiPath += `?ref=${params.branch}`;
+      }
+
+      const args = [apiPath, '--jq', '.content'];
+      const result = await executeGitHubCommand('api', args, { cache: false });
+
+      if (result.isError) {
+        return result;
+      }
+
+      // Extract the actual content from the exec result
+      const execResult = JSON.parse(result.content[0].text as string);
+      const base64Content = execResult.result.trim().replace(/\n/g, '');
+
+      // Decode base64 content using Node.js Buffer
+      let decodedContent: string;
+      try {
+        decodedContent = Buffer.from(base64Content, 'base64').toString('utf-8');
+      } catch (decodeError) {
+        throw new Error(
+          `Failed to decode base64 content: ${(decodeError as Error).message}`
+        );
+      }
 
       return {
         content: [
           {
             type: 'text',
-            text: content,
+            text: decodedContent,
           },
         ],
         isError: false,
@@ -244,9 +145,19 @@ export async function viewRepositoryStructure(
 
       for (const tryBranch of branchFallbacks) {
         try {
-          const command = `gh api repos/${owner}/${repo}/contents/${pathSegment}?ref=${tryBranch}`;
-          const stdout = execSync(command, { encoding: 'utf-8' });
-          const items = JSON.parse(stdout);
+          const apiPath = `repos/${owner}/${repo}/contents/${pathSegment}?ref=${tryBranch}`;
+          const args = [apiPath];
+          const result = await executeGitHubCommand('api', args, {
+            cache: false,
+          });
+
+          if (result.isError) {
+            throw new Error(result.content[0].text as string);
+          }
+
+          // Extract the actual content from the exec result
+          const execResult = JSON.parse(result.content[0].text as string);
+          const items = JSON.parse(execResult.result);
 
           // If we get here, the request succeeded
           apiResponse = items;
@@ -338,17 +249,27 @@ export async function searchGitHubIssues(
 
   return withCache(cacheKey, async () => {
     try {
-      const command = buildGitHubIssuesSearchCommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
+      const { command, args } = buildGitHubIssuesSearchCommand(params);
+      const result = await executeGitHubCommand(command, args, {
+        cache: false,
+      });
 
-      const result: GitHubSearchResult = {
+      if (result.isError) {
+        return result;
+      }
+
+      // Extract the actual content from the exec result
+      const execResult = JSON.parse(result.content[0].text as string);
+      const content = execResult.result;
+
+      const searchResult: GitHubSearchResult = {
         searchType: 'issues',
         query: params.query || '',
         results: content,
         rawOutput: content,
       };
 
-      return createSuccessResult(result);
+      return createSuccessResult(searchResult);
     } catch (error) {
       return createErrorResult('Failed to search GitHub issues', error);
     }
@@ -362,18 +283,27 @@ export async function searchGitHubTopics(
 
   return withCache(cacheKey, async () => {
     try {
-      // Use GitHub API for topics search since gh search topics doesn't exist
-      const command = buildGitHubTopicsAPICommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
+      const { command, args } = buildGitHubTopicsAPICommand(params);
+      const result = await executeGitHubCommand(command, args, {
+        cache: false,
+      });
 
-      const result: GitHubSearchResult = {
+      if (result.isError) {
+        return result;
+      }
+
+      // Extract the actual content from the exec result
+      const execResult = JSON.parse(result.content[0].text as string);
+      const content = execResult.result;
+
+      const searchResult: GitHubSearchResult = {
         searchType: 'topics',
         query: params.query || '',
         results: content,
         rawOutput: content,
       };
 
-      return createSuccessResult(result);
+      return createSuccessResult(searchResult);
     } catch (error) {
       return createErrorResult('Failed to search GitHub topics', error);
     }
@@ -387,18 +317,27 @@ export async function searchGitHubUsers(
 
   return withCache(cacheKey, async () => {
     try {
-      // Use GitHub API for users search since gh search users doesn't exist
-      const command = buildGitHubUsersAPICommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
+      const { command, args } = buildGitHubUsersAPICommand(params);
+      const result = await executeGitHubCommand(command, args, {
+        cache: false,
+      });
 
-      const result: GitHubSearchResult = {
+      if (result.isError) {
+        return result;
+      }
+
+      // Extract the actual content from the exec result
+      const execResult = JSON.parse(result.content[0].text as string);
+      const content = execResult.result;
+
+      const searchResult: GitHubSearchResult = {
         searchType: 'users',
         query: params.query || '',
         results: content,
         rawOutput: content,
       };
 
-      return createSuccessResult(result);
+      return createSuccessResult(searchResult);
     } catch (error) {
       return createErrorResult('Failed to search GitHub users', error);
     }
@@ -412,300 +351,171 @@ export async function searchGitHubDiscussions(
 
   return withCache(cacheKey, async () => {
     try {
-      // Use GitHub API for discussions search since gh search discussions doesn't exist
-      const command = buildGitHubDiscussionsAPICommand(params);
-      const content = execSync(command, { encoding: 'utf-8' });
+      const { command, args } = buildGitHubDiscussionsAPICommand(params);
+      const result = await executeGitHubCommand(command, args, {
+        cache: false,
+      });
 
-      const result: GitHubSearchResult = {
+      if (result.isError) {
+        return result;
+      }
+
+      // Extract the actual content from the exec result
+      const execResult = JSON.parse(result.content[0].text as string);
+      const content = execResult.result;
+
+      const searchResult: GitHubSearchResult = {
         searchType: 'discussions',
         query: params.query || '',
         results: content,
         rawOutput: content,
       };
 
-      // Parse the response to check if we have any discussions
+      // Parse the response to provide helpful context
       try {
         const parsedContent = JSON.parse(content);
-        const discussionCount =
-          parsedContent?.data?.search?.discussionCount || 0;
 
-        // If no discussions found and we have a specific owner, provide helpful context
-        if (discussionCount === 0 && params.owner) {
-          const scopeInfo = params.repo
-            ? `repository "${params.owner}/${params.repo}"`
-            : `organization "${params.owner}"`;
+        // Handle repository-specific response
+        if (parsedContent?.data?.repository?.discussions) {
+          const discussions = parsedContent.data.repository.discussions;
+          const discussionCount = discussions.totalCount || 0;
 
-          result.results = JSON.stringify(
-            {
-              ...parsedContent,
-              searchInfo: {
-                message: `No discussions found in ${scopeInfo}. This search was scoped to ${params.owner} only and did not search other organizations. The repository may not have discussions enabled.`,
-                searchScope: params.repo
-                  ? `repo:${params.owner}/${params.repo}`
-                  : `org:${params.owner}`,
-                query: params.query,
-                discussionCount: 0,
+          if (discussionCount === 0 && params.owner && params.repo) {
+            searchResult.results = JSON.stringify(
+              {
+                ...parsedContent,
+                searchInfo: {
+                  message: `No discussions found in repository "${params.owner}/${params.repo}". The repository may not have discussions enabled or there are no discussions matching the criteria.`,
+                  searchScope: `repo:${params.owner}/${params.repo}`,
+                  query: params.query,
+                  discussionCount: 0,
+                  repositorySpecific: true,
+                },
               },
-            },
-            null,
-            2
-          );
+              null,
+              2
+            );
+          }
+        }
+        // Handle search API response
+        else if (parsedContent?.data?.search) {
+          const discussionCount =
+            parsedContent.data.search.discussionCount || 0;
+
+          if (discussionCount === 0 && params.owner) {
+            const scopeInfo = params.repo
+              ? `repository "${params.owner}/${params.repo}"`
+              : `organization "${params.owner}"`;
+
+            searchResult.results = JSON.stringify(
+              {
+                ...parsedContent,
+                searchInfo: {
+                  message: `No discussions found in ${scopeInfo}. This search was scoped to ${params.owner} only and did not search other organizations. The repository may not have discussions enabled.`,
+                  searchScope: params.repo
+                    ? `repo:${params.owner}/${params.repo}`
+                    : `org:${params.owner}`,
+                  query: params.query,
+                  discussionCount: 0,
+                  globalSearch: !params.repo,
+                },
+              },
+              null,
+              2
+            );
+          }
         }
       } catch (parseError) {
         // If we can't parse the JSON, just return the original result
       }
 
-      return createSuccessResult(result);
+      return createSuccessResult(searchResult);
     } catch (error) {
       return createErrorResult('Failed to search GitHub discussions', error);
     }
   });
 }
 
-function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): string {
-  // Enhanced query processing for GitHub advanced syntax
-  const processedQuery = processAdvancedSearchQuery(params.query || '');
-  let command = `gh search code ${processedQuery}`;
-
-  if (params.owner) command += ` --owner ${params.owner}`;
-  if (params.repo) command += ` --repo ${params.repo}`;
-  if (params.language) command += ` --language ${params.language}`;
-  if (params.filename) command += ` --filename ${params.filename}`;
-  if (params.extension) command += ` --extension ${params.extension}`;
-  if (params.path) command += ` --path ${params.path}`;
-  if (params.in) command += ` --in ${params.in}`;
-  if (params.size) command += ` --size ${params.size}`;
-  if (params.match) command += ` --match ${params.match}`;
-  if (params.limit) command += ` --limit ${params.limit}`;
-
-  return command;
-}
-
 /**
- * Enhanced query processing for GitHub advanced search syntax:
- * - Preserves boolean operations (AND, OR, NOT)
- * - Maintains quoted strings for exact matches
- * - Handles regex patterns (/pattern/)
- * - Supports qualifiers within the query
- * - Preserves GitHub search syntax
+ * Determines if a string needs quoting for GitHub search
  */
-function processAdvancedSearchQuery(query: string): string {
-  if (!query) return '""';
-
-  // Preserve query if it contains GitHub qualifiers or advanced syntax
-  const hasQualifiers = /\b(language|path|filename|extension|in|size|user|org|repo):/i.test(query);
-  const hasBooleanOps = /\b(AND|OR|NOT)\b/i.test(query);
-  const hasRegex = /\/.*\//.test(query);
-  const hasQuotes = /"[^"]*"/.test(query);
-  const hasParentheses = /\([^)]*\)/.test(query);
-
-  // If query contains advanced syntax, preserve it as-is (no additional quotes)
-  if (hasQualifiers || hasBooleanOps || hasRegex || hasParentheses) {
-    return query.trim();
-  }
-
-  // If query is already properly quoted, preserve it
-  if (hasQuotes && query.trim().startsWith('"') && query.trim().endsWith('"')) {
-    return query.trim();
-  }
-
-  // For simple queries, add quotes for exact matching
-  const trimmed = query.trim();
-  return `"${trimmed}"`;
+export function needsQuoting(str: string): boolean {
+  return (
+    str.includes(' ') ||
+    str.includes('"') ||
+    str.includes('\t') ||
+    str.includes('\n') ||
+    str.includes('\r') ||
+    /[<>(){}[\]\\|&;]/.test(str)
+  );
 }
 
-function buildGitHubCommitsSearchCommand(
-  params: GitHubCommitsSearchParams
-): string {
-  let command = `gh search commits "${params.query}"`;
+function buildGitHubIssuesSearchCommand(params: GitHubIssuesSearchParams): {
+  command: string;
+  args: string[];
+} {
+  // Build query following GitHub CLI patterns
+  const queryParts: string[] = [];
 
-  if (params.owner) command += ` --owner ${params.owner}`;
-  if (params.repo) command += ` --repo ${params.repo}`;
-  if (params.author) command += ` --author ${params.author}`;
-  if (params.committer) command += ` --committer ${params.committer}`;
-  if (params.authorDate) command += ` --author-date ${params.authorDate}`;
-  if (params.committerDate)
-    command += ` --committer-date ${params.committerDate}`;
-  if (params.authorEmail) command += ` --author-email ${params.authorEmail}`;
-  if (params.authorName) command += ` --author-name "${params.authorName}"`;
-  if (params.committerEmail)
-    command += ` --committer-email ${params.committerEmail}`;
-  if (params.committerName)
-    command += ` --committer-name "${params.committerName}"`;
-  if (params.merge !== undefined) command += ` --merge`;
-  if (params.hash) command += ` --hash ${params.hash}`;
-  if (params.parent) command += ` --parent ${params.parent}`;
-  if (params.tree) command += ` --tree ${params.tree}`;
-  if (params.visibility) command += ` --visibility ${params.visibility}`;
-  if (params.limit) command += ` --limit ${params.limit}`;
-  if (params.sort && params.sort !== 'best-match')
-    command += ` --sort ${params.sort}`;
-  if (params.order) command += ` --order ${params.order}`;
-
-  return command;
-}
-
-function buildGitHubPullRequestsSearchCommand(
-  params: GitHubPullRequestsSearchParams
-): string {
-  let command = `gh search prs "${params.query}"`;
-
-  if (params.owner) command += ` --owner ${params.owner}`;
-  if (params.repo) command += ` --repo ${params.repo}`;
-  if (params.author) command += ` --author ${params.author}`;
-  if (params.assignee) command += ` --assignee ${params.assignee}`;
-  if (params.mentions) command += ` --mentions ${params.mentions}`;
-  if (params.commenter) command += ` --commenter ${params.commenter}`;
-  if (params.involves) command += ` --involves ${params.involves}`;
-  if (params.reviewedBy) command += ` --reviewed-by ${params.reviewedBy}`;
-  if (params.reviewRequested)
-    command += ` --review-requested ${params.reviewRequested}`;
-  if (params.state) command += ` --state ${params.state}`;
-  if (params.head) command += ` --head ${params.head}`;
-  if (params.base) command += ` --base ${params.base}`;
-  if (params.language) command += ` --language ${params.language}`;
-  if (params.created) command += ` --created ${params.created}`;
-  if (params.updated) command += ` --updated ${params.updated}`;
-  if (params.merged) command += ` --merged ${params.merged}`;
-  if (params.closed) command += ` --closed ${params.closed}`;
-  if (params.draft !== undefined) command += ` --draft ${params.draft}`;
-  if (params.limit) command += ` --limit ${params.limit}`;
-  if (params.sort) command += ` --sort ${params.sort}`;
-  if (params.order) command += ` --order ${params.order}`;
-
-  return command;
-}
-
-function buildGitHubReposSearchCommand(
-  params: GitHubReposSearchParams
-): string {
-  // Process query to use single-word strategy for repository discovery
-  const processedQuery = processSimpleSearchQuery(params.query || '');
-  let command = `gh search repos ${processedQuery}`;
-
-  if (params.owner) command += ` --owner ${params.owner}`;
-  if (params.archived !== undefined)
-    command += ` --archived ${params.archived}`;
-  if (params.created) command += ` --created "${params.created}"`;
-  if (params.followers !== undefined)
-    command += ` --followers ${params.followers}`;
-  if (params.forks !== undefined) command += ` --forks ${params.forks}`;
-  if (params.goodFirstIssues !== undefined)
-    command += ` --good-first-issues ${params.goodFirstIssues}`;
-  if (params.helpWantedIssues !== undefined)
-    command += ` --help-wanted-issues ${params.helpWantedIssues}`;
-  if (params.includeForks) command += ` --include-forks ${params.includeForks}`;
-  if (params.language) command += ` --language ${params.language}`;
-  if (params.license) command += ` --license ${params.license}`;
-  if (params.limit) command += ` --limit ${params.limit}`;
-  if (params.match) command += ` --match ${params.match}`;
-  if (params.numberTopics !== undefined)
-    command += ` --number-topics ${params.numberTopics}`;
-  if (params.order) command += ` --order ${params.order}`;
-  if (params.size) command += ` --size "${params.size}"`;
-
-  // DEFAULT TO UPDATED SORTING for recency prioritization
-  const sortBy = params.sort || 'updated';
-  if (sortBy !== 'best-match') {
-    command += ` --sort ${sortBy}`;
+  // Add main search query
+  if (params.query) {
+    const query = params.query.trim();
+    queryParts.push(needsQuoting(query) ? `"${query}"` : query);
   }
 
-  if (params.stars !== undefined) command += ` --stars ${params.stars}`;
-  if (params.topic) command += ` --topic ${params.topic}`;
-  if (params.updated) command += ` --updated "${params.updated}"`;
-  if (params.visibility) command += ` --visibility ${params.visibility}`;
-
-  return command;
-}
-
-/**
- * Simple search query processing for repository discovery:
- * - Prioritize single terms over combined searches
- * - "RAG" stays as "RAG" (single word search)
- * - "RAG Ranking" becomes "RAG" (use first term only for initial search)
- * - Only combine terms when explicitly needed after initial searches
- * - Preserve quoted phrases as-is for exact matches
- */
-function processSimpleSearchQuery(query: string): string {
-  if (!query) return '""';
-
-  // Check if query is already properly quoted single term
-  const singleQuotedPattern = /^"[^"]*"$/;
-  if (singleQuotedPattern.test(query.trim())) {
-    return query.trim();
+  // Add repository/organization qualifiers
+  if (params.owner && params.repo) {
+    queryParts.push(`repo:${params.owner}/${params.repo}`);
+  } else if (params.owner) {
+    queryParts.push(`org:${params.owner}`);
   }
 
-  // Check if query is multiple quoted terms (advanced search)
-  const multipleQuotedPattern = /^(\s*"[^"]+"\s*)+$/;
-  if (multipleQuotedPattern.test(query.trim())) {
-    return query.trim();
-  }
+  // Construct query string
+  const queryString = queryParts.filter(part => part.length > 0).join(' ');
 
-  // Plain text query - PRIORITIZE SINGLE WORDS for progressive search
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .filter(term => term.length > 0);
+  const args = ['issues', queryString];
 
-  if (terms.length === 0) return '""';
-
-  // FOR PROGRESSIVE SEARCH: Use only the first term initially
-  // This implements the "RAG" then "Ranking" strategy instead of "RAG Ranking"
-  if (terms.length === 1) {
-    return `"${terms[0]}"`;
-  }
-
-  // For multiple terms, prioritize the first term (most important)
-  // This encourages users to do separate searches: "RAG" first, then "Ranking"
-  return `"${terms[0]}"`;
-}
-
-function buildGitHubIssuesSearchCommand(
-  params: GitHubIssuesSearchParams
-): string {
-  let command = `gh search issues "${params.query}"`;
-
-  if (params.owner) command += ` --owner ${params.owner}`;
-  if (params.repo) command += ` --repo ${params.repo}`;
-  if (params.app) command += ` --app ${params.app}`;
-  if (params.archived !== undefined)
-    command += ` --archived ${params.archived}`;
-  if (params.author) command += ` --author ${params.author}`;
-  if (params.assignee) command += ` --assignee ${params.assignee}`;
-  if (params.closed) command += ` --closed ${params.closed}`;
-  if (params.commenter) command += ` --commenter ${params.commenter}`;
-  if (params.comments !== undefined)
-    command += ` --comments ${params.comments}`;
-  if (params.created) command += ` --created ${params.created}`;
-  if (params.includePrs !== undefined) command += ` --include-prs`;
+  // Add individual flags for additional qualifiers
+  if (params.app) args.push(`--app=${params.app}`);
+  if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
+  if (params.author) args.push(`--author=${params.author}`);
+  if (params.assignee) args.push(`--assignee=${params.assignee}`);
+  if (params.closed) args.push(`--closed=${params.closed}`);
+  if (params.commenter) args.push(`--commenter=${params.commenter}`);
+  if (params.comments !== undefined) args.push(`--comments=${params.comments}`);
+  if (params.created) args.push(`--created=${params.created}`);
+  if (params.includePrs !== undefined) args.push(`--include-prs`);
   if (params.interactions !== undefined)
-    command += ` --interactions ${params.interactions}`;
-  if (params.involves) command += ` --involves ${params.involves}`;
-  if (params.label) command += ` --label ${params.label}`;
-  if (params.language) command += ` --language ${params.language}`;
-  if (params.locked !== undefined) command += ` --locked ${params.locked}`;
-  if (params.match) command += ` --match ${params.match}`;
-  if (params.mentions) command += ` --mentions ${params.mentions}`;
-  if (params.milestone) command += ` --milestone ${params.milestone}`;
-  if (params.noAssignee !== undefined) command += ` --no-assignee`;
-  if (params.noLabel !== undefined) command += ` --no-label`;
-  if (params.noMilestone !== undefined) command += ` --no-milestone`;
-  if (params.noProject !== undefined) command += ` --no-project`;
-  if (params.project) command += ` --project ${params.project}`;
+    args.push(`--interactions=${params.interactions}`);
+  if (params.involves) args.push(`--involves=${params.involves}`);
+  if (params.labels) args.push(`--label=${params.labels}`);
+  if (params.language) args.push(`--language=${params.language}`);
+  if (params.locked !== undefined) args.push(`--locked=${params.locked}`);
+  if (params.match) args.push(`--match=${params.match}`);
+  if (params.mentions) args.push(`--mentions=${params.mentions}`);
+  if (params.milestone) args.push(`--milestone=${params.milestone}`);
+  if (params.noAssignee !== undefined) args.push(`--no-assignee`);
+  if (params.noLabel !== undefined) args.push(`--no-label`);
+  if (params.noMilestone !== undefined) args.push(`--no-milestone`);
+  if (params.noProject !== undefined) args.push(`--no-project`);
+  if (params.project) args.push(`--project=${params.project}`);
   if (params.reactions !== undefined)
-    command += ` --reactions ${params.reactions}`;
-  if (params.state) command += ` --state ${params.state}`;
-  if (params.teamMentions) command += ` --team-mentions ${params.teamMentions}`;
-  if (params.updated) command += ` --updated ${params.updated}`;
-  if (params.visibility) command += ` --visibility ${params.visibility}`;
-  if (params.limit) command += ` --limit ${params.limit}`;
-  if (params.sort) command += ` --sort ${params.sort}`;
-  if (params.order) command += ` --order ${params.order}`;
+    args.push(`--reactions=${params.reactions}`);
+  if (params.state) args.push(`--state=${params.state}`);
+  if (params.teamMentions) args.push(`--team-mentions=${params.teamMentions}`);
+  if (params.updated) args.push(`--updated=${params.updated}`);
+  if (params.visibility) args.push(`--visibility=${params.visibility}`);
+  if (params.limit) args.push(`--limit=${params.limit}`);
+  if (params.sort) args.push(`--sort=${params.sort}`);
+  if (params.order) args.push(`--order=${params.order}`);
 
-  return command;
+  return { command: 'search', args };
 }
 
-function buildGitHubTopicsAPICommand(params: GitHubTopicsSearchParams): string {
+function buildGitHubTopicsAPICommand(params: GitHubTopicsSearchParams): {
+  command: string;
+  args: string[];
+} {
   // Build GitHub API search query for topics
   const searchQuery = params.query || '';
 
@@ -721,22 +531,36 @@ function buildGitHubTopicsAPICommand(params: GitHubTopicsSearchParams): string {
   const finalQuery = queryParts.join(' ').trim();
 
   // Use GitHub API to search topics
-  let command = `gh api search/topics -q '.items'`;
+  let apiPath = 'search/topics';
+  const queryParams: string[] = [];
+
   if (finalQuery) {
-    command = `gh api 'search/topics?q=${encodeURIComponent(finalQuery)}'`;
+    queryParams.push(`q=${encodeURIComponent(finalQuery)}`);
   }
 
   // Add pagination parameters
   const limit = params.limit || 30;
-  command += `${finalQuery ? '&' : '?'}per_page=${limit}`;
+  queryParams.push(`per_page=${limit}`);
 
-  if (params.sort) command += `&sort=${params.sort}`;
-  if (params.order) command += `&order=${params.order}`;
+  // Add owner parameter if provided
+  if (params.owner) {
+    queryParams.push(`owner=${encodeURIComponent(params.owner)}`);
+  }
 
-  return command;
+  if (params.sort) queryParams.push(`sort=${params.sort}`);
+  if (params.order) queryParams.push(`order=${params.order}`);
+
+  if (queryParams.length > 0) {
+    apiPath += `?${queryParams.join('&')}`;
+  }
+
+  return { command: 'api', args: [apiPath] };
 }
 
-function buildGitHubUsersAPICommand(params: GitHubUsersSearchParams): string {
+function buildGitHubUsersAPICommand(params: GitHubUsersSearchParams): {
+  command: string;
+  args: string[];
+} {
   // Build GitHub API search query for users
   const searchQuery = params.query || '';
 
@@ -753,68 +577,99 @@ function buildGitHubUsersAPICommand(params: GitHubUsersSearchParams): string {
   const finalQuery = queryParts.join(' ').trim();
 
   // Use GitHub API to search users
-  let command = `gh api search/users -q '.items'`;
+  let apiPath = 'search/users';
+  const queryParams: string[] = [];
+
   if (finalQuery) {
-    command = `gh api 'search/users?q=${encodeURIComponent(finalQuery)}'`;
+    queryParams.push(`q=${encodeURIComponent(finalQuery)}`);
   }
 
   // Add pagination parameters
   const limit = params.limit || 30;
-  command += `${finalQuery ? '&' : '?'}per_page=${limit}`;
+  queryParams.push(`per_page=${limit}`);
 
-  if (params.sort) command += `&sort=${params.sort}`;
-  if (params.order) command += `&order=${params.order}`;
+  if (params.sort) queryParams.push(`sort=${params.sort}`);
+  if (params.order) queryParams.push(`order=${params.order}`);
 
-  return command;
+  if (queryParams.length > 0) {
+    apiPath += `?${queryParams.join('&')}`;
+  }
+
+  return { command: 'api', args: [apiPath] };
 }
 
 function buildGitHubDiscussionsAPICommand(
   params: GitHubDiscussionsSearchParams
-): string {
-  // GitHub Discussions search is not available via REST API
-  // We'll use GraphQL API through gh api graphql
-  const query = `
-    query($searchQuery: String!, $first: Int!) {
-      search(query: $searchQuery, type: DISCUSSION, first: $first) {
-        discussionCount
-        edges {
-          node {
-            ... on Discussion {
-              title
-              body
-              url
-              createdAt
-              updatedAt
-              author {
-                login
-              }
-              repository {
-                nameWithOwner
-              }
-              category {
+): { command: string; args: string[] } {
+  // Build search query
+  const searchQuery = params.query || '';
+  const limit = params.limit || 30;
+
+  // If we have both owner and repo, use repository-specific discussions API
+  if (params.owner && params.repo) {
+    const query = `query($owner: String!, $repo: String!, $first: Int!) {
+      repository(owner: $owner, name: $repo) {
+        discussions(first: $first) {
+          totalCount
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            title
+            body
+            url
+            createdAt
+            updatedAt
+            author {
+              login
+              ... on User {
                 name
               }
-              answerChosenAt
+            }
+            repository {
+              nameWithOwner
+              url
+            }
+            category {
+              name
+              slug
+            }
+            answerChosenAt
+            isAnswered
+            upvoteCount
+            comments {
+              totalCount
             }
           }
         }
       }
-    }
-  `;
+    }`;
 
-  // Build search query
-  const searchQuery = params.query || '';
+    return {
+      command: 'api',
+      args: [
+        'graphql',
+        '--field',
+        `query=${query}`,
+        '--field',
+        `owner=${params.owner}`,
+        '--field',
+        `repo=${params.repo}`,
+        '--field',
+        `first=${limit}`,
+      ],
+    };
+  }
+
+  // For global search or organization-only search, use the search API
   const queryParts = [searchQuery];
 
-  // Always scope to specific repo if both owner and repo are provided
-  if (params.repo && params.owner) {
-    queryParts.push(`repo:${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    // If only owner is specified, search within that owner's organization
-    // This prevents fallback to user's organizations when searching for specific packages
+  if (params.owner && !params.repo) {
+    // Search within organization
     queryParts.push(`org:${params.owner}`);
   }
-  // If no owner is specified, search globally (current behavior)
 
   if (params.author) queryParts.push(`author:${params.author}`);
   if (params.category) queryParts.push(`category:"${params.category}"`);
@@ -825,12 +680,64 @@ function buildGitHubDiscussionsAPICommand(
   if (params.updated) queryParts.push(`updated:${params.updated}`);
 
   const finalQuery = queryParts.join(' ').trim();
-  const limit = params.limit || 30;
 
-  return `gh api graphql -f query='${query}' -f searchQuery='${finalQuery}' -F first=${limit}`;
+  const searchQueryGql = `query($searchQuery: String!, $first: Int!) {
+    search(query: $searchQuery, type: DISCUSSION, first: $first) {
+      discussionCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          ... on Discussion {
+            id
+            title
+            body
+            url
+            createdAt
+            updatedAt
+            author {
+              login
+              ... on User {
+                name
+              }
+            }
+            repository {
+              nameWithOwner
+              url
+            }
+            category {
+              name
+              slug
+            }
+            answerChosenAt
+            isAnswered
+            upvoteCount
+            comments {
+              totalCount
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+  return {
+    command: 'api',
+    args: [
+      'graphql',
+      '--field',
+      `query=${searchQueryGql}`,
+      '--field',
+      `searchQuery=${finalQuery}`,
+      '--field',
+      `first=${limit}`,
+    ],
+  };
 }
 
-function createSuccessResult(data: any): CallToolResult {
+export function createSuccessResult(data: any): CallToolResult {
   return {
     content: [
       {
@@ -842,7 +749,10 @@ function createSuccessResult(data: any): CallToolResult {
   };
 }
 
-function createErrorResult(message: string, error: unknown): CallToolResult {
+export function createErrorResult(
+  message: string,
+  error: unknown
+): CallToolResult {
   return {
     content: [
       {

@@ -25,14 +25,13 @@ export type UserInvolvement = {
 };
 
 export interface GitHubCodeSearchParams extends BaseSearchParams {
-  branch: string;
+  query: string;
   language?: string;
   filename?: string;
   extension?: string;
   path?: string;
-  in?: 'file' | 'path' | 'file,path';
-  size?: string;
   match?: 'file' | 'path';
+  branch?: string;
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
@@ -58,14 +57,15 @@ export interface GitHubPullRequestsSearchParams
     UserInvolvement,
     DateRange,
     OrderSort {
-  reviewedBy?: string;
-  reviewRequested?: string;
-  state?: 'open' | 'closed' | 'merged';
+  state?: 'open' | 'closed';
   head?: string;
   base?: string;
   language?: string;
   merged?: string;
+  mergedAt?: string;
   draft?: boolean;
+  reviewedBy?: string;
+  reviewRequested?: string;
   sort?:
     | 'comments'
     | 'reactions'
@@ -122,9 +122,25 @@ export interface GitHubSearchResult {
     | 'topics'
     | 'users';
   query: string;
+  actualQuery?: string; // The actual constructed query sent to GitHub CLI
   totalCount?: number;
-  results: string;
+  results: string | any[];
   rawOutput: string;
+  analysis?: {
+    summary: string;
+    repositories?: string[];
+    languages?: string[];
+    fileTypes?: string[];
+    topMatches?: Array<{
+      repository: string;
+      path: string;
+      url: string;
+      score: number;
+      matchCount: number;
+      language: string;
+      stars: number;
+    }>;
+  };
 }
 
 export interface GitHubReposSearchResult {
@@ -133,6 +149,29 @@ export interface GitHubReposSearchResult {
   totalCount?: number;
   results: string;
   rawOutput: string;
+  metadata?: {
+    totalRepositories: number;
+    languages: string[];
+    averageStars: number;
+    recentlyUpdated: number;
+    topRepositories: Array<{
+      name: string;
+      stars: number;
+      description: string;
+      language: string;
+      url: string;
+      forks: number;
+      isPrivate: boolean;
+      updatedAt: string;
+    }>;
+    searchParams: {
+      query?: string;
+      owner?: string;
+      language?: string;
+      stars?: number;
+      updated?: string;
+    };
+  };
 }
 
 export interface GitHubRepositoryViewResult {
@@ -209,6 +248,7 @@ export interface GitHubIssuesSearchParams {
   interactions?: number;
   state?: 'open' | 'closed';
   label?: string;
+  labels?: string;
   milestone?: string;
   project?: string;
   language?: string;
@@ -313,12 +353,15 @@ export interface GitHubDiscussionsSearchParams
     | 'updated';
 }
 
-export interface GitHubTopicsSearchParams extends BaseSearchParams, OrderSort {
+export interface GitHubTopicsSearchParams extends OrderSort {
+  query: string;
+  owner?: string;
   featured?: boolean;
   curated?: boolean;
   repositories?: string;
   created?: string;
   sort?: 'featured' | 'repositories' | 'created' | 'updated';
+  limit?: number;
 }
 
 export interface GitHubUsersSearchParams extends BaseSearchParams, OrderSort {

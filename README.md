@@ -81,13 +81,13 @@
 - **Chain-of-Thought Reasoning Framework**: 6-step reasoning methodology built into prompts
 - **Teaching Methodology Integration**: AI education built into tool descriptions  
 - **Context-aware Search Optimization**: Quality validation pipelines for code discovery
-- **Automatic Query Optimization**: Single-word prioritization strategy ("RAG" → "Ranking" not "RAG Ranking")
+- **Automatic Query Optimization**: Single-word prioritization strategy ("RAG" -> "Ranking" not "RAG Ranking")
 
 ### 🔄 **Intelligent Tool Chaining**
 - **Automatic Organization Detection**: Smart tool chaining based on context
 - **Package-to-Repository Mapping**: NPM mentions trigger automatic repository discovery
 - **Cross-validation Workflows**: Multi-step research flows with tool interconnection
-- **Progressive Search Refinement**: Phase-based search refinement (Broad → Pattern → Precise)
+- **Progressive Search Refinement**: Phase-based search refinement (Broad -> Pattern -> Precise)
 
 ### 🎯 **Smart Discovery Features**
 - **Semantic Landscape Mapping**: `search_github_topics` for ecosystem understanding
@@ -296,7 +296,7 @@ This methodology improved search result quality by leveraging the NPM ecosystem'
   - The tool will automatically detect and use your organization access
 
 - **📦 Package-Based Discovery**: Mention specific packages to trigger automatic repository discovery
-  - *"How does the lodash library implement debouncing?"* → Automatically finds and analyzes lodash repository
+  - *"How does the lodash library implement debouncing?"* -> Automatically finds and analyzes lodash repository
 
 ### 🎨 **Advanced Use Cases**
 - **🔬 Comparative Analysis**: Compare different approaches across repositories

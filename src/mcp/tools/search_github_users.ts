@@ -1,0 +1,97 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import z from 'zod';
+import { GitHubUsersSearchParams } from '../../types';
+import { TOOL_NAMES } from '../contstants';
+import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
+import { searchGitHubUsers } from '../../impl/github';
+
+export function registerSearchGitHubUsersTool(server: McpServer) {
+  server.tool(
+    TOOL_NAMES.GITHUB_SEARCH_USERS,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_USERS],
+    {
+      query: z
+        .string()
+        .describe(
+          "The search query to find users/organizations (e.g., 'react developer', 'python', 'machine learning')"
+        ),
+      owner: z
+        .string()
+        .describe(
+          "Filter by repository owner/organization (e.g., 'example-org') obtained from the appropriate tool for fetching user organizations"
+        ),
+      type: z
+        .enum(['user', 'org'])
+        .optional()
+        .describe(
+          'Filter by account type (user for individuals, org for organizations)'
+        ),
+      location: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by location (e.g., 'San Francisco', 'London', 'Remote')"
+        ),
+      language: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by primary programming language (e.g., 'javascript', 'python', 'java')"
+        ),
+      repos: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by repository count (e.g., '>10', '>50' for active contributors)"
+        ),
+      followers: z
+        .string()
+        .optional()
+        .describe(
+          "Filter by follower count (e.g., '>100', '>1000' for influential users)"
+        ),
+      created: z
+        .string()
+        .optional()
+        .describe(
+          "Filter based on account creation date (e.g., '>2020-01-01', '<2023-12-31')"
+        ),
+      sort: z
+        .enum(['followers', 'repositories', 'joined'])
+        .optional()
+        .describe('Sort users by specified criteria (default: best-match)'),
+      order: z
+        .enum(['asc', 'desc'])
+        .optional()
+        .default('desc')
+        .describe('Order of results returned (default: desc)'),
+      limit: z
+        .number()
+        .optional()
+        .default(50)
+        .describe('Maximum number of users to return (default: 50)'),
+    },
+    {
+      title: 'Search GitHub Users',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    async (args: GitHubUsersSearchParams) => {
+      try {
+        return await searchGitHubUsers(args);
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to search GitHub users: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+}

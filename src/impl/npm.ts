@@ -1,21 +1,52 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { generateCacheKey, withCache } from './cache';
+import { generateCacheKey, withCache } from '../utils/cache';
+import { executeNpmCommand } from '../utils/exec';
 import { NpmRepositoryResult, NpmSearchParams } from '../types';
-
-const execAsync = promisify(exec);
 
 export async function npmView(packageName: string): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('npm-view', { packageName });
 
   return withCache(cacheKey, async () => {
     try {
-      const { stdout } = await execAsync(
-        `npm view ${packageName} repository.url repository.directory dependencies devdependencies peerDependencies version --json`
-      );
-      const result: NpmRepositoryResult = JSON.parse(stdout);
-      return createSuccessResult(result);
+      const result = await executeNpmCommand('view', [packageName, '--json'], {
+        cache: true,
+      });
+
+      if (result.isError) {
+        return result;
+      }
+
+      // Parse the result from the executed command
+      const commandOutput = JSON.parse(result.content[0].text as string);
+      const npmData: NpmRepositoryResult = commandOutput.result;
+
+      let popularityData = '';
+      try {
+        // Get version count as popularity indicator
+        const versionsResult = await executeNpmCommand('view', [
+          packageName,
+          'time',
+          '--json',
+        ]);
+        if (!versionsResult.isError) {
+          const versionsOutput = JSON.parse(
+            versionsResult.content[0].text as string
+          );
+          const timeData = versionsOutput.result;
+          const versionCount = Object.keys(timeData).length - 2; // Subtract 'created' and 'modified'
+          popularityData = `Package versions released: ${versionCount}`;
+        }
+      } catch {
+        // Popularity data is optional
+      }
+
+      const enhancedResult = {
+        ...npmData,
+        popularityInfo: popularityData,
+        lastAnalyzed: new Date().toISOString(),
+      };
+
+      return createSuccessResult(enhancedResult);
     } catch (error) {
       return createErrorResult(
         'Failed to get npm repository information',
@@ -28,34 +59,91 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
 export async function npmSearch(
   args: NpmSearchParams
 ): Promise<CallToolResult> {
-  const { query, json = true, searchlimit = 20 } = args;
-  let command = `npm search "${query}" --searchlimit=${searchlimit}`;
-  if (json) {
-    command += ' --json';
-  }
+  const { query, json = true, searchlimit = 50 } = args;
 
   try {
-    const { stdout, stderr } = await execAsync(command);
-    if (stderr) {
-      return {
-        content: [{ type: 'text', text: `Error searching NPM: ${stderr}` }],
-        isError: true,
-      };
+    const args = [`"${query}"`, `--searchlimit=${searchlimit}`];
+    if (json) args.push('--json');
+
+    const result = await executeNpmCommand('search', args, {
+      cache: true,
+    });
+
+    if (result.isError) {
+      return result;
     }
-    return {
-      content: [{ type: 'text', text: stdout }],
-    };
+
+    if (json) {
+      try {
+        const commandOutput = JSON.parse(result.content[0].text as string);
+        const searchResults = commandOutput.result;
+
+        const enhancedResults = {
+          searchQuery: query,
+          resultCount: Array.isArray(searchResults) ? searchResults.length : 0,
+          searchLimitApplied: searchlimit,
+          results: searchResults,
+          searchTips:
+            !searchResults ||
+            (Array.isArray(searchResults) && searchResults.length === 0)
+              ? "Try broader terms like 'react', 'cli', or 'typescript'"
+              : Array.isArray(searchResults) &&
+                  searchResults.length >= searchlimit
+                ? 'Results limited. Use more specific terms to narrow down.'
+                : 'Good result set size for analysis.',
+          timestamp: new Date().toISOString(),
+        };
+        return createSuccessResult(enhancedResults);
+      } catch (parseError) {
+        // Fallback to raw output if JSON parsing fails
+        return result;
+      }
+    }
+
+    return result;
   } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Failed to execute npm search: ${(error as Error).message}`,
-        },
-      ],
-      isError: true,
-    };
+    return createErrorResult('Failed to execute npm search', error);
   }
+}
+
+export async function npmPackageStats(
+  packageName: string
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('npm-stats', { packageName });
+
+  return withCache(cacheKey, async () => {
+    try {
+      // Execute multiple commands in parallel using executeNpmCommand
+      const commands = [
+        executeNpmCommand('view', [packageName, 'time', '--json']),
+        executeNpmCommand('view', [packageName, 'versions', '--json']),
+        executeNpmCommand('view', [packageName, 'dist-tags', '--json']),
+      ];
+
+      const results = await Promise.allSettled(commands);
+
+      const stats = {
+        packageName,
+        releaseHistory:
+          results[0].status === 'fulfilled' && !results[0].value.isError
+            ? JSON.parse(results[0].value.content[0].text as string).result
+            : null,
+        versions:
+          results[1].status === 'fulfilled' && !results[1].value.isError
+            ? JSON.parse(results[1].value.content[0].text as string).result
+            : null,
+        distTags:
+          results[2].status === 'fulfilled' && !results[2].value.isError
+            ? JSON.parse(results[2].value.content[0].text as string).result
+            : null,
+        analyzedAt: new Date().toISOString(),
+      };
+
+      return createSuccessResult(stats);
+    } catch (error) {
+      return createErrorResult('Failed to get npm package statistics', error);
+    }
+  });
 }
 
 function createSuccessResult(data: any): CallToolResult {
