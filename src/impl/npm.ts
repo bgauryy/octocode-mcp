@@ -41,7 +41,7 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
       }
 
       const enhancedResult = {
-        ...npmData,
+        npmData: JSON.parse(JSON.stringify(npmData)),
         popularityInfo: popularityData,
         lastAnalyzed: new Date().toISOString(),
       };
