@@ -50,7 +50,8 @@ function registerAllTools(server: McpServer) {
   Tools.registerNpmSearchTool(server);
   Tools.registerViewRepositoryStructureTool(server);
   Tools.registerSearchGitHubIssuesTool(server);
-  Tools.registerSearchGitHubDiscussionsTool(server);
+  // TODO: add discussions tool after fixing API
+  //Tools.registerSearchGitHubDiscussionsTool(server);
   Tools.registerSearchGitHubTopicsTool(server);
   Tools.registerSearchGitHubUsersTool(server);
   Tools.registerNpmPackageStatsTool(server);

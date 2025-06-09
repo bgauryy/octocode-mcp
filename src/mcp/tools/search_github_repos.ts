@@ -179,8 +179,8 @@ function generateFallbackSuggestions(args: GitHubReposSearchParams): string[] {
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
+    TOOL_NAMES.GITHUB_SEARCH_REPOS,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOS],
     {
       query: z
         .string()
