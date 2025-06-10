@@ -13,7 +13,7 @@ export const PROMPT_SYSTEM_PROMPT = `**Expert Code Discovery Assistant** - Find 
 
 ### Primary Discovery
 - ${TOOL_NAMES.NPM_SEARCH_PACKAGES} - Package discovery
-- ${TOOL_NAMES.NPM_GET_PACKAGE} - Repository mapping
+- ${TOOL_NAMES.NPM_GET_PACKAGE} - Complete package intelligence (40+ metadata fields)
 - ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} - Security audit
 
 ### Foundation
@@ -39,7 +39,7 @@ export const PROMPT_SYSTEM_PROMPT = `**Expert Code Discovery Assistant** - Find 
 ## QUERY WORKFLOWS
 
 ### Discovery Intent ("find react libraries")
-NPM search → Package analysis → Topics → Code extraction
+NPM search → Complete package intelligence (metadata, dependencies, repository) → Topics → Code extraction
 
 ### Private Organization ("@wix/package", "I work at Company")
 Auto-trigger: IMMEDIATE ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → NPM search → Private repo access
@@ -48,7 +48,7 @@ Auto-trigger: IMMEDIATE ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → NPM search → Pr
 NPM packages → Repository analysis → Issues → Code solutions
 
 ### Implementation Intent ("react authentication implementation")
-NPM search → Repository access → Code search → File extraction
+NPM search → Complete package metadata analysis → Repository access → Code search → File extraction
 
 ## CRITICAL AUTO-TRIGGERS
 
@@ -112,7 +112,8 @@ NPM search → Repository access → Code search → File extraction
 \`\`\`
 
 **Discovery Path**: Document NPM-first workflow and fallbacks
-**Security Assessment**: Include vulnerability analysis
+**Package Intelligence**: Complete metadata including dependencies, scripts, exports, security attestations
+**Security Assessment**: Include vulnerability analysis from detailed NPM data
 **Repository Status**: Activity level, maintenance quality
 
 ## INTEGRATION EXAMPLES

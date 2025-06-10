@@ -185,6 +185,138 @@ export interface GitHubRepositoryViewResult {
   rawOutput: string;
 }
 
+export interface NpmDistTags {
+  latest: string;
+}
+
+export interface NpmTime {
+  created: string;
+  modified: string;
+  [version: string]: string; // Allows for dynamic version keys
+}
+
+export interface NpmBugs {
+  url: string;
+}
+
+export interface NpmRepository {
+  type: string;
+  url: string;
+}
+
+export interface NpmMaintainer {
+  email?: string; // Email is sometimes present, but not always in the provided data
+  name: string;
+}
+
+export interface NpmUsers {
+  [username: string]: boolean;
+}
+
+export interface NpmEngines {
+  node: string;
+}
+
+export interface NpmExports {
+  [key: string]: {
+    import: string;
+    require: string;
+  };
+}
+
+export interface NpmTypesVersions {
+  [key: string]: {
+    [key: string]: string[];
+  };
+}
+
+export interface NpmScripts {
+  [scriptName: string]: string;
+}
+
+export interface NpmDependencies {
+  [packageName: string]: string;
+}
+
+export interface NpmDevDependencies {
+  [packageName: string]: string;
+}
+
+export interface NpmResolutions {
+  [packageName: string]: string;
+}
+
+export interface NpmAttestations {
+  url: string;
+  provenance: {
+    predicateType: string;
+  };
+}
+
+export interface NpmSignatures {
+  keyid: string;
+  sig: string;
+}
+
+export interface NpmDist {
+  integrity: string;
+  shasum: string;
+  tarball: string;
+  fileCount: number;
+  unpackedSize: number;
+  attestations: NpmAttestations;
+  signatures: NpmSignatures[];
+}
+
+export interface NpmOperationalInternal {
+  host: string;
+  tmp: string;
+}
+
+export interface NpmData {
+  _id: string;
+  _rev: string;
+  name: string;
+  'dist-tags': NpmDistTags;
+  versions: string[];
+  time: NpmTime;
+  bugs: NpmBugs;
+  author: string;
+  license: string;
+  homepage: string;
+  keywords: string[];
+  repository: NpmRepository;
+  description: string;
+  maintainers: string[]; // This appears to be an array of strings like "name <email>"
+  readmeFilename: string;
+  users: NpmUsers;
+  _contentLength: number;
+  version: string;
+  type: string;
+  engines: NpmEngines;
+  exports: NpmExports;
+  typesVersions: NpmTypesVersions;
+  scripts: NpmScripts;
+  dependencies: NpmDependencies;
+  devDependencies: NpmDevDependencies;
+  resolutions: NpmResolutions;
+  gitHead: string;
+  _nodeVersion: string;
+  _npmVersion: string;
+  dist: NpmDist;
+  _npmUser: string;
+  directories: Record<string, never>; // Empty object
+  _npmOperationalInternal: NpmOperationalInternal;
+  _hasShrinkwrap: boolean;
+}
+
+export interface NpmViewResult {
+  npmData: NpmData; // Changed from string to proper NpmData object
+  popularityInfo: string;
+  lastAnalyzed: string;
+}
+
+// Legacy interface - keeping for backward compatibility
 export interface NpmRepositoryResult {
   'repository.url': string;
   'repository.directory': string;

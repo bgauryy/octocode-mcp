@@ -16,15 +16,29 @@ export const TOOL_DESCRIPTIONS = {
 
 **INTEGRATION:** ALWAYS chain to ${TOOL_NAMES.NPM_GET_PACKAGE} → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
 
-  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Repository mapping** - Transform npm packages into GitHub repositories for code analysis.
+  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Complete package intelligence** - Comprehensive NPM metadata analysis with GitHub repository mapping.
 
 **WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_SEARCH_PACKAGES}, user mentions package names, private package detection (@company/).
 
-**WORKFLOW:** Extract repository URL → Parse owner/repo → Detect organizational context → Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → MANDATORY ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}
+**DETAILED INSIGHTS PROVIDED:**
+- Complete NPM registry metadata (dependencies, scripts, exports, engines)
+- Repository URL extraction for GitHub mapping
+- Package maturity indicators (version count, release frequency)
+- Distribution info (tarball size, file count, integrity checksums)
+- Security attestations and signatures
+- Maintainer and author information
+- License and keyword analysis
+- Organizational context detection
+
+**DATA STRUCTURE:** Returns NpmViewResult with direct NpmData object containing 40+ detailed fields including dist-tags, time stamps, repository info, dependencies, devDependencies, scripts, engines, exports, and security metadata - all directly accessible without parsing.
+
+**WORKFLOW:** Extract comprehensive metadata → Parse repository URL → Detect organizational context → Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → MANDATORY ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}
 
 **ORGANIZATIONAL DETECTION:** @company/ scoped packages → Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
 
-**EXAMPLES:** "react" → github.com/facebook/react, "@wix/package" → Private org detection`,
+**DISCOVERY VALUE:** Single call provides package ecosystem overview, dependency insights, repository access, and security baseline for informed development decisions.
+
+**EXAMPLES:** "react" → Complete metadata + github.com/facebook/react, "@wix/package" → Private org detection + full internal package analysis`,
 
   [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security analysis** - Essential for package evaluation and organizational detection.
 

@@ -12,11 +12,11 @@ export function registerNpmViewTool(server: McpServer) {
       packageName: z
         .string()
         .describe(
-          "The name of the npm package to analyze (e.g., 'react', '@types/node', 'lodash')"
+          "The name of the npm package to analyze (e.g., 'react', '@types/node', 'lodash'). Returns comprehensive metadata as direct object including dependencies, repository URL, scripts, engines, exports, distribution info, security attestations, and 40+ detailed NPM registry fields - all directly accessible."
         ),
     },
     {
-      title: 'View NPM Package',
+      title: 'NPM Package Intelligence - Complete Metadata Analysis',
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
