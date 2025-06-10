@@ -32,7 +32,9 @@ export const TOOL_DESCRIPTIONS = {
 
 **ANALYSIS:** Security vulnerabilities, dependency tree, license compatibility, bundle impact, organization detection (@company/).
 
-**ORGANIZATIONAL CONTEXT:** Private packages → Check ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access`,
+**ORGANIZATIONAL CONTEXT:** Private packages → Check ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+
+**KNOWN LIMITATION:** Some NPM audit failures may occur (package-specific). Bundle analysis and dependency tree remain reliable.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**FOUNDATION TOOL** - Essential for ecosystem discovery and terminology mapping.
 
@@ -75,6 +77,8 @@ export const TOOL_DESCRIPTIONS = {
 
 **RESULT OPTIMIZATION:** 1-10 IDEAL, 100+ TOO BROAD
 
+**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
+
 **INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `**Complete code extraction** - Fetch full working implementations.
@@ -107,6 +111,8 @@ export const TOOL_DESCRIPTIONS = {
 
 **PROBLEM HIERARCHY:** "React auth JWT error" → "authentication" → "React" → "token expired" → "JWT"
 
+**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
+
 **RESULT TARGETS:** 0 → broader terms, 1-20 IDEAL, 100+ → add specific terms/filters`,
 
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `**Implementation analysis** - PR search for patterns and repository status.
@@ -115,13 +121,15 @@ export const TOOL_DESCRIPTIONS = {
 
 **KEY FILTERS:** State (open/closed), draft (false for completed), author/reviewer, language
 
+**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
+
 **QUALITY FOCUS:** Use review-related filters for thoroughly vetted code examples`,
 
   [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `**Development history** - Track code evolution and repository status.
 
 **SEARCH STRATEGY:** Start minimal ("fix", "feature", "update") with owner/repo, progressive expansion.
 
-**LIMITATIONS:** Large organizations may return org-wide results, requires text terms.
+**LIMITATIONS:** Large organizations may return org-wide results, requires text terms. GitHub CLI limited to --limit parameter only (no page navigation).
 
 **ERROR HANDLING:** "Search text required" → Use minimal keywords ("fix", "update")`,
 
@@ -158,6 +166,8 @@ export const TOOL_DESCRIPTIONS = {
 - Scoped search (with owner): Targeted search within specific organization/user
 
 **MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
+
+**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow instead). GitHub CLI limited to --limit parameter only (no page navigation).
 
 **CRITICAL:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results for 95% of use cases`,
 
