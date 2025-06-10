@@ -18,9 +18,10 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         ),
       owner: z
         .string()
-        .min(1, 'Owner is required and cannot be empty')
+        .min(1)
+        .optional()
         .describe(
-          "Filter by repository owner/organization (e.g., 'example-org')"
+          "Filter by repository owner/organization (e.g., 'example-org'). OPTIONAL: Leave empty for global searches across all of GitHub."
         ),
       repo: z
         .string()

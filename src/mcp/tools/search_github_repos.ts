@@ -190,9 +190,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         ),
       owner: z
         .string()
-        .min(1, 'Owner is required and cannot be empty')
+        .min(1)
+        .optional()
         .describe(
-          'Repository owner/organization - REQUIRED for scoped, reliable results'
+          'Repository owner/organization (e.g., "facebook", "microsoft"). OPTIONAL: Leave empty for global searches across all of GitHub. Recommended for scoped, reliable results.'
         ),
       archived: z.boolean().optional().describe('Filter archived state'),
       created: z
@@ -330,6 +331,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           if (args.owner && args.query) {
             responseText += `\n• SCOPED SEARCH SUCCESS: owner + single term pattern proven effective`;
             responseText += `\n• PROVEN EXAMPLES: microsoft+typescript→VSCode(173K⭐), facebook+react→React(236K⭐)`;
+          } else if (!args.owner) {
+            responseText += `\n• GLOBAL SEARCH: Searching across all GitHub repositories`;
+            responseText += `\n• TIP: Add owner filter for more targeted results if you know specific organizations`;
           }
 
           // Add caching recommendations for testing-validated popular searches
@@ -364,11 +368,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 🔄 RECOMMENDED FALLBACK WORKFLOW:
 ${fallbacks.map(f => `• ${f}`).join('\n')}
 
-💡 PRODUCTION NOTE: This tool is a last resort. For reliable discovery:
+💡 PRODUCTION NOTE: For reliable discovery:
 1. Start with npm_search_packages for package-based discovery
 2. Use github_search_topics for ecosystem terminology  
 3. Use npm_get_package to extract repository URLs
-4. Only use repository search when NPM + Topics completely fail`;
+4. Use global repository search (without owner) for broad discovery
+5. Use scoped search (with owner) when you know specific organizations`;
 
         return {
           content: [

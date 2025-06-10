@@ -101,6 +101,10 @@ export const TOOL_DESCRIPTIONS = {
 
 **SEARCH STRATEGY:** Single keywords ("bug", "feature"), then combine ("bug fix"), never complex.
 
+**SEARCH MODES:** 
+- Global search (no owner): Searches issues across all GitHub repositories
+- Scoped search (with owner): Targeted search within specific organization/user
+
 **PROBLEM HIERARCHY:** "React auth JWT error" → "authentication" → "React" → "token expired" → "JWT"
 
 **RESULT TARGETS:** 0 → broader terms, 1-20 IDEAL, 100+ → add specific terms/filters`,
@@ -133,6 +137,10 @@ export const TOOL_DESCRIPTIONS = {
 
 **SEARCH METHODOLOGY:** Technology terms ("react", "python") → add context (location, experience) → specialized search.
 
+**SEARCH MODES:** 
+- Global search (no owner): Searches users/orgs across all GitHub
+- Scoped search (with owner): Targeted search within specific organization context
+
 **KEY FILTERS:** Type (user/org), location, language, followers (">100" influential), repos (">10" active)
 
 **DISCOVERY PATTERNS:** Technology experts, local developers, open source contributors, industry leaders`,
@@ -141,9 +149,13 @@ export const TOOL_DESCRIPTIONS = {
 
 **MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first.
 
-**KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies.
+**KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies, global & scoped searches.
 
-**BEST PRACTICES:** Single terms work best ("react", "typescript"), validated combinations (microsoft + typescript ✅), progressive refinement.
+**BEST PRACTICES:** Single terms work best ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), validated combinations (microsoft + typescript ✅), progressive refinement.
+
+**SEARCH MODES:** 
+- Global search (no owner): Searches across all GitHub repositories
+- Scoped search (with owner): Targeted search within specific organization/user
 
 **MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
 

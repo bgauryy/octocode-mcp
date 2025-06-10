@@ -18,9 +18,10 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         ),
       owner: z
         .string()
-        .min(1, 'Owner is required and cannot be empty')
+        .min(1)
+        .optional()
         .describe(
-          "Filter by repository owner/organization (e.g., 'example-org') obtained from the appropriate tool for fetching user organizations"
+          "Filter by repository owner/organization (e.g., 'example-org'). OPTIONAL: Leave empty for global searches across all of GitHub."
         ),
       type: z
         .enum(['user', 'org'])
