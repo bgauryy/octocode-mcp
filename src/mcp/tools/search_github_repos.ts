@@ -82,7 +82,13 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
     },
     {
       condition:
-        args.language && args.stars !== undefined && args.stars > 10000,
+        args.language &&
+        args.stars &&
+        ((args.stars.includes('>') &&
+          parseInt(args.stars.replace(/[><]/g, '')) > 10000) ||
+          (!args.stars.includes('>') &&
+            !args.stars.includes('<') &&
+            parseInt(args.stars) > 10000)),
       warning:
         'High star threshold with specific language may be too restrictive (TESTING-VALIDATED)',
       suggestion:
@@ -129,8 +135,10 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
     warnings.push('Limit must be between 1 and 100');
   }
 
-  if (args.stars !== undefined && args.stars < 0) {
-    warnings.push('Stars filter must be non-negative');
+  if (args.stars && !/^[><]=?\d+$|^\d+$|^\d+\.\.\d+$/.test(args.stars)) {
+    warnings.push(
+      'Stars filter must be in format ">100", ">=500", "<1000", "<=200", "50..200" or a simple number'
+    );
   }
 
   if (args.forks !== undefined && args.forks < 0) {
@@ -220,7 +228,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .describe(
           'Filter by programming language - WARNING: Can cause empty results with restrictive combinations'
         ),
-      license: z.string().optional().describe('Filter by license type'),
+      license: z
+        .array(z.string())
+        .optional()
+        .describe('Filter based on license type (e.g., ["mit", "apache-2.0"])'),
       limit: z
         .number()
         .optional()
@@ -230,30 +241,41 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .enum(['name', 'description', 'readme'])
         .optional()
         .describe('Search scope restriction'),
-      numberTopics: z.number().optional().describe('Filter by topics count'),
+      numberTopics: z
+        .number()
+        .optional()
+        .describe('Filter on number of topics'),
       order: z
         .enum(['asc', 'desc'])
         .optional()
         .default('desc')
         .describe('Result order (default: desc for newest first)'),
-      size: z.string().optional().describe('Filter by size in KB'),
+      size: z
+        .string()
+        .optional()
+        .describe(
+          'Filter on size range, in kilobytes (e.g., ">1000", "50..120")'
+        ),
       sort: z
         .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
         .optional()
-        .default('updated')
-        .describe('Sort criteria (default: updated for recent activity)'),
+        .default('best-match')
+        .describe('Sort fetched repositories (default: best-match)'),
       stars: z
-        .number()
+        .string()
         .optional()
         .describe(
-          'Filter by stars count - TIP: Use >100 for established projects, >10 for active ones'
+          'Filter by stars count (e.g., ">100", "<1000", ">=500", "50..200" for range queries) - TIP: Use >100 for established projects, >10 for active ones'
         ),
-      topic: z.string().optional().describe('Filter by topic/tag'),
+      topic: z
+        .array(z.string())
+        .optional()
+        .describe('Filter on topic (e.g., ["react", "javascript"])'),
       updated: z.string().optional().describe('Filter by last update date'),
       visibility: z
         .enum(['public', 'private', 'internal'])
         .optional()
-        .describe('Filter by visibility'),
+        .describe('Filter based on repository visibility'),
     },
     {
       title: 'Search GitHub Repositories',
@@ -286,8 +308,29 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         // Check if we got empty results and provide helpful guidance
         const resultText = result.content[0].text as string;
-        const parsedResults = JSON.parse(resultText);
-        const resultCount = JSON.parse(parsedResults.rawOutput).length;
+
+        // Handle non-JSON responses gracefully
+        let parsedResults;
+        let resultCount = 0;
+
+        try {
+          parsedResults = JSON.parse(resultText);
+          if (parsedResults.rawOutput) {
+            const rawData = JSON.parse(parsedResults.rawOutput);
+            resultCount = Array.isArray(rawData) ? rawData.length : 0;
+          }
+        } catch (parseError) {
+          // If parsing fails, it might be an error message from GitHub CLI
+          if (
+            resultText.includes('Failed to') ||
+            resultText.includes('Error:')
+          ) {
+            throw new Error(`GitHub CLI error: ${resultText}`);
+          }
+          // For other parsing issues, set reasonable defaults
+          resultCount = 0;
+          parsedResults = { rawOutput: '[]' };
+        }
 
         let responseText = resultText;
 

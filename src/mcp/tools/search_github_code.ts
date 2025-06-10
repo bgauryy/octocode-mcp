@@ -75,10 +75,10 @@ const searchGitHubCodeSchema = z.object({
       'Repository owner/organization (e.g., "facebook", "microsoft"). Leave empty for global searches.'
     ),
   repo: z
-    .string()
+    .array(z.string())
     .optional()
     .describe(
-      'Repository name (e.g., "react", "vscode"). Requires owner parameter.'
+      'Repository names (e.g., ["react", "vscode"]). Requires owner parameter.'
     ),
   extension: z
     .string()
@@ -117,6 +117,10 @@ const searchGitHubCodeSchema = z.object({
     .describe(
       'Branch for workflow documentation (required but not used by CLI)'
     ),
+  size: z
+    .string()
+    .optional()
+    .describe('Filter on file size range, in kilobytes (e.g., ">1", "<50")'),
 });
 
 export function registerGitHubSearchCodeTool(server: McpServer) {

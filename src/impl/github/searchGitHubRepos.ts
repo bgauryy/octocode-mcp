@@ -154,7 +154,8 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
     args.push(`--help-wanted-issues=${params.helpWantedIssues}`);
   if (params.includeForks) args.push(`--include-forks=${params.includeForks}`);
   if (params.language) args.push(`--language=${params.language}`);
-  if (params.license) args.push(`--license=${params.license}`);
+  if (params.license && params.license.length > 0)
+    args.push(`--license=${params.license.join(',')}`);
   if (params.limit) args.push(`--limit=${params.limit}`);
   if (params.match) args.push(`--match=${params.match}`);
   if (params.numberTopics !== undefined)
@@ -162,14 +163,15 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   if (params.order) args.push(`--order=${params.order}`);
   if (params.size) args.push(`--size="${params.size}"`);
 
-  // DEFAULT TO UPDATED SORTING for recency prioritization
-  const sortBy = params.sort || 'updated';
+  // Use best-match as default, only specify sort if different from default
+  const sortBy = params.sort || 'best-match';
   if (sortBy !== 'best-match') {
     args.push(`--sort=${sortBy}`);
   }
 
-  if (params.stars !== undefined) args.push(`--stars=${params.stars}`);
-  if (params.topic) args.push(`--topic=${params.topic}`);
+  if (params.stars !== undefined) args.push(`--stars="${params.stars}"`);
+  if (params.topic && params.topic.length > 0)
+    args.push(`--topic=${params.topic.join(',')}`);
   if (params.updated) args.push(`--updated="${params.updated}"`);
   if (params.visibility) args.push(`--visibility=${params.visibility}`);
 

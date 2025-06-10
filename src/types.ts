@@ -24,14 +24,16 @@ export type UserInvolvement = {
   involves?: string;
 };
 
-export interface GitHubCodeSearchParams extends BaseSearchParams {
+export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   query: string;
+  repo?: string[];
   language?: string;
   filename?: string;
   extension?: string;
   path?: string;
   match?: 'file' | 'path';
   branch?: string;
+  size?: string;
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
@@ -89,13 +91,13 @@ export interface GitHubReposSearchParams extends BaseSearchParams, OrderSort {
   helpWantedIssues?: number;
   includeForks?: 'false' | 'true' | 'only';
   language?: string;
-  license?: string;
+  license?: string[];
   match?: 'name' | 'description' | 'readme';
   numberTopics?: number;
   size?: string;
   sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
-  stars?: number;
-  topic?: string;
+  stars?: string;
+  topic?: string[];
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
 }
@@ -168,7 +170,7 @@ export interface GitHubReposSearchResult {
       query?: string;
       owner?: string;
       language?: string;
-      stars?: number;
+      stars?: string;
       updated?: string;
     };
   };
