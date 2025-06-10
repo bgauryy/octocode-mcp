@@ -34,6 +34,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   match?: 'file' | 'path';
   branch?: string;
   size?: string;
+  limit?: number;
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
@@ -92,6 +93,7 @@ export interface GitHubReposSearchParams extends BaseSearchParams, OrderSort {
   includeForks?: 'false' | 'true' | 'only';
   language?: string;
   license?: string[];
+  limit?: number;
   match?: 'name' | 'description' | 'readme';
   numberTopics?: number;
   size?: string;
@@ -374,4 +376,7 @@ export interface GitHubUsersSearchParams extends BaseSearchParams, OrderSort {
   repos?: string;
   created?: string;
   sort?: 'followers' | 'repositories' | 'joined';
+  order?: 'asc' | 'desc';
+  limit?: number;
+  page?: number;
 }

@@ -73,6 +73,11 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .optional()
         .default(50)
         .describe('Maximum number of users to return (default: 50)'),
+      page: z
+        .number()
+        .optional()
+        .default(1)
+        .describe('The page number of the results to fetch (default: 1)'),
     },
     {
       title: 'Search GitHub Users',

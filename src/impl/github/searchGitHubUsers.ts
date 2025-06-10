@@ -69,6 +69,9 @@ function buildGitHubUsersAPICommand(params: GitHubUsersSearchParams): {
   const limit = params.limit || 30;
   queryParams.push(`per_page=${limit}`);
 
+  const page = params.page || 1;
+  queryParams.push(`page=${page}`);
+
   if (params.sort) queryParams.push(`sort=${params.sort}`);
   if (params.order) queryParams.push(`order=${params.order}`);
 
