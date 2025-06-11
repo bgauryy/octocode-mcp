@@ -14,25 +14,17 @@ export const TOOL_DESCRIPTIONS = {
 
 **RESULT OPTIMIZATION:** 0 results → broader terms, 1-20 IDEAL, 100+ → more specific terms
 
-**INTEGRATION:** ALWAYS chain to ${TOOL_NAMES.NPM_GET_PACKAGE} → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
-
-  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Repository mapping** - Transform npm packages into GitHub repositories for code analysis.
-
-**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_SEARCH_PACKAGES}, user mentions package names, private package detection (@company/).
-
-**WORKFLOW:** Extract repository URL → Parse owner/repo → Detect organizational context → Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → MANDATORY ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}
-
-**ORGANIZATIONAL DETECTION:** @company/ scoped packages → Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
-
-**EXAMPLES:** "react" → github.com/facebook/react, "@wix/package" → Private org detection`,
+**INTEGRATION:** ALWAYS chain to focused NPM tools → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
 
   [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security analysis** - Essential for package evaluation and organizational detection.
 
-**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_GET_PACKAGE} for complete assessment.
+**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for complete assessment.
 
 **ANALYSIS:** Security vulnerabilities, dependency tree, license compatibility, bundle impact, organization detection (@company/).
 
-**ORGANIZATIONAL CONTEXT:** Private packages → Check ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access`,
+**ORGANIZATIONAL CONTEXT:** Private packages → Check ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access
+
+**KNOWN LIMITATION:** Some NPM audit failures may occur (package-specific). Bundle analysis and dependency tree remain reliable.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**FOUNDATION TOOL** - Essential for ecosystem discovery and terminology mapping.
 
@@ -69,11 +61,20 @@ export const TOOL_DESCRIPTIONS = {
 
 **KEY FEATURES:** Every search includes "repo:owner/repository", smart boolean logic, organizational context.
 
+**ANTI-HALLUCINATION SAFEGUARDS:**
+- 🚨 NEVER search for overly specific function names without verification
+- 🔍 DISCOVERY FIRST: Use broad terms ("function", "class", "export") then narrow down
+- 📝 PATTERN DETECTION: Long camelCase names (>20 chars) may not exist
+- ⚠️ COMPOUND PATTERNS: "performSomethingOnSomething" patterns often hallucinated
+- 💡 SAFER APPROACH: "function.*keyword" finds real implementations
+
 **BOOLEAN OPERATIONS:** Default AND ("sparse index" = "sparse AND index"), OR ("useState OR useEffect"), NOT ("error NOT test")
 
 **PATH WARNING:** React uses path:packages (NOT path:src). Using path:src on repositories without top-level src returns zero results.
 
 **RESULT OPTIMIZATION:** 1-10 IDEAL, 100+ TOO BROAD
+
+**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
 
 **INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery`,
 
@@ -101,7 +102,13 @@ export const TOOL_DESCRIPTIONS = {
 
 **SEARCH STRATEGY:** Single keywords ("bug", "feature"), then combine ("bug fix"), never complex.
 
+**SEARCH MODES:** 
+- Global search (no owner): Searches issues across all GitHub repositories
+- Scoped search (with owner): Targeted search within specific organization/user
+
 **PROBLEM HIERARCHY:** "React auth JWT error" → "authentication" → "React" → "token expired" → "JWT"
+
+**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
 
 **RESULT TARGETS:** 0 → broader terms, 1-20 IDEAL, 100+ → add specific terms/filters`,
 
@@ -111,27 +118,25 @@ export const TOOL_DESCRIPTIONS = {
 
 **KEY FILTERS:** State (open/closed), draft (false for completed), author/reviewer, language
 
+**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
+
 **QUALITY FOCUS:** Use review-related filters for thoroughly vetted code examples`,
 
   [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `**Development history** - Track code evolution and repository status.
 
 **SEARCH STRATEGY:** Start minimal ("fix", "feature", "update") with owner/repo, progressive expansion.
 
-**LIMITATIONS:** Large organizations may return org-wide results, requires text terms.
+**LIMITATIONS:** Large organizations may return org-wide results, requires text terms. GitHub CLI limited to --limit parameter only (no page navigation).
 
 **ERROR HANDLING:** "Search text required" → Use minimal keywords ("fix", "update")`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS]: `**Community knowledge** - Access discussions for tutorials and solutions.
-
-**DISCOVERY WORKFLOW:** ${TOOL_NAMES.NPM_GET_PACKAGE} → get repo URL → Search discussions
-
-**SEARCH STRATEGY:** Start simple ("help", "tutorial"), build complexity ("help deployment"), avoid full phrases.
-
-**KEY FILTERS:** Answered: true for validated solutions, category filters, maintainer participation`,
 
   [TOOL_NAMES.GITHUB_SEARCH_USERS]: `**Developer discovery** - Find experts and community leaders.
 
 **SEARCH METHODOLOGY:** Technology terms ("react", "python") → add context (location, experience) → specialized search.
+
+**SEARCH MODES:** 
+- Global search (no owner): Searches users/orgs across all GitHub
+- Scoped search (with owner): Targeted search within specific organization context
 
 **KEY FILTERS:** Type (user/org), location, language, followers (">100" influential), repos (">10" active)
 
@@ -141,21 +146,114 @@ export const TOOL_DESCRIPTIONS = {
 
 **MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first.
 
-**KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies.
+**KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies, global & scoped searches.
 
-**BEST PRACTICES:** Single terms work best ("react", "typescript"), validated combinations (microsoft + typescript ✅), progressive refinement.
+**BEST PRACTICES:** Single terms work best ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), validated combinations (microsoft + typescript ✅), progressive refinement.
+
+**SEARCH MODES:** 
+- Global search (no owner): Searches across all GitHub repositories
+- Scoped search (with owner): Targeted search within specific organization/user
 
 **MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
 
+**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow instead). GitHub CLI limited to --limit parameter only (no page navigation).
+
 **CRITICAL:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results for 95% of use cases`,
 
-  [TOOL_NAMES.NPM_GET_PACKAGE_STATS]: `**Package maturity analysis** - Lifecycle assessment for package evaluation.
+  // Focused NPM tools for minimal token usage
+  [TOOL_NAMES.NPM_GET_REPOSITORY]: `**Repository discovery** - Extract GitHub repository URL and project description.
 
-**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_GET_PACKAGE} for complete assessment.
+**MINIMAL OUTPUT:** Package name, description, repository URL, homepage - optimized for token efficiency.
 
-**ANALYSIS:** Release timeline, version history, distribution tags, maintenance indicators, organizational context.
+**WHEN TO USE:** When you only need repository location for GitHub operations.
 
-**MATURITY INDICATORS:** Stable (regular releases, clear versioning), active development (frequent releases, beta/alpha), abandoned (long gaps, no activity).
+**INTEGRATION:** Perfect first step → ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → Code exploration`,
 
-**INTEGRATION:** MANDATORY with ${TOOL_NAMES.NPM_GET_PACKAGE}, combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
+  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `**Dependency analysis** - Extract package dependencies tree.
+
+**MINIMAL OUTPUT:** Dependencies, devDependencies, resolutions - focused dependency data only.
+
+**WHEN TO USE:** When analyzing package ecosystem and compatibility.
+
+**INTEGRATION:** Combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for security audit`,
+
+  [TOOL_NAMES.NPM_GET_BUGS]: `**Issue tracking** - Extract bug reporting information.
+
+**MINIMAL OUTPUT:** Package name and bugs URL - direct access to issue tracker.
+
+**WHEN TO USE:** When users need to report issues or check known problems.
+
+**INTEGRATION:** Links to ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for problem discovery`,
+
+  [TOOL_NAMES.NPM_GET_README]: `**Documentation access** - Extract README filename information.
+
+**MINIMAL OUTPUT:** Package name and readme filename - efficient documentation lookup.
+
+**WHEN TO USE:** When users need documentation without full package metadata.
+
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} for full README content`,
+
+  [TOOL_NAMES.NPM_GET_VERSIONS]: `**Official version tracking** - Extract production-ready semantic versions only.
+
+**MINIMAL OUTPUT:** Official versions (major.minor.patch format), latest version, count - excludes alpha/beta/rc versions.
+
+**WHEN TO USE:** Find stable versions for production deployment, analyze release cadence of stable releases.
+
+**INTEGRATION:** Perfect for production planning - filters out experimental versions for reliable deployment decisions`,
+
+  [TOOL_NAMES.NPM_GET_AUTHOR]: `**Maintainer information** - Extract author and maintainer details.
+
+**MINIMAL OUTPUT:** Author and maintainers list - focused ownership data.
+
+**WHEN TO USE:** When users need to contact maintainers or assess project ownership.
+
+**INTEGRATION:** Links to ${TOOL_NAMES.GITHUB_SEARCH_USERS} for developer discovery`,
+
+  [TOOL_NAMES.NPM_GET_LICENSE]: `**License compliance** - Extract package license information.
+
+**MINIMAL OUTPUT:** Package name and license - essential legal compliance data.
+
+**WHEN TO USE:** When users need quick license verification for legal compliance.
+
+**INTEGRATION:** Essential for enterprise package evaluation workflows`,
+
+  [TOOL_NAMES.NPM_GET_HOMEPAGE]: `**Official documentation gateway** - Extract package homepage for comprehensive project resources.
+
+**MINIMAL OUTPUT:** Package name and homepage URL - direct access to live documentation, tutorials, and demos.
+
+**WHEN TO USE:** Access official docs, interactive examples, getting started guides, and project showcases.
+
+**INTEGRATION:** Complements ${TOOL_NAMES.NPM_GET_REPOSITORY} - homepage often contains better docs than README`,
+
+  [TOOL_NAMES.NPM_GET_ID]: `**Precise package targeting** - Extract exact name@version for dependency management.
+
+**MINIMAL OUTPUT:** Package name and _id (name@latestVersion format) - canonical package identifier for lockfiles.
+
+**WHEN TO USE:** Pin exact versions, resolve dependency conflicts, generate package-lock entries, version compatibility checks.
+
+**INTEGRATION:** Critical for CI/CD pipelines, dependency auditing, and reproducible builds`,
+
+  [TOOL_NAMES.NPM_GET_RELEASES]: `**Recent releases tracker** - Get latest release activity and timeline data.
+
+**MINIMAL OUTPUT:** Last modified, created date, version count, and last 10 releases - focused release intelligence.
+
+**WHEN TO USE:** Track recent package activity, analyze release frequency, check latest versions and release dates.
+
+**INTEGRATION:** Essential for monitoring package updates - combine with ${TOOL_NAMES.NPM_GET_VERSIONS} for comprehensive version analysis`,
+
+  [TOOL_NAMES.NPM_GET_ENGINES]: `**Environment compatibility validator** - Prevent runtime conflicts before installation.
+
+**MINIMAL OUTPUT:** Node.js version requirements, npm constraints - environment compatibility matrix.
+
+**WHEN TO USE:** Pre-deployment validation, Docker image planning, Node.js upgrade decisions, CI/CD environment setup.
+
+**INTEGRATION:** Prevents deployment failures - use before installation in production environments`,
+
+  [TOOL_NAMES.NPM_GET_EXPORTS]: `**Import path intelligence** - Discover available modules and import strategies.
+
+**MINIMAL OUTPUT:** Export mappings, entry points, submodule paths - complete import guide for developers.
+
+**WHEN TO USE:** Learn correct import syntax, discover tree-shakable exports, find submodules, optimize bundle size.
+
+**INTEGRATION:** CRITICAL for ${TOOL_NAMES.GITHUB_SEARCH_CODE} - enables precise code search with accurate import paths`,
 };

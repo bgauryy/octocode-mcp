@@ -17,11 +17,25 @@ export const TOOL_NAMES = {
   // GitHub Users API (/user/*)
   GITHUB_GET_USER_ORGS: 'github_get_user_organizations',
 
-  // npm Registry API
+  // npm Registry API - Comprehensive
   NPM_SEARCH_PACKAGES: 'npm_search_packages',
   NPM_GET_PACKAGE: 'npm_get_package',
   NPM_GET_PACKAGE_STATS: 'npm_get_package_stats',
   NPM_ANALYZE_DEPENDENCIES: 'npm_analyze_dependencies',
+
+  // npm Registry API - Focused (minimal token usage)
+  NPM_GET_REPOSITORY: 'npm_get_repository',
+  NPM_GET_DEPENDENCIES: 'npm_get_dependencies',
+  NPM_GET_BUGS: 'npm_get_bugs',
+  NPM_GET_README: 'npm_get_readme',
+  NPM_GET_VERSIONS: 'npm_get_versions',
+  NPM_GET_AUTHOR: 'npm_get_author',
+  NPM_GET_LICENSE: 'npm_get_license',
+  NPM_GET_HOMEPAGE: 'npm_get_homepage',
+  NPM_GET_ID: 'npm_get_id',
+  NPM_GET_RELEASES: 'npm_get_releases',
+  NPM_GET_ENGINES: 'npm_get_engines',
+  NPM_GET_EXPORTS: 'npm_get_exports',
 
   // Advanced/Composite Operations
   GITHUB_ADVANCED_SEARCH: 'github_advanced_search',

@@ -42,7 +42,7 @@ function registerAllTools(server: McpServer) {
   Tools.registerGitHubSearchCodeTool(server);
   Tools.registerFetchGitHubFileContentTool(server);
   Tools.registerViewRepositoryTool(server);
-  Tools.registerNpmViewTool(server);
+  //Tools.registerNpmViewTool(server);
   Tools.registerSearchGitHubReposTool(server);
   Tools.registerSearchGitHubCommitsTool(server);
   Tools.registerSearchGitHubPullRequestsTool(server);
@@ -50,12 +50,22 @@ function registerAllTools(server: McpServer) {
   Tools.registerNpmSearchTool(server);
   Tools.registerViewRepositoryStructureTool(server);
   Tools.registerSearchGitHubIssuesTool(server);
-  // TODO: add discussions tool after fixing API
-  //Tools.registerSearchGitHubDiscussionsTool(server);
   Tools.registerSearchGitHubTopicsTool(server);
   Tools.registerSearchGitHubUsersTool(server);
-  Tools.registerNpmPackageStatsTool(server);
+  // Focused NPM tools for minimal token usage
   Tools.registerNpmDependencyAnalysisTool(server);
+  Tools.registerNpmGetRepositoryTool(server);
+  Tools.registerNpmGetDependenciesTool(server);
+  Tools.registerNpmGetBugsTool(server);
+  Tools.registerNpmGetReadmeTool(server);
+  Tools.registerNpmGetVersionsTool(server);
+  Tools.registerNpmGetAuthorTool(server);
+  Tools.registerNpmGetLicenseTool(server);
+  Tools.registerNpmGetHomepageTool(server);
+  Tools.registerNpmGetIdTool(server);
+  Tools.registerNpmGetReleasesTool(server);
+  Tools.registerNpmGetEnginesTool(server);
+  Tools.registerNpmGetExportsTool(server);
 }
 
 // Register all resources

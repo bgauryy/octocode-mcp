@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
-import { NpmRepositoryResult } from '../../types';
+import { NpmData, NpmViewResult } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
 
 export async function npmView(packageName: string): Promise<CallToolResult> {
@@ -19,7 +19,8 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
 
       // Parse the result from the executed command
       const commandOutput = JSON.parse(result.content[0].text as string);
-      const npmData: NpmRepositoryResult = commandOutput.result;
+      // The result is a JSON string from npm that needs to be parsed again
+      const npmData: NpmData = JSON.parse(commandOutput.result);
 
       let popularityData = '';
       try {
@@ -33,7 +34,8 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
           const versionsOutput = JSON.parse(
             versionsResult.content[0].text as string
           );
-          const timeData = versionsOutput.result;
+          // Parse the JSON string to get the actual time data
+          const timeData = JSON.parse(versionsOutput.result);
           const versionCount = Object.keys(timeData).length - 2; // Subtract 'created' and 'modified'
           popularityData = `Package versions released: ${versionCount}`;
         }
@@ -41,8 +43,9 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
         // Popularity data is optional
       }
 
-      const enhancedResult = {
-        npmData: JSON.parse(JSON.stringify(npmData)),
+      // Create the properly typed result with npmData as proper object
+      const enhancedResult: NpmViewResult = {
+        npmData: npmData,
         popularityInfo: popularityData,
         lastAnalyzed: new Date().toISOString(),
       };

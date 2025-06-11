@@ -24,14 +24,17 @@ export type UserInvolvement = {
   involves?: string;
 };
 
-export interface GitHubCodeSearchParams extends BaseSearchParams {
+export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   query: string;
+  repo?: string[];
   language?: string;
   filename?: string;
   extension?: string;
   path?: string;
   match?: 'file' | 'path';
   branch?: string;
+  size?: string;
+  limit?: number;
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
@@ -89,13 +92,14 @@ export interface GitHubReposSearchParams extends BaseSearchParams, OrderSort {
   helpWantedIssues?: number;
   includeForks?: 'false' | 'true' | 'only';
   language?: string;
-  license?: string;
+  license?: string[];
+  limit?: number;
   match?: 'name' | 'description' | 'readme';
   numberTopics?: number;
   size?: string;
   sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
-  stars?: number;
-  topic?: string;
+  stars?: string;
+  topic?: string[];
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
 }
@@ -122,7 +126,7 @@ export interface GitHubSearchResult {
     | 'topics'
     | 'users';
   query: string;
-  actualQuery?: string; // The actual constructed query sent to GitHub CLI
+  actualQuery?: string;
   totalCount?: number;
   results: string | any[];
   rawOutput: string;
@@ -168,7 +172,7 @@ export interface GitHubReposSearchResult {
       query?: string;
       owner?: string;
       language?: string;
-      stars?: number;
+      stars?: string;
       updated?: string;
     };
   };
@@ -179,6 +183,136 @@ export interface GitHubRepositoryViewResult {
   repo: string;
   repositoryInfo: string;
   rawOutput: string;
+}
+
+export interface NpmDistTags {
+  latest: string;
+}
+
+export interface NpmTime {
+  created: string;
+  modified: string;
+  [version: string]: string;
+}
+
+export interface NpmBugs {
+  url: string;
+}
+
+export interface NpmRepository {
+  type: string;
+  url: string;
+}
+
+export interface NpmMaintainer {
+  email?: string;
+  name: string;
+}
+
+export interface NpmUsers {
+  [username: string]: boolean;
+}
+
+export interface NpmEngines {
+  node: string;
+}
+
+export interface NpmExports {
+  [key: string]: {
+    import: string;
+    require: string;
+  };
+}
+
+export interface NpmTypesVersions {
+  [key: string]: {
+    [key: string]: string[];
+  };
+}
+
+export interface NpmScripts {
+  [scriptName: string]: string;
+}
+
+export interface NpmDependencies {
+  [packageName: string]: string;
+}
+
+export interface NpmDevDependencies {
+  [packageName: string]: string;
+}
+
+export interface NpmResolutions {
+  [packageName: string]: string;
+}
+
+export interface NpmAttestations {
+  url: string;
+  provenance: {
+    predicateType: string;
+  };
+}
+
+export interface NpmSignatures {
+  keyid: string;
+  sig: string;
+}
+
+export interface NpmDist {
+  integrity: string;
+  shasum: string;
+  tarball: string;
+  fileCount: number;
+  unpackedSize: number;
+  attestations: NpmAttestations;
+  signatures: NpmSignatures[];
+}
+
+export interface NpmOperationalInternal {
+  host: string;
+  tmp: string;
+}
+
+export interface NpmData {
+  _id: string;
+  _rev: string;
+  name: string;
+  'dist-tags': NpmDistTags;
+  versions: string[];
+  time: NpmTime;
+  bugs: NpmBugs;
+  author: string;
+  license: string;
+  homepage: string;
+  keywords: string[];
+  repository: NpmRepository;
+  description: string;
+  maintainers: string[];
+  readmeFilename: string;
+  users: NpmUsers;
+  _contentLength: number;
+  version: string;
+  type: string;
+  engines: NpmEngines;
+  exports: NpmExports;
+  typesVersions: NpmTypesVersions;
+  scripts: NpmScripts;
+  dependencies: NpmDependencies;
+  devDependencies: NpmDevDependencies;
+  resolutions: NpmResolutions;
+  gitHead: string;
+  _nodeVersion: string;
+  _npmVersion: string;
+  dist: NpmDist;
+  directories: Record<string, never>;
+  _npmOperationalInternal: NpmOperationalInternal;
+  _hasShrinkwrap: boolean;
+}
+
+export interface NpmViewResult {
+  npmData: Partial<NpmData>;
+  popularityInfo: string;
+  lastAnalyzed: string;
 }
 
 export interface NpmRepositoryResult {
@@ -372,4 +506,78 @@ export interface GitHubUsersSearchParams extends BaseSearchParams, OrderSort {
   repos?: string;
   created?: string;
   sort?: 'followers' | 'repositories' | 'joined';
+  order?: 'asc' | 'desc';
+  limit?: number;
+  page?: number;
+}
+
+// Focused NPM result types for minimal token usage
+export interface NpmRepositoryInfoResult {
+  packageName: string;
+  description: string;
+  repository: NpmRepository;
+  homepage?: string;
+}
+
+export interface NpmDependenciesResult {
+  packageName: string;
+  dependencies: NpmDependencies;
+  devDependencies: NpmDevDependencies;
+  resolutions: NpmResolutions;
+}
+
+export interface NpmBugsResult {
+  packageName: string;
+  bugs: NpmBugs;
+}
+
+export interface NpmReadmeResult {
+  packageName: string;
+  readmeFilename: string;
+}
+
+export interface NpmVersionsResult {
+  packageName: string;
+  versions: string[];
+  latestVersion: string;
+  versionCount: number;
+}
+
+export interface NpmAuthorResult {
+  packageName: string;
+  author: string;
+  maintainers: string[];
+}
+
+export interface NpmLicenseResult {
+  packageName: string;
+  license: string;
+}
+
+export interface NpmHomepageResult {
+  packageName: string;
+  homepage: string;
+}
+
+export interface NpmIdResult {
+  packageName: string;
+  id: string; // name@latestVersion format
+}
+
+export interface NpmTimeResult {
+  packageName: string;
+  time: NpmTime;
+  lastModified: string;
+  created: string;
+  versionCount: number;
+}
+
+export interface NpmEnginesResult {
+  packageName: string;
+  engines: NpmEngines;
+}
+
+export interface NpmExportsResult {
+  packageName: string;
+  exports: NpmExports;
 }
