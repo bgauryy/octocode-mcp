@@ -14,6 +14,14 @@ export const TOOL_DESCRIPTIONS = {
 
 **RESULT OPTIMIZATION:** 0 results → broader terms, 1-20 IDEAL, 100+ → more specific terms
 
+**NPM SEARCH FALLBACK STRATEGY:** When NPM search fails to find packages:
+1. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} - Search for related ecosystem terms and technologies
+2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Search for repositories that might contain packages
+3. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for package.json files with related names
+4. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for package development references
+5. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles/descriptions for package mentions
+6. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for package discussions and problems
+
 **INTEGRATION:** ALWAYS chain to focused NPM tools → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
 
   [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security analysis** - Essential for package evaluation and organizational detection.
@@ -28,9 +36,26 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**FOUNDATION TOOL** - Essential for ecosystem discovery and terminology mapping.
 
-**SEARCH STRATEGY:** Start global, single terms ("react", "typescript"), multi-term sparingly ("react+typescript"), add owner only when needed.
+**🎯 CRITICAL: SINGLE-TERM STRATEGY (EVIDENCE-BASED)**
+✅ PROVEN EFFECTIVE: Single terms ("mcp" → 570 results, "langchain" → 98 results)
+❌ PROVEN FAILURE: Multi-terms ("mcp model-context-protocol" → 0 results)
 
-**BEST PRACTICES:** DON'T start with owner (limits discovery), DO start broad, USE single terms mostly.
+**SEARCH STRATEGY:** 
+1. **PRIMARY: Single terms ONLY** ("react", "mcp", "typescript", "langchain")
+2. **SECONDARY: Hyphenated compounds** ("model-context-protocol", "next.js")
+3. **NEVER: Multi-word phrases** (avoid "react typescript", "mcp server tools")
+
+**PROGRESSIVE DISCOVERY WORKFLOW:**
+1. Start with core term: "mcp" → get ecosystem overview
+2. Refine with specific variations: "model-context-protocol", "mcp-server"
+3. Use results to guide repository search
+4. Apply owner filters only after initial discovery
+
+**BEST PRACTICES:** 
+- DON'T start with owner (limits discovery)
+- DO start broad with single terms
+- NEVER combine multiple concepts in one search
+- USE sequential single-term searches for comprehensive coverage
 
 **RESULT OPTIMIZATION:** 1-10 IDEAL, 10+ add featured/curated filters
 
@@ -144,11 +169,15 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `**FALLBACK TOOL** - Repository search with smart query handling.
 
-**MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first.
+**MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first FOR PUBLIC PACKAGES. For ORGANIZATIONAL searches (when user works at company), use immediately after ${TOOL_NAMES.GITHUB_GET_USER_ORGS}.
 
 **KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies, global & scoped searches.
 
-**BEST PRACTICES:** Single terms work best ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), validated combinations (microsoft + typescript ✅), progressive refinement.
+**🎯 CRITICAL: SINGLE-TERM STRATEGY (EVIDENCE-BASED)**
+✅ PROVEN EFFECTIVE: Single terms work best ("react", "typescript")
+❌ PROVEN FAILURE: Multi-term queries often return 0 results or fall back to single terms
+
+**BEST PRACTICES:** Single terms ONLY ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), avoid multi-term combinations, progressive refinement through sequential searches.
 
 **SEARCH MODES:** 
 - Global search (no owner): Searches across all GitHub repositories
@@ -156,9 +185,15 @@ export const TOOL_DESCRIPTIONS = {
 
 **MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
 
-**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow instead). GitHub CLI limited to --limit parameter only (no page navigation).
+**ORGANIZATIONAL FALLBACK STRATEGY:** When repository search fails within organization:
+1. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for project name in code files
+2. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for project references  
+3. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles/descriptions for project mentions
+4. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for project discussions
 
-**CRITICAL:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results for 95% of use cases`,
+**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow for PUBLIC packages, use CODE→COMMITS→PRS workflow for INTERNAL projects). GitHub CLI limited to --limit parameter only (no page navigation).
+
+**CRITICAL:** For PUBLIC packages: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results. For INTERNAL/ORGANIZATIONAL projects: Direct code/commits/PRs search provides better discovery.`,
 
   // Focused NPM tools for minimal token usage
   [TOOL_NAMES.NPM_GET_REPOSITORY]: `**Repository discovery** - Extract GitHub repository URL and project description.
