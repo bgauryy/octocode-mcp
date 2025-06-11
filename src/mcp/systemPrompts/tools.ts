@@ -36,9 +36,26 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**FOUNDATION TOOL** - Essential for ecosystem discovery and terminology mapping.
 
-**SEARCH STRATEGY:** Start global, single terms ("react", "typescript"), multi-term sparingly ("react+typescript"), add owner only when needed.
+**🎯 CRITICAL: SINGLE-TERM STRATEGY (EVIDENCE-BASED)**
+✅ PROVEN EFFECTIVE: Single terms ("mcp" → 570 results, "langchain" → 98 results)
+❌ PROVEN FAILURE: Multi-terms ("mcp model-context-protocol" → 0 results)
 
-**BEST PRACTICES:** DON'T start with owner (limits discovery), DO start broad, USE single terms mostly.
+**SEARCH STRATEGY:** 
+1. **PRIMARY: Single terms ONLY** ("react", "mcp", "typescript", "langchain")
+2. **SECONDARY: Hyphenated compounds** ("model-context-protocol", "next.js")
+3. **NEVER: Multi-word phrases** (avoid "react typescript", "mcp server tools")
+
+**PROGRESSIVE DISCOVERY WORKFLOW:**
+1. Start with core term: "mcp" → get ecosystem overview
+2. Refine with specific variations: "model-context-protocol", "mcp-server"
+3. Use results to guide repository search
+4. Apply owner filters only after initial discovery
+
+**BEST PRACTICES:** 
+- DON'T start with owner (limits discovery)
+- DO start broad with single terms
+- NEVER combine multiple concepts in one search
+- USE sequential single-term searches for comprehensive coverage
 
 **RESULT OPTIMIZATION:** 1-10 IDEAL, 10+ add featured/curated filters
 
@@ -156,7 +173,11 @@ export const TOOL_DESCRIPTIONS = {
 
 **KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies, global & scoped searches.
 
-**BEST PRACTICES:** Single terms work best ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), validated combinations (microsoft + typescript ✅), progressive refinement.
+**🎯 CRITICAL: SINGLE-TERM STRATEGY (EVIDENCE-BASED)**
+✅ PROVEN EFFECTIVE: Single terms work best ("react", "typescript")
+❌ PROVEN FAILURE: Multi-term queries often return 0 results or fall back to single terms
+
+**BEST PRACTICES:** Single terms ONLY ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), avoid multi-term combinations, progressive refinement through sequential searches.
 
 **SEARCH MODES:** 
 - Global search (no owner): Searches across all GitHub repositories
