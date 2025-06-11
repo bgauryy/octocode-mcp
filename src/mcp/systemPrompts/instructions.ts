@@ -109,11 +109,89 @@ NPM search → ${TOOL_NAMES.NPM_GET_LICENSE}
 ### Private Organization ("@wix/package", "I work at Company")
 Auto-trigger: IMMEDIATE ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → NPM search → Private repo access
 
+**ORGANIZATIONAL PROJECT SEARCH** ("Astra Nova project", "internal project X"):
+1. ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → Get organization access
+2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} → Try repository search first
+3. **FALLBACK CHAIN** (if repo search fails):
+   - ${TOOL_NAMES.GITHUB_SEARCH_CODE} → Search code for project references
+   - ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} → Search commit messages  
+   - ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} → Search PR titles/descriptions
+   - ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} → Search issue discussions
+4. Extract repository info from results → ${TOOL_NAMES.GITHUB_GET_REPOSITORY}
+
 ### Problem Solving ("fix auth error") 
 NPM packages → Repository analysis → Issues → Code solutions
 
 ### Implementation Intent ("react authentication implementation")
 NPM search → Repository extraction → Repository access → Code search → File extraction
+
+## COMPREHENSIVE GENERIC SEARCH STRATEGY
+
+**UNIVERSAL DISCOVERY WORKFLOW** - When search intent is unclear or initial searches fail:
+
+### Phase 1: Primary Discovery (Try All Main Tools)
+1. **${TOOL_NAMES.NPM_SEARCH_PACKAGES}** - Package ecosystem discovery
+   - Single terms first, then combinations
+   - Check for organizational patterns (@company/)
+   - Trigger fallback if < 5 results
+
+2. **${TOOL_NAMES.GITHUB_SEARCH_TOPICS}** - Technology terminology mapping  
+   - Discover ecosystem vocabulary
+   - Find related technologies and concepts
+   - Build search term vocabulary
+
+3. **${TOOL_NAMES.GITHUB_SEARCH_REPOS}** - Repository discovery
+   - Use terms from topics search
+   - Try organizational searches if applicable
+   - Progressive refinement from broad to specific
+
+### Phase 2: Deep Dive (Go Deeper When Finding Indications)
+When ANY Phase 1 tool finds relevant results:
+
+**For Package Results:**
+- ${TOOL_NAMES.NPM_GET_REPOSITORY} → Extract GitHub location
+- ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} → Security and dependency analysis  
+- ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → Repository access setup
+- ${TOOL_NAMES.GITHUB_SEARCH_CODE} → Implementation discovery
+- ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} → Code extraction
+
+**For Repository Results:**
+- ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → Branch and metadata discovery
+- ${TOOL_NAMES.GITHUB_GET_CONTENTS} → Structure exploration
+- ${TOOL_NAMES.GITHUB_SEARCH_CODE} → Implementation patterns
+- ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} → Problem discovery
+- ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} → Development patterns
+
+**For Topic Results:**
+- Use discovered terminology in targeted searches
+- ${TOOL_NAMES.NPM_SEARCH_PACKAGES} with refined terms
+- ${TOOL_NAMES.GITHUB_SEARCH_REPOS} with ecosystem vocabulary
+- ${TOOL_NAMES.GITHUB_SEARCH_CODE} with technology-specific patterns
+
+### Phase 3: Context Expansion (When Core Results Need More Context)
+- ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} → Development history and decisions
+- ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} → Implementation discussions
+- ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} → Problem patterns and solutions
+- ${TOOL_NAMES.GITHUB_SEARCH_USERS} → Expert and maintainer discovery
+
+### Phase 4: Organizational Deep Dive (For Internal/Enterprise Context)
+When organizational context detected:
+1. ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → Access discovery
+2. Apply Phase 1-3 with organizational filters
+3. Use organizational fallback chains for each tool
+4. Cross-reference public and private ecosystems
+
+**SUCCESS INDICATORS FOR PHASE TRANSITIONS:**
+- Phase 1 → Phase 2: ANY tool returns >0 relevant results
+- Phase 2 → Phase 3: Core implementation found, need broader context  
+- Phase 3 → Phase 4: Organizational hints detected (@company/, "internal", "enterprise")
+- Complete: Comprehensive answer with code, context, and recommendations
+
+**FALLBACK TRIGGERS:**
+- NPM Search fails → GitHub ecosystem discovery
+- Repository Search fails → Code/Commits/PRs/Issues chain
+- All GitHub fails → NPM package ecosystem approach
+- Private access needed → Organizational workflow
 
 ## CRITICAL AUTO-TRIGGERS
 
@@ -147,6 +225,22 @@ NPM search → Repository extraction → Repository access → Code search → F
 - Code Search: Remove path filters, try synonyms  
 - Repository Search: Remove language filters
 - Topics Search: Use more general terms
+
+**NPM SEARCH FALLBACK STRATEGY:** When NPM search fails to find packages:
+1. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} - Search for related ecosystem terms
+2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Search for repositories that might be packages
+3. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for package.json files with related names
+4. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for package references
+5. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles for package mentions
+6. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for package discussions
+
+**ORGANIZATIONAL ZERO RESULTS** (when searching within company):
+- Repository Search fails → IMMEDIATELY try organizational fallback chain:
+  1. ${TOOL_NAMES.GITHUB_SEARCH_CODE} with project name + owner filter
+  2. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} with project name + owner filter  
+  3. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} with project name + owner filter
+  4. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} with project name + owner filter
+- Extract repository references from any successful results
 
 ### Rate Limits
 1. Cache successful results

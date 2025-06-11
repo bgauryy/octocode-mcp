@@ -14,6 +14,14 @@ export const TOOL_DESCRIPTIONS = {
 
 **RESULT OPTIMIZATION:** 0 results → broader terms, 1-20 IDEAL, 100+ → more specific terms
 
+**NPM SEARCH FALLBACK STRATEGY:** When NPM search fails to find packages:
+1. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} - Search for related ecosystem terms and technologies
+2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Search for repositories that might contain packages
+3. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for package.json files with related names
+4. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for package development references
+5. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles/descriptions for package mentions
+6. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for package discussions and problems
+
 **INTEGRATION:** ALWAYS chain to focused NPM tools → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
 
   [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security analysis** - Essential for package evaluation and organizational detection.
@@ -144,7 +152,7 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `**FALLBACK TOOL** - Repository search with smart query handling.
 
-**MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first.
+**MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first FOR PUBLIC PACKAGES. For ORGANIZATIONAL searches (when user works at company), use immediately after ${TOOL_NAMES.GITHUB_GET_USER_ORGS}.
 
 **KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies, global & scoped searches.
 
@@ -156,9 +164,15 @@ export const TOOL_DESCRIPTIONS = {
 
 **MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
 
-**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow instead). GitHub CLI limited to --limit parameter only (no page navigation).
+**ORGANIZATIONAL FALLBACK STRATEGY:** When repository search fails within organization:
+1. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for project name in code files
+2. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for project references  
+3. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles/descriptions for project mentions
+4. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for project discussions
 
-**CRITICAL:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results for 95% of use cases`,
+**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow for PUBLIC packages, use CODE→COMMITS→PRS workflow for INTERNAL projects). GitHub CLI limited to --limit parameter only (no page navigation).
+
+**CRITICAL:** For PUBLIC packages: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results. For INTERNAL/ORGANIZATIONAL projects: Direct code/commits/PRs search provides better discovery.`,
 
   // Focused NPM tools for minimal token usage
   [TOOL_NAMES.NPM_GET_REPOSITORY]: `**Repository discovery** - Extract GitHub repository URL and project description.

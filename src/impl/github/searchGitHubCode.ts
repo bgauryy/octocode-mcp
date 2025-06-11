@@ -4,6 +4,18 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
 
+/**
+ * Search GitHub code with organizational fallback strategy
+ *
+ * For internal company projects (like "Astra Nova" at Wix):
+ * 1. Try direct code search first
+ * 2. If no results, the calling code should implement fallback chain:
+ *    - searchGitHubCommits() for commit message references
+ *    - searchGitHubPullRequests() for PR mentions
+ *    - searchGitHubIssues() for issue discussions
+ * 3. Extract repository info from any successful results
+ */
+
 export async function searchGitHubCode(
   params: GitHubCodeSearchParams
 ): Promise<CallToolResult> {
@@ -98,6 +110,19 @@ export async function searchGitHubCode(
             topMatches: analysis.topMatches.slice(0, 5),
           },
         };
+
+        // Add organizational fallback guidance for zero results
+        if (analysis.totalFound === 0 && params.owner) {
+          searchResult.organizationalFallback = {
+            suggestion: `No code matches found for "${params.query}" in ${params.owner}. Try organizational fallback strategy:`,
+            fallbackSteps: [
+              `Search commits: "${params.query}" with owner:${params.owner}`,
+              `Search pull requests: "${params.query}" with owner:${params.owner}`,
+              `Search issues: "${params.query}" with owner:${params.owner}`,
+              'Extract repository references from any successful results',
+            ],
+          };
+        }
 
         return createSuccessResult(searchResult);
       } catch (parseError) {

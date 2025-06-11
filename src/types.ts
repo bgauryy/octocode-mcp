@@ -145,6 +145,10 @@ export interface GitHubSearchResult {
       stars: number;
     }>;
   };
+  organizationalFallback?: {
+    suggestion: string;
+    fallbackSteps: string[];
+  };
 }
 
 export interface GitHubReposSearchResult {
