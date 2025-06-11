@@ -194,4 +194,101 @@ export const TOOL_DESCRIPTIONS = {
 **MATURITY INDICATORS:** Stable (regular releases, clear versioning), active development (frequent releases, beta/alpha), abandoned (long gaps, no activity).
 
 **INTEGRATION:** MANDATORY with ${TOOL_NAMES.NPM_GET_PACKAGE}, combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
+
+  // Focused NPM tools for minimal token usage
+  [TOOL_NAMES.NPM_GET_REPOSITORY]: `**Repository discovery** - Extract GitHub repository URL and project description.
+
+**MINIMAL OUTPUT:** Package name, description, repository URL, homepage - optimized for token efficiency.
+
+**WHEN TO USE:** When you only need repository location for GitHub operations.
+
+**INTEGRATION:** Perfect first step → ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → Code exploration`,
+
+  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `**Dependency analysis** - Extract package dependencies tree.
+
+**MINIMAL OUTPUT:** Dependencies, devDependencies, resolutions - focused dependency data only.
+
+**WHEN TO USE:** When analyzing package ecosystem and compatibility.
+
+**INTEGRATION:** Combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for security audit`,
+
+  [TOOL_NAMES.NPM_GET_BUGS]: `**Issue tracking** - Extract bug reporting information.
+
+**MINIMAL OUTPUT:** Package name and bugs URL - direct access to issue tracker.
+
+**WHEN TO USE:** When users need to report issues or check known problems.
+
+**INTEGRATION:** Links to ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for problem discovery`,
+
+  [TOOL_NAMES.NPM_GET_README]: `**Documentation access** - Extract README filename information.
+
+**MINIMAL OUTPUT:** Package name and readme filename - efficient documentation lookup.
+
+**WHEN TO USE:** When users need documentation without full package metadata.
+
+**INTEGRATION:** Combine with ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} for full README content`,
+
+  [TOOL_NAMES.NPM_GET_VERSIONS]: `**Official version tracking** - Extract production-ready semantic versions only.
+
+**MINIMAL OUTPUT:** Official versions (major.minor.patch format), latest version, count - excludes alpha/beta/rc versions.
+
+**WHEN TO USE:** Find stable versions for production deployment, analyze release cadence of stable releases.
+
+**INTEGRATION:** Perfect for production planning - filters out experimental versions for reliable deployment decisions`,
+
+  [TOOL_NAMES.NPM_GET_AUTHOR]: `**Maintainer information** - Extract author and maintainer details.
+
+**MINIMAL OUTPUT:** Author and maintainers list - focused ownership data.
+
+**WHEN TO USE:** When users need to contact maintainers or assess project ownership.
+
+**INTEGRATION:** Links to ${TOOL_NAMES.GITHUB_SEARCH_USERS} for developer discovery`,
+
+  [TOOL_NAMES.NPM_GET_LICENSE]: `**License compliance** - Extract package license information.
+
+**MINIMAL OUTPUT:** Package name and license - essential legal compliance data.
+
+**WHEN TO USE:** When users need quick license verification for legal compliance.
+
+**INTEGRATION:** Essential for enterprise package evaluation workflows`,
+
+  [TOOL_NAMES.NPM_GET_HOMEPAGE]: `**Official documentation gateway** - Extract package homepage for comprehensive project resources.
+
+**MINIMAL OUTPUT:** Package name and homepage URL - direct access to live documentation, tutorials, and demos.
+
+**WHEN TO USE:** Access official docs, interactive examples, getting started guides, and project showcases.
+
+**INTEGRATION:** Complements ${TOOL_NAMES.NPM_GET_REPOSITORY} - homepage often contains better docs than README`,
+
+  [TOOL_NAMES.NPM_GET_ID]: `**Precise package targeting** - Extract exact name@version for dependency management.
+
+**MINIMAL OUTPUT:** Package name and _id (name@latestVersion format) - canonical package identifier for lockfiles.
+
+**WHEN TO USE:** Pin exact versions, resolve dependency conflicts, generate package-lock entries, version compatibility checks.
+
+**INTEGRATION:** Critical for CI/CD pipelines, dependency auditing, and reproducible builds`,
+
+  [TOOL_NAMES.NPM_GET_RELEASES]: `**Recent releases tracker** - Get latest release activity and timeline data.
+
+**MINIMAL OUTPUT:** Last modified, created date, version count, and last 10 releases - focused release intelligence.
+
+**WHEN TO USE:** Track recent package activity, analyze release frequency, check latest versions and release dates.
+
+**INTEGRATION:** Essential for monitoring package updates - combine with ${TOOL_NAMES.NPM_GET_VERSIONS} for comprehensive version analysis`,
+
+  [TOOL_NAMES.NPM_GET_ENGINES]: `**Environment compatibility validator** - Prevent runtime conflicts before installation.
+
+**MINIMAL OUTPUT:** Node.js version requirements, npm constraints - environment compatibility matrix.
+
+**WHEN TO USE:** Pre-deployment validation, Docker image planning, Node.js upgrade decisions, CI/CD environment setup.
+
+**INTEGRATION:** Prevents deployment failures - use before installation in production environments`,
+
+  [TOOL_NAMES.NPM_GET_EXPORTS]: `**Import path intelligence** - Discover available modules and import strategies.
+
+**MINIMAL OUTPUT:** Export mappings, entry points, submodule paths - complete import guide for developers.
+
+**WHEN TO USE:** Learn correct import syntax, discover tree-shakable exports, find submodules, optimize bundle size.
+
+**INTEGRATION:** CRITICAL for ${TOOL_NAMES.GITHUB_SEARCH_CODE} - enables precise code search with accurate import paths`,
 };

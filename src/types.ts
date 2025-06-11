@@ -126,7 +126,7 @@ export interface GitHubSearchResult {
     | 'topics'
     | 'users';
   query: string;
-  actualQuery?: string; // The actual constructed query sent to GitHub CLI
+  actualQuery?: string;
   totalCount?: number;
   results: string | any[];
   rawOutput: string;
@@ -192,7 +192,7 @@ export interface NpmDistTags {
 export interface NpmTime {
   created: string;
   modified: string;
-  [version: string]: string; // Allows for dynamic version keys
+  [version: string]: string;
 }
 
 export interface NpmBugs {
@@ -205,7 +205,7 @@ export interface NpmRepository {
 }
 
 export interface NpmMaintainer {
-  email?: string; // Email is sometimes present, but not always in the provided data
+  email?: string;
   name: string;
 }
 
@@ -287,7 +287,7 @@ export interface NpmData {
   keywords: string[];
   repository: NpmRepository;
   description: string;
-  maintainers: string[]; // This appears to be an array of strings like "name <email>"
+  maintainers: string[];
   readmeFilename: string;
   users: NpmUsers;
   _contentLength: number;
@@ -304,19 +304,17 @@ export interface NpmData {
   _nodeVersion: string;
   _npmVersion: string;
   dist: NpmDist;
-  _npmUser: string;
-  directories: Record<string, never>; // Empty object
+  directories: Record<string, never>;
   _npmOperationalInternal: NpmOperationalInternal;
   _hasShrinkwrap: boolean;
 }
 
 export interface NpmViewResult {
-  npmData: NpmData; // Changed from string to proper NpmData object
+  npmData: Partial<NpmData>;
   popularityInfo: string;
   lastAnalyzed: string;
 }
 
-// Legacy interface - keeping for backward compatibility
 export interface NpmRepositoryResult {
   'repository.url': string;
   'repository.directory': string;
@@ -511,4 +509,75 @@ export interface GitHubUsersSearchParams extends BaseSearchParams, OrderSort {
   order?: 'asc' | 'desc';
   limit?: number;
   page?: number;
+}
+
+// Focused NPM result types for minimal token usage
+export interface NpmRepositoryInfoResult {
+  packageName: string;
+  description: string;
+  repository: NpmRepository;
+  homepage?: string;
+}
+
+export interface NpmDependenciesResult {
+  packageName: string;
+  dependencies: NpmDependencies;
+  devDependencies: NpmDevDependencies;
+  resolutions: NpmResolutions;
+}
+
+export interface NpmBugsResult {
+  packageName: string;
+  bugs: NpmBugs;
+}
+
+export interface NpmReadmeResult {
+  packageName: string;
+  readmeFilename: string;
+}
+
+export interface NpmVersionsResult {
+  packageName: string;
+  versions: string[];
+  latestVersion: string;
+  versionCount: number;
+}
+
+export interface NpmAuthorResult {
+  packageName: string;
+  author: string;
+  maintainers: string[];
+}
+
+export interface NpmLicenseResult {
+  packageName: string;
+  license: string;
+}
+
+export interface NpmHomepageResult {
+  packageName: string;
+  homepage: string;
+}
+
+export interface NpmIdResult {
+  packageName: string;
+  id: string; // name@latestVersion format
+}
+
+export interface NpmTimeResult {
+  packageName: string;
+  time: NpmTime;
+  lastModified: string;
+  created: string;
+  versionCount: number;
+}
+
+export interface NpmEnginesResult {
+  packageName: string;
+  engines: NpmEngines;
+}
+
+export interface NpmExportsResult {
+  packageName: string;
+  exports: NpmExports;
 }

@@ -14,3 +14,17 @@ export { registerSearchGitHubTopicsTool } from './search_github_topics.js';
 export { registerSearchGitHubUsersTool } from './search_github_users.js';
 export { registerNpmPackageStatsTool } from './npm_package_stats.js';
 export { registerNpmDependencyAnalysisTool } from './npm_dependency_analysis.js';
+
+// Focused NPM tools for minimal token usage
+export { registerNpmGetRepositoryTool } from './npm_get_repository.js';
+export { registerNpmGetDependenciesTool } from './npm_get_dependencies.js';
+export { registerNpmGetBugsTool } from './npm_get_bugs.js';
+export { registerNpmGetReadmeTool } from './npm_get_readme.js';
+export { registerNpmGetVersionsTool } from './npm_get_versions.js';
+export { registerNpmGetAuthorTool } from './npm_get_author.js';
+export { registerNpmGetLicenseTool } from './npm_get_license.js';
+export { registerNpmGetHomepageTool } from './npm_get_homepage.js';
+export { registerNpmGetIdTool } from './npm_get_id.js';
+export { registerNpmGetReleasesTool } from './npm_get_releases.js';
+export { registerNpmGetEnginesTool } from './npm_get_engines.js';
+export { registerNpmGetExportsTool } from './npm_get_exports.js';

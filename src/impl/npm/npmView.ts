@@ -45,7 +45,7 @@ export async function npmView(packageName: string): Promise<CallToolResult> {
 
       // Create the properly typed result with npmData as proper object
       const enhancedResult: NpmViewResult = {
-        npmData: npmData, // Now this is a proper parsed object
+        npmData: npmData,
         popularityInfo: popularityData,
         lastAnalyzed: new Date().toISOString(),
       };
