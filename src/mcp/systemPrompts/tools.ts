@@ -61,6 +61,13 @@ export const TOOL_DESCRIPTIONS = {
 
 **KEY FEATURES:** Every search includes "repo:owner/repository", smart boolean logic, organizational context.
 
+**ANTI-HALLUCINATION SAFEGUARDS:**
+- 🚨 NEVER search for overly specific function names without verification
+- 🔍 DISCOVERY FIRST: Use broad terms ("function", "class", "export") then narrow down
+- 📝 PATTERN DETECTION: Long camelCase names (>20 chars) may not exist
+- ⚠️ COMPOUND PATTERNS: "performSomethingOnSomething" patterns often hallucinated
+- 💡 SAFER APPROACH: "function.*keyword" finds real implementations
+
 **BOOLEAN OPERATIONS:** Default AND ("sparse index" = "sparse AND index"), OR ("useState OR useEffect"), NOT ("error NOT test")
 
 **PATH WARNING:** React uses path:packages (NOT path:src). Using path:src on repositories without top-level src returns zero results.
