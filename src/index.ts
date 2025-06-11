@@ -52,10 +52,8 @@ function registerAllTools(server: McpServer) {
   Tools.registerSearchGitHubIssuesTool(server);
   Tools.registerSearchGitHubTopicsTool(server);
   Tools.registerSearchGitHubUsersTool(server);
-  //Tools.registerNpmPackageStatsTool(server);
-  Tools.registerNpmDependencyAnalysisTool(server);
-
   // Focused NPM tools for minimal token usage
+  Tools.registerNpmDependencyAnalysisTool(server);
   Tools.registerNpmGetRepositoryTool(server);
   Tools.registerNpmGetDependenciesTool(server);
   Tools.registerNpmGetBugsTool(server);

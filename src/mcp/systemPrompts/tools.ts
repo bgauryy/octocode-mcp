@@ -14,35 +14,11 @@ export const TOOL_DESCRIPTIONS = {
 
 **RESULT OPTIMIZATION:** 0 results → broader terms, 1-20 IDEAL, 100+ → more specific terms
 
-**INTEGRATION:** ALWAYS chain to ${TOOL_NAMES.NPM_GET_PACKAGE} → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
-
-  [TOOL_NAMES.NPM_GET_PACKAGE]: `**Complete package intelligence** - Comprehensive NPM metadata analysis with GitHub repository mapping.
-
-**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_SEARCH_PACKAGES}, user mentions package names, private package detection (@company/).
-
-**DETAILED INSIGHTS PROVIDED:**
-- Complete NPM registry metadata (dependencies, scripts, exports, engines)
-- Repository URL extraction for GitHub mapping
-- Package maturity indicators (version count, release frequency)
-- Distribution info (tarball size, file count, integrity checksums)
-- Security attestations and signatures
-- Maintainer and author information
-- License and keyword analysis
-- Organizational context detection
-
-**DATA STRUCTURE:** Returns NpmViewResult with direct NpmData object containing 40+ detailed fields including dist-tags, time stamps, repository info, dependencies, devDependencies, scripts, engines, exports, and security metadata - all directly accessible without parsing.
-
-**WORKFLOW:** Extract comprehensive metadata → Parse repository URL → Detect organizational context → Chain to ${TOOL_NAMES.GITHUB_GET_REPOSITORY} → MANDATORY ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}
-
-**ORGANIZATIONAL DETECTION:** @company/ scoped packages → Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
-
-**DISCOVERY VALUE:** Single call provides package ecosystem overview, dependency insights, repository access, and security baseline for informed development decisions.
-
-**EXAMPLES:** "react" → Complete metadata + github.com/facebook/react, "@wix/package" → Private org detection + full internal package analysis`,
+**INTEGRATION:** ALWAYS chain to focused NPM tools → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
 
   [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security analysis** - Essential for package evaluation and organizational detection.
 
-**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_GET_PACKAGE} for complete assessment.
+**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for complete assessment.
 
 **ANALYSIS:** Security vulnerabilities, dependency tree, license compatibility, bundle impact, organization detection (@company/).
 
@@ -147,14 +123,6 @@ export const TOOL_DESCRIPTIONS = {
 
 **ERROR HANDLING:** "Search text required" → Use minimal keywords ("fix", "update")`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_DISCUSSIONS]: `**Community knowledge** - Access discussions for tutorials and solutions.
-
-**DISCOVERY WORKFLOW:** ${TOOL_NAMES.NPM_GET_PACKAGE} → get repo URL → Search discussions
-
-**SEARCH STRATEGY:** Start simple ("help", "tutorial"), build complexity ("help deployment"), avoid full phrases.
-
-**KEY FILTERS:** Answered: true for validated solutions, category filters, maintainer participation`,
-
   [TOOL_NAMES.GITHUB_SEARCH_USERS]: `**Developer discovery** - Find experts and community leaders.
 
 **SEARCH METHODOLOGY:** Technology terms ("react", "python") → add context (location, experience) → specialized search.
@@ -184,16 +152,6 @@ export const TOOL_DESCRIPTIONS = {
 **KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow instead). GitHub CLI limited to --limit parameter only (no page navigation).
 
 **CRITICAL:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results for 95% of use cases`,
-
-  [TOOL_NAMES.NPM_GET_PACKAGE_STATS]: `**Package maturity analysis** - Lifecycle assessment for package evaluation.
-
-**WHEN TO USE:** ALWAYS after ${TOOL_NAMES.NPM_GET_PACKAGE} for complete assessment.
-
-**ANALYSIS:** Release timeline, version history, distribution tags, maintenance indicators, organizational context.
-
-**MATURITY INDICATORS:** Stable (regular releases, clear versioning), active development (frequent releases, beta/alpha), abandoned (long gaps, no activity).
-
-**INTEGRATION:** MANDATORY with ${TOOL_NAMES.NPM_GET_PACKAGE}, combine with ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
 
   // Focused NPM tools for minimal token usage
   [TOOL_NAMES.NPM_GET_REPOSITORY]: `**Repository discovery** - Extract GitHub repository URL and project description.

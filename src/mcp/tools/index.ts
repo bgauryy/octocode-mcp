@@ -1,7 +1,6 @@
 export { registerGitHubSearchCodeTool } from './search_github_code.js';
 export { registerFetchGitHubFileContentTool } from './fetch_github_file_content.js';
 export { registerViewRepositoryTool } from './view_repository.js';
-export { registerNpmViewTool } from './npm_view.js';
 export { registerSearchGitHubReposTool } from './search_github_repos.js';
 export { registerSearchGitHubCommitsTool } from './search_github_commits.js';
 export { registerSearchGitHubPullRequestsTool } from './search_github_pull_requests.js';
@@ -9,10 +8,8 @@ export { registerGetUserOrganizationsTool } from './get_user_organizations.js';
 export { registerNpmSearchTool } from './npm_search.js';
 export { registerViewRepositoryStructureTool } from './view_repository_structure.js';
 export { registerSearchGitHubIssuesTool } from './search_github_issues.js';
-export { registerSearchGitHubDiscussionsTool } from './search_github_discussions.js';
 export { registerSearchGitHubTopicsTool } from './search_github_topics.js';
 export { registerSearchGitHubUsersTool } from './search_github_users.js';
-export { registerNpmPackageStatsTool } from './npm_package_stats.js';
 export { registerNpmDependencyAnalysisTool } from './npm_dependency_analysis.js';
 
 // Focused NPM tools for minimal token usage
