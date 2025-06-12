@@ -4,6 +4,7 @@ import { GitHubRepositoryViewParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { viewGitHubRepositoryInfo } from '../../impl/github/viewGitHubRepositoryInfo';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerViewRepositoryTool(server: McpServer) {
   server.tool(
@@ -32,15 +33,13 @@ export function registerViewRepositoryTool(server: McpServer) {
       try {
         return await viewGitHubRepositoryInfo(args);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to view repository: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        return generateSmartRecovery({
+          tool: 'GitHub Repository View',
+          owner: args.owner,
+          repo: args.repo,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );
