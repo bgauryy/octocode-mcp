@@ -39,6 +39,9 @@ process.stdin.on('close', async () => {
 
 // Register all tools
 function registerAllTools(server: McpServer) {
+  // System & API Status - CRITICAL FIRST STEP
+  Tools.registerApiStatusCheckTool(server);
+
   Tools.registerGitHubSearchCodeTool(server);
   Tools.registerFetchGitHubFileContentTool(server);
   Tools.registerViewRepositoryTool(server);
@@ -72,7 +75,6 @@ function registerAllTools(server: McpServer) {
 function registerResources(server: McpServer) {
   Resources.registerUsageGuideResource(server);
   Resources.registerGithubStatusResource(server);
-  Resources.registerGithubRateLimitResource(server);
   Resources.registerNpmStatusResource(server);
   Resources.registerRepositoryIntelligenceResource(server);
 }

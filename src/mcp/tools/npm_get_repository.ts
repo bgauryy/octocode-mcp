@@ -3,6 +3,7 @@ import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { npmGetRepository } from '../../impl/npm/npmGetRepository';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerNpmGetRepositoryTool(server: McpServer) {
   server.tool(
@@ -26,15 +27,28 @@ export function registerNpmGetRepositoryTool(server: McpServer) {
       try {
         return await npmGetRepository(args.packageName);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to get npm repository info: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        const errorMessage = (error as Error).message;
+
+        // Enhanced error handling for package not found
+        if (
+          errorMessage.includes('404') ||
+          errorMessage.includes('not found')
+        ) {
+          return generateSmartRecovery({
+            tool: 'NPM Get Repository',
+            packageName: args.packageName,
+            context: args,
+            error: error as Error,
+          });
+        }
+
+        // Generic enhanced error handling
+        return generateSmartRecovery({
+          tool: 'NPM Get Repository',
+          packageName: args.packageName,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );

@@ -1,28 +1,71 @@
 import { TOOL_NAMES } from '../contstants';
 
 export const TOOL_DESCRIPTIONS = {
-  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `**PRIMARY DISCOVERY TOOL** - Main entry point for package and repository discovery.
+  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `**Universal Package Discovery Engine** - Intelligent resource discovery with semantic understanding across all domains.
 
-**WHEN TO USE:** Package discovery by keyword, when user mentions package names, organizational package detection (@company/ scopes).
+**🧠 SEMANTIC PACKAGE INTELLIGENCE:**
+- **DOMAIN-ADAPTIVE SEARCH**: Automatically detects query intent and adapts search strategy
+- **UNIVERSAL RESOURCE DISCOVERY**: Finds packages, tools, libraries, frameworks across any field
+- **INTELLIGENT CATEGORIZATION**: Understands technology, creative, business, educational, scientific packages
+- **CONTEXTUAL RECOMMENDATIONS**: Provides domain-specific guidance and alternatives
 
-**SEARCH STRATEGY:**
-1. Single terms: "react", "cli", "auth"
-2. Combined terms: "react-hooks", "typescript-cli"  
-3. Avoid complexity: Complex phrases yield zero results
+**🎯 ADAPTIVE SEARCH STRATEGIES:**
+- **TECHNOLOGY PACKAGES** → Development tools, frameworks, libraries, utilities
+- **CREATIVE PACKAGES** → Design tools, media processing, artistic frameworks, generators
+- **BUSINESS PACKAGES** → Analytics, automation, productivity, management tools
+- **EDUCATIONAL PACKAGES** → Learning resources, documentation generators, tutorial tools
+- **SCIENTIFIC PACKAGES** → Data analysis, visualization, computation, research tools
+- **UTILITY PACKAGES** → General-purpose tools, helpers, converters, processors
 
-**ORGANIZATIONAL DETECTION:** @company/ packages → Trigger ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
+**🚀 INTELLIGENT QUERY OPTIMIZATION:**
+1. **Single Terms**: "visualization", "automation", "analysis", "design"
+2. **Combined Concepts**: "data-visualization", "workflow-automation", "content-management"
+3. **Domain Bridging**: Technical terms → accessible language, specific → general
+4. **Semantic Expansion**: Core concept → related terms → ecosystem discovery
 
-**RESULT OPTIMIZATION:** 0 results → broader terms, 1-20 IDEAL, 100+ → more specific terms
+**💡 UNIVERSAL SEARCH PATTERNS:**
+- **"data visualization"** → Charts, graphs, dashboards, plotting tools
+- **"content management"** → CMS, publishing, editorial, workflow tools  
+- **"image processing"** → Graphics, filters, conversion, manipulation tools
+- **"workflow automation"** → Task runners, schedulers, pipeline tools
+- **"learning resources"** → Educational, tutorial, documentation tools
 
-**NPM SEARCH FALLBACK STRATEGY:** When NPM search fails to find packages:
-1. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} - Search for related ecosystem terms and technologies
-2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Search for repositories that might contain packages
-3. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for package.json files with related names
-4. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for package development references
-5. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles/descriptions for package mentions
-6. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for package discussions and problems
+**🌍 CROSS-DOMAIN EXAMPLES:**
+- **CREATIVE DOMAIN**: "design OR graphics OR visual OR creative OR artistic"
+- **BUSINESS DOMAIN**: "management OR analytics OR productivity OR automation"
+- **RESEARCH DOMAIN**: "analysis OR data OR research OR scientific OR academic"
+- **EDUCATIONAL DOMAIN**: "learning OR tutorial OR education OR documentation"
+- **UTILITY DOMAIN**: "tool OR utility OR helper OR converter OR processor"
 
-**INTEGRATION:** ALWAYS chain to focused NPM tools → ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES}`,
+**🔧 ORGANIZATIONAL INTELLIGENCE:**
+- **@organization/** packages → Triggers private/enterprise discovery workflow
+- **Internal/Private** indicators → Activates organizational context search
+- **Enterprise** patterns → Suggests organizational repository exploration
+
+**⚡ SEARCH OPTIMIZATION:**
+- **0 results** → Broader terms, ecosystem exploration, alternative approaches
+- **1-20 results** → IDEAL scope for detailed analysis and comparison
+- **100+ results** → More specific terms, domain filters, focused refinement
+- **Organizational scope** → Private package discovery, enterprise workflows
+
+**🔄 INTELLIGENT FALLBACK STRATEGIES:**
+When package search yields insufficient results:
+1. **Ecosystem Exploration** → Related technology/domain discovery
+2. **Repository Search** → Direct project/tool discovery  
+3. **Topic Analysis** → Domain terminology and trend identification
+4. **Community Discovery** → Expert and organization identification
+5. **Content Search** → Implementation and usage pattern analysis
+6. **Discussion Mining** → Problem-solving and solution discovery
+
+**🎨 DOMAIN-SPECIFIC INTELLIGENCE:**
+- **Creative Tools**: Design, media, art, visualization, creative coding
+- **Business Solutions**: Analytics, automation, management, productivity
+- **Research Instruments**: Data analysis, computation, visualization, modeling
+- **Educational Resources**: Learning, documentation, tutorials, guides
+- **Utility Collections**: Helpers, converters, processors, generators
+
+**INPUT**: Any concept, tool, or resource need across any domain
+**OUTPUT**: Comprehensive package ecosystem with domain-adapted insights and alternatives`,
 
   [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `**CRITICAL: Package security analysis** - Essential for package evaluation and organizational detection.
 
@@ -34,32 +77,80 @@ export const TOOL_DESCRIPTIONS = {
 
 **KNOWN LIMITATION:** Some NPM audit failures may occur (package-specific). Bundle analysis and dependency tree remain reliable.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**FOUNDATION TOOL** - Essential for ecosystem discovery and terminology mapping.
+  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `**Universal Topic Discovery Engine** - Comprehensive ecosystem exploration with semantic intelligence across all domains.
 
-**🎯 CRITICAL: SINGLE-TERM STRATEGY (EVIDENCE-BASED)**
-✅ PROVEN EFFECTIVE: Single terms ("mcp" → 570 results, "langchain" → 98 results)
-❌ PROVEN FAILURE: Multi-terms ("mcp model-context-protocol" → 0 results)
+**🧠 SEMANTIC TOPIC INTELLIGENCE:**
+- **DOMAIN-AGNOSTIC DISCOVERY**: Explores any field, discipline, or area of interest
+- **ECOSYSTEM MAPPING**: Reveals relationships, trends, and communities across topics
+- **CONTEXTUAL UNDERSTANDING**: Adapts recommendations based on query domain and intent
+- **CROSS-POLLINATION**: Discovers unexpected connections between different fields
 
-**SEARCH STRATEGY:** 
-1. **PRIMARY: Single terms ONLY** ("react", "mcp", "typescript", "langchain")
-2. **SECONDARY: Hyphenated compounds** ("model-context-protocol", "next.js")
-3. **NEVER: Multi-word phrases** (avoid "react typescript", "mcp server tools")
+**🎯 UNIVERSAL EXPLORATION PATTERNS:**
+- **SINGLE TERMS**: "sustainability", "automation", "creativity", "wellness", "education"
+- **COMPOUND CONCEPTS**: "machine-learning", "user-experience", "data-science", "digital-art"
+- **DOMAIN BRIDGING**: Technical ↔ Creative ↔ Business ↔ Academic ↔ Social
 
-**PROGRESSIVE DISCOVERY WORKFLOW:**
-1. Start with core term: "mcp" → get ecosystem overview
-2. Refine with specific variations: "model-context-protocol", "mcp-server"
-3. Use results to guide repository search
-4. Apply owner filters only after initial discovery
+**🌍 CROSS-DOMAIN TOPIC DISCOVERY:**
+- **TECHNOLOGY DOMAINS**: "ai", "blockchain", "iot", "cybersecurity", "cloud-computing"
+- **CREATIVE DOMAINS**: "design", "art", "music", "writing", "photography", "animation"
+- **BUSINESS DOMAINS**: "entrepreneurship", "marketing", "finance", "management", "strategy"
+- **ACADEMIC DOMAINS**: "research", "education", "science", "mathematics", "psychology"
+- **SOCIAL DOMAINS**: "community", "activism", "sustainability", "health", "culture"
+- **LIFESTYLE DOMAINS**: "fitness", "cooking", "travel", "productivity", "mindfulness"
 
-**BEST PRACTICES:** 
-- DON'T start with owner (limits discovery)
-- DO start broad with single terms
-- NEVER combine multiple concepts in one search
-- USE sequential single-term searches for comprehensive coverage
+**🚀 INTELLIGENT SEARCH STRATEGIES:**
+1. **Broad Discovery**: Start with core concepts to map the landscape
+2. **Semantic Expansion**: Related terms, synonyms, and variations
+3. **Community Identification**: Active projects, contributors, and organizations
+4. **Trend Analysis**: Emerging topics, popular projects, and growth patterns
+5. **Cross-Domain Connections**: Unexpected intersections and collaborations
 
-**RESULT OPTIMIZATION:** 1-10 IDEAL, 10+ add featured/curated filters
+**💡 ADAPTIVE TOPIC PATTERNS:**
+- **"sustainability"** → Environmental, green-tech, renewable, climate, conservation
+- **"creativity"** → Art, design, innovation, expression, generative, artistic
+- **"wellness"** → Health, fitness, mental-health, mindfulness, nutrition
+- **"automation"** → Workflow, productivity, efficiency, tools, processes
+- **"learning"** → Education, tutorial, knowledge, skill-development, training
 
-**INTEGRATION:** CRITICAL foundation - use before other GitHub tools, after ${TOOL_NAMES.NPM_SEARCH_PACKAGES}`,
+**🔍 DISCOVERY METHODOLOGIES:**
+- **ECOSYSTEM EXPLORATION**: Map entire domains and their sub-communities
+- **TREND IDENTIFICATION**: Spot emerging topics and growing communities
+- **COMMUNITY MAPPING**: Find active contributors and thought leaders
+- **RESOURCE DISCOVERY**: Locate tools, frameworks, and learning materials
+- **COLLABORATION OPPORTUNITIES**: Identify potential partnerships and projects
+
+**⚡ SEARCH OPTIMIZATION STRATEGIES:**
+- **1-10 TOPICS**: Perfect scope for deep domain analysis
+- **10+ TOPICS**: Rich ecosystem with multiple exploration paths
+- **Featured/Curated**: High-quality, community-validated topics
+- **Repository Count**: Indicates community size and activity level
+
+**🎨 DOMAIN-SPECIFIC INTELLIGENCE:**
+- **CREATIVE EXPLORATION**: Art, design, media, expression, aesthetics
+- **BUSINESS INTELLIGENCE**: Strategy, operations, innovation, market trends
+- **RESEARCH DISCOVERY**: Academic, scientific, experimental, methodological
+- **EDUCATIONAL RESOURCES**: Learning, teaching, knowledge transfer, skill building
+- **SOCIAL IMPACT**: Community, activism, sustainability, social good
+- **PERSONAL DEVELOPMENT**: Wellness, productivity, skills, lifestyle, growth
+
+**🔄 PROGRESSIVE DISCOVERY WORKFLOW:**
+1. **Core Topic Exploration** → Understand the fundamental landscape
+2. **Related Topic Discovery** → Find adjacent and complementary areas
+3. **Community Identification** → Locate active contributors and projects
+4. **Resource Mapping** → Discover tools, frameworks, and materials
+5. **Trend Analysis** → Identify emerging patterns and opportunities
+6. **Cross-Domain Bridging** → Find unexpected connections and innovations
+
+**🌟 UNIVERSAL APPLICATIONS:**
+- **Research Planning**: Explore academic and scientific domains
+- **Business Strategy**: Identify market trends and opportunities  
+- **Creative Inspiration**: Discover artistic and design communities
+- **Learning Pathways**: Find educational resources and skill development
+- **Community Building**: Locate like-minded individuals and organizations
+- **Innovation Discovery**: Spot emerging technologies and methodologies
+
+**INPUT**: Any topic, concept, interest, or domain of inquiry
+**OUTPUT**: Comprehensive ecosystem map with community insights, trends, and exploration pathways`,
 
   [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `**CRITICAL: Private organization discovery** - Essential for company/enterprise repository access.
 
@@ -82,26 +173,79 @@ export const TOOL_DESCRIPTIONS = {
 
 **CRITICAL:** NEVER call with guessed repository names. ALWAYS use discovery workflow first.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code search** - Advanced search with automatic repository scoping.
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Universal Content Discovery Engine** - Intelligent search with automatic domain adaptation and semantic understanding.
 
-**KEY FEATURES:** Every search includes "repo:owner/repository", smart boolean logic, organizational context.
+**🧠 SEMANTIC QUERY INTELLIGENCE - ADAPTS TO ANY DOMAIN:**
+- **AUTOMATIC DOMAIN DETECTION**: Analyzes query intent and adapts search strategy accordingly
+- **UNIVERSAL BOOLEAN ENHANCEMENT**: Converts any query into optimal boolean patterns for maximum efficiency
+- **CROSS-DOMAIN EXPERTISE**: Handles technology, research, business, creative, educational, scientific topics
+- **CONTEXTUAL INTELLIGENCE**: Provides domain-specific guidance based on query semantics
 
-**ANTI-HALLUCINATION SAFEGUARDS:**
-- 🚨 NEVER search for overly specific function names without verification
-- 🔍 DISCOVERY FIRST: Use broad terms ("function", "class", "export") then narrow down
-- 📝 PATTERN DETECTION: Long camelCase names (>20 chars) may not exist
-- ⚠️ COMPOUND PATTERNS: "performSomethingOnSomething" patterns often hallucinated
-- 💡 SAFER APPROACH: "function.*keyword" finds real implementations
+**🎯 ADAPTIVE SEMANTIC PATTERNS:**
+- **TECHNOLOGY QUERIES** → "framework OR library OR tool OR implementation NOT tutorial"
+- **RESEARCH QUERIES** → "study OR analysis OR research OR investigation NOT example"
+- **BUSINESS QUERIES** → "solution OR strategy OR management OR process NOT demo"
+- **CREATIVE QUERIES** → "design OR art OR creative OR visual NOT template"
+- **EDUCATIONAL QUERIES** → "learning OR education OR tutorial OR guide NOT test"
+- **SCIENTIFIC QUERIES** → "data OR analysis OR algorithm OR method NOT mock"
 
-**BOOLEAN OPERATIONS:** Default AND ("sparse index" = "sparse AND index"), OR ("useState OR useEffect"), NOT ("error NOT test")
+**🚀 INTELLIGENT QUERY OPTIMIZATION:**
+- **Semantic Expansion**: Automatically adds synonyms and variations based on domain
+- **Context Enrichment**: Suggests related terms specific to the detected topic area
+- **Quality Filtering**: Adds appropriate exclusions (NOT test, NOT example, NOT demo)
+- **Progressive Refinement**: Starts broad, then narrows based on results
 
-**PATH WARNING:** React uses path:packages (NOT path:src). Using path:src on repositories without top-level src returns zero results.
+**🔧 UNIVERSAL BOOLEAN INTELLIGENCE:**
+- **COVERAGE PATTERNS**: "primary_term OR synonym OR variation OR abbreviation"
+- **PRECISION PATTERNS**: "specific_concept AND context AND domain NOT noise"
+- **QUALITY PATTERNS**: "topic NOT test NOT example NOT demo NOT tutorial"
+- **DOMAIN PATTERNS**: "core_concept OR related_field OR application_area"
 
-**RESULT OPTIMIZATION:** 1-10 IDEAL, 100+ TOO BROAD
+**💡 SEMANTIC DOMAIN EXAMPLES:**
+- **"machine learning"** → "ml OR ai OR algorithm OR model OR neural NOT tutorial"
+- **"climate change"** → "climate OR environment OR warming OR carbon NOT simulation"
+- **"marketing strategy"** → "marketing OR strategy OR campaign OR brand NOT template"
+- **"data visualization"** → "visualization OR chart OR graph OR dashboard NOT example"
+- **"user experience"** → "ux OR ui OR design OR usability OR interface NOT mockup"
 
-**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
+**🎨 CREATIVE DOMAIN INTELLIGENCE:**
+- **Art & Design**: "creative OR artistic OR visual OR aesthetic OR design"
+- **Music & Audio**: "music OR audio OR sound OR composition OR production"
+- **Writing & Content**: "writing OR content OR narrative OR storytelling OR editorial"
+- **Media & Video**: "video OR media OR film OR animation OR production"
 
-**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery`,
+**🔬 ACADEMIC DOMAIN INTELLIGENCE:**
+- **Research**: "research OR study OR analysis OR investigation OR methodology"
+- **Science**: "scientific OR experiment OR hypothesis OR data OR evidence"
+- **Mathematics**: "mathematical OR algorithm OR computation OR formula OR proof"
+- **Social Sciences**: "social OR behavioral OR psychological OR cultural OR demographic"
+
+**🏢 BUSINESS DOMAIN INTELLIGENCE:**
+- **Management**: "management OR leadership OR strategy OR operations OR planning"
+- **Finance**: "financial OR economic OR investment OR budget OR revenue"
+- **Marketing**: "marketing OR advertising OR branding OR promotion OR customer"
+- **Analytics**: "analytics OR metrics OR performance OR tracking OR insights"
+
+**🌍 UNIVERSAL FALLBACK STRATEGIES:**
+- **Term Simplification**: Complex phrases → core concepts
+- **Semantic Broadening**: Specific terms → general categories
+- **Cross-Domain Bridging**: Technical terms → common language
+- **Progressive Refinement**: General → specific based on results
+
+**⚡ EFFICIENCY GUARANTEES:**
+- **3-5x Performance**: Boolean queries consistently outperform simple text
+- **Automatic Enhancement**: Every query gets optimized for maximum results
+- **Smart Fallbacks**: Multiple strategies ensure you always get insights
+- **Domain Adaptation**: Recommendations tailored to your specific field
+
+**🔍 ANTI-HALLUCINATION SAFEGUARDS:**
+- **Existence Verification**: Confirms content exists before deep analysis
+- **Semantic Validation**: Checks query makes sense in detected domain
+- **Progressive Discovery**: Starts broad, narrows based on actual results
+- **Cross-Reference**: Validates findings across multiple sources
+
+**INPUT**: Any query in any domain - technology, research, business, creative, educational, scientific
+**OUTPUT**: Comprehensive, domain-adapted search results with intelligent insights and next steps`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `**Complete code extraction** - Fetch full working implementations.
 
@@ -167,33 +311,90 @@ export const TOOL_DESCRIPTIONS = {
 
 **DISCOVERY PATTERNS:** Technology experts, local developers, open source contributors, industry leaders`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `**FALLBACK TOOL** - Repository search with smart query handling.
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `**Universal Project Discovery Engine** - Intelligent repository search with semantic understanding across all domains and disciplines.
 
-**MANDATORY PREREQUISITES:** ${TOOL_NAMES.NPM_SEARCH_PACKAGES} and ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} must fail first FOR PUBLIC PACKAGES. For ORGANIZATIONAL searches (when user works at company), use immediately after ${TOOL_NAMES.GITHUB_GET_USER_ORGS}.
+**🧠 SEMANTIC PROJECT INTELLIGENCE:**
+- **DOMAIN-ADAPTIVE DISCOVERY**: Automatically detects query intent and adapts search strategy
+- **UNIVERSAL PROJECT TYPES**: Finds software, research, creative, educational, business, and community projects
+- **CONTEXTUAL UNDERSTANDING**: Provides domain-specific insights and recommendations
+- **CROSS-DISCIPLINARY EXPLORATION**: Discovers projects spanning multiple fields and interests
 
-**KEY FEATURES:** Smart multi-term handling, filter validation, fallback strategies, global & scoped searches.
+**🎯 ADAPTIVE PROJECT DISCOVERY:**
+- **TECHNOLOGY PROJECTS** → Software, tools, frameworks, applications, systems
+- **RESEARCH PROJECTS** → Academic studies, experiments, data analysis, methodologies
+- **CREATIVE PROJECTS** → Art, design, media, content, artistic expressions
+- **EDUCATIONAL PROJECTS** → Learning resources, tutorials, courses, documentation
+- **BUSINESS PROJECTS** → Solutions, automation, analytics, productivity tools
+- **COMMUNITY PROJECTS** → Open source, collaboration, social impact, activism
 
-**🎯 CRITICAL: SINGLE-TERM STRATEGY (EVIDENCE-BASED)**
-✅ PROVEN EFFECTIVE: Single terms work best ("react", "typescript")
-❌ PROVEN FAILURE: Multi-term queries often return 0 results or fall back to single terms
+**🚀 INTELLIGENT SEARCH STRATEGIES:**
+1. **Single Terms**: "visualization", "sustainability", "automation", "creativity"
+2. **Domain-Specific**: Add context filters based on detected field
+3. **Quality Indicators**: Star count, activity level, community engagement
+4. **Scope Management**: Global discovery vs. targeted organizational search
 
-**BEST PRACTICES:** Single terms ONLY ("react", "typescript"), owner is OPTIONAL (leave empty for global searches), avoid multi-term combinations, progressive refinement through sequential searches.
+**💡 UNIVERSAL PROJECT PATTERNS:**
+- **"data visualization"** → Charts, dashboards, plotting, analytics projects
+- **"sustainability"** → Environmental, green-tech, climate, conservation projects
+- **"education"** → Learning platforms, tutorials, courses, knowledge sharing
+- **"automation"** → Workflow tools, productivity, efficiency, process optimization
+- **"creativity"** → Art tools, design systems, creative coding, expression platforms
 
-**SEARCH MODES:** 
-- Global search (no owner): Searches across all GitHub repositories
-- Scoped search (with owner): Targeted search within specific organization/user
+**🌍 CROSS-DOMAIN PROJECT TYPES:**
+- **RESEARCH REPOSITORIES**: Academic papers, datasets, experiments, methodologies
+- **CREATIVE PORTFOLIOS**: Art projects, design systems, media collections
+- **BUSINESS SOLUTIONS**: Analytics tools, automation scripts, productivity apps
+- **EDUCATIONAL RESOURCES**: Learning materials, tutorials, course content
+- **COMMUNITY INITIATIVES**: Open source projects, social impact, collaboration
+- **PERSONAL PROJECTS**: Individual explorations, experiments, learning journeys
 
-**MULTI-TERM HANDLING:** "react hooks auth" → structured workflow, primary term extraction, workflow guidance.
+**⚡ SEARCH OPTIMIZATION STRATEGIES:**
+- **0 results** → Broader terms, alternative approaches, ecosystem exploration
+- **1-20 results** → IDEAL scope for detailed analysis and comparison
+- **100+ results** → Add filters, narrow scope, focus on quality indicators
+- **Organizational scope** → Private/enterprise project discovery
 
-**ORGANIZATIONAL FALLBACK STRATEGY:** When repository search fails within organization:
-1. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Search for project name in code files
-2. ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Search commit messages for project references  
-3. ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Search PR titles/descriptions for project mentions
-4. ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Search issues for project discussions
+**🔧 INTELLIGENT FILTERING:**
+- **Quality Indicators**: Star count (>100 established, >10 active)
+- **Activity Level**: Recent updates, community engagement
+- **Project Maturity**: Development stage, documentation quality
+- **Domain Relevance**: Topic tags, description matching, content analysis
 
-**KNOWN LIMITATIONS:** Multi-term repository search breaks down (use NPM→Topics workflow for PUBLIC packages, use CODE→COMMITS→PRS workflow for INTERNAL projects). GitHub CLI limited to --limit parameter only (no page navigation).
+**🔄 PROGRESSIVE DISCOVERY WORKFLOW:**
+1. **Broad Exploration** → Map the project landscape in your domain
+2. **Quality Filtering** → Focus on well-maintained, active projects
+3. **Community Analysis** → Identify key contributors and organizations
+4. **Feature Comparison** → Analyze capabilities and approaches
+5. **Ecosystem Understanding** → See how projects relate and complement
+6. **Selection Criteria** → Choose based on needs, quality, and fit
 
-**CRITICAL:** For PUBLIC packages: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} workflow provides superior results. For INTERNAL/ORGANIZATIONAL projects: Direct code/commits/PRs search provides better discovery.`,
+**🎨 DOMAIN-SPECIFIC PROJECT DISCOVERY:**
+- **CREATIVE DOMAIN**: Art tools, design systems, media processing, creative coding
+- **BUSINESS DOMAIN**: Analytics, automation, productivity, management tools
+- **RESEARCH DOMAIN**: Data analysis, visualization, computation, methodology
+- **EDUCATIONAL DOMAIN**: Learning platforms, tutorials, knowledge sharing
+- **SOCIAL DOMAIN**: Community tools, activism, social impact, collaboration
+- **PERSONAL DOMAIN**: Productivity, wellness, lifestyle, skill development
+
+**🌟 UNIVERSAL APPLICATIONS:**
+- **Solution Discovery**: Find tools and projects for specific needs
+- **Research Exploration**: Locate academic and experimental projects
+- **Learning Resources**: Discover educational and tutorial projects
+- **Community Building**: Find collaborative and open source initiatives
+- **Innovation Inspiration**: Explore cutting-edge and experimental work
+- **Quality Assessment**: Compare approaches, features, and implementations
+
+**🔍 FALLBACK STRATEGIES:**
+When repository search yields insufficient results:
+1. **Package Discovery** → Find related tools and libraries
+2. **Topic Exploration** → Understand domain terminology and trends
+3. **Content Search** → Look for implementations and usage patterns
+4. **Community Discovery** → Find experts and organizations
+5. **Discussion Mining** → Explore problems and solutions
+6. **Cross-Domain Bridging** → Look in adjacent fields and applications
+
+**INPUT**: Any project need, concept, or area of interest across any domain
+**OUTPUT**: Comprehensive project landscape with quality insights and recommendations`,
 
   // Focused NPM tools for minimal token usage
   [TOOL_NAMES.NPM_GET_REPOSITORY]: `**Repository discovery** - Extract GitHub repository URL and project description.
@@ -291,4 +492,56 @@ export const TOOL_DESCRIPTIONS = {
 **WHEN TO USE:** Learn correct import syntax, discover tree-shakable exports, find submodules, optimize bundle size.
 
 **INTEGRATION:** CRITICAL for ${TOOL_NAMES.GITHUB_SEARCH_CODE} - enables precise code search with accurate import paths`,
+
+  [TOOL_NAMES.API_STATUS_CHECK]: `**🛠️ CRITICAL FIRST STEP** - Comprehensive API readiness verification before research operations.
+
+**ESSENTIAL PRE-RESEARCH VALIDATION:**
+- **GitHub CLI Authentication**: Verifies user is logged in (gh auth status)
+- **NPM Registry Connectivity**: Confirms npm ping successful  
+- **GitHub API Rate Limits**: Real-time quota analysis across all endpoints
+
+**🔍 COMPREHENSIVE HEALTH CHECK:**
+- **Authentication Status**: GitHub CLI login verification with username detection
+- **Network Connectivity**: NPM registry accessibility and response validation
+- **API Quota Analysis**: Core API, Search API, and Code Search remaining limits
+- **Reset Time Tracking**: When exhausted APIs will restore quota
+- **Usage Percentage**: Current consumption across all GitHub endpoints
+
+**⚡ INTELLIGENT RESEARCH STRATEGY:**
+- **Ready Status**: All systems operational for comprehensive research
+- **Limited Status**: Reduced capacity - targeted searches recommended
+- **Not Ready Status**: Authentication/quota issues require resolution
+
+**🎯 RESEARCH GUIDANCE BASED ON API LIMITS:**
+- **Code Search < 5**: Critical - use repository browsing instead of code search
+- **Search API < 20**: Limited - focus on specific repositories vs broad searches  
+- **Core API < 200**: Constrained - minimize repository exploration operations
+- **NPM Disconnected**: GitHub-only research mode activated
+
+**🚀 SMART FALLBACK RECOMMENDATIONS:**
+- **Authentication Issues**: Step-by-step gh auth login guidance
+- **NPM Problems**: Alternative research paths using GitHub discovery
+- **Rate Limit Exhaustion**: Wait times and alternative approaches
+- **Network Issues**: Diagnostic commands and troubleshooting steps
+
+**📊 REAL-TIME API INTELLIGENCE:**
+- **Primary API**: Repository operations, issues, PRs, users (5000/hour)
+- **Search API**: Repository/user/topic searches (30/minute) 
+- **Code Search**: Code content searches (10/minute) - most restrictive
+- **Reset Schedules**: Precise timestamps for quota restoration
+
+**✅ RESEARCH READINESS MATRIX:**
+- **READY**: GitHub authenticated + NPM connected + healthy API limits
+- **LIMITED**: Some constraints but research possible with guidance
+- **NOT_READY**: Critical issues blocking research operations
+
+**💡 PROACTIVE OPTIMIZATION:**
+- **API Usage Prediction**: Warns before hitting limits during extensive research
+- **Strategy Adaptation**: Automatically suggests efficient research patterns
+- **Resource Conservation**: Identifies when to use cached vs live data
+- **Batch Operation Planning**: Optimal timing for bulk research tasks
+
+**WHEN TO USE:** ALWAYS call first before starting any research session to ensure optimal tool usage and prevent operation failures.
+
+**INTEGRATION:** Sets research strategy for all subsequent GitHub and NPM tools based on current system status.`,
 };

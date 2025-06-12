@@ -4,6 +4,7 @@ import { GitHubPullRequestsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
@@ -98,17 +99,72 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     },
     async (args: GitHubPullRequestsSearchParams) => {
       try {
-        return await searchGitHubPullRequests(args);
+        const result = await searchGitHubPullRequests(args);
+
+        // Check for empty results and enhance with smart suggestions
+        if (result.content && result.content[0]) {
+          let responseText = result.content[0].text as string;
+          let resultCount = 0;
+
+          try {
+            const parsed = JSON.parse(responseText);
+            if (parsed.rawOutput) {
+              const rawData = JSON.parse(parsed.rawOutput);
+              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            }
+          } catch {
+            const lines = responseText.split('\n').filter(line => line.trim());
+            resultCount = Math.max(0, lines.length - 5);
+          }
+
+          if (resultCount === 0) {
+            responseText += `
+
+🔄 NO RESULTS RECOVERY STRATEGY:
+• Try broader terms: "${args.query}" → "fix", "feature", "update"
+• Implementation search: github_search_code for actual code changes
+• Project discovery: github_search_repos for related projects
+• Issue tracking: github_search_issues for related problems
+
+💡 PR SEARCH OPTIMIZATION:
+• Focus on action words: "implement", "add", "fix", "update"
+• Try state filters: state=open vs state=closed
+• Use review filters: draft=false for completed PRs
+
+🔗 RECOMMENDED TOOL CHAIN:
+1. github_search_issues - Find problems that needed solutions
+2. github_search_code - See actual implementation patterns
+3. github_search_repos - Discover projects with similar features`;
+          } else if (resultCount <= 5) {
+            responseText += `
+
+💡 FEW RESULTS ENHANCEMENT:
+• Found ${resultCount} PRs - try removing restrictive filters
+• Alternative: github_search_code for implementation examples
+• Cross-reference: github_search_issues for related discussions`;
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: responseText,
+              },
+            ],
+            isError: false,
+          };
+        }
+
+        return result;
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub pull requests: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        return generateSmartRecovery({
+          tool: 'GitHub Pull Requests Search',
+          query: args.query,
+          owner: args.owner,
+          repo: args.repo,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );

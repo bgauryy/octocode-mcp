@@ -35,6 +35,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   branch?: string;
   size?: string;
   limit?: number;
+  enableQueryOptimization?: boolean;
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {

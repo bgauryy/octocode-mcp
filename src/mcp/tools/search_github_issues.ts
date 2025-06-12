@@ -4,6 +4,7 @@ import { GitHubIssuesSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubIssues } from '../../impl/github/searchGitHubIssues';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
@@ -145,17 +146,74 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     },
     async (args: GitHubIssuesSearchParams) => {
       try {
-        return await searchGitHubIssues(args);
+        const result = await searchGitHubIssues(args);
+
+        // Check for empty results and enhance with smart suggestions
+        if (result.content && result.content[0]) {
+          let responseText = result.content[0].text as string;
+          let resultCount = 0;
+
+          try {
+            const parsed = JSON.parse(responseText);
+            if (parsed.rawOutput) {
+              const rawData = JSON.parse(parsed.rawOutput);
+              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            }
+          } catch {
+            // If parsing fails, estimate from text
+            const lines = responseText.split('\n').filter(line => line.trim());
+            resultCount = Math.max(0, lines.length - 5);
+          }
+
+          // Add smart suggestions for empty or poor results
+          if (resultCount === 0) {
+            responseText += `
+
+🔄 NO RESULTS RECOVERY STRATEGY:
+• Try broader terms: "${args.query}" → single keywords
+• Alternative discovery: github_search_repos for related projects
+• Problem context: github_search_code for implementation examples
+• Solution tracking: github_search_pull_requests for fixes
+
+💡 QUERY SIMPLIFICATION:
+• Remove quotes and special characters
+• Use single keywords: "bug", "error", "feature"
+• Try related terms: "issue" → "problem", "bug" → "error"
+
+🔗 RECOMMENDED TOOL CHAIN:
+1. github_search_repos - Find projects that might have similar issues
+2. github_search_code - Search for code patterns related to your problem
+3. npm_search_packages - Find packages that solve similar problems`;
+          } else if (resultCount <= 5) {
+            responseText += `
+
+💡 FEW RESULTS ENHANCEMENT:
+• Found ${resultCount} issues - try broader search terms
+• Alternative: github_search_repos for project-level discovery
+• Cross-reference: github_search_code for implementation patterns`;
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: responseText,
+              },
+            ],
+            isError: false,
+          };
+        }
+
+        return result;
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub issues: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        return generateSmartRecovery({
+          tool: 'GitHub Issues Search',
+          query: args.query,
+          owner: args.owner,
+          repo: args.repo,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );

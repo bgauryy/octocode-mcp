@@ -4,6 +4,7 @@ import { GitHubTopicsSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubTopics } from '../../impl/github/searchGitHubTopics';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerSearchGitHubTopicsTool(server: McpServer) {
   server.tool(
@@ -66,17 +67,70 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
     },
     async (args: GitHubTopicsSearchParams) => {
       try {
-        return await searchGitHubTopics(args);
+        const result = await searchGitHubTopics(args);
+
+        // Check for empty results and enhance with smart suggestions
+        if (result.content && result.content[0]) {
+          let responseText = result.content[0].text as string;
+          let resultCount = 0;
+
+          try {
+            const parsed = JSON.parse(responseText);
+            if (parsed.rawOutput) {
+              const rawData = JSON.parse(parsed.rawOutput);
+              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            }
+          } catch {
+            const lines = responseText.split('\n').filter(line => line.trim());
+            resultCount = Math.max(0, lines.length - 5);
+          }
+
+          if (resultCount === 0) {
+            responseText += `
+
+🔄 NO TOPICS FOUND RECOVERY:
+• Try simpler terms: "${args.query}" → single technology keywords
+• Ecosystem discovery: npm_search_packages for related packages
+• Repository search: github_search_repos for projects using these topics
+• User community: github_search_users for topic experts
+
+💡 TOPIC SEARCH OPTIMIZATION:
+• Use popular technology terms: "react", "javascript", "python"
+• Try compound topics: "machine-learning", "web-development"
+• Focus on featured topics: featured=true
+
+🔗 RECOMMENDED DISCOVERY CHAIN:
+1. npm_search_packages - Find packages in this domain
+2. github_search_repos - Discover projects using these topics
+3. github_search_code - Find implementations using topic technologies`;
+          } else if (resultCount <= 3) {
+            responseText += `
+
+💡 LIMITED TOPICS ENHANCEMENT:
+• Found ${resultCount} topics - try broader or more popular terms
+• Ecosystem expansion: npm_search_packages for related technologies
+• Project discovery: github_search_repos for topic implementation`;
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: responseText,
+              },
+            ],
+            isError: false,
+          };
+        }
+
+        return result;
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub topics: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        return generateSmartRecovery({
+          tool: 'GitHub Topics Search',
+          query: args.query,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );

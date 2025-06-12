@@ -4,6 +4,7 @@ import { GitHubUsersSearchParams } from '../../types';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { searchGitHubUsers } from '../../impl/github/searchGitHubUsers';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerSearchGitHubUsersTool(server: McpServer) {
   server.tool(
@@ -88,17 +89,70 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
     },
     async (args: GitHubUsersSearchParams) => {
       try {
-        return await searchGitHubUsers(args);
+        const result = await searchGitHubUsers(args);
+
+        // Check for empty results and enhance with smart suggestions
+        if (result.content && result.content[0]) {
+          let responseText = result.content[0].text as string;
+          let resultCount = 0;
+
+          try {
+            const parsed = JSON.parse(responseText);
+            if (parsed.rawOutput) {
+              const rawData = JSON.parse(parsed.rawOutput);
+              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            }
+          } catch {
+            const lines = responseText.split('\n').filter(line => line.trim());
+            resultCount = Math.max(0, lines.length - 5);
+          }
+
+          if (resultCount === 0) {
+            responseText += `
+
+🔄 NO RESULTS RECOVERY STRATEGY:
+• Try simpler terms: "${args.query}" → technology keywords only
+• Organization discovery: github_get_user_organizations for company access
+• Project-based search: github_search_repos to find user projects
+• Code contribution search: github_search_code for user activity
+
+💡 USER SEARCH OPTIMIZATION:
+• Use technology terms: "react", "python", "javascript"
+• Try location filters: location="San Francisco", location="Remote"
+• Focus on active users: followers>10, repos>5
+
+🔗 RECOMMENDED TOOL CHAIN:
+1. github_search_repos - Find projects by technology/topic
+2. github_get_user_organizations - Discover organizations
+3. npm_search_packages - Find package maintainers`;
+          } else if (resultCount <= 5) {
+            responseText += `
+
+💡 FEW RESULTS ENHANCEMENT:
+• Found ${resultCount} users - try broader location or technology terms
+• Alternative: github_search_repos for project discovery
+• Organization search: github_get_user_organizations`;
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: responseText,
+              },
+            ],
+            isError: false,
+          };
+        }
+
+        return result;
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub users: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        return generateSmartRecovery({
+          tool: 'GitHub Users Search',
+          query: args.query,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );

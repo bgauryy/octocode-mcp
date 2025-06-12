@@ -3,6 +3,7 @@ import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { npmGetDependencies } from '../../impl/npm/npmGetDependencies';
+import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerNpmGetDependenciesTool(server: McpServer) {
   server.tool(
@@ -26,15 +27,12 @@ export function registerNpmGetDependenciesTool(server: McpServer) {
       try {
         return await npmGetDependencies(args.packageName);
       } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to get npm dependencies: ${(error as Error).message}`,
-            },
-          ],
-          isError: true,
-        };
+        return generateSmartRecovery({
+          tool: 'NPM Get Dependencies',
+          packageName: args.packageName,
+          context: args,
+          error: error as Error,
+        });
       }
     }
   );
