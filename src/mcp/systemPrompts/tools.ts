@@ -82,9 +82,15 @@ export const TOOL_DESCRIPTIONS = {
 
 **CRITICAL:** NEVER call with guessed repository names. ALWAYS use discovery workflow first.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Precision code search** - Advanced search with automatic repository scoping.
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `**Advanced precision code search** - Enhanced search with intelligent boolean operator suggestions and automatic query optimization.
 
-**KEY FEATURES:** Every search includes "repo:owner/repository", smart boolean logic, organizational context.
+**🚀 NEW ENHANCED FEATURES:**
+- **Automatic Query Optimization**: Intelligently enhances queries with boolean operators for better results
+- **Context-Aware Suggestions**: Pattern-specific boolean operator recommendations
+- **Smart Fallback**: Tries optimized queries when original returns minimal results
+- **Domain-Specific Intelligence**: Specialized suggestions for React, Auth, API, Database patterns
+
+**KEY FEATURES:** Repository scoping, smart boolean logic, organizational context, query optimization.
 
 **ANTI-HALLUCINATION SAFEGUARDS:**
 - 🚨 NEVER search for overly specific function names without verification
@@ -93,11 +99,23 @@ export const TOOL_DESCRIPTIONS = {
 - ⚠️ COMPOUND PATTERNS: "performSomethingOnSomething" patterns often hallucinated
 - 💡 SAFER APPROACH: "function.*keyword" finds real implementations
 
-**BOOLEAN OPERATIONS:** Default AND ("sparse index" = "sparse AND index"), OR ("useState OR useEffect"), NOT ("error NOT test")
+**ENHANCED BOOLEAN OPERATIONS:**
+- **Basic**: Default AND ("sparse index" = "sparse AND index")
+- **Advanced**: OR ("useState OR useEffect"), NOT ("error NOT test")
+- **Pattern-Specific**: "login OR authenticate OR signin" for auth patterns
+- **Context Exclusion**: "React NOT test NOT spec" for production code
+- **Variation Coverage**: "function OR functions OR func" for comprehensive matching
+
+**INTELLIGENT SUGGESTIONS:**
+- **React Patterns**: "useState OR useEffect OR useContext", "class Component OR function Component"  
+- **Auth Patterns**: "login OR authenticate OR signin", "jwt OR token OR bearer"
+- **API Patterns**: "fetch OR axios OR request", "endpoint OR route OR handler"
+- **DB Patterns**: "insert OR update OR delete OR select", "mongodb OR postgresql OR mysql"
+- **Error Patterns**: "try catch OR error handling OR exception"
 
 **PATH WARNING:** React uses path:packages (NOT path:src). Using path:src on repositories without top-level src returns zero results.
 
-**RESULT OPTIMIZATION:** 1-10 IDEAL, 100+ TOO BROAD
+**RESULT OPTIMIZATION:** 1-10 IDEAL, 100+ TOO BROAD. Auto-optimization enabled by default.
 
 **PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
 

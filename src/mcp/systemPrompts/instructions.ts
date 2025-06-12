@@ -255,10 +255,15 @@ When organizational context detected:
 - Combined terms: "react-hooks", "typescript-cli"
 - Avoid complexity: Complex phrases yield zero results
 
-### Code Search Patterns
-- Boolean: "useState OR useEffect", "function NOT test"
-- Path warnings: React uses path:packages (NOT path:src)
-- Repository-specific: facebook/react + "useEffect"
+### Enhanced Code Search Patterns
+- **Boolean Operators**: "useState OR useEffect", "function NOT test"
+- **Pattern-Specific**: "login OR authenticate OR signin" for auth patterns
+- **Context Exclusion**: "React NOT test NOT spec" for production code
+- **Variation Coverage**: "function OR functions OR func" for comprehensive matching
+- **Domain Intelligence**: Auto-suggestions for React, Auth, API, Database patterns
+- **Path warnings**: React uses path:packages (NOT path:src)
+- **Repository-specific**: facebook/react + "useEffect"
+- **Query Optimization**: Automatic enhancement of simple queries with boolean operators
 
 ### Repository Search (Last Resort)
 - Single terms work best vs multi-term failures
