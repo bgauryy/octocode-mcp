@@ -1,8 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import z from 'zod';
 import { TOOL_NAMES } from '../contstants';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+
+export type { ApiStatusCheck, LeanApiStatusCheck };
 
 interface GitHubRateLimit {
   limit: number;
@@ -57,6 +60,19 @@ interface ApiStatusCheck {
   };
   overall_status: 'ready' | 'limited' | 'not_ready';
   research_recommendations: string[];
+  timestamp: string;
+}
+
+interface LeanApiStatusCheck {
+  github_authenticated: boolean;
+  github_user?: string;
+  npm_connected: boolean;
+  rate_limits: {
+    core_remaining: number;
+    search_remaining: number;
+    code_search_remaining: number;
+  };
+  overall_status: 'ready' | 'limited' | 'not_ready';
   timestamp: string;
 }
 
@@ -122,19 +138,18 @@ async function checkNpmConnectivity(): Promise<
       cache: false,
     });
 
-    if (pingResult.isError) {
-      const errorText = String(pingResult.content[0]?.text || '');
-      return {
-        status: 'disconnected',
-        message: `NPM registry unreachable: ${errorText}`,
-      };
-    }
+    // Check both success and error responses for PONG
+    const responseText = String(pingResult.content[0]?.text || '');
 
-    const pingText = String(pingResult.content[0]?.text || '');
-
-    if (pingText.includes('npm ping ok') || pingText.includes('Ping success')) {
-      // Extract registry if present
-      const registryMatch = pingText.match(/registry: (.+)/);
+    if (
+      responseText.includes('PONG') ||
+      responseText.includes('npm ping ok') ||
+      responseText.includes('Ping success')
+    ) {
+      // Extract registry from PING line or fallback
+      const registryMatch =
+        responseText.match(/PING\s+([^\s]+)/) ||
+        responseText.match(/registry: (.+)/);
       const registry = registryMatch
         ? registryMatch[1]
         : 'https://registry.npmjs.org';
@@ -146,9 +161,16 @@ async function checkNpmConnectivity(): Promise<
       };
     }
 
+    if (pingResult.isError) {
+      return {
+        status: 'disconnected',
+        message: `NPM registry unreachable: ${responseText}`,
+      };
+    }
+
     return {
       status: 'error',
-      message: `NPM ping response unclear: ${pingText}`,
+      message: `NPM ping response unclear: ${responseText}`,
     };
   } catch (error) {
     return {
@@ -205,9 +227,23 @@ async function checkGitHubRateLimits(): Promise<
     let rateLimit: GitHubRateLimitResponse;
     try {
       const parsed = JSON.parse(content);
-      rateLimit = parsed.result || parsed;
-    } catch {
-      rateLimit = JSON.parse(content);
+      // The response is wrapped by executeGitHubCommand, so extract from .result
+      const actualResponse = parsed.result || parsed;
+      // The actual GitHub API response might be a string that needs parsing
+      if (typeof actualResponse === 'string') {
+        rateLimit = JSON.parse(actualResponse);
+      } else {
+        rateLimit = actualResponse;
+      }
+    } catch (parseError) {
+      throw new Error(`Failed to parse rate limit response: ${content}`);
+    }
+
+    // Validate response structure
+    if (!rateLimit || !rateLimit.resources) {
+      throw new Error(
+        `Invalid rate limit response structure: ${JSON.stringify(rateLimit)}`
+      );
     }
 
     const formatResetTime = (reset: number) =>
@@ -218,6 +254,13 @@ async function checkGitHubRateLimits(): Promise<
     const core = rateLimit.resources.core;
     const search = rateLimit.resources.search;
     const codeSearch = rateLimit.resources.code_search;
+
+    // Validate individual resources
+    if (!core || !search || !codeSearch) {
+      throw new Error(
+        `Missing rate limit resources: core=${!!core}, search=${!!search}, code_search=${!!codeSearch}`
+      );
+    }
 
     const primaryApi = {
       remaining: core.remaining,
@@ -319,7 +362,29 @@ async function checkGitHubRateLimits(): Promise<
   }
 }
 
-async function performApiStatusCheck(): Promise<CallToolResult> {
+function createLeanReport(
+  githubAuth: ApiStatusCheck['github_auth'],
+  npmConnectivity: ApiStatusCheck['npm_connectivity'],
+  githubRateLimits: ApiStatusCheck['github_rate_limits'],
+  overallStatus: 'ready' | 'limited' | 'not_ready'
+): LeanApiStatusCheck {
+  return {
+    github_authenticated: githubAuth.status === 'authenticated',
+    github_user: githubAuth.user,
+    npm_connected: npmConnectivity.status === 'connected',
+    rate_limits: {
+      core_remaining: githubRateLimits.primary_api.remaining,
+      search_remaining: githubRateLimits.search_api.remaining,
+      code_search_remaining: githubRateLimits.code_search.remaining,
+    },
+    overall_status: overallStatus,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function performApiStatusCheck(
+  lean: boolean = false
+): Promise<CallToolResult> {
   try {
     console.log('🔍 Performing comprehensive API status check...');
 
@@ -384,6 +449,25 @@ async function performApiStatusCheck(): Promise<CallToolResult> {
       );
     }
 
+    if (lean) {
+      const leanResult = createLeanReport(
+        githubAuth,
+        npmConnectivity,
+        githubRateLimits,
+        overallStatus
+      );
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(leanResult, null, 2),
+          },
+        ],
+        isError: false,
+      };
+    }
+
     const result: ApiStatusCheck = {
       github_auth: githubAuth,
       npm_connectivity: npmConnectivity,
@@ -432,7 +516,15 @@ export function registerApiStatusCheckTool(server: McpServer) {
     TOOL_NAMES.API_STATUS_CHECK,
     TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
     {
-      // No parameters needed for status check
+      random_string: z
+        .string()
+        .optional()
+        .describe('Dummy parameter for no-parameter tools'),
+      lean: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('Return lean report with essential information only'),
     },
     {
       title: 'API Status Check',
@@ -441,8 +533,9 @@ export function registerApiStatusCheckTool(server: McpServer) {
       idempotentHint: true,
       openWorldHint: false,
     },
-    async () => {
-      return await performApiStatusCheck();
+    async (args: { random_string?: string; lean?: boolean }) => {
+      const lean = args.lean || false;
+      return await performApiStatusCheck(lean);
     }
   );
 }

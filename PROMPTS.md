@@ -5,6 +5,10 @@ This document contains a comprehensive set of benchmark prompts designed to test
 ## Benchmark Test Queries
 
 ### Concurrent Rendering Implementation Analysis
+**Prompt:** How react implemented concurrent rendering? how vuejs did it?
+SHow summary . deep insightful search from code, prs and commits
+
+### Concurrent Rendering Implementation Analysis
 **Prompt:** How did React implement their concurrent rendering feature? How does it work internally? Compare this implementation with how Vue.js handles concurrent features. Analyze the architectural differences, performance implications, and developer experience trade-offs between the two approaches.
 
 ### State Management Evolution Analysis
@@ -12,6 +16,9 @@ This document contains a comprehensive set of benchmark prompts designed to test
 
 ### Build Tool Architecture Comparison
 **Prompt:** Analyze and compare the architecture of modern JavaScript build tools: Webpack, Vite, Turbopack, and esbuild. How do they handle module resolution, tree shaking, and hot module replacement? Examine their core algorithms, performance optimizations, and plugin systems.
+
+
+
 
 ### Database ORM Implementation Deep Dive
 **Prompt:** Compare the implementation strategies of TypeORM, Prisma, and Drizzle ORM. How do they handle schema generation, query building, type safety, and migrations? Analyze their code generation techniques, runtime performance, and developer experience design decisions.
