@@ -492,4 +492,56 @@ When repository search yields insufficient results:
 **WHEN TO USE:** Learn correct import syntax, discover tree-shakable exports, find submodules, optimize bundle size.
 
 **INTEGRATION:** CRITICAL for ${TOOL_NAMES.GITHUB_SEARCH_CODE} - enables precise code search with accurate import paths`,
+
+  [TOOL_NAMES.API_STATUS_CHECK]: `**🛠️ CRITICAL FIRST STEP** - Comprehensive API readiness verification before research operations.
+
+**ESSENTIAL PRE-RESEARCH VALIDATION:**
+- **GitHub CLI Authentication**: Verifies user is logged in (gh auth status)
+- **NPM Registry Connectivity**: Confirms npm ping successful  
+- **GitHub API Rate Limits**: Real-time quota analysis across all endpoints
+
+**🔍 COMPREHENSIVE HEALTH CHECK:**
+- **Authentication Status**: GitHub CLI login verification with username detection
+- **Network Connectivity**: NPM registry accessibility and response validation
+- **API Quota Analysis**: Core API, Search API, and Code Search remaining limits
+- **Reset Time Tracking**: When exhausted APIs will restore quota
+- **Usage Percentage**: Current consumption across all GitHub endpoints
+
+**⚡ INTELLIGENT RESEARCH STRATEGY:**
+- **Ready Status**: All systems operational for comprehensive research
+- **Limited Status**: Reduced capacity - targeted searches recommended
+- **Not Ready Status**: Authentication/quota issues require resolution
+
+**🎯 RESEARCH GUIDANCE BASED ON API LIMITS:**
+- **Code Search < 5**: Critical - use repository browsing instead of code search
+- **Search API < 20**: Limited - focus on specific repositories vs broad searches  
+- **Core API < 200**: Constrained - minimize repository exploration operations
+- **NPM Disconnected**: GitHub-only research mode activated
+
+**🚀 SMART FALLBACK RECOMMENDATIONS:**
+- **Authentication Issues**: Step-by-step gh auth login guidance
+- **NPM Problems**: Alternative research paths using GitHub discovery
+- **Rate Limit Exhaustion**: Wait times and alternative approaches
+- **Network Issues**: Diagnostic commands and troubleshooting steps
+
+**📊 REAL-TIME API INTELLIGENCE:**
+- **Primary API**: Repository operations, issues, PRs, users (5000/hour)
+- **Search API**: Repository/user/topic searches (30/minute) 
+- **Code Search**: Code content searches (10/minute) - most restrictive
+- **Reset Schedules**: Precise timestamps for quota restoration
+
+**✅ RESEARCH READINESS MATRIX:**
+- **READY**: GitHub authenticated + NPM connected + healthy API limits
+- **LIMITED**: Some constraints but research possible with guidance
+- **NOT_READY**: Critical issues blocking research operations
+
+**💡 PROACTIVE OPTIMIZATION:**
+- **API Usage Prediction**: Warns before hitting limits during extensive research
+- **Strategy Adaptation**: Automatically suggests efficient research patterns
+- **Resource Conservation**: Identifies when to use cached vs live data
+- **Batch Operation Planning**: Optimal timing for bulk research tasks
+
+**WHEN TO USE:** ALWAYS call first before starting any research session to ensure optimal tool usage and prevent operation failures.
+
+**INTEGRATION:** Sets research strategy for all subsequent GitHub and NPM tools based on current system status.`,
 };

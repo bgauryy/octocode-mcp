@@ -17,6 +17,9 @@ export const TOOL_NAMES = {
   // GitHub Users API (/user/*)
   GITHUB_GET_USER_ORGS: 'github_get_user_organizations',
 
+  // System & API Status
+  API_STATUS_CHECK: 'api_status_check',
+
   // npm Registry API - Comprehensive
   NPM_SEARCH_PACKAGES: 'npm_search_packages',
   NPM_GET_PACKAGE: 'npm_get_package',
