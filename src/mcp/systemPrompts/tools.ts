@@ -102,24 +102,30 @@ export const TOOL_DESCRIPTIONS = {
 **ENHANCED BOOLEAN OPERATIONS:**
 - **Basic**: Default AND ("sparse index" = "sparse AND index")
 - **Advanced**: OR ("useState OR useEffect"), NOT ("error NOT test")
-- **Pattern-Specific**: "login OR authenticate OR signin" for auth patterns
-- **Context Exclusion**: "React NOT test NOT spec" for production code
-- **Variation Coverage**: "function OR functions OR func" for comprehensive matching
+- **Semantic Expansion**: Include synonyms, variations, and related terms
+- **Context Exclusion**: Use NOT to filter out irrelevant results (tests, mocks, examples)
+- **Comprehensive Coverage**: Combine singular/plural, past/present tense, abbreviations
 
 **INTELLIGENT SUGGESTIONS:**
-- **React Patterns**: "useState OR useEffect OR useContext", "class Component OR function Component"  
-- **Auth Patterns**: "login OR authenticate OR signin", "jwt OR token OR bearer"
-- **API Patterns**: "fetch OR axios OR request", "endpoint OR route OR handler"
-- **DB Patterns**: "insert OR update OR delete OR select", "mongodb OR postgresql OR mysql"
-- **Error Patterns**: "try catch OR error handling OR exception"
+- **Semantic Grouping**: Group related concepts with OR operators for comprehensive coverage
+- **Technology Variations**: Include different implementations of the same concept
+- **Functional Equivalents**: Search for different ways to achieve the same goal
+- **Domain Expansion**: Broaden search to include related domain terminology
+- **Implementation Alternatives**: Cover multiple approaches to the same problem
 
 **PATH WARNING:** React uses path:packages (NOT path:src). Using path:src on repositories without top-level src returns zero results.
 
 **RESULT OPTIMIZATION:** 1-10 IDEAL, 100+ TOO BROAD. Auto-optimization enabled by default.
 
-**PAGINATION LIMITATION:** GitHub CLI limited to --limit parameter only (no page navigation).
+**RESEARCH EXCELLENCE FEATURES:**
+- **Multi-Pattern Search**: Combine multiple search strategies in single query
+- **Quality Filtering**: Use NOT operators to exclude tests, examples, deprecated code
+- **Context Intelligence**: Automatically suggest related terms and variations
+- **Cross-Validation**: Verify findings across multiple repositories and implementations
 
-**INTEGRATION:** Use after ${TOOL_NAMES.GITHUB_GET_REPOSITORY} for branch discovery`,
+**RESULT OPTIMIZATION:** 1-10 IDEAL for deep analysis, 100+ indicates need for refinement
+
+**RESEARCH INTEGRATION:** Essential component of multi-tool research workflow - use after repository discovery for targeted implementation analysis`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `**Complete code extraction** - Fetch full working implementations.
 
