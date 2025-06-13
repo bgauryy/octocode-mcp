@@ -268,14 +268,6 @@ USAGE: When users need to report issues or check known problems.
 
 INTEGRATION: Links to github_search_issues for problem discovery.`,
 
-  [TOOL_NAMES.NPM_GET_README]: `Get README filename information.
-
-OUTPUT: Package name and readme filename (efficient documentation lookup)
-
-USAGE: Documentation needs without full package metadata.
-
-INTEGRATION: Combine with github_get_file_content for full README content.`,
-
   [TOOL_NAMES.NPM_GET_VERSIONS]: `Get official production-ready semantic versions.
 
 OUTPUT: Official versions (major.minor.patch), latest version, count (excludes alpha/beta/rc)
@@ -292,30 +284,6 @@ USAGE: Contact maintainers or assess project ownership.
 
 INTEGRATION: Links to github_search_users for developer discovery.`,
 
-  [TOOL_NAMES.NPM_GET_LICENSE]: `Get package license information.
-
-OUTPUT: Package name and license (essential legal compliance data)
-
-USAGE: Quick license verification for legal compliance.
-
-INTEGRATION: Essential for enterprise package evaluation.`,
-
-  [TOOL_NAMES.NPM_GET_HOMEPAGE]: `Get package homepage for comprehensive project resources.
-
-OUTPUT: Package name and homepage URL (direct access to documentation, tutorials, demos)
-
-USAGE: Access official docs, interactive examples, getting started guides.
-
-INTEGRATION: Complements npm_get_repository - homepage often has better docs than README.`,
-
-  [TOOL_NAMES.NPM_GET_ID]: `Get exact package identifier for dependency management.
-
-OUTPUT: Package name and _id (name@latestVersion format) - canonical identifier
-
-USAGE: Pin exact versions, resolve conflicts, generate package-lock entries.
-
-INTEGRATION: Critical for CI/CD pipelines, dependency auditing, reproducible builds.`,
-
   [TOOL_NAMES.NPM_GET_RELEASES]: `Get recent release activity and timeline data.
 
 OUTPUT: Last modified, created date, version count, last 10 releases (focused release intelligence)
@@ -323,14 +291,6 @@ OUTPUT: Last modified, created date, version count, last 10 releases (focused re
 USAGE: Track package activity, analyze release frequency, check latest versions.
 
 INTEGRATION: Combine with npm_get_versions for comprehensive version analysis.`,
-
-  [TOOL_NAMES.NPM_GET_ENGINES]: `Get environment compatibility requirements.
-
-OUTPUT: Node.js version requirements, npm constraints (compatibility matrix)
-
-USAGE: Pre-deployment validation, Docker planning, Node.js upgrade decisions, CI/CD setup.
-
-INTEGRATION: Prevents deployment failures - use before production installation.`,
 
   [TOOL_NAMES.NPM_GET_EXPORTS]: `Get available modules and import strategies.
 

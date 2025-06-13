@@ -60,14 +60,9 @@ function registerAllTools(server: McpServer) {
   Tools.registerNpmGetRepositoryTool(server);
   Tools.registerNpmGetDependenciesTool(server);
   Tools.registerNpmGetBugsTool(server);
-  Tools.registerNpmGetReadmeTool(server);
   Tools.registerNpmGetVersionsTool(server);
   Tools.registerNpmGetAuthorTool(server);
-  Tools.registerNpmGetLicenseTool(server);
-  Tools.registerNpmGetHomepageTool(server);
-  Tools.registerNpmGetIdTool(server);
   Tools.registerNpmGetReleasesTool(server);
-  Tools.registerNpmGetEnginesTool(server);
   Tools.registerNpmGetExportsTool(server);
 }
 
