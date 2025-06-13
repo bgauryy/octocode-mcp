@@ -1,317 +1,299 @@
 import { TOOL_NAMES } from '../contstants';
 
 export const TOOL_DESCRIPTIONS = {
-  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages across all domains. Supports semantic queries and domain-specific search strategies.
-
-SEARCH STRATEGIES:
-- Single terms: "visualization", "automation", "analysis"
-- Combined concepts: "data-visualization", "workflow-automation"
-- Domain-specific filters automatically applied
-
-SEARCH PATTERNS:
-- Technology packages: frameworks, libraries, utilities
-- Creative packages: design tools, media processing
-- Business packages: analytics, automation, productivity
-- Educational packages: learning resources, documentation
-- Scientific packages: data analysis, visualization, computation
-
-OPTIMIZATION:
-- 0 results: broaden terms, try ecosystem exploration
-- 1-20 results: ideal scope for analysis
-- 100+ results: add specific filters
-
-FALLBACK STRATEGIES:
-When insufficient results, automatically tries:
-1. Repository search for direct projects
-2. Topic analysis for domain terminology
-3. Community discovery for experts
-4. Content search for implementations`,
-
-  [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `Analyze package security vulnerabilities, dependency tree, and organizational context.
-
-USAGE: Always call after npm_search_packages for complete assessment.
-
-ANALYSIS INCLUDES:
-- Security vulnerabilities and audit results
-- Dependency tree and compatibility
-- Bundle size impact
-- License compatibility
-- Organization detection (@company/ packages)
+  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages
 
-ORGANIZATIONAL CONTEXT: 
-- Private packages trigger github_get_user_organizations workflow
-- Enterprise package discovery enabled
+Very strong and useful tool for finding github locations of packages using npm
 
-LIMITATIONS: Some NPM audit failures may occur for specific packages.`,
+FEATURES
+ Multisearch Accepts one or more search terms or package names (string or array) Each is searched and results are aggregated
+ Partial/prefix search Supports searching by prefix (eg "react*")
+ If multiple package names are found in a query each is searched and results are aggregated
+ If NPM search yields no or insufficient results automatically fall back to GitHub search tools (topics repos code issues PRs)
 
-  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics across all domains and disciplines.
+SEARCH TIPS
+ Single terms work best e.g. "react"
+ Multiple terms also work e.g. "react" "vue"
+ Organization packages e.g. "@org/package"
 
-SEARCH PATTERNS:
-- Single terms: "sustainability", "automation", "creativity"
-- Compound concepts: "machine-learning", "user-experience"
-- Cross-domain exploration supported
+Results include repository links for direct GitHub exploration`,
 
-DOMAIN COVERAGE:
-- Technology: "ai", "blockchain", "iot", "cybersecurity"
-- Creative: "design", "art", "music", "writing"
-- Business: "entrepreneurship", "marketing", "finance"
-- Academic: "research", "education", "science"
-- Social: "community", "activism", "sustainability"
+  [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `Analyze package security vulnerabilities dependency tree and organizational context
 
-OPTIMIZATION:
-- 1-10 topics: ideal for focused analysis
-- 10+ topics: rich ecosystem exploration
-- Featured/curated topics indicate quality
+USAGE Always call after npm_search_packages for complete assessment
 
-WORKFLOW:
-1. Core topic exploration
-2. Related topic discovery
-3. Community identification
-4. Resource mapping
-5. Trend analysis`,
+ANALYSIS INCLUDES
+ Security vulnerabilities and audit results
+ Dependency tree and compatibility
+ Bundle size impact
+ License compatibility
+ Organization detection (@company/ packages)
 
-  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Discover user organizations for enterprise/private repository access.
+ORGANIZATIONAL CONTEXT 
+ Private packages trigger github_get_user_organizations workflow
+ Enterprise package discovery enabled
 
-AUTO-TRIGGERS: @organization/ patterns, "internal code", "enterprise setup"
+LIMITATIONS Some NPM audit failures may occur for specific packages`,
 
-WORKFLOW: 
-1. Detect organizational context
-2. Match company to organizations
-3. Use as 'owner' parameter in subsequent calls
-4. Enable private repository access
+  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics across all domains and disciplines
 
-INTEGRATION: Required first step when private access needed.`,
+SEARCH PATTERNS
+ Single terms "sustainability" "automation" "creativity"
+ Compound concepts "machine learning" "user experience"
+ Cross domain exploration supported
 
-  [TOOL_NAMES.GITHUB_GET_REPOSITORY]: `Get repository metadata and default branch information.
+DOMAIN COVERAGE
+ Technology "ai" "blockchain" "iot" "cybersecurity"
+ Creative "design" "art" "music" "writing"
+ Business "entrepreneurship" "marketing" "finance"
+ Academic "research" "education" "science"
+ Social "community" "activism" "sustainability"
 
-PURPOSE: Discover default branch and repository metadata to prevent tool failures.
+OPTIMIZATION
+ 1 10 topics ideal for focused analysis
+ 10+ topics rich ecosystem exploration
+ Featured/curated topics indicate quality
 
-PREREQUISITES: Repository owner/name must be discovered first through:
-1. npm_search_packages → npm_get_package (for packages)
-2. github_search_topics (for ecosystem discovery)
-3. github_search_repositories (last resort)
+WORKFLOW
+1 Core topic exploration
+2 Related topic discovery
+3 Community identification
+4 Resource mapping
+5 Trend analysis`,
 
-REQUIRED BEFORE: github_search_code, github_get_contents, github_get_file_content
+  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Discover user organizations for enterprise/private repository access
 
-CRITICAL: Never call with guessed repository names. Always use discovery workflow.`,
+AUTOTRIGGERS @organization/ patterns "internal code" "enterprise setup"
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code content with automatic query optimization and domain adaptation.
+WORKFLOW 
+1 Detect organizational context
+2 Match company to organizations
+3 Use as 'owner' parameter in subsequent calls
+4 Enable private repository access
 
-QUERY OPTIMIZATION:
-- Automatic boolean enhancement for better results
-- Domain-specific pattern matching
-- Quality filtering (excludes test, example, demo files)
-- Semantic expansion based on context
+INTEGRATION Required first step when private access needed`,
 
-DOMAIN PATTERNS:
-- Technology: "framework OR library OR tool OR implementation NOT tutorial"
-- Research: "study OR analysis OR research NOT example"
-- Business: "solution OR strategy OR management NOT demo"
-- Creative: "design OR art OR creative NOT template"
-- Educational: "learning OR education OR tutorial NOT test"
-- Scientific: "data OR analysis OR algorithm NOT mock"
+  [TOOL_NAMES.GITHUB_GET_REPOSITORY]: `Get repository metadata and default branch information
 
-BOOLEAN INTELLIGENCE:
-- Coverage: "primary_term OR synonym OR variation"
-- Precision: "specific_concept AND context NOT noise"
-- Quality: "topic NOT test NOT example NOT demo"
+PURPOSE Discover default branch and repository metadata to prevent tool failures
 
-FALLBACK STRATEGIES:
-- Term simplification: complex phrases → core concepts
-- Semantic broadening: specific → general categories
-- Progressive refinement: general → specific based on results`,
+PREREQUISITES Repository owner/name must be discovered first through
+1 npm_search_packages (for packages  includes repository URL)
+2 github_search_topics (for ecosystem discovery)
+3 github_search_repositories (last resort)
 
-  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories.
+REQUIRED BEFORE github_search_code github_get_contents github_get_file_content
 
-WORKFLOW: 
-1. Discovery (mandatory)
-2. github_get_repository 
-3. Find files with github_search_code or github_get_contents
-4. Extract with this tool
+CRITICAL Never call with guessed repository names Always use discovery workflow`,
 
-AUTO-RECOVERY: Tries branches in order: specified → main → master → develop → trunk
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code content with automatic query optimization and domain adaptation
 
-ERROR HANDLING: Provides guidance when files don't exist, suggests alternatives
+QUERY OPTIMIZATION
+ Automatic boolean enhancement for better results
+ Domainspecific pattern matching
+ Quality filtering (excludes test example demo files)
+ Semantic expansion based on context
 
-ORGANIZATIONAL CONTEXT: Use github_get_user_organizations for private repositories
+DOMAIN PATTERNS
+ Technology "framework OR library OR tool OR implementation NOT tutorial"
+ Research "study OR analysis OR research NOT example"
+ Business "solution OR strategy OR management NOT demo"
+ Creative "design OR art OR creative NOT template"
+ Educational "learning OR education OR tutorial NOT test"
+ Scientific "data OR analysis OR algorithm NOT mock"
 
-CRITICAL: Never guess file paths. Use structure exploration first.`,
+BOOLEAN INTELLIGENCE
+ Coverage "primary_term OR synonym OR variation"
+ Precision "specific_concept AND context NOT noise"
+ Quality "topic NOT test NOT example NOT demo"
 
-  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository directory structure.
+FALLBACK STRATEGIES
+ Term simplification complex phrases → core concepts
+ Semantic broadening specific → general categories
+ Progressive refinement general → specific based on results`,
 
-PREREQUISITES: Must call github_get_repository first for branch discovery.
+  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories
 
-EXPLORATION STRATEGY:
-1. Root analysis
-2. Source discovery (src/, lib/, components/)
-3. Documentation (docs/, README)
-4. Configuration files
-5. Examples and tests
+WORKFLOW 
+1 Discovery (mandatory)
+2 github_get_repository 
+3 Find files with github_search_code or github_get_contents
+4 Extract with this tool
 
-AUTO-RECOVERY: Tries branches in order: specified → main → master → develop → trunk`,
+AUTORECOVERY Tries branches in order specified → main → master → develop → trunk
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search GitHub issues for problem discovery and repository status.
+ERROR HANDLING Provides guidance when files don't exist suggests alternatives
 
-SEARCH STRATEGY:
-- Start with single keywords: "bug", "feature", "documentation"
-- Combine terms if needed: "bug fix", "feature request"
-- Never use complex queries
+ORGANIZATIONAL CONTEXT Use github_get_user_organizations for private repositories
 
-SEARCH MODES:
-- Global search (no owner): searches all GitHub repositories
-- Scoped search (with owner): targeted within organization
+CRITICAL Never guess file paths Use structure exploration first`,
 
-RESULT OPTIMIZATION:
-- 0 results: use broader terms
-- 1-20 results: ideal scope
-- 100+ results: add specific filters
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository directory structure
 
-PAGINATION: Limited to --limit parameter only.`,
+PREREQUISITES Must call github_get_repository first for branch discovery
 
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests for implementation analysis and code review insights.
+EXPLORATION STRATEGY
+1 Root analysis
+2 Source discovery (src/ lib/ components/)
+3 Documentation (docs/ README)
+4 Configuration files
+5 Examples and tests
 
-CORE APPLICATIONS:
-- Code review insights
-- Feature implementation tracking
-- Repository activity assessment
+AUTORECOVERY Tries branches in order specified → main → master → develop → trunk`,
 
-KEY FILTERS:
-- State (open/closed)
-- Draft (false for completed PRs)
-- Author/reviewer information
-- Programming language
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search GitHub issues for problem discovery and repository status
 
-QUALITY FOCUS: Use review-related filters for thoroughly vetted code examples.
+SEARCH STRATEGY
+ Start with single keywords "bug" "feature" "documentation"
+ Combine terms if needed "bug fix" "feature request"
+ Never use complex queries
 
-PAGINATION: Limited to --limit parameter only.`,
+SEARCH MODES
+ Global search (no owner) searches all GitHub repositories
+ Scoped search (with owner) targeted within organization
 
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history for development tracking and code evolution.
+RESULT OPTIMIZATION
+ 0 results use broader terms
+ 1 20 results ideal scope
+ 100+ results add specific filters
 
-SEARCH STRATEGY:
-- Start minimal: "fix", "feature", "update"
-- Add owner/repo for scoped search
-- Progressive expansion if needed
+PAGINATION Limited to limit parameter only`,
 
-LIMITATIONS:
-- Large organizations may return org-wide results
-- Requires text terms for search
-- Limited to --limit parameter
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests for implementation analysis and code review insights
 
-ERROR HANDLING: "Search text required" errors need minimal keywords.`,
+CORE APPLICATIONS
+ Code review insights
+ Feature implementation tracking
+ Repository activity assessment
 
-  [TOOL_NAMES.GITHUB_SEARCH_USERS]: `Find developers, experts, and community leaders.
+KEY FILTERS
+ State (open/closed)
+ Draft (false for completed PRs)
+ Author/reviewer information
+ Programming language
 
-SEARCH METHODOLOGY:
-1. Technology terms: "react", "python"
-2. Add context: location, experience level
-3. Specialized filters
+QUALITY FOCUS Use review related filters for thoroughly vetted code examples
 
-SEARCH MODES:
-- Global search: across all GitHub
-- Scoped search: within specific organization
+PAGINATION Limited to limit parameter only`,
 
-KEY FILTERS:
-- Type (user/org)
-- Location
-- Programming language
-- Followers (">100" for influential users)
-- Repository count (">10" for active contributors)`,
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history for development tracking and code evolution
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search GitHub repositories across all domains and project types.
+SEARCH STRATEGY
+ Start minimal "fix" "feature" "update"
+ Add owner/repo for scoped search
+ Progressive expansion if needed
 
-SEARCH STRATEGIES:
-1. Single terms: "visualization", "sustainability", "automation"
-2. Domain-specific context filters
-3. Quality indicators: star count, activity level
-4. Scope management: global vs organizational
+LIMITATIONS
+ Large organizations may return orgwide results
+ Requires text terms for search
+ Limited to limit parameter
 
-PROJECT TYPES:
-- Technology: software, tools, frameworks, applications
-- Research: academic studies, experiments, methodologies
-- Creative: art, design, media projects
-- Educational: learning resources, tutorials, courses
-- Business: analytics, automation, productivity tools
-- Community: open source, collaboration, social impact
+ERROR HANDLING "Search text required" errors need minimal keywords`,
 
-OPTIMIZATION:
-- 0 results: broader terms, alternative approaches
-- 1-20 results: ideal for detailed analysis
-- 100+ results: add filters, narrow scope
+  [TOOL_NAMES.GITHUB_SEARCH_USERS]: `Find developers experts and community leaders
 
-QUALITY INDICATORS:
-- Star count (>100 established, >10 active)
-- Recent updates and community engagement
-- Documentation quality and project maturity`,
+SEARCH METHODOLOGY
+1 Technology terms "react" "python"
+2 Add context location experience level
+3 Specialized filters
 
-  // NPM focused tools
-  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree.
+SEARCH MODES
+ Global search across all GitHub
+ Scoped search within specific organization
 
-OUTPUT: dependencies, devDependencies, resolutions (focused dependency data only)
+KEY FILTERS
+ Type (user/org)
+ Location
+ Programming language
+ Followers (">100" for influential users)
+ Repository count (">10" for active contributors)`,
 
-USAGE: Analyzing package ecosystem and compatibility.
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search GitHub repositories across all domains and project types
 
-INTEGRATION: Combine with npm_analyze_dependencies for security audit.`,
+SEARCH STRATEGIES
+1 Single terms "visualization" "sustainability" "automation"
+2 Domain specific context filters
+3 Quality indicators star count activity level
+4 Scope management global vs organizational
 
-  [TOOL_NAMES.NPM_GET_BUGS]: `Get bug reporting and issue tracking information.
+PROJECT TYPES
+ Technology software tools frameworks applications
+ Research academic studies experiments methodologies
+ Creative art design media projects
+ Educational learning resources tutorials courses
+ Business analytics automation productivity tools
+ Community open source collaboration social impact
 
-OUTPUT: Package name and bugs URL (direct access to issue tracker)
+OPTIMIZATION
+ 0 results broader terms alternative approaches
+ 1 20 results ideal for detailed analysis
+ 100+ results add filters narrow scope
 
-USAGE: When users need to report issues or check known problems.
+QUALITY INDICATORS
+ Star count (>100 established >10 active)
+ Recent updates and community engagement
+ Documentation quality and project maturity`,
 
-INTEGRATION: Links to github_search_issues for problem discovery.`,
+  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree
 
-  [TOOL_NAMES.NPM_GET_VERSIONS]: `Get official production-ready semantic versions.
+OUTPUT dependencies devDependencies resolutions (focused dependency data only)
 
-OUTPUT: Official versions (major.minor.patch), latest version, count (excludes alpha/beta/rc)
+USAGE Analyzing package ecosystem and compatibility
 
-USAGE: Find stable versions for production deployment, analyze release cadence.
+INTEGRATION Combine with npm_analyze_dependencies for security audit`,
 
-INTEGRATION: Production planning - filters experimental versions for reliable deployment.`,
+  [TOOL_NAMES.NPM_GET_VERSIONS]: `Get official productionready semantic versions
 
-  [TOOL_NAMES.NPM_GET_RELEASES]: `Get recent release activity and timeline data.
+OUTPUT Official versions (majorminorpatch) latest version count (excludes alpha/beta/rc)
 
-OUTPUT: Last modified, created date, version count, last 10 releases (focused release intelligence)
+USAGE Find stable versions for production deployment analyze release cadence
 
-USAGE: Track package activity, analyze release frequency, check latest versions.
+INTEGRATION Production planning  filters experimental versions for reliable deployment`,
 
-INTEGRATION: Combine with npm_get_versions for comprehensive version analysis.`,
+  [TOOL_NAMES.NPM_GET_RELEASES]: `Get recent release activity and timeline data
 
-  [TOOL_NAMES.NPM_GET_EXPORTS]: `Get available modules and import strategies.
+OUTPUT Last modified created date version count last 10 releases (focused release intelligence)
 
-OUTPUT: Export mappings, entry points, submodule paths (complete import guide)
+USAGE Track package activity analyze release frequency check latest versions
 
-USAGE: Learn import syntax, discover tree-shakable exports, find submodules, optimize bundles.
+INTEGRATION Combine with npm_get_versions for comprehensive version analysis`,
 
-INTEGRATION: Critical for github_search_code - enables precise code search with accurate imports.`,
+  [TOOL_NAMES.NPM_GET_EXPORTS]: `Get available modules and import strategies
 
-  [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication before research operations.
+OUTPUT Export mappings entry points submodule paths (complete import guide)
 
-PRE-RESEARCH VALIDATION:
-- GitHub CLI authentication status
-- NPM registry connectivity 
-- GitHub API rate limits
+USAGE Learn import syntax discover treeshakable exports find submodules optimize bundles
 
-HEALTH CHECK:
-- Authentication status with username detection
-- Network connectivity validation
-- Real-time API quota analysis
+INTEGRATION Critical for github_search_code  enables precise code search with accurate imports`,
 
-RESEARCH STRATEGY:
-- READY: All systems operational
-- LIMITED: Reduced capacity, targeted searches recommended
-- NOT_READY: Authentication/quota issues require resolution
+  [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication before research operations
 
-API GUIDANCE:
-- Code Search < 5: use repository browsing instead
-- Search API < 20: focus on specific repositories
-- Core API < 200: minimize repository exploration
-- NPM disconnected: GitHub-only research mode
+PRERESEARCH VALIDATION
+ GitHub CLI authentication status
+ NPM registry connectivity 
+ GitHub API rate limits
 
-FALLBACK RECOMMENDATIONS:
-- Authentication issues: step-by-step gh auth login guidance
-- NPM problems: alternative research paths
-- Rate limit exhaustion: wait times and alternatives
-- Network issues: diagnostic commands and troubleshooting
+HEALTH CHECK
+ Authentication status with username detection
+ Network connectivity validation
+ Real time API quota analysis
 
-USAGE: Always call first before research sessions to ensure optimal tool usage.`,
+RESEARCH STRATEGY
+ READY All systems operational
+ LIMITED Reduced capacity targeted searches recommended
+ NOT_READY Authentication/quota issues require resolution
+
+API GUIDANCE
+ Code Search < 5 use repository browsing instead
+ Search API < 20 focus on specific repositories
+ Core API < 200 minimize repository exploration
+ NPM disconnected GitHub only research mode
+
+FALLBACK RECOMMENDATIONS
+ Authentication issues step by step gh auth login guidance
+ NPM problems alternative research paths
+ Rate limit exhaustion wait times and alternatives
+ Network issues diagnostic commands and troubleshooting
+
+USAGE Always call first before research sessions to ensure optimal tool usage`,
 };

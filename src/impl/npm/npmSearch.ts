@@ -9,10 +9,12 @@ export async function npmSearch(
   const { query, json = true, searchlimit = 50 } = args;
 
   try {
-    const args = [`"${query}"`, `--searchlimit=${searchlimit}`];
-    if (json) args.push('--json');
+    // Build CLI arguments for the `npm search` command. Renamed to avoid
+    // shadowing the function parameter `args`.
+    const cmdArgs = [`"${query}"`, `--searchlimit=${searchlimit}`];
+    if (json) cmdArgs.push('--json');
 
-    const result = await executeNpmCommand('search', args, {
+    const result = await executeNpmCommand('search', cmdArgs, {
       cache: true,
     });
 
@@ -22,8 +24,39 @@ export async function npmSearch(
 
     if (json) {
       try {
-        const commandOutput = JSON.parse(result.content[0].text as string);
-        const searchResults = commandOutput.result;
+        // Ensure we actually received text content to parse
+        if (
+          !result.content ||
+          result.content.length === 0 ||
+          typeof result.content[0].text !== 'string'
+        ) {
+          return createErrorResult(
+            'npm search returned success but without parseable text content',
+            result
+          );
+        }
+
+        const commandOutput: any = JSON.parse(result.content[0].text as string);
+
+        // npm search --json output formats differ between npm versions.
+        // Handle the most common shapes:
+        // 1. Direct array of packages
+        // 2. { objects: [ { package: {...} } ] }
+        // 3. { results: [...] }
+        let searchResults: any[] = [];
+
+        if (Array.isArray(commandOutput)) {
+          searchResults = commandOutput;
+        } else if (commandOutput && typeof commandOutput === 'object') {
+          if (Array.isArray(commandOutput.objects)) {
+            // Older npm output nests the actual package info under `package`
+            searchResults = commandOutput.objects.map(
+              (o: any) => o.package || o
+            );
+          } else if (Array.isArray(commandOutput.results)) {
+            searchResults = commandOutput.results;
+          }
+        }
 
         const enhancedResults = {
           searchQuery: query,
@@ -43,7 +76,10 @@ export async function npmSearch(
         return createSuccessResult(enhancedResults);
       } catch (parseError) {
         // Fallback to raw output if JSON parsing fails
-        return result;
+        return createErrorResult(
+          'Failed to parse npm search JSON output',
+          parseError
+        );
       }
     }
 
