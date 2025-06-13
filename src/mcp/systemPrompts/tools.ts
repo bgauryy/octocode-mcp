@@ -244,14 +244,6 @@ QUALITY INDICATORS:
 - Documentation quality and project maturity`,
 
   // NPM focused tools
-  [TOOL_NAMES.NPM_GET_REPOSITORY]: `Get package repository URL and basic project information.
-
-OUTPUT: Package name, description, repository URL, homepage (minimal, token-efficient)
-
-USAGE: When you need repository location for GitHub operations.
-
-INTEGRATION: First step before github_get_repository for code exploration.`,
-
   [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree.
 
 OUTPUT: dependencies, devDependencies, resolutions (focused dependency data only)
