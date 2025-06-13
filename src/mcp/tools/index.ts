@@ -12,12 +12,8 @@ export { registerSearchGitHubTopicsTool } from './search_github_topics.js';
 export { registerSearchGitHubUsersTool } from './search_github_users.js';
 export { registerNpmDependencyAnalysisTool } from './npm_dependency_analysis.js';
 export { registerApiStatusCheckTool } from './api_status_check.js';
-
-// Focused NPM tools for minimal token usage
 export { registerNpmGetRepositoryTool } from './npm_get_repository.js';
 export { registerNpmGetDependenciesTool } from './npm_get_dependencies.js';
-export { registerNpmGetBugsTool } from './npm_get_bugs.js';
 export { registerNpmGetVersionsTool } from './npm_get_versions.js';
-export { registerNpmGetAuthorTool } from './npm_get_author.js';
 export { registerNpmGetReleasesTool } from './npm_get_releases.js';
 export { registerNpmGetExportsTool } from './npm_get_exports.js';

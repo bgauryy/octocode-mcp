@@ -276,14 +276,6 @@ USAGE: Find stable versions for production deployment, analyze release cadence.
 
 INTEGRATION: Production planning - filters experimental versions for reliable deployment.`,
 
-  [TOOL_NAMES.NPM_GET_AUTHOR]: `Get author and maintainer information.
-
-OUTPUT: Author and maintainers list (focused ownership data)
-
-USAGE: Contact maintainers or assess project ownership.
-
-INTEGRATION: Links to github_search_users for developer discovery.`,
-
   [TOOL_NAMES.NPM_GET_RELEASES]: `Get recent release activity and timeline data.
 
 OUTPUT: Last modified, created date, version count, last 10 releases (focused release intelligence)

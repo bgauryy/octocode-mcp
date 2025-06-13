@@ -59,9 +59,7 @@ function registerAllTools(server: McpServer) {
   Tools.registerNpmDependencyAnalysisTool(server);
   Tools.registerNpmGetRepositoryTool(server);
   Tools.registerNpmGetDependenciesTool(server);
-  Tools.registerNpmGetBugsTool(server);
   Tools.registerNpmGetVersionsTool(server);
-  Tools.registerNpmGetAuthorTool(server);
   Tools.registerNpmGetReleasesTool(server);
   Tools.registerNpmGetExportsTool(server);
 }

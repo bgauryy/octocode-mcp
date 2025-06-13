@@ -32,7 +32,6 @@ export const TOOL_NAMES = {
   NPM_GET_BUGS: 'npm_get_bugs',
   NPM_GET_README: 'npm_get_readme',
   NPM_GET_VERSIONS: 'npm_get_versions',
-  NPM_GET_AUTHOR: 'npm_get_author',
   NPM_GET_LICENSE: 'npm_get_license',
   NPM_GET_HOMEPAGE: 'npm_get_homepage',
   NPM_GET_ID: 'npm_get_id',
