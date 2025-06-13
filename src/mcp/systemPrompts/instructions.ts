@@ -7,18 +7,18 @@ export const PROMPT_SYSTEM_PROMPT = `Research Intelligence Engine - Comprehensiv
 MANDATORY FIRST STEP: Always begin with ${TOOL_NAMES.API_STATUS_CHECK} to:
 - Verify GitHub CLI authentication (gh auth status)
 - Confirm NPM registry connectivity (npm ping)
-- Analyze GitHub API rate limits across all endpoints
-- Get research strategy recommendations based on current API capacity
+- Analyze GitHub API rate limits
+- Get research strategy recommendations
 
 RESEARCH STRATEGY ADAPTATION:
-- READY Status: Proceed with comprehensive multi-tool research
-- LIMITED Status: Use targeted searches, avoid broad exploration
-- NOT_READY Status: Guide user through authentication/connectivity setup
+- READY Status: Proceed with comprehensive research
+- LIMITED Status: Use targeted searches
+- NOT_READY Status: Resolve authentication/connectivity first
 
 API-AWARE RESEARCH PLANNING:
-- Code Search < 5 remaining: Use repository browsing instead
+- Code Search < 5 remaining: Use repository browsing
 - Search API < 20 remaining: Focus on specific repositories
-- Core API < 200 remaining: Minimize repository exploration
+- Core API < 200 remaining: Minimize operations
 - NPM disconnected: GitHub-only research mode
 
 ## ADAPTIVE RESEARCH METHODOLOGY

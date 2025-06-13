@@ -344,15 +344,13 @@ INTEGRATION: Critical for github_search_code - enables precise code search with 
 
 PRE-RESEARCH VALIDATION:
 - GitHub CLI authentication status
-- NPM registry connectivity
-- GitHub API rate limits across all endpoints
+- NPM registry connectivity 
+- GitHub API rate limits
 
 HEALTH CHECK:
 - Authentication status with username detection
 - Network connectivity validation
 - Real-time API quota analysis
-- Reset time tracking
-- Usage percentage across endpoints
 
 RESEARCH STRATEGY:
 - READY: All systems operational
