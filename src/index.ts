@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts/instructions';
 import * as Tools from './mcp/tools/index.js';
-import * as Resources from './mcp/resources/index.js';
+import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 
 const server = new McpServer(
   {
@@ -24,7 +23,6 @@ const server = new McpServer(
 );
 
 registerAllTools(server);
-registerResources(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
@@ -37,11 +35,8 @@ process.stdin.on('close', async () => {
   server.close();
 });
 
-// Register all tools
 function registerAllTools(server: McpServer) {
-  // System & API Status - CRITICAL FIRST STEP
   Tools.registerApiStatusCheckTool(server);
-
   Tools.registerGitHubSearchCodeTool(server);
   Tools.registerFetchGitHubFileContentTool(server);
   Tools.registerSearchGitHubReposTool(server);
@@ -58,12 +53,4 @@ function registerAllTools(server: McpServer) {
   Tools.registerNpmGetVersionsTool(server);
   Tools.registerNpmGetReleasesTool(server);
   Tools.registerNpmGetExportsTool(server);
-}
-
-// Register all resources
-function registerResources(server: McpServer) {
-  Resources.registerUsageGuideResource(server);
-  Resources.registerGithubStatusResource(server);
-  Resources.registerNpmStatusResource(server);
-  Resources.registerRepositoryIntelligenceResource(server);
 }

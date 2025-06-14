@@ -1,7 +1,7 @@
 // import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // import z from 'zod';
 // import { GitHubRepositoryViewParams } from '../../types';
-// import { TOOL_NAMES } from '../contstants';
+// import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 // import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 // import { viewGitHubRepositoryInfo } from '../../impl/github/viewGitHubRepositoryInfo';
 // import { generateSmartRecovery } from '../../utils/smartRecovery';

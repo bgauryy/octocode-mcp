@@ -1,7 +1,7 @@
 // import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 // import z from 'zod';
 // import { GitHubDiscussionsSearchParams } from '../../types';
-// import { TOOL_NAMES } from '../contstants';
+// import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 // import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 // import { searchGitHubDiscussions } from '../../impl/github/searchGitHubDiscussions';
 

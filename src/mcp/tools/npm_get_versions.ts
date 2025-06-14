@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_NAMES } from '../contstants';
-import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { npmGetVersions } from '../../impl/npm/npmGetVersions';
 
 export function registerNpmGetVersionsTool(server: McpServer) {

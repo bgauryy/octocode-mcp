@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_NAMES } from '../contstants';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { npmSearch } from '../../impl/npm/npmSearch';
-import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
 interface NpmPkgMeta {
   name: string;

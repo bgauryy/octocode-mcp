@@ -1,10 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubPullRequestsSearchParams } from '../../types';
-import { TOOL_NAMES } from '../contstants';
-import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
-import { generateSmartRecovery } from '../../utils/smartRecovery';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
@@ -157,14 +155,15 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
 
         return result;
       } catch (error) {
-        return generateSmartRecovery({
-          tool: 'GitHub Pull Requests Search',
-          query: args.query,
-          owner: args.owner,
-          repo: args.repo,
-          context: args,
-          error: error as Error,
-        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Failed to search GitHub pull requests: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
       }
     }
   );

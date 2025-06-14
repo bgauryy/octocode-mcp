@@ -1,9 +1,29 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_NAMES } from '../contstants';
-import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+
+export function registerApiStatusCheckTool(server: McpServer) {
+  server.tool(
+    TOOL_NAMES.API_STATUS_CHECK,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
+    {
+      random_string: z
+        .string()
+        .optional()
+        .describe('Dummy parameter for no-parameter tools'),
+    },
+    {
+      title: 'API Status Check',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    async () => checkApiStatus()
+  );
+}
 
 interface ApiStatus {
   github: {
@@ -161,25 +181,4 @@ async function checkApiStatus(): Promise<CallToolResult> {
       isError: true,
     };
   }
-}
-
-export function registerApiStatusCheckTool(server: McpServer) {
-  server.tool(
-    TOOL_NAMES.API_STATUS_CHECK,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
-    {
-      random_string: z
-        .string()
-        .optional()
-        .describe('Dummy parameter for no-parameter tools'),
-    },
-    {
-      title: 'API Status Check',
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-    async () => checkApiStatus()
-  );
 }

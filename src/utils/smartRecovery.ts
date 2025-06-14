@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { TOOL_NAMES } from '../mcp/contstants';
+import { TOOL_NAMES } from '../mcp/systemPrompts';
 
 // Universal Error Recovery Framework
 export interface SmartRecoveryOptions {
@@ -54,15 +54,6 @@ const TOOL_FALLBACK_CHAINS = {
       tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
       reason: 'Problem discussion search',
     },
-  ],
-  'repository-discovery': [
-    { tool: TOOL_NAMES.NPM_GET_REPOSITORY, reason: 'Package-to-repo mapping' },
-    {
-      tool: TOOL_NAMES.GITHUB_SEARCH_REPOS,
-      reason: 'Direct repository search',
-    },
-    { tool: TOOL_NAMES.GITHUB_SEARCH_TOPICS, reason: 'Topic-based discovery' },
-    { tool: TOOL_NAMES.GITHUB_SEARCH_USERS, reason: 'Organization discovery' },
   ],
   'issue-discovery': [
     { tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES, reason: 'Primary issue search' },

@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubRepositoryStructureParams } from '../../types';
-import { TOOL_NAMES } from '../contstants';
-import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { viewRepositoryStructure } from '../../impl/github/viewRepositoryStructure';
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
@@ -19,7 +18,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       branch: z
         .string()
         .describe(
-          `MANDATORY: Specify the branch to explore (e.g., 'main', 'master', 'develop'). Must be obtained from ${TOOL_NAMES.GITHUB_GET_REPOSITORY} first. Never explore without explicit branch specification.`
+          "MANDATORY: Specify the branch to explore (e.g., 'main', 'master'). Branch name MUST be obtained from repository metadata or structure tools. Never explore without explicit branch specification."
         ),
       path: z
         .string()

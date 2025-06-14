@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_NAMES } from '../contstants';
 import { GithubFetchRequestParams } from '../../types';
-import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { fetchGitHubFileContent } from '../../impl/github/fetchGitHubFileContent';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
@@ -19,7 +18,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
       branch: z
         .string()
         .describe(
-          `The default branch of the repository. branch name MUST be obtained from ${TOOL_NAMES.GITHUB_GET_REPOSITORY} tool`
+          'The default branch of the repository. Branch name MUST be obtained from repository metadata or structure tools.'
         ),
       filePath: z
         .string()
