@@ -1,19 +1,13 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubCommitsSearchParams, GitHubSearchResult } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
+import { createErrorResult, createSuccessResult } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
 
 export async function searchGitHubCommits(
   params: GitHubCommitsSearchParams
 ): Promise<CallToolResult> {
-  // Validate required query parameter
-  if (!params.query || params.query.trim() === '') {
-    return createErrorResult(
-      'Search query required',
-      new Error('GitHub commit search requires a non-empty query parameter')
-    );
-  }
+  // Allow exploratory search: if no query, fetch recent commits for repo/owner
 
   const cacheKey = generateCacheKey('gh-commits', params);
 
@@ -46,52 +40,73 @@ export async function searchGitHubCommits(
   });
 }
 
+function safeQuote(arg: string): string {
+  // Quote if contains spaces, >, <, =, or other shell special chars
+  if (/\s|[><=]/.test(arg)) {
+    // Use single quotes, escape any single quote inside
+    return `'${arg.replace(/'/g, "'\\''")}'`;
+  }
+  return arg;
+}
+
 function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
   command: string;
   args: string[];
 } {
-  // Build query following GitHub CLI patterns
-  const queryParts: string[] = [];
+  // Only put the search keywords in the query string
+  const query =
+    params.query && params.query.trim() !== ''
+      ? params.query.trim()
+      : undefined;
 
-  // Add main search query
-  if (params.query) {
-    const query = params.query.trim();
-    queryParts.push(needsQuoting(query) ? `"${query}"` : query);
-  }
+  // Start with the base command and query (if any)
+  const args: string[] = ['commits'];
+  if (query) args.push(safeQuote(query));
 
-  // Add repository/organization qualifiers
-  if (params.owner && params.repo) {
-    queryParts.push(`repo:${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    queryParts.push(`org:${params.owner}`);
-  }
-
-  // Construct query string
-  const queryString = queryParts.filter(part => part.length > 0).join(' ');
-
-  const args = ['commits', queryString];
-
-  // Add individual flags for additional qualifiers
-  if (params.author) args.push(`--author=${params.author}`);
-  if (params.committer) args.push(`--committer=${params.committer}`);
-  if (params.authorDate) args.push(`--author-date=${params.authorDate}`);
+  // Add flags for all filters, quoting as needed
+  if (params.author) args.push(`--author=${safeQuote(params.author)}`);
+  if (params.authorDate)
+    args.push(`--author-date=${safeQuote(params.authorDate)}`);
+  if (params.authorEmail)
+    args.push(`--author-email=${safeQuote(params.authorEmail)}`);
+  if (params.authorName)
+    args.push(`--author-name=${safeQuote(params.authorName)}`);
+  if (params.committer) args.push(`--committer=${safeQuote(params.committer)}`);
   if (params.committerDate)
-    args.push(`--committer-date=${params.committerDate}`);
-  if (params.authorEmail) args.push(`--author-email=${params.authorEmail}`);
-  if (params.authorName) args.push(`--author-name="${params.authorName}"`);
+    args.push(`--committer-date=${safeQuote(params.committerDate)}`);
   if (params.committerEmail)
-    args.push(`--committer-email=${params.committerEmail}`);
+    args.push(`--committer-email=${safeQuote(params.committerEmail)}`);
   if (params.committerName)
-    args.push(`--committer-name="${params.committerName}"`);
-  if (params.merge !== undefined) args.push(`--merge`);
-  if (params.hash) args.push(`--hash=${params.hash}`);
-  if (params.parent) args.push(`--parent=${params.parent}`);
-  if (params.tree) args.push(`--tree=${params.tree}`);
-  if (params.visibility) args.push(`--visibility=${params.visibility}`);
-  if (params.limit) args.push(`--limit=${params.limit}`);
-  if (params.sort && params.sort !== 'best-match')
-    args.push(`--sort=${params.sort}`);
-  if (params.order) args.push(`--order=${params.order}`);
+    args.push(`--committer-name=${safeQuote(params.committerName)}`);
+  if (params.hash) args.push(`--hash=${safeQuote(params.hash)}`);
+  if (params.parent) args.push(`--parent=${safeQuote(params.parent)}`);
+  if (params.tree) args.push(`--tree=${safeQuote(params.tree)}`);
+  if (params.merge !== undefined && params.merge) args.push(`--merge`);
+  if (params.visibility)
+    args.push(`--visibility=${safeQuote(params.visibility)}`);
+
+  // --repo and --owner flags (avoid conflict)
+  if (params.repo && params.owner) {
+    args.push(`--repo=${safeQuote(params.owner + '/' + params.repo)}`);
+  } else if (params.repo) {
+    args.push(`--repo=${safeQuote(params.repo)}`);
+  } else if (params.owner) {
+    args.push(`--owner=${safeQuote(params.owner)}`);
+  }
+
+  // --sort and --order
+  if (params.sort && params.sort !== 'best-match') {
+    args.push(`--sort=${safeQuote(params.sort)}`);
+    if (params.order) {
+      args.push(`--order=${safeQuote(params.order)}`);
+    }
+  }
+
+  // Always add --limit (default 50 if not specified)
+  args.push(`--limit=${params.limit ?? 50}`);
+
+  // Always add --json for consistent output
+  args.push('--json=author,commit,committer,id,parents,repository,sha,url');
 
   return { command: 'search', args };
 }

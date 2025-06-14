@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { GitHubReposSearchParams, GitHubReposSearchResult } from '../../types';
+import { GitHubReposSearchParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
@@ -34,93 +34,74 @@ export async function searchGitHubRepos(
         topStarred: [] as any[],
       };
 
-      try {
-        // Parse JSON response from GitHub CLI
-        repositories = JSON.parse(rawContent);
+      // Parse JSON response from GitHub CLI
+      repositories = JSON.parse(rawContent);
 
-        if (Array.isArray(repositories) && repositories.length > 0) {
-          analysis.totalFound = repositories.length;
+      if (Array.isArray(repositories) && repositories.length > 0) {
+        analysis.totalFound = repositories.length;
 
-          // Analyze repository data
-          let totalStars = 0;
-          const now = new Date();
-          const thirtyDaysAgo = new Date(
-            now.getTime() - 30 * 24 * 60 * 60 * 1000
-          );
-
-          repositories.forEach(repo => {
-            // Collect languages
-            if (repo.language) {
-              analysis.languages.add(repo.language);
-            }
-
-            // Calculate average stars (use correct field name)
-            if (repo.stargazersCount) {
-              totalStars += repo.stargazersCount;
-            }
-
-            // Count recently updated repositories (use correct field name)
-            if (repo.updatedAt) {
-              const updatedDate = new Date(repo.updatedAt);
-              if (updatedDate > thirtyDaysAgo) {
-                analysis.recentlyUpdated++;
-              }
-            }
-          });
-
-          analysis.avgStars =
-            repositories.length > 0
-              ? Math.round(totalStars / repositories.length)
-              : 0;
-
-          // Get top starred repositories (limit to top 5)
-          analysis.topStarred = repositories
-            .sort((a, b) => (b.stargazersCount || 0) - (a.stargazersCount || 0))
-            .slice(0, 5)
-            .map(repo => ({
-              name: repo.fullName || repo.name,
-              stars: repo.stargazersCount || 0,
-              description: repo.description || 'No description',
-              language: repo.language || 'Unknown',
-              url: repo.url,
-              forks: repo.forksCount || 0,
-              isPrivate: repo.isPrivate || false,
-              updatedAt: repo.updatedAt,
-            }));
-        }
-      } catch (parseError) {
-        // If JSON parsing fails, fall back to raw text processing
-        console.warn(
-          'Failed to parse repository JSON, using raw text:',
-          parseError
+        // Analyze repository data
+        let totalStars = 0;
+        const now = new Date();
+        const thirtyDaysAgo = new Date(
+          now.getTime() - 30 * 24 * 60 * 60 * 1000
         );
+
+        repositories.forEach(repo => {
+          // Collect languages
+          if (repo.language) {
+            analysis.languages.add(repo.language);
+          }
+
+          // Calculate average stars (use correct field name)
+          if (repo.stargazersCount) {
+            totalStars += repo.stargazersCount;
+          }
+
+          // Count recently updated repositories (use correct field name)
+          if (repo.updatedAt) {
+            const updatedDate = new Date(repo.updatedAt);
+            if (updatedDate > thirtyDaysAgo) {
+              analysis.recentlyUpdated++;
+            }
+          }
+        });
+
+        analysis.avgStars =
+          repositories.length > 0
+            ? Math.round(totalStars / repositories.length)
+            : 0;
+
+        // Get top starred repositories (limit to top 5)
+        analysis.topStarred = repositories
+          .sort((a, b) => (b.stargazersCount || 0) - (a.stargazersCount || 0))
+          .slice(0, 5)
+          .map(repo => ({
+            name: repo.fullName || repo.name,
+            stars: repo.stargazersCount || 0,
+            description: repo.description || 'No description',
+            language: repo.language || 'Unknown',
+            url: repo.url,
+            forks: repo.forksCount || 0,
+            isPrivate: repo.isPrivate || false,
+            updatedAt: repo.updatedAt,
+          }));
       }
 
-      const repoResult: GitHubReposSearchResult = {
-        searchType: 'repos',
-        query: params.query || '',
-        results: rawContent,
-        rawOutput: rawContent,
-        // Add enhanced metadata
-        ...(repositories.length > 0 && {
-          metadata: {
-            totalRepositories: analysis.totalFound,
-            languages: Array.from(analysis.languages).slice(0, 10), // Top 10 languages
-            averageStars: analysis.avgStars,
-            recentlyUpdated: analysis.recentlyUpdated,
-            topRepositories: analysis.topStarred,
-            searchParams: {
-              query: params.query,
-              owner: params.owner,
-              language: params.language,
-              stars: params.stars,
-              updated: params.updated,
-            },
-          },
-        }),
-      };
-
-      return createSuccessResult(repoResult);
+      return createSuccessResult({
+        totalRepositories: analysis.totalFound,
+        languages: Array.from(analysis.languages).slice(0, 10), // Top 10 languages
+        averageStars: analysis.avgStars,
+        recentlyUpdated: analysis.recentlyUpdated,
+        topRepositories: analysis.topStarred,
+        searchParams: {
+          query: params.query,
+          owner: params.owner,
+          language: params.language,
+          stars: params.stars,
+          updated: params.updated,
+        },
+      });
     } catch (error) {
       return createErrorResult('Failed to search GitHub repositories', error);
     }

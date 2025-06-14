@@ -1,6 +1,6 @@
 export { registerGitHubSearchCodeTool } from './search_github_code.js';
 export { registerFetchGitHubFileContentTool } from './fetch_github_file_content.js';
-export { registerViewRepositoryTool } from './view_repository.js';
+//export { registerViewRepositoryTool } from './view_repository.js';
 export { registerSearchGitHubReposTool } from './search_github_repos.js';
 export { registerSearchGitHubCommitsTool } from './search_github_commits.js';
 export { registerSearchGitHubPullRequestsTool } from './search_github_pull_requests.js';

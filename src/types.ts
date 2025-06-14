@@ -39,7 +39,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
-  query: string;
+  query?: string;
   author?: string;
   committer?: string;
   authorDate?: string;

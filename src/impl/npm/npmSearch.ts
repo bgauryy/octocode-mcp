@@ -11,7 +11,7 @@ export async function npmSearch(
   try {
     // Build CLI arguments for the `npm search` command. Renamed to avoid
     // shadowing the function parameter `args`.
-    const cmdArgs = [`"${query}"`, `--searchlimit=${searchlimit}`];
+    const cmdArgs = [query, `--searchlimit=${searchlimit}`];
     if (json) cmdArgs.push('--json');
 
     const result = await executeNpmCommand('search', cmdArgs, {
@@ -36,7 +36,12 @@ export async function npmSearch(
           );
         }
 
-        const commandOutput: any = JSON.parse(result.content[0].text as string);
+        // Parse the wrapper object and then the actual npm output
+        const wrapper = JSON.parse(result.content[0].text as string);
+        const commandOutput: any =
+          typeof wrapper.result === 'string'
+            ? JSON.parse(wrapper.result)
+            : wrapper.result;
 
         // npm search --json output formats differ between npm versions.
         // Handle the most common shapes:

@@ -44,8 +44,6 @@ function registerAllTools(server: McpServer) {
 
   Tools.registerGitHubSearchCodeTool(server);
   Tools.registerFetchGitHubFileContentTool(server);
-  Tools.registerViewRepositoryTool(server);
-  //Tools.registerNpmViewTool(server);
   Tools.registerSearchGitHubReposTool(server);
   Tools.registerSearchGitHubCommitsTool(server);
   Tools.registerSearchGitHubPullRequestsTool(server);
@@ -55,7 +53,6 @@ function registerAllTools(server: McpServer) {
   Tools.registerSearchGitHubIssuesTool(server);
   Tools.registerSearchGitHubTopicsTool(server);
   Tools.registerSearchGitHubUsersTool(server);
-  // Focused NPM tools for minimal token usage
   Tools.registerNpmDependencyAnalysisTool(server);
   Tools.registerNpmGetDependenciesTool(server);
   Tools.registerNpmGetVersionsTool(server);

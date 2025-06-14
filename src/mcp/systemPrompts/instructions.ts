@@ -54,6 +54,13 @@ Determine optimal tool combinations:
    BUSINESS/ORGANIZATIONAL: ${TOOL_NAMES.GITHUB_GET_USER_ORGS}, ${TOOL_NAMES.GITHUB_SEARCH_REPOS}, ${TOOL_NAMES.GITHUB_SEARCH_CODE}, ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} 
    CREATIVE/MEDIA: ${TOOL_NAMES.GITHUB_SEARCH_TOPICS}, ${TOOL_NAMES.GITHUB_SEARCH_REPOS}, ${TOOL_NAMES.GITHUB_SEARCH_CODE}, ${TOOL_NAMES.NPM_SEARCH_PACKAGES} 
 
+Recommendations
+   For precise data, use:
+      ${TOOL_NAMES.NPM_SEARCH_PACKAGES} (for packages)
+      ${TOOL_NAMES.GITHUB_SEARCH_REPOS} (for top projects)
+      ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} (for related tech)
+
+For code/issue search, always use boolean operators and exclude noise (e.g., NOT test NOT doc).
    
 
  BOOLEAN SEARCH INTELLIGENCE 

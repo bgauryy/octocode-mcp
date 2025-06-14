@@ -6,10 +6,11 @@ export const TOOL_DESCRIPTIONS = {
 Very strong and useful tool for finding github locations of packages using npm
 
 FEATURES
- Multisearch Accepts one or more search terms or package names (string or array) Each is searched and results are aggregated
- Partial/prefix search Supports searching by prefix (eg "react*")
- If multiple package names are found in a query each is searched and results are aggregated
- If NPM search yields no or insufficient results automatically fall back to GitHub search tools (topics repos code issues PRs)
+ Multisearch: Accepts one or more search terms or package names (string or array). Each is searched and results are aggregated and deduped by package name.
+ Partial/prefix search: Supports searching by prefix (e.g., 'react-').
+ Results are always returned as a minimal, consistent package metadata list (name, version, description, date, keywords, links) for all queries.
+ If multiple package names are found in a query, each is searched and results are aggregated and deduped.
+ If NPM search yields no or insufficient results, automatically fall back to GitHub search tools (topics, repos, code, issues, PRs).
 
 SEARCH TIPS
  Single terms work best e.g. "react"
@@ -72,19 +73,6 @@ WORKFLOW
 4 Enable private repository access
 
 INTEGRATION Required first step when private access needed`,
-
-  [TOOL_NAMES.GITHUB_GET_REPOSITORY]: `Get repository metadata and default branch information
-
-PURPOSE Discover default branch and repository metadata to prevent tool failures
-
-PREREQUISITES Repository owner/name must be discovered first through
-1 npm_search_packages (for packages  includes repository URL)
-2 github_search_topics (for ecosystem discovery)
-3 github_search_repositories (last resort)
-
-REQUIRED BEFORE github_search_code github_get_contents github_get_file_content
-
-CRITICAL Never call with guessed repository names Always use discovery workflow`,
 
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code content with automatic query optimization and domain adaptation
 

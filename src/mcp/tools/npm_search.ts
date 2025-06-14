@@ -4,20 +4,18 @@ import { TOOL_NAMES } from '../contstants';
 import { npmSearch } from '../../impl/npm/npmSearch';
 import { TOOL_DESCRIPTIONS } from '../systemPrompts/tools';
 
-// Minimal shape we care about from npm search results
 interface NpmPkgMeta {
   name: string;
   version: string;
-  description?: string;
-  date?: string;
-  published?: string;
-  keywords?: string[];
-  links?: {
-    homepage?: string;
-    repository?: string;
-    bugs?: string;
-    npm?: string;
-    [key: string]: string | undefined;
+  description: string | null;
+  date: string | null;
+  keywords: string[];
+  links: {
+    homepage: string | null;
+    repository: string | null;
+    bugs: string | null;
+    npm: string | null;
+    [key: string]: string | null | undefined;
   };
 }
 
@@ -39,7 +37,7 @@ export function registerNpmSearchTool(server: McpServer) {
       queries: z
         .union([z.string(), z.array(z.string())])
         .describe(
-          "One or more search terms or package names. Can be a string or array of strings. Supports partial/prefix search (e.g., 'react-')."
+          "One or more search terms or package names. Accepts a string or array of strings. Supports partial/prefix search (e.g., 'react-'). Results are always deduped and returned as a minimal, consistent package metadata list."
         ),
       searchlimit: z
         .number()
