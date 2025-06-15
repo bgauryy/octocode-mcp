@@ -31,8 +31,8 @@ export async function npmSearch(
           typeof result.content[0].text !== 'string'
         ) {
           return createErrorResult(
-            'npm search returned success but without parseable text content',
-            result
+            'npm search returned no parseable content',
+            new Error('Try npm_search_packages with different query terms')
           );
         }
 
@@ -82,14 +82,14 @@ export async function npmSearch(
       } catch (parseError) {
         // Fallback to raw output if JSON parsing fails
         return createErrorResult(
-          'Failed to parse npm search JSON output',
-          parseError
+          'npm search JSON parse failed',
+          new Error('Raw npm output may still be accessible')
         );
       }
     }
 
     return result;
   } catch (error) {
-    return createErrorResult('Failed to execute npm search', error);
+    return createErrorResult('npm search execution failed', error);
   }
 }

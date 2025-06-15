@@ -123,8 +123,10 @@ export async function viewRepositoryStructure(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       return createErrorResult(
-        `Failed to view GitHub repository structure for ${owner}/${repo} at path '${requestedPath}': ${errorMessage}`,
-        error
+        `Repository access failed: ${owner}/${repo}${requestedPath ? ` at ${requestedPath}` : ''}`,
+        new Error(
+          `${errorMessage}. Use github_search_repos to verify repository exists`
+        )
       );
     }
   });
