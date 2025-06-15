@@ -11,11 +11,11 @@ export function registerNpmGetExportsTool(server: McpServer) {
       packageName: z
         .string()
         .describe(
-          "The name of the npm package to get exports information for (e.g., 'react', 'express', 'lodash'). Returns import path intelligence: available modules, entry points, and tree-shakable exports for optimal code search - optimized for token efficiency."
+          "The name of the npm package to analyze for comprehensive API intelligence (e.g., 'react', 'express', 'lodash'). Returns complete public interface discovery including entry points, import paths, export mappings, search targets, and package analysis context. Essential for understanding package public API, generating accurate import statements, and enabling precise GitHub code searches."
         ),
     },
     {
-      title: 'NPM Module Structure - Extract Package Export Mappings',
+      title: 'NPM API Intelligence - Comprehensive Public Interface Discovery',
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -29,7 +29,7 @@ export function registerNpmGetExportsTool(server: McpServer) {
           content: [
             {
               type: 'text',
-              text: `Failed to get npm exports info: ${(error as Error).message}`,
+              text: `Failed to get npm API intelligence: ${(error as Error).message}`,
             },
           ],
           isError: true,
