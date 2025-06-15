@@ -12,6 +12,7 @@ interface EfficientNpmTimeResult {
   officialVersionCount: number;
   totalVersionCount: number;
   last10OfficialReleases: Array<{ version: string; releaseDate: string }>;
+  nextSteps: string[];
 }
 
 export async function npmGetReleases(
@@ -63,6 +64,12 @@ export async function npmGetReleases(
         officialVersionCount: officialVersionEntries.length,
         totalVersionCount: versionEntries.length,
         last10OfficialReleases: sortedOfficialVersions,
+        nextSteps: [
+          `npm_get_exports "${npmData.name}"`,
+          `github_search_repositories "${npmData.name}" stars:>10`,
+          `github_search_commits "${npmData.name}" sort:committer-date`,
+          `npm_get_dependencies "${npmData.name}"`,
+        ],
       };
 
       return createSuccessResult(timeResult);

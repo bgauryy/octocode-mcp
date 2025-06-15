@@ -24,11 +24,30 @@ export async function searchGitHubTopics(
       const execResult = JSON.parse(result.content[0].text as string);
       const content = execResult.result;
 
+      // Parse and analyze results
+      let parsedResults;
+      let totalCount = 0;
+      try {
+        parsedResults = JSON.parse(content);
+        const topics = parsedResults?.items || [];
+        totalCount = Array.isArray(topics) ? topics.length : 0;
+      } catch {
+        parsedResults = content;
+      }
+
       const searchResult: GitHubSearchResult = {
         searchType: 'topics',
         query: params.query || '',
-        results: content,
+        results: parsedResults,
         rawOutput: content,
+        ...(totalCount === 0 && {
+          suggestions: [
+            `npm_search_packages "${params.query || 'package'}"`,
+            `github_search_repositories "${params.query || 'repo'}" stars:>100`,
+            `github_search_code "${params.query || 'code'}" language:javascript`,
+            `github_search_users "${params.query || 'user'}"`,
+          ],
+        }),
       };
 
       return createSuccessResult(searchResult);

@@ -15,7 +15,6 @@ export async function viewRepositoryStructure(
   return withCache(cacheKey, async () => {
     const { owner, repo, branch, path: requestedPath = '' } = params;
     const directoryListing: string[] = [];
-    let apiResponse: any = null;
     let actualBranch = branch;
 
     // Define branch fallback order
@@ -48,7 +47,6 @@ export async function viewRepositoryStructure(
           const items = JSON.parse(execResult.result);
 
           // If we get here, the request succeeded
-          apiResponse = items;
           actualBranch = tryBranch;
           success = true;
 
@@ -104,15 +102,13 @@ export async function viewRepositoryStructure(
       const result: GitHubRepositoryStructureResult = {
         owner,
         repo,
-        branch: actualBranch, // Include the branch that actually worked
+        branch: actualBranch,
         structure: directoryListing,
-        rawOutput: apiResponse,
-        // Add metadata about branch fallback if different from requested
         ...(actualBranch !== branch && {
           branchFallback: {
             requested: branch,
             used: actualBranch,
-            message: `Branch '${branch}' not found, used '${actualBranch}' instead`,
+            message: `Used '${actualBranch}' instead of '${branch}'`,
           },
         }),
       };

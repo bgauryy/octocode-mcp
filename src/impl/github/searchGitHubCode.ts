@@ -99,15 +99,29 @@ export async function searchGitHubCode(
         const searchResult: GitHubSearchResult = {
           searchType: 'code',
           query: params.query || '',
-          actualQuery: actualQuery, // Add the actual constructed query
+          actualQuery: actualQuery,
           results: codeResults,
           rawOutput: rawContent,
           analysis: {
-            summary: `Found ${analysis.totalFound} code matches across ${analysis.repositories.size} repositories`,
+            summary: `${analysis.totalFound} matches across ${analysis.repositories.size} repos`,
             repositories: Array.from(analysis.repositories).slice(0, 10),
             languages: Array.from(analysis.languages),
             fileTypes: Array.from(analysis.fileTypes),
             topMatches: analysis.topMatches.slice(0, 5),
+            ...(analysis.totalFound === 0 && {
+              suggestions: params.owner
+                ? [
+                    `github_search_commits "${params.query}" owner:${params.owner}`,
+                    `github_search_pull_requests "${params.query}" owner:${params.owner}`,
+                    `github_search_issues "${params.query}" owner:${params.owner}`,
+                    `npm_search_packages "${params.query}"`,
+                  ]
+                : [
+                    `npm_search_packages "${params.query}"`,
+                    `github_search_repositories "${params.query}" stars:>10`,
+                    `github_search_topics "${params.query}"`,
+                  ],
+            }),
           },
         };
 

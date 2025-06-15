@@ -64,19 +64,30 @@ export async function npmSearch(
         }
 
         const enhancedResults = {
-          searchQuery: query,
-          resultCount: Array.isArray(searchResults) ? searchResults.length : 0,
-          searchLimitApplied: searchlimit,
+          query,
+          total: Array.isArray(searchResults) ? searchResults.length : 0,
+          limit: searchlimit,
           results: searchResults,
-          searchTips:
-            !searchResults ||
-            (Array.isArray(searchResults) && searchResults.length === 0)
-              ? "Try broader terms like 'react', 'cli', or 'typescript'"
-              : Array.isArray(searchResults) &&
-                  searchResults.length >= searchlimit
-                ? 'Results limited. Use more specific terms to narrow down.'
-                : 'Good result set size for analysis.',
-          timestamp: new Date().toISOString(),
+          ...((!searchResults || searchResults.length === 0) && {
+            suggestions: [
+              `github_search_repositories "${query}" stars:>10`,
+              `github_search_topics "${query}"`,
+              `github_search_code "${query}" language:javascript`,
+            ],
+          }),
+          ...(Array.isArray(searchResults) &&
+            searchResults.length >= searchlimit && {
+              tip: 'Results limited. Use more specific terms.',
+            }),
+          ...(Array.isArray(searchResults) &&
+            searchResults.length > 0 &&
+            searchResults.length < searchlimit && {
+              nextSteps: [
+                `npm_get_exports "${searchResults[0]?.name || query}"`,
+                `github_search_repositories "${searchResults[0]?.name || query}"`,
+                `npm_get_dependencies "${searchResults[0]?.name || query}"`,
+              ],
+            }),
         };
         return createSuccessResult(enhancedResults);
       } catch (parseError) {

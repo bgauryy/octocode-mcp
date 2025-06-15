@@ -94,10 +94,13 @@ export async function fetchGitHubFileContent(
         filePath: params.filePath,
         owner: params.owner,
         repo: params.repo,
-        branch: params.branch,
         content: decodedContent,
         size: decodedContent.length,
-        encoding: 'utf-8',
+        nextSteps: [
+          `github_search_code "${params.filePath.split('/').pop()}" repo:${params.owner}/${params.repo}`,
+          `github_get_contents "${params.owner}/${params.repo}" path:${params.filePath.split('/').slice(0, -1).join('/')}`,
+          `npm_search_packages "${params.owner}"`,
+        ],
       });
     } catch (error) {
       return createErrorResult(

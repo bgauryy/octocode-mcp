@@ -86,88 +86,19 @@ async function checkNpm(): Promise<ApiStatus['npm']> {
   }
 }
 
-async function checkLimits(): Promise<ApiStatus['limits']> {
-  try {
-    const result = await executeGitHubCommand('api', ['rate_limit'], {
-      timeout: 5000,
-    });
-    if (result.isError) {
-      return {
-        core: { remaining: 0, limit: 0 },
-        search: { remaining: 0, limit: 0 },
-        code_search: { remaining: 0, limit: 0 },
-        error: 'Failed to fetch rate limits',
-      };
-    }
-
-    const data = JSON.parse(String(result.content[0]?.text || '{}'));
-    const resources = (data.result || data).resources || {};
-
-    return {
-      core: resources.core || { remaining: 0, limit: 0 },
-      search: resources.search || { remaining: 0, limit: 0 },
-      code_search: resources.code_search || { remaining: 0, limit: 0 },
-    };
-  } catch (error: any) {
-    return {
-      core: { remaining: 0, limit: 0 },
-      search: { remaining: 0, limit: 0 },
-      code_search: { remaining: 0, limit: 0 },
-      error: `Limits check failed: ${error.message}`,
-    };
-  }
-}
-
-function getRecommendations(status: ApiStatus): string[] {
-  const recs: string[] = [];
-
-  if (!status.github.authenticated) {
-    recs.push('❌ Run: gh auth login');
-  }
-  if (!status.npm.connected) {
-    recs.push('⚠️ NPM unavailable - GitHub only mode');
-  }
-  if (status.limits.code_search.remaining < 5) {
-    recs.push('🔍 Code search limited - use browsing');
-  }
-  if (status.limits.search.remaining < 20) {
-    recs.push('🔎 Search limited - reduce scope');
-  }
-  if (status.limits.core.remaining < 200) {
-    recs.push('🏠 API limited - minimize operations');
-  }
-
-  return recs;
-}
-
 async function checkApiStatus(): Promise<CallToolResult> {
   try {
-    const [github, npm, limits] = await Promise.all([
-      checkGitHub(),
-      checkNpm(),
-      checkLimits(),
-    ]);
+    const [github, npm] = await Promise.all([checkGitHub(), checkNpm()]);
 
-    const status: ApiStatus = {
-      github,
-      npm,
-      limits,
-      status: github.authenticated
-        ? limits.error
-          ? 'limited'
-          : 'ready'
-        : 'not_ready',
-      recommendations: getRecommendations({
-        github,
-        npm,
-        limits,
-        status: 'ready',
-        recommendations: [],
-      }),
+    const optimizedStatus = {
+      github: github.authenticated,
+      npm: npm.connected,
     };
 
     return {
-      content: [{ type: 'text', text: JSON.stringify(status, null, 2) }],
+      content: [
+        { type: 'text', text: JSON.stringify(optimizedStatus, null, 2) },
+      ],
       isError: false,
     };
   } catch (error: any) {

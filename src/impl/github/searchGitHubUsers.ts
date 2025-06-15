@@ -24,11 +24,30 @@ export async function searchGitHubUsers(
       const execResult = JSON.parse(result.content[0].text as string);
       const content = execResult.result;
 
+      // Parse and analyze results
+      let parsedResults;
+      let totalCount = 0;
+      try {
+        parsedResults = JSON.parse(content);
+        const users = parsedResults?.items || [];
+        totalCount = Array.isArray(users) ? users.length : 0;
+      } catch {
+        parsedResults = content;
+      }
+
       const searchResult: GitHubSearchResult = {
         searchType: 'users',
         query: params.query || '',
-        results: content,
+        results: parsedResults,
         rawOutput: content,
+        ...(totalCount === 0 && {
+          suggestions: [
+            `npm_search_packages "${params.query || 'package'}"`,
+            `github_search_repositories "${params.query || 'repo'}" user:${params.query}`,
+            `github_search_topics "${params.query || 'topic'}"`,
+            `github_search_code "${params.query || 'code'}" language:javascript`,
+          ],
+        }),
       };
 
       return createSuccessResult(searchResult);

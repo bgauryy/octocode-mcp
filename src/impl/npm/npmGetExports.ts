@@ -51,6 +51,8 @@ interface ComprehensiveNpmExportsResult {
     hasReactSupport: boolean;
     moduleStructure: 'single' | 'multi' | 'complex';
   };
+
+  nextSteps: string[];
 }
 
 export async function npmGetExports(
@@ -111,6 +113,14 @@ export async function npmGetExports(
           searchTargets,
         },
         analysisContext,
+        nextSteps: [
+          `github_search_code "${searchTargets.apiKeywords[0]}" path:src/`,
+          `github_search_repositories "${npmData.name}" stars:>10`,
+          `npm_get_dependencies "${npmData.name}"`,
+          ...(searchTargets.entryFiles.length > 0
+            ? [`github_search_code filename:${searchTargets.entryFiles[0]}`]
+            : []),
+        ],
       };
 
       return createSuccessResult(exportsResult);

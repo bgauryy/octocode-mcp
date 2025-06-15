@@ -26,11 +26,31 @@ export async function searchGitHubCommits(
       const execResult = JSON.parse(result.content[0].text as string);
       const content = execResult.result;
 
+      // Parse and analyze results
+      let parsedResults;
+      let totalCount = 0;
+      try {
+        parsedResults = JSON.parse(content);
+        totalCount = Array.isArray(parsedResults) ? parsedResults.length : 0;
+      } catch {
+        parsedResults = content;
+      }
+
       const searchResult: GitHubSearchResult = {
         searchType: 'commits',
         query: params.query || '',
-        results: content,
+        results: parsedResults,
         rawOutput: content,
+        ...(totalCount === 0 && {
+          suggestions: [
+            `npm_search_packages "${params.query || 'package'}"`,
+            `github_search_pull_requests "${params.query || 'pr'}"`,
+            `github_search_issues "${params.query || 'issue'}"`,
+            ...(params.owner
+              ? [`github_search_code "${params.query}" owner:${params.owner}`]
+              : []),
+          ],
+        }),
       };
 
       return createSuccessResult(searchResult);

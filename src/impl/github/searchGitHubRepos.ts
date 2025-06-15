@@ -89,17 +89,28 @@ export async function searchGitHubRepos(
       }
 
       return createSuccessResult({
-        totalRepositories: analysis.totalFound,
-        languages: Array.from(analysis.languages).slice(0, 10), // Top 10 languages
-        averageStars: analysis.avgStars,
-        recentlyUpdated: analysis.recentlyUpdated,
-        topRepositories: analysis.topStarred,
+        total: analysis.totalFound,
+        ...(analysis.totalFound > 0
+          ? {
+              languages: Array.from(analysis.languages).slice(0, 10),
+              avgStars: analysis.avgStars,
+              recentlyUpdated: analysis.recentlyUpdated,
+              topRepositories: analysis.topStarred,
+            }
+          : {
+              suggestions: [
+                `npm_search_packages "${params.query || 'package'}"`,
+                `github_search_topics "${params.query || 'topic'}"`,
+                `github_search_code "${params.query || 'code'}" language:javascript`,
+                ...(params.query
+                  ? [`github_search_users "${params.query}"`]
+                  : []),
+              ],
+            }),
         searchParams: {
           query: params.query,
           owner: params.owner,
           language: params.language,
-          stars: params.stars,
-          updated: params.updated,
         },
       });
     } catch (error) {
