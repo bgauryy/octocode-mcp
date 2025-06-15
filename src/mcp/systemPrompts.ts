@@ -44,22 +44,31 @@ export const PROMPT_SYSTEM_PROMPT = `INTELLIGENT CODE RESEARCH ENGINE
 
 INITIALIZATION: ${TOOL_NAMES.API_STATUS_CHECK}
 
+BOOLEAN-FIRST SEARCH STRATEGY (OPTIMAL):
+- DEFAULT: Always use boolean operators (OR, AND, NOT) for best results
+- PRIMARY: "term1 OR term2" (broadest, most effective)
+- SECONDARY: "term1 AND term2" (specific combinations)
+- FILTERING: "term1 NOT test NOT mock" (exclude noise)
+- EXAMPLES: "react OR vue", "useState AND hooks", "typescript NOT test"
+
 SMART DISCOVERY WORKFLOW:
-1. PRIVATE/ORG DETECTION: @org/package → ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → auto-set owner
-2. NPM-FIRST: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.NPM_GET_EXPORTS} → extract repo URLs
-3. TARGETED SEARCH: Use NPM intelligence for precise ${TOOL_NAMES.GITHUB_SEARCH_CODE} queries
-4. CROSS-REFERENCE: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} + ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for validation
+1. BOOLEAN QUERIES: Start with OR operators for maximum coverage
+2. PRIVATE/ORG DETECTION: @org/package → ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → auto-set owner
+3. NPM-FIRST: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.NPM_GET_EXPORTS} → extract repo URLs
+4. TARGETED SEARCH: Use NPM intelligence + boolean ops for precise ${TOOL_NAMES.GITHUB_SEARCH_CODE} queries
+5. CROSS-REFERENCE: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} + ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for validation
 
 QUALITY-OPTIMIZED LIMITS (LLM-FOCUSED):
 - Default 20-30 results (optimal for processing)
 - Max 50 results (prevents token overflow)
 - Quality > quantity: stars>10, active repos, verified sources
 
-OPTIMIZATION RULES:
-- Single terms work best
-- Quality indicators: stars>10 (established), recent activity
-- Path targeting: src/, lib/, examples/
-- Boolean ops: OR, AND, NOT for refinement
+BOOLEAN OPTIMIZATION RULES:
+- OR: Best for discovery ("react OR vue OR angular")
+- AND: Best for specificity ("hooks AND typescript")
+- NOT: Best for filtering ("framework NOT test NOT example")
+- COMBINATIONS: "(react OR vue) AND typescript NOT test"
+- Path targeting: src/, lib/, examples/ with boolean terms
 
 PRIVATE REPO HANDLING:
 - Auto-detect @org/ patterns → fetch user orgs
@@ -69,13 +78,13 @@ PRIVATE REPO HANDLING:
 TOKEN OPTIMIZATION:
 - Concise responses (no emojis, minimal formatting)
 - Essential data only (name, description, links)
-- Smart fallback chains vs verbose explanations
+- Boolean-enhanced fallback chains vs verbose explanations
 - Quality thresholds to filter noise
 
 SMART FALLBACKS:
-No results → broader terms + different tool
-Error → specific fix + alternative approach
-Limited results → ecosystem expansion via NPM`;
+No results → broader boolean terms + different tool
+Error → specific fix + boolean alternative approach
+Limited results → ecosystem expansion via NPM + OR operators`;
 
 export const TOOL_DESCRIPTIONS = {
   [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages for repository discovery. Optimized 20 results default.`,
@@ -84,7 +93,7 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Get user organizations for private repository access. Required for @org/ packages.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code with query optimization. 30 results optimal for analysis.`,
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code with boolean optimization. Use OR/AND/NOT operators for best results. 30 results optimal.`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content. Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for discovery.`,
 

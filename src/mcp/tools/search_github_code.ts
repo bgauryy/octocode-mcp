@@ -20,15 +20,19 @@ function enhanceQuery(query: string): string[] {
     enhanced.push(cleaned);
   }
 
-  // Add simple boolean variations if no operators present
+  // Add simple boolean variations for multi-word queries
+  // Only enhance if no operators are present and it's a reasonable multi-word search
   const hasBoolean = /\b(OR|AND|NOT)\b/i.test(query);
-  if (!hasBoolean && query.split(' ').length <= 3) {
-    const terms = query.split(' ').filter(t => t.length > 2);
-    if (terms.length === 2) {
-      enhanced.push(`${terms[0]} OR ${terms[1]}`);
-      enhanced.push(`${terms[0]} AND ${terms[1]} NOT test`);
-    } else if (terms.length === 1) {
-      enhanced.push(`${terms[0]} NOT test NOT mock`);
+  const words = query.split(/\s+/).filter(word => word.length > 2);
+
+  if (!hasBoolean && words.length >= 2 && words.length <= 4) {
+    // For code searches, OR is often more effective than AND
+    if (words.length === 2) {
+      enhanced.push(`${words[0]} OR ${words[1]}`);
+    } else if (words.length === 3) {
+      // Try combining first two words with OR, keep third with AND
+      enhanced.push(`(${words[0]} OR ${words[1]}) ${words[2]}`);
+      enhanced.push(`${words[0]} OR ${words[1]} OR ${words[2]}`);
     }
   }
 
@@ -61,11 +65,16 @@ function applyIntelligence(
     }
   }
 
-  // Apply package context
+  // Apply package context - but don't auto-add restrictive filters
   if (intelligence.analysisContext) {
-    // Focus on relevant file types
-    if (intelligence.analysisContext.hasTypeSupport && !args.extension) {
-      args.extension = 'ts';
+    // Only suggest language filter if user hasn't specified one
+    // Don't automatically apply it as it makes searches too restrictive
+    if (
+      intelligence.analysisContext.hasTypeSupport &&
+      !args.extension &&
+      !args.language
+    ) {
+      // Just a hint, don't auto-apply: args.extension = 'ts';
     }
   }
 

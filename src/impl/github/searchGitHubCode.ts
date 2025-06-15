@@ -97,7 +97,7 @@ export async function searchGitHubCode(
         }
 
         // Format comprehensive results
-        const searchResult: GitHubSearchResult = {
+        const searchResult = {
           searchType: 'code',
           query: params.query || '',
           actualQuery: actualQuery,
@@ -111,10 +111,9 @@ export async function searchGitHubCode(
             ...(analysis.totalFound === 0 && {
               suggestions: params.owner
                 ? [
-                    `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${params.query}" owner:${params.owner}`,
-                    `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query}" owner:${params.owner}`,
-                    `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${params.query}" owner:${params.owner}`,
                     `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query}"`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query}" stars:>10`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query}"`,
                   ]
                 : [
                     `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query}"`,
@@ -124,19 +123,6 @@ export async function searchGitHubCode(
             }),
           },
         };
-
-        // Add organizational fallback guidance for zero results
-        if (analysis.totalFound === 0 && params.owner) {
-          searchResult.organizationalFallback = {
-            suggestion: `No code matches found for "${params.query}" in ${params.owner}. Try organizational fallback strategy:`,
-            fallbackSteps: [
-              `Search commits: "${params.query}" with owner:${params.owner}`,
-              `Search pull requests: "${params.query}" with owner:${params.owner}`,
-              `Search issues: "${params.query}" with owner:${params.owner}`,
-              'Extract repository references from any successful results',
-            ],
-          };
-        }
 
         return createSuccessResult(searchResult);
       } catch (parseError) {
@@ -220,8 +206,11 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
         queryParts.push(`path:${needsQuoting(path) ? `"${path}"` : path}`);
       }
     } else {
-      // Simple search terms - quote if contains spaces or special characters
-      queryParts.push(needsQuoting(query) ? `"${query}"` : query);
+      // Simple search terms - be smart about quoting
+      // Only quote if it contains special characters that need escaping
+      // Don't quote simple multi-word searches as they work better without quotes
+      const shouldQuote = /[()<>{}[\]\\|&;]/.test(query) || query.includes('"');
+      queryParts.push(shouldQuote ? `"${query}"` : query);
 
       // Build repository/organization qualifiers
       if (params.owner && params.repo) {
@@ -230,7 +219,8 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
         queryParts.push(`org:${params.owner}`);
       }
 
-      // Add language qualifier (following GitHub CLI patterns)
+      // Add language qualifier only if explicitly requested
+      // Don't auto-add language filtering to avoid over-restrictive searches
       if (params.language) {
         const lang = params.language.toLowerCase().trim();
         queryParts.push(`language:${lang}`);
@@ -244,7 +234,7 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
         );
       }
 
-      // Add extension qualifier (convert to path pattern)
+      // Add extension qualifier
       if (params.extension) {
         const ext = params.extension.startsWith('.')
           ? params.extension.slice(1)
