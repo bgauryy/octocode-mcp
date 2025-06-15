@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { GitHubCommitsSearchParams, GitHubSearchResult } from '../../types';
+import { GitHubCommitsSearchParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
@@ -37,11 +37,11 @@ export async function searchGitHubCommits(
         parsedResults = content;
       }
 
-      const searchResult: GitHubSearchResult = {
+      // Return the parsed results directly without wrapping in GitHubSearchResult
+      return createSuccessResult({
         searchType: 'commits',
         query: params.query || '',
         results: parsedResults,
-        rawOutput: content,
         ...(totalCount === 0 && {
           suggestions: [
             `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
@@ -54,9 +54,7 @@ export async function searchGitHubCommits(
               : []),
           ],
         }),
-      };
-
-      return createSuccessResult(searchResult);
+      });
     } catch (error) {
       return createErrorResult('Failed to search GitHub commits', error);
     }

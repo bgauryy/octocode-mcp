@@ -130,7 +130,6 @@ export interface GitHubSearchResult {
   actualQuery?: string;
   totalCount?: number;
   results: string | any[];
-  rawOutput: string;
   analysis?: {
     summary: string;
     repositories?: string[];
@@ -157,7 +156,6 @@ export interface GitHubReposSearchResult {
   query: string;
   totalCount?: number;
   results: string;
-  rawOutput: string;
   metadata?: {
     totalRepositories: number;
     languages: string[];
@@ -187,7 +185,6 @@ export interface GitHubRepositoryViewResult {
   owner: string;
   repo: string;
   repositoryInfo: string;
-  rawOutput: string;
 }
 
 export interface NpmDistTags {
@@ -463,7 +460,6 @@ export interface GitHubRepositoryStructureResult {
   repo: string;
   branch: string;
   structure: string[];
-  rawOutput?: any;
   branchFallback?: {
     requested: string;
     used: string;

@@ -1,4 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { TOOL_NAMES } from '../mcp/systemPrompts';
 
 /**
  * Determines if a string needs quoting for GitHub search
@@ -141,4 +142,59 @@ export function createSmartError(
     ],
     isError: true,
   };
+}
+
+// Helper function to create standardized success responses
+export function createStandardResponse(args: {
+  searchType: string;
+  query: string | undefined;
+  data: any;
+  totalResults?: number;
+  failureSuggestions?: string[];
+}): CallToolResult {
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(
+          {
+            searchType: args.searchType,
+            query: args.query,
+            results: args.data,
+            ...(args.totalResults !== undefined && {
+              totalResults: args.totalResults,
+            }),
+            ...(args.failureSuggestions &&
+              args.failureSuggestions.length > 0 && {
+                suggestions: args.failureSuggestions,
+              }),
+          },
+          null,
+          2
+        ),
+      },
+    ],
+    isError: false,
+  };
+}
+
+// Helper function to generate standard suggestions
+export function generateStandardSuggestions(
+  query: string,
+  excludeTools: string[] = []
+): string[] {
+  const allSuggestions = [
+    `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_USERS} "${query}"`,
+    `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}"`,
+  ];
+
+  return allSuggestions
+    .filter(suggestion => !excludeTools.some(tool => suggestion.includes(tool)))
+    .slice(0, 3);
 }

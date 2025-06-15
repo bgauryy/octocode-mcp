@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { createStandardResponse } from '../../impl/util';
 import { npmGetDependencies } from '../../impl/npm/npmGetDependencies';
 
 export function registerNpmGetDependenciesTool(server: McpServer) {
@@ -23,7 +24,18 @@ export function registerNpmGetDependenciesTool(server: McpServer) {
     },
     async (args: { packageName: string }) => {
       try {
-        return await npmGetDependencies(args.packageName);
+        const result = await npmGetDependencies(args.packageName);
+
+        if (result.content && result.content[0] && !result.isError) {
+          const data = JSON.parse(result.content[0].text as string);
+          return createStandardResponse({
+            searchType: SEARCH_TYPES.NPM_DEPENDENCIES,
+            query: args.packageName,
+            data: data,
+          });
+        }
+
+        return result;
       } catch (error) {
         return {
           content: [

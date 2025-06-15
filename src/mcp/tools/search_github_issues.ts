@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubIssuesSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import {
+  createStandardResponse,
+  generateStandardSuggestions,
+} from '../../impl/util';
 import { searchGitHubIssues } from '../../impl/github/searchGitHubIssues';
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
@@ -179,52 +183,43 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       try {
         const result = await searchGitHubIssues(args);
 
-        // Check for empty results and enhance with smart suggestions
-        if (result.content && result.content[0]) {
+        // Check if we have a successful result with content
+        if (result.content && result.content[0] && !result.isError) {
           const responseText = result.content[0].text as string;
-          let resultCount = 0;
 
           try {
-            const parsed = JSON.parse(responseText);
-            if (parsed.rawOutput) {
-              const rawData = JSON.parse(parsed.rawOutput);
-              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            const data = JSON.parse(responseText);
+
+            // If we have results, return them directly
+            if (data.results) {
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.ISSUES,
+                query: args.query,
+                data: data.results,
+                failureSuggestions: data.suggestions,
+              });
             }
-          } catch {
-            // If parsing fails, estimate from text
-            const lines = responseText.split('\n').filter(line => line.trim());
-            resultCount = Math.max(0, lines.length - 5);
+          } catch (parseError) {
+            // If parsing fails, return the raw response
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.ISSUES,
+              query: args.query,
+              data: responseText,
+            });
           }
-
-          // Provide structured summary for better usability
-          const summary = {
-            query: args.query,
-            owner: args.owner || 'All repositories',
-            totalResults: resultCount,
-            timestamp: new Date().toISOString(),
-            ...(resultCount === 0 && {
-              suggestions: [
-                'Try broader search terms',
-                'Remove owner filter for global search',
-                'Check for typos in search query',
-                'Use different keywords or labels',
-              ],
-            }),
-          };
-
-          // Return properly formatted text content instead of invalid "json" type
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `# GitHub Issues Search Results\n\n## Summary\n${JSON.stringify(summary, null, 2)}\n\n## Raw Data\n${responseText}`,
-              },
-            ],
-            isError: false,
-          };
         }
 
-        return result;
+        // If no results or error, generate suggestions
+        const suggestions = generateStandardSuggestions(args.query, [
+          TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        ]);
+
+        return createStandardResponse({
+          searchType: SEARCH_TYPES.ISSUES,
+          query: args.query,
+          data: [],
+          failureSuggestions: suggestions,
+        });
       } catch (error) {
         return {
           content: [

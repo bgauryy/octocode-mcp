@@ -1,8 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createStandardResponse } from '../../impl/util';
 
 interface ApiStatus {
   github: {
@@ -95,12 +96,11 @@ async function checkApiStatus(): Promise<CallToolResult> {
       npm: npm.connected,
     };
 
-    return {
-      content: [
-        { type: 'text', text: JSON.stringify(optimizedStatus, null, 2) },
-      ],
-      isError: false,
-    };
+    return createStandardResponse({
+      searchType: SEARCH_TYPES.API_STATUS,
+      query: undefined,
+      data: optimizedStatus,
+    });
   } catch (error: any) {
     return {
       content: [

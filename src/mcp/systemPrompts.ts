@@ -22,6 +22,24 @@ export const TOOL_NAMES = {
   NPM_GET_EXPORTS: 'npm_get_exports',
 };
 
+export const SEARCH_TYPES = {
+  API_STATUS: 'api_status',
+  ORGANIZATIONS: 'organizations',
+  CODE: 'code',
+  REPOSITORIES: 'repositories',
+  COMMITS: 'commits',
+  ISSUES: 'issues',
+  PULL_REQUESTS: 'prs',
+  TOPICS: 'topics',
+  USERS: 'users',
+  CONTENTS: 'contents',
+  FILE_CONTENT: 'file_content',
+  NPM_PACKAGES: 'npm_packages',
+  NPM_DEPENDENCIES: 'npm_dependencies',
+  NPM_RELEASES: 'npm_releases',
+  NPM_EXPORTS: 'npm_exports',
+} as const;
+
 export const PROMPT_SYSTEM_PROMPT = `INTELLIGENT CODE RESEARCH ENGINE
 
 INITIALIZATION: ${TOOL_NAMES.API_STATUS_CHECK}

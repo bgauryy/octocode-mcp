@@ -1,8 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GithubFetchRequestParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { fetchGitHubFileContent } from '../../impl/github/fetchGitHubFileContent';
+import { createStandardResponse } from '../../impl/util';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.tool(
@@ -92,18 +93,34 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         // Enhance successful response with minimal metadata
         if (result.content?.[0] && !result.isError) {
           const content = result.content[0].text as string;
-          const lines = content.split('\n').length;
-          const size = content.length;
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `File: ${args.filePath} (${lines} lines, ${size} bytes)\n\`\`\`\n${content}\n\`\`\``,
+          try {
+            const data = JSON.parse(content);
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.FILE_CONTENT,
+              query: args.filePath,
+              data: data,
+            });
+          } catch (parseError) {
+            // If not JSON, treat as plain text content
+            const lines = content.split('\n').length;
+            const size = content.length;
+
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.FILE_CONTENT,
+              query: args.filePath,
+              data: {
+                filePath: args.filePath,
+                owner: args.owner,
+                repo: args.repo,
+                branch: args.branch,
+                content: content,
+                size: size,
+                lines: lines,
+                encoding: 'utf-8',
               },
-            ],
-            isError: false,
-          };
+            });
+          }
         }
 
         return result;

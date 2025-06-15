@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { getUserOrganizations } from '../../impl/github/getUserOrganizations';
-import { createOptimizedError } from '../../impl/util';
+import { createOptimizedError, createStandardResponse } from '../../impl/util';
 
 export function registerGetUserOrganizationsTool(server: McpServer) {
   server.tool(
@@ -54,8 +54,8 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
 
           try {
             const parsed = JSON.parse(responseText);
-            if (parsed.rawOutput) {
-              const rawData = JSON.parse(parsed.rawOutput);
+            if (parsed.results) {
+              const rawData = JSON.parse(parsed.results);
               orgCount = Array.isArray(rawData) ? rawData.length : 0;
             }
           } catch {
@@ -78,15 +78,12 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
             }),
           };
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `# User Organizations\n\n## Summary\n${JSON.stringify(summary, null, 2)}\n\n## Raw Data\n${responseText}\n\n## Usage Guide\n• Use organization names as 'owner' parameter in repository searches\n• Organizations enable access to private repositories\n• Essential for enterprise GitHub exploration`,
-              },
-            ],
-            isError: false,
-          };
+          return createStandardResponse({
+            searchType: SEARCH_TYPES.ORGANIZATIONS,
+            query: undefined,
+            data: responseText,
+            totalResults: summary.totalOrganizations,
+          });
         }
 
         return result;

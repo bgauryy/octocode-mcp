@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubTopicsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import {
+  createStandardResponse,
+  generateStandardSuggestions,
+} from '../../impl/util';
 import { searchGitHubTopics } from '../../impl/github/searchGitHubTopics';
 
 export function registerSearchGitHubTopicsTool(server: McpServer) {
@@ -72,61 +76,43 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
       try {
         const result = await searchGitHubTopics(args);
 
-        // Check for empty results and enhance with smart suggestions
-        if (result.content && result.content[0]) {
-          let responseText = result.content[0].text as string;
-          let resultCount = 0;
+        // Check if we have a successful result with content
+        if (result.content && result.content[0] && !result.isError) {
+          const responseText = result.content[0].text as string;
 
           try {
-            const parsed = JSON.parse(responseText);
-            if (parsed.rawOutput) {
-              const rawData = JSON.parse(parsed.rawOutput);
-              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            const data = JSON.parse(responseText);
+
+            // If we have results, return them directly
+            if (data.results) {
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.TOPICS,
+                query: args.query,
+                data: data.results,
+                failureSuggestions: data.suggestions,
+              });
             }
-          } catch {
-            const lines = responseText.split('\n').filter(line => line.trim());
-            resultCount = Math.max(0, lines.length - 5);
+          } catch (parseError) {
+            // If parsing fails, return the raw response
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.TOPICS,
+              query: args.query,
+              data: responseText,
+            });
           }
-
-          if (resultCount === 0) {
-            responseText += `
-
-NO TOPICS FOUND RECOVERY:
-• Try simpler terms: "${args.query}" → single technology keywords
-• Ecosystem discovery: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for related packages
-• Repository search: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for projects using these topics
-• User community: ${TOOL_NAMES.GITHUB_SEARCH_USERS} for topic experts
-
-TOPIC SEARCH OPTIMIZATION:
-• Use popular technology terms: "react", "javascript", "python"
-• Try compound topics: "machine-learning", "web-development"
-• Focus on featured topics: featured=true
-
-RECOMMENDED DISCOVERY CHAIN:
-1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} - Find packages in this domain
-2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Discover projects using these topics
-3. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find implementations using topic technologies`;
-          } else if (resultCount <= 3) {
-            responseText += `
-
-LIMITED TOPICS ENHANCEMENT:
-• Found ${resultCount} topics - try broader or more popular terms
-• Ecosystem expansion: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for related technologies
-• Project discovery: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for topic implementation`;
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: responseText,
-              },
-            ],
-            isError: false,
-          };
         }
 
-        return result;
+        // If no results or error, generate suggestions
+        const suggestions = generateStandardSuggestions(args.query, [
+          TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        ]);
+
+        return createStandardResponse({
+          searchType: SEARCH_TYPES.TOPICS,
+          query: args.query,
+          data: [],
+          failureSuggestions: suggestions,
+        });
       } catch (error) {
         return {
           content: [

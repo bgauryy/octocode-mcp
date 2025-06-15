@@ -1,9 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubReposSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { searchGitHubRepos } from '../../impl/github/searchGitHubRepos';
-import { detectOrganizationalQuery, createSmartError } from '../../impl/util';
+import {
+  detectOrganizationalQuery,
+  createSmartError,
+  createStandardResponse,
+  generateStandardSuggestions,
+} from '../../impl/util';
 
 // Security validation function
 function sanitizeInput(input: string): string {
@@ -193,41 +198,24 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         // Check if we got results and provide helpful guidance
         const resultText = result.content[0].text as string;
-        let resultCount = 0;
-        let hasResults = false;
+        const resultCount = 0;
 
         try {
           const parsedResults = JSON.parse(resultText);
+          const suggestions =
+            resultCount === 0
+              ? generateStandardSuggestions(args.query, [
+                  TOOL_NAMES.GITHUB_SEARCH_REPOS,
+                ])
+              : [];
 
-          // Check multiple possible result structures
-          if (parsedResults.rawOutput) {
-            const rawData = JSON.parse(parsedResults.rawOutput);
-            resultCount = Array.isArray(rawData) ? rawData.length : 0;
-            hasResults = resultCount > 0;
-          } else if (parsedResults.topRepositories) {
-            resultCount = Array.isArray(parsedResults.topRepositories)
-              ? parsedResults.topRepositories.length
-              : 0;
-            hasResults = resultCount > 0;
-          } else if (parsedResults.total) {
-            resultCount = parsedResults.total;
-            hasResults = resultCount > 0;
-          }
-
-          // Fallback: check if the result text contains repository data
-          if (
-            !hasResults &&
-            (resultText.includes('"name":') ||
-              resultText.includes('"url":"https://github.com/') ||
-              resultText.includes('topRepositories'))
-          ) {
-            hasResults = true;
-            // Try to extract count from text patterns
-            const nameMatches = resultText.match(/"name":/g);
-            if (nameMatches) {
-              resultCount = nameMatches.length;
-            }
-          }
+          return createStandardResponse({
+            searchType: SEARCH_TYPES.REPOSITORIES,
+            query: args.query,
+            data: parsedResults,
+            totalResults: resultCount,
+            failureSuggestions: suggestions,
+          });
         } catch (parseError) {
           // If JSON parsing fails, check for error indicators
           if (
@@ -238,42 +226,18 @@ export function registerSearchGitHubReposTool(server: McpServer) {
             throw new Error(`GitHub CLI error: ${resultText}`);
           }
 
-          // Check if there's still repository data in the text
-          hasResults =
-            resultText.includes('"name":') ||
-            resultText.includes('github.com/');
+          // Return as-is if we can't parse but it's not an error
+          const suggestions = generateStandardSuggestions(args.query, [
+            TOOL_NAMES.GITHUB_SEARCH_REPOS,
+          ]);
+
+          return createStandardResponse({
+            searchType: SEARCH_TYPES.REPOSITORIES,
+            query: args.query,
+            data: resultText,
+            failureSuggestions: suggestions,
+          });
         }
-
-        let responseText = resultText;
-
-        // Add concise optimization notes
-        if (queryAnalysis.shouldDecompose) {
-          responseText += `\nQuery simplified: "${args.query}" → "${queryAnalysis.primaryTerm}"`;
-        }
-
-        if (orgInfo.needsOrgAccess && smartArgs.owner) {
-          responseText += `\nOrg detected: ${orgInfo.orgName}`;
-        }
-
-        // Add concise result context ONLY if we're certain about the status
-        if (!hasResults && resultCount === 0) {
-          responseText += `\nNo results found`;
-        } else if (hasResults && resultCount > 50) {
-          responseText += `\nBroad results (${resultCount}) - add filters`;
-        } else if (hasResults && resultCount > 0) {
-          responseText += `\nFound ${resultCount} repositories`;
-        }
-        // If uncertain about results, don't add any status message
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: responseText,
-            },
-          ],
-          isError: false,
-        };
       } catch (error) {
         return createSmartError(
           TOOL_NAMES.GITHUB_SEARCH_REPOS,

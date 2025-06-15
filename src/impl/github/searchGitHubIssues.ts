@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { GitHubSearchResult, GitHubIssuesSearchParams } from '../../types';
+import { GitHubIssuesSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 
 export async function searchGitHubIssues(
@@ -34,11 +34,11 @@ export async function searchGitHubIssues(
         parsedResults = content;
       }
 
-      const searchResult: GitHubSearchResult = {
+      // Return the parsed results directly without wrapping in GitHubSearchResult
+      return createSuccessResult({
         searchType: 'issues',
         query: params.query || '',
         results: parsedResults,
-        rawOutput: content,
         ...(totalCount === 0 && {
           suggestions: [
             `npm_search_packages "${params.query || 'issue'}"`,
@@ -49,9 +49,7 @@ export async function searchGitHubIssues(
               : []),
           ],
         }),
-      };
-
-      return createSuccessResult(searchResult);
+      });
     } catch (error) {
       return createErrorResult('Failed to search GitHub issues', error);
     }

@@ -1,9 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { GitHubCodeSearchParams } from '../../types';
 import { searchGitHubCode } from '../../impl/github/searchGitHubCode';
-import { detectOrganizationalQuery, createSmartError } from '../../impl/util';
+import {
+  detectOrganizationalQuery,
+  createSmartError,
+  generateStandardSuggestions,
+  createStandardResponse,
+} from '../../impl/util';
 
 // Simple query enhancement for better results
 function enhanceQuery(query: string): string[] {
@@ -194,7 +199,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
             : [enhancedArgs.query];
 
         let result: any = null;
-        let usedQuery = enhancedArgs.query;
 
         // Try queries in order of preference
         for (const query of queryVariations) {
@@ -207,7 +211,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
               try {
                 JSON.parse(testResult.content[0].text as string);
                 result = testResult;
-                usedQuery = query;
                 break;
               } catch {
                 continue;
@@ -229,27 +232,33 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 
         // Enhance response with concise context
         if (result.content && result.content[0]) {
-          let responseText = result.content[0].text as string;
+          const responseText = result.content[0].text as string;
 
-          // Add transformation note if query was modified
-          if (usedQuery !== args.query) {
-            responseText += `\nOptimized: "${args.query}" → "${usedQuery}"`;
+          try {
+            const data = JSON.parse(responseText);
+            const suggestions = generateStandardSuggestions(args.query, [
+              TOOL_NAMES.GITHUB_SEARCH_CODE,
+            ]);
+
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.CODE,
+              query: args.query,
+              data: data,
+              failureSuggestions: suggestions,
+            });
+          } catch (parseError) {
+            // If we can't parse, return as-is
+            const suggestions = generateStandardSuggestions(args.query, [
+              TOOL_NAMES.GITHUB_SEARCH_CODE,
+            ]);
+
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.CODE,
+              query: args.query,
+              data: responseText,
+              failureSuggestions: suggestions,
+            });
           }
-
-          // Add org detection context
-          if (orgInfo.needsOrgAccess && smartArgs.owner) {
-            responseText += `\nOrg detected: ${orgInfo.orgName}`;
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: responseText,
-              },
-            ],
-            isError: false,
-          };
         }
 
         return result;

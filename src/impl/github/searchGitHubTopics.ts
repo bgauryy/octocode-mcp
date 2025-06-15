@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { GitHubSearchResult, GitHubTopicsSearchParams } from '../../types';
+import { GitHubTopicsSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
 import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
@@ -36,11 +36,11 @@ export async function searchGitHubTopics(
         parsedResults = content;
       }
 
-      const searchResult: GitHubSearchResult = {
+      // Return the parsed results directly without wrapping in GitHubSearchResult
+      return createSuccessResult({
         searchType: 'topics',
         query: params.query || '',
         results: parsedResults,
-        rawOutput: content,
         ...(totalCount === 0 && {
           suggestions: [
             `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
@@ -49,9 +49,7 @@ export async function searchGitHubTopics(
             `${TOOL_NAMES.GITHUB_SEARCH_USERS} "${params.query || 'user'}"`,
           ],
         }),
-      };
-
-      return createSuccessResult(searchResult);
+      });
     } catch (error) {
       return createErrorResult('Failed to search GitHub topics', error);
     }

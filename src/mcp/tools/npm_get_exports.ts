@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { createStandardResponse } from '../../impl/util';
 import { npmGetExports } from '../../impl/npm/npmGetExports';
 
 export function registerNpmGetExportsTool(server: McpServer) {
@@ -23,7 +24,18 @@ export function registerNpmGetExportsTool(server: McpServer) {
     },
     async (args: { packageName: string }) => {
       try {
-        return await npmGetExports(args.packageName);
+        const result = await npmGetExports(args.packageName);
+
+        if (result.content && result.content[0] && !result.isError) {
+          const data = JSON.parse(result.content[0].text as string);
+          return createStandardResponse({
+            searchType: SEARCH_TYPES.NPM_EXPORTS,
+            query: args.packageName,
+            data: data,
+          });
+        }
+
+        return result;
       } catch (error) {
         return {
           content: [

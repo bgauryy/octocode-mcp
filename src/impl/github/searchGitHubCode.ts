@@ -102,7 +102,6 @@ export async function searchGitHubCode(
           query: params.query || '',
           actualQuery: actualQuery,
           results: codeResults,
-          rawOutput: rawContent,
           analysis: {
             summary: `${analysis.totalFound} matches across ${analysis.repositories.size} repos`,
             repositories: Array.from(analysis.repositories).slice(0, 10),
@@ -147,7 +146,6 @@ export async function searchGitHubCode(
           query: params.query || '',
           actualQuery: actualQuery,
           results: rawContent,
-          rawOutput: rawContent,
         };
         return createSuccessResult(searchResult);
       }

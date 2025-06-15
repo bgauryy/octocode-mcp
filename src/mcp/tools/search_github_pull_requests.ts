@@ -1,9 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubPullRequestsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
-import { createSmartError } from '../../impl/util';
+import {
+  createSmartError,
+  createStandardResponse,
+  generateStandardSuggestions,
+} from '../../impl/util';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
@@ -166,78 +170,43 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
 
         const result = await searchGitHubPullRequests(args);
 
-        // Check for empty results and enhance with smart suggestions
-        if (result.content && result.content[0]) {
+        // Check if we have a successful result with content
+        if (result.content && result.content[0] && !result.isError) {
           const responseText = result.content[0].text as string;
-          let resultCount = 0;
 
           try {
-            const parsed = JSON.parse(responseText);
-            if (parsed.rawOutput) {
-              const rawData = JSON.parse(parsed.rawOutput);
-              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            const data = JSON.parse(responseText);
+
+            // If we have results, return them directly
+            if (data.results) {
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.PULL_REQUESTS,
+                query: args.query,
+                data: data.results,
+                failureSuggestions: data.suggestions,
+              });
             }
-          } catch {
-            const lines = responseText.split('\n').filter(line => line.trim());
-            resultCount = Math.max(0, lines.length - 5);
+          } catch (parseError) {
+            // If parsing fails, return the raw response
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.PULL_REQUESTS,
+              query: args.query,
+              data: responseText,
+            });
           }
-
-          // Provide structured summary for better usability
-          const summary = {
-            query: args.query,
-            owner: args.owner || 'global search',
-            repo: args.repo || 'all repositories',
-            state: args.state || 'all states',
-            totalResults: resultCount,
-            sort: args.sort || 'best-match',
-            timestamp: new Date().toISOString(),
-            ...(resultCount === 0 && {
-              suggestions: [
-                'Try broader search terms (e.g., "bug", "feature", "fix")',
-                'Remove repository/owner filters for global search',
-                'Search for both open and closed PRs (remove state filter)',
-                'Use different keywords related to code changes',
-                'Try searching for specific programming languages',
-              ],
-            }),
-          };
-
-          let enhancedResponse = `# GitHub Pull Requests Search Results\n\n## Summary\n${JSON.stringify(summary, null, 2)}\n\n## Search Results\n${responseText}`;
-
-          // Add context-specific guidance
-          if (resultCount > 0) {
-            enhancedResponse += `\n\n## Analysis Insights\n• Found ${resultCount} pull requests matching your criteria\n• Review merged PRs for implementation patterns\n• Check open PRs for ongoing development\n• Use review filters for code quality insights`;
-
-            if (args.state === 'open') {
-              enhancedResponse += `\n• OPEN PRs: Active development - good for current practices`;
-            } else if (args.state === 'closed') {
-              enhancedResponse += `\n• CLOSED PRs: Historical patterns - good for learning implementations`;
-            } else {
-              enhancedResponse += `\n• ALL STATES: Comprehensive view - includes both active and historical`;
-            }
-
-            if (args.draft === false) {
-              enhancedResponse += `\n• NON-DRAFT PRs: Production-ready code - high quality examples`;
-            }
-          } else {
-            enhancedResponse += `\n\n## Search Optimization Tips\n• START BROAD: Try keywords like "bug", "feature", "refactor", "update"\n• REMOVE FILTERS: Search globally first, then add specific filters\n• STATE SELECTION: Try both open and closed PRs\n• LANGUAGE FOCUS: Filter by programming language for specific examples\n• REVIEW FOCUS: Use reviewedBy filter for thoroughly vetted code`;
-          }
-
-          // Add PR-specific guidance
-          enhancedResponse += `\n\n## Pull Request Analysis Guide\n• **Merged PRs**: Best for learning proven implementations\n• **Open PRs**: Good for current development patterns\n• **Draft PRs**: Work-in-progress, may contain experimental code\n• **Reviewed PRs**: Higher quality, thoroughly vetted code examples\n• **Recent PRs**: Current practices and modern implementations`;
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: enhancedResponse,
-              },
-            ],
-            isError: false,
-          };
         }
 
-        return result;
+        // If no results or error, generate suggestions
+        const suggestions = generateStandardSuggestions(args.query, [
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        ]);
+
+        return createStandardResponse({
+          searchType: SEARCH_TYPES.PULL_REQUESTS,
+          query: args.query,
+          data: [],
+          failureSuggestions: suggestions,
+        });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';

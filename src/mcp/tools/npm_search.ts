@@ -1,8 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { npmSearch } from '../../impl/npm/npmSearch';
-import { detectOrganizationalQuery, createSmartError } from '../../impl/util';
+import {
+  detectOrganizationalQuery,
+  createSmartError,
+  createStandardResponse,
+} from '../../impl/util';
 
 interface NpmPkgMeta {
   name: string;
@@ -134,15 +138,13 @@ export function registerNpmSearchTool(server: McpServer) {
         }));
 
         if (simplifiedResults.length > 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({ results: simplifiedResults }, null, 2),
-              },
-            ],
-            isError: false,
-          };
+          return createStandardResponse({
+            searchType: SEARCH_TYPES.NPM_PACKAGES,
+            query: Array.isArray(args.queries)
+              ? args.queries.join(', ')
+              : args.queries,
+            data: { results: simplifiedResults },
+          });
         }
 
         // Check if any org queries need special handling

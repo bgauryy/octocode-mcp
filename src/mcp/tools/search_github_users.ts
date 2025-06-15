@@ -1,9 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubUsersSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
 import { searchGitHubUsers } from '../../impl/github/searchGitHubUsers';
-import { createSmartError } from '../../impl/util';
+import {
+  createSmartError,
+  createStandardResponse,
+  generateStandardSuggestions,
+} from '../../impl/util';
 
 export function registerSearchGitHubUsersTool(server: McpServer) {
   server.tool(
@@ -181,94 +185,43 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
 
         const result = await searchGitHubUsers(args);
 
-        // Check for empty results and enhance with smart suggestions
-        if (result.content && result.content[0]) {
+        // Check if we have a successful result with content
+        if (result.content && result.content[0] && !result.isError) {
           const responseText = result.content[0].text as string;
-          let resultCount = 0;
 
           try {
-            const parsed = JSON.parse(responseText);
-            if (parsed.rawOutput) {
-              const rawData = JSON.parse(parsed.rawOutput);
-              resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            const data = JSON.parse(responseText);
+
+            // If we have results, return them directly
+            if (data.results) {
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.USERS,
+                query: args.query,
+                data: data.results,
+                failureSuggestions: data.suggestions,
+              });
             }
-          } catch {
-            const lines = responseText.split('\n').filter(line => line.trim());
-            resultCount = Math.max(0, lines.length - 5);
+          } catch (parseError) {
+            // If parsing fails, return the raw response
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.USERS,
+              query: args.query,
+              data: responseText,
+            });
           }
-
-          // Provide structured summary for better usability
-          const summary = {
-            query: args.query,
-            accountType: args.type || 'all types',
-            location: args.location || 'global',
-            language: args.language || 'all languages',
-            totalResults: resultCount,
-            page: args.page || 1,
-            sort: args.sort || 'best-match',
-            timestamp: new Date().toISOString(),
-            ...(resultCount === 0 && {
-              suggestions: [
-                'Try broader search terms (e.g., "developer", "engineer")',
-                'Remove location/language filters for global search',
-                'Use different account types (user vs org)',
-                'Try technology keywords ("programming", "software", "development")',
-                'Search for specific skills or job titles',
-              ],
-            }),
-          };
-
-          let enhancedResponse = `# GitHub Users Search Results\n\n## Summary\n${JSON.stringify(summary, null, 2)}\n\n## Search Results\n${responseText}`;
-
-          // Add context-specific guidance
-          if (resultCount > 0) {
-            enhancedResponse += `\n\n## Discovery Insights\n• Found ${resultCount} users/organizations matching your criteria`;
-
-            if (args.type === 'user') {
-              enhancedResponse += `\n• INDIVIDUAL DEVELOPERS: Good for finding personal expertise and contributions`;
-            } else if (args.type === 'org') {
-              enhancedResponse += `\n• ORGANIZATIONS: Companies and groups - good for discovering teams and projects`;
-            } else {
-              enhancedResponse += `\n• MIXED RESULTS: Both individuals and organizations`;
-            }
-
-            if (args.language) {
-              enhancedResponse += `\n• LANGUAGE FOCUS: ${args.language} developers - specialized expertise`;
-            }
-
-            if (args.location) {
-              enhancedResponse += `\n• LOCATION FILTER: ${args.location} - regional talent pool`;
-            }
-
-            if (args.followers) {
-              enhancedResponse += `\n• INFLUENCE FILTER: ${args.followers} followers - community leaders and influencers`;
-            }
-
-            if (args.repos) {
-              enhancedResponse += `\n• ACTIVITY FILTER: ${args.repos} repositories - active contributors`;
-            }
-          } else {
-            enhancedResponse += `\n\n## Search Optimization Tips\n• START BROAD: Try technology names ("react", "python", "javascript")\n• REMOVE FILTERS: Search globally first, then add location/language filters\n• TRY ROLES: Search for "developer", "engineer", "maintainer", "contributor"\n• COMMUNITY SEARCH: Look for "open source", "contributor", "maintainer"\n• SKILL SEARCH: Use specific technologies, frameworks, or tools`;
-          }
-
-          // Add user-specific guidance
-          enhancedResponse += `\n\n## User Discovery Guide\n• **High Followers**: Community leaders and influencers (>1000 followers)\n• **Active Contributors**: Prolific developers (>50 repositories)\n• **Organizations**: Companies, teams, and communities\n• **Location-based**: Regional talent and communities\n• **Language-specific**: Technology experts and specialists\n• **Recent Joiners**: New talent and fresh perspectives`;
-
-          // Add networking and collaboration tips
-          enhancedResponse += `\n\n## Collaboration Opportunities\n• Follow interesting users for updates and insights\n• Check user repositories for collaboration opportunities\n• Review organization profiles for potential employment\n• Explore user contributions to popular projects\n• Connect with users in your technology stack or location`;
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: enhancedResponse,
-              },
-            ],
-            isError: false,
-          };
         }
 
-        return result;
+        // If no results or error, generate suggestions
+        const suggestions = generateStandardSuggestions(args.query, [
+          TOOL_NAMES.GITHUB_SEARCH_USERS,
+        ]);
+
+        return createStandardResponse({
+          searchType: SEARCH_TYPES.USERS,
+          query: args.query,
+          data: [],
+          failureSuggestions: suggestions,
+        });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
