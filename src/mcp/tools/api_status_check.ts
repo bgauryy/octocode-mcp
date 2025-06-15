@@ -4,6 +4,26 @@ import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
+interface ApiStatus {
+  github: {
+    authenticated: boolean;
+    username?: string;
+    error?: string;
+  };
+  npm: {
+    connected: boolean;
+    error?: string;
+  };
+  limits: {
+    core: { remaining: number; limit: number };
+    search: { remaining: number; limit: number };
+    code_search: { remaining: number; limit: number };
+    error?: string;
+  };
+  status: 'ready' | 'limited' | 'not_ready';
+  recommendations: string[];
+}
+
 export function registerApiStatusCheckTool(server: McpServer) {
   server.tool(
     TOOL_NAMES.API_STATUS_CHECK,
@@ -23,26 +43,6 @@ export function registerApiStatusCheckTool(server: McpServer) {
     },
     async () => checkApiStatus()
   );
-}
-
-interface ApiStatus {
-  github: {
-    authenticated: boolean;
-    username?: string;
-    error?: string;
-  };
-  npm: {
-    connected: boolean;
-    error?: string;
-  };
-  limits: {
-    core: { remaining: number; limit: number };
-    search: { remaining: number; limit: number };
-    code_search: { remaining: number; limit: number };
-    error?: string;
-  };
-  status: 'ready' | 'limited' | 'not_ready';
-  recommendations: string[];
 }
 
 async function checkGitHub(): Promise<ApiStatus['github']> {

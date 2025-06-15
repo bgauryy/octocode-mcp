@@ -1,65 +1,41 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { executeGitHubCommand } from '../../utils/exec';
-import { generateCacheKey, withCache } from '../../utils/cache';
 import { GithubFetchRequestParams } from '../../types';
-import { createErrorResult, createSuccessResult } from '../util';
+import { generateCacheKey, withCache } from '../../utils/cache';
+import { executeGitHubCommand } from '../../utils/exec';
+import {
+  createSuccessResult,
+  createOptimizedError,
+  analyzeGitHubError,
+} from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 export async function fetchGitHubFileContent(
   params: GithubFetchRequestParams
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-file-content', params);
+  const cacheKey = generateCacheKey('gh-file', params);
 
   return withCache(cacheKey, async () => {
     try {
-      let apiPath = `/repos/${params.owner}/${params.repo}/contents/${params.filePath}`;
+      const command = 'gh';
+      const args = [
+        'api',
+        `repos/${params.owner}/${params.repo}/contents/${params.filePath}`,
+        ...(params.branch ? ['--field', `ref=${params.branch}`] : []),
+        '--jq',
+        '.content',
+      ];
 
-      // Add ref parameter if branch is provided
-      if (params.branch) {
-        apiPath += `?ref=${params.branch}`;
-      }
-
-      const args = [apiPath, '--jq', '.content'];
-      const result = await executeGitHubCommand('api', args, { cache: false });
+      const result = await executeGitHubCommand(command, args, {
+        cache: false,
+      });
 
       if (result.isError) {
-        // Parse the error message to provide better context
         const errorMsg = result.content[0].text as string;
-
-        // Handle common GitHub API errors
-        if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
-          return createErrorResult(
-            `File not found: ${params.filePath} in ${params.owner}/${params.repo}${params.branch ? ` on branch '${params.branch}'` : ''}`,
-            new Error(
-              `Use github_get_contents to explore repository structure or github_search_code to find files by pattern. Query: filename:${params.filePath.split('/').pop()} repo:${params.owner}/${params.repo}`
-            )
-          );
-        }
-
-        if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-          return createErrorResult(
-            `Access denied: ${params.filePath} in ${params.owner}/${params.repo}`,
-            new Error(
-              `Repository may be private. Use github_get_user_organizations to check access or authenticate with 'gh auth login'`
-            )
-          );
-        }
-
-        // Handle rate limiting
-        if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
-          return createErrorResult(
-            'GitHub API rate limit exceeded',
-            new Error(
-              `Wait and retry. Use github_search_code instead of direct file access to reduce API calls`
-            )
-          );
-        }
-
-        // Generic error fallback
-        return createErrorResult(
-          `GitHub API error for ${params.filePath}`,
-          new Error(
-            `${errorMsg}. Use github_get_contents to explore repository structure first`
-          )
+        const analysis = analyzeGitHubError(errorMsg);
+        return createOptimizedError(
+          `File fetch ${params.filePath}`,
+          errorMsg,
+          analysis.suggestions
         );
       }
 
@@ -69,11 +45,13 @@ export async function fetchGitHubFileContent(
 
       // Validate base64 content
       if (!base64Content || base64Content === 'null') {
-        return createErrorResult(
-          `Empty file content: ${params.filePath}`,
-          new Error(
-            `File exists but empty or binary. Use github_search_code to find content by pattern or check different file`
-          )
+        return createOptimizedError(
+          `File content ${params.filePath}`,
+          'Empty or binary file',
+          [
+            `${TOOL_NAMES.GITHUB_SEARCH_CODE} to find content`,
+            'check different file',
+          ]
         );
       }
 
@@ -82,11 +60,13 @@ export async function fetchGitHubFileContent(
       try {
         decodedContent = Buffer.from(base64Content, 'base64').toString('utf-8');
       } catch (decodeError) {
-        return createErrorResult(
-          `Decode error: ${params.filePath}`,
-          new Error(
-            `${(decodeError as Error).message}. File may be binary. Use github_search_code for text-based content`
-          )
+        return createOptimizedError(
+          `File decode ${params.filePath}`,
+          (decodeError as Error).message,
+          [
+            'file may be binary',
+            `${TOOL_NAMES.GITHUB_SEARCH_CODE} for text content`,
+          ]
         );
       }
 
@@ -97,17 +77,17 @@ export async function fetchGitHubFileContent(
         content: decodedContent,
         size: decodedContent.length,
         nextSteps: [
-          `github_search_code "${params.filePath.split('/').pop()}" repo:${params.owner}/${params.repo}`,
-          `github_get_contents "${params.owner}/${params.repo}" path:${params.filePath.split('/').slice(0, -1).join('/')}`,
-          `npm_search_packages "${params.owner}"`,
+          `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.filePath.split('/').pop()}" repo:${params.owner}/${params.repo}`,
+          `${TOOL_NAMES.GITHUB_GET_CONTENTS} "${params.owner}/${params.repo}" path:${params.filePath.split('/').slice(0, -1).join('/')}`,
+          `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.owner}"`,
         ],
       });
     } catch (error) {
-      return createErrorResult(
-        `Unexpected error: ${params.filePath}`,
-        new Error(
-          `${(error as Error).message}. Workflow: github_get_contents → github_search_code → github_get_file_content`
-        )
+      const analysis = analyzeGitHubError((error as Error).message);
+      return createOptimizedError(
+        `File fetch ${params.filePath}`,
+        (error as Error).message,
+        analysis.suggestions
       );
     }
   });

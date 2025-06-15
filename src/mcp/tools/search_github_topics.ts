@@ -88,26 +88,26 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
 
 NO TOPICS FOUND RECOVERY:
 • Try simpler terms: "${args.query}" → single technology keywords
-• Ecosystem discovery: npm_search_packages for related packages
-• Repository search: github_search_repos for projects using these topics
-• User community: github_search_users for topic experts
+• Ecosystem discovery: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for related packages
+• Repository search: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for projects using these topics
+• User community: ${TOOL_NAMES.GITHUB_SEARCH_USERS} for topic experts
 
 TOPIC SEARCH OPTIMIZATION:
 • Use popular technology terms: "react", "javascript", "python"
 • Try compound topics: "machine-learning", "web-development"
 • Focus on featured topics: featured=true
 
-🔗 RECOMMENDED DISCOVERY CHAIN:
-1. npm_search_packages - Find packages in this domain
-2. github_search_repos - Discover projects using these topics
-3. github_search_code - Find implementations using topic technologies`;
+RECOMMENDED DISCOVERY CHAIN:
+1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} - Find packages in this domain
+2. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Discover projects using these topics
+3. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find implementations using topic technologies`;
           } else if (resultCount <= 3) {
             responseText += `
 
 LIMITED TOPICS ENHANCEMENT:
 • Found ${resultCount} topics - try broader or more popular terms
-• Ecosystem expansion: npm_search_packages for related technologies
-• Project discovery: github_search_repos for topic implementation`;
+• Ecosystem expansion: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for related technologies
+• Project discovery: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for topic implementation`;
           }
 
           return {

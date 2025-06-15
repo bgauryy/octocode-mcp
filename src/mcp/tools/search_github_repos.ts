@@ -50,8 +50,8 @@ function decomposeQuery(query: string): {
     terms.length > 1
       ? `Multi-term query detected. Recommended workflow:
 1. Start with primary term: "${primaryTerm}"
-2. Use npm_search_packages for "${terms.join(' ')}" package discovery
-3. Use github_search_topics for ecosystem terminology: "${terms.join('+')}"
+2. Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for "${terms.join(' ')}" package discovery
+3. Use ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem terminology: "${terms.join('+')}"
 4. Apply additional terms as filters once repositories are discovered`
       : '';
 
@@ -99,8 +99,7 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
         (args.language || args.topic || args.stars !== undefined),
       warning:
         'Specific filters without owner scope may return too many or zero results',
-      suggestion:
-        'PROVEN WORKFLOW: npm_search_packages → npm_get_package → repository extraction (95% success rate)',
+      suggestion: `PROVEN WORKFLOW: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package → repository extraction (95% success rate)`,
     },
     {
       condition: args.query?.includes(' ') && args.query?.split(' ').length > 2,
@@ -147,7 +146,7 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
   // Production best practices
   if (!args.owner) {
     suggestions.push(
-      'BEST PRACTICE: Use npm_search_packages → npm_get_package workflow instead of direct repository search'
+      `BEST PRACTICE: Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package workflow instead of direct repository search`
     );
   }
 
@@ -160,28 +159,21 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
 
 // Generate fallback suggestions for failed searches
 function generateFallbackSuggestions(args: GitHubReposSearchParams): string[] {
-  const suggestions = [
-    `1. Try npm_search_packages with "${args.query}" for package-based discovery`,
-    `2. Use github_search_topics with "${args.query}" for ecosystem terminology`,
-    `3. Remove restrictive filters: ${args.language ? 'language, ' : ''}${args.stars ? 'stars, ' : ''}${args.topic ? 'topic' : ''}`.replace(
-      /, $/,
-      ''
-    ),
+  const fallbacks = [
+    `PROVEN WORKFLOW: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package → repository extraction (95% success rate)`,
+    'Simplify query to single technology term',
+    'Use quality filters: stars:>10 for active projects',
+    'Add language filter for specific technologies',
+    'Check spelling and use canonical technology names',
   ];
 
-  if (args.owner) {
-    suggestions.push(`4. Try broader search without owner filter`);
+  if (args.query) {
+    fallbacks.unshift(
+      `BEST PRACTICE: Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package workflow instead of direct repository search`
+    );
   }
 
-  if (args.language) {
-    suggestions.push(`4. Remove language filter and search more broadly`);
-  }
-
-  suggestions.push(
-    `5. Use single terms only: break "${args.query}" into individual searches`
-  );
-
-  return suggestions.filter(s => !s.includes('undefined'));
+  return fallbacks;
 }
 
 export function registerSearchGitHubReposTool(server: McpServer) {
@@ -360,7 +352,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           responseText += `\n\n✅ TESTING-VALIDATED INSIGHTS:`;
           responseText += `\n• Found ${resultCount} repositories`;
           if (resultCount >= 100) {
-            responseText += `\n• TOO BROAD: Add more specific filters or use npm_search_packages for focused discovery`;
+            responseText += `\n• TOO BROAD: Add more specific filters or use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for focused discovery`;
           } else if (resultCount >= 31) {
             responseText += `\n• BROAD: Consider adding language, stars, or topic filters for refinement`;
           } else if (resultCount >= 11) {
@@ -411,8 +403,8 @@ RECOMMENDED FALLBACK WORKFLOW:
 ${fallbacks.map(f => `• ${f}`).join('\n')}
 
 PRODUCTION NOTE: For reliable discovery:
-1. Start with npm_search_packages for package-based discovery
-2. Use github_search_topics for ecosystem terminology  
+1. Start with ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for package-based discovery
+2. Use ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem terminology  
 3. Use npm_get_package to extract repository URLs
 4. Use global repository search (without owner) for broad discovery
 5. Use scoped search (with owner) when you know specific organizations`;
