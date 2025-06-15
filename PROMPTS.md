@@ -17,9 +17,6 @@ SHow summary . deep insightful search from code, prs and commits
 ### Build Tool Architecture Comparison
 **Prompt:** Analyze and compare the architecture of modern JavaScript build tools: Webpack, Vite, Turbopack, and esbuild. How do they handle module resolution, tree shaking, and hot module replacement? Examine their core algorithms, performance optimizations, and plugin systems.
 
-
-
-
 ### Database ORM Implementation Deep Dive
 **Prompt:** Compare the implementation strategies of TypeORM, Prisma, and Drizzle ORM. How do they handle schema generation, query building, type safety, and migrations? Analyze their code generation techniques, runtime performance, and developer experience design decisions.
 

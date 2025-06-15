@@ -137,18 +137,46 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     },
     {
       title: 'Search GitHub Issues',
+      description:
+        'Search for GitHub issues across repositories with advanced filtering options. Returns structured results with search metadata and suggestions for empty results.',
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: true,
     },
     async (args: GitHubIssuesSearchParams) => {
+      // Input validation
+      if (!args.query || args.query.trim().length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Error: Search query is required and cannot be empty',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Validate query length to prevent API issues
+      if (args.query.length > 256) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Error: Search query is too long. Please limit to 256 characters or less.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
       try {
         const result = await searchGitHubIssues(args);
 
         // Check for empty results and enhance with smart suggestions
         if (result.content && result.content[0]) {
-          let responseText = result.content[0].text as string;
+          const responseText = result.content[0].text as string;
           let resultCount = 0;
 
           try {
@@ -163,39 +191,28 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
             resultCount = Math.max(0, lines.length - 5);
           }
 
-          // Add smart suggestions for empty or poor results
-          if (resultCount === 0) {
-            responseText += `
+          // Provide structured summary for better usability
+          const summary = {
+            query: args.query,
+            owner: args.owner || 'All repositories',
+            totalResults: resultCount,
+            timestamp: new Date().toISOString(),
+            ...(resultCount === 0 && {
+              suggestions: [
+                'Try broader search terms',
+                'Remove owner filter for global search',
+                'Check for typos in search query',
+                'Use different keywords or labels',
+              ],
+            }),
+          };
 
-🔄 NO RESULTS RECOVERY STRATEGY:
-• Try broader terms: "${args.query}" → single keywords
-• Alternative discovery: github_search_repos for related projects
-• Problem context: github_search_code for implementation examples
-• Solution tracking: github_search_pull_requests for fixes
-
-💡 QUERY SIMPLIFICATION:
-• Remove quotes and special characters
-• Use single keywords: "bug", "error", "feature"
-• Try related terms: "issue" → "problem", "bug" → "error"
-
-🔗 RECOMMENDED TOOL CHAIN:
-1. github_search_repos - Find projects that might have similar issues
-2. github_search_code - Search for code patterns related to your problem
-3. npm_search_packages - Find packages that solve similar problems`;
-          } else if (resultCount <= 5) {
-            responseText += `
-
-💡 FEW RESULTS ENHANCEMENT:
-• Found ${resultCount} issues - try broader search terms
-• Alternative: github_search_repos for project-level discovery
-• Cross-reference: github_search_code for implementation patterns`;
-          }
-
+          // Return properly formatted text content instead of invalid "json" type
           return {
             content: [
               {
                 type: 'text',
-                text: responseText,
+                text: `# GitHub Issues Search Results\n\n## Summary\n${JSON.stringify(summary, null, 2)}\n\n## Raw Data\n${responseText}`,
               },
             ],
             isError: false,
