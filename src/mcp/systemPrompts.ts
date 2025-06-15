@@ -20,7 +20,6 @@ export const TOOL_NAMES = {
   NPM_ANALYZE_DEPENDENCIES: 'npm_analyze_dependencies',
   NPM_GET_REPOSITORY: 'npm_get_repository',
   NPM_GET_DEPENDENCIES: 'npm_get_dependencies',
-  NPM_GET_VERSIONS: 'npm_get_versions',
   NPM_GET_RELEASES: 'npm_get_releases',
   NPM_GET_EXPORTS: 'npm_get_exports',
 };
@@ -45,15 +44,14 @@ Core Strategy:
 1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for package discovery (most reliable entry point)
 2. ${TOOL_NAMES.NPM_GET_PACKAGE} for detailed package metadata
 3. ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for ecosystem analysis
-4. ${TOOL_NAMES.NPM_GET_VERSIONS} for version compatibility assessment
-5. ${TOOL_NAMES.NPM_GET_RELEASES} for activity and maintenance patterns
+4. ${TOOL_NAMES.NPM_GET_RELEASES} for official release tracking and maintenance patterns
 6. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem mapping
 7. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for comprehensive repository discovery
 
 NPM-First Comprehensive Approach:
 - Start with NPM search for any library, framework, or tool queries
 - Extract detailed package metadata and statistics
-- Analyze version history and release patterns for stability assessment
+- Analyze official release history and maintenance patterns for stability assessment
 - Use dependency analysis to understand ecosystem relationships
 - Follow repository links for deep GitHub analysis
 
@@ -272,13 +270,9 @@ Single terms work best. Use quality indicators: stars >100 for established proje
 
 Focused dependency data for ecosystem analysis. Combine with npm_analyze_dependencies for security audit.`,
 
-  [TOOL_NAMES.NPM_GET_VERSIONS]: `Get official production-ready semantic versions
+  [TOOL_NAMES.NPM_GET_RELEASES]: `Get official production-ready release activity and timeline data
 
-Returns stable versions only (excludes alpha/beta/rc). Use for production planning and release cadence analysis.`,
-
-  [TOOL_NAMES.NPM_GET_RELEASES]: `Get recent release activity and timeline data
-
-Release intelligence with last 10 releases. Track package activity and maintenance patterns.`,
+Returns only semantic versions (major.minor.patch) with release dates. Excludes pre-release versions (alpha/beta/rc). Provides release intelligence with last 10 official releases for activity and maintenance pattern analysis.`,
 
   [TOOL_NAMES.NPM_GET_EXPORTS]: `Get available modules and import strategies
 

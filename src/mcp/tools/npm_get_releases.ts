@@ -11,11 +11,11 @@ export function registerNpmGetReleasesTool(server: McpServer) {
       packageName: z
         .string()
         .describe(
-          "The name of the npm package to get release information for (e.g., 'react', 'express', 'lodash'). Returns focused release data: last modified, created date, version count, and last 10 releases - optimized for token efficiency."
+          "The name of the npm package to get official release information for (e.g., 'react', 'express', 'lodash'). Returns only semantic versions (major.minor.patch) with release dates, excluding pre-release versions like alpha, beta, rc. Provides last 10 official releases for maintenance pattern analysis."
         ),
     },
     {
-      title: 'NPM Package Releases - Extract Recent Release Data',
+      title: 'NPM Official Releases - Extract Production-Ready Release Data',
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,

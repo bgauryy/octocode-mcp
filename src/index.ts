@@ -42,7 +42,7 @@ function registerAllTools(server: McpServer) {
       fn: Tools.registerNpmDependencyAnalysisTool,
     },
     { name: 'NpmGetDependencies', fn: Tools.registerNpmGetDependenciesTool },
-    { name: 'NpmGetVersions', fn: Tools.registerNpmGetVersionsTool },
+
     { name: 'NpmGetReleases', fn: Tools.registerNpmGetReleasesTool },
     { name: 'NpmGetExports', fn: Tools.registerNpmGetExportsTool },
   ];

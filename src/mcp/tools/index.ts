@@ -13,6 +13,5 @@ export { registerSearchGitHubUsersTool } from './search_github_users.js';
 export { registerNpmDependencyAnalysisTool } from './npm_dependency_analysis.js';
 export { registerApiStatusCheckTool } from './api_status_check.js';
 export { registerNpmGetDependenciesTool } from './npm_get_dependencies.js';
-export { registerNpmGetVersionsTool } from './npm_get_versions.js';
 export { registerNpmGetReleasesTool } from './npm_get_releases.js';
 export { registerNpmGetExportsTool } from './npm_get_exports.js';

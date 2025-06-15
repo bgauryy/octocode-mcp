@@ -4,13 +4,14 @@ import { executeNpmCommand } from '../../utils/exec';
 import { NpmData } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
 
-// Efficient type for minimal data return
+// Efficient type for minimal data return with official releases only
 interface EfficientNpmTimeResult {
   packageName: string;
   lastModified: string;
   created: string;
-  versionCount: number;
-  last10Releases: Array<{ version: string; releaseDate: string }>;
+  officialVersionCount: number;
+  totalVersionCount: number;
+  last10OfficialReleases: Array<{ version: string; releaseDate: string }>;
 }
 
 export async function npmGetReleases(
@@ -38,8 +39,15 @@ export async function npmGetReleases(
         ([key]) => key !== 'created' && key !== 'modified'
       );
 
-      // Sort by release date (most recent first) and take last 10
-      const sortedVersions = versionEntries
+      // Filter for official semantic versions only (major.minor.patch)
+      // Excludes pre-release versions like alpha, beta, rc, dev, experimental, etc.
+      const semanticVersionRegex = /^\d+\.\d+\.\d+$/;
+      const officialVersionEntries = versionEntries.filter(([version]) =>
+        semanticVersionRegex.test(version)
+      );
+
+      // Sort by release date (most recent first) and take last 10 official releases
+      const sortedOfficialVersions = officialVersionEntries
         .sort(
           ([, dateA], [, dateB]) =>
             new Date(dateB).getTime() - new Date(dateA).getTime()
@@ -47,18 +55,19 @@ export async function npmGetReleases(
         .slice(0, 10)
         .map(([version, releaseDate]) => ({ version, releaseDate }));
 
-      // Create efficient result with only requested data
+      // Create efficient result with only official releases
       const timeResult: EfficientNpmTimeResult = {
         packageName: npmData.name,
         lastModified: npmData.time.modified,
         created: npmData.time.created,
-        versionCount: versionEntries.length,
-        last10Releases: sortedVersions,
+        officialVersionCount: officialVersionEntries.length,
+        totalVersionCount: versionEntries.length,
+        last10OfficialReleases: sortedOfficialVersions,
       };
 
       return createSuccessResult(timeResult);
     } catch (error) {
-      return createErrorResult('Failed to get npm time information', error);
+      return createErrorResult('Failed to get npm release information', error);
     }
   });
 }
