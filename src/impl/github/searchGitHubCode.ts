@@ -3,6 +3,7 @@ import { GitHubCodeSearchParams, GitHubSearchResult } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 /**
  * Search GitHub code with organizational fallback strategy
@@ -111,15 +112,15 @@ export async function searchGitHubCode(
             ...(analysis.totalFound === 0 && {
               suggestions: params.owner
                 ? [
-                    `github_search_commits "${params.query}" owner:${params.owner}`,
-                    `github_search_pull_requests "${params.query}" owner:${params.owner}`,
-                    `github_search_issues "${params.query}" owner:${params.owner}`,
-                    `npm_search_packages "${params.query}"`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${params.query}" owner:${params.owner}`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query}" owner:${params.owner}`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${params.query}" owner:${params.owner}`,
+                    `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query}"`,
                   ]
                 : [
-                    `npm_search_packages "${params.query}"`,
-                    `github_search_repositories "${params.query}" stars:>10`,
-                    `github_search_topics "${params.query}"`,
+                    `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query}"`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query}" stars:>10`,
+                    `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query}"`,
                   ],
             }),
           },

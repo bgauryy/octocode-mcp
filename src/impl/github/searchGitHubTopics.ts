@@ -3,6 +3,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { GitHubSearchResult, GitHubTopicsSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 export async function searchGitHubTopics(
   params: GitHubTopicsSearchParams
@@ -42,10 +43,10 @@ export async function searchGitHubTopics(
         rawOutput: content,
         ...(totalCount === 0 && {
           suggestions: [
-            `npm_search_packages "${params.query || 'package'}"`,
-            `github_search_repositories "${params.query || 'repo'}" stars:>100`,
-            `github_search_code "${params.query || 'code'}" language:javascript`,
-            `github_search_users "${params.query || 'user'}"`,
+            `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+            `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query || 'repo'}" stars:>100`,
+            `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}" language:javascript`,
+            `${TOOL_NAMES.GITHUB_SEARCH_USERS} "${params.query || 'user'}"`,
           ],
         }),
       };

@@ -3,6 +3,7 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmData } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 // Efficient type for minimal data return with official releases only
 interface EfficientNpmTimeResult {
@@ -65,10 +66,10 @@ export async function npmGetReleases(
         totalVersionCount: versionEntries.length,
         last10OfficialReleases: sortedOfficialVersions,
         nextSteps: [
-          `npm_get_exports "${npmData.name}"`,
-          `github_search_repositories "${npmData.name}" stars:>10`,
-          `github_search_commits "${npmData.name}" sort:committer-date`,
-          `npm_get_dependencies "${npmData.name}"`,
+          `${TOOL_NAMES.NPM_GET_EXPORTS} "${npmData.name}"`,
+          `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${npmData.name}" stars:>10`,
+          `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${npmData.name}" sort:committer-date`,
+          `${TOOL_NAMES.NPM_GET_DEPENDENCIES} "${npmData.name}"`,
         ],
       };
 

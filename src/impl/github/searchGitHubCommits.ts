@@ -3,6 +3,7 @@ import { GitHubCommitsSearchParams, GitHubSearchResult } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 export async function searchGitHubCommits(
   params: GitHubCommitsSearchParams
@@ -43,11 +44,13 @@ export async function searchGitHubCommits(
         rawOutput: content,
         ...(totalCount === 0 && {
           suggestions: [
-            `npm_search_packages "${params.query || 'package'}"`,
-            `github_search_pull_requests "${params.query || 'pr'}"`,
-            `github_search_issues "${params.query || 'issue'}"`,
+            `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+            `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query || 'pr'}"`,
+            `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${params.query || 'issue'}"`,
             ...(params.owner
-              ? [`github_search_code "${params.query}" owner:${params.owner}`]
+              ? [
+                  `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query}" owner:${params.owner}`,
+                ]
               : []),
           ],
         }),

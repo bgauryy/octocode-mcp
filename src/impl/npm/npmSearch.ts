@@ -2,6 +2,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 export async function npmSearch(
   args: NpmSearchParams
@@ -70,9 +71,9 @@ export async function npmSearch(
           results: searchResults,
           ...((!searchResults || searchResults.length === 0) && {
             suggestions: [
-              `github_search_repositories "${query}" stars:>10`,
-              `github_search_topics "${query}"`,
-              `github_search_code "${query}" language:javascript`,
+              `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}" stars:>10`,
+              `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${query}"`,
+              `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}" language:javascript`,
             ],
           }),
           ...(Array.isArray(searchResults) &&
@@ -83,9 +84,9 @@ export async function npmSearch(
             searchResults.length > 0 &&
             searchResults.length < searchlimit && {
               nextSteps: [
-                `npm_get_exports "${searchResults[0]?.name || query}"`,
-                `github_search_repositories "${searchResults[0]?.name || query}"`,
-                `npm_get_dependencies "${searchResults[0]?.name || query}"`,
+                `${TOOL_NAMES.NPM_GET_EXPORTS} "${searchResults[0]?.name || query}"`,
+                `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${searchResults[0]?.name || query}"`,
+                `${TOOL_NAMES.NPM_GET_DEPENDENCIES} "${searchResults[0]?.name || query}"`,
               ],
             }),
         };
