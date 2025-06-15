@@ -8,6 +8,8 @@ import {
 } from '../../impl/util';
 import { searchGitHubTopics } from '../../impl/github/searchGitHubTopics';
 
+const MAX_TOPICS = 30;
+
 export function registerSearchGitHubTopicsTool(server: McpServer) {
   server.tool(
     TOOL_NAMES.GITHUB_SEARCH_TOPICS,
@@ -83,7 +85,34 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
           try {
             const data = JSON.parse(responseText);
 
-            // If we have results, return them directly
+            // Check if we have the GitHub API response format with items array
+            if (
+              data.results &&
+              data.results.items &&
+              Array.isArray(data.results.items)
+            ) {
+              // Return top 30 topics from the items array
+              const topTopics = data.results.items.slice(0, MAX_TOPICS);
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.TOPICS,
+                query: args.query,
+                data: topTopics,
+                failureSuggestions: data.suggestions,
+              });
+            }
+
+            // Check if the data itself has items array (direct GitHub API response)
+            if (data.items && Array.isArray(data.items)) {
+              // Return top 30 topics from the items array
+              const topTopics = data.items.slice(0, 30);
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.TOPICS,
+                query: args.query,
+                data: topTopics,
+              });
+            }
+
+            // If we have results in a different format, return them directly
             if (data.results) {
               return createStandardResponse({
                 searchType: SEARCH_TYPES.TOPICS,
