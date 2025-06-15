@@ -149,7 +149,6 @@ export function createStandardResponse(args: {
   searchType: string;
   query: string | undefined;
   data: any;
-  totalResults?: number;
   failureSuggestions?: string[];
 }): CallToolResult {
   return {
@@ -161,9 +160,6 @@ export function createStandardResponse(args: {
             searchType: args.searchType,
             query: args.query,
             results: args.data,
-            ...(args.totalResults !== undefined && {
-              totalResults: args.totalResults,
-            }),
             ...(args.failureSuggestions &&
               args.failureSuggestions.length > 0 && {
                 suggestions: args.failureSuggestions,

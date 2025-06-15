@@ -50,40 +50,22 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
         // Enhance response with usage guidance
         if (result.content && result.content[0]) {
           const responseText = result.content[0].text as string;
-          let orgCount = 0;
 
           try {
             const parsed = JSON.parse(responseText);
-            if (parsed.results) {
-              const rawData = JSON.parse(parsed.results);
-              orgCount = Array.isArray(rawData) ? rawData.length : 0;
-            }
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.ORGANIZATIONS,
+              query: undefined,
+              data: parsed.results || responseText,
+            });
           } catch {
-            // If parsing fails, estimate from text
-            const lines = responseText.split('\n').filter(line => line.trim());
-            orgCount = Math.max(0, lines.length - 3);
+            // If parsing fails, return raw response
+            return createStandardResponse({
+              searchType: SEARCH_TYPES.ORGANIZATIONS,
+              query: undefined,
+              data: responseText,
+            });
           }
-
-          // Provide structured summary for better usability
-          const summary = {
-            totalOrganizations: orgCount,
-            limit: limit,
-            timestamp: new Date().toISOString(),
-            ...(orgCount === 0 && {
-              suggestions: [
-                'Check authentication status with api_status_check',
-                'Ensure you are logged into GitHub CLI',
-                'Verify you belong to organizations',
-              ],
-            }),
-          };
-
-          return createStandardResponse({
-            searchType: SEARCH_TYPES.ORGANIZATIONS,
-            query: undefined,
-            data: responseText,
-            totalResults: summary.totalOrganizations,
-          });
         }
 
         return result;

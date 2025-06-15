@@ -213,7 +213,6 @@ export function registerSearchGitHubReposTool(server: McpServer) {
             searchType: SEARCH_TYPES.REPOSITORIES,
             query: args.query,
             data: parsedResults,
-            totalResults: resultCount,
             failureSuggestions: suggestions,
           });
         } catch (parseError) {
