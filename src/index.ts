@@ -37,10 +37,7 @@ function registerAllTools(server: McpServer) {
     { name: 'SearchGitHubIssues', fn: Tools.registerSearchGitHubIssuesTool },
     { name: 'SearchGitHubTopics', fn: Tools.registerSearchGitHubTopicsTool },
     { name: 'SearchGitHubUsers', fn: Tools.registerSearchGitHubUsersTool },
-    {
-      name: 'NpmDependencyAnalysis',
-      fn: Tools.registerNpmDependencyAnalysisTool,
-    },
+
     { name: 'NpmGetDependencies', fn: Tools.registerNpmGetDependenciesTool },
 
     { name: 'NpmGetReleases', fn: Tools.registerNpmGetReleasesTool },

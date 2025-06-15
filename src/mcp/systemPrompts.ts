@@ -16,7 +16,6 @@ export const TOOL_NAMES = {
   // npm Registry API - Comprehensive
   NPM_SEARCH_PACKAGES: 'npm_search_packages',
   NPM_GET_PACKAGE: 'npm_get_package',
-  NPM_ANALYZE_DEPENDENCIES: 'npm_analyze_dependencies',
   NPM_GET_REPOSITORY: 'npm_get_repository',
   NPM_GET_DEPENDENCIES: 'npm_get_dependencies',
   NPM_GET_RELEASES: 'npm_get_releases',
@@ -43,7 +42,7 @@ Core Strategy (API Intelligence Foundation):
 1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for package discovery (most reliable entry point)
 2. ${TOOL_NAMES.NPM_GET_PACKAGE} for detailed package metadata
 3. **${TOOL_NAMES.NPM_GET_EXPORTS} for API intelligence (CRITICAL: transforms all subsequent searches)**
-4. ${TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES} for ecosystem analysis
+4. ${TOOL_NAMES.NPM_GET_DEPENDENCIES} for focused dependency analysis
 5. ${TOOL_NAMES.NPM_GET_RELEASES} for official release tracking and maintenance patterns
 6. ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem mapping
 7. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for comprehensive repository discovery (guided by API intelligence)
@@ -53,7 +52,7 @@ NPM-First Comprehensive Approach:
 - Extract detailed package metadata and statistics
 - **IMMEDIATELY extract API intelligence with ${TOOL_NAMES.NPM_GET_EXPORTS} for search strategy**
 - Analyze official release history and maintenance patterns for stability assessment
-- Use dependency analysis to understand ecosystem relationships
+- Use focused dependency tree analysis to understand ecosystem relationships
 - Follow repository links for deep GitHub analysis guided by API intelligence
 
 CRITICAL NPM + GITHUB TOOL INTEGRATION:
@@ -220,7 +219,7 @@ DOCUMENTATION SYNTHESIS
 - Community resources and tutorials
 
 ECOSYSTEM CONTEXT
-- ${TOOL_NAMES.NPM_GET_DEPENDENCIES} for dependency analysis
+- ${TOOL_NAMES.NPM_GET_DEPENDENCIES} for focused dependency analysis
 - Related packages and alternatives
 - Community adoption and trends
 
@@ -262,10 +261,6 @@ export const TOOL_DESCRIPTIONS = {
 Core package search tool with direct GitHub repository linking. Multisearch support with deduplication. Fallback to GitHub search if NPM results insufficient.
 
 Best practices: Single terms, organization packages (@org/name), partial matching supported. Returns package metadata with repository URLs for deep GitHub analysis.`,
-
-  [TOOL_NAMES.NPM_ANALYZE_DEPENDENCIES]: `Analyze package security, dependencies, and organizational context
-
-Complete package assessment tool. Security audit, dependency tree analysis, license compatibility. Detects private organizations. Use after npm_search_packages for comprehensive evaluation.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics for ecosystem mapping
 
@@ -309,7 +304,7 @@ Single terms work best. Use quality indicators: stars >100 for established proje
 
   [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree
 
-Focused dependency data for ecosystem analysis. Combine with npm_analyze_dependencies for security audit.`,
+Focused dependency data for ecosystem analysis and dependency tree insights.`,
 
   [TOOL_NAMES.NPM_GET_RELEASES]: `Get official production-ready release activity and timeline data
 
