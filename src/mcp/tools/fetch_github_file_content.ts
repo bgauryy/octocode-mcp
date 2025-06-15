@@ -132,7 +132,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         ) {
           errorType = 'not-found';
           specificSuggestions = `
-🔍 FILE NOT FOUND SOLUTIONS:
+FILE NOT FOUND SOLUTIONS:
 • Verify file path exists: ${args.filePath}
 • Check repository structure with github_get_contents
 • Confirm branch exists: ${args.branch}
@@ -153,7 +153,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         ) {
           errorType = 'rate-limit';
           specificSuggestions = `
-⏱️ RATE LIMIT SOLUTIONS:
+RATE LIMIT SOLUTIONS:
 • Wait before retry (GitHub API limits)
 • Use authentication to increase limits: gh auth login
 • Try searching for content instead of direct access`;
@@ -163,7 +163,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           content: [
             {
               type: 'text',
-              text: `Failed to fetch GitHub file content: ${errorMessage}\n\n🔧 ERROR TYPE: ${errorType.toUpperCase()}\n\n📋 CONTEXT:\n• Repository: ${args.owner}/${args.repo}\n• Branch: ${args.branch}\n• File: ${args.filePath}${specificSuggestions}\n\n💡 GENERAL TROUBLESHOOTING:\n• Use github_get_contents to explore repository structure\n• Verify repository exists and is accessible\n• Check branch name spelling and existence\n• Use github_search_code for pattern-based file discovery`,
+              text: `Failed to fetch GitHub file content: ${errorMessage}\n\nERROR TYPE: ${errorType.toUpperCase()}\n\nCONTEXT:\n• Repository: ${args.owner}/${args.repo}\n• Branch: ${args.branch}\n• File: ${args.filePath}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use github_get_contents to explore repository structure\n• Verify repository exists and is accessible\n• Check branch name spelling and existence\n• Use github_search_code for pattern-based file discovery`,
             },
           ],
           isError: true,

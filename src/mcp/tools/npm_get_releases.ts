@@ -11,7 +11,7 @@ export function registerNpmGetReleasesTool(server: McpServer) {
       packageName: z
         .string()
         .describe(
-          "The name of the npm package to get official release information for (e.g., 'react', 'express', 'lodash'). Returns only semantic versions (major.minor.patch) with release dates, excluding pre-release versions like alpha, beta, rc. Provides last 10 official releases for maintenance pattern analysis."
+          "The name of the npm package to get official release information for (e.g., 'axios', 'lodash', 'chalk'). Returns only semantic versions (major.minor.patch) with release dates, excluding pre-release versions like alpha, beta, rc. Provides last 10 official releases for maintenance pattern analysis."
         ),
     },
     {

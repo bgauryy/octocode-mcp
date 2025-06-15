@@ -252,19 +252,19 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           errorMessage.includes('rate limit') ||
           errorMessage.includes('429')
         ) {
-          specificSuggestions = `\n\n⏱️ RATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search scope with specific filters`;
+          specificSuggestions = `\n\nRATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search scope with specific filters`;
         } else if (
           errorMessage.includes('404') ||
           errorMessage.includes('Not Found')
         ) {
-          specificSuggestions = `\n\n🔍 NOT FOUND SOLUTIONS:\n• Verify repository exists: ${args.owner}/${args.repo}\n• Check organization/user name spelling\n• Try global search without repository filters`;
+          specificSuggestions = `\n\nNOT FOUND SOLUTIONS:\n• Verify repository exists: ${args.owner}/${args.repo}\n• Check organization/user name spelling\n• Try global search without repository filters`;
         }
 
         return {
           content: [
             {
               type: 'text',
-              text: `Failed to search GitHub pull requests: ${errorMessage}${specificSuggestions}\n\n🔧 GENERAL TROUBLESHOOTING:\n• Use simpler search terms (single keywords work best)\n• Remove restrictive filters for broader results\n• Try different states (open, closed, or both)\n• Search for common PR types: "bug fix", "feature", "refactor"\n• Use language filters for specific technology examples`,
+              text: `Failed to search GitHub pull requests: ${errorMessage}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use simpler search terms (single keywords work best)\n• Remove restrictive filters for broader results\n• Try different states (open, closed, or both)\n• Search for common PR types: "bug fix", "feature", "refactor"\n• Use language filters for specific technology examples`,
             },
           ],
           isError: true,

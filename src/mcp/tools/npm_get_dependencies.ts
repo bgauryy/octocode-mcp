@@ -11,7 +11,7 @@ export function registerNpmGetDependenciesTool(server: McpServer) {
       packageName: z
         .string()
         .describe(
-          "The name of the npm package to analyze dependencies for (e.g., 'react', 'express', 'lodash'). Returns focused dependency data: dependencies, devDependencies, and resolutions - optimized for token efficiency."
+          "The name of the npm package to analyze dependencies for (e.g., 'axios', 'lodash', 'chalk'). Returns focused dependency data: dependencies, devDependencies, and resolutions - optimized for token efficiency."
         ),
     },
     {

@@ -45,7 +45,7 @@ export async function searchGitHubTopics(
           suggestions: [
             `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
             `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query || 'repo'}" stars:>100`,
-            `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}" language:javascript`,
+            `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
             `${TOOL_NAMES.GITHUB_SEARCH_USERS} "${params.query || 'user'}"`,
           ],
         }),

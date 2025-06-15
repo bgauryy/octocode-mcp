@@ -11,7 +11,7 @@ export function registerNpmGetExportsTool(server: McpServer) {
       packageName: z
         .string()
         .describe(
-          "The name of the npm package to analyze for comprehensive API intelligence (e.g., 'react', 'express', 'lodash'). Returns complete public interface discovery including entry points, import paths, export mappings, search targets, and package analysis context. Essential for understanding package public API, generating accurate import statements, and enabling precise GitHub code searches."
+          "The name of the npm package to analyze for comprehensive API intelligence (e.g., 'axios', 'lodash', 'chalk'). Returns complete public interface discovery including entry points, import paths, export mappings, search targets, and package analysis context. Essential for understanding package public API, generating accurate import statements, and enabling precise GitHub code searches."
         ),
     },
     {

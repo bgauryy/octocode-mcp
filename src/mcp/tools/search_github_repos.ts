@@ -72,12 +72,12 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
     {
       condition:
         args.owner === 'facebook' &&
-        args.query === 'react' &&
+        args.query === 'framework' &&
         args.language === 'JavaScript',
       warning:
         'facebook + react + JavaScript filter may return 0 results (TESTING-VALIDATED)',
       suggestion:
-        'PROVEN: owner=facebook + query=react without language filter → React (236K⭐), React Native (119K⭐), Create React App',
+        'PROVEN: owner=facebook + query=react without language filter → React (236K stars), React Native (119K stars), Create React App',
     },
     {
       condition:
@@ -107,7 +107,7 @@ function validateFilterCombinations(args: GitHubReposSearchParams): {
       warning:
         'Multi-term queries often fail (TESTING-VALIDATED: "machine learning" → 0 results)',
       suggestion:
-        'PROVEN: Single terms succeed - "tensorflow" → TensorFlow (190K⭐) organization repos',
+        'PROVEN: Single terms succeed - "tensorflow" → TensorFlow (190K stars) organization repos',
     },
   ];
 
@@ -335,24 +335,24 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         // Add guidance for multi-term queries
         if (queryAnalysis.shouldDecompose) {
-          responseText += `\n\n⚠️ MULTI-TERM QUERY OPTIMIZATION:\n${queryAnalysis.suggestion}`;
+          responseText += `\n\nMULTI-TERM QUERY OPTIMIZATION:\n${queryAnalysis.suggestion}`;
         }
 
         // Add validation warnings
         if (validation.warnings.length > 0) {
-          responseText += `\n\n⚠️ FILTER WARNINGS:\n${validation.warnings.map(w => `• ${w}`).join('\n')}`;
+          responseText += `\n\nFILTER WARNINGS:\n${validation.warnings.map(w => `• ${w}`).join('\n')}`;
         }
 
         // Add suggestions for better workflow
         if (validation.suggestions.length > 0) {
-          responseText += `\n\n💡 OPTIMIZATION SUGGESTIONS:\n${validation.suggestions.map(s => `• ${s}`).join('\n')}`;
+          responseText += `\n\nOPTIMIZATION SUGGESTIONS:\n${validation.suggestions.map(s => `• ${s}`).join('\n')}`;
         }
 
         // Add fallback guidance for empty results
         if (resultCount === 0) {
           const fallbacks = generateFallbackSuggestions(args);
-          responseText += `\n\n🔄 FALLBACK STRATEGIES (0 results found):\n${fallbacks.map(f => `• ${f}`).join('\n')}`;
-          responseText += `\n\n📊 PRODUCTION TIP: Repository search has 99% avoidance rate. NPM + Topics workflow provides better results with less API usage.`;
+          responseText += `\n\nFALLBACK STRATEGIES (0 results found):\n${fallbacks.map(f => `• ${f}`).join('\n')}`;
+          responseText += `\n\nPRODUCTION TIP: Repository search has 99% avoidance rate. NPM + Topics workflow provides better results with less API usage.`;
         }
 
         // Add testing-validated production best practices for successful searches
@@ -372,7 +372,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           // Add proven search patterns based on testing
           if (args.owner && args.query) {
             responseText += `\n• SCOPED SEARCH SUCCESS: owner + single term pattern proven effective`;
-            responseText += `\n• PROVEN EXAMPLES: microsoft+typescript→VSCode(173K⭐), facebook+react→React(236K⭐)`;
+            responseText += `\n• PROVEN EXAMPLES: microsoft+typescript→VSCode(173K stars), facebook+react→React(236K stars)`;
           } else if (!args.owner) {
             responseText += `\n• GLOBAL SEARCH: Searching across all GitHub repositories`;
             responseText += `\n• TIP: Add owner filter for more targeted results if you know specific organizations`;
@@ -380,14 +380,14 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
           // Add caching recommendations for testing-validated popular searches
           const validatedPopularTerms = [
-            'react', // 236K⭐ confirmed
-            'typescript', // 105K⭐ confirmed
+            'framework',
+            'typescript',
             'javascript',
             'python',
             'nodejs',
             'vue',
             'angular',
-            'tensorflow', // 190K⭐ confirmed
+            'tensorflow',
           ];
           if (validatedPopularTerms.includes(args.query.toLowerCase())) {
             responseText += `\n• CACHE CANDIDATE: "${args.query}" is a testing-validated high-value search term`;
@@ -405,12 +405,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         };
       } catch (error) {
         const fallbacks = generateFallbackSuggestions(args);
-        const errorMessage = `❌ Repository search failed: ${(error as Error).message}
+        const errorMessage = `Repository search failed: ${(error as Error).message}
 
-🔄 RECOMMENDED FALLBACK WORKFLOW:
+RECOMMENDED FALLBACK WORKFLOW:
 ${fallbacks.map(f => `• ${f}`).join('\n')}
 
-💡 PRODUCTION NOTE: For reliable discovery:
+PRODUCTION NOTE: For reliable discovery:
 1. Start with npm_search_packages for package-based discovery
 2. Use github_search_topics for ecosystem terminology  
 3. Use npm_get_package to extract repository URLs

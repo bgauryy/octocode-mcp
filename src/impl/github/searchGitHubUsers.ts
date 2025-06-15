@@ -3,6 +3,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { GitHubSearchResult, GitHubUsersSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 export async function searchGitHubUsers(
   params: GitHubUsersSearchParams
@@ -42,10 +43,10 @@ export async function searchGitHubUsers(
         rawOutput: content,
         ...(totalCount === 0 && {
           suggestions: [
-            `npm_search_packages "${params.query || 'package'}"`,
-            `github_search_repositories "${params.query || 'repo'}" user:${params.query}`,
-            `github_search_topics "${params.query || 'topic'}"`,
-            `github_search_code "${params.query || 'code'}" language:javascript`,
+            `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+            `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query || 'repo'}" user:${params.query}`,
+            `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query || 'topic'}"`,
+            `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
           ],
         }),
       };

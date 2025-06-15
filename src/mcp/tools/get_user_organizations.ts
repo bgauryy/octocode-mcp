@@ -96,7 +96,7 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
           content: [
             {
               type: 'text',
-              text: `Failed to get user organizations: ${errorMessage}\n\n🔧 TROUBLESHOOTING:\n• Check GitHub authentication: gh auth status\n• Login if needed: gh auth login\n• Verify organization memberships in GitHub web interface\n• Ensure proper API permissions`,
+              text: `Failed to get user organizations: ${errorMessage}\n\nTROUBLESHOOTING:\n• Check GitHub authentication: gh auth status\n• Login if needed: gh auth login\n• Verify organization memberships in GitHub web interface\n• Ensure proper API permissions`,
             },
           ],
           isError: true,

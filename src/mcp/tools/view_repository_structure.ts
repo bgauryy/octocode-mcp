@@ -219,7 +219,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         ) {
           errorType = 'not-found';
           specificSuggestions = `
-🔍 NOT FOUND SOLUTIONS:
+NOT FOUND SOLUTIONS:
 • Verify repository exists: ${args.owner}/${args.repo}
 • Check branch name: ${args.branch} (try 'main', 'master', 'develop')
 • Verify path exists: ${args.path || 'root'}
@@ -250,7 +250,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         ) {
           errorType = 'rate-limit';
           specificSuggestions = `
-⏱️ RATE LIMIT SOLUTIONS:
+RATE LIMIT SOLUTIONS:
 • Wait before retry (GitHub API limits)
 • Use authentication to increase limits
 • Reduce exploration frequency`;
@@ -260,7 +260,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           content: [
             {
               type: 'text',
-              text: `Failed to view repository structure: ${errorMessage}\n\n🔧 ERROR TYPE: ${errorType.toUpperCase()}\n\n📋 CONTEXT:\n• Repository: ${args.owner}/${args.repo}\n• Branch: ${args.branch}\n• Path: ${args.path || 'root'}${specificSuggestions}\n\n💡 GENERAL TROUBLESHOOTING:\n• Verify repository exists and is accessible\n• Check branch name spelling (common: main, master, develop)\n• Start with root path (empty) before exploring subdirectories\n• Use github_search_repos to find and verify repositories\n• Ensure proper authentication for private repositories`,
+              text: `Failed to view repository structure: ${errorMessage}\n\nERROR TYPE: ${errorType.toUpperCase()}\n\nCONTEXT:\n• Repository: ${args.owner}/${args.repo}\n• Branch: ${args.branch}\n• Path: ${args.path || 'root'}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Verify repository exists and is accessible\n• Check branch name spelling (common: main, master, develop)\n• Start with root path (empty) before exploring subdirectories\n• Use github_search_repos to find and verify repositories\n• Ensure proper authentication for private repositories`,
             },
           ],
           isError: true,

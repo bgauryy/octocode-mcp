@@ -205,19 +205,19 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           errorMessage.includes('rate limit') ||
           errorMessage.includes('429')
         ) {
-          specificSuggestions = `\n\n⏱️ RATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search scope with filters`;
+          specificSuggestions = `\n\nRATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search scope with filters`;
         } else if (
           errorMessage.includes('404') ||
           errorMessage.includes('Not Found')
         ) {
-          specificSuggestions = `\n\n🔍 NOT FOUND SOLUTIONS:\n• Verify repository exists: ${args.owner}/${args.repo}\n• Check organization/user name spelling\n• Try global search without owner/repo filters`;
+          specificSuggestions = `\n\nNOT FOUND SOLUTIONS:\n• Verify repository exists: ${args.owner}/${args.repo}\n• Check organization/user name spelling\n• Try global search without owner/repo filters`;
         }
 
         return {
           content: [
             {
               type: 'text',
-              text: `Failed to search GitHub commits: ${errorMessage}${specificSuggestions}\n\n🔧 GENERAL TROUBLESHOOTING:\n• Use simpler search terms (single keywords work best)\n• Try exploratory mode (no query) for recent commits\n• Remove restrictive filters and search globally first\n• Verify repository access and visibility settings`,
+              text: `Failed to search GitHub commits: ${errorMessage}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use simpler search terms (single keywords work best)\n• Try exploratory mode (no query) for recent commits\n• Remove restrictive filters and search globally first\n• Verify repository access and visibility settings`,
             },
           ],
           isError: true,

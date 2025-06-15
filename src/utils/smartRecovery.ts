@@ -255,7 +255,7 @@ export function generateSmartRecovery(
   if (queryAnalysis) {
     recoveryText += `
 
-🔍 QUERY ANALYSIS:
+QUERY ANALYSIS:
 • Type: ${queryAnalysis.type.toUpperCase()} search
 • Complexity: ${queryAnalysis.complexity.toUpperCase()}
 • Keywords: ${queryAnalysis.keywords.join(', ')}`;
@@ -270,7 +270,7 @@ export function generateSmartRecovery(
   if (simplifiedQueries.length > 1) {
     recoveryText += `
 
-🔄 SIMPLIFIED QUERY OPTIONS:
+SIMPLIFIED QUERY OPTIONS:
 ${simplifiedQueries
   .slice(1)
   .map((q, i) => `${i + 1}. "${q}"`)
@@ -281,7 +281,7 @@ ${simplifiedQueries
   if (packageVariations.length > 1) {
     recoveryText += `
 
-📦 PACKAGE NAME VARIATIONS:
+PACKAGE NAME VARIATIONS:
 ${packageVariations
   .slice(1)
   .map((v, i) => `${i + 1}. "${v}"`)
@@ -298,7 +298,7 @@ ${toolChain.map((t, i) => `${i + 1}. ${t.tool} - ${t.reason}`).join('\n')}`;
   if (error.message.includes('404') || error.message.includes('not found')) {
     recoveryText += `
 
-💡 NOT FOUND RECOVERY:
+NOT FOUND RECOVERY:
 • Check spelling and exact names
 • Try search tools instead of direct access
 • Use broader discovery methods first`;
@@ -307,7 +307,7 @@ ${toolChain.map((t, i) => `${i + 1}. ${t.tool} - ${t.reason}`).join('\n')}`;
   if (error.message.includes('API') || error.message.includes('rate limit')) {
     recoveryText += `
 
-⏱️ API LIMIT RECOVERY:
+API LIMIT RECOVERY:
 • Wait a moment before retrying
 • Use simpler queries to reduce API usage
 • Try different tools that may use different API endpoints`;
@@ -316,7 +316,7 @@ ${toolChain.map((t, i) => `${i + 1}. ${t.tool} - ${t.reason}`).join('\n')}`;
   // General best practices
   recoveryText += `
 
-📋 PROVEN RECOVERY WORKFLOW:
+PROVEN RECOVERY WORKFLOW:
 1. Start with search tools (npm_search_packages, github_search_repos)
 2. Use discovery results to guide specific tool usage
 3. Progressively simplify queries if needed
@@ -326,7 +326,7 @@ ${toolChain.map((t, i) => `${i + 1}. ${t.tool} - ${t.reason}`).join('\n')}`;
   if (resultCount === 0) {
     recoveryText += `
 
-🎯 ZERO RESULTS STRATEGY:
+ZERO RESULTS STRATEGY:
 • Broaden search terms
 • Remove restrictive filters
 • Try ecosystem discovery tools
@@ -352,7 +352,7 @@ export function getToolCategoryRecovery(
 ): string {
   if (toolName.startsWith('npm_get_')) {
     return `
-🔄 NPM TOOL RECOVERY:
+NPM TOOL RECOVERY:
 • Try npm_search_packages first for discovery
 • Check package name variations
 • Use github_search_repos for alternative discovery`;
@@ -360,7 +360,7 @@ export function getToolCategoryRecovery(
 
   if (toolName.includes('github_search_')) {
     return `
-🔄 GITHUB SEARCH RECOVERY:
+GITHUB SEARCH RECOVERY:
 • Simplify query terms
 • Remove restrictive filters
 • Try broader discovery tools first`;
@@ -368,14 +368,14 @@ export function getToolCategoryRecovery(
 
   if (toolName.includes('github_get_')) {
     return `
-🔄 GITHUB ACCESS RECOVERY:
+GITHUB ACCESS RECOVERY:
 • Verify repository exists and is accessible
 • Check branch/path names
 • Try search tools for discovery first`;
   }
 
   return `
-🔄 GENERAL RECOVERY:
+GENERAL RECOVERY:
 • Try discovery tools before specific access
 • Use simpler queries
 • Follow recommended tool chains`;

@@ -73,7 +73,7 @@ export async function npmSearch(
             suggestions: [
               `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}" stars:>10`,
               `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${query}"`,
-              `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}" language:javascript`,
+              `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}"`,
             ],
           }),
           ...(Array.isArray(searchResults) &&

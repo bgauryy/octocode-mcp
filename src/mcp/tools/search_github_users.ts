@@ -13,7 +13,7 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .string()
         .min(1, 'Search query is required and cannot be empty')
         .describe(
-          "The search query to find users/organizations (e.g., 'react developer', 'python', 'machine learning')"
+          "The search query to find users/organizations (e.g., 'software developer', 'programming', 'machine learning')"
         ),
       owner: z
         .string()
@@ -38,7 +38,7 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .string()
         .optional()
         .describe(
-          "Filter by primary programming language (e.g., 'javascript', 'python', 'java')"
+          "Filter by primary programming language (e.g., 'python', 'rust', 'go')"
         ),
       repos: z
         .string()
@@ -209,7 +209,7 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
                 'Try broader search terms (e.g., "developer", "engineer")',
                 'Remove location/language filters for global search',
                 'Use different account types (user vs org)',
-                'Try technology keywords ("react", "python", "javascript")',
+                'Try technology keywords ("programming", "software", "development")',
                 'Search for specific skills or job titles',
               ],
             }),
@@ -281,19 +281,19 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
           errorMessage.includes('rate limit') ||
           errorMessage.includes('429')
         ) {
-          specificSuggestions = `\n\n⏱️ RATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search frequency and scope`;
+          specificSuggestions = `\n\nRATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search frequency and scope`;
         } else if (
           errorMessage.includes('validation') ||
           errorMessage.includes('invalid')
         ) {
-          specificSuggestions = `\n\n🔧 VALIDATION SOLUTIONS:\n• Check filter formats (e.g., followers:">100", repos:">10")\n• Verify date formats (e.g., created:">2020-01-01")\n• Simplify search query and remove special characters`;
+          specificSuggestions = `\n\nVALIDATION SOLUTIONS:\n• Check filter formats (e.g., followers:">100", repos:">10")\n• Verify date formats (e.g., created:">2020-01-01")\n• Simplify search query and remove special characters`;
         }
 
         return {
           content: [
             {
               type: 'text',
-              text: `Failed to search GitHub users: ${errorMessage}${specificSuggestions}\n\n🔧 GENERAL TROUBLESHOOTING:\n• Use simpler search terms (technology names work well)\n• Remove restrictive filters for broader results\n• Try different account types (user vs organization)\n• Search for common roles: "developer", "engineer", "maintainer"\n• Use location or language filters to narrow results effectively`,
+              text: `Failed to search GitHub users: ${errorMessage}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use simpler search terms (technology names work well)\n• Remove restrictive filters for broader results\n• Try different account types (user vs organization)\n• Search for common roles: "developer", "engineer", "maintainer"\n• Use location or language filters to narrow results effectively`,
             },
           ],
           isError: true,

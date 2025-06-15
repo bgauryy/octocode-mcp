@@ -3,6 +3,7 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmData } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 // Enhanced type for comprehensive API intelligence
 interface ComprehensiveNpmExportsResult {
@@ -46,9 +47,9 @@ interface ComprehensiveNpmExportsResult {
   // Additional context for intelligent analysis
   analysisContext: {
     packageType: 'esm' | 'cjs' | 'dual' | 'unknown';
-    isTypescriptPackage: boolean;
+    hasTypeSupport: boolean;
     hasBrowserSupport: boolean;
-    hasReactSupport: boolean;
+    hasFrameworkSupport: boolean;
     moduleStructure: 'single' | 'multi' | 'complex';
   };
 
@@ -114,11 +115,13 @@ export async function npmGetExports(
         },
         analysisContext,
         nextSteps: [
-          `github_search_code "${searchTargets.apiKeywords[0]}" path:src/`,
-          `github_search_repositories "${npmData.name}" stars:>10`,
-          `npm_get_dependencies "${npmData.name}"`,
+          `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${searchTargets.apiKeywords[0]}" path:src/`,
+          `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${npmData.name}" stars:>10`,
+          `${TOOL_NAMES.NPM_GET_DEPENDENCIES} "${npmData.name}"`,
           ...(searchTargets.entryFiles.length > 0
-            ? [`github_search_code filename:${searchTargets.entryFiles[0]}`]
+            ? [
+                `${TOOL_NAMES.GITHUB_SEARCH_CODE} filename:${searchTargets.entryFiles[0]}`,
+              ]
             : []),
         ],
       };
@@ -241,8 +244,8 @@ function analyzePackageContext(npmData: NpmData, exports: Record<string, any>) {
   else if (hasEsmIndicators) packageType = 'esm';
   else if (hasCjsIndicators) packageType = 'cjs';
 
-  // Check for TypeScript
-  const isTypescriptPackage =
+  // Check for type system support
+  const hasTypeSupport =
     !!(npmData as any).types ||
     !!(npmData as any).typings ||
     npmData.name.includes('@types/');
@@ -255,11 +258,17 @@ function analyzePackageContext(npmData: NpmData, exports: Record<string, any>) {
         typeof config === 'object' && config !== null && 'browser' in config
     );
 
-  // Check for React support
-  const hasReactSupport =
-    npmData.keywords?.includes('react') ||
-    npmData.description?.toLowerCase().includes('react') ||
-    Object.keys(exports).some(path => path.includes('jsx'));
+  // Check for framework support
+  const hasFrameworkSupport =
+    npmData.keywords?.some(keyword =>
+      ['framework', 'library', 'toolkit', 'sdk', 'api'].includes(
+        keyword.toLowerCase()
+      )
+    ) ||
+    !!npmData.description
+      ?.toLowerCase()
+      .match(/framework|library|toolkit|sdk|api/) ||
+    Object.keys(exports).some(path => path.includes('runtime'));
 
   // Determine module structure complexity
   const exportCount = Object.keys(exports).length;
@@ -269,9 +278,9 @@ function analyzePackageContext(npmData: NpmData, exports: Record<string, any>) {
 
   return {
     packageType,
-    isTypescriptPackage,
+    hasTypeSupport,
     hasBrowserSupport,
-    hasReactSupport,
+    hasFrameworkSupport,
     moduleStructure,
   };
 }

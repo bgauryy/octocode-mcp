@@ -13,7 +13,7 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
         .string()
         .min(1, 'Search query is required and cannot be empty')
         .describe(
-          "The search query to find topics (e.g., 'react', 'react+typescript', 'machine-learning')"
+          "The search query to find topics (e.g., 'web-development', 'data-science', 'machine-learning')"
         ),
       owner: z
         .string()
@@ -86,13 +86,13 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
           if (resultCount === 0) {
             responseText += `
 
-🔄 NO TOPICS FOUND RECOVERY:
+NO TOPICS FOUND RECOVERY:
 • Try simpler terms: "${args.query}" → single technology keywords
 • Ecosystem discovery: npm_search_packages for related packages
 • Repository search: github_search_repos for projects using these topics
 • User community: github_search_users for topic experts
 
-💡 TOPIC SEARCH OPTIMIZATION:
+TOPIC SEARCH OPTIMIZATION:
 • Use popular technology terms: "react", "javascript", "python"
 • Try compound topics: "machine-learning", "web-development"
 • Focus on featured topics: featured=true
@@ -104,7 +104,7 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
           } else if (resultCount <= 3) {
             responseText += `
 
-💡 LIMITED TOPICS ENHANCEMENT:
+LIMITED TOPICS ENHANCEMENT:
 • Found ${resultCount} topics - try broader or more popular terms
 • Ecosystem expansion: npm_search_packages for related technologies
 • Project discovery: github_search_repos for topic implementation`;
