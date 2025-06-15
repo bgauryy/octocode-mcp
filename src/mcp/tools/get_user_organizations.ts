@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { getUserOrganizations } from '../../impl/github/getUserOrganizations';
+import { createOptimizedError } from '../../impl/util';
 
 export function registerGetUserOrganizationsTool(server: McpServer) {
   server.tool(
@@ -92,15 +93,11 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to get user organizations: ${errorMessage}\n\nTROUBLESHOOTING:\n• Check GitHub authentication: gh auth status\n• Login if needed: gh auth login\n• Verify organization memberships in GitHub web interface\n• Ensure proper API permissions`,
-            },
-          ],
-          isError: true,
-        };
+        return createOptimizedError('Get user organizations', errorMessage, [
+          'gh auth status',
+          'gh auth login',
+          'check org memberships',
+        ]);
       }
     }
   );

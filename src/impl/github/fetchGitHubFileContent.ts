@@ -2,40 +2,30 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GithubFetchRequestParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
-import {
-  createSuccessResult,
-  createOptimizedError,
-  analyzeGitHubError,
-} from '../util';
-import { TOOL_NAMES } from '../../mcp/systemPrompts';
+import { createErrorResult, createSuccessResult } from '../util';
 
 export async function fetchGitHubFileContent(
   params: GithubFetchRequestParams
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-file', params);
+  const cacheKey = generateCacheKey('gh-file-content', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const command = 'gh';
-      const args = [
-        'api',
-        `repos/${params.owner}/${params.repo}/contents/${params.filePath}`,
-        ...(params.branch ? ['--field', `ref=${params.branch}`] : []),
-        '--jq',
-        '.content',
-      ];
+      let apiPath = `/repos/${params.owner}/${params.repo}/contents/${params.filePath}`;
 
-      const result = await executeGitHubCommand(command, args, {
-        cache: false,
-      });
+      // Add ref parameter if branch is provided
+      if (params.branch) {
+        apiPath += `?ref=${params.branch}`;
+      }
+
+      const args = [apiPath, '--jq', '.content'];
+      const result = await executeGitHubCommand('api', args, { cache: false });
 
       if (result.isError) {
         const errorMsg = result.content[0].text as string;
-        const analysis = analyzeGitHubError(errorMsg);
-        return createOptimizedError(
-          `File fetch ${params.filePath}`,
-          errorMsg,
-          analysis.suggestions
+        return createErrorResult(
+          `Failed to fetch file: ${params.filePath}`,
+          new Error(errorMsg)
         );
       }
 
@@ -45,13 +35,9 @@ export async function fetchGitHubFileContent(
 
       // Validate base64 content
       if (!base64Content || base64Content === 'null') {
-        return createOptimizedError(
-          `File content ${params.filePath}`,
-          'Empty or binary file',
-          [
-            `${TOOL_NAMES.GITHUB_SEARCH_CODE} to find content`,
-            'check different file',
-          ]
+        return createErrorResult(
+          `Empty or invalid file content: ${params.filePath}`,
+          new Error('File is empty or binary')
         );
       }
 
@@ -60,13 +46,9 @@ export async function fetchGitHubFileContent(
       try {
         decodedContent = Buffer.from(base64Content, 'base64').toString('utf-8');
       } catch (decodeError) {
-        return createOptimizedError(
-          `File decode ${params.filePath}`,
-          (decodeError as Error).message,
-          [
-            'file may be binary',
-            `${TOOL_NAMES.GITHUB_SEARCH_CODE} for text content`,
-          ]
+        return createErrorResult(
+          `Failed to decode file content: ${params.filePath}`,
+          decodeError as Error
         );
       }
 
@@ -74,20 +56,15 @@ export async function fetchGitHubFileContent(
         filePath: params.filePath,
         owner: params.owner,
         repo: params.repo,
+        branch: params.branch,
         content: decodedContent,
         size: decodedContent.length,
-        nextSteps: [
-          `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.filePath.split('/').pop()}" repo:${params.owner}/${params.repo}`,
-          `${TOOL_NAMES.GITHUB_GET_CONTENTS} "${params.owner}/${params.repo}" path:${params.filePath.split('/').slice(0, -1).join('/')}`,
-          `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.owner}"`,
-        ],
+        encoding: 'utf-8',
       });
     } catch (error) {
-      const analysis = analyzeGitHubError((error as Error).message);
-      return createOptimizedError(
-        `File fetch ${params.filePath}`,
-        (error as Error).message,
-        analysis.suggestions
+      return createErrorResult(
+        `Unexpected error fetching file: ${params.filePath}`,
+        error as Error
       );
     }
   });

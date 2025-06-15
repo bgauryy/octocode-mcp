@@ -3,6 +3,7 @@ import z from 'zod';
 import { GitHubUsersSearchParams } from '../../types';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { searchGitHubUsers } from '../../impl/github/searchGitHubUsers';
+import { createSmartError } from '../../impl/util';
 
 export function registerSearchGitHubUsersTool(server: McpServer) {
   server.tool(
@@ -71,10 +72,12 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(100)
+        .max(50)
         .optional()
-        .default(50)
-        .describe('Maximum number of users to return (default: 50, max: 100)'),
+        .default(25)
+        .describe(
+          'Maximum number of users to return (default: 25, max: 50 for LLM optimization)'
+        ),
       page: z
         .number()
         .int()
@@ -119,12 +122,12 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
           };
         }
 
-        if (args.limit && (args.limit < 1 || args.limit > 100)) {
+        if (args.limit && (args.limit < 1 || args.limit > 50)) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'Error: Limit must be between 1 and 100',
+                text: 'Error: Limit must be between 1 and 50',
               },
             ],
             isError: true,
@@ -270,34 +273,12 @@ export function registerSearchGitHubUsersTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
 
-        // Enhanced error analysis
-        let specificSuggestions = '';
-        if (
-          errorMessage.includes('authentication') ||
-          errorMessage.includes('401')
-        ) {
-          specificSuggestions = `\n\n🔒 AUTHENTICATION SOLUTIONS:\n• Check GitHub CLI authentication: gh auth status\n• Login if needed: gh auth login\n• Verify API permissions for user search`;
-        } else if (
-          errorMessage.includes('rate limit') ||
-          errorMessage.includes('429')
-        ) {
-          specificSuggestions = `\n\nRATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search frequency and scope`;
-        } else if (
-          errorMessage.includes('validation') ||
-          errorMessage.includes('invalid')
-        ) {
-          specificSuggestions = `\n\nVALIDATION SOLUTIONS:\n• Check filter formats (e.g., followers:">100", repos:">10")\n• Verify date formats (e.g., created:">2020-01-01")\n• Simplify search query and remove special characters`;
-        }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub users: ${errorMessage}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use simpler search terms (technology names work well)\n• Remove restrictive filters for broader results\n• Try different account types (user vs organization)\n• Search for common roles: "developer", "engineer", "maintainer"\n• Use location or language filters to narrow results effectively`,
-            },
-          ],
-          isError: true,
-        };
+        return createSmartError(
+          TOOL_NAMES.GITHUB_SEARCH_USERS,
+          'User search',
+          errorMessage,
+          args.query
+        );
       }
     }
   );

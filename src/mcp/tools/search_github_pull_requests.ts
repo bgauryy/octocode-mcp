@@ -3,6 +3,7 @@ import z from 'zod';
 import { GitHubPullRequestsSearchParams } from '../../types';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
+import { createSmartError } from '../../impl/util';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
@@ -65,11 +66,11 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(100)
+        .max(50)
         .optional()
-        .default(50)
+        .default(25)
         .describe(
-          'Maximum number of pull requests to return (default: 50, max: 100)'
+          'Maximum number of pull requests to return (default: 25, max: 50 for LLM optimization)'
         ),
       sort: z
         .enum([
@@ -129,12 +130,12 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           };
         }
 
-        if (args.limit && (args.limit < 1 || args.limit > 100)) {
+        if (args.limit && (args.limit < 1 || args.limit > 50)) {
           return {
             content: [
               {
                 type: 'text',
-                text: 'Error: Limit must be between 1 and 100',
+                text: 'Error: Limit must be between 1 and 50',
               },
             ],
             isError: true,
@@ -241,34 +242,12 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
 
-        // Enhanced error analysis
-        let specificSuggestions = '';
-        if (
-          errorMessage.includes('authentication') ||
-          errorMessage.includes('401')
-        ) {
-          specificSuggestions = `\n\n🔒 AUTHENTICATION SOLUTIONS:\n• Check GitHub CLI authentication: gh auth status\n• Login if needed: gh auth login\n• Verify API permissions for PR search`;
-        } else if (
-          errorMessage.includes('rate limit') ||
-          errorMessage.includes('429')
-        ) {
-          specificSuggestions = `\n\nRATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search scope with specific filters`;
-        } else if (
-          errorMessage.includes('404') ||
-          errorMessage.includes('Not Found')
-        ) {
-          specificSuggestions = `\n\nNOT FOUND SOLUTIONS:\n• Verify repository exists: ${args.owner}/${args.repo}\n• Check organization/user name spelling\n• Try global search without repository filters`;
-        }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub pull requests: ${errorMessage}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use simpler search terms (single keywords work best)\n• Remove restrictive filters for broader results\n• Try different states (open, closed, or both)\n• Search for common PR types: "bug fix", "feature", "refactor"\n• Use language filters for specific technology examples`,
-            },
-          ],
-          isError: true,
-        };
+        return createSmartError(
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+          'PR search',
+          errorMessage,
+          args.query
+        );
       }
     }
   );

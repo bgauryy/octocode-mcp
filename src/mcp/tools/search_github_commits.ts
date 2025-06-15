@@ -3,6 +3,7 @@ import z from 'zod';
 import { GitHubCommitsSearchParams } from '../../types';
 import { searchGitHubCommits } from '../../impl/github/searchGitHubCommits';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { createSmartError } from '../../impl/util';
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   server.tool(
@@ -64,11 +65,11 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(100)
+        .max(50)
         .optional()
-        .default(50)
+        .default(25)
         .describe(
-          'Maximum number of commits to return (default: 50, max: 100)'
+          'Maximum number of commits to return (default: 25, max: 50 for LLM optimization)'
         ),
       visibility: z
         .enum(['public', 'private', 'internal'])
@@ -194,34 +195,12 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
 
-        // Enhanced error analysis
-        let specificSuggestions = '';
-        if (
-          errorMessage.includes('authentication') ||
-          errorMessage.includes('401')
-        ) {
-          specificSuggestions = `\n\n🔒 AUTHENTICATION SOLUTIONS:\n• Check GitHub CLI authentication: gh auth status\n• Login if needed: gh auth login\n• Verify API permissions for commit search`;
-        } else if (
-          errorMessage.includes('rate limit') ||
-          errorMessage.includes('429')
-        ) {
-          specificSuggestions = `\n\nRATE LIMIT SOLUTIONS:\n• Wait before retry (GitHub API limits)\n• Use authentication to increase limits\n• Reduce search scope with filters`;
-        } else if (
-          errorMessage.includes('404') ||
-          errorMessage.includes('Not Found')
-        ) {
-          specificSuggestions = `\n\nNOT FOUND SOLUTIONS:\n• Verify repository exists: ${args.owner}/${args.repo}\n• Check organization/user name spelling\n• Try global search without owner/repo filters`;
-        }
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Failed to search GitHub commits: ${errorMessage}${specificSuggestions}\n\nGENERAL TROUBLESHOOTING:\n• Use simpler search terms (single keywords work best)\n• Try exploratory mode (no query) for recent commits\n• Remove restrictive filters and search globally first\n• Verify repository access and visibility settings`,
-            },
-          ],
-          isError: true,
-        };
+        return createSmartError(
+          TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+          'Commit search',
+          errorMessage,
+          args.query
+        );
       }
     }
   );

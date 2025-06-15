@@ -52,9 +52,14 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
         .describe('Order of results returned (default: desc)'),
       limit: z
         .number()
+        .int()
+        .min(1)
+        .max(50)
         .optional()
-        .default(50)
-        .describe('Maximum number of topics to return (default: 50)'),
+        .default(20)
+        .describe(
+          'Maximum number of topics to return (default: 20, max: 50 for LLM optimization)'
+        ),
     },
     {
       title: 'Search GitHub Topics',

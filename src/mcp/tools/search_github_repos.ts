@@ -3,6 +3,7 @@ import z from 'zod';
 import { GitHubReposSearchParams } from '../../types';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { searchGitHubRepos } from '../../impl/github/searchGitHubRepos';
+import { detectOrganizationalQuery, createSmartError } from '../../impl/util';
 
 // Security validation function
 function sanitizeInput(input: string): string {
@@ -58,124 +59,6 @@ function decomposeQuery(query: string): {
   return { primaryTerm, suggestion, shouldDecompose: true };
 }
 
-// Enhanced filter validation with testing-validated production insights
-function validateFilterCombinations(args: GitHubReposSearchParams): {
-  isValid: boolean;
-  warnings: string[];
-  suggestions: string[];
-} {
-  const warnings: string[] = [];
-  const suggestions: string[] = [];
-
-  // Critical filter combination checks based on comprehensive testing
-  const problematicCombinations = [
-    {
-      condition:
-        args.owner === 'facebook' &&
-        args.query === 'framework' &&
-        args.language === 'JavaScript',
-      warning:
-        'facebook + react + JavaScript filter may return 0 results (TESTING-VALIDATED)',
-      suggestion:
-        'PROVEN: owner=facebook + query=react without language filter → React (236K stars), React Native (119K stars), Create React App',
-    },
-    {
-      condition:
-        args.language &&
-        args.stars &&
-        ((args.stars.includes('>') &&
-          parseInt(args.stars.replace(/[><]/g, '')) > 10000) ||
-          (!args.stars.includes('>') &&
-            !args.stars.includes('<') &&
-            parseInt(args.stars) > 10000)),
-      warning:
-        'High star threshold with specific language may be too restrictive (TESTING-VALIDATED)',
-      suggestion:
-        'PROVEN: Use >1000 stars for established projects, >100 for active ones. Language filters often miss major projects.',
-    },
-    {
-      condition:
-        !args.owner &&
-        (args.language || args.topic || args.stars !== undefined),
-      warning:
-        'Specific filters without owner scope may return too many or zero results',
-      suggestion: `PROVEN WORKFLOW: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package → repository extraction (95% success rate)`,
-    },
-    {
-      condition: args.query?.includes(' ') && args.query?.split(' ').length > 2,
-      warning:
-        'Multi-term queries often fail (TESTING-VALIDATED: "machine learning" → 0 results)',
-      suggestion:
-        'PROVEN: Single terms succeed - "tensorflow" → TensorFlow (190K stars) organization repos',
-    },
-  ];
-
-  problematicCombinations.forEach(check => {
-    if (check.condition) {
-      warnings.push(check.warning);
-      suggestions.push(check.suggestion);
-    }
-  });
-
-  // Validate date formats
-  const dateFields = ['created', 'updated'];
-  dateFields.forEach(field => {
-    const value = args[field as keyof GitHubReposSearchParams] as string;
-    if (value && !/^[><]=?\d{4}-\d{2}-\d{2}$/.test(value)) {
-      warnings.push(
-        `${field} must be in format ">2020-01-01", "<2023-12-31", etc.`
-      );
-    }
-  });
-
-  // Validate numeric ranges
-  if (args.limit && (args.limit < 1 || args.limit > 100)) {
-    warnings.push('Limit must be between 1 and 100');
-  }
-
-  if (args.stars && !/^[><]=?\d+$|^\d+$|^\d+\.\.\d+$/.test(args.stars)) {
-    warnings.push(
-      'Stars filter must be in format ">100", ">=500", "<1000", "<=200", "50..200" or a simple number'
-    );
-  }
-
-  if (args.forks !== undefined && args.forks < 0) {
-    warnings.push('Forks filter must be non-negative');
-  }
-
-  // Production best practices
-  if (!args.owner) {
-    suggestions.push(
-      `BEST PRACTICE: Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package workflow instead of direct repository search`
-    );
-  }
-
-  return {
-    isValid: warnings.length === 0,
-    warnings,
-    suggestions,
-  };
-}
-
-// Generate fallback suggestions for failed searches
-function generateFallbackSuggestions(args: GitHubReposSearchParams): string[] {
-  const fallbacks = [
-    `PROVEN WORKFLOW: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package → repository extraction (95% success rate)`,
-    'Simplify query to single technology term',
-    'Use quality filters: stars:>10 for active projects',
-    'Add language filter for specific technologies',
-    'Check spelling and use canonical technology names',
-  ];
-
-  if (args.query) {
-    fallbacks.unshift(
-      `BEST PRACTICE: Use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → npm_get_package workflow instead of direct repository search`
-    );
-  }
-
-  return fallbacks;
-}
-
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.tool(
     TOOL_NAMES.GITHUB_SEARCH_REPOS,
@@ -225,9 +108,14 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .describe('Filter based on license type (e.g., ["mit", "apache-2.0"])'),
       limit: z
         .number()
+        .int()
+        .min(1)
+        .max(50)
         .optional()
-        .default(50)
-        .describe('Maximum results (default: 50, max: 100)'),
+        .default(25)
+        .describe(
+          'Maximum results (default: 25, max: 50 for LLM optimization)'
+        ),
       match: z
         .enum(['name', 'description', 'readme'])
         .optional()
@@ -277,114 +165,105 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     },
     async (args: GitHubReposSearchParams) => {
       try {
-        // Ensure query is provided (should be caught by schema validation)
+        // Ensure query is provided
         if (!args.query || args.query.trim() === '') {
           throw new Error('Query is required and cannot be empty');
+        }
+
+        // Smart organizational detection
+        const orgInfo = detectOrganizationalQuery(args.query);
+        const smartArgs = { ...args };
+
+        // Auto-set owner for organizational queries if not provided
+        if (orgInfo.needsOrgAccess && !args.owner && orgInfo.orgName) {
+          smartArgs.owner = orgInfo.orgName;
         }
 
         // Smart query analysis and decomposition
         const queryAnalysis = decomposeQuery(args.query);
 
-        // Enhanced filter validation
-        const validation = validateFilterCombinations(args);
-
         // Prepare the search with potentially decomposed query
         const searchArgs = {
-          ...args,
+          ...smartArgs,
           query: sanitizeInput(queryAnalysis.primaryTerm),
         };
 
         // Execute the search
         const result = await searchGitHubRepos(searchArgs);
 
-        // Check if we got empty results and provide helpful guidance
+        // Check if we got results and provide helpful guidance
         const resultText = result.content[0].text as string;
-
-        // Handle non-JSON responses gracefully
-        let parsedResults;
         let resultCount = 0;
+        let hasResults = false;
 
         try {
-          parsedResults = JSON.parse(resultText);
+          const parsedResults = JSON.parse(resultText);
+
+          // Check multiple possible result structures
           if (parsedResults.rawOutput) {
             const rawData = JSON.parse(parsedResults.rawOutput);
             resultCount = Array.isArray(rawData) ? rawData.length : 0;
+            hasResults = resultCount > 0;
+          } else if (parsedResults.topRepositories) {
+            resultCount = Array.isArray(parsedResults.topRepositories)
+              ? parsedResults.topRepositories.length
+              : 0;
+            hasResults = resultCount > 0;
+          } else if (parsedResults.total) {
+            resultCount = parsedResults.total;
+            hasResults = resultCount > 0;
+          }
+
+          // Fallback: check if the result text contains repository data
+          if (
+            !hasResults &&
+            (resultText.includes('"name":') ||
+              resultText.includes('"url":"https://github.com/') ||
+              resultText.includes('topRepositories'))
+          ) {
+            hasResults = true;
+            // Try to extract count from text patterns
+            const nameMatches = resultText.match(/"name":/g);
+            if (nameMatches) {
+              resultCount = nameMatches.length;
+            }
           }
         } catch (parseError) {
-          // If parsing fails, it might be an error message from GitHub CLI
+          // If JSON parsing fails, check for error indicators
           if (
             resultText.includes('Failed to') ||
-            resultText.includes('Error:')
+            resultText.includes('Error:') ||
+            resultText.includes('fatal:')
           ) {
             throw new Error(`GitHub CLI error: ${resultText}`);
           }
-          // For other parsing issues, set reasonable defaults
-          resultCount = 0;
-          parsedResults = { rawOutput: '[]' };
+
+          // Check if there's still repository data in the text
+          hasResults =
+            resultText.includes('"name":') ||
+            resultText.includes('github.com/');
         }
 
         let responseText = resultText;
 
-        // Add guidance for multi-term queries
+        // Add concise optimization notes
         if (queryAnalysis.shouldDecompose) {
-          responseText += `\n\nMULTI-TERM QUERY OPTIMIZATION:\n${queryAnalysis.suggestion}`;
+          responseText += `\nQuery simplified: "${args.query}" → "${queryAnalysis.primaryTerm}"`;
         }
 
-        // Add validation warnings
-        if (validation.warnings.length > 0) {
-          responseText += `\n\nFILTER WARNINGS:\n${validation.warnings.map(w => `• ${w}`).join('\n')}`;
+        if (orgInfo.needsOrgAccess && smartArgs.owner) {
+          responseText += `\nOrg detected: ${orgInfo.orgName}`;
         }
 
-        // Add suggestions for better workflow
-        if (validation.suggestions.length > 0) {
-          responseText += `\n\nOPTIMIZATION SUGGESTIONS:\n${validation.suggestions.map(s => `• ${s}`).join('\n')}`;
+        // Add concise result context ONLY if we're certain about the status
+        if (!hasResults && resultCount === 0) {
+          responseText += `\nNo results found`;
+        } else if (hasResults && resultCount > 50) {
+          responseText += `\nBroad results (${resultCount}) - add filters`;
+        } else if (hasResults && resultCount > 0) {
+          responseText += `\nFound ${resultCount} repositories`;
         }
-
-        // Add fallback guidance for empty results
-        if (resultCount === 0) {
-          const fallbacks = generateFallbackSuggestions(args);
-          responseText += `\n\nFALLBACK STRATEGIES (0 results found):\n${fallbacks.map(f => `• ${f}`).join('\n')}`;
-          responseText += `\n\nPRODUCTION TIP: Repository search has 99% avoidance rate. NPM + Topics workflow provides better results with less API usage.`;
-        }
-
-        // Add testing-validated production best practices for successful searches
-        if (resultCount > 0) {
-          responseText += `\n\n✅ TESTING-VALIDATED INSIGHTS:`;
-          responseText += `\n• Found ${resultCount} repositories`;
-          if (resultCount >= 100) {
-            responseText += `\n• TOO BROAD: Add more specific filters or use ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for focused discovery`;
-          } else if (resultCount >= 31) {
-            responseText += `\n• BROAD: Consider adding language, stars, or topic filters for refinement`;
-          } else if (resultCount >= 11) {
-            responseText += `\n• GOOD: Manageable scope for analysis`;
-          } else {
-            responseText += `\n• IDEAL: Perfect scope for deep analysis`;
-          }
-
-          // Add proven search patterns based on testing
-          if (args.owner && args.query) {
-            responseText += `\n• SCOPED SEARCH SUCCESS: owner + single term pattern proven effective`;
-            responseText += `\n• PROVEN EXAMPLES: microsoft+typescript→VSCode(173K stars), facebook+react→React(236K stars)`;
-          } else if (!args.owner) {
-            responseText += `\n• GLOBAL SEARCH: Searching across all GitHub repositories`;
-            responseText += `\n• TIP: Add owner filter for more targeted results if you know specific organizations`;
-          }
-
-          // Add caching recommendations for testing-validated popular searches
-          const validatedPopularTerms = [
-            'framework',
-            'typescript',
-            'javascript',
-            'python',
-            'nodejs',
-            'vue',
-            'angular',
-            'tensorflow',
-          ];
-          if (validatedPopularTerms.includes(args.query.toLowerCase())) {
-            responseText += `\n• CACHE CANDIDATE: "${args.query}" is a testing-validated high-value search term`;
-          }
-        }
+        // If uncertain about results, don't add any status message
 
         return {
           content: [
@@ -396,28 +275,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           isError: false,
         };
       } catch (error) {
-        const fallbacks = generateFallbackSuggestions(args);
-        const errorMessage = `Repository search failed: ${(error as Error).message}
-
-RECOMMENDED FALLBACK WORKFLOW:
-${fallbacks.map(f => `• ${f}`).join('\n')}
-
-PRODUCTION NOTE: For reliable discovery:
-1. Start with ${TOOL_NAMES.NPM_SEARCH_PACKAGES} for package-based discovery
-2. Use ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} for ecosystem terminology  
-3. Use npm_get_package to extract repository URLs
-4. Use global repository search (without owner) for broad discovery
-5. Use scoped search (with owner) when you know specific organizations`;
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: errorMessage,
-            },
-          ],
-          isError: true,
-        };
+        return createSmartError(
+          TOOL_NAMES.GITHUB_SEARCH_REPOS,
+          'Repository search',
+          (error as Error).message,
+          args.query
+        );
       }
     }
   );

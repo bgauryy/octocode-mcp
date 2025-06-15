@@ -3,6 +3,7 @@ import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { GitHubCodeSearchParams } from '../../types';
 import { searchGitHubCode } from '../../impl/github/searchGitHubCode';
+import { detectOrganizationalQuery, createSmartError } from '../../impl/util';
 
 // Simple query enhancement for better results
 function enhanceQuery(query: string): string[] {
@@ -115,11 +116,11 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         .number()
         .int()
         .min(1)
-        .max(100)
+        .max(50)
         .optional()
         .default(30)
         .describe(
-          'Maximum number of results to return (default: 30, max: 100).'
+          'Maximum number of results to return (default: 30, max: 50 for LLM optimization).'
         ),
       match: z.enum(['file', 'path']).optional().describe('Search scope'),
       branch: z
@@ -174,22 +175,31 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           };
         }
 
+        // Smart organizational detection
+        const orgInfo = detectOrganizationalQuery(args.query);
+        const smartArgs = { ...args };
+
+        // Auto-set owner for organizational queries if not provided
+        if (orgInfo.needsOrgAccess && !args.owner && orgInfo.orgName) {
+          smartArgs.owner = orgInfo.orgName;
+        }
+
         // Apply intelligence from other tools
-        const smartArgs = applyIntelligence(args, args.intelligence);
+        const enhancedArgs = applyIntelligence(smartArgs, args.intelligence);
 
         // Try enhanced queries
         const queryVariations =
           args.enableQueryOptimization !== false
-            ? enhanceQuery(smartArgs.query)
-            : [smartArgs.query];
+            ? enhanceQuery(enhancedArgs.query)
+            : [enhancedArgs.query];
 
         let result: any = null;
-        let usedQuery = smartArgs.query;
+        let usedQuery = enhancedArgs.query;
 
         // Try queries in order of preference
         for (const query of queryVariations) {
           try {
-            const testArgs = { ...smartArgs, query };
+            const testArgs = { ...enhancedArgs, query };
             const testResult = await searchGitHubCode(testArgs);
 
             if (testResult.content && testResult.content[0]) {
@@ -209,15 +219,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         }
 
         if (!result) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Search failed. Try:\n• Simpler terms\n• Boolean operators: "term1 OR term2"\n• Specific paths: path:src/\n• Exclude tests: "term NOT test"`,
-              },
-            ],
-            isError: true,
-          };
+          return createSmartError(
+            TOOL_NAMES.GITHUB_SEARCH_CODE,
+            'Code search',
+            'No results found',
+            args.query
+          );
         }
 
         // Enhance response with concise context
@@ -226,12 +233,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 
           // Add transformation note if query was modified
           if (usedQuery !== args.query) {
-            responseText += `\n\nQuery optimized: "${args.query}" → "${usedQuery}"`;
+            responseText += `\nOptimized: "${args.query}" → "${usedQuery}"`;
           }
 
-          // Add intelligence context if used
-          if (args.intelligence?.searchTargets) {
-            responseText += `\nApplied package intelligence for targeted search`;
+          // Add org detection context
+          if (orgInfo.needsOrgAccess && smartArgs.owner) {
+            responseText += `\nOrg detected: ${orgInfo.orgName}`;
           }
 
           return {
@@ -249,15 +256,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `GitHub Code Search failed: ${errorMessage}\n\nSuggestions:\n• Simplify query terms\n• Use OR/AND/NOT operators\n• Try path filters: path:src/\n• Check repository access`,
-            },
-          ],
-          isError: true,
-        };
+        return createSmartError(
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          'Code search',
+          errorMessage,
+          args.query
+        );
       }
     }
   );

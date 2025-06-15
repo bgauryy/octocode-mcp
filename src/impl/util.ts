@@ -1,5 +1,4 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { TOOL_NAMES } from '../mcp/systemPrompts';
 
 /**
  * Determines if a string needs quoting for GitHub search
@@ -63,123 +62,83 @@ export function createOptimizedError(
 }
 
 /**
- * Create optimized success response with essential metadata only
+ * Detect organizational/private package patterns
  */
-export function createOptimizedSuccess(
-  data: any,
-  summary?: { [key: string]: any }
-): CallToolResult {
-  let text: string;
+export function detectOrganizationalQuery(query: string): {
+  isOrgQuery: boolean;
+  orgName?: string;
+  packageName?: string;
+  needsOrgAccess: boolean;
+} {
+  // Match @org/package pattern
+  const orgPackageMatch = query.match(/@([^/\s]+)\/([^/\s]+)/);
+  if (orgPackageMatch) {
+    return {
+      isOrgQuery: true,
+      orgName: orgPackageMatch[1],
+      packageName: `@${orgPackageMatch[1]}/${orgPackageMatch[2]}`,
+      needsOrgAccess: true,
+    };
+  }
 
-  if (summary) {
-    const summaryText = Object.entries(summary)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ');
-    text = `${summaryText}\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}`;
-  } else {
-    text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  // Common enterprise org patterns
+  const enterpriseOrgs = [
+    'wix',
+    'microsoft',
+    'google',
+    'facebook',
+    'netflix',
+    'uber',
+    'airbnb',
+  ];
+  const orgMatch = enterpriseOrgs.find(
+    org =>
+      query.toLowerCase().includes(org) ||
+      query.toLowerCase().includes(`@${org}`)
+  );
+
+  if (orgMatch) {
+    return {
+      isOrgQuery: true,
+      orgName: orgMatch,
+      needsOrgAccess: true,
+    };
+  }
+
+  return {
+    isOrgQuery: false,
+    needsOrgAccess: false,
+  };
+}
+
+/**
+ * Create optimized error response with smart fallbacks
+ */
+export function createSmartError(
+  tool: string,
+  operation: string,
+  error: string,
+  query?: string
+): CallToolResult {
+  // Simple fallback suggestions based on tool type
+  let suggestions = '';
+  if (query) {
+    if (tool.includes('SEARCH_REPOS')) {
+      suggestions = ' → Try npm_search_packages or github_search_topics';
+    } else if (tool.includes('SEARCH_CODE')) {
+      suggestions = ' → Try github_search_repositories + explore structure';
+    } else if (tool.includes('NPM_SEARCH')) {
+      suggestions = ' → Try github_search_repositories';
+    }
   }
 
   return {
     content: [
       {
         type: 'text',
-        text,
+        text: `${operation} failed: ${error}${suggestions}`,
       },
     ],
-    isError: false,
+    isError: true,
   };
-}
-
-/**
- * Smart error analysis for common GitHub API errors
- */
-export function analyzeGitHubError(error: string): {
-  type: string;
-  suggestions: string[];
-} {
-  const errorLower = error.toLowerCase();
-
-  if (errorLower.includes('404') || errorLower.includes('not found')) {
-    return {
-      type: 'not_found',
-      suggestions: [
-        `${TOOL_NAMES.GITHUB_GET_CONTENTS} to explore`,
-        `${TOOL_NAMES.GITHUB_SEARCH_CODE} to find files`,
-      ],
-    };
-  }
-
-  if (errorLower.includes('403') || errorLower.includes('forbidden')) {
-    return {
-      type: 'permission',
-      suggestions: [
-        `${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access`,
-        'check if repo is private',
-      ],
-    };
-  }
-
-  if (errorLower.includes('rate limit') || errorLower.includes('429')) {
-    return {
-      type: 'rate_limit',
-      suggestions: [
-        'wait before retry',
-        `use ${TOOL_NAMES.GITHUB_SEARCH_CODE} instead`,
-      ],
-    };
-  }
-
-  if (errorLower.includes('authentication') || errorLower.includes('401')) {
-    return {
-      type: 'auth',
-      suggestions: ['gh auth login', 'check GitHub CLI auth'],
-    };
-  }
-
-  return {
-    type: 'unknown',
-    suggestions: ['check input parameters', 'try alternative search methods'],
-  };
-}
-
-/**
- * Generate smart fallback suggestions based on search context
- */
-export function generateSmartFallbacks(
-  searchType: string,
-  query: string,
-  context?: { owner?: string; repo?: string }
-): string[] {
-  const fallbacks: string[] = [];
-
-  switch (searchType) {
-    case 'code':
-      fallbacks.push(`${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${query}"`);
-      if (context?.owner) {
-        fallbacks.push(
-          `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}" owner:${context.owner}`
-        );
-      }
-      fallbacks.push(`${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${query}"`);
-      break;
-
-    case 'repos':
-      fallbacks.push(`${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${query}"`);
-      fallbacks.push(`${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${query}"`);
-      fallbacks.push(`${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}"`);
-      break;
-
-    case 'issues':
-      fallbacks.push(`${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${query}"`);
-      fallbacks.push(`${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}"`);
-      fallbacks.push(`${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${query}"`);
-      break;
-
-    default:
-      fallbacks.push(`${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${query}"`);
-      fallbacks.push(`${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}"`);
-  }
-
-  return fallbacks.slice(0, 3); // Limit to 3 suggestions for token efficiency
 }

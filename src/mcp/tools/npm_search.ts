@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { npmSearch } from '../../impl/npm/npmSearch';
+import { detectOrganizationalQuery, createSmartError } from '../../impl/util';
 
 interface NpmPkgMeta {
   name: string;
@@ -40,10 +41,13 @@ export function registerNpmSearchTool(server: McpServer) {
         ),
       searchlimit: z
         .number()
+        .int()
+        .min(1)
+        .max(50)
         .optional()
-        .default(50)
+        .default(20)
         .describe(
-          'Maximum number of search results to return per query. Defaults to 50.'
+          'Maximum number of search results to return per query (default: 20, max: 50 for LLM optimization).'
         ),
       json: z
         .boolean()
@@ -68,19 +72,21 @@ export function registerNpmSearchTool(server: McpServer) {
         const terms = Array.isArray(args.queries)
           ? args.queries
           : [args.queries];
+
+        // Check for organizational patterns
+        const orgQueries = terms.map(term => ({
+          term,
+          orgInfo: detectOrganizationalQuery(term),
+        }));
+
         const allResults: any[] = [];
-        let hadError = false;
         const errorMessages: string[] = [];
 
-        // For each term, perform npm search (supporting prefix/partial)
-        for (const term of terms) {
-          // If the term ends with '-' treat it as an explicit prefix search.
-          // Removing the length < 4 heuristic to avoid overly broad queries like 'vue'.
-          const isPrefix = term.endsWith('-');
-          const searchTerm = isPrefix ? term : term;
+        // For each term, perform npm search
+        for (const { term } of orgQueries) {
           try {
             const result = await npmSearch({
-              query: searchTerm,
+              query: term,
               searchlimit: args.searchlimit,
               json: true,
             });
@@ -90,13 +96,10 @@ export function registerNpmSearchTool(server: McpServer) {
               try {
                 parsed = JSON.parse(responseText);
               } catch {
-                hadError = true;
-                errorMessages.push(
-                  `Failed to parse NPM search results for '${term}'`
-                );
+                errorMessages.push(`Parse failed: ${term}`);
                 continue;
               }
-              // Robustly extract package array (supports different shapes)
+
               const pkgArray: any[] = Array.isArray(parsed)
                 ? parsed
                 : Array.isArray(parsed.results)
@@ -110,16 +113,12 @@ export function registerNpmSearchTool(server: McpServer) {
               }
             }
           } catch (err) {
-            hadError = true;
-            errorMessages.push(
-              `NPM search failed for '${term}': ${err instanceof Error ? err.message : String(err)}`
-            );
+            errorMessages.push(`Search failed: ${term}`);
           }
         }
 
         // Dedupe by package name
         const deduped = dedupePackages(allResults as NpmPkgMeta[]);
-        // Map to minimal output
         const simplifiedResults = deduped.map(pkg => ({
           name: pkg.name,
           version: pkg.version,
@@ -146,27 +145,32 @@ export function registerNpmSearchTool(server: McpServer) {
           };
         }
 
-        // If no results, fallback message
-        let fallbackMsg = 'No results found.';
-        if (hadError) fallbackMsg += ` Errors: ${errorMessages.join('; ')}`;
-        fallbackMsg +=
-          '\nFALLBACK: Use GitHub search tools (topics, repos, code, issues, PRs) for further discovery.';
-        return {
-          content: [{ type: 'text', text: fallbackMsg }],
-          isError: true,
-        };
+        // Check if any org queries need special handling
+        const orgNeedsAccess = orgQueries.some(q => q.orgInfo.needsOrgAccess);
+        if (orgNeedsAccess) {
+          return createSmartError(
+            TOOL_NAMES.NPM_SEARCH_PACKAGES,
+            'NPM search',
+            'Private package not found',
+            terms[0]
+          );
+        }
+
+        return createSmartError(
+          TOOL_NAMES.NPM_SEARCH_PACKAGES,
+          'NPM search',
+          'No packages found',
+          terms[0]
+        );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `NPM Search Failed: ${errorMessage}\nFALLBACK: Use GitHub search tools (topics, repos, code, issues, PRs).`,
-            },
-          ],
-          isError: true,
-        };
+        return createSmartError(
+          TOOL_NAMES.NPM_SEARCH_PACKAGES,
+          'NPM search',
+          errorMessage,
+          Array.isArray(args.queries) ? args.queries[0] : args.queries
+        );
       }
     }
   );

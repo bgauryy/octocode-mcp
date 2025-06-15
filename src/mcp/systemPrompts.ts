@@ -24,99 +24,69 @@ export const TOOL_NAMES = {
 
 export const PROMPT_SYSTEM_PROMPT = `INTELLIGENT CODE RESEARCH ENGINE
 
-INITIALIZATION: Always start with ${TOOL_NAMES.API_STATUS_CHECK}
+INITIALIZATION: ${TOOL_NAMES.API_STATUS_CHECK}
 
-DISCOVERY WORKFLOW:
-1. ${TOOL_NAMES.NPM_SEARCH_PACKAGES} - Package discovery
-2. ${TOOL_NAMES.NPM_GET_EXPORTS} - API intelligence for targeted searches
-3. ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Repository discovery  
-4. ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Implementation patterns
+SMART DISCOVERY WORKFLOW:
+1. PRIVATE/ORG DETECTION: @org/package → ${TOOL_NAMES.GITHUB_GET_USER_ORGS} → auto-set owner
+2. NPM-FIRST: ${TOOL_NAMES.NPM_SEARCH_PACKAGES} → ${TOOL_NAMES.NPM_GET_EXPORTS} → extract repo URLs
+3. TARGETED SEARCH: Use NPM intelligence for precise ${TOOL_NAMES.GITHUB_SEARCH_CODE} queries
+4. CROSS-REFERENCE: ${TOOL_NAMES.GITHUB_SEARCH_REPOS} + ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} for validation
 
-SMART SEARCH STRATEGY:
-- Use NPM results to guide GitHub searches with specific terms and paths
-- Apply API intelligence (entry points, modules) for precise targeting
-- Cross-reference tools for comprehensive coverage
-- Target: README.md, docs/, src/, examples/, tests/
+QUALITY-OPTIMIZED LIMITS (LLM-FOCUSED):
+- Default 20-30 results (optimal for processing)
+- Max 50 results (prevents token overflow)
+- Quality > quantity: stars>10, active repos, verified sources
 
-QUALITY PRINCIPLES:
-- Extract complete implementations over snippets
-- Include setup, configuration, usage patterns
-- Show real-world examples with context
-- Focus on production code (exclude test/mock files)
-- verify documentation against code when using it as data -> code and configuration files are the source of truth, not documentation
+OPTIMIZATION RULES:
+- Single terms work best
+- Quality indicators: stars>10 (established), recent activity
+- Path targeting: src/, lib/, examples/
+- Boolean ops: OR, AND, NOT for refinement
 
-SEARCH OPTIMIZATION:
-- Single terms work best over complex queries
-- Use quality indicators: stars >100 (established), >10 (active)
-- Target specific paths: path:src/, path:lib/, path:examples/
-- Leverage boolean operators: OR, AND, NOT
+PRIVATE REPO HANDLING:
+- Auto-detect @org/ patterns → fetch user orgs
+- Enterprise patterns: @wix/, @microsoft/, @google/
+- Fallback to public if private access fails
 
-OUTPUT STANDARDS:
-- Concise, actionable results
-- Working examples with minimal context
-- Reference specific files and implementations
-- Quality data over verbose explanations
+TOKEN OPTIMIZATION:
+- Concise responses (no emojis, minimal formatting)
+- Essential data only (name, description, links)
+- Smart fallback chains vs verbose explanations
+- Quality thresholds to filter noise
 
-ORGANIZATION ACCESS: Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for private/enterprise access`;
+SMART FALLBACKS:
+No results → broader terms + different tool
+Error → specific fix + alternative approach
+Limited results → ecosystem expansion via NPM`;
 
 export const TOOL_DESCRIPTIONS = {
-  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages for GitHub repository discovery
+  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages for repository discovery. Optimized 20 results default.`,
 
-Core package search with GitHub repository linking. Best practices: Single terms, @org/name patterns, partial matching supported.`,
+  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics for ecosystem mapping. Quality-focused 20 results.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics for ecosystem mapping
+  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Get user organizations for private repository access. Required for @org/ packages.`,
 
-Cross-domain topic discovery. Single terms work best. Featured/curated topics indicate quality.`,
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code with query optimization. 30 results optimal for analysis.`,
 
-  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Discover user organizations for private repository access
+  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content. Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for discovery.`,
 
-Required for enterprise/internal queries. Use org names as owner parameters in subsequent searches.`,
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure. Essential for file discovery and navigation.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code content with query optimization
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search issues for problem discovery. Quality-filtered 25 results.`,
 
-Automatic boolean enhancement and quality filtering. Excludes test/demo files. Use path filters and file extensions.`,
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests for implementation analysis. 25 curated results.`,
 
-  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history for development tracking. 25 focused results.`,
 
-Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for file discovery. Auto-recovery across branches. Never guess file paths.`,
+  [TOOL_NAMES.GITHUB_SEARCH_USERS]: `Find developers and experts. 25 quality profiles.`,
 
-  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository directory structure
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories across domains. Quality-optimized 25 results.`,
 
-Essential for file discovery. Explore systematically: root, src/lib/packages/, docs/, examples/, tests/.`,
+  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree for ecosystem analysis.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search GitHub issues for problem discovery and repository status
+  [TOOL_NAMES.NPM_GET_RELEASES]: `Get production releases. Semantic versions only, excludes pre-release.`,
 
-Single keywords work best. Use for understanding problems, feature requests, project health.`,
+  [TOOL_NAMES.NPM_GET_EXPORTS]: `Extract package API intelligence. Entry points, imports, search targets.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests for implementation analysis and code review insights
-
-Track feature implementations and development patterns. Use state and review filters for quality examples.`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history for development tracking and code evolution
-
-Minimal keywords work best. Use for tracing feature development and code evolution patterns.`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_USERS]: `Find developers, experts and community leaders
-
-Search by technology, location, language. Use followers >100 (influential), repos >10 (active contributors).`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search GitHub repositories across all domains
-
-Single terms work best. Quality indicators: stars >100 (established), >10 (active). Filter by language, updated date.`,
-
-  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree
-
-Focused dependency data for ecosystem analysis and dependency tree insights.`,
-
-  [TOOL_NAMES.NPM_GET_RELEASES]: `Get official production-ready release activity
-
-Returns semantic versions (major.minor.patch) with dates. Excludes pre-release. Last 10 releases for maintenance analysis.`,
-
-  [TOOL_NAMES.NPM_GET_EXPORTS]: `Extract comprehensive package API intelligence
-
-Returns API intelligence: entry points, import paths, export mappings, search targets. Essential for precise code searches.`,
-
-  [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication
-
-Check GitHub CLI auth, NPM connectivity, rate limits. Returns READY/LIMITED/NOT_READY status.`,
+  [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication. Check GitHub CLI, NPM connectivity.`,
 };

@@ -586,3 +586,107 @@ export interface NpmExportsResult {
   packageName: string;
   exports: NpmExports;
 }
+
+// ===== VERIFIED RETURN TYPES FOR ALL TOOLS =====
+
+export interface ToolResponse {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: boolean;
+}
+
+export interface SearchResultSummary {
+  query: string;
+  totalResults: number;
+  resultType:
+    | 'repositories'
+    | 'code'
+    | 'commits'
+    | 'issues'
+    | 'pull_requests'
+    | 'users'
+    | 'topics'
+    | 'packages';
+  timestamp: string;
+  suggestions?: string[];
+  owner?: string;
+  limit: number;
+}
+
+export interface OptimizedSearchResponse extends ToolResponse {
+  metadata?: {
+    summary: SearchResultSummary;
+    queryOptimization?: {
+      original: string;
+      modified: string;
+      reason: string;
+    };
+    orgDetection?: {
+      detected: boolean;
+      orgName?: string;
+      autoApplied: boolean;
+    };
+  };
+}
+
+export interface NPMPackageResult {
+  name: string;
+  version: string;
+  description: string | null;
+  date: string | null;
+  keywords: string[];
+  links: {
+    homepage: string | null;
+    repository: string | null;
+    bugs: string | null;
+    npm: string;
+  };
+}
+
+export interface GitHubSearchAnalysis {
+  summary: string;
+  repositories: string[];
+  languages: string[];
+  fileTypes: string[];
+  topMatches: string[];
+  suggestions?: string[];
+}
+
+export interface RepositorySearchResult {
+  name: string;
+  full_name: string;
+  description: string | null;
+  html_url: string;
+  clone_url: string;
+  stargazers_count: number;
+  forks_count: number;
+  language: string | null;
+  topics: string[];
+  updated_at: string;
+  created_at: string;
+}
+
+export interface CodeSearchResult {
+  name: string;
+  path: string;
+  sha: string;
+  url: string;
+  git_url: string;
+  html_url: string;
+  repository: {
+    id: number;
+    name: string;
+    full_name: string;
+    description: string | null;
+    html_url: string;
+  };
+  score: number;
+}
+
+// Quality thresholds for filtering results
+export const QUALITY_THRESHOLDS = {
+  MIN_STARS: 10,
+  MIN_FORKS: 2,
+  MAX_RESULTS_LLM_OPTIMAL: 30,
+  MAX_RESULTS_ABSOLUTE: 50,
+  PAGINATION_SIZE: 20,
+} as const;
