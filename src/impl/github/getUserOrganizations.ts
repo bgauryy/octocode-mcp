@@ -1,6 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
+import { createSuccessResult } from '../util';
 
 export async function getUserOrganizations(params: {
   limit?: number;
@@ -21,28 +22,27 @@ export async function getUserOrganizations(params: {
       const execResult = JSON.parse(result.content[0].text as string);
       const output = execResult.result;
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `GitHub Organizations for authenticated user:
+      // Parse organizations into clean array
+      const organizations = output
+        .split('\n')
+        .map((org: string) => org.trim())
+        .filter((org: string) => org.length > 0);
 
-${output}
-
- IMPORTANT: Use any of these organization names as the 'owner' parameter in other search tools:
-- search_github_code
-- search_github_repos
-- search_github_commits
-- search_github_pull_requests
-- fetch_github_file_content
-- view_repository
-
-Example: If you see a private repository in the list above, use the organization name as the 'owner' to filter results to that organization.
-If the search for code or repositories by owner fails, try searching without an owner filter`,
-          },
-        ],
-        isError: false,
-      };
+      return createSuccessResult({
+        organizations,
+        count: organizations.length,
+        usage: {
+          note: "Use organization names as 'owner' parameter in other GitHub search tools",
+          tools: [
+            'github_search_code',
+            'github_search_repositories',
+            'github_search_commits',
+            'github_search_pull_requests',
+            'github_get_file_content',
+            'github_get_contents',
+          ],
+        },
+      });
     } catch (error) {
       return {
         content: [

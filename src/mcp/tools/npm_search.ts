@@ -143,7 +143,7 @@ export function registerNpmSearchTool(server: McpServer) {
             query: Array.isArray(args.queries)
               ? args.queries.join(', ')
               : args.queries,
-            data: { results: simplifiedResults },
+            data: simplifiedResults,
           });
         }
 

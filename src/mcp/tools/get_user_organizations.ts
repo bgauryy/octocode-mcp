@@ -47,23 +47,48 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
 
         const result = await getUserOrganizations({ limit });
 
-        // Enhance response with usage guidance
+        // Handle the new clean format
         if (result.content && result.content[0]) {
           const responseText = result.content[0].text as string;
 
           try {
             const parsed = JSON.parse(responseText);
+
+            // Return clean organizations array - just the organizations
             return createStandardResponse({
               searchType: SEARCH_TYPES.ORGANIZATIONS,
               query: undefined,
-              data: parsed.results || responseText,
+              data: parsed.organizations || [],
             });
           } catch {
-            // If parsing fails, return raw response
+            // Fallback for old format - parse text manually
+            const lines = responseText.split('\n');
+            const orgStart = lines.findIndex(line =>
+              line.includes('Organizations for authenticated user:')
+            );
+            const importantStart = lines.findIndex(line =>
+              line.includes('IMPORTANT:')
+            );
+
+            if (orgStart >= 0 && importantStart >= 0) {
+              const orgLines = lines
+                .slice(orgStart + 1, importantStart)
+                .map(line => line.trim())
+                .filter(
+                  line => line.length > 0 && !line.includes('Organizations')
+                );
+
+              return createStandardResponse({
+                searchType: SEARCH_TYPES.ORGANIZATIONS,
+                query: undefined,
+                data: orgLines,
+              });
+            }
+
             return createStandardResponse({
               searchType: SEARCH_TYPES.ORGANIZATIONS,
               query: undefined,
-              data: responseText,
+              data: [],
             });
           }
         }
