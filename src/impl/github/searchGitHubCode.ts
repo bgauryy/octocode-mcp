@@ -1,21 +1,8 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { GitHubCodeSearchParams, GitHubSearchResult } from '../../types';
+import { GitHubCodeSearchParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { createErrorResult, createSuccessResult, needsQuoting } from '../util';
+import { createErrorResult, createSuccessResult } from '../util';
 import { executeGitHubCommand } from '../../utils/exec';
-import { TOOL_NAMES } from '../../mcp/systemPrompts';
-
-/**
- * Search GitHub code with organizational fallback strategy
- *
- * For internal company projects (like "Astra Nova" at Wix):
- * 1. Try direct code search first
- * 2. If no results, the calling code should implement fallback chain:
- *    - searchGitHubCommits() for commit message references
- *    - searchGitHubPullRequests() for PR mentions
- *    - searchGitHubIssues() for issue discussions
- * 3. Extract repository info from any successful results
- */
 
 export async function searchGitHubCode(
   params: GitHubCodeSearchParams
@@ -25,7 +12,6 @@ export async function searchGitHubCode(
   return withCache(cacheKey, async () => {
     try {
       const { command, args } = buildGitHubCodeSearchCommand(params);
-      const actualQuery = args[1]; // Store the actual query string
       const result = await executeGitHubCommand(command, args, {
         cache: false,
       });
@@ -38,102 +24,21 @@ export async function searchGitHubCode(
       const execResult = JSON.parse(result.content[0].text as string);
       const rawContent = execResult.result;
 
-      // Parse and format the rich JSON results
-      let codeResults = [];
-      const analysis = {
-        totalFound: 0,
-        repositories: new Set<string>(),
-        languages: new Set<string>(),
-        fileTypes: new Set<string>(),
-        topMatches: [] as any[],
-      };
-
+      // Simple result processing - just return the data
       try {
-        // Parse JSON response from GitHub CLI
-        codeResults = JSON.parse(rawContent);
-
-        if (Array.isArray(codeResults) && codeResults.length > 0) {
-          analysis.totalFound = codeResults.length;
-
-          // Analyze code search results
-          codeResults.forEach((result: any) => {
-            // Collect repositories (try multiple possible field names)
-            const repoName =
-              result.repository?.fullName ||
-              result.repository?.nameWithOwner ||
-              result.repository?.name ||
-              'Unknown';
-            if (repoName !== 'Unknown') {
-              analysis.repositories.add(repoName);
-            }
-
-            // Collect languages from file extensions and repository info
-            if (result.path) {
-              const extension = result.path.split('.').pop();
-              if (extension) analysis.fileTypes.add(extension);
-            }
-            if (result.repository?.language) {
-              analysis.languages.add(result.repository.language);
-            }
-
-            // Build top matches with better context
-            analysis.topMatches.push({
-              repository: repoName,
-              path: result.path || '',
-              url: result.url || '',
-              matchCount: result.textMatches?.length || 0,
-              language: result.repository?.language || 'Unknown',
-              stars:
-                result.repository?.stargazersCount ||
-                result.repository?.stargazers_count ||
-                0,
-            });
-          });
-
-          // Sort by match count (number of text matches) for best matches first
-          analysis.topMatches.sort(
-            (a, b) => (b.matchCount || 0) - (a.matchCount || 0)
-          );
-        }
-
-        // Format comprehensive results
-        const searchResult = {
+        const codeResults = JSON.parse(rawContent);
+        return createSuccessResult({
           searchType: 'code',
           query: params.query || '',
-          actualQuery: actualQuery,
           results: codeResults,
-          analysis: {
-            summary: `${analysis.totalFound} matches across ${analysis.repositories.size} repos`,
-            repositories: Array.from(analysis.repositories).slice(0, 10),
-            languages: Array.from(analysis.languages),
-            fileTypes: Array.from(analysis.fileTypes),
-            topMatches: analysis.topMatches.slice(0, 5),
-            ...(analysis.totalFound === 0 && {
-              suggestions: params.owner
-                ? [
-                    `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query}"`,
-                    `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query}" stars:>10`,
-                    `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query}"`,
-                  ]
-                : [
-                    `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query}"`,
-                    `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query}" stars:>10`,
-                    `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query}"`,
-                  ],
-            }),
-          },
-        };
-
-        return createSuccessResult(searchResult);
+        });
       } catch (parseError) {
-        // Fallback to raw output if JSON parsing fails
-        const searchResult: GitHubSearchResult = {
+        // Return raw content if JSON parsing fails
+        return createSuccessResult({
           searchType: 'code',
           query: params.query || '',
-          actualQuery: actualQuery,
           results: rawContent,
-        };
-        return createSuccessResult(searchResult);
+        });
       }
     } catch (error) {
       return createErrorResult('Failed to search GitHub code', error);
@@ -145,159 +50,84 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
   command: string;
   args: string[];
 } {
-  // Build search query following official GitHub CLI patterns
-  const queryParts: string[] = [];
+  const args = ['code'];
 
-  // Handle main search terms - preserve user's intent for boolean operators
+  // Handle query with proper boolean operator preservation
   if (params.query) {
-    const query = params.query.trim();
+    // Check if query contains boolean operators (AND, OR, NOT)
+    const hasBooleanOps = /\b(AND|OR|NOT)\b/.test(params.query);
 
-    // Check if query already contains GitHub search syntax
-    const hasGitHubSyntax =
-      /\b(OR|AND|NOT|\w+:|repo:|org:|user:|language:|path:|filename:|extension:)/.test(
-        query
-      );
-
-    if (hasGitHubSyntax) {
-      // User provided GitHub search syntax, use as-is but don't add redundant qualifiers
-      queryParts.push(query);
-
-      // Skip adding individual qualifiers if they're already in the query
-      const skipRepo = /\b(repo|org|user):/.test(query);
-      const skipLanguage = /\blanguage:/.test(query);
-      const skipPath = /\bpath:/.test(query);
-      const skipFilename = /\bfilename:/.test(query);
-      const skipExtension = /\bextension:/.test(query);
-
-      // Build repository/organization qualifiers only if not already present
-      if (!skipRepo) {
-        if (params.owner && params.repo) {
-          queryParts.push(`repo:${params.owner}/${params.repo}`);
-        } else if (params.owner) {
-          queryParts.push(`org:${params.owner}`);
-        }
-      }
-
-      // Add language qualifier only if not already present
-      if (!skipLanguage && params.language) {
-        const lang = params.language.toLowerCase().trim();
-        queryParts.push(`language:${lang}`);
-      }
-
-      // Add filename qualifier only if not already present
-      if (!skipFilename && params.filename) {
-        const filename = params.filename.trim();
-        queryParts.push(
-          `filename:${needsQuoting(filename) ? `"${filename}"` : filename}`
-        );
-      }
-
-      // Add extension qualifier only if not already present
-      if (!skipExtension && params.extension) {
-        const ext = params.extension.startsWith('.')
-          ? params.extension.slice(1)
-          : params.extension;
-        queryParts.push(`extension:${ext}`);
-      }
-
-      // Add path qualifier only if not already present
-      if (!skipPath && params.path) {
-        const path = params.path.trim();
-        queryParts.push(`path:${needsQuoting(path) ? `"${path}"` : path}`);
-      }
+    if (hasBooleanOps) {
+      // For boolean queries, don't quote to preserve operators
+      args.push(params.query);
+    } else if (/[\s><|&;]/.test(params.query)) {
+      // For non-boolean queries with special chars, wrap in quotes
+      args.push(`"${params.query}"`);
     } else {
-      // Simple search terms - be smart about quoting
-      // Only quote if it contains special characters that need escaping
-      // Don't quote simple multi-word searches as they work better without quotes
-      const shouldQuote = /[()<>{}[\]\\|&;]/.test(query) || query.includes('"');
-      queryParts.push(shouldQuote ? `"${query}"` : query);
-
-      // Build repository/organization qualifiers
-      if (params.owner && params.repo) {
-        queryParts.push(`repo:${params.owner}/${params.repo}`);
-      } else if (params.owner) {
-        queryParts.push(`org:${params.owner}`);
-      }
-
-      // Add language qualifier only if explicitly requested
-      // Don't auto-add language filtering to avoid over-restrictive searches
-      if (params.language) {
-        const lang = params.language.toLowerCase().trim();
-        queryParts.push(`language:${lang}`);
-      }
-
-      // Add filename qualifier
-      if (params.filename) {
-        const filename = params.filename.trim();
-        queryParts.push(
-          `filename:${needsQuoting(filename) ? `"${filename}"` : filename}`
-        );
-      }
-
-      // Add extension qualifier
-      if (params.extension) {
-        const ext = params.extension.startsWith('.')
-          ? params.extension.slice(1)
-          : params.extension;
-        queryParts.push(`extension:${ext}`);
-      }
-
-      // Add path qualifier
-      if (params.path) {
-        const path = params.path.trim();
-        queryParts.push(`path:${needsQuoting(path) ? `"${path}"` : path}`);
-      }
-    }
-  } else {
-    // No main query, just build from qualifiers
-    if (params.owner && params.repo) {
-      queryParts.push(`repo:${params.owner}/${params.repo}`);
-    } else if (params.owner) {
-      queryParts.push(`org:${params.owner}`);
-    }
-
-    if (params.language) {
-      const lang = params.language.toLowerCase().trim();
-      queryParts.push(`language:${lang}`);
-    }
-
-    if (params.filename) {
-      const filename = params.filename.trim();
-      queryParts.push(
-        `filename:${needsQuoting(filename) ? `"${filename}"` : filename}`
-      );
-    }
-
-    if (params.extension) {
-      const ext = params.extension.startsWith('.')
-        ? params.extension.slice(1)
-        : params.extension;
-      queryParts.push(`extension:${ext}`);
-    }
-
-    if (params.path) {
-      const path = params.path.trim();
-      queryParts.push(`path:${needsQuoting(path) ? `"${path}"` : path}`);
+      // Simple queries without special chars
+      args.push(params.query);
     }
   }
 
-  // Construct final query string (space-separated = implicit AND)
-  const queryString = queryParts.filter(part => part.length > 0).join(' ');
-
-  // Build GitHub CLI command arguments
-  const args = ['code', queryString];
-
-  // Add output format for structured parsing
-  args.push('--json', 'repository,path,textMatches,sha,url');
-
-  // Add optional parameters
-  if (params.limit && params.limit > 0) {
-    args.push('--limit', params.limit.toString());
+  // Add simple flags
+  if (params.language) args.push(`--language=${params.language}`);
+  if (params.filename) args.push(`--filename=${params.filename}`);
+  if (params.extension)
+    args.push(`--extension=${params.extension.replace(/^\./, '')}`);
+  if (params.size) {
+    // Simple size handling - wrap in quotes if has special chars
+    if (/[><]/.test(params.size)) {
+      args.push(`--size="${params.size}"`);
+    } else {
+      args.push(`--size=${params.size}`);
+    }
   }
 
-  if (params.match) {
-    args.push('--match', params.match);
+  // Repository filters
+  if (params.owner && params.repo) {
+    if (Array.isArray(params.repo)) {
+      params.repo.forEach(r => args.push(`--repo=${params.owner}/${r}`));
+    } else {
+      args.push(`--repo=${params.owner}/${params.repo}`);
+    }
+  } else if (params.owner) {
+    args.push(`--owner=${params.owner}`);
   }
+
+  // Add qualifiers to query string (simple approach)
+  const queryQualifiers: string[] = [];
+  if (params.path) queryQualifiers.push(`path:${params.path}`);
+  if (params.symbol) queryQualifiers.push(`symbol:${params.symbol}`);
+  if (params.content) queryQualifiers.push(`content:${params.content}`);
+  if (params.user) queryQualifiers.push(`user:${params.user}`);
+  if (params.org) queryQualifiers.push(`org:${params.org}`);
+  if (params.is && params.is.length > 0) {
+    params.is.forEach(prop => queryQualifiers.push(`is:${prop}`));
+  }
+
+  // If we have qualifiers, append them to the query
+  if (queryQualifiers.length > 0) {
+    const currentQuery = args[1] || '';
+    const enhancedQuery = `${currentQuery} ${queryQualifiers.join(' ')}`.trim();
+
+    // Check if enhanced query has boolean operators
+    const enhancedHasBooleanOps = /\b(AND|OR|NOT)\b/.test(enhancedQuery);
+
+    if (enhancedHasBooleanOps) {
+      // For boolean queries, don't quote to preserve operators
+      args[1] = enhancedQuery;
+    } else if (/[\s><|&;]/.test(enhancedQuery)) {
+      // Quote non-boolean queries with special chars
+      args[1] = `"${enhancedQuery}"`;
+    } else {
+      args[1] = enhancedQuery;
+    }
+  }
+
+  // Standard flags
+  args.push('--json=repository,path,textMatches,sha,url');
+  if (params.limit) args.push(`--limit=${params.limit}`);
+  if (params.match) args.push(`--match=${params.match}`);
 
   return { command: 'search', args };
 }

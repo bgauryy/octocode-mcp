@@ -122,6 +122,7 @@ export async function executeGitHubCommand(
     );
   }
 
+  // SIMPLE: Just join with spaces, let shell handle it naturally
   const fullCommand = `gh ${command} ${args.join(' ')}`;
 
   const executeCommand = async (): Promise<CallToolResult> => {

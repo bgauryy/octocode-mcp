@@ -36,6 +36,13 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   size?: string;
   limit?: number;
   enableQueryOptimization?: boolean;
+  // Additional GitHub Code Search qualifiers
+  symbol?: string; // Symbol qualifier: symbol:WithContext
+  content?: string; // Content qualifier: content:README.md
+  is?: ('archived' | 'fork' | 'vendored' | 'generated')[]; // Repository properties
+  user?: string; // User qualifier: user:octocat
+  org?: string; // Organization qualifier: org:github
+  // Boolean and regex support built into query string
 }
 
 export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {

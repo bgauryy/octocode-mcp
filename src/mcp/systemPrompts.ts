@@ -140,7 +140,21 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.NPM_GET_RELEASES]: `Get production releases (semantic versions only, excludes pre-release). Important for stability and version strategy analysis.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code with advanced boolean optimization. BOOLEAN RULES: OR for discovery ("react OR vue"), AND for specificity ("hooks AND typescript"), NOT for filtering ("framework NOT test"). Combine with path targeting (src/, lib/) and NPM-informed searches using package export names. Auto-detects @org/ patterns for private repos. Fallback chain: broader terms -> alternative approaches -> cross-platform pivoting.`,
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `GitHub Code Search (Legacy API via CLI)
+
+Advanced boolean logic + multi-filter combinations for quality code discovery through GitHub CLI.
+
+BOOLEAN: AND (precision), OR (breadth), NOT (filtering) | FILTERS: language, path, size, owner, extension (stackable)
+
+EXAMPLES:
+- \`async AND await NOT test language:javascript path:src size:1000..5000\` — quality async code
+- \`function OR class OR interface language:typescript extension:ts\` — TypeScript definitions  
+- \`config NOT debug NOT test extension:json path:src\` — production configs
+
+STRATEGY: Start broad (OR), narrow (AND + NOT), stack filters for quality data
+LIMITATIONS: No parentheses, <384KB files, default branch only, must include search terms with qualifiers
+
+Returns: code snippets, file paths, repository context, GitHub links.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories across domains. 25 quality results. Essential for finding authoritative implementations.`,
 
