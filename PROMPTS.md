@@ -4,9 +4,14 @@ This document contains a comprehensive set of benchmark prompts designed to test
 
 ## Benchmark Test Queries
 
-### Concurrent Rendering Implementation Analysis
-**Prompt:** How react implemented concurrent rendering? how vuejs did it?
-SHow summary . deep insightful search from code, prs and commits
+### React Concurrent Rendering Analysis
+**Prompt:** Explain React's concurrent rendering implementation including scheduler and fiber architecture. Analyze the core algorithms, data structures, and design patterns used in the implementation. Include performance optimizations and trade-offs in the design decisions.
+
+### Vue 3 Reactivity System Analysis
+**Prompt:** How does Vue 3's reactivity system work with proxies and effect tracking? Analyze the implementation details of the reactivity system, including proxy-based reactivity, effect tracking mechanisms, and dependency collection. Compare with Vue 2's Object.defineProperty approach and examine the performance implications.
+
+### Angular Dependency Injection Analysis
+**Prompt:** Analyze Angular's dependency injection system and hierarchical injectors. How does it handle service instantiation, dependency resolution, and scope management? Examine the implementation of hierarchical injectors, provider configuration, and circular dependency resolution. Compare with other DI approaches and analyze the architectural trade-offs.
 
 ### Concurrent Rendering Implementation Analysis
 **Prompt:** How did React implement their concurrent rendering feature? How does it work internally? Compare this implementation with how Vue.js handles concurrent features. Analyze the architectural differences, performance implications, and developer experience trade-offs between the two approaches.
