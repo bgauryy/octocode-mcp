@@ -69,7 +69,6 @@ export async function npmGetReleases(
           `${TOOL_NAMES.NPM_GET_EXPORTS} "${npmData.name}"`,
           `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${npmData.name}" stars:>10`,
           `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${npmData.name}" sort:committer-date`,
-          `${TOOL_NAMES.NPM_GET_DEPENDENCIES} "${npmData.name}"`,
         ],
       };
 

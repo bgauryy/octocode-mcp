@@ -117,7 +117,6 @@ export async function npmGetExports(
         nextSteps: [
           `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${searchTargets.apiKeywords[0]}" path:src/`,
           `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${npmData.name}" stars:>10`,
-          `${TOOL_NAMES.NPM_GET_DEPENDENCIES} "${npmData.name}"`,
           ...(searchTargets.entryFiles.length > 0
             ? [
                 `${TOOL_NAMES.GITHUB_SEARCH_CODE} filename:${searchTargets.entryFiles[0]}`,

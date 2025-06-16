@@ -86,7 +86,6 @@ export async function npmSearch(
               nextSteps: [
                 `${TOOL_NAMES.NPM_GET_EXPORTS} "${searchResults[0]?.name || query}"`,
                 `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${searchResults[0]?.name || query}"`,
-                `${TOOL_NAMES.NPM_GET_DEPENDENCIES} "${searchResults[0]?.name || query}"`,
               ],
             }),
         };

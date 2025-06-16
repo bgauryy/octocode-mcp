@@ -17,7 +17,7 @@ export const TOOL_NAMES = {
   NPM_SEARCH_PACKAGES: 'npm_search_packages',
   NPM_GET_PACKAGE: 'npm_get_package',
   NPM_GET_REPOSITORY: 'npm_get_repository',
-  NPM_GET_DEPENDENCIES: 'npm_get_dependencies',
+
   NPM_GET_RELEASES: 'npm_get_releases',
   NPM_GET_EXPORTS: 'npm_get_exports',
 };
@@ -35,7 +35,7 @@ export const SEARCH_TYPES = {
   CONTENTS: 'contents',
   FILE_CONTENT: 'file_content',
   NPM_PACKAGES: 'npm_packages',
-  NPM_DEPENDENCIES: 'npm_dependencies',
+
   NPM_RELEASES: 'npm_releases',
   NPM_EXPORTS: 'npm_exports',
 } as const;
@@ -63,27 +63,27 @@ Package Discovery:
 ${TOOL_NAMES.NPM_SEARCH_PACKAGES} -> ${TOOL_NAMES.NPM_GET_EXPORTS} -> ${TOOL_NAMES.GITHUB_SEARCH_CODE} -> repository analysis
 
 Repository Analysis: 
-${TOOL_NAMES.GITHUB_SEARCH_TOPICS} -> ${TOOL_NAMES.GITHUB_SEARCH_REPOS} -> ${TOOL_NAMES.GITHUB_GET_CONTENTS} -> NPM analysis
+${TOOL_NAMES.GITHUB_SEARCH_TOPICS} -> ${TOOL_NAMES.GITHUB_SEARCH_REPOS} -> ${TOOL_NAMES.GITHUB_GET_CONTENTS} -> configuration files (package.json, pom.xml, etc.)
 
 Problem Solving:
 ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} -> code patterns -> NPM solutions -> validation
 
 Architecture Study:
-Ecosystem mapping (${TOOL_NAMES.GITHUB_SEARCH_TOPICS} + ${TOOL_NAMES.NPM_SEARCH_PACKAGES}) -> dependency analysis -> implementation discovery -> evolution tracking
+Ecosystem mapping (${TOOL_NAMES.GITHUB_SEARCH_TOPICS} + ${TOOL_NAMES.NPM_SEARCH_PACKAGES}) -> configuration analysis (package.json, pom.xml, requirements.txt) -> implementation discovery -> evolution tracking
 
 INTEGRATION & ANALYSIS:
 - NPM exports inform GitHub code search targets
 - Repository URLs drive package discovery
-- Dependency trees map repository relationships
+- Configuration files reveal dependencies, build systems, and architecture patterns
 - Complete coverage in single response with technical depth
 - Practical understanding: how, why, trade-offs
 - Follow implementation chains across interconnected systems
 
 DISCOVERY EXECUTION (Sequential + Reflective):
 1. Ecosystem context (topics/packages parallel search) -> ASSESS initial landscape
-2. NPM intelligence extraction (exports/dependencies) -> SYNTHESIZE with ecosystem data
+2. NPM intelligence extraction (exports) -> SYNTHESIZE with ecosystem data
 3. User organizations check (${TOOL_NAMES.GITHUB_GET_USER_ORGS}) if internal repos/packages needed -> STRATEGIZE access scope
-4. Targeted repository discovery -> ${TOOL_NAMES.GITHUB_GET_CONTENTS} -> structural analysis -> REFLECT on architecture patterns
+4. Targeted repository discovery -> ${TOOL_NAMES.GITHUB_GET_CONTENTS} -> configuration files analysis (package.json, pom.xml, requirements.txt) -> REFLECT on architecture patterns
 5. Implementation deep-dive -> ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} -> architectural mapping -> VALIDATE against all previous findings
 6. Community validation and cross-reference -> SYNTHESIZE complete understanding
 
@@ -109,7 +109,8 @@ TREE OF THOUGHTS (Multiple Reasoning Paths):
 
 CUMULATIVE INTELLIGENCE:
 - NPM exports inform GitHub search targets
-- Repository structure guides file content priorities  
+- Repository structure guides file content priorities
+- Configuration files (package.json, pom.xml, requirements.txt, etc.) reveal dependencies, build systems, and project architecture
 - Issue patterns validate or contradict implementation findings
 - Community metrics weight the reliability of discovered patterns
 - Always ask: "What story do ALL results tell together?"
@@ -136,8 +137,6 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.NPM_GET_EXPORTS]: `Extract package API intelligence (entry points, imports, search targets). Vital for understanding interfaces & usage patterns.`,
 
-  [TOOL_NAMES.NPM_GET_DEPENDENCIES]: `Extract package dependency tree for ecosystem analysis. Crucial for understanding relationships and architectural decisions.`,
-
   [TOOL_NAMES.NPM_GET_RELEASES]: `Get production releases (semantic versions only, excludes pre-release). Important for stability and version strategy analysis.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `GitHub Code Search (Legacy API via CLI)
@@ -158,7 +157,7 @@ Returns: code snippets, file paths, repository context, GitHub links.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories across domains. 25 quality results. Essential for finding authoritative implementations.`,
 
-  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure. Essential for file discovery and navigation. Always use before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure. Essential for file discovery and navigation. Prioritize configuration files (package.json, pom.xml, requirements.txt) for dependency and architecture analysis. Always use before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content. Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for discovery. Critical for deep implementation analysis.`,
 
