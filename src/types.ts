@@ -448,6 +448,24 @@ export interface NpmPackageInfo {
   peerDependencies?: Record<string, string>;
 }
 
+export interface FileMetadata {
+  name: string;
+  type: 'file' | 'dir';
+  size?: number;
+  extension?: string;
+  category:
+    | 'code'
+    | 'config'
+    | 'docs'
+    | 'assets'
+    | 'data'
+    | 'build'
+    | 'test'
+    | 'other';
+  language?: string;
+  description?: string;
+}
+
 export interface GitHubRepositoryStructureParams {
   owner: string;
   repo: string;
@@ -459,6 +477,17 @@ export interface GitHubRepositoryStructureResult {
   owner: string;
   repo: string;
   branch: string;
+  path?: string;
+  items?: FileMetadata[];
+  analysis?: {
+    totalItems: number;
+    directories: number;
+    files: number;
+    categories: Array<{ category: string; count: number }>;
+    languages: Array<{ language: string; count: number }>;
+    totalSize: number;
+    largestFiles: Array<{ name: string; size?: number; category: string }>;
+  };
   structure: string[];
   branchFallback?: {
     requested: string;
