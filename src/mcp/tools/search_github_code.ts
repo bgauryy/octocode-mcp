@@ -16,7 +16,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         .string()
         .min(1, 'Query cannot be empty')
         .describe(
-          'GitHub legacy search query. REQUIRED: search terms + qualifiers. Format: "search terms" language:javascript path:src repo:owner/name. Cannot use qualifiers alone. No parentheses support.'
+          'GitHub legacy search query. REQUIRED: search terms + qualifiers. Format: "search terms" language:javascript path:src repo:owner/name. Cannot use qualifiers alone. No parentheses support. NOTE: Use separate parameters (language, owner, etc.) instead of inline qualifiers to avoid parsing issues.'
         ),
       owner: z
         .string()

@@ -56,12 +56,14 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
   if (params.query) {
     // Check if query contains boolean operators (AND, OR, NOT)
     const hasBooleanOps = /\b(AND|OR|NOT)\b/.test(params.query);
+    // Check if query contains GitHub qualifiers (word:value patterns)
+    const hasGitHubQualifiers = /\w+:[^\s]+/.test(params.query);
 
-    if (hasBooleanOps) {
-      // For boolean queries, don't quote to preserve operators
+    if (hasBooleanOps || hasGitHubQualifiers) {
+      // For boolean queries or queries with GitHub qualifiers, don't quote to preserve operators/qualifiers
       args.push(params.query);
     } else if (/[\s><|&;]/.test(params.query)) {
-      // For non-boolean queries with special chars, wrap in quotes
+      // For non-boolean, non-qualifier queries with special chars, wrap in quotes
       args.push(`"${params.query}"`);
     } else {
       // Simple queries without special chars
@@ -110,14 +112,15 @@ function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
     const currentQuery = args[1] || '';
     const enhancedQuery = `${currentQuery} ${queryQualifiers.join(' ')}`.trim();
 
-    // Check if enhanced query has boolean operators
+    // Check if enhanced query has boolean operators or GitHub qualifiers
     const enhancedHasBooleanOps = /\b(AND|OR|NOT)\b/.test(enhancedQuery);
+    const enhancedHasGitHubQualifiers = /\w+:[^\s]+/.test(enhancedQuery);
 
-    if (enhancedHasBooleanOps) {
-      // For boolean queries, don't quote to preserve operators
+    if (enhancedHasBooleanOps || enhancedHasGitHubQualifiers) {
+      // For boolean queries or queries with GitHub qualifiers, don't quote to preserve operators/qualifiers
       args[1] = enhancedQuery;
     } else if (/[\s><|&;]/.test(enhancedQuery)) {
-      // Quote non-boolean queries with special chars
+      // Quote non-boolean, non-qualifier queries with special chars
       args[1] = `"${enhancedQuery}"`;
     } else {
       args[1] = enhancedQuery;
