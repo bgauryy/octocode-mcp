@@ -126,7 +126,8 @@ Before responding, always think step-by-step.
 7. Ensure all facts are supported by references from the tools.
 8. Consider if further exploration or clarification is needed before finalizing the response.
 9.Think after each step about the best tools or actions to take and learn from previous results.
-10.If you have enough information (high quality content, references, etc.), stop and return the answer.`;
+10.If you have enough information (high quality content, references, etc.), stop and return the answer.
+11. Don't hellucinate and don't make up information - get inforamtion from content and search results (e.g. organization should be checked with ${TOOL_NAMES.GITHUB_GET_USER_ORGS} and not by you)`;
 
 export const TOOL_DESCRIPTIONS = {
   [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication. Check GitHub CLI, NPM connectivity. ALWAYS START HERE.`,
@@ -143,13 +144,16 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `GitHub Code Search
 Supports advanced boolean logic and multi-filter combinations for quality code discovery.
-BOOLEAN: AND (precision), OR (breadth), NOT (filtering) | FILTERS: language, path, size, owner, extension (stackable)
+BOOLEAN: AND (precision), OR (breadth), NOT (filtering) | FILTERS: language, path, size, owner, extension, filename, user, org, match, repo (stackable)
 
 EXAMPLES:
 - \`async AND await NOT test language:javascript path:src size:1000..5000\` — quality async code
 - \`function OR class OR interface language:typescript extension:ts\` — TypeScript definitions  
 - \`config NOT debug NOT test extension:json path:src\` — production configs
+- \`interface Props filename:index.tsx match:file\` — specific file content
+- \`createRoot user:facebook repo:["react"]\` — user repos (array required)
 
+ADVANCED: size ranges (>1000, <500, 50..200), match scope (file/path), enableQueryOptimization (true/false)
 STRATEGY: Start broad (OR), narrow (AND + NOT), stack filters for quality data. If no results are found, try using different filters or search terms. For example, consider removing 'owner:org/name' from the query (if the user didn't specify a particular owner) or use an owner obtained from ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
 Returns: code snippets, file paths, repository context, GitHub links.
 This data is useful and can be used for content and further research (e.g. understanding packages, dependencies, etc.)

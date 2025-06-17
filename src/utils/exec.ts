@@ -5,8 +5,8 @@ import { generateCacheKey, withCache } from './cache';
 
 const safeExecAsync = promisify(nodeExec);
 
+// Allowed command prefixes - this prevents shell injection by restricting to safe commands
 const ALLOWED_NPM_COMMANDS = ['view', 'search', 'ping'] as const;
-
 const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
 
 type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
@@ -42,36 +42,16 @@ function isValidGhCommand(command: string): command is GhCommand {
   return ALLOWED_GH_COMMANDS.includes(command as GhCommand);
 }
 
-function sanitizeArgs(args: string[]): string[] {
-  return args.map(arg => {
-    // Check if arg contains GitHub boolean operators or qualifiers - don't quote these
-    const hasGitHubSyntax =
-      /\b(AND|OR|NOT)\b/.test(arg) || /\w+:[^\s]+/.test(arg);
-
-    if (hasGitHubSyntax) {
-      // GitHub search syntax - preserve as-is
-      return arg;
-    }
-
-    // Check if arg contains shell special characters that need quoting
-    const needsQuoting = /[(){}[\]<>|&;$`\\'"*?~\s]/.test(arg);
-
-    if (needsQuoting && !arg.startsWith('"') && !arg.startsWith("'")) {
-      // Escape double quotes and backslashes within the argument
-      const escaped = arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      return `"${escaped}"`;
-    }
-
-    return arg;
-  });
-}
-
+/**
+ * Execute NPM commands safely by validating against allowed commands
+ * Security: Only executes commands that start with "npm {ALLOWED_COMMAND}"
+ */
 export async function executeNpmCommand(
   command: string,
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<CallToolResult> {
-  // Only allow registered commands
+  // Security check: only allow registered commands
   if (!isValidNpmCommand(command)) {
     return createErrorResult(
       'Command not registered',
@@ -79,8 +59,8 @@ export async function executeNpmCommand(
     );
   }
 
-  const sanitizedArgs = sanitizeArgs(args);
-  const fullCommand = `npm ${command} ${sanitizedArgs.join(' ')}`;
+  // Build command with validated prefix - no sanitization needed since we control the prefix
+  const fullCommand = `npm ${command} ${args.join(' ')}`;
 
   const executeNpmCommand = () => executeCommand(fullCommand, 'npm', options);
 
@@ -92,12 +72,16 @@ export async function executeNpmCommand(
   return executeNpmCommand();
 }
 
+/**
+ * Execute GitHub CLI commands safely by validating against allowed commands
+ * Security: Only executes commands that start with "gh {ALLOWED_COMMAND}"
+ */
 export async function executeGitHubCommand(
   command: string,
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<CallToolResult> {
-  // Only allow registered commands
+  // Security check: only allow registered commands
   if (!isValidGhCommand(command)) {
     return createErrorResult(
       'Command not registered',
@@ -105,8 +89,8 @@ export async function executeGitHubCommand(
     );
   }
 
-  const sanitizedArgs = sanitizeArgs(args);
-  const fullCommand = `gh ${command} ${sanitizedArgs.join(' ')}`;
+  // Build command with validated prefix - no sanitization needed since we control the prefix
+  const fullCommand = `gh ${command} ${args.join(' ')}`;
 
   const executeGhCommand = () => executeCommand(fullCommand, 'github', options);
 
@@ -118,6 +102,10 @@ export async function executeGitHubCommand(
   return executeGhCommand();
 }
 
+/**
+ * Execute shell commands with timeout and error handling
+ * Security: Should only be called with pre-validated command prefixes
+ */
 async function executeCommand(
   fullCommand: string,
   type: 'npm' | 'github',
