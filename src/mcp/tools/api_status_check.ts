@@ -60,7 +60,9 @@ async function checkGitHub(): Promise<ApiStatus['github']> {
       };
     }
 
-    const username = output.match(/Logged in to github\.com (?:as|account) ([^\s]+)/)?.[1];
+    const username = output.match(
+      /Logged in to github\.com (?:as|account) ([^\s]+)/
+    )?.[1];
     return { authenticated: true, username };
   } catch (error: any) {
     return {
