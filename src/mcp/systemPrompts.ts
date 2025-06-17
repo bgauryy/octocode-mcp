@@ -92,7 +92,7 @@ Always verify authentication first. When in doubt about private vs public, check
 export const TOOL_DESCRIPTIONS = {
   [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication. Check GitHub CLI, NPM connectivity. ALWAYS START HERE.`,
 
-  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Get user organizations for internal repo/package discovery. Essential for accessing private repositories and understanding organizational structure.`,
+  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Get user organizations for internal repo/package discovery. Essential for accessing private repositories and understanding organizational structure. Use this FIRST when dealing with company/internal projects.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics for ecosystem mapping. Perfect for understanding technology landscapes and finding related projects.`,
 
@@ -109,9 +109,17 @@ STRATEGY: Start broad (OR), narrow (AND + NOT), stack filters for quality result
 
   [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories across domains. Essential for finding authoritative implementations. Use stars filter (>100) for established projects.`,
 
-  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure and browse directories. Essential for file discovery. Always use before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}. Requires valid branch name.`,
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure and browse directories. Essential for file discovery. ALWAYS use FIRST before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}. 
+WORKFLOW: Use this to discover branches, directory structure, and file paths. Auto-fallback to common branches (main/master/develop).
+CRITICAL: This tool provides the exact file paths and branch names needed for ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
 
-  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories. Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for discovery. Critical for deep implementation analysis.`,
+  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories. 
+CRITICAL WORKFLOW: 
+1. MUST use ${TOOL_NAMES.GITHUB_GET_CONTENTS} first to discover: branches, directory structure, exact file paths
+2. Then use this tool with discovered paths (case-sensitive)
+3. NEVER fetch files without exploring structure first
+BRANCH HANDLING: Auto-fallback: specified → main → master → develop → trunk. Always specify branch.
+ERROR RECOVERY: If 404, use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to verify paths. If 403, use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for private access.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search issues for problem discovery and solutions. Quality-filtered results for understanding common problems, bugs, and feature requests.`,
 

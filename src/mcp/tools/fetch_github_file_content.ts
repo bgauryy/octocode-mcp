@@ -14,19 +14,21 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         .string()
         .min(1)
         .describe(
-          `Filter by repository owner/organization (e.g., 'example-org') get from ${TOOL_NAMES.GITHUB_GET_USER_ORGS} tool`
+          `Repository owner/organization. Get  owner from ${TOOL_NAMES.GITHUB_GET_USER_ORGS} tool for private repos`
         ),
       repo: z.string().min(1).describe('The name of the GitHub repository'),
       branch: z
         .string()
         .min(1)
         .describe(
-          'The default branch of the repository. Branch name MUST be obtained from repository metadata or structure tools.'
+          'Branch name (e.g., "master", "main"). MUST be obtained from repository metadata or ${TOOL_NAMES.GITHUB_GET_CONTENTS} tool. Auto-fallback to common branches if specified branch not found.'
         ),
       filePath: z
         .string()
         .min(1)
-        .describe('The path to the file within the repository'),
+        .describe(
+          'The path to the file within the repository (case-sensitive). Use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to discover file paths first.'
+        ),
     },
     {
       title: 'Fetch GitHub File Content',
@@ -45,7 +47,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: 'Error: Repository owner required',
+                text: `Error: Repository owner required. Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} to discover available organizations.`,
               },
             ],
             isError: true,
@@ -57,7 +59,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: 'Error: Repository name required',
+                text: `Error: Repository name required. Use ${TOOL_NAMES.GITHUB_SEARCH_REPOS} to find repositories.`,
               },
             ],
             isError: true,
@@ -69,7 +71,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: `Error: Branch name required. Use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to discover branches`,
+                text: `Error: Branch name required. Use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to discover available branches.`,
               },
             ],
             isError: true,
@@ -81,16 +83,17 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: 'Error: File path required',
+                text: `Error: File path required. Use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to explore repository structure first.`,
               },
             ],
             isError: true,
           };
         }
 
+        // Call the enhanced implementation
         const result = await fetchGitHubFileContent(args);
 
-        // Enhance successful response with minimal metadata
+        // If successful, format as standard response
         if (result.content?.[0] && !result.isError) {
           const content = result.content[0].text as string;
 
@@ -103,54 +106,28 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
             });
           } catch (parseError) {
             // If not JSON, treat as plain text content
-            const lines = content.split('\n').length;
-            const size = content.length;
-
             return createStandardResponse({
               searchType: SEARCH_TYPES.FILE_CONTENT,
               query: args.filePath,
               data: {
-                filePath: args.filePath,
-                owner: args.owner,
-                repo: args.repo,
-                branch: args.branch,
-                content: content,
-                size: size,
-                lines: lines,
-                encoding: 'utf-8',
+                error: 'Failed to parse response',
+                raw: content,
               },
             });
           }
         }
 
+        // Return the error result from the implementation (it already has good error messages)
         return result;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        let suggestions = '';
-
-        if (
-          errorMessage.includes('404') ||
-          errorMessage.includes('Not Found')
-        ) {
-          suggestions = `Solutions: Use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to explore structure, ${TOOL_NAMES.GITHUB_SEARCH_CODE} to find files`;
-        } else if (
-          errorMessage.includes('403') ||
-          errorMessage.includes('Forbidden')
-        ) {
-          suggestions = `Solutions: Repository may be private, use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for access`;
-        } else if (
-          errorMessage.includes('rate limit') ||
-          errorMessage.includes('429')
-        ) {
-          suggestions = `Solutions: Wait before retry, use ${TOOL_NAMES.GITHUB_SEARCH_CODE} instead`;
-        }
 
         return {
           content: [
             {
               type: 'text',
-              text: `Failed to fetch ${args.filePath}: ${errorMessage}${suggestions ? `. ${suggestions}` : ''}`,
+              text: `Unexpected error: ${errorMessage}. Try using ${TOOL_NAMES.GITHUB_GET_CONTENTS} to explore repository structure first.`,
             },
           ],
           isError: true,
