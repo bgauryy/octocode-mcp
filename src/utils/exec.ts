@@ -5,27 +5,9 @@ import { generateCacheKey, withCache } from './cache';
 
 const safeExecAsync = promisify(nodeExec);
 
-const ALLOWED_NPM_COMMANDS = [
-  'view',
-  'search',
-  'ping',
-  'whoami',
-  'version',
-  'config',
-  'audit',
-  'list',
-  'outdated',
-  'help',
-] as const;
+const ALLOWED_NPM_COMMANDS = ['view', 'search', 'ping'] as const;
 
-const ALLOWED_GH_COMMANDS = [
-  'search',
-  'repo',
-  'api',
-  'auth',
-  'org',
-  'help',
-] as const;
+const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
 
 type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
 type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
@@ -60,6 +42,30 @@ function isValidGhCommand(command: string): command is GhCommand {
   return ALLOWED_GH_COMMANDS.includes(command as GhCommand);
 }
 
+function sanitizeArgs(args: string[]): string[] {
+  return args.map(arg => {
+    // Check if arg contains GitHub boolean operators or qualifiers - don't quote these
+    const hasGitHubSyntax =
+      /\b(AND|OR|NOT)\b/.test(arg) || /\w+:[^\s]+/.test(arg);
+
+    if (hasGitHubSyntax) {
+      // GitHub search syntax - preserve as-is
+      return arg;
+    }
+
+    // Check if arg contains shell special characters that need quoting
+    const needsQuoting = /[(){}[\]<>|&;$`\\'"*?~\s]/.test(arg);
+
+    if (needsQuoting && !arg.startsWith('"') && !arg.startsWith("'")) {
+      // Escape double quotes and backslashes within the argument
+      const escaped = arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return `"${escaped}"`;
+    }
+
+    return arg;
+  });
+}
+
 export async function executeNpmCommand(
   command: string,
   args: string[] = [],
@@ -73,40 +79,17 @@ export async function executeNpmCommand(
     );
   }
 
-  const fullCommand = `npm ${command} ${args.join(' ')}`;
+  const sanitizedArgs = sanitizeArgs(args);
+  const fullCommand = `npm ${command} ${sanitizedArgs.join(' ')}`;
 
-  const executeCommand = async (): Promise<CallToolResult> => {
-    try {
-      const execOptions = {
-        timeout: options.timeout || 30000,
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        encoding: 'utf-8' as const,
-      };
-
-      const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
-
-      if (stderr && !stderr.includes('npm WARN')) {
-        return createErrorResult('NPM command error', new Error(stderr));
-      }
-
-      return createSuccessResult({
-        command: fullCommand,
-        result: stdout,
-        timestamp: new Date().toISOString(),
-        type: 'npm',
-      });
-    } catch (error) {
-      return createErrorResult('Failed to execute NPM command', error);
-    }
-  };
+  const executeNpmCommand = () => executeCommand(fullCommand, 'npm', options);
 
   if (options.cache) {
     const cacheKey = generateCacheKey('npm-exec', { command, args });
-    return withCache(cacheKey, executeCommand);
+    return withCache(cacheKey, executeNpmCommand);
   }
 
-  return executeCommand();
+  return executeNpmCommand();
 }
 
 export async function executeGitHubCommand(
@@ -122,39 +105,58 @@ export async function executeGitHubCommand(
     );
   }
 
-  // SIMPLE: Just join with spaces, let shell handle it naturally
-  const fullCommand = `gh ${command} ${args.join(' ')}`;
+  const sanitizedArgs = sanitizeArgs(args);
+  const fullCommand = `gh ${command} ${sanitizedArgs.join(' ')}`;
 
-  const executeCommand = async (): Promise<CallToolResult> => {
-    try {
-      const execOptions = {
-        timeout: options.timeout || 60000,
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        encoding: 'utf-8' as const,
-      };
-
-      const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
-
-      if (stderr) {
-        return createErrorResult('GitHub CLI command error', new Error(stderr));
-      }
-
-      return createSuccessResult({
-        command: fullCommand,
-        result: stdout,
-        timestamp: new Date().toISOString(),
-        type: 'github',
-      });
-    } catch (error) {
-      return createErrorResult('Failed to execute GitHub CLI command', error);
-    }
-  };
+  const executeGhCommand = () => executeCommand(fullCommand, 'github', options);
 
   if (options.cache) {
     const cacheKey = generateCacheKey('gh-exec', { command, args });
-    return withCache(cacheKey, executeCommand);
+    return withCache(cacheKey, executeGhCommand);
   }
 
-  return executeCommand();
+  return executeGhCommand();
+}
+
+async function executeCommand(
+  fullCommand: string,
+  type: 'npm' | 'github',
+  options: ExecOptions = {}
+): Promise<CallToolResult> {
+  try {
+    const defaultTimeout = type === 'npm' ? 30000 : 60000;
+    const execOptions = {
+      timeout: options.timeout || defaultTimeout,
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+      encoding: 'utf-8' as const,
+    };
+
+    const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
+
+    // Handle different warning patterns for npm vs gh
+    const shouldTreatAsError =
+      type === 'npm'
+        ? stderr && !stderr.includes('npm WARN')
+        : stderr && !stderr.includes('Warning:') && !stderr.includes('notice:');
+
+    if (shouldTreatAsError) {
+      const errorType =
+        type === 'npm' ? 'NPM command error' : 'GitHub CLI command error';
+      return createErrorResult(errorType, new Error(stderr));
+    }
+
+    return createSuccessResult({
+      command: fullCommand,
+      result: stdout,
+      timestamp: new Date().toISOString(),
+      type,
+    });
+  } catch (error) {
+    const errorMessage =
+      type === 'npm'
+        ? 'Failed to execute NPM command'
+        : 'Failed to execute GitHub CLI command';
+    return createErrorResult(errorMessage, error);
+  }
 }
