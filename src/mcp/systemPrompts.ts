@@ -102,6 +102,9 @@ SUGGESTED STRATEGIES:
 
 In case of errors, try to understand the error and attempt to fix it.
 
+PATH DISCOVERY:
+ Before using path in tools, first use ${TOOL_NAMES.GITHUB_GET_CONTENTS} or ${TOOL_NAMES.NPM_GET_EXPORTS}  to discover the actual path in the repository.
+
 DO:
 - Always verify authentication first.
 - Prioritize documentation and configuration files.
