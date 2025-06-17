@@ -186,7 +186,7 @@ export function generateStandardSuggestions(
     `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${query}"`,
     `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${query}"`,
     `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${query}"`,
-    `${TOOL_NAMES.GITHUB_SEARCH_USERS} "${query}"`,
+
     `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}"`,
   ];
 

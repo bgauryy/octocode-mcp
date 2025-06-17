@@ -10,14 +10,10 @@ export const TOOL_NAMES = {
   GITHUB_SEARCH_ISSUES: 'github_search_issues',
   GITHUB_SEARCH_PULL_REQUESTS: 'github_search_pull_requests',
   GITHUB_SEARCH_TOPICS: 'github_search_topics',
-  GITHUB_SEARCH_USERS: 'github_search_users',
   GITHUB_GET_CONTENTS: 'github_get_contents',
   GITHUB_GET_FILE_CONTENT: 'github_get_file_content',
   // npm Registry API - Comprehensive
   NPM_SEARCH_PACKAGES: 'npm_search_packages',
-  NPM_GET_PACKAGE: 'npm_get_package',
-  NPM_GET_REPOSITORY: 'npm_get_repository',
-
   NPM_GET_RELEASES: 'npm_get_releases',
   NPM_GET_EXPORTS: 'npm_get_exports',
 };
@@ -31,148 +27,95 @@ export const SEARCH_TYPES = {
   ISSUES: 'issues',
   PULL_REQUESTS: 'prs',
   TOPICS: 'topics',
-  USERS: 'users',
   CONTENTS: 'contents',
   FILE_CONTENT: 'file_content',
   NPM_PACKAGES: 'npm_packages',
-
   NPM_RELEASES: 'npm_releases',
   NPM_EXPORTS: 'npm_exports',
 } as const;
 
 export const PROMPT_SYSTEM_PROMPT = `CODE RESEARCH ENGINE. You are a code research assistant.
 
-You are given a query and you need to find the best strategy and tools to use.
+Start with verifying authentication: ${TOOL_NAMES.API_STATUS_CHECK}
 
-Start with verifying user authentication to GitHub and NPM using this tool:
-${TOOL_NAMES.API_STATUS_CHECK} - Verify GitHub/NPM authentication
-
-Tools are using npm and github cli under the hood.
-
-MAIN GOAL:
-Understand user's intention and plan the best strategy for finding the most comprehensive answer.
-Provide comprehensive answers using data from tools.
-Documentation files are excellent and should be used alongside content from other files.
-Focus on: documentation files (.md, .txt etc.), configuration files (package.json, pom.xml, requirements.txt, etc.).
-Always provide references from code and docs.
-To optimize LLM usage, you can output results in chunks and plan steps to get the best answer.
-Leverage NPM tools for getting information about packages and their dependencies, and their GitHub location.
-This will be the easier way.
+MAIN GOAL: Find comprehensive answers using available tools. Focus on documentation files (.md, .txt), configuration files (package.json, pom.xml, requirements.txt), and provide code references.
 
 TOOLS:
 
-DISCOVERY & INITIAL SEARCH
+DISCOVERY & SEARCH
  ${TOOL_NAMES.NPM_SEARCH_PACKAGES} - Find packages by name/keyword
  ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Find repositories and projects
- ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find code examples and usage patterns
+ ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find code examples with boolean logic
  ${TOOL_NAMES.GITHUB_SEARCH_TOPICS} - Explore technology ecosystems
 
-DEEP ANALYSIS & EXPLORATION
- ${TOOL_NAMES.GITHUB_GET_CONTENTS} - Browse repository structure and files
- ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} - Read complete file contents
- ${TOOL_NAMES.NPM_GET_EXPORTS} - Understand package APIs and imports
- ${TOOL_NAMES.NPM_GET_RELEASES} - Analyze version history and stability
+DEEP ANALYSIS
+ ${TOOL_NAMES.GITHUB_GET_CONTENTS} - Browse repository structure
+ ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} - Read complete files
+ ${TOOL_NAMES.NPM_GET_EXPORTS} - Package API and import patterns
+ ${TOOL_NAMES.NPM_GET_RELEASES} - Version history and stability
 
-PROBLEM SOLVING & LEARNING
- ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Find known problems and solutions
- ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - See feature implementations
- ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Track development changes
+PROBLEM SOLVING
+ ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} - Find problems and solutions
+ ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Implementation patterns
+ ${TOOL_NAMES.GITHUB_SEARCH_COMMITS} - Development changes
 
-COMPANY & TEAM CONTEXT
+ORGANIZATION CONTEXT
  ${TOOL_NAMES.GITHUB_GET_USER_ORGS} - Discover internal/company resources
- ${TOOL_NAMES.GITHUB_SEARCH_USERS} - Find developers and maintainers
 
+CRITICAL SEARCH STRATEGY:
+1. ALWAYS start with ${TOOL_NAMES.API_STATUS_CHECK}
+2. For known company/org projects (e.g., mentions of "wix", "google", company names) OR when public searches return 0 results: 
+   - IMMEDIATELY use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} to discover private organizations
+   - Then search within those organizations using owner parameter
+3. For unknown projects: Try public search first, but if no meaningful results, fallback to step 2
+4. For private/company code (e.g., @org/package), ALWAYS use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} first
 
-TYPES OF QUERIES:
-Code analysis, repo/package search, creating docs, etc. - all in free language and the AI should decide what to do according to semantics.
-If the user asks on private code from private github repository 
-  (e.g. realted to company or organization) - e.g package with prefix of @org/package - use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} to check if the code/repository is in the users provate github repo find the repository
+SEARCH FAILURE RECOVERY:
+- If public repository search returns 0 results or irrelevant matches
+- If code search in public repos yields no meaningful results  
+- If project name suggests company/internal tool
+→ IMMEDIATELY check ${TOOL_NAMES.GITHUB_GET_USER_ORGS} and retry searches with discovered organizations
 
-SUGGESTED STRATEGIES:
-- Start with NPM search to find packages metadata and their GitHub location
-- Use NPM exports tool to understand package APIs (exports, imports, etc.)
-- Use GitHub repository search with advanced filters for smart research
-- Use GitHub code search for finding specific code examples and usage patterns
-- Browse repository structure to understand organization and key files
-- Fetch important files from repositories to fully understand documentation and workflows
-- Understand dependencies and usage patterns across repositories
-- Use commit and issue searches for understanding codebase evolution and context
-- Use topics and repository searches to narrow down research scope
-- Analyze version history to understand package stability and release patterns
-
-In case of errors, try to understand the error and attempt to fix it.
-
-PATH DISCOVERY:
- Before using path in tools, first use ${TOOL_NAMES.GITHUB_GET_CONTENTS} or ${TOOL_NAMES.NPM_GET_EXPORTS}  to discover the actual path in the repository.
-
-DO:
-- Always verify authentication first.
-- Prioritize documentation and configuration files.
-- Provide direct references (links, code snippets) from retrieved data.
-- Break down complex queries into smaller, manageable steps.
-- Adapt your strategy based on intermediate results.
-
-DO NOT:
-- Guess answers or provide information not supported by tool outputs.
-- Attempt to perform actions that are outside the scope of your provided tools.
-- Fabricate URLs or file contents.
-
+STRATEGY: Start with NPM for package metadata → GitHub for implementation → Browse structure → Read key files → Search for specific patterns.
+From given results try to find the best tools to use next
 
 THINKING PROCESS:
-Before responding, always think step-by-step.
-1. Analyze the user's query to identify the core intent and keywords.
-2. Determine the initial tools needed based on the query and authentication status.
-3. Formulate a plan of action, outlining the sequence of tool calls and expected information.
-4. Execute tools one by one, analyzing the results of each step.
-5. If a step yields unexpected results or errors, re-evaluate the plan and adjust.
-6. Synthesize information from all successful tool calls to construct a comprehensive answer.
-7. Ensure all facts are supported by references from the tools.
-8. Consider if further exploration or clarification is needed before finalizing the response.
-9.Think after each step about the best tools or actions to take and learn from previous results.
-10.If you have enough information (high quality content, references, etc.), stop and return the answer.
-11. Don't hellucinate and don't make up information - get inforamtion from content and search results (e.g. organization should be checked with ${TOOL_NAMES.GITHUB_GET_USER_ORGS} and not by you)`;
+1. Analyze query intent and keywords
+2. Detect if query involves company/org code or if public search likely to fail
+3. Plan tool sequence: public search OR organizations-first based on analysis
+4. Execute tools, adapting based on results - AUTO-FALLBACK to organizations if public fails
+5. Synthesize comprehensive answer with references
+6. Stop when sufficient quality information is gathered
+
+Always verify authentication first. When in doubt about private vs public, check organizations early. Provide direct references from tool outputs.`;
 
 export const TOOL_DESCRIPTIONS = {
   [TOOL_NAMES.API_STATUS_CHECK]: `Verify API readiness and authentication. Check GitHub CLI, NPM connectivity. ALWAYS START HERE.`,
 
-  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Get user organizations for internal repo/package discovery. Auto-detect @org/ patterns, enterprise analysis, private repository access. Use when user wants discovery of internal/company resources.`,
+  [TOOL_NAMES.GITHUB_GET_USER_ORGS]: `Get user organizations for internal repo/package discovery. Essential for accessing private repositories and understanding organizational structure.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics for ecosystem mapping. 20 quality results. Critical for understanding technology landscapes.`,
+  [TOOL_NAMES.GITHUB_SEARCH_TOPICS]: `Discover GitHub topics for ecosystem mapping. Perfect for understanding technology landscapes and finding related projects.`,
 
-  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages for repository discovery. Default 20 optimized results. Essential first step for modern development analysis.`,
+  [TOOL_NAMES.NPM_SEARCH_PACKAGES]: `Search NPM packages by name/keyword. Essential first step for package discovery. Supports partial matching and multiple queries.`,
 
-  [TOOL_NAMES.NPM_GET_EXPORTS]: `Extract package API intelligence (entry points, imports, search targets). Vital for understanding interfaces & usage patterns.`,
+  [TOOL_NAMES.NPM_GET_EXPORTS]: `Extract package API intelligence (entry points, imports, search targets). Critical for understanding package interfaces and generating import statements.`,
 
-  [TOOL_NAMES.NPM_GET_RELEASES]: `Get production releases (semantic versions only, excludes pre-release). Important for stability and version strategy analysis.`,
+  [TOOL_NAMES.NPM_GET_RELEASES]: `Get official releases (semantic versions only, excludes pre-release). Essential for stability analysis and version strategy.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `GitHub Code Search
-Supports advanced boolean logic and multi-filter combinations for quality code discovery.
-BOOLEAN: AND (precision), OR (breadth), NOT (filtering) | FILTERS: language, path, size, owner, extension, filename, user, org, match, repo (stackable)
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `GitHub Code Search with advanced boolean logic and multi-filter combinations.
+BOOLEAN: AND (precision), OR (breadth), NOT (filtering) | FILTERS: language, path, size, owner, extension, filename, match, repo
+EXAMPLES: \`async AND await NOT test language:javascript\`, \`function OR class language:typescript\`, \`interface Props filename:index.tsx\`
+STRATEGY: Start broad (OR), narrow (AND + NOT), stack filters for quality results.`,
 
-EXAMPLES:
-- \`async AND await NOT test language:javascript path:src size:1000..5000\` — quality async code
-- \`function OR class OR interface language:typescript extension:ts\` — TypeScript definitions  
-- \`config NOT debug NOT test extension:json path:src\` — production configs
-- \`interface Props filename:index.tsx match:file\` — specific file content
-- \`createRoot user:facebook repo:["react"]\` — user repos (array required)
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories across domains. Essential for finding authoritative implementations. Use stars filter (>100) for established projects.`,
 
-ADVANCED: size ranges (>1000, <500, 50..200), match scope (file/path), enableQueryOptimization (true/false)
-STRATEGY: Start broad (OR), narrow (AND + NOT), stack filters for quality data. If no results are found, try using different filters or search terms. For example, consider removing 'owner:org/name' from the query (if the user didn't specify a particular owner) or use an owner obtained from ${TOOL_NAMES.GITHUB_GET_USER_ORGS}
-Returns: code snippets, file paths, repository context, GitHub links.
-This data is useful and can be used for content and further research (e.g. understanding packages, dependencies, etc.)
-`,
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure and browse directories. Essential for file discovery. Always use before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}. Requires valid branch name.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories across domains. 25 quality results. Essential for finding authoritative implementations.`,
+  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories. Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for discovery. Critical for deep implementation analysis.`,
 
-  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Explore repository structure. Essential for file discovery and navigation. Prioritize configuration files (package.json, pom.xml, requirements.txt) for dependency and architecture analysis. Always use before ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search issues for problem discovery and solutions. Quality-filtered results for understanding common problems, bugs, and feature requests.`,
 
-  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content. Use after ${TOOL_NAMES.GITHUB_GET_CONTENTS} for discovery. Critical for deep implementation analysis.`,
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests for implementation analysis. Excellent for understanding feature development patterns and code review insights.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search issues for problem discovery. Quality-filtered 25 results. Valuable for understanding common problems and solutions.`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests for implementation analysis. 25 curated results. Excellent for understanding feature development patterns.`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history for development tracking. 25 focused results. Useful for understanding evolution and key changes.`,
-
-  [TOOL_NAMES.GITHUB_SEARCH_USERS]: `Find developers and experts. 25 quality profiles. Helpful for identifying key contributors and maintainers.`,
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history for development tracking. Focused results for understanding project evolution and finding specific changes.`,
 };

@@ -103,9 +103,7 @@ export async function searchGitHubRepos(
                 `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
                 `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query || 'topic'}"`,
                 `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
-                ...(params.query
-                  ? [`${TOOL_NAMES.GITHUB_SEARCH_USERS} "${params.query}"`]
-                  : []),
+                ...(params.query ? [] : []),
               ],
             }),
         searchParams: {
