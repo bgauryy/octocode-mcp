@@ -114,12 +114,9 @@ WORKFLOW: Use this to discover branches, directory structure, and file paths. Au
 CRITICAL: This tool provides the exact file paths and branch names needed for ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}.`,
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Extract complete file content from repositories. 
-CRITICAL WORKFLOW: 
-1. MUST use ${TOOL_NAMES.GITHUB_GET_CONTENTS} first to discover: branches, directory structure, exact file paths
-2. Then use this tool with discovered paths (case-sensitive)
-3. NEVER fetch files without exploring structure first
-BRANCH HANDLING: Auto-fallback: specified → main → master → develop → trunk. Always specify branch.
-ERROR RECOVERY: If 404, use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to verify paths. If 403, use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} for private access.`,
+WORKFLOW: ${TOOL_NAMES.GITHUB_GET_CONTENTS} first → validate exact path → fetch file. NEVER HALLUCINATE PATHS.
+BRANCH: Auto-fallback (specified → main → master → develop → trunk). Always specify branch.
+ERROR RECOVERY: 404? Search with ${TOOL_NAMES.GITHUB_SEARCH_CODE} + re-explore structure using ${TOOL_NAMES.GITHUB_GET_CONTENTS}. 403? Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS}. Wrong directory? Search similar paths. Always validate before retry.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Search issues for problem discovery and solutions. Quality-filtered results for understanding common problems, bugs, and feature requests.`,
 

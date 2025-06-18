@@ -3,6 +3,7 @@ import { GithubFetchRequestParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { createErrorResult, createSuccessResult } from '../util';
+import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 export async function fetchGitHubFileContent(
   params: GithubFetchRequestParams
@@ -62,10 +63,9 @@ export async function fetchGitHubFileContent(
           return createErrorResult(
             `File not found: ${filePath}`,
             new Error(
-              `File "${filePath}" does not exist in ${owner}/${repo} on branch ${validBranch}. ` +
-                `Suggestions: 1) Use github_get_contents to explore the repository structure first, ` +
-                `2) Check if the file path is correct (case-sensitive), ` +
-                `3) Verify the file exists in the expected directory`
+              `File does not exist in ${owner}/${repo} on branch ${validBranch}. ` +
+                `Retry after:
+                 Use ${TOOL_NAMES.GITHUB_GET_CONTENTS} to explore the repository structure and use ${TOOL_NAMES.GITHUB_SEARCH_CODE} to search for the file`
             )
           );
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
@@ -73,8 +73,7 @@ export async function fetchGitHubFileContent(
             `Access denied: ${filePath}`,
             new Error(
               `Permission denied for ${owner}/${repo}. ` +
-                `The repository may be private or you may not have access. ` +
-                `Use github_get_user_organizations to check available organizations.`
+                `Use ${TOOL_NAMES.GITHUB_GET_USER_ORGS} to check available organizations (since repository may be private)`
             )
           );
         } else if (
@@ -84,7 +83,7 @@ export async function fetchGitHubFileContent(
           return createErrorResult(
             `Rate limit exceeded`,
             new Error(
-              `GitHub API rate limit exceeded. Wait before retrying or use github_search_code for alternative access.`
+              `GitHub API rate limit exceeded. Wait before retrying or use other tools as alternative`
             )
           );
         } else {
