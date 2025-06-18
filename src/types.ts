@@ -308,6 +308,10 @@ export interface NpmData {
   _hasShrinkwrap: boolean;
 }
 
+export type NpmViewPackageParams = {
+  packageName: string;
+};
+
 export interface NpmViewPackageResult {
   name: string;
   latest: string;

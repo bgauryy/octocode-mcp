@@ -26,7 +26,7 @@ SEARCH STRATEGY:
 - ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Smart semantic search combining repositories and topics
 - ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find implementation patterns and examples  
 - ${TOOL_NAMES.NPM_PACKAGE_SEARCH} - Package ecosystem discovery
-- ${TOOL_NAMES.NPM_VIEW_PACKAGE} - Get package exports to understand available files
+- ${TOOL_NAMES.NPM_VIEW_PACKAGE} - Complete package analysis with exports for file discovery
 - ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} + ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Understanding development patterns
 - ${TOOL_NAMES.GITHUB_GET_CONTENTS} → ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} - ALWAYS verify file existence before fetching
 
@@ -45,13 +45,12 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.NPM_PACKAGE_SEARCH]: `Search NPM packages by keyword. Use for package ecosystem discovery.`,
 
-  [TOOL_NAMES.NPM_VIEW_PACKAGE]: `Get comprehensive package metadata essential for further GitHub searches and code analysis. Returns vital data including:
-  1. repositoryGitUrl - Critical for accurate GitHub repository searches with reduced API limitations
-  2. exports - Essential for understanding package API structure, import patterns, and discovering which files exist
-  3. dependencies - Shows how the package is built and its ecosystem relationships
-  4. registryUrl - Identifies the package registry source for distribution analysis
-  5. versions with release dates - Historical context for package evolution
-  Use this tool when you find packages in code or when users ask about specific packages to get complete context before GitHub searches. The exports field helps identify available files before fetching.`,
+  [TOOL_NAMES.NPM_VIEW_PACKAGE]: `Get comprehensive package metadata essential for GitHub searches and code analysis. Returns complete package context:
+  • repositoryGitUrl - Direct GitHub repo link for accurate searches
+  • exports - Critical for discovering available files and import paths  
+  • dependencies/devDependencies - Full ecosystem understanding
+  • versions with dates - Historical evolution context
+  The exports field is invaluable for GitHub file discovery - shows exact paths before fetching. Always use when finding packages in code.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `SEMANTIC CODE DISCOVERY: Search code with boolean logic (AND, OR, NOT). 
   Format: "term AND term" language:js path:src. Filters: owner/org/user, repo, extension, filename, language, path, size, limit, match scope. 
