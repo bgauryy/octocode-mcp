@@ -217,13 +217,6 @@ export interface NpmEngines {
   node: string;
 }
 
-export interface NpmExports {
-  [key: string]: {
-    import: string;
-    require: string;
-  };
-}
-
 export interface NpmTypesVersions {
   [key: string]: {
     [key: string]: string[];
@@ -292,9 +285,9 @@ export interface NpmData {
   users: NpmUsers;
   _contentLength: number;
   version: string;
-  type: string;
+  type?: string;
   engines: NpmEngines;
-  exports: NpmExports;
+  exports: string | Record<string, unknown>;
   typesVersions: NpmTypesVersions;
   scripts: NpmScripts;
   dependencies: NpmDependencies;
@@ -307,6 +300,26 @@ export interface NpmData {
   directories: Record<string, never>;
   _npmOperationalInternal: NpmOperationalInternal;
   _hasShrinkwrap: boolean;
+}
+
+export interface NpmViewPackageResult {
+  name: string;
+  latest: string;
+  license: string;
+  timeCreated: string;
+  timeModified: string;
+  repositoryGitUrl: string;
+  registryUrl: string;
+  description: string;
+  size: number;
+  dependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
+  exports: string | Record<string, unknown>;
+  versions: Array<{ version: string; releaseDate: string }>;
+  versionStats: {
+    total: number;
+    official: number;
+  };
 }
 
 export interface NpmViewResult {
@@ -537,77 +550,6 @@ export interface GitHubUsersSearchParams extends BaseSearchParams, OrderSort {
   order?: 'asc' | 'desc';
   limit?: number;
   page?: number;
-}
-
-// Focused NPM result types for minimal token usage
-export interface NpmRepositoryInfoResult {
-  packageName: string;
-  description: string;
-  repository: NpmRepository;
-  homepage?: string;
-}
-
-export interface NpmDependenciesResult {
-  packageName: string;
-  dependencies: NpmDependencies;
-  devDependencies: NpmDevDependencies;
-  resolutions: NpmResolutions;
-}
-
-export interface NpmBugsResult {
-  packageName: string;
-  bugs: NpmBugs;
-}
-
-export interface NpmReadmeResult {
-  packageName: string;
-  readmeFilename: string;
-}
-
-export interface NpmVersionsResult {
-  packageName: string;
-  versions: string[];
-  latestVersion: string;
-  versionCount: number;
-}
-
-export interface NpmAuthorResult {
-  packageName: string;
-  author: string;
-  maintainers: string[];
-}
-
-export interface NpmLicenseResult {
-  packageName: string;
-  license: string;
-}
-
-export interface NpmHomepageResult {
-  packageName: string;
-  homepage: string;
-}
-
-export interface NpmIdResult {
-  packageName: string;
-  id: string; // name@latestVersion format
-}
-
-export interface NpmTimeResult {
-  packageName: string;
-  time: NpmTime;
-  lastModified: string;
-  created: string;
-  versionCount: number;
-}
-
-export interface NpmEnginesResult {
-  packageName: string;
-  engines: NpmEngines;
-}
-
-export interface NpmExportsResult {
-  packageName: string;
-  exports: NpmExports;
 }
 
 // ===== VERIFIED RETURN TYPES FOR ALL TOOLS =====

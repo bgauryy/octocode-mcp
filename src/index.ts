@@ -25,10 +25,6 @@ function registerAllTools(server: McpServer) {
       name: 'SearchGitHubPullRequests',
       fn: Tools.registerSearchGitHubPullRequestsTool,
     },
-    {
-      name: 'GetUserOrganizations',
-      fn: Tools.registerGetUserOrganizationsTool,
-    },
     { name: 'NpmSearch', fn: Tools.registerNpmSearchTool },
     {
       name: 'ViewRepositoryStructure',
@@ -36,8 +32,7 @@ function registerAllTools(server: McpServer) {
     },
     { name: 'SearchGitHubIssues', fn: Tools.registerSearchGitHubIssuesTool },
     { name: 'SearchGitHubTopics', fn: Tools.registerSearchGitHubTopicsTool },
-    { name: 'NpmGetReleases', fn: Tools.registerNpmGetReleasesTool },
-    { name: 'NpmGetExports', fn: Tools.registerNpmGetExportsTool },
+    { name: 'NpmViewPackage', fn: Tools.registerNpmViewPackageTool },
   ];
 
   for (const tool of toolRegistrations) {

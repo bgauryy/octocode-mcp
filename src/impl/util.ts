@@ -15,51 +15,61 @@ export function needsQuoting(str: string): boolean {
   );
 }
 
-export function createSuccessResult(data: any): CallToolResult {
+// CONSOLIDATED ERROR & SUCCESS HANDLING
+export function createResult(
+  data: any,
+  isError = false,
+  suggestions?: string[]
+): CallToolResult {
+  const text = isError
+    ? `${data}${suggestions ? ` | Try: ${suggestions.join(', ')}` : ''}`
+    : JSON.stringify(data, null, 2);
+
   return {
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify(data, null, 2),
-      },
-    ],
-    isError: false,
+    content: [{ type: 'text', text }],
+    isError,
   };
+}
+
+// LEGACY SUPPORT - Remove these once all tools are updated
+export function createSuccessResult(data: any): CallToolResult {
+  return createResult(data, false);
 }
 
 export function createErrorResult(
   message: string,
   error: unknown
 ): CallToolResult {
-  return {
-    content: [
-      {
-        type: 'text',
-        text: `${message}: ${(error as Error).message}`,
-      },
-    ],
-    isError: true,
-  };
+  return createResult(`${message}: ${(error as Error).message}`, true);
 }
 
-/**
- * Create optimized error response with minimal token usage
- */
-export function createOptimizedError(
-  operation: string,
-  error: string,
-  suggestions?: string[]
-): CallToolResult {
-  const suggestionsText = suggestions ? `. Try: ${suggestions.join(', ')}` : '';
-  return {
-    content: [
-      {
-        type: 'text',
-        text: `${operation} failed: ${error}${suggestionsText}`,
-      },
-    ],
-    isError: true,
-  };
+// STANDARD RESPONSE - Simplified
+export function createStandardResponse(args: {
+  query?: string;
+  data: any;
+  suggestions?: string[];
+}): CallToolResult {
+  return createResult({
+    q: args.query,
+    results: args.data,
+    ...(args.suggestions?.length && { suggestions: args.suggestions }),
+  });
+}
+
+// ENHANCED PARSING UTILITY
+export function parseJsonResponse(
+  responseText: string,
+  fallback: any = null
+): {
+  data: any;
+  parsed: boolean;
+} {
+  try {
+    const data = JSON.parse(responseText);
+    return { data, parsed: true };
+  } catch {
+    return { data: fallback || responseText, parsed: false };
+  }
 }
 
 /**
@@ -112,83 +122,18 @@ export function detectOrganizationalQuery(query: string): {
   };
 }
 
-/**
- * Create optimized error response with smart fallbacks
- */
-export function createSmartError(
-  tool: string,
-  operation: string,
-  error: string,
-  query?: string
-): CallToolResult {
-  // Simple fallback suggestions based on tool type
-  let suggestions = '';
-  if (query) {
-    if (tool.includes('SEARCH_REPOS')) {
-      suggestions = ' → Try npm_search_packages or github_search_topics';
-    } else if (tool.includes('SEARCH_CODE')) {
-      suggestions = ' → Try github_search_repositories + explore structure';
-    } else if (tool.includes('NPM_SEARCH')) {
-      suggestions = ' → Try github_search_repositories';
-    }
-  }
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: `${operation} failed: ${error}${suggestions}`,
-      },
-    ],
-    isError: true,
-  };
-}
-
-// Helper function to create standardized success responses
-export function createStandardResponse(args: {
-  query: string | undefined;
-  data: any;
-  failureSuggestions?: string[];
-}): CallToolResult {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(
-          {
-            query: args.query,
-            results: args.data,
-            ...(args.failureSuggestions &&
-              args.failureSuggestions.length > 0 && {
-                suggestions: args.failureSuggestions,
-              }),
-          },
-          null,
-          2
-        ),
-      },
-    ],
-    isError: false,
-  };
-}
-
 // Helper function to generate standard suggestions
 export function generateStandardSuggestions(
   query: string,
   excludeTools: string[] = []
 ): string[] {
   const allSuggestions = [
-    `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${query}"`,
-    `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${query}"`,
-    `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${query}"`,
-    `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${query}"`,
-    `${TOOL_NAMES.GITHUB_SEARCH_COMMITS} "${query}"`,
-    `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${query}"`,
-
-    `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${query}"`,
+    `${TOOL_NAMES.NPM_SEARCH_PACKAGES}`,
+    `${TOOL_NAMES.GITHUB_SEARCH_REPOS}`,
+    `${TOOL_NAMES.GITHUB_SEARCH_CODE}`,
   ];
 
   return allSuggestions
     .filter(suggestion => !excludeTools.some(tool => suggestion.includes(tool)))
-    .slice(0, 3);
+    .slice(0, 2); // Reduced to 2 for token efficiency
 }

@@ -1,122 +1,116 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { createResult } from '../../impl/util';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createStandardResponse } from '../../impl/util';
-
-interface ApiStatus {
-  github: {
-    authenticated: boolean;
-    username?: string;
-    error?: string;
-  };
-  npm: {
-    connected: boolean;
-    error?: string;
-  };
-  limits: {
-    core: { remaining: number; limit: number };
-    search: { remaining: number; limit: number };
-    code_search: { remaining: number; limit: number };
-    error?: string;
-  };
-  status: 'ready' | 'limited' | 'not_ready';
-  recommendations: string[];
-}
 
 export function registerApiStatusCheckTool(server: McpServer) {
   server.tool(
     TOOL_NAMES.API_STATUS_CHECK,
     TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
+    {},
     {
-      random_string: z
-        .string()
-        .optional()
-        .describe('Dummy parameter for no-parameter tools'),
-    },
-    {
-      title: 'API Status Check',
+      title: 'Verify API Readiness and Authentication',
+      description: TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     },
-    async () => checkApiStatus()
-  );
-}
+    async () => {
+      try {
+        let githubConnected = false;
+        let organizations: string[] = [];
+        let npmConnected = false;
+        let registry = '';
 
-async function checkGitHub(): Promise<ApiStatus['github']> {
-  try {
-    const result = await executeGitHubCommand('auth', ['status'], {
-      timeout: 5000,
-    });
-    const output = String(result.content[0]?.text || '');
+        // Check GitHub authentication and get organizations
+        try {
+          const authResult = await executeGitHubCommand('auth', ['status']);
 
-    if (
-      result.isError ||
-      !(
-        /Logged in to github\.com/i.test(output) ||
-        /✓.*github\.com/i.test(output)
-      )
-    ) {
-      return {
-        authenticated: false,
-        error: 'Not authenticated. Run: gh auth login',
-      };
+          if (!authResult.isError) {
+            const authData = JSON.parse(authResult.content[0].text as string);
+            const isAuthenticated =
+              authData.result?.includes('Logged in') ||
+              authData.result?.includes('github.com');
+
+            if (isAuthenticated) {
+              githubConnected = true;
+
+              // Get user organizations using direct GitHub CLI command
+              try {
+                const orgsResult = await executeGitHubCommand(
+                  'org',
+                  ['list', '--limit=50'],
+                  { cache: false }
+                );
+                if (!orgsResult.isError) {
+                  const execResult = JSON.parse(
+                    orgsResult.content[0].text as string
+                  );
+                  const output = execResult.result;
+
+                  // Parse organizations into clean array
+                  organizations = output
+                    .split('\n')
+                    .map((org: string) => org.trim())
+                    .filter((org: string) => org.length > 0);
+                }
+              } catch (orgError) {
+                // Organizations fetch failed, but GitHub is still connected
+                console.warn('Failed to fetch organizations:', orgError);
+              }
+            }
+          }
+        } catch (error) {
+          // GitHub CLI not available or authentication failed
+          githubConnected = false;
+        }
+
+        // Check NPM connectivity using whoami
+        try {
+          const npmResult = await executeNpmCommand('whoami', [], {
+            timeout: 5000,
+          });
+
+          if (!npmResult.isError) {
+            npmConnected = true;
+            // Get registry info
+            try {
+              const registryResult = await executeNpmCommand(
+                'config',
+                ['get', 'registry'],
+                { timeout: 3000 }
+              );
+              if (!registryResult.isError) {
+                const registryData = JSON.parse(
+                  registryResult.content[0].text as string
+                );
+                registry = registryData.result.trim();
+              }
+            } catch {
+              registry = 'https://registry.npmjs.org/'; // default fallback
+            }
+          }
+        } catch (error) {
+          npmConnected = false;
+        }
+
+        return createResult({
+          github: {
+            connected: githubConnected,
+            organizations,
+          },
+          npm: {
+            connected: npmConnected,
+            registry,
+          },
+        });
+      } catch (error) {
+        return createResult(
+          `API status check failed: ${(error as Error).message}`,
+          true
+        );
+      }
     }
-
-    const username = output.match(
-      /Logged in to github\.com (?:as|account) ([^\s]+)/
-    )?.[1];
-    return { authenticated: true, username };
-  } catch (error: any) {
-    return {
-      authenticated: false,
-      error: `GitHub check failed: ${error.message}`,
-    };
-  }
-}
-
-async function checkNpm(): Promise<ApiStatus['npm']> {
-  try {
-    const result = await executeNpmCommand('ping', [], { timeout: 5000 });
-    const output = String(result.content[0]?.text || '');
-
-    return {
-      connected: output.includes('PONG') || output.includes('ping ok'),
-      error: result.isError ? 'NPM registry unreachable' : undefined,
-    };
-  } catch (error: any) {
-    return {
-      connected: false,
-      error: `NPM check failed: ${error.message}`,
-    };
-  }
-}
-
-async function checkApiStatus(): Promise<CallToolResult> {
-  try {
-    const [github, npm] = await Promise.all([checkGitHub(), checkNpm()]);
-
-    const optimizedStatus = {
-      github: github.authenticated,
-      npm: npm.connected,
-    };
-
-    return createStandardResponse({
-      query: undefined,
-      data: optimizedStatus,
-    });
-  } catch (error: any) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `API Status Check Failed: ${error.message}\n\nTry:\n1. gh auth login\n2. npm ping`,
-        },
-      ],
-      isError: true,
-    };
-  }
+  );
 }

@@ -84,7 +84,7 @@ export async function npmSearch(
             searchResults.length > 0 &&
             searchResults.length < searchlimit && {
               nextSteps: [
-                `${TOOL_NAMES.NPM_GET_EXPORTS} "${searchResults[0]?.name || query}"`,
+                `${TOOL_NAMES.NPM_VIEW_PACKAGE} "${searchResults[0]?.name || query}"`,
                 `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${searchResults[0]?.name || query}"`,
               ],
             }),

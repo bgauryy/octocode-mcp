@@ -6,7 +6,13 @@ import { generateCacheKey, withCache } from './cache';
 const safeExecAsync = promisify(nodeExec);
 
 // Allowed command prefixes - this prevents shell injection by restricting to safe commands
-const ALLOWED_NPM_COMMANDS = ['view', 'search', 'ping'] as const;
+const ALLOWED_NPM_COMMANDS = [
+  'view',
+  'search',
+  'ping',
+  'config',
+  'whoami',
+] as const;
 const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
 
 type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
