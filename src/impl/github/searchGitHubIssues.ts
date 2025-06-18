@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { executeGitHubCommand } from '../../utils/exec';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { GitHubIssuesSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
@@ -88,7 +88,7 @@ export async function searchGitHubIssues(
 }
 
 function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
-  command: string;
+  command: GhCommand;
   args: string[];
 } {
   // Build GitHub API search query for issues

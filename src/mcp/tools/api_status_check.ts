@@ -9,7 +9,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
     TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
     {},
     {
-      title: 'Verify API Readiness and Authentication',
+      title: 'Verify Tools Readiness and Authentication',
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
       readOnlyHint: true,
       destructiveHint: false,
@@ -57,7 +57,6 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 }
               } catch (orgError) {
                 // Organizations fetch failed, but GitHub is still connected
-                console.warn('Failed to fetch organizations:', orgError);
               }
             }
           }

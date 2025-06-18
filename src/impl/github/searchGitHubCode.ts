@@ -2,7 +2,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubCodeSearchParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult } from '../util';
-import { executeGitHubCommand } from '../../utils/exec';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 // Regex patterns for query analysis - centralized to avoid duplication
 const QUERY_PATTERNS = {
@@ -89,7 +89,7 @@ export async function searchGitHubCode(
  * @returns Object containing command and arguments array
  */
 function buildGitHubCodeSearchCommand(params: GitHubCodeSearchParams): {
-  command: string;
+  command: GhCommand;
   args: string[];
 } {
   const args = ['code'];

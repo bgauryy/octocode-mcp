@@ -2,7 +2,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubCommitsSearchParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult } from '../util';
-import { executeGitHubCommand } from '../../utils/exec';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { TOOL_NAMES } from '../../mcp/systemPrompts';
 
 // Enhanced commit message parsing
@@ -314,7 +314,7 @@ function safeQuote(arg: string): string {
 }
 
 function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
-  command: string;
+  command: GhCommand;
   args: string[];
 } {
   // Only put the search keywords in the query string

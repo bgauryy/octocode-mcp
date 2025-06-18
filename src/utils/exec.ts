@@ -15,8 +15,8 @@ const ALLOWED_NPM_COMMANDS = [
 ] as const;
 const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
 
-type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
-type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
+export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
+export type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
 type ExecOptions = {
   timeout?: number;
   cwd?: string;
@@ -53,7 +53,7 @@ function isValidGhCommand(command: string): command is GhCommand {
  * Security: Only executes commands that start with "npm {ALLOWED_COMMAND}"
  */
 export async function executeNpmCommand(
-  command: string,
+  command: NpmCommand,
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<CallToolResult> {
@@ -83,7 +83,7 @@ export async function executeNpmCommand(
  * Security: Only executes commands that start with "gh {ALLOWED_COMMAND}"
  */
 export async function executeGitHubCommand(
-  command: string,
+  command: GhCommand,
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<CallToolResult> {

@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { executeGitHubCommand } from '../../utils/exec';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { GitHubTopicsSearchParams } from '../../types';
 import { createErrorResult, createSuccessResult } from '../util';
@@ -56,7 +56,7 @@ export async function searchGitHubTopics(
 }
 
 function buildGitHubTopicsAPICommand(params: GitHubTopicsSearchParams): {
-  command: string;
+  command: GhCommand;
   args: string[];
 } {
   // Build GitHub API search query for topics

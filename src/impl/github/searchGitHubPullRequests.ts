@@ -2,7 +2,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { GitHubPullRequestsSearchParams } from '../../types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { createErrorResult, createSuccessResult } from '../util';
-import { executeGitHubCommand } from '../../utils/exec';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 export async function searchGitHubPullRequests(
   params: GitHubPullRequestsSearchParams
@@ -94,7 +94,7 @@ export async function searchGitHubPullRequests(
 
 export function buildGitHubPullRequestsAPICommand(
   params: GitHubPullRequestsSearchParams
-): { command: string; args: string[] } {
+): { command: GhCommand; args: string[] } {
   // Build GitHub API search query for pull requests
   const queryParts: string[] = [];
 
