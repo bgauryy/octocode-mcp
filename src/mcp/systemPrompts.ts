@@ -52,9 +52,9 @@ export const TOOL_DESCRIPTIONS = {
   5. versions with release dates - Historical context for package evolution
   Use this tool when you find packages in code or when users ask about specific packages to get complete context before GitHub searches.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code with boolean logic. Format: "term AND term" language:js path:src`,
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code with boolean logic (AND, OR, NOT). Format: "term AND term" language:js path:src. Filters: owner/org/user, repo, extension, filename, language, path, size, limit, match scope. CRITICAL: When packages found in results or from user input, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} for metadata/paths.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories. Use stars:>100 for quality projects.`,
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories. Use stars:>100 for quality projects. CRITICAL: When finding packages, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} to get essential metadata and repository paths.`,
 
   [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Browse repo structure. Use before github_get_file_content.`,
 
