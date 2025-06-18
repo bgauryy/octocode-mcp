@@ -26,23 +26,24 @@ export type UserInvolvement = {
 
 export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   query: string;
+  owner?: string | string[]; // Override to support array
   repo?: string[];
   language?: string;
   filename?: string;
   extension?: string;
   path?: string;
-  match?: 'file' | 'path';
-  branch?: string;
+  match?: 'file' | 'path' | ('file' | 'path')[]; // Support array
   size?: string;
+  visibility?: 'public' | 'private' | 'internal';
   limit?: number;
+  // Legacy fields for backward compatibility
+  branch?: string;
   enableQueryOptimization?: boolean;
-  // Additional GitHub Code Search qualifiers
-  symbol?: string; // Symbol qualifier: symbol:WithContext
-  content?: string; // Content qualifier: content:README.md
-  is?: ('archived' | 'fork' | 'vendored' | 'generated')[]; // Repository properties
-  user?: string; // User qualifier: user:octocat
-  org?: string; // Organization qualifier: org:github
-  // Boolean and regex support built into query string
+  symbol?: string;
+  content?: string;
+  is?: ('archived' | 'fork' | 'vendored' | 'generated')[];
+  user?: string;
+  org?: string;
 }
 
 export interface GitHubCommitsSearchParams

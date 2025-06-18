@@ -1,12 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import { fetchGitHubFileContent } from '../../impl/github/fetchGitHubFileContent';
 import {
   createResult,
   parseJsonResponse,
   getErrorSuggestions,
+  createErrorResult,
+  createSuccessResult,
 } from '../../impl/util';
+import { GithubFetchRequestParams } from '../../types';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { generateCacheKey, withCache } from '../../utils/cache';
+import { executeGitHubCommand } from '../../utils/exec';
 
 type GitHubFileContentParams = {
   owner: string;
@@ -20,24 +25,34 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
     TOOL_NAMES.GITHUB_GET_FILE_CONTENT,
     TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_FILE_CONTENT],
     {
-      owner: z.string().min(1).describe(`Repository owner/organization`),
-      repo: z.string().min(1).describe('The name of the GitHub repository'),
+      owner: z
+        .string()
+        .min(1)
+        .describe(
+          `Repository owner/organization (e.g., 'microsoft', 'facebook')`
+        ),
+      repo: z
+        .string()
+        .min(1)
+        .describe(`Repository name (e.g., 'vscode', 'react'). Case-sensitive.`),
       branch: z
         .string()
         .min(1)
         .describe(
-          "Branch name (e.g., 'master', 'main'). Must be obtained from repository metadata."
+          `Branch name (e.g., 'main', 'master'). Auto-fallback to common branches if not found.`
         ),
       filePath: z
         .string()
         .min(1)
         .describe(
-          'Path to the file within repository. Use github_get_contents to discover file paths first.'
+          `File path from repository root (e.g., 'README.md', 'src/index.js'). Use github_get_contents to explore structure.`
         ),
     },
     {
-      title: 'Extract Complete File Content from Repositories',
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_FILE_CONTENT],
+      title: 'Read File Content from GitHub Repositories',
+      description:
+        `Fetches complete file content from GitHub repositories. ` +
+        `Handles text files up to 500KB, detects binary files, supports branch fallback.`,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -107,4 +122,162 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
       }
     }
   );
+}
+
+async function fetchGitHubFileContent(
+  params: GithubFetchRequestParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-file-content', params);
+
+  return withCache(cacheKey, async () => {
+    const { owner, repo, branch, filePath } = params;
+
+    try {
+      // Try to fetch file content directly
+      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
+
+      const result = await executeGitHubCommand('api', [apiPath], {
+        cache: false,
+      });
+
+      if (result.isError) {
+        const errorMsg = result.content[0].text as string;
+
+        // Try fallback branches if original branch fails
+        if (
+          errorMsg.includes('404') &&
+          branch !== 'main' &&
+          branch !== 'master'
+        ) {
+          const fallbackBranches = ['main', 'master'];
+
+          for (const fallbackBranch of fallbackBranches) {
+            const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
+            const fallbackResult = await executeGitHubCommand(
+              'api',
+              [fallbackPath],
+              {
+                cache: false,
+              }
+            );
+
+            if (!fallbackResult.isError) {
+              return await processFileContent(
+                fallbackResult,
+                owner,
+                repo,
+                fallbackBranch,
+                filePath
+              );
+            }
+          }
+        }
+
+        // Handle common errors
+        if (errorMsg.includes('404')) {
+          return createErrorResult(
+            `File not found: ${filePath}`,
+            new Error(
+              `File does not exist in ${owner}/${repo} on branch ${branch}`
+            )
+          );
+        } else if (errorMsg.includes('403')) {
+          return createErrorResult(
+            `Access denied: ${filePath}`,
+            new Error(`Permission denied for ${owner}/${repo}`)
+          );
+        } else {
+          return createErrorResult(
+            `Failed to fetch file: ${filePath}`,
+            new Error(errorMsg)
+          );
+        }
+      }
+
+      return await processFileContent(result, owner, repo, branch, filePath);
+    } catch (error) {
+      return createErrorResult(
+        `Unexpected error fetching file: ${filePath}`,
+        error as Error
+      );
+    }
+  });
+}
+
+async function processFileContent(
+  result: any,
+  owner: string,
+  repo: string,
+  branch: string,
+  filePath: string
+): Promise<CallToolResult> {
+  // Extract the actual content from the exec result
+  const execResult = JSON.parse(result.content[0].text as string);
+  const fileData = JSON.parse(execResult.result);
+  // Check if it's a directory
+  if (Array.isArray(fileData)) {
+    return createErrorResult(
+      `Path is a directory: ${filePath}`,
+      new Error(`"${filePath}" is a directory, not a file`)
+    );
+  }
+
+  const fileSize = fileData.size || 0;
+  const MAX_FILE_SIZE = 500 * 1024; // 500KB limit for simplicity
+
+  // Check file size
+  if (fileSize > MAX_FILE_SIZE) {
+    return createErrorResult(
+      `File too large: ${filePath}`,
+      new Error(
+        `File size (${Math.round(fileSize / 1024)}KB) exceeds limit (500KB)`
+      )
+    );
+  }
+
+  // Get and decode content
+  const base64Content = fileData.content?.replace(/\s/g, ''); // Remove all whitespace
+
+  if (!base64Content) {
+    return createErrorResult(
+      `Empty file: ${filePath}`,
+      new Error(`File appears to be empty`)
+    );
+  }
+
+  let decodedContent: string;
+  try {
+    const buffer = Buffer.from(base64Content, 'base64');
+
+    // Simple binary check - look for null bytes
+    if (buffer.indexOf(0) !== -1) {
+      return createErrorResult(
+        `Binary file detected: ${filePath}`,
+        new Error(`Binary files cannot be displayed as text`)
+      );
+    }
+
+    decodedContent = buffer.toString('utf-8');
+  } catch (decodeError) {
+    return createErrorResult(
+      `Failed to decode file: ${filePath}`,
+      new Error(`Unable to decode file as UTF-8`)
+    );
+  }
+
+  // Return simplified response
+  const response = {
+    filePath,
+    owner,
+    repo,
+    branch,
+    content: decodedContent,
+    metadata: {
+      size: fileSize,
+      lines: decodedContent.split('\n').length,
+      encoding: 'utf-8',
+    },
+  };
+
+  return createSuccessResult(response);
 }
