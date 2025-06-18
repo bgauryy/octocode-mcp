@@ -125,14 +125,6 @@ export interface GithubFetchRequestParams {
 }
 
 export interface GitHubSearchResult {
-  searchType:
-    | 'code'
-    | 'commits'
-    | 'issues'
-    | 'prs'
-    | 'discussions'
-    | 'topics'
-    | 'users';
   query: string;
   actualQuery?: string;
   totalCount?: number;
@@ -159,7 +151,6 @@ export interface GitHubSearchResult {
 }
 
 export interface GitHubReposSearchResult {
-  searchType: 'repos';
   query: string;
   totalCount?: number;
   results: string;

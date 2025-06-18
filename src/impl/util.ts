@@ -146,7 +146,6 @@ export function createSmartError(
 
 // Helper function to create standardized success responses
 export function createStandardResponse(args: {
-  searchType: string;
   query: string | undefined;
   data: any;
   failureSuggestions?: string[];
@@ -157,7 +156,6 @@ export function createStandardResponse(args: {
         type: 'text' as const,
         text: JSON.stringify(
           {
-            searchType: args.searchType,
             query: args.query,
             results: args.data,
             ...(args.failureSuggestions &&

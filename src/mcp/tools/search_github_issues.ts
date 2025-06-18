@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubIssuesSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createStandardResponse,
   generateStandardSuggestions,
@@ -193,7 +193,6 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
             // If we have results, return them directly
             if (data.results) {
               return createStandardResponse({
-                searchType: SEARCH_TYPES.ISSUES,
                 query: args.query,
                 data: data.results,
                 failureSuggestions: data.suggestions,
@@ -202,7 +201,6 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           } catch (parseError) {
             // If parsing fails, return the raw response
             return createStandardResponse({
-              searchType: SEARCH_TYPES.ISSUES,
               query: args.query,
               data: responseText,
             });
@@ -215,7 +213,6 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         ]);
 
         return createStandardResponse({
-          searchType: SEARCH_TYPES.ISSUES,
           query: args.query,
           data: [],
           failureSuggestions: suggestions,

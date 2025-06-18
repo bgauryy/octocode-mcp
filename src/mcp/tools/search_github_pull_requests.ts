@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubPullRequestsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
 import {
   createSmartError,
@@ -180,7 +180,6 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
             // If we have results, return them directly
             if (data.results) {
               return createStandardResponse({
-                searchType: SEARCH_TYPES.PULL_REQUESTS,
                 query: args.query,
                 data: data.results,
                 failureSuggestions: data.suggestions,
@@ -189,7 +188,6 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           } catch (parseError) {
             // If parsing fails, return the raw response
             return createStandardResponse({
-              searchType: SEARCH_TYPES.PULL_REQUESTS,
               query: args.query,
               data: responseText,
             });
@@ -202,7 +200,6 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         ]);
 
         return createStandardResponse({
-          searchType: SEARCH_TYPES.PULL_REQUESTS,
           query: args.query,
           data: [],
           failureSuggestions: suggestions,

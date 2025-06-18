@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubRepositoryStructureParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { createStandardResponse } from '../../impl/util';
 import { viewRepositoryStructure } from '../../impl/github/viewRepositoryStructure';
 
@@ -51,7 +51,6 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           try {
             const data = JSON.parse(responseText);
             return createStandardResponse({
-              searchType: SEARCH_TYPES.CONTENTS,
               query: `${args.owner}/${args.repo}${args.path ? `/${args.path}` : ''}`,
               data: data,
             });

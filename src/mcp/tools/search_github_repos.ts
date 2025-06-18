@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubReposSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { searchGitHubRepos } from '../../impl/github/searchGitHubRepos';
 import {
   detectOrganizationalQuery,
@@ -210,7 +210,6 @@ export function registerSearchGitHubReposTool(server: McpServer) {
               : [];
 
           return createStandardResponse({
-            searchType: SEARCH_TYPES.REPOSITORIES,
             query: args.query,
             data: parsedResults,
             failureSuggestions: suggestions,
@@ -231,7 +230,6 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ]);
 
           return createStandardResponse({
-            searchType: SEARCH_TYPES.REPOSITORIES,
             query: args.query,
             data: resultText,
             failureSuggestions: suggestions,

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { getUserOrganizations } from '../../impl/github/getUserOrganizations';
 import { createOptimizedError, createStandardResponse } from '../../impl/util';
 
@@ -56,7 +56,6 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
 
             // Return clean organizations array - just the organizations
             return createStandardResponse({
-              searchType: SEARCH_TYPES.ORGANIZATIONS,
               query: undefined,
               data: parsed.organizations || [],
             });
@@ -79,14 +78,12 @@ export function registerGetUserOrganizationsTool(server: McpServer) {
                 );
 
               return createStandardResponse({
-                searchType: SEARCH_TYPES.ORGANIZATIONS,
                 query: undefined,
                 data: orgLines,
               });
             }
 
             return createStandardResponse({
-              searchType: SEARCH_TYPES.ORGANIZATIONS,
               query: undefined,
               data: [],
             });

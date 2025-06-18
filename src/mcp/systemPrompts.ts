@@ -18,22 +18,6 @@ export const TOOL_NAMES = {
   NPM_GET_EXPORTS: 'npm_get_exports',
 };
 
-export const SEARCH_TYPES = {
-  API_STATUS: 'api_status',
-  ORGANIZATIONS: 'organizations',
-  CODE: 'code',
-  REPOSITORIES: 'repositories',
-  COMMITS: 'commits',
-  ISSUES: 'issues',
-  PULL_REQUESTS: 'prs',
-  TOPICS: 'topics',
-  CONTENTS: 'contents',
-  FILE_CONTENT: 'file_content',
-  NPM_PACKAGES: 'npm_packages',
-  NPM_RELEASES: 'npm_releases',
-  NPM_EXPORTS: 'npm_exports',
-} as const;
-
 export const PROMPT_SYSTEM_PROMPT = `CODE RESEARCH ENGINE. You are a code research assistant.
 
 Start with verifying authentication: ${TOOL_NAMES.API_STATUS_CHECK}

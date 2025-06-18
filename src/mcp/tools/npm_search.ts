@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { npmSearch } from '../../impl/npm/npmSearch';
 import {
   detectOrganizationalQuery,
@@ -139,7 +139,6 @@ export function registerNpmSearchTool(server: McpServer) {
 
         if (simplifiedResults.length > 0) {
           return createStandardResponse({
-            searchType: SEARCH_TYPES.NPM_PACKAGES,
             query: Array.isArray(args.queries)
               ? args.queries.join(', ')
               : args.queries,

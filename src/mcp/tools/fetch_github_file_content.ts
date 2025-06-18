@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GithubFetchRequestParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { fetchGitHubFileContent } from '../../impl/github/fetchGitHubFileContent';
 import { createStandardResponse } from '../../impl/util';
 
@@ -100,14 +100,12 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           try {
             const data = JSON.parse(content);
             return createStandardResponse({
-              searchType: SEARCH_TYPES.FILE_CONTENT,
               query: args.filePath,
               data: data,
             });
           } catch (parseError) {
             // If not JSON, treat as plain text content
             return createStandardResponse({
-              searchType: SEARCH_TYPES.FILE_CONTENT,
               query: args.filePath,
               data: {
                 error: 'Failed to parse response',

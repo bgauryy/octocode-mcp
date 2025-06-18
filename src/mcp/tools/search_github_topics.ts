@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubTopicsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES, SEARCH_TYPES } from '../systemPrompts';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createStandardResponse,
   generateStandardSuggestions,
@@ -94,7 +94,6 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
               // Return top 30 topics from the items array
               const topTopics = data.results.items.slice(0, MAX_TOPICS);
               return createStandardResponse({
-                searchType: SEARCH_TYPES.TOPICS,
                 query: args.query,
                 data: topTopics,
                 failureSuggestions: data.suggestions,
@@ -106,7 +105,6 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
               // Return top 30 topics from the items array
               const topTopics = data.items.slice(0, 30);
               return createStandardResponse({
-                searchType: SEARCH_TYPES.TOPICS,
                 query: args.query,
                 data: topTopics,
               });
@@ -115,7 +113,6 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
             // If we have results in a different format, return them directly
             if (data.results) {
               return createStandardResponse({
-                searchType: SEARCH_TYPES.TOPICS,
                 query: args.query,
                 data: data.results,
                 failureSuggestions: data.suggestions,
@@ -124,7 +121,6 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
           } catch (parseError) {
             // If parsing fails, return the raw response
             return createStandardResponse({
-              searchType: SEARCH_TYPES.TOPICS,
               query: args.query,
               data: responseText,
             });
@@ -137,7 +133,6 @@ export function registerSearchGitHubTopicsTool(server: McpServer) {
         ]);
 
         return createStandardResponse({
-          searchType: SEARCH_TYPES.TOPICS,
           query: args.query,
           data: [],
           failureSuggestions: suggestions,
