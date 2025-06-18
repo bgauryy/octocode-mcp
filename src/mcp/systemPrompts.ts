@@ -26,13 +26,16 @@ SEARCH STRATEGY:
 - ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Smart semantic search combining repositories and topics
 - ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find implementation patterns and examples  
 - ${TOOL_NAMES.NPM_PACKAGE_SEARCH} - Package ecosystem discovery
+- ${TOOL_NAMES.NPM_VIEW_PACKAGE} - Get package exports to understand available files
 - ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} + ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Understanding development patterns
-- ${TOOL_NAMES.GITHUB_GET_CONTENTS} → ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} - File exploration
+- ${TOOL_NAMES.GITHUB_GET_CONTENTS} → ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} - ALWAYS verify file existence before fetching
 
 BEST PRACTICES:
 - Use natural language queries - the tools are semantic and adaptive
 - Leverage quality filters like stars:>100 for established projects
 - Run parallel searches for comprehensive results
+- ALWAYS verify file existence with ${TOOL_NAMES.GITHUB_GET_CONTENTS} before using ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}
+- Use ${TOOL_NAMES.NPM_VIEW_PACKAGE} exports field to discover available files in packages
 - Always check documentation and examples when available`;
 
 export const TOOL_DESCRIPTIONS = {
@@ -44,11 +47,11 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.NPM_VIEW_PACKAGE]: `Get comprehensive package metadata essential for further GitHub searches and code analysis. Returns vital data including:
   1. repositoryGitUrl - Critical for accurate GitHub repository searches with reduced API limitations
-  2. exports - Essential for understanding package API structure and import patterns
+  2. exports - Essential for understanding package API structure, import patterns, and discovering which files exist
   3. dependencies - Shows how the package is built and its ecosystem relationships
   4. registryUrl - Identifies the package registry source for distribution analysis
   5. versions with release dates - Historical context for package evolution
-  Use this tool when you find packages in code or when users ask about specific packages to get complete context before GitHub searches.`,
+  Use this tool when you find packages in code or when users ask about specific packages to get complete context before GitHub searches. The exports field helps identify available files before fetching.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `SEMANTIC CODE DISCOVERY: Search code with boolean logic (AND, OR, NOT). 
   Format: "term AND term" language:js path:src. Filters: owner/org/user, repo, extension, filename, language, path, size, limit, match scope. 
@@ -59,9 +62,9 @@ export const TOOL_DESCRIPTIONS = {
   Repository names can be misleading - use github_search_topics first for semantic discovery.
   Use stars:>100 for quality projects. CRITICAL: When finding packages, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} to get essential metadata and repository paths.`,
 
-  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Browse repository structure. Use before github_get_file_content to understand file organization.`,
+  [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Browse repository structure and verify file existence. ALWAYS use before github_get_file_content to confirm files exist and understand organization.`,
 
-  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Read file content. Requires exact path from github_get_contents.`,
+  [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Read file content. REQUIRES exact path verification from github_get_contents first. If fetching fails, check file existence with github_get_contents.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Find GitHub issues and problems. Use for understanding pain points and feature requests.`,
 

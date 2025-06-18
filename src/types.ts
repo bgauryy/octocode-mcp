@@ -513,6 +513,22 @@ export interface GitHubRepositoryStructureResult {
   };
 }
 
+export interface GitHubRepositoryContentsResult {
+  path: string;
+  baseUrl: string;
+  files: Array<{
+    name: string;
+    size: number;
+    url: string;
+  }>;
+  folders: string[];
+  branchFallback?: {
+    requested: string;
+    used: string;
+    message: string;
+  };
+}
+
 export interface GitHubDiscussionsSearchParams
   extends BaseSearchParams,
     UserInvolvement,
