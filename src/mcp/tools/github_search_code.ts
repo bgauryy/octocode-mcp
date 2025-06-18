@@ -91,21 +91,36 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         const result = await searchGitHubCode({ ...args, query: finalQuery });
 
         if (result.isError) {
-          return result;
+          return createResult(result.content[0].text, true);
         }
 
         const { data, parsed } = parseJsonResponse(
           result.content[0].text as string
         );
 
-        if (parsed && data.results) {
-          return createResult({
-            q: args.query,
-            results: data.results,
-          });
+        if (parsed) {
+          // Handle different possible response formats
+          if (data.results && Array.isArray(data.results)) {
+            return createResult({
+              q: args.query,
+              results: data.results,
+            });
+          }
+
+          // Handle case where no results found but valid response
+          if (Array.isArray(data.results) && data.results.length === 0) {
+            return createResult({
+              q: args.query,
+              results: [],
+            });
+          }
         }
 
-        return createResult(data);
+        // Fallback for unparsed data
+        return createResult({
+          q: args.query,
+          results: data || [],
+        });
       } catch (error) {
         return createResult(
           `Search failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

@@ -42,6 +42,10 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       try {
         const result = await viewRepositoryStructure(args);
 
+        if (result.isError) {
+          return createResult(result.content[0].text, true);
+        }
+
         if (result.content && result.content[0] && !result.isError) {
           const { data, parsed } = parseJsonResponse(
             result.content[0].text as string

@@ -1,6 +1,6 @@
 export type BaseSearchParams = {
   query?: string;
-  owner?: string;
+  owner?: string | string[]; // Support both single and multiple owners
   repo?: string;
   limit?: number;
 };
@@ -45,8 +45,10 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   // Boolean and regex support built into query string
 }
 
-export interface GitHubCommitsSearchParams extends BaseSearchParams, OrderSort {
-  query?: string;
+export interface GitHubCommitsSearchParams
+  extends Omit<BaseSearchParams, 'query'>,
+    OrderSort {
+  query?: string; // Make query optional
   author?: string;
   committer?: string;
   authorDate?: string;
@@ -91,7 +93,10 @@ export interface GitHubPullRequestsSearchParams
     | 'updated';
 }
 
-export interface GitHubReposSearchParams extends BaseSearchParams, OrderSort {
+export interface GitHubReposSearchParams
+  extends Omit<BaseSearchParams, 'query'>,
+    OrderSort {
+  query?: string; // Make query optional
   archived?: boolean;
   created?: string;
   followers?: number;

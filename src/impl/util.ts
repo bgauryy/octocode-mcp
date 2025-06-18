@@ -132,49 +132,36 @@ export function getNoResultsSuggestions(currentTool: string): string[] {
   switch (currentTool) {
     case TOOL_NAMES.GITHUB_SEARCH_REPOS:
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         TOOL_NAMES.NPM_PACKAGE_SEARCH
       );
       break;
     case TOOL_NAMES.GITHUB_SEARCH_CODE:
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_REPOS,
         TOOL_NAMES.GITHUB_SEARCH_ISSUES
       );
       break;
-    case TOOL_NAMES.GITHUB_SEARCH_TOPICS:
-      suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_REPOS,
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        TOOL_NAMES.NPM_PACKAGE_SEARCH
-      );
-      break;
     case TOOL_NAMES.NPM_PACKAGE_SEARCH:
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_REPOS,
         TOOL_NAMES.GITHUB_SEARCH_CODE
       );
       break;
     case TOOL_NAMES.GITHUB_SEARCH_ISSUES:
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         TOOL_NAMES.GITHUB_SEARCH_REPOS
       );
       break;
     case TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS:
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_ISSUES,
         TOOL_NAMES.GITHUB_SEARCH_CODE
       );
       break;
     case TOOL_NAMES.GITHUB_SEARCH_COMMITS:
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         TOOL_NAMES.GITHUB_SEARCH_REPOS
       );
@@ -183,14 +170,12 @@ export function getNoResultsSuggestions(currentTool: string): string[] {
     case TOOL_NAMES.GITHUB_GET_FILE_CONTENT:
       suggestions.push(
         TOOL_NAMES.GITHUB_SEARCH_REPOS,
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS
+        TOOL_NAMES.GITHUB_SEARCH_CODE
       );
       break;
     default:
       // Fallback for any other tools
       suggestions.push(
-        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
         TOOL_NAMES.GITHUB_SEARCH_REPOS,
         TOOL_NAMES.GITHUB_SEARCH_CODE
       );
@@ -211,9 +196,6 @@ export function getErrorSuggestions(currentTool: string): string[] {
   }
 
   // Add discovery alternatives
-  if (currentTool !== TOOL_NAMES.GITHUB_SEARCH_TOPICS) {
-    suggestions.push(TOOL_NAMES.GITHUB_SEARCH_TOPICS);
-  }
   if (currentTool !== TOOL_NAMES.GITHUB_SEARCH_REPOS) {
     suggestions.push(TOOL_NAMES.GITHUB_SEARCH_REPOS);
   }

@@ -120,21 +120,35 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
 
         const result = await searchGitHubPullRequests(args);
 
+        if (result.isError) {
+          return createResult(result.content[0].text, true);
+        }
+
         if (result.content && result.content[0] && !result.isError) {
           const { data, parsed } = parseJsonResponse(
             result.content[0].text as string
           );
 
-          if (parsed && data.results) {
-            return createResult({
-              q: args.query,
-              results: data.results,
-              ...(data.metadata && { metadata: data.metadata }),
-            });
+          if (parsed) {
+            // Handle different possible response formats
+            if (data.results && Array.isArray(data.results)) {
+              return createResult({
+                q: args.query,
+                results: data.results,
+                ...(data.metadata && { metadata: data.metadata }),
+              });
+            }
+            // Handle case where no results found but valid response
+            if (data.metadata && data.metadata.total_count === 0) {
+              const suggestions = getNoResultsSuggestions(
+                TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+              );
+              return createResult('No pull requests found', true, suggestions);
+            }
           }
         }
 
-        // Handle no results
+        // Handle no results or parsing failure
         const suggestions = getNoResultsSuggestions(
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
         );

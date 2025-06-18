@@ -1,8 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import * as Tools from './mcp/tools/index.js';
 import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
+import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
+import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
+import { registerNpmSearchTool } from './mcp/tools/npm_package_search.js';
+import { registerViewRepositoryStructureTool } from './mcp/tools/github_view_repo_structure.js';
+import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
+import { registerNpmViewPackageTool } from './mcp/tools/npm_view_package.js';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
@@ -13,26 +22,25 @@ const SERVER_CONFIG: Implementation = {
 
 function registerAllTools(server: McpServer) {
   const toolRegistrations = [
-    { name: 'ApiStatusCheck', fn: Tools.registerApiStatusCheckTool },
-    { name: 'GitHubSearchCode', fn: Tools.registerGitHubSearchCodeTool },
+    { name: 'ApiStatusCheck', fn: registerApiStatusCheckTool },
+    { name: 'GitHubSearchCode', fn: registerGitHubSearchCodeTool },
     {
       name: 'FetchGitHubFileContent',
-      fn: Tools.registerFetchGitHubFileContentTool,
+      fn: registerFetchGitHubFileContentTool,
     },
-    { name: 'SearchGitHubRepos', fn: Tools.registerSearchGitHubReposTool },
-    { name: 'SearchGitHubCommits', fn: Tools.registerSearchGitHubCommitsTool },
+    { name: 'SearchGitHubRepos', fn: registerSearchGitHubReposTool },
+    { name: 'SearchGitHubCommits', fn: registerSearchGitHubCommitsTool },
     {
       name: 'SearchGitHubPullRequests',
-      fn: Tools.registerSearchGitHubPullRequestsTool,
+      fn: registerSearchGitHubPullRequestsTool,
     },
-    { name: 'NpmSearch', fn: Tools.registerNpmSearchTool },
+    { name: 'NpmSearch', fn: registerNpmSearchTool },
     {
       name: 'ViewRepositoryStructure',
-      fn: Tools.registerViewRepositoryStructureTool,
+      fn: registerViewRepositoryStructureTool,
     },
-    { name: 'SearchGitHubIssues', fn: Tools.registerSearchGitHubIssuesTool },
-    { name: 'SearchGitHubTopics', fn: Tools.registerSearchGitHubTopicsTool },
-    { name: 'NpmViewPackage', fn: Tools.registerNpmViewPackageTool },
+    { name: 'SearchGitHubIssues', fn: registerSearchGitHubIssuesTool },
+    { name: 'NpmViewPackage', fn: registerNpmViewPackageTool },
   ];
 
   for (const tool of toolRegistrations) {

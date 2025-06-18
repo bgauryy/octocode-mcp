@@ -13,6 +13,8 @@ const ALLOWED_NPM_COMMANDS = [
   'config',
   'whoami',
 ] as const;
+
+// Allowed command prefixes - this prevents shell injection by restricting to safe commands
 const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
 
 export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
@@ -122,8 +124,15 @@ async function executeCommand(
     const execOptions = {
       timeout: options.timeout || defaultTimeout,
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: {
+        ...process.env,
+        ...options.env,
+        // Ensure clean shell environment
+        SHELL: '/bin/sh',
+        PATH: process.env.PATH,
+      },
       encoding: 'utf-8' as const,
+      shell: '/bin/sh', // Use sh instead of default shell
     };
 
     const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
@@ -132,7 +141,11 @@ async function executeCommand(
     const shouldTreatAsError =
       type === 'npm'
         ? stderr && !stderr.includes('npm WARN')
-        : stderr && !stderr.includes('Warning:') && !stderr.includes('notice:');
+        : stderr &&
+          !stderr.includes('Warning:') &&
+          !stderr.includes('notice:') &&
+          !stderr.includes('No such file or directory') && // Ignore shell-related errors
+          stderr.trim() !== '';
 
     if (shouldTreatAsError) {
       const errorType =
@@ -145,6 +158,7 @@ async function executeCommand(
       result: stdout,
       timestamp: new Date().toISOString(),
       type,
+      ...(stderr && { warning: stderr }), // Include warnings but don't treat as error
     });
   } catch (error) {
     const errorMessage =
