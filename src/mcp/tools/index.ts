@@ -3,7 +3,7 @@ export { registerFetchGitHubFileContentTool } from './github_fetch_content.js';
 export { registerSearchGitHubReposTool } from './github_search_repos.js';
 export { registerSearchGitHubCommitsTool } from './github_search_commits.js';
 export { registerSearchGitHubPullRequestsTool } from './github_search_pull_requests.js';
-export { registerNpmSearchTool } from './npm_search.js';
+export { registerNpmSearchTool } from './npm_package_search.js';
 export { registerViewRepositoryStructureTool } from './github_view_repo_structure.js';
 export { registerSearchGitHubIssuesTool } from './github_search_issues.js';
 export { registerSearchGitHubTopicsTool } from './github_search_topics.js';

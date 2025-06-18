@@ -128,7 +128,7 @@ export function generateStandardSuggestions(
   excludeTools: string[] = []
 ): string[] {
   const allSuggestions = [
-    `${TOOL_NAMES.NPM_SEARCH_PACKAGES}`,
+    `${TOOL_NAMES.NPM_PACKAGE_SEARCH}`,
     `${TOOL_NAMES.GITHUB_SEARCH_REPOS}`,
     `${TOOL_NAMES.GITHUB_SEARCH_CODE}`,
   ];

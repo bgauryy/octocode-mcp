@@ -100,7 +100,7 @@ export async function searchGitHubRepos(
             }
           : {
               suggestions: [
-                `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+                `${TOOL_NAMES.NPM_PACKAGE_SEARCH} "${params.query || 'package'}"`,
                 `${TOOL_NAMES.GITHUB_SEARCH_TOPICS} "${params.query || 'topic'}"`,
                 `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
                 ...(params.query ? [] : []),

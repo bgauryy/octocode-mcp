@@ -275,7 +275,7 @@ export async function searchGitHubCommits(
           analysis: finalAnalysis,
           ...(totalCount === 0 && {
             suggestions: [
-              `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+              `${TOOL_NAMES.NPM_PACKAGE_SEARCH} "${params.query || 'package'}"`,
               `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query || 'pr'}"`,
               `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${params.query || 'issue'}"`,
               ...(params.owner
@@ -293,7 +293,7 @@ export async function searchGitHubCommits(
           query: params.query || '',
           results: content,
           suggestions: [
-            `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+            `${TOOL_NAMES.NPM_PACKAGE_SEARCH} "${params.query || 'package'}"`,
             `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query || 'pr'}"`,
           ],
         });

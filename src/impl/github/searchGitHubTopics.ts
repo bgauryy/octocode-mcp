@@ -43,7 +43,7 @@ export async function searchGitHubTopics(
         results: parsedResults,
         ...(totalCount === 0 && {
           suggestions: [
-            `${TOOL_NAMES.NPM_SEARCH_PACKAGES} "${params.query || 'package'}"`,
+            `${TOOL_NAMES.NPM_PACKAGE_SEARCH} "${params.query || 'package'}"`,
             `${TOOL_NAMES.GITHUB_SEARCH_REPOS} "${params.query || 'repo'}" stars:>100`,
             `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
           ],

@@ -27,8 +27,8 @@ function dedupePackages(pkgs: NpmPkg[]): NpmPkg[] {
 
 export function registerNpmSearchTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.NPM_SEARCH_PACKAGES,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_SEARCH_PACKAGES],
+    TOOL_NAMES.NPM_PACKAGE_SEARCH,
+    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
     {
       queries: z
         .union([z.string(), z.array(z.string())])
@@ -44,7 +44,7 @@ export function registerNpmSearchTool(server: McpServer) {
     },
     {
       title: 'Search NPM Packages by Name/Keyword',
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_SEARCH_PACKAGES],
+      description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
