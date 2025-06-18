@@ -6,7 +6,8 @@ import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   parseJsonResponse,
-  generateStandardSuggestions,
+  getNoResultsSuggestions,
+  getErrorSuggestions,
 } from '../../impl/util';
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
@@ -118,14 +119,18 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         }
 
         // Handle no results
-        const suggestions = generateStandardSuggestions(args.query || '', [
-          TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        ]);
+        const suggestions = getNoResultsSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_COMMITS
+        );
         return createResult('No commits found', true, suggestions);
       } catch (error) {
+        const suggestions = getErrorSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_COMMITS
+        );
         return createResult(
           `Commit search failed: ${(error as Error).message}`,
-          true
+          true,
+          suggestions
         );
       }
     }

@@ -2,7 +2,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { fetchGitHubFileContent } from '../../impl/github/fetchGitHubFileContent';
-import { createResult, parseJsonResponse } from '../../impl/util';
+import {
+  createResult,
+  parseJsonResponse,
+  getErrorSuggestions,
+} from '../../impl/util';
 
 type GitHubFileContentParams = {
   owner: string;
@@ -80,14 +84,19 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           errorMessage.includes('404') ||
           errorMessage.includes('Not Found')
         ) {
-          suggestions = ['github_get_contents', 'github_search_code'];
+          suggestions = [
+            TOOL_NAMES.GITHUB_GET_CONTENTS,
+            TOOL_NAMES.GITHUB_SEARCH_CODE,
+          ];
         } else if (
           errorMessage.includes('403') ||
           errorMessage.includes('Forbidden')
         ) {
-          suggestions = ['github_get_user_organizations'];
+          suggestions = [TOOL_NAMES.API_STATUS_CHECK];
         } else if (errorMessage.includes('branch')) {
-          suggestions = ['github_get_contents to verify branch'];
+          suggestions = [TOOL_NAMES.GITHUB_GET_CONTENTS];
+        } else {
+          suggestions = getErrorSuggestions(TOOL_NAMES.GITHUB_GET_FILE_CONTENT);
         }
 
         return createResult(

@@ -7,7 +7,8 @@ import {
   detectOrganizationalQuery,
   createResult,
   parseJsonResponse,
-  generateStandardSuggestions,
+  getNoResultsSuggestions,
+  getErrorSuggestions,
 } from '../../impl/util';
 
 // Security validation function
@@ -153,14 +154,16 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         }
 
         // Handle no results
-        const suggestions = generateStandardSuggestions(args.query, [
-          TOOL_NAMES.GITHUB_SEARCH_REPOS,
-        ]);
+        const suggestions = getNoResultsSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_REPOS
+        );
         return createResult('No repositories found', true, suggestions);
       } catch (error) {
+        const suggestions = getErrorSuggestions(TOOL_NAMES.GITHUB_SEARCH_REPOS);
         return createResult(
           `Repository search failed: ${(error as Error).message}`,
-          true
+          true,
+          suggestions
         );
       }
     }

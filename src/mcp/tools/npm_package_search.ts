@@ -2,7 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { npmSearch } from '../../impl/npm/npmSearch';
-import { createResult, parseJsonResponse } from '../../impl/util';
+import {
+  createResult,
+  parseJsonResponse,
+  getNoResultsSuggestions,
+  getErrorSuggestions,
+} from '../../impl/util';
 
 // Simplified interface
 interface NpmPkg {
@@ -102,9 +107,17 @@ export function registerNpmSearchTool(server: McpServer) {
           });
         }
 
-        return createResult('No packages found', true);
+        const suggestions = getNoResultsSuggestions(
+          TOOL_NAMES.NPM_PACKAGE_SEARCH
+        );
+        return createResult('No packages found', true, suggestions);
       } catch (error) {
-        return createResult(`Search failed: ${(error as Error).message}`, true);
+        const suggestions = getErrorSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH);
+        return createResult(
+          `Search failed: ${(error as Error).message}`,
+          true,
+          suggestions
+        );
       }
     }
   );

@@ -5,7 +5,8 @@ import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   parseJsonResponse,
-  generateStandardSuggestions,
+  getNoResultsSuggestions,
+  getErrorSuggestions,
 } from '../../impl/util';
 import { searchGitHubIssues } from '../../impl/github/searchGitHubIssues';
 
@@ -158,14 +159,18 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         }
 
         // Handle no results
-        const suggestions = generateStandardSuggestions(args.query, [
-          TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        ]);
+        const suggestions = getNoResultsSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_ISSUES
+        );
         return createResult('No issues found', true, suggestions);
       } catch (error) {
+        const suggestions = getErrorSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_ISSUES
+        );
         return createResult(
           `Failed to search GitHub issues: ${(error as Error).message}`,
-          true
+          true,
+          suggestions
         );
       }
     }

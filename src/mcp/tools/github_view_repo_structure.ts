@@ -2,7 +2,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubRepositoryStructureParams } from '../../types';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import { createResult, parseJsonResponse } from '../../impl/util';
+import {
+  createResult,
+  parseJsonResponse,
+  getErrorSuggestions,
+} from '../../impl/util';
 import { viewRepositoryStructure } from '../../impl/github/viewRepositoryStructure';
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
@@ -65,17 +69,19 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           errorMessage.includes('404') ||
           errorMessage.includes('Not Found')
         ) {
-          suggestions = ['github_search_repositories'];
+          suggestions = [TOOL_NAMES.GITHUB_SEARCH_REPOS];
         } else if (
           errorMessage.includes('403') ||
           errorMessage.includes('Forbidden')
         ) {
-          suggestions = ['github_get_user_organizations'];
+          suggestions = [TOOL_NAMES.API_STATUS_CHECK];
         } else if (
           errorMessage.includes('invalid') ||
           errorMessage.includes('branch')
         ) {
-          suggestions = ['Try common branches: main, master, develop'];
+          suggestions = [TOOL_NAMES.GITHUB_SEARCH_REPOS];
+        } else {
+          suggestions = getErrorSuggestions(TOOL_NAMES.GITHUB_GET_CONTENTS);
         }
 
         return createResult(

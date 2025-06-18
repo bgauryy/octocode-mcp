@@ -122,18 +122,101 @@ export function detectOrganizationalQuery(query: string): {
   };
 }
 
-// Helper function to generate standard suggestions
-export function generateStandardSuggestions(
-  query: string,
-  excludeTools: string[] = []
-): string[] {
-  const allSuggestions = [
-    `${TOOL_NAMES.NPM_PACKAGE_SEARCH}`,
-    `${TOOL_NAMES.GITHUB_SEARCH_REPOS}`,
-    `${TOOL_NAMES.GITHUB_SEARCH_CODE}`,
-  ];
+/**
+ * Generate fallback suggestions for no results - ensures no tool suggests itself
+ */
+export function getNoResultsSuggestions(currentTool: string): string[] {
+  const suggestions: string[] = [];
 
-  return allSuggestions
-    .filter(suggestion => !excludeTools.some(tool => suggestion.includes(tool)))
-    .slice(0, 2); // Reduced to 2 for token efficiency
+  // Tool-specific fallbacks
+  switch (currentTool) {
+    case TOOL_NAMES.GITHUB_SEARCH_REPOS:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.NPM_PACKAGE_SEARCH
+      );
+      break;
+    case TOOL_NAMES.GITHUB_SEARCH_CODE:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_REPOS,
+        TOOL_NAMES.GITHUB_SEARCH_ISSUES
+      );
+      break;
+    case TOOL_NAMES.GITHUB_SEARCH_TOPICS:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_REPOS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.NPM_PACKAGE_SEARCH
+      );
+      break;
+    case TOOL_NAMES.NPM_PACKAGE_SEARCH:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_REPOS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE
+      );
+      break;
+    case TOOL_NAMES.GITHUB_SEARCH_ISSUES:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_REPOS
+      );
+      break;
+    case TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        TOOL_NAMES.GITHUB_SEARCH_CODE
+      );
+      break;
+    case TOOL_NAMES.GITHUB_SEARCH_COMMITS:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_REPOS
+      );
+      break;
+    case TOOL_NAMES.GITHUB_GET_CONTENTS:
+    case TOOL_NAMES.GITHUB_GET_FILE_CONTENT:
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_REPOS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS
+      );
+      break;
+    default:
+      // Fallback for any other tools
+      suggestions.push(
+        TOOL_NAMES.GITHUB_SEARCH_TOPICS,
+        TOOL_NAMES.GITHUB_SEARCH_REPOS,
+        TOOL_NAMES.GITHUB_SEARCH_CODE
+      );
+  }
+
+  return suggestions.slice(0, 3);
+}
+
+/**
+ * Generate fallback suggestions for errors - ensures no tool suggests itself
+ */
+export function getErrorSuggestions(currentTool: string): string[] {
+  const suggestions: string[] = [];
+
+  // Always suggest API status check first (unless it's the current tool)
+  if (currentTool !== TOOL_NAMES.API_STATUS_CHECK) {
+    suggestions.push(TOOL_NAMES.API_STATUS_CHECK);
+  }
+
+  // Add discovery alternatives
+  if (currentTool !== TOOL_NAMES.GITHUB_SEARCH_TOPICS) {
+    suggestions.push(TOOL_NAMES.GITHUB_SEARCH_TOPICS);
+  }
+  if (currentTool !== TOOL_NAMES.GITHUB_SEARCH_REPOS) {
+    suggestions.push(TOOL_NAMES.GITHUB_SEARCH_REPOS);
+  }
+
+  return suggestions.slice(0, 3);
 }

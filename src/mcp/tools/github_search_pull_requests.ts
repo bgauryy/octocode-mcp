@@ -6,7 +6,8 @@ import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequ
 import {
   createResult,
   parseJsonResponse,
-  generateStandardSuggestions,
+  getNoResultsSuggestions,
+  getErrorSuggestions,
 } from '../../impl/util';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
@@ -134,14 +135,18 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         }
 
         // Handle no results
-        const suggestions = generateStandardSuggestions(args.query, [
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        ]);
+        const suggestions = getNoResultsSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+        );
         return createResult('No pull requests found', true, suggestions);
       } catch (error) {
+        const suggestions = getErrorSuggestions(
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+        );
         return createResult(
           `PR search failed: ${(error as Error).message}`,
-          true
+          true,
+          suggestions
         );
       }
     }
