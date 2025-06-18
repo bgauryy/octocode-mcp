@@ -53,7 +53,13 @@ async function checkGitHub(): Promise<ApiStatus['github']> {
     });
     const output = String(result.content[0]?.text || '');
 
-    if (result.isError || !output.includes('Logged in to github.com')) {
+    if (
+      result.isError ||
+      !(
+        /Logged in to github\.com/i.test(output) ||
+        /✓.*github\.com/i.test(output)
+      )
+    ) {
       return {
         authenticated: false,
         error: 'Not authenticated. Run: gh auth login',
