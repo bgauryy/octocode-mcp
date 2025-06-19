@@ -8,17 +8,10 @@ import {
   createErrorResult,
   createSuccessResult,
 } from '../../utils/responses';
-import { GithubFetchRequestParams } from '../../types';
+import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
-
-type GitHubFileContentParams = {
-  owner: string;
-  repo: string;
-  branch: string;
-  filePath: string;
-};
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.tool(

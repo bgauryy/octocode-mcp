@@ -7,16 +7,7 @@ import {
   getErrorSuggestions,
 } from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
-interface NpmPackage {
-  name: string;
-  version: string;
-  description: string | null;
-  keywords: string[];
-  repository: string | null;
-  links?: {
-    repository?: string;
-  };
-}
+import { NpmPackage } from '../../types';
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;

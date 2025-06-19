@@ -291,3 +291,21 @@ export interface GitHubRepositoryContentsResult {
     message: string;
   };
 }
+
+export type GitHubFileContentParams = {
+  owner: string;
+  repo: string;
+  branch: string;
+  filePath: string;
+};
+
+export interface NpmPackage {
+  name: string;
+  version: string;
+  description: string | null;
+  keywords: string[];
+  repository: string | null;
+  links?: {
+    repository?: string;
+  };
+}
