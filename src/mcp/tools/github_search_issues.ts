@@ -167,20 +167,34 @@ async function searchGitHubIssues(
     const apiResponse = JSON.parse(execResult.result);
     const issues = apiResponse.items || [];
 
-    const cleanIssues: GitHubIssueItem[] = issues.map((issue: any) => ({
-      number: issue.number,
-      title: issue.title,
-      state: issue.state,
-      author: issue.user?.login,
-      repository:
-        issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-      labels: issue.labels?.map((l: any) => l.name) || [],
-      created_at: issue.created_at,
-      updated_at: issue.updated_at,
-      url: issue.html_url,
-      comments: issue.comments,
-      reactions: issue.reactions?.total_count || 0,
-    }));
+    const cleanIssues: GitHubIssueItem[] = issues.map(
+      (issue: {
+        number: number;
+        title: string;
+        state: 'open' | 'closed';
+        user?: { login: string };
+        repository_url?: string;
+        labels?: Array<{ name: string }>;
+        created_at: string;
+        updated_at: string;
+        html_url: string;
+        comments: number;
+        reactions?: { total_count: number };
+      }) => ({
+        number: issue.number,
+        title: issue.title,
+        state: issue.state,
+        author: issue.user?.login || '',
+        repository:
+          issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
+        labels: issue.labels?.map(l => l.name) || [],
+        created_at: issue.created_at,
+        updated_at: issue.updated_at,
+        url: issue.html_url,
+        comments: issue.comments,
+        reactions: issue.reactions?.total_count || 0,
+      })
+    );
 
     const searchResult: GitHubIssuesSearchResult = {
       searchType: 'issues',

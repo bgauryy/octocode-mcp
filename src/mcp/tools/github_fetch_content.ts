@@ -56,9 +56,11 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         const result = await fetchGitHubFileContent(args);
 
         if (result.content && result.content[0] && !result.isError) {
-          const { data, parsed } = parseJsonResponse(
-            result.content[0].text as string
-          );
+          const { data, parsed } = parseJsonResponse<{
+            content?: string;
+            size?: number;
+            encoding?: string;
+          }>(result.content[0].text as string);
 
           if (parsed) {
             return createResult({
@@ -198,7 +200,7 @@ async function fetchGitHubFileContent(
 }
 
 async function processFileContent(
-  result: any,
+  result: CallToolResult,
   owner: string,
   repo: string,
   branch: string,

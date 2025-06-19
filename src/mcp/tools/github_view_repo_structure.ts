@@ -81,9 +81,17 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         }
 
         if (result.content && result.content[0] && !result.isError) {
-          const { data, parsed } = parseJsonResponse(
-            result.content[0].text as string
-          );
+          const { data, parsed } = parseJsonResponse<{
+            path: string;
+            baseUrl: string;
+            files: Array<{ name: string; size: number; url: string }>;
+            folders: string[];
+            branchFallback?: {
+              requested: string;
+              used: string;
+              message: string;
+            };
+          }>(result.content[0].text as string);
 
           if (parsed) {
             const typedResult: GitHubRepositoryContentsResult = {
@@ -182,7 +190,13 @@ export async function viewRepositoryStructure(
 
       // Try the requested branch first, then fallback to main/master
       const branchesToTry = await getSmartBranchFallback(owner, repo, branch);
-      let items: any[] = [];
+      let items: Array<{
+        name: string;
+        path: string;
+        size: number;
+        type: 'file' | 'dir';
+        url: string;
+      }> = [];
       let usedBranch = branch;
       let lastError: Error | null = null;
 

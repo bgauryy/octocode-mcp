@@ -10,7 +10,8 @@
       "skipLibCheck": true,
       "forceConsistentCasingInFileNames": true,
       "declaration": true,
-      "declarationMap": true
+      "declarationMap": true,
+      "noImplicitAny": true
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules"]

@@ -156,7 +156,7 @@ export async function searchGitHubCommits(
       const analysis = {
         totalFound: 0,
         recentCommits: 0,
-        topAuthors: [] as any[],
+        topAuthors: [] as Array<{ name: string; commits: number }>,
         repositories: new Set<string>(),
       };
 
@@ -223,7 +223,7 @@ export async function searchGitHubCommits(
               }
             : null,
           url: commit.url,
-          parents: commit.parents?.map((p: any) => p.sha) || [],
+          parents: commit.parents?.map((p: { sha: string }) => p.sha) || [],
         }));
 
         return createSuccessResult({

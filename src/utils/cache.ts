@@ -9,8 +9,11 @@ const cache = new NodeCache({
   checkperiod: 3600, // Check for expired keys every 1 hour
 });
 
-export function generateCacheKey(prefix: string, params: any): string {
-  const paramString = JSON.stringify(params, Object.keys(params).sort());
+export function generateCacheKey(prefix: string, params: unknown): string {
+  const paramString = JSON.stringify(
+    params,
+    Object.keys(params as Record<string, unknown>).sort()
+  );
   const hash = crypto.createHash('md5').update(paramString).digest('hex');
   return `${VERSION}-${prefix}:${hash}`;
 }

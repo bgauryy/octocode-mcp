@@ -3,7 +3,7 @@ import { TOOL_NAMES } from '../mcp/systemPrompts';
 
 // CONSOLIDATED ERROR & SUCCESS HANDLING
 export function createResult(
-  data: any,
+  data: unknown,
   isError = false,
   suggestions?: string[]
 ): CallToolResult {
@@ -18,7 +18,7 @@ export function createResult(
 }
 
 // LEGACY SUPPORT - Remove these once all tools are updated
-export function createSuccessResult(data: any): CallToolResult {
+export function createSuccessResult(data: unknown): CallToolResult {
   return createResult(data, false);
 }
 
@@ -30,18 +30,18 @@ export function createErrorResult(
 }
 
 // ENHANCED PARSING UTILITY
-export function parseJsonResponse(
+export function parseJsonResponse<T = unknown>(
   responseText: string,
-  fallback: any = null
+  fallback: T | null = null
 ): {
-  data: any;
+  data: T;
   parsed: boolean;
 } {
   try {
-    const data = JSON.parse(responseText);
+    const data = JSON.parse(responseText) as T;
     return { data, parsed: true };
   } catch {
-    return { data: fallback || responseText, parsed: false };
+    return { data: (fallback || responseText) as T, parsed: false };
   }
 }
 

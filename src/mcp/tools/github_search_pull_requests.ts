@@ -128,31 +128,50 @@ async function searchGitHubPullRequests(
     const apiResponse = JSON.parse(execResult.result);
     const pullRequests = apiResponse.items || [];
 
-    const cleanPRs: GitHubPullRequestItem[] = pullRequests.map((pr: any) => {
-      const result: GitHubPullRequestItem = {
-        number: pr.number,
-        title: pr.title,
-        state: pr.state,
-        author: pr.user?.login,
-        repository:
-          pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-        labels: pr.labels?.map((l: any) => l.name) || [],
-        created_at: pr.created_at,
-        updated_at: pr.updated_at,
-        url: pr.html_url,
-        comments: pr.comments,
-        reactions: pr.reactions?.total_count || 0,
-        draft: pr.draft,
-      };
+    const cleanPRs: GitHubPullRequestItem[] = pullRequests.map(
+      (pr: {
+        number: number;
+        title: string;
+        state: 'open' | 'closed';
+        user?: { login: string };
+        repository_url?: string;
+        labels?: Array<{ name: string }>;
+        created_at: string;
+        updated_at: string;
+        html_url: string;
+        comments: number;
+        reactions?: { total_count: number };
+        draft: boolean;
+        merged_at?: string;
+        closed_at?: string;
+        head?: { ref: string };
+        base?: { ref: string };
+      }) => {
+        const result: GitHubPullRequestItem = {
+          number: pr.number,
+          title: pr.title,
+          state: pr.state,
+          author: pr.user?.login || '',
+          repository:
+            pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
+          labels: pr.labels?.map(l => l.name) || [],
+          created_at: pr.created_at,
+          updated_at: pr.updated_at,
+          url: pr.html_url,
+          comments: pr.comments,
+          reactions: pr.reactions?.total_count || 0,
+          draft: pr.draft,
+        };
 
-      // Only include optional fields if they have values
-      if (pr.merged_at) result.merged_at = pr.merged_at;
-      if (pr.closed_at) result.closed_at = pr.closed_at;
-      if (pr.head?.ref) result.head = pr.head.ref;
-      if (pr.base?.ref) result.base = pr.base.ref;
+        // Only include optional fields if they have values
+        if (pr.merged_at) result.merged_at = pr.merged_at;
+        if (pr.closed_at) result.closed_at = pr.closed_at;
+        if (pr.head?.ref) result.head = pr.head.ref;
+        if (pr.base?.ref) result.base = pr.base.ref;
 
-      return result;
-    });
+        return result;
+      }
+    );
 
     const searchResult: GitHubPullRequestsSearchResult = {
       searchType: 'prs',

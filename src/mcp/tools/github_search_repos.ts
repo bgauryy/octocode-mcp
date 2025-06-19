@@ -175,7 +175,25 @@ export async function searchGitHubRepos(
         languages: new Set<string>(),
         avgStars: 0,
         recentlyUpdated: 0,
-        topStarred: [] as any[],
+        topStarred: [] as Array<{
+          name: string;
+          stars: number;
+          description: string;
+          language: string;
+          url: string;
+          forks: number;
+          isPrivate: boolean;
+          isArchived: boolean;
+          isFork: boolean;
+          topics: string[];
+          license: string | null;
+          hasIssues: boolean;
+          openIssuesCount: number;
+          createdAt: string;
+          updatedAt: string;
+          visibility: string;
+          owner: string;
+        }>,
       };
 
       // Parse JSON response from GitHub CLI

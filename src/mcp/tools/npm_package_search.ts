@@ -98,7 +98,14 @@ function deduplicatePackages(packages: NpmPackage[]): NpmPackage[] {
   });
 }
 
-function normalizePackage(pkg: any): NpmPackage {
+function normalizePackage(pkg: {
+  name?: string;
+  version?: string;
+  description?: string;
+  keywords?: string[];
+  links?: { repository?: string };
+  repository?: { url?: string };
+}): NpmPackage {
   const description = pkg.description || null;
   const truncatedDescription =
     description && description.length > MAX_DESCRIPTION_LENGTH
@@ -125,13 +132,32 @@ function parseNpmSearchOutput(output: string): NpmPackage[] {
         ? JSON.parse(wrapper.result)
         : wrapper.result;
 
-    let packages: any[] = [];
+    let packages: Array<{
+      name?: string;
+      version?: string;
+      description?: string;
+      keywords?: string[];
+      links?: { repository?: string };
+      repository?: { url?: string };
+    }> = [];
 
     // Handle different npm search output formats
     if (Array.isArray(commandResult)) {
       packages = commandResult;
     } else if (commandResult?.objects && Array.isArray(commandResult.objects)) {
-      packages = commandResult.objects.map((obj: any) => obj.package || obj);
+      packages = commandResult.objects.map(
+        (obj: {
+          package?: {
+            name?: string;
+            version?: string;
+            description?: string;
+            keywords?: string[];
+            links?: { repository?: string };
+            repository?: { url?: string };
+          };
+          [key: string]: unknown;
+        }) => obj.package || obj
+      );
     } else if (commandResult?.results && Array.isArray(commandResult.results)) {
       packages = commandResult.results;
     }
