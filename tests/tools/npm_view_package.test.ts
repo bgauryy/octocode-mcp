@@ -55,7 +55,7 @@ describe('NPM View Package Tool', () => {
           packageName: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Get NPM Package Metadata',
+          title: 'npm_view_package',
           description: expect.any(String),
           readOnlyHint: true,
           destructiveHint: false,

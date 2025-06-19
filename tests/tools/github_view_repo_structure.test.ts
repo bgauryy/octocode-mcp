@@ -59,7 +59,7 @@ describe('GitHub View Repository Structure Tool', () => {
           path: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Browse Repository Structure and Browse Directories',
+          title: 'github_get_contents',
           description: expect.any(String),
           readOnlyHint: true,
           destructiveHint: false,

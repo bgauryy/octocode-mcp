@@ -44,10 +44,10 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           'Repository owner/organization(s). Single string or array for multiple owners. Leave empty for global search.'
         ),
       repo: z
-        .array(z.string())
+        .union([z.string(), z.array(z.string())])
         .optional()
         .describe(
-          'Specific repositories in "owner/repo" format. Requires owner parameter to be set.'
+          'Specific repositories in "owner/repo" format. Can be a single repository string or array of repository strings. Requires owner parameter to be set.'
         ),
       language: z
         .string()
@@ -101,10 +101,8 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         ),
     },
     {
-      title: 'Search Code in GitHub Repositories',
-      description:
-        'Search code across GitHub with boolean operators (AND, OR, NOT), qualifiers, and filters. ' +
-        'Supports language, file type, owner, repository, path, and visibility filtering.',
+      title: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -200,7 +198,7 @@ async function searchGitHubCode(
         const owners = Array.isArray(params.owner)
           ? params.owner
           : [params.owner];
-        const repos = params.repo;
+        const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
         // Create repo filters for each owner/repo combination
         owners.forEach(owner => {
           repos.forEach(repo => {

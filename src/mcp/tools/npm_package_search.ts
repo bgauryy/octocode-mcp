@@ -30,7 +30,7 @@ export function registerNpmSearchTool(server: McpServer) {
         .describe('Max results per query (default: 20)'),
     },
     {
-      title: 'Search NPM Packages by Name/Keyword',
+      title: TOOL_NAMES.NPM_PACKAGE_SEARCH,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
       readOnlyHint: true,
       destructiveHint: false,

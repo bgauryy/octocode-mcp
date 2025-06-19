@@ -77,7 +77,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           order: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Search Pull Requests for Implementation Analysis',
+          title: 'github_search_pull_requests',
           description: expect.any(String),
           readOnlyHint: true,
           destructiveHint: false,

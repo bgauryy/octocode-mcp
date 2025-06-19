@@ -56,7 +56,7 @@ describe('API Status Check Tool', () => {
         expect.any(String),
         {},
         expect.objectContaining({
-          title: 'Verify Tools Readiness and Authentication',
+          title: 'api_status_check',
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,

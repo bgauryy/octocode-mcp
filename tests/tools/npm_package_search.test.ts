@@ -41,7 +41,7 @@ describe('NPM Package Search Tool', () => {
           searchlimit: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Search NPM Packages by Name/Keyword',
+          title: 'npm_package_search',
           description: expect.any(String),
           readOnlyHint: true,
           destructiveHint: false,

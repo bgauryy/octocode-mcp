@@ -88,7 +88,7 @@ describe('GitHub Search Issues Tool', () => {
           limit: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Search Issues for Problem Discovery and Solutions',
+          title: 'github_search_issues',
           description: expect.any(String),
           readOnlyHint: true,
           destructiveHint: false,

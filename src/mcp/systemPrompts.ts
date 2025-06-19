@@ -14,34 +14,38 @@ export const TOOL_NAMES = {
   NPM_VIEW_PACKAGE: 'npm_view_package',
 };
 
-export const PROMPT_SYSTEM_PROMPT = `Smart code research assistant with semantic search capabilities.
+export const PROMPT_SYSTEM_PROMPT = `You are a smart code research assistant with semantic search capabilities using gh and npm cli under the hood.
+You are able to search code, repositories, issues, pull requests, commits, and packages.
+Using Github: You are able to search code, repositories, issues, pull requests, commits
+Using NPM: You are able to search packages, view package metadata, and view package dependencies.
 
-APPROACH:
-- Start with ${TOOL_NAMES.API_STATUS_CHECK} to check authentication
-- Use ${TOOL_NAMES.GITHUB_SEARCH_REPOS} for smart repository and topic discovery
-- Run searches in parallel when possible for efficiency
-- Dive deeper with specific tools for detailed analysis
+- ALWAYS START with ${TOOL_NAMES.API_STATUS_CHECK} before evaluating any user query (check npm and GitHub authentication and use GitHub organizations)
+- Understand users query from semantic understanding and choose the right tools for the job.
 
-SEARCH STRATEGY:
-- ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - Smart semantic search combining repositories and topics
-- ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find implementation patterns and examples  
+TOOLS SEARCH STRATEGY:
+- ${TOOL_NAMES.GITHUB_SEARCH_REPOS} - START SHALLOW & GO BROAD: Use topics for exploratory discovery, then narrow down
+- ${TOOL_NAMES.GITHUB_SEARCH_CODE} - Find implementation patterns with SMART BOOLEAN OPERATORS (AND, OR, NOT)
 - ${TOOL_NAMES.NPM_PACKAGE_SEARCH} - Package ecosystem discovery
 - ${TOOL_NAMES.NPM_VIEW_PACKAGE} - Complete package analysis with exports for file discovery
 - ${TOOL_NAMES.GITHUB_SEARCH_ISSUES} + ${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} - Understanding development patterns
 - ${TOOL_NAMES.GITHUB_GET_CONTENTS} → ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT} - ALWAYS verify file existence before fetching
 
 BEST PRACTICES:
-- Use natural language queries - the tools are semantic and adaptive
-- Leverage quality filters like stars:>100 for established projects
-- Run parallel searches for comprehensive results
-- ALWAYS verify file existence with ${TOOL_NAMES.GITHUB_GET_CONTENTS} before using ${TOOL_NAMES.GITHUB_GET_FILE_CONTENT}
-- Use ${TOOL_NAMES.NPM_VIEW_PACKAGE} exports field to discover available files in packages
-- Always check documentation and examples when available`;
+- Leverage smart boolean operators if possible in tools and advanced filters for smart research 
+- For repo discovery: START SHALLOW with topics, then go BROAD to explore ecosystems
+- For code search: Be focused and specific with boolean operators
+- Always check documentation and examples when available
+- Add referenced and high quality research data from docs and quality code
+- Be creative and smart and use tools efficiently to gather most data
+- If query is short (e.g. where is the git repo of X package) make simple query and use tools to gather data fast
+- For broad research make steps and think about the best way to gather data`;
 
 export const TOOL_DESCRIPTIONS = {
-  [TOOL_NAMES.API_STATUS_CHECK]: `Check GitHub & NPM authentication status and discover user organizations.
-  Essential first step that enables access to private/organizational repositories by identifying available organizations for the 'owner' parameter in search tools.
-  Critical for enterprise code exploration and accessing company-specific repositories that require organizational membership.`,
+  [TOOL_NAMES.API_STATUS_CHECK]: `**MANDATORY FIRST STEP** - Check GitHub & NPM authentication status before any user query evaluation.
+  Returns connectivity status and discovers user organizations - CRITICAL for accessing private/organizational repositories.
+  **DO NOT PROCEED** with searches if both GitHub and NPM are disconnected.
+  **USE ORGANIZATIONS** returned in 'github.organizations' array for targeted owner/org parameters in all search tools.
+  Essential for enterprise code exploration and accessing company-specific repositories that require organizational membership.`,
 
   [TOOL_NAMES.NPM_PACKAGE_SEARCH]: `Search NPM packages by keyword. Use for package ecosystem discovery.`,
 
@@ -52,14 +56,17 @@ export const TOOL_DESCRIPTIONS = {
   • versions with dates - Historical evolution context
   The exports field is invaluable for GitHub file discovery - shows exact paths before fetching. Always use when finding packages in code.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `SEMANTIC CODE DISCOVERY: Search code with boolean logic (AND, OR, NOT). 
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: `SEMANTIC CODE DISCOVERY: Search code with SMART BOOLEAN OPERATORS (AND, OR, NOT). 
+  Prioritize intelligent boolean combinations: "logger AND debug NOT test", "config OR settings", "error handling AND typescript".
   Format: "term AND term" language:js path:src. Filters: owner/org/user, repo, extension, filename, language, path, size, limit, match scope. 
   Use for finding actual implementation patterns and code examples.
   CRITICAL: When packages found in results or from user input, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} for metadata/paths.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories by name/description. PRIMARY FILTERS work alone: owner, language, stars, topic, forks. SECONDARY FILTERS require query/primary filter: license, created, archived, includeForks, updated, visibility, match.
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories by name/description. START SHALLOW AND GO BROAD (contrary to code search).
+  Use topics for EXPLORATORY discovery: topic:["cli","typescript","api"] to find ecosystem patterns.
+  PRIMARY FILTERS work alone: owner, language, stars, topic, forks. SECONDARY FILTERS require query/primary filter: license, created, archived, includeForks, updated, visibility, match.
   
-  PATTERNS: Use topic:["cli","typescript"] for semantic discovery. Use stars:">100" for quality. Use owner:"microsoft" for organization repos. Query supports GitHub syntax: "language:Go OR language:Rust".
+  SMART REPOS SEARCH PATTERNS: Use topic:["cli","typescript"] for semantic discovery. Use stars:">100" for quality. Use owner:"microsoft" for organization repos. Query supports GitHub syntax: "language:Go OR language:Rust".
   
   CRITICAL: When finding packages, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} for metadata and repository paths.`,
 

@@ -104,7 +104,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .describe('Maximum results (default: 25, max: 50)'),
     },
     {
-      title: 'GitHub Repository Search',
+      title: TOOL_NAMES.GITHUB_SEARCH_REPOS,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOS],
       readOnlyHint: true,
       destructiveHint: false,

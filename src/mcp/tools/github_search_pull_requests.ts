@@ -77,7 +77,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .describe('Order (default: desc)'),
     },
     {
-      title: 'Search Pull Requests for Implementation Analysis',
+      title: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
       readOnlyHint: true,
       destructiveHint: false,

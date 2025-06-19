@@ -42,10 +42,8 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         ),
     },
     {
-      title: 'Read File Content from GitHub Repositories',
-      description:
-        `Fetches complete file content from GitHub repositories. ` +
-        `Handles text files up to 500KB, detects binary files, supports branch fallback.`,
+      title: TOOL_NAMES.GITHUB_GET_FILE_CONTENT,
+      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_FILE_CONTENT],
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,

@@ -134,7 +134,7 @@ describe('GitHub Repository Search Tool', () => {
           limit: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'GitHub Repository Search',
+          title: 'github_search_repositories',
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,

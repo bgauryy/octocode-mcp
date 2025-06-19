@@ -119,7 +119,7 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         .describe('Maximum results (default: 25)'),
     },
     {
-      title: 'Search Issues for Problem Discovery and Solutions',
+      title: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_ISSUES],
       readOnlyHint: true,
       destructiveHint: false,
