@@ -65,9 +65,13 @@ export const TOOL_DESCRIPTIONS = {
 
   [TOOL_NAMES.GITHUB_GET_FILE_CONTENT]: `Read file content. REQUIRES exact path verification from github_get_contents first. If fetching fails, check file existence with github_get_contents.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Find GitHub issues and problems. Use for understanding pain points and feature requests.`,
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: `Find GitHub issues and problems with rich metadata (labels, reactions, comments, state). 
+  Discover pain points, feature requests, bug patterns, and community discussions. 
+  Filter by state, labels, assignee, or date ranges. Use for understanding project health and common user issues.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Find pull requests and implementations. Use for understanding how features were implemented.`,
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Find pull requests and implementations with detailed metadata. 
+  Discover how features were implemented, code review patterns, and development workflows. 
+  Filter by state, author, reviewer, or merge status. Essential for understanding project development practices.`,
 
   [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commit history. Use for understanding code evolution and development patterns.`,
 };

@@ -1,14 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { GitHubIssuesSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
-  createResult,
-  parseJsonResponse,
-  getNoResultsSuggestions,
-  getErrorSuggestions,
-} from '../../impl/util';
-import { searchGitHubIssues } from '../../impl/github/searchGitHubIssues';
+  GitHubIssuesSearchParams,
+  GitHubIssuesSearchResult,
+  GitHubIssueItem,
+} from '../../types';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { createSuccessResult, createErrorResult } from '../../impl/util';
+import { generateCacheKey, withCache } from '../../utils/cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
@@ -126,68 +127,123 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       openWorldHint: true,
     },
     async (args: GitHubIssuesSearchParams) => {
-      // Input validation
-      if (!args.query || args.query.trim().length === 0) {
-        return createResult(
+      if (!args.query?.trim()) {
+        return createErrorResult(
           'Search query is required and cannot be empty',
-          true
+          new Error('Invalid query')
         );
       }
 
       if (args.query.length > 256) {
-        return createResult(
+        return createErrorResult(
           'Search query is too long. Please limit to 256 characters or less.',
-          true
+          new Error('Query too long')
         );
       }
 
       try {
-        const result = await searchGitHubIssues(args);
-
-        if (result.isError) {
-          return createResult(result.content[0].text, true);
-        }
-
-        if (result.content && result.content[0] && !result.isError) {
-          const { data, parsed } = parseJsonResponse(
-            result.content[0].text as string
-          );
-
-          if (parsed) {
-            // Handle different possible response formats
-            if (data.results && Array.isArray(data.results)) {
-              return createResult({
-                q: args.query,
-                results: data.results,
-                ...(data.metadata && { metadata: data.metadata }),
-              });
-            }
-
-            // Handle case where no results found but valid response
-            if (data.metadata && data.metadata.total_count === 0) {
-              const suggestions = getNoResultsSuggestions(
-                TOOL_NAMES.GITHUB_SEARCH_ISSUES
-              );
-              return createResult('No issues found', true, suggestions);
-            }
-          }
-        }
-
-        // Handle no results or parsing failure
-        const suggestions = getNoResultsSuggestions(
-          TOOL_NAMES.GITHUB_SEARCH_ISSUES
-        );
-        return createResult('No issues found', true, suggestions);
+        return await searchGitHubIssues(args);
       } catch (error) {
-        const suggestions = getErrorSuggestions(
-          TOOL_NAMES.GITHUB_SEARCH_ISSUES
-        );
-        return createResult(
-          `Failed to search GitHub issues: ${(error as Error).message}`,
-          true,
-          suggestions
-        );
+        return createErrorResult('Failed to search GitHub issues', error);
       }
     }
   );
+}
+
+async function searchGitHubIssues(
+  params: GitHubIssuesSearchParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-issues', params);
+
+  return withCache(cacheKey, async () => {
+    const { command, args } = buildGitHubIssuesAPICommand(params);
+    const result = await executeGitHubCommand(command, args, { cache: false });
+
+    if (result.isError) {
+      return result;
+    }
+
+    const execResult = JSON.parse(result.content[0].text as string);
+    const apiResponse = JSON.parse(execResult.result);
+    const issues = apiResponse.items || [];
+
+    const cleanIssues: GitHubIssueItem[] = issues.map((issue: any) => ({
+      number: issue.number,
+      title: issue.title,
+      state: issue.state,
+      author: issue.user?.login,
+      repository:
+        issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
+      labels: issue.labels?.map((l: any) => l.name) || [],
+      created_at: issue.created_at,
+      updated_at: issue.updated_at,
+      url: issue.html_url,
+      comments: issue.comments,
+      reactions: issue.reactions?.total_count || 0,
+    }));
+
+    const searchResult: GitHubIssuesSearchResult = {
+      searchType: 'issues',
+      query: params.query || '',
+      results: cleanIssues,
+      metadata: {
+        total_count: apiResponse.total_count || 0,
+        incomplete_results: apiResponse.incomplete_results || false,
+      },
+    };
+
+    return createSuccessResult(searchResult);
+  });
+}
+
+function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
+  command: GhCommand;
+  args: string[];
+} {
+  const queryParts: string[] = [params.query?.trim() || ''];
+
+  // Repository/organization qualifiers
+  if (params.owner && params.repo) {
+    queryParts.push(`repo:${params.owner}/${params.repo}`);
+  } else if (params.owner) {
+    queryParts.push(`org:${params.owner}`);
+  }
+
+  // Build search qualifiers from params
+  const qualifiers: Record<string, string | undefined> = {
+    author: params.author,
+    assignee: params.assignee,
+    mentions: params.mentions,
+    commenter: params.commenter,
+    involves: params.involves,
+    language: params.language,
+    state: params.state,
+    created: params.created,
+    updated: params.updated,
+    closed: params.closed,
+  };
+
+  Object.entries(qualifiers).forEach(([key, value]) => {
+    if (value) queryParts.push(`${key}:${value}`);
+  });
+
+  // Special qualifiers
+  if (params.labels) queryParts.push(`label:"${params.labels}"`);
+  if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
+  if (params.noAssignee) queryParts.push('no:assignee');
+  if (params.noLabel) queryParts.push('no:label');
+  if (params.noMilestone) queryParts.push('no:milestone');
+  if (params.archived !== undefined)
+    queryParts.push(`archived:${params.archived}`);
+  if (params.locked) queryParts.push('is:locked');
+  if (params.visibility) queryParts.push(`is:${params.visibility}`);
+
+  const query = queryParts.filter(Boolean).join(' ');
+  const limit = Math.min(params.limit || 25, 100);
+
+  let apiPath = `search/issues?q=${encodeURIComponent(query)}&per_page=${limit}`;
+  if (params.sort) apiPath += `&sort=${params.sort}`;
+  if (params.order) apiPath += `&order=${params.order}`;
+
+  return { command: 'api', args: [apiPath] };
 }

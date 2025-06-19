@@ -438,6 +438,30 @@ export interface GitHubIssuesSearchParams {
   order?: 'asc' | 'desc';
 }
 
+export interface GitHubIssueItem {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  author: string;
+  repository: string;
+  labels: string[];
+  created_at: string;
+  updated_at: string;
+  url: string;
+  comments: number;
+  reactions: number;
+}
+
+export interface GitHubIssuesSearchResult {
+  searchType: 'issues';
+  query: string;
+  results: GitHubIssueItem[];
+  metadata: {
+    total_count: number;
+    incomplete_results: boolean;
+  };
+}
+
 export interface NpmPackageInfo {
   name: string;
   version: string;
