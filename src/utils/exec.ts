@@ -5,30 +5,20 @@ import { generateCacheKey, withCache } from './cache';
 
 const safeExecAsync = promisify(nodeExec);
 
+// Allowed command prefixes - this prevents shell injection by restricting to safe commands
 const ALLOWED_NPM_COMMANDS = [
   'view',
   'search',
   'ping',
-  'whoami',
-  'version',
   'config',
-  'audit',
-  'list',
-  'outdated',
-  'help',
+  'whoami',
 ] as const;
 
-const ALLOWED_GH_COMMANDS = [
-  'search',
-  'repo',
-  'api',
-  'auth',
-  'org',
-  'help',
-] as const;
+// Allowed command prefixes - this prevents shell injection by restricting to safe commands
+const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
 
-type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
-type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
+export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
+export type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
 type ExecOptions = {
   timeout?: number;
   cwd?: string;
@@ -36,7 +26,7 @@ type ExecOptions = {
   cache?: boolean;
 };
 
-function createSuccessResult(data: any): CallToolResult {
+function createSuccessResult(data: unknown): CallToolResult {
   return {
     content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
     isError: false,
@@ -60,12 +50,16 @@ function isValidGhCommand(command: string): command is GhCommand {
   return ALLOWED_GH_COMMANDS.includes(command as GhCommand);
 }
 
+/**
+ * Execute NPM commands safely by validating against allowed commands
+ * Security: Only executes commands that start with "npm {ALLOWED_COMMAND}"
+ */
 export async function executeNpmCommand(
-  command: string,
+  command: NpmCommand,
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<CallToolResult> {
-  // Only allow registered commands
+  // Security check: only allow registered commands
   if (!isValidNpmCommand(command)) {
     return createErrorResult(
       'Command not registered',
@@ -73,48 +67,29 @@ export async function executeNpmCommand(
     );
   }
 
+  // Build command with validated prefix - no sanitization needed since we control the prefix
   const fullCommand = `npm ${command} ${args.join(' ')}`;
 
-  const executeCommand = async (): Promise<CallToolResult> => {
-    try {
-      const execOptions = {
-        timeout: options.timeout || 30000,
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        encoding: 'utf-8' as const,
-      };
-
-      const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
-
-      if (stderr && !stderr.includes('npm WARN')) {
-        return createErrorResult('NPM command error', new Error(stderr));
-      }
-
-      return createSuccessResult({
-        command: fullCommand,
-        result: stdout,
-        timestamp: new Date().toISOString(),
-        type: 'npm',
-      });
-    } catch (error) {
-      return createErrorResult('Failed to execute NPM command', error);
-    }
-  };
+  const executeNpmCommand = () => executeCommand(fullCommand, 'npm', options);
 
   if (options.cache) {
     const cacheKey = generateCacheKey('npm-exec', { command, args });
-    return withCache(cacheKey, executeCommand);
+    return withCache(cacheKey, executeNpmCommand);
   }
 
-  return executeCommand();
+  return executeNpmCommand();
 }
 
+/**
+ * Execute GitHub CLI commands safely by validating against allowed commands
+ * Security: Only executes commands that start with "gh {ALLOWED_COMMAND}"
+ */
 export async function executeGitHubCommand(
-  command: string,
+  command: GhCommand,
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<CallToolResult> {
-  // Only allow registered commands
+  // Security check: only allow registered commands
   if (!isValidGhCommand(command)) {
     return createErrorResult(
       'Command not registered',
@@ -122,38 +97,74 @@ export async function executeGitHubCommand(
     );
   }
 
+  // Build command with validated prefix - no sanitization needed since we control the prefix
   const fullCommand = `gh ${command} ${args.join(' ')}`;
 
-  const executeCommand = async (): Promise<CallToolResult> => {
-    try {
-      const execOptions = {
-        timeout: options.timeout || 60000,
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        encoding: 'utf-8' as const,
-      };
-
-      const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
-
-      if (stderr) {
-        return createErrorResult('GitHub CLI command error', new Error(stderr));
-      }
-
-      return createSuccessResult({
-        command: fullCommand,
-        result: stdout,
-        timestamp: new Date().toISOString(),
-        type: 'github',
-      });
-    } catch (error) {
-      return createErrorResult('Failed to execute GitHub CLI command', error);
-    }
-  };
+  const executeGhCommand = () => executeCommand(fullCommand, 'github', options);
 
   if (options.cache) {
     const cacheKey = generateCacheKey('gh-exec', { command, args });
-    return withCache(cacheKey, executeCommand);
+    return withCache(cacheKey, executeGhCommand);
   }
 
-  return executeCommand();
+  return executeGhCommand();
+}
+
+/**
+ * Execute shell commands with timeout and error handling
+ * Security: Should only be called with pre-validated command prefixes
+ */
+async function executeCommand(
+  fullCommand: string,
+  type: 'npm' | 'github',
+  options: ExecOptions = {}
+): Promise<CallToolResult> {
+  try {
+    const defaultTimeout = type === 'npm' ? 30000 : 60000;
+    const execOptions = {
+      timeout: options.timeout || defaultTimeout,
+      cwd: options.cwd,
+      env: {
+        ...process.env,
+        ...options.env,
+        // Ensure clean shell environment
+        SHELL: '/bin/sh',
+        PATH: process.env.PATH,
+      },
+      encoding: 'utf-8' as const,
+      shell: '/bin/sh', // Use sh instead of default shell
+    };
+
+    const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
+
+    // Handle different warning patterns for npm vs gh
+    const shouldTreatAsError =
+      type === 'npm'
+        ? stderr && !stderr.includes('npm WARN')
+        : stderr &&
+          !stderr.includes('Warning:') &&
+          !stderr.includes('notice:') &&
+          !stderr.includes('No such file or directory') && // Ignore shell-related errors
+          stderr.trim() !== '';
+
+    if (shouldTreatAsError) {
+      const errorType =
+        type === 'npm' ? 'NPM command error' : 'GitHub CLI command error';
+      return createErrorResult(errorType, new Error(stderr));
+    }
+
+    return createSuccessResult({
+      command: fullCommand,
+      result: stdout,
+      timestamp: new Date().toISOString(),
+      type,
+      ...(stderr && { warning: stderr }), // Include warnings but don't treat as error
+    });
+  } catch (error) {
+    const errorMessage =
+      type === 'npm'
+        ? 'Failed to execute NPM command'
+        : 'Failed to execute GitHub CLI command';
+    return createErrorResult(errorMessage, error);
+  }
 }

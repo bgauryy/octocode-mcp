@@ -1,80 +1,102 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts/instructions';
-import * as Tools from './mcp/tools/index.js';
-import * as Resources from './mcp/resources/index.js';
+import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
+import { Implementation } from '@modelcontextprotocol/sdk/types.js';
+import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
+import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
+import { registerNpmSearchTool } from './mcp/tools/npm_package_search.js';
+import { registerViewRepositoryStructureTool } from './mcp/tools/github_view_repo_structure.js';
+import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
+import { registerNpmViewPackageTool } from './mcp/tools/npm_view_package.js';
 
-const server = new McpServer(
-  {
-    name: 'octocode-mcp',
-    version: '1.0.0',
-    description: `Code question assistant: Find, analyze, and explore any code in GitHub repositories and npm packages.
-       Use for code examples, implementations, debugging, and understanding how libraries work.`,
-  },
-  {
-    capabilities: {
-      tools: {},
-      resources: {},
-      prompts: {},
-    },
-    instructions: `
-    #PROMPT_SYSTEM_PROMPT
-    ${PROMPT_SYSTEM_PROMPT}`,
-  }
-);
+const SERVER_CONFIG: Implementation = {
+  name: 'octocode-mcp',
+  version: '1.0.0',
+  description: `Comprehensive code analysis assistant: Deep exploration and understanding of complex implementations in GitHub repositories and npm packages.
+       Specialized in architectural analysis, algorithm explanations, and complete technical documentation.`,
+};
 
-registerAllTools(server);
-registerResources(server);
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
-
-process.on('SIGINT', async () => {
-  process.exit(0);
-});
-
-process.stdin.on('close', async () => {
-  server.close();
-});
-
-// Register all tools
 function registerAllTools(server: McpServer) {
-  // System & API Status - CRITICAL FIRST STEP
-  Tools.registerApiStatusCheckTool(server);
+  const toolRegistrations = [
+    { name: 'ApiStatusCheck', fn: registerApiStatusCheckTool },
+    { name: 'GitHubSearchCode', fn: registerGitHubSearchCodeTool },
+    {
+      name: 'FetchGitHubFileContent',
+      fn: registerFetchGitHubFileContentTool,
+    },
+    { name: 'SearchGitHubRepos', fn: registerSearchGitHubReposTool },
+    { name: 'SearchGitHubCommits', fn: registerSearchGitHubCommitsTool },
+    {
+      name: 'SearchGitHubPullRequests',
+      fn: registerSearchGitHubPullRequestsTool,
+    },
+    { name: 'NpmSearch', fn: registerNpmSearchTool },
+    {
+      name: 'ViewRepositoryStructure',
+      fn: registerViewRepositoryStructureTool,
+    },
+    { name: 'SearchGitHubIssues', fn: registerSearchGitHubIssuesTool },
+    { name: 'NpmViewPackage', fn: registerNpmViewPackageTool },
+  ];
 
-  Tools.registerGitHubSearchCodeTool(server);
-  Tools.registerFetchGitHubFileContentTool(server);
-  Tools.registerViewRepositoryTool(server);
-  //Tools.registerNpmViewTool(server);
-  Tools.registerSearchGitHubReposTool(server);
-  Tools.registerSearchGitHubCommitsTool(server);
-  Tools.registerSearchGitHubPullRequestsTool(server);
-  Tools.registerGetUserOrganizationsTool(server);
-  Tools.registerNpmSearchTool(server);
-  Tools.registerViewRepositoryStructureTool(server);
-  Tools.registerSearchGitHubIssuesTool(server);
-  Tools.registerSearchGitHubTopicsTool(server);
-  Tools.registerSearchGitHubUsersTool(server);
-  // Focused NPM tools for minimal token usage
-  Tools.registerNpmDependencyAnalysisTool(server);
-  Tools.registerNpmGetRepositoryTool(server);
-  Tools.registerNpmGetDependenciesTool(server);
-  Tools.registerNpmGetBugsTool(server);
-  Tools.registerNpmGetReadmeTool(server);
-  Tools.registerNpmGetVersionsTool(server);
-  Tools.registerNpmGetAuthorTool(server);
-  Tools.registerNpmGetLicenseTool(server);
-  Tools.registerNpmGetHomepageTool(server);
-  Tools.registerNpmGetIdTool(server);
-  Tools.registerNpmGetReleasesTool(server);
-  Tools.registerNpmGetEnginesTool(server);
-  Tools.registerNpmGetExportsTool(server);
+  for (const tool of toolRegistrations) {
+    try {
+      tool.fn(server);
+    } catch (error) {
+      // ignore
+    }
+  }
 }
 
-// Register all resources
-function registerResources(server: McpServer) {
-  Resources.registerUsageGuideResource(server);
-  Resources.registerGithubStatusResource(server);
-  Resources.registerNpmStatusResource(server);
-  Resources.registerRepositoryIntelligenceResource(server);
+async function startServer() {
+  try {
+    const server = new McpServer(SERVER_CONFIG, {
+      capabilities: {
+        tools: {},
+        resources: {},
+        prompts: {},
+      },
+      instructions: `
+    ${PROMPT_SYSTEM_PROMPT}
+  `,
+    });
+
+    registerAllTools(server);
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+
+    const gracefulShutdown = async (_signal: string) => {
+      try {
+        await server.close();
+        process.exit(0);
+      } catch (error) {
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+    process.stdin.on('close', async () => {
+      await gracefulShutdown('STDIN_CLOSE');
+    });
+
+    process.on('uncaughtException', () => {
+      gracefulShutdown('UNCAUGHT_EXCEPTION');
+    });
+
+    process.on('unhandledRejection', () => {
+      gracefulShutdown('UNHANDLED_REJECTION');
+    });
+  } catch (error) {
+    process.exit(1);
+  }
 }
+
+startServer().catch(() => {
+  process.exit(1);
+});

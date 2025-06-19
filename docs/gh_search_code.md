@@ -1,348 +1,315 @@
-# GitHub Code Search Guide
+# Search code matching "react" and "lifecycle"
+$ gh search code react lifecycle
+
+# Search code matching "error handling"
+$ gh search code "error handling"
+
+# Search code matching "deque" in Python files
+$ gh search code deque --language=python
+
+# Search code matching "cli" in repositories owned by microsoft organization
+$ gh search code cli --owner=microsoft
+
+# Search code matching "panic" in the GitHub CLI repository
+$ gh search code panic --repo cli/cli
+
+# Search code matching keyword "lint" in package.json files
+$ gh search code lint --filename package.json
+
+USAGE
+  gh search code <query> [flags]
+
+FLAGS
+      --extension string   Filter on file extension
+      --filename string    Filter on filename
+  -q, --jq expression      Filter JSON output using a jq expression
+      --json fields        Output JSON with the specified fields
+      --language string    Filter results by language
+  -L, --limit int          Maximum number of code results to fetch (default 30)
+      --match strings      Restrict search to file contents or file path: {file|path}
+      --owner strings      Filter on owner
+  -R, --repo strings       Filter on repository
+      --size string        Filter on size range, in kilobytes
+  -t, --template string    Format JSON output using a Go template; see "gh help formatting"
+  -w, --web                Open the search query in the web browser
+
+INHERITED FLAGS
+  --help   Show help for command
+
+JSON FIELDS
+  path, repository, sha, textMatches, url
+
+EXAMPLES
+  # Search code matching "react" and "lifecycle"
+  $ gh search code react lifecycle
+  
+  # Search code matching "error handling"
+  $ gh search code "error handling"
+  
+  # Search code matching "deque" in Python files
+  $ gh search code deque --language=python
+  
+  # Search code matching "cli" in repositories owned by microsoft organization
+  $ gh search code cli --owner=microsoft
+  
+  # Search code matching "panic" in the GitHub CLI repository
+  $ gh search code panic --repo cli/cli
+  
+  # Search code matching keyword "lint" in package.json files
+  $ gh search code lint --filename package.json
+
+LEARN MORE
+  Use `gh <command> <subcommand> --help` for more information about a command.
+  Read the manual at https://cli.github.com/manual
+  Learn about exit codes using `gh help exit-codes`
+  Learn about accessibility experiences using `gh help accessibility`
+
+
+
+-----
+
+
+Possibilities for gh search code Query Construction
+gh search code is designed to find specific patterns, functions, variables, or phrases within the content of code files across GitHub.
+
+1. Simple Keyword Search (Implicit AND)
+
+Description: Provide one or more keywords. GitHub will search these keywords in the content of code files, and usually also in the file path and filename. Multiple keywords are implicitly ANDed.
+Example:
+Bash
+
+gh search code react lifecycle
+Meaning: Find code files that contain both "react" AND "lifecycle".
+2. Exact Phrase Search
+
+Description: Enclose a phrase in double quotes to search for that exact sequence of words in the code content.
+Example:
+Bash
+
+gh search code "error handling"
+Meaning: Find code files containing the exact phrase "error handling".
+3. Single Filter/Qualifier
+
+Description: Use a single command-line flag (--flag=value) to apply a specific filter.
+Examples:
+By Language:
+Bash
+
+gh search code deque --language=python
+Meaning: Find "deque" in code files specifically written in Python.
+By Extension:
+Bash
+
+gh search code "hello world" --extension=js
+Meaning: Find "hello world" in files with the .js extension.
+By Filename:
+Bash
+
+gh search code "main" --filename=server.js
+Meaning: Find "main" within files named "server.js".
+4. Multiple Filters (Implicit AND between Filters)
+
+Description: Combine several command-line flags. All specified conditions must be met.
+Example:
+Bash
+
+gh search code "cli" --owner=microsoft --language=typescript
+Meaning: Find "cli" in TypeScript code files that are also in repositories owned by the "microsoft" organization.
+5. Filtering by Repository or Owner
+
+Description: Restrict the code search to specific repositories or owners.
+Examples:
+By Owner (Organization/User):
+Bash
+
+gh search code "authenticate" --owner=google
+Meaning: Find "authenticate" in code files within repositories owned by the "google" organization.
+By Specific Repository:
+Bash
+
+gh search code "config variable" --repo=octocat/Spoon-Knife
+Meaning: Find "config variable" only in the octocat/Spoon-Knife repository.
+6. Filtering by Repository Visibility
+
+Description: Limit the search to public, private, or internal repositories.
+Example:
+Bash
+
+gh search code "API_KEY" --visibility=private
+Meaning: Find "API_KEY" in code within private repositories you have access to.
+7. Exclusion (NOT Operator)
+
+Description: Use the - (minus) prefix before a keyword or a qualifier to exclude results that match that term or condition.
+Examples:
+Exclude a Keyword:
+Bash
+
+gh search code "router" -test
+Meaning: Find "router" in code, but exclude files that also contain the word "test".
+Exclude by Extension:
+Bash
+
+gh search code "import" -- -extension:json
+Meaning: Find "import" in code, excluding files with the .json extension. (Note the -- before -extension:json.)
+Exclude by Path (using path: qualifier in query):
+Bash
+
+gh search code "debug_log" -- "NOT path:*/tests/*"
+Meaning: Find "debug_log" in code, but exclude files where the path contains "tests" (indicating test files). (Note the NOT needs to be part of the query string and -- might be needed if it's the first element after the main query).
+8. Explicit "OR" Logic (Using OR Keyword)
+
+Description: For "OR" conditions between different keywords or qualifiers (or complex logical groupings), use the uppercase OR keyword within the main query string. Parentheses () can be used for grouping.
+Examples:
+Keywords with OR:
+Bash
 
-> **Reference:** [Understanding GitHub Code Search Syntax](https://docs.github.com/en/search-github/github-code-search/understanding-github-code-search-syntax)
+gh search code "GET /api OR POST /api"
+Meaning: Find code containing "GET /api" OR "POST /api".
+Qualifiers with OR (using standard GitHub search syntax in query):
+Bash
 
-This guide will walk you through how to effectively use the `gh search code` command from the GitHub CLI. We'll cover its flags, the powerful query syntax, best practices for constructing your searches, and how to integrate it into your scripts.
+gh search code "language:JavaScript OR language:TypeScript"
+Meaning: Find code that is either JavaScript OR TypeScript.
+Complex Grouping:
+Bash
 
-## Understanding gh search code
+gh search code "function authenticate (owner:myorg OR repo:anotherorg/utility-lib)"
+Meaning: Find the string "function authenticate" AND (the file is in a repository owned by "myorg" OR in the anotherorg/utility-lib repository).
+9. Path Filtering (path: qualifier)
 
-The `gh search code` command allows you to search for code within GitHub repositories directly from your terminal. It leverages GitHub's robust code search API, supporting a wide range of sophisticated queries.
+Description: Search for code within specific directory paths or patterns. This is a very powerful way to narrow searches.
+Examples:
+Specific directory:
+Bash
 
-The basic syntax is:
+gh search code "database connection" "path:src/utils"
+Meaning: Find "database connection" only in files within the src/utils directory (and its subdirectories).
+Root level files:
+Bash
 
-```bash
-gh search code <query> [flags]
-```
+gh search code "config" "path:/"
+Meaning: Find "config" in files located directly at the root of repositories.
+Globbing in paths (advanced GitHub search syntax, might need direct gh api for full regex):
+Bash
 
-Where `<query>` is your search string, and `[flags]` are optional arguments to control the command's behavior or output.
+gh search code "logger" "path:*.go" "path:/cmd/**/*.go"
+Meaning: (This example uses path: multiple times, which might be ANDed depending on the exact gh CLI parsing. For true OR, you might need (path:*.go OR path:/cmd/**/*.go). The gh CLI flags primarily implement AND, so combining path: with OR often requires putting it in the main query string.)
+11. Sorting and Limits
 
-## Core Query Syntax (The Power Behind Your Search)
+Description: Control the number of results and their order.
+Examples:
+Limit results:
+Bash
 
-The most important aspect of `gh search code` is the `<query>` string itself. This is where you specify what you're looking for and apply various filters using qualifiers and boolean operators. The syntax for these is consistent with the GitHub web interface code search.
+gh search code "interface" -L 50
+Meaning: Find "interface" in code and return up to 50 results.
+Sort (default is "best-match" for code): gh search code manual does not list --sort for code search directly, implying it's always best-match. You'd use --sort if available or rely on the default relevance.
+Key Considerations for gh search code:
 
-Here's a breakdown of the powerful query features:
+Indexing Limitations: GitHub's code search has limitations:
+Forks are only searchable if they have more stars than the parent AND at least one commit after creation.
+Only the default branch is indexed.
+Files generally need to be smaller than a certain size (e.g., 384 KB for github.com) and only the first part of the file is indexed.
+There's a limit on the number of private/internal repositories searched.
+-- for Query Qualifiers: Remember to use -- before qualifiers like -topic:linux or -extension:json if they start with a hyphen and are part of the main query string, to prevent gh CLI from interpreting them as flags.
+New Code Search Engine: GitHub recently updated its code search. The gh CLI uses what is described as a "legacy" engine, so results might not always perfectly match the web interface, and some newer features like full regex search might not be directly available via the gh CLI flags. For advanced regex, you might need to use gh api /search/code and pass the regex in the q parameter directly (e.g., content:/^MyMethod$/).
+By combining these possibilities, you can construct very precise queries for finding code on GitHub.
 
-### 1. Exact Matches
 
-To find an exact string, including whitespace, enclose it in double quotes (`"`).
 
-**Example:** `"sparse index"`
+-------
 
-**In Qualifiers:** `path:git language:"protocol buffers"`
+Boolean Operators in gh search code Queries
+When using gh search code, you can combine keywords and specific qualifiers (--language, --repo, --path, etc.) using boolean logic to refine your search.
 
-### 2. Searching for Quotes and Backslashes
+Key Principles:
 
-**Quotes:** Escape a quotation mark within a quoted string using a backslash (`\"`).
+Case Sensitivity: The boolean operators AND, OR, and NOT must be in uppercase.
+Implicit AND: When you provide multiple terms or qualifiers separated by spaces, they are implicitly ANDed. This means all conditions must be met.
+Parentheses (): Use parentheses to group clauses and control the order of operations, especially when mixing AND and OR.
+-- for Query Qualifiers: If a query term starting with a hyphen (e.g., -extension:json) is not a direct gh flag, you might need to use -- before it to indicate it's part of the search query string.
+1. AND Operator
+The AND operator (or simply a space between terms) means that all specified terms or conditions must be present in the code files.
 
-**Example:** `"name = \"tensorflow\""`
+Examples:
 
-**Backslashes:** Use a double backslash (`\\`) to search for a literal backslash.
+Implicit AND (Keywords in code content):
 
-> **Note:** `\` and `\"` are the only recognized escape sequences outside of regular expressions. Other backslashes are treated literally.
+Bash
 
-### 3. Boolean Operations
+gh search code "user authentication" token generation
+Meaning: Find code files containing the phrase "user authentication" AND the words "token generation".
+Implicit AND (Keywords + Filters):
 
-Combine search terms using `AND`, `OR`, and `NOT`. By default, adjacent terms are treated with `AND`.
+Bash
 
-- **AND (or space):** Results must contain all terms.
-  - **Example:** `sparse index` (same as `sparse AND index`)
+gh search code "database connection" --language=python --repo=myorg/myproject
+Meaning: Find code files that:
+Contain "database connection"
+AND are written in python
+AND are located within the myorg/myproject repository.
+Explicit AND (within the query string, less common as space works):
 
-- **OR:** Results must contain at least one of the terms.
-  - **Example:** `sparse OR index`
+Bash
 
-- **NOT:** Excludes files containing the specified term.
-  - **Example:** `"fatal error" NOT path:__testing__`
+gh search code "router AND handler"
+Meaning: Find code files containing both "router" AND "handler".
+2. OR Operator
+The OR operator means that results will be returned if they match any of the specified terms or conditions.
 
-- **Parentheses:** Use `()` for complex expressions.
-  - **Example:** `(language:ruby OR language:python) AND NOT path:"/tests/"`
+Examples:
 
-### 4. Qualifiers
+Keywords OR Keywords:
 
-Qualifiers narrow down your search to specific contexts.
+Bash
 
-#### Repository and Organization Qualifiers
+gh search code "login form OR signup form"
+Meaning: Find code files containing "login form" OR "signup form".
+Qualifiers OR Qualifiers (within query string):
 
-- **`repo:<owner>/<repo_name>`**: Search within a specific repository. Full name (owner/repo) is required.
-  - **Example:** `repo:github-linguist/linguist`
-  - **Multiple Repos:** `repo:github-linguist/linguist OR repo:tree-sitter/tree-sitter`
+Bash
 
-- **`org:<organization_name>`**: Search within all repositories of an organization. Full name is required.
-  - **Example:** `org:github`
+gh search code "language:Java OR language:Kotlin"
+Meaning: Find code files that are either Java OR Kotlin.
+Combining with AND using Parentheses:
 
-- **`user:<username>`**: Search within all repositories of a personal account. Full name is required.
-  - **Example:** `user:octocat`
+Bash
 
-#### Language Qualifier
+gh search code "Logger (language:Go OR language:Rust)"
+Meaning: Find code files that contain the term "Logger" AND (are written in Go OR are written in Rust).
+Comma-separated values for specific flags (implicit OR for that flag):
 
-- **`language:<language_name>`**: Filter by programming language. Refer to the [Linguist languages.yml](https://github.com/github-linguist/linguist/blob/main/lib/linguist/languages.yml) for a complete list.
-  - **Example:** `language:ruby OR language:cpp OR language:csharp`
+Bash
 
-#### Path Qualifier
+gh search code "config" --extension=js,ts
+Meaning: Find code files containing "config" that have either a .js OR a .ts extension.
+3. NOT Operator (Exclusion)
+The NOT operator (or the - prefix) excludes results that match the specified term or condition.
 
-- **`path:<path_term>`**: Search for files where the path contains the term.
-  - **Example:** `path:unit_tests` (matches `src/unit_tests/my_test.py` and `src/docs/unit_tests.md`)
+Examples:
 
-**Glob Expressions:**
+Exclude a Keyword:
 
-- **`*`**: Matches any character (except `/`).
-  - **Example:** `path:*.txt` (for files with `.txt` extension)
-  - **Anchored:** `path:/src/*.js` (direct descendants of src)
+Bash
 
-- **`**`**: Matches across subdirectories.
-  - **Example:** `path:/src/**/*.js` (matches deeply nested `.js` files in src)
+gh search code "class" -abstract
+Meaning: Find code files containing the word "class" but NOT the word "abstract".
+Exclude by Qualifier (using - prefix):
 
-- **`?`**: Matches a single character.
-  - **Example:** `path:*.a?c`
+Bash
 
-- **Literal Special Characters:** Enclose paths with `*` or `?` in quotes to search for them literally (e.g., `path:"file?"`).
+gh search code "test_data" -- -path:*/tests/*
+Meaning: Find code files containing "test_data" but NOT where the file path includes the segment "tests" (e.g., to exclude test files themselves).
+Note: The -- is important here to signify that -path:*/tests/* is a query term, not a gh flag.
+Exclude by Qualifier (another example with - prefix):
 
-#### Content Qualifier
+Bash
 
-- **`content:<term>`**: Restrict search to file content only (not file paths). By default, bare terms search both.
-  - **Example:** `content:README.md` (finds files containing "README.md", not just files named README.md)
+gh search code "import" -- -extension:json
+Meaning: Find code files containing "import" but NOT with a .json extension.
+Explicit NOT (less common, usually - is preferred, especially with grouping):
 
-#### Repository Property Qualifier
+Bash
 
-- **`is:<property>`**: Filter based on repository properties.
-  - **Values:** `archived`, `fork`, `vendored`, `generated`
-  - **Example:** `path:/^MIT.txt$/ is:archived`
-  - **Inverted:** `log4j NOT is:archived`
-
-### 5. Using Regular Expressions
-
-Surround your regular expression with forward slashes (`/`).
-
-**Example:** `/sparse.*index/`
-
-**Escaping Slashes:** Escape forward slashes within the regex (`App\/src\/`).
-
-**Special Characters:** `\n` (newline), `\t` (tab), `\x{hhhh}` (Unicode character).
-
-**Case Sensitivity:** By default, searches are case-insensitive. For case-sensitive search, use `/(?-i)True/`.
-
-**Limitation:** "Look-around" assertions are not supported.
-
-### 6. Separating Search Terms
-
-Always separate search terms, exact strings, regex, qualifiers, parentheses, and boolean keywords with spaces. The only exception is items inside parentheses.
-
-## gh search code Flags
-
-While the query string handles most of the filtering logic, `gh search code` also has a few direct flags to control its output and behavior:
-
-### `--language <string>` or `-l <string>`
-
-**Description:** A convenient shortcut to filter results by a specific programming language. This is equivalent to adding `language:<string>` to your query.
-
-**Example:** 
-```bash
-gh search code "hello world" --language=python
-```
-
-### `--web`
-
-**Description:** Opens the search results in your default web browser instead of displaying them in the terminal.
-
-**Example:** 
-```bash
-gh search code "main function" --web
-```
-
-### `--json <fields>`
-
-**Description:** Outputs the search results in JSON format, allowing you to specify which fields you want to include (e.g., `repo,path,textMatches`). This is incredibly useful for scripting and parsing results.
-
-**Example:** 
-```bash
-gh search code "TODO" --json repo,path,url
-```
-
-### `-q, --jq <expression>`
-
-**Description:** Filters the JSON output using a jq expression. This flag requires `jq` to be installed on your system. It's often used in conjunction with `--json`.
-
-**Example:** 
-```bash
-gh search code "error" --json repo,path,textMatches | gh search code -q '.[] | select(.repo.name == "my-project")'
-```
-
-### `-L, --limit <int>`
-
-**Description:** Sets the maximum number of search results to fetch. The default limit is usually 30.
-
-**Example:** 
-```bash
-gh search code "interface" --limit 100
-```
-
-## Best Practices for gh search code
-
-1. **Start Broad, Then Refine:** Begin with a general term, then progressively add qualifiers and boolean operators to narrow down your results.
-
-2. **Use Exact Matches for Specificity:** When looking for a precise phrase or string, always use double quotes.
-
-3. **Leverage Qualifiers Heavily:** Qualifiers are your most powerful tools for relevant results. Always specify `repo:`, `org:`, `user:`, or `language:` if you know the context.
-
-4. **Understand `path:` vs. `content:`:** Remember that bare terms search both. Use `content:` if you only care about the file's content, and `path:` (often with glob expressions) for file structure.
-
-5. **Regex for Patterns:** When you need to find patterns rather than exact strings, regular expressions are essential. Be mindful of escaping special characters.
-
-6. **Review GitHub Docs:** The official [GitHub code search documentation](https://docs.github.com/search-github/searching-on-github/searching-code) is the definitive source for query syntax updates and nuances.
-
-7. **Pipe to jq for Parsing:** For programmatic use, always combine `--json` with `jq` (`-q` flag or piping to `jq` directly) to extract the data you need efficiently.
-
-8. **Respect Rate Limits:** While `gh` CLI often handles rate limits, be aware that very broad or frequent queries can hit GitHub API limits. Consider adding delays in scripts if you're making many calls.
-
-## How to Use gh search code via Code
-
-You can execute `gh search code` from within scripts using your system's command execution capabilities. Here are examples in Bash and Python, demonstrating how to construct and execute commands, and parse JSON output.
-
-### 1. Bash Scripting
-
-```bash
-#!/bin/bash
-
-# Define your query and flags
-SEARCH_QUERY="\"License MIT\" language:markdown repo:github-linguist/linguist"
-LIMIT_RESULTS=5
-
-echo "Searching for: $SEARCH_QUERY (limit: $LIMIT_RESULTS)"
-
-# Execute the command and capture output
-# --json repo,path,textMatches will give you repository info, file path, and the matching text snippets
-# The 'jq .' at the end pretty-prints the JSON.
-RESULTS=$(gh search code "$SEARCH_QUERY" --limit "$LIMIT_RESULTS" --json repo,path,textMatches)
-
-if [ $? -eq 0 ]; then # Check if the command executed successfully
-  echo "--- Search Results (JSON) ---"
-  echo "$RESULTS" | jq . # Pretty-print the JSON output
-
-  echo "--- Extracted Paths ---"
-  # Example of extracting paths using jq
-  echo "$RESULTS" | jq -r '.[].path'
-else
-  echo "Error executing gh search code. Check your query or GitHub CLI installation."
-fi
-
-# Example using --web flag
-# gh search code "TODO fixme" --web
-```
-
-#### Explanation for Bash:
-
-- **`#!/bin/bash`**: Shebang for bash script.
-- **`SEARCH_QUERY="..."`**: Defines your query string. It's best to put complex queries in a variable.
-- **`LIMIT_RESULTS=5`**: Defines the limit.
-- **`RESULTS=$(...)`**: Captures the standard output of the gh command into the RESULTS variable.
-- **`--json repo,path,textMatches`**: Tells gh to return the results as JSON, including specific fields. `textMatches` is crucial for seeing why a file matched.
-- **`jq .`**: Pipes the JSON output to jq for pretty-printing. `jq` is a powerful command-line JSON processor.
-- **`jq -r '.[].path'`**: Another jq example to extract specific data (raw path strings).
-- **`if [ $? -eq 0 ]; then`**: Checks the exit status of the previous command (`gh search code`). 0 means success, non-zero means an error.
-
-### 2. Python Scripting
-
-```python
-import subprocess
-import json
-
-def gh_search_code(query, limit=30, json_fields=None, web=False):
-    """
-    Executes gh search code and returns the results.
-
-    Args:
-        query (str): The search query string.
-        limit (int): Maximum number of results to fetch.
-        json_fields (list): List of fields to include in JSON output (e.g., ['repo', 'path', 'textMatches']).
-                           If None, default text output is returned.
-        web (bool): If True, opens results in the web browser instead of returning data.
-
-    Returns:
-        dict or str: Parsed JSON results if json_fields is provided,
-                     raw text output if json_fields is None,
-                     None if web is True, or if an error occurs.
-    """
-    cmd = ["gh", "search", "code", query]
-
-    if limit:
-        cmd.extend(["--limit", str(limit)])
-
-    if json_fields:
-        cmd.extend(["--json", ",".join(json_fields)])
-
-    if web:
-        cmd.append("--web")
-        print(f"Opening search results in browser for query: '{query}'")
-        try:
-            subprocess.run(cmd, check=True)
-            return None # No direct output when opening web
-        except subprocess.CalledProcessError as e:
-            print(f"Error opening web results: {e}")
-            return None
-
-    try:
-        # Execute the command and capture output
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        
-        if json_fields:
-            return json.loads(result.stdout)
-        else:
-            return result.stdout.strip()
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing gh search code: {e}")
-        print(f"Stderr: {e.stderr}")
-        return None
-    except json.JSONDecodeError as e:
-        print(f"Error decoding JSON output: {e}")
-        print(f"Raw output: {result.stdout}")
-        return None
-
-if __name__ == "__main__":
-    # Example 1: Basic search with text output
-    print("--- Example 1: Basic text search ---")
-    text_results = gh_search_code("TODO", limit=5)
-    if text_results:
-        print(text_results)
-
-    print("\n--- Example 2: JSON search for specific fields ---")
-    # Example 2: Search for "License" in Markdown files, get repo and path
-    json_results = gh_search_code(
-        query='path:README.md "License"', 
-        limit=2,
-        json_fields=['repo', 'path']
-    )
-    if json_results:
-        for item in json_results:
-            print(f"Repo: {item['repo']['name']}, Path: {item['path']}")
-
-    print("\n--- Example 3: More detailed JSON search with text matches ---")
-    detailed_json_results = gh_search_code(
-        query='language:javascript function AND "async await"',
-        limit=3,
-        json_fields=['repo', 'path', 'textMatches']
-    )
-    if detailed_json_results:
-        for item in detailed_json_results:
-            print(f"Repo: {item['repo']['name']}")
-            print(f"  Path: {item['path']}")
-            for match in item.get('textMatches', []):
-                print(f"    Match: {match.get('fragment')}")
-            print("-" * 20)
-
-    # Example 4: Open results in web browser (uncomment to test)
-    # gh_search_code(query="authentication token", web=True)
-```
-
-#### Explanation for Python:
-
-- **`subprocess.run()`**: This function is used to run external commands.
-- **`capture_output=True`**: Captures stdout and stderr.
-- **`text=True`**: Decodes stdout/stderr as text.
-- **`check=True`**: Raises a `CalledProcessError` if the command returns a non-zero exit code (indicating an error).
-- **`json.loads()`**: Parses the JSON string output from gh CLI into a Python dictionary or list.
-- **Error Handling**: The `try...except` blocks catch potential errors during command execution or JSON parsing, making the script more robust.
-- **`json_fields` parameter**: Allows you to dynamically specify which fields you need, making the function versatile. `repo` and `path` are common, but `textMatches` is extremely useful for seeing the actual code snippets that caused the match.
-
-## Conclusion
-
-By understanding the query syntax and the available flags, you can harness the full power of `gh search code` for both interactive exploration and automated scripting tasks.
+gh search code "main NOT path:*/vendor/*"
+Meaning: Find code files containing "main" that are NOT located in a "vendor" directory.

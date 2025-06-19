@@ -5,6 +5,63 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2024-12-19 - Enhanced Testing & Codebase Simplification
+
+### 🧪 ENHANCED: Comprehensive Testing Framework & Code Quality
+
+#### Added
+- **Complete Test Suite**: Added comprehensive test coverage with Vitest framework
+- **API Status Check Tests**: Robust testing for authentication and API connectivity
+- **Response Utilities Tests**: Complete test coverage for error handling and response utilities
+- **MCP Fixtures**: Reusable test fixtures for consistent testing across tools
+- **Test Configuration**: Optimized Vitest configuration with coverage reporting
+
+#### Enhanced
+- **Type Safety**: Improved TypeScript types with better error handling and validation
+- **Response Handling**: Consolidated error and success response patterns
+- **Code Organization**: Simplified codebase with redundant type definitions removed
+- **Tool Descriptions**: Refined tool descriptions for better clarity and usage
+- **System Prompts**: Streamlined system prompts for improved efficiency
+
+#### Technical Improvements
+- **Test Infrastructure**: Complete test setup with fixtures and utilities
+- **Error Handling**: Enhanced error response patterns with better suggestions
+- **Type Definitions**: Cleaned up and consolidated type system
+- **Cache Utilities**: Improved caching with better type safety
+- **Execution Framework**: Enhanced command execution with better error handling
+
+#### Fixed
+- **Type Issues**: Resolved TypeScript compilation issues across all tools
+- **Response Consistency**: Standardized response formats across all tools
+- **Error Messages**: Improved error messaging with actionable suggestions
+- **Tool Registration**: Fixed tool registration and metadata handling
+
+---
+
+## [2.1.0] - 2024-12-15 - System Prompt Optimization & Tool Refinement
+
+### 🎯 ENHANCED: Streamlined System Prompts & Tool Efficiency
+
+#### Enhanced
+- **System Prompts**: Major simplification and optimization of system prompts for better clarity
+- **Tool Descriptions**: Refined and consolidated tool descriptions for improved understanding
+- **Search Strategy**: Enhanced search strategy documentation with clearer guidance
+- **NPM Integration**: Improved NPM package search and metadata retrieval
+- **GitHub Tools**: Enhanced GitHub search tools with better filtering and results
+
+#### Technical Improvements
+- **Response Utilities**: Consolidated response handling patterns
+- **Error Messaging**: Improved error messages with better context and suggestions
+- **Command Execution**: Enhanced shell command execution with better safety
+- **Tool Registration**: Streamlined tool registration and configuration
+
+#### Removed
+- **Redundant Code**: Removed duplicate and unused type definitions
+- **Legacy Dependencies**: Cleaned up unused dependencies and imports
+- **Redundant Tools**: Removed redundant search functionality
+
+---
+
 ## [2.0.0] - 2024-12-XX - Universal Research Intelligence Engine
 
 ### 🚀 MAJOR TRANSFORMATION: From Code Search Tool to Universal Research Engine
