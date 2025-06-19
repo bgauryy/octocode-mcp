@@ -41,7 +41,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       stars: z
         .string()
         .optional()
-        .describe('Filter by stars count. Use >100 for established projects.'),
+        .describe(
+          'Filter by stars count with numeric values or ranges (e.g., "100", ">500", "<50", "10..100"). Use >100 for established projects.'
+        ),
       forks: z.number().optional().describe('Filter by forks count'),
       followers: z.number().optional().describe('Filter by followers count'),
       goodFirstIssues: z
@@ -363,7 +365,21 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
     args.push(`--sort=${sortBy}`);
   }
 
-  if (params.stars !== undefined) args.push(`--stars="${params.stars}"`);
+  // Only add stars filter if it's a valid numeric value or range
+  if (
+    params.stars !== undefined &&
+    params.stars !== '*' &&
+    params.stars.trim() !== ''
+  ) {
+    // Validate that stars parameter contains valid numeric patterns
+    const starsValue = params.stars.trim();
+    const isValidStars = /^(\d+|>\d+|<\d+|\d+\.\.\d+|>=\d+|<=\d+)$/.test(
+      starsValue
+    );
+    if (isValidStars) {
+      args.push(`--stars="${params.stars}"`);
+    }
+  }
   if (params.topic && params.topic.length > 0)
     args.push(`--topic=${params.topic.join(',')}`);
   if (params.updated) args.push(`--updated="${params.updated}"`);
