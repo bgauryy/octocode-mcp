@@ -98,24 +98,25 @@ export interface GitHubReposSearchParams
   extends Omit<BaseSearchParams, 'query'>,
     OrderSort {
   query?: string; // Make query optional
-  archived?: boolean;
-  created?: string;
-  followers?: number;
-  forks?: number;
-  goodFirstIssues?: number;
-  helpWantedIssues?: number;
-  includeForks?: 'false' | 'true' | 'only';
+
+  // PRIMARY FILTERS (work alone)
   language?: string;
-  license?: string[];
-  limit?: number;
-  match?: 'name' | 'description' | 'readme';
-  numberTopics?: number;
-  size?: string;
-  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
+  forks?: number;
   stars?: string;
   topic?: string[];
+
+  // SECONDARY FILTERS (require query or primary filter)
+  archived?: boolean;
+  created?: string;
+  includeForks?: 'false' | 'true' | 'only';
+  license?: string[];
+  match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
+
+  // SORTING AND LIMITS
+  limit?: number;
+  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
 }
 
 export interface GithubFetchRequestParams {

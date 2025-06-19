@@ -3,15 +3,15 @@
       "target": "ES2022",
       "module": "ESNext",
       "moduleResolution": "node",
-      "outDir": "./build",
       "rootDir": "./src",
+      "outDir": "./build",
       "strict": true,
       "esModuleInterop": true,
       "skipLibCheck": true,
       "forceConsistentCasingInFileNames": true,
       "declaration": true,
       "declarationMap": true,
-      "noImplicitAny": true
+      "noImplicitAny": true,
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules"]

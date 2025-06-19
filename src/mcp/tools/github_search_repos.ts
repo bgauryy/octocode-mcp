@@ -22,72 +22,66 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .string()
         .optional()
         .describe(
-          'Search query with full GitHub syntax support: "cli shell" (AND), "vim plugin" (phrase), "-- -topic:linux" (exclude), "language:Go OR language:Rust" (OR), "stars:>=500 (language:TypeScript OR topic:frontend)" (complex). Optional - can search with just filters.'
+          'Search query with GitHub syntax: "cli shell" (AND), "vim plugin" (phrase), "language:Go OR language:Rust" (OR). Optional - can search with just primary filters.'
         ),
 
-      // Owner and basic filters
+      // PRIMARY FILTERS (can work alone)
       owner: z
         .string()
         .optional()
         .describe(
-          'Repository owner/organization. Leave empty for global search.'
+          'Repository owner/organization. PRIMARY FILTER - works alone.'
         ),
       language: z
         .string()
         .optional()
-        .describe('Filter by programming language'),
-
-      // Numeric filters with range support
+        .describe('Programming language. PRIMARY FILTER - works alone.'),
       stars: z
         .string()
         .optional()
-        .describe('Filter by stars count. Use >100 for established projects.'),
-      forks: z.number().optional().describe('Filter by forks count'),
-      followers: z.number().optional().describe('Filter by followers count'),
-      goodFirstIssues: z
+        .describe(
+          'Stars count with ranges: "100", ">500", "<50", "10..100", ">=1000". PRIMARY FILTER - works alone. Use >100 for quality projects.'
+        ),
+      topic: z
+        .array(z.string())
+        .optional()
+        .describe('Filter by topics. PRIMARY FILTER - works alone.'),
+      forks: z
         .number()
         .optional()
-        .describe('Filter by good first issues count'),
-      helpWantedIssues: z
-        .number()
-        .optional()
-        .describe('Filter by help wanted issues count'),
-      numberTopics: z
-        .number()
-        .optional()
-        .describe('Filter on number of topics'),
+        .describe('Exact forks count. PRIMARY FILTER - works alone.'),
 
-      // String filters
-      size: z.string().optional().describe('Filter on size range in KB'),
-
-      // Comma-separated string filters (not arrays)
+      // SECONDARY FILTERS (require query or primary filter)
       license: z
         .array(z.string())
         .optional()
-        .describe('Filter based on license type'),
-      topic: z.array(z.string()).optional().describe('Filter on topic'),
+        .describe('License types. REQUIRES query or primary filter.'),
       match: z
         .enum(['name', 'description', 'readme'])
         .optional()
-        .describe('Search scope restriction'),
+        .describe('Search scope. REQUIRES query.'),
       visibility: z
         .enum(['public', 'private', 'internal'])
         .optional()
-        .describe('Filter based on repository visibility'),
-
-      // Date filters
+        .describe('Repository visibility. REQUIRES query or primary filter.'),
       created: z
         .string()
         .optional()
-        .describe('Filter by created date (format: >2020-01-01, <2023-12-31)'),
-      updated: z.string().optional().describe('Filter by last update date'),
-
-      // Boolean and enum filters
-      archived: z.boolean().optional().describe('Filter archived state'),
+        .describe(
+          'Created date filter: ">2020-01-01", "<2023-12-31". REQUIRES query or primary filter.'
+        ),
+      updated: z
+        .string()
+        .optional()
+        .describe('Updated date filter. REQUIRES query or primary filter.'),
+      archived: z
+        .boolean()
+        .optional()
+        .describe('Archived state. REQUIRES query or primary filter.'),
       includeForks: z
         .enum(['false', 'true', 'only'])
         .optional()
-        .describe('Include forks in results'),
+        .describe('Include forks. REQUIRES query or primary filter.'),
 
       // Sorting and limits
       sort: z
@@ -119,21 +113,23 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     },
     async args => {
       try {
-        // Query is now optional - can search with just filters
-        if (
-          !args.query?.trim() &&
-          !args.owner &&
-          !args.language &&
-          !args.topic &&
-          !args.stars
-        ) {
+        // Updated validation logic for primary filters
+        const hasPrimaryFilter =
+          args.query?.trim() ||
+          args.owner ||
+          args.language ||
+          args.topic ||
+          args.stars ||
+          args.forks;
+
+        if (!hasPrimaryFilter) {
           return createResult(
-            'Either query or at least one filter is required',
+            'Requires query or primary filter (owner, language, stars, topic, forks)',
             true
           );
         }
 
-        // Search repositories using GitHub CLI - exactly like the API intended
+        // Search repositories using GitHub CLI
         const result = await searchGitHubRepos(args);
 
         return result;
@@ -330,44 +326,53 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
     'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
   );
 
-  // Handle owner as single string (BaseSearchParams) or array
+  // PRIMARY FILTERS - Handle owner as single string (BaseSearchParams) or array
   if (params.owner) {
     const ownerValue = Array.isArray(params.owner)
       ? params.owner.join(',')
       : params.owner;
     args.push(`--owner=${ownerValue}`);
   }
+  if (params.language) args.push(`--language=${params.language}`);
+  if (params.forks !== undefined) args.push(`--forks=${params.forks}`);
+  if (params.topic && params.topic.length > 0)
+    args.push(`--topic=${params.topic.join(',')}`);
+
+  // Only add stars filter if it's a valid numeric value or range
+  if (
+    params.stars !== undefined &&
+    params.stars !== '*' &&
+    params.stars.trim() !== ''
+  ) {
+    // Validate that stars parameter contains valid numeric patterns
+    const starsValue = params.stars.trim();
+    const isValidStars = /^(\d+|>\d+|<\d+|\d+\.\.\d+|>=\d+|<=\d+)$/.test(
+      starsValue
+    );
+    if (isValidStars) {
+      args.push(`--stars="${params.stars}"`);
+    }
+  }
+
+  // SECONDARY FILTERS - only add if we have primary filters
   if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
   if (params.created) args.push(`--created="${params.created}"`);
-  if (params.followers !== undefined)
-    args.push(`--followers=${params.followers}`);
-  if (params.forks !== undefined) args.push(`--forks=${params.forks}`);
-  if (params.goodFirstIssues !== undefined)
-    args.push(`--good-first-issues=${params.goodFirstIssues}`);
-  if (params.helpWantedIssues !== undefined)
-    args.push(`--help-wanted-issues=${params.helpWantedIssues}`);
   if (params.includeForks) args.push(`--include-forks=${params.includeForks}`);
-  if (params.language) args.push(`--language=${params.language}`);
   if (params.license && params.license.length > 0)
     args.push(`--license=${params.license.join(',')}`);
-  if (params.limit) args.push(`--limit=${params.limit}`);
   if (params.match) args.push(`--match=${params.match}`);
-  if (params.numberTopics !== undefined)
-    args.push(`--number-topics=${params.numberTopics}`);
+  if (params.updated) args.push(`--updated="${params.updated}"`);
+  if (params.visibility) args.push(`--visibility=${params.visibility}`);
+
+  // SORTING AND LIMITS
+  if (params.limit) args.push(`--limit=${params.limit}`);
   if (params.order) args.push(`--order=${params.order}`);
-  if (params.size) args.push(`--size="${params.size}"`);
 
   // Use best-match as default, only specify sort if different from default
   const sortBy = params.sort || 'best-match';
   if (sortBy !== 'best-match') {
     args.push(`--sort=${sortBy}`);
   }
-
-  if (params.stars !== undefined) args.push(`--stars="${params.stars}"`);
-  if (params.topic && params.topic.length > 0)
-    args.push(`--topic=${params.topic.join(',')}`);
-  if (params.updated) args.push(`--updated="${params.updated}"`);
-  if (params.visibility) args.push(`--visibility=${params.visibility}`);
 
   return { command: 'search', args };
 }
