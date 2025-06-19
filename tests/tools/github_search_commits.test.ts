@@ -39,7 +39,7 @@ interface GitHubCommitsSearchResponse {
     topAuthors: Array<{ name: string; commits: number }>;
     repositories: string[];
   };
-  suggestions?: string[];
+
 }
 
 // Mock the exec utilities
@@ -486,7 +486,6 @@ describe('GitHub Search Commits Tool', () => {
       expect(result.isError).toBe(false);
       expect(data.total).toBe(0);
       expect(data.commits).toEqual([]);
-      expect(data.suggestions).toContain('Try broader search terms');
     });
   });
 

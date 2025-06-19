@@ -5,7 +5,6 @@ import {
   createErrorResult,
   createResult,
   createSuccessResult,
-  getErrorSuggestions,
   needsQuoting,
 } from '../../utils/responses';
 import { GitHubReposSearchParams } from '../../types';
@@ -134,11 +133,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         return result;
       } catch (error) {
-        return createResult(
-          `Search failed: ${(error as Error).message}`,
-          true,
-          getErrorSuggestions(TOOL_NAMES.GITHUB_SEARCH_REPOS)
-        );
+        return createResult(`Search failed: ${(error as Error).message}`, true);
       }
     }
   );
@@ -266,12 +261,6 @@ export async function searchGitHubRepos(
             }
           : {
               repositories: [],
-              suggestions: [
-                `${TOOL_NAMES.NPM_PACKAGE_SEARCH} "${params.query || 'package'}"`,
-                `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
-                'Try broader search terms',
-                'Check spelling and try synonyms',
-              ],
             }),
       });
     } catch (error) {

@@ -8,7 +8,6 @@ import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   parseJsonResponse,
-  getErrorSuggestions,
   createErrorResult,
   createSuccessResult,
 } from '../../utils/responses';
@@ -112,54 +111,11 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
 
-        // Enhanced context-aware error suggestions
-        let suggestions: string[] = [];
         const context = `${args.owner}/${args.repo}`;
-
-        if (
-          errorMessage.includes('404') ||
-          errorMessage.includes('Not Found')
-        ) {
-          if (args.path) {
-            suggestions = [
-              `Try exploring root first: github_get_contents(owner: "${args.owner}", repo: "${args.repo}", branch: "${args.branch}", path: "")`,
-              `Search for similar paths: github_search_code with path filters`,
-            ];
-          } else {
-            suggestions = [
-              `Search for repository: github_search_repositories(query: "${args.repo}")`,
-              `Verify owner exists: github_search_repositories(owner: "${args.owner}")`,
-            ];
-          }
-        } else if (
-          errorMessage.includes('403') ||
-          errorMessage.includes('Forbidden')
-        ) {
-          suggestions = [
-            `Check authentication status: api_status_check`,
-            `Try public repositories first to verify access`,
-          ];
-        } else if (errorMessage.includes('rate limit')) {
-          suggestions = [
-            `Check rate limit status: api_status_check`,
-            `Wait before retrying or use authenticated requests`,
-          ];
-        } else if (
-          errorMessage.includes('invalid') ||
-          errorMessage.includes('branch')
-        ) {
-          suggestions = [
-            `Find valid branches: github_search_repositories(query: "${context}")`,
-            `Try common branches: main, master, develop`,
-          ];
-        } else {
-          suggestions = getErrorSuggestions(TOOL_NAMES.GITHUB_GET_CONTENTS);
-        }
 
         return createResult(
           `Repository exploration failed: ${errorMessage}. Context: ${context} on ${args.branch}${args.path ? ` at ${args.path}` : ''}`,
-          true,
-          suggestions
+          true
         );
       }
     }
@@ -173,7 +129,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
  * - Smart branch detection: fetches repository default branch automatically
  * - Intelligent fallback: tries requested -> default -> common branches
  * - Input validation: prevents path traversal and validates GitHub naming
- * - Enhanced error context: provides actionable suggestions for recovery
+ * - Clear error context: provides descriptive error messages
  * - Efficient caching: avoids redundant API calls
  */
 export async function viewRepositoryStructure(
@@ -231,8 +187,7 @@ export async function viewRepositoryStructure(
         if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
           if (path) {
             throw new Error(
-              `Path "${path}" not found in repository ${owner}/${repo}. ` +
-                `Use github_get_contents with empty path first to discover the repository structure.`
+              `Path "${path}" not found in repository ${owner}/${repo}.`
             );
           } else {
             throw new Error(

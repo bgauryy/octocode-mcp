@@ -595,9 +595,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.content[0].text).toContain(
         'Path "nonexistent/path" not found'
       );
-      expect(result.content[0].text).toContain(
-        'Use github_get_contents with empty path first'
-      );
     });
 
     it('should handle access denied errors', async () => {

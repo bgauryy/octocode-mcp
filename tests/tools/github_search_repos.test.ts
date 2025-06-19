@@ -34,7 +34,7 @@ interface GitHubRepoSearchResponse {
     avgStars: number;
     recentlyUpdated: number;
   };
-  suggestions?: string[];
+
 }
 
 // Mock the exec utilities and cache
@@ -770,8 +770,6 @@ describe('GitHub Repository Search Tool', () => {
       const data = parseResultJson<GitHubRepoSearchResponse>(result);
       expect(data.total).toBe(0);
       expect(data.repositories).toEqual([]);
-      expect(data.suggestions).toBeDefined();
-      expect(data.suggestions).toContain('Try broader search terms');
     });
   });
 

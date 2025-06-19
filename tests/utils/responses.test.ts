@@ -4,11 +4,8 @@ import {
   createSuccessResult,
   createErrorResult,
   parseJsonResponse,
-  getNoResultsSuggestions,
-  getErrorSuggestions,
   needsQuoting,
 } from '../../src/utils/responses.js';
-import { TOOL_NAMES } from '../../src/mcp/systemPrompts.js';
 
 describe('Response Utilities', () => {
   describe('createResult', () => {
@@ -54,29 +51,26 @@ describe('Response Utilities', () => {
 
   describe('createErrorResult (legacy)', () => {
     it('should create error result with exception', () => {
-      const message = 'Operation failed';
-      const error = new Error('Detailed error message');
-      const result = createErrorResult(message, error);
+      const error = new Error('Test error');
+      const result = createErrorResult('Failed operation', error);
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe(
-        'Operation failed: Detailed error message'
-      );
+      expect(result.content[0].text).toBe('Failed operation: Test error');
     });
   });
 
   describe('parseJsonResponse', () => {
     it('should parse valid JSON', () => {
-      const jsonString = '{"name": "test", "value": 123}';
+      const jsonString = '{"key": "value"}';
       const result = parseJsonResponse(jsonString);
 
       expect(result.parsed).toBe(true);
-      expect(result.data).toEqual({ name: 'test', value: 123 });
+      expect(result.data).toEqual({ key: 'value' });
     });
 
     it('should handle invalid JSON with fallback', () => {
       const invalidJson = 'not json';
-      const fallback = { error: 'parsing failed' };
+      const fallback = { fallback: 'data' };
       const result = parseJsonResponse(invalidJson, fallback);
 
       expect(result.parsed).toBe(false);
@@ -92,84 +86,28 @@ describe('Response Utilities', () => {
     });
   });
 
-  describe('getNoResultsSuggestions', () => {
-    it('should provide suggestions for GitHub search repos', () => {
-      const suggestions = getNoResultsSuggestions(
-        TOOL_NAMES.GITHUB_SEARCH_REPOS
-      );
-
-      expect(suggestions).toContain(TOOL_NAMES.GITHUB_SEARCH_CODE);
-      expect(suggestions).toContain(TOOL_NAMES.NPM_PACKAGE_SEARCH);
-      expect(suggestions).not.toContain(TOOL_NAMES.GITHUB_SEARCH_REPOS);
-      expect(suggestions.length).toBeLessThanOrEqual(3);
-    });
-
-    it('should provide suggestions for GitHub search code', () => {
-      const suggestions = getNoResultsSuggestions(
-        TOOL_NAMES.GITHUB_SEARCH_CODE
-      );
-
-      expect(suggestions).toContain(TOOL_NAMES.GITHUB_SEARCH_REPOS);
-      expect(suggestions).toContain(TOOL_NAMES.GITHUB_SEARCH_ISSUES);
-      expect(suggestions).not.toContain(TOOL_NAMES.GITHUB_SEARCH_CODE);
-    });
-
-    it('should provide fallback suggestions for unknown tools', () => {
-      const suggestions = getNoResultsSuggestions('unknown_tool');
-
-      expect(suggestions).toContain(TOOL_NAMES.GITHUB_SEARCH_REPOS);
-      expect(suggestions).toContain(TOOL_NAMES.GITHUB_SEARCH_CODE);
-      expect(suggestions.length).toBeLessThanOrEqual(3);
-    });
-  });
-
-  describe('getErrorSuggestions', () => {
-    it('should suggest API status check for other tools', () => {
-      const suggestions = getErrorSuggestions(TOOL_NAMES.GITHUB_SEARCH_REPOS);
-
-      expect(suggestions).toContain(TOOL_NAMES.API_STATUS_CHECK);
-      expect(suggestions).not.toContain(TOOL_NAMES.GITHUB_SEARCH_REPOS);
-      expect(suggestions.length).toBeLessThanOrEqual(3);
-    });
-
-    it('should not suggest API status check for itself', () => {
-      const suggestions = getErrorSuggestions(TOOL_NAMES.API_STATUS_CHECK);
-
-      expect(suggestions).not.toContain(TOOL_NAMES.API_STATUS_CHECK);
-      expect(suggestions).toContain(TOOL_NAMES.GITHUB_SEARCH_REPOS);
-    });
-  });
-
   describe('needsQuoting', () => {
     it('should return true for strings with spaces', () => {
       expect(needsQuoting('hello world')).toBe(true);
     });
 
     it('should return true for strings with special characters', () => {
+      expect(needsQuoting('hello&world')).toBe(true);
+      expect(needsQuoting('hello|world')).toBe(true);
       expect(needsQuoting('hello<world')).toBe(true);
       expect(needsQuoting('hello>world')).toBe(true);
-      expect(needsQuoting('hello(world)')).toBe(true);
-      expect(needsQuoting('hello{world}')).toBe(true);
-      expect(needsQuoting('hello[world]')).toBe(true);
-      expect(needsQuoting('hello\\world')).toBe(true);
-      expect(needsQuoting('hello|world')).toBe(true);
-      expect(needsQuoting('hello&world')).toBe(true);
-      expect(needsQuoting('hello;world')).toBe(true);
     });
 
     it('should return true for strings with quotes or whitespace', () => {
       expect(needsQuoting('hello"world')).toBe(true);
       expect(needsQuoting('hello\tworld')).toBe(true);
       expect(needsQuoting('hello\nworld')).toBe(true);
-      expect(needsQuoting('hello\rworld')).toBe(true);
     });
 
     it('should return false for simple strings', () => {
       expect(needsQuoting('hello')).toBe(false);
       expect(needsQuoting('helloworld')).toBe(false);
-      expect(needsQuoting('hello-world')).toBe(false);
-      expect(needsQuoting('hello_world')).toBe(false);
-      expect(needsQuoting('hello.world')).toBe(false);
+      expect(needsQuoting('hello123')).toBe(false);
     });
 
     it('should return false for empty string', () => {

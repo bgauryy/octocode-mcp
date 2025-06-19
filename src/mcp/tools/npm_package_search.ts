@@ -1,11 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import {
-  createResult,
-  getNoResultsSuggestions,
-  getErrorSuggestions,
-} from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
 
@@ -73,17 +69,9 @@ export function registerNpmSearchTool(server: McpServer) {
           });
         }
 
-        const suggestions = getNoResultsSuggestions(
-          TOOL_NAMES.NPM_PACKAGE_SEARCH
-        );
-        return createResult('No packages found', true, suggestions);
+        return createResult('No packages found', true);
       } catch (error) {
-        const suggestions = getErrorSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH);
-        return createResult(
-          `Search failed: ${(error as Error).message}`,
-          true,
-          suggestions
-        );
+        return createResult(`Search failed: ${(error as Error).message}`, true);
       }
     }
   );

@@ -6,7 +6,6 @@ import {
   createResult,
   createSuccessResult,
   createErrorResult,
-  getErrorSuggestions,
   needsQuoting,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -121,11 +120,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         const result = await searchGitHubCommits(args);
         return result;
       } catch (error) {
-        return createResult(
-          `Search failed: ${(error as Error).message}`,
-          true,
-          getErrorSuggestions(TOOL_NAMES.GITHUB_SEARCH_COMMITS)
-        );
+        return createResult(`Search failed: ${(error as Error).message}`, true);
       }
     }
   );
@@ -242,13 +237,6 @@ export async function searchGitHubCommits(
         query: params.query,
         total: 0,
         commits: [],
-        suggestions: [
-          `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query || 'pr'}"`,
-          `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${params.query || 'issue'}"`,
-          `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
-          'Try broader search terms',
-          'Check spelling and try synonyms',
-        ],
       });
     } catch (error) {
       return createErrorResult('Failed to search GitHub commits', error);
