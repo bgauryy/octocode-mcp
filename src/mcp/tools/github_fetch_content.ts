@@ -7,7 +7,7 @@ import {
   getErrorSuggestions,
   createErrorResult,
   createSuccessResult,
-} from '../../impl/util';
+} from '../../utils/responses';
 import { GithubFetchRequestParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';

@@ -5,7 +5,7 @@ import {
   createErrorResult,
   createResult,
   createSuccessResult,
-} from '../../impl/util';
+} from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';

@@ -6,7 +6,7 @@ import {
   GitHubIssueItem,
 } from '../../types';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import { createSuccessResult, createErrorResult } from '../../impl/util';
+import { createSuccessResult, createErrorResult } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';

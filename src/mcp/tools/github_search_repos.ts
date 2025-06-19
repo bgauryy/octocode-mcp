@@ -7,7 +7,7 @@ import {
   createSuccessResult,
   getErrorSuggestions,
   needsQuoting,
-} from '../../impl/util';
+} from '../../utils/responses';
 import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';

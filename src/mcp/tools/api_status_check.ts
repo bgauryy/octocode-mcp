@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import { createResult } from '../../impl/util';
+import { createResult } from '../../utils/responses';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 
 export function registerApiStatusCheckTool(server: McpServer) {

@@ -1,20 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { TOOL_NAMES } from '../mcp/systemPrompts';
 
-/**
- * Determines if a string needs quoting for GitHub search
- */
-export function needsQuoting(str: string): boolean {
-  return (
-    str.includes(' ') ||
-    str.includes('"') ||
-    str.includes('\t') ||
-    str.includes('\n') ||
-    str.includes('\r') ||
-    /[<>(){}[\]\\|&;]/.test(str)
-  );
-}
-
 // CONSOLIDATED ERROR & SUCCESS HANDLING
 export function createResult(
   data: any,
@@ -43,19 +29,6 @@ export function createErrorResult(
   return createResult(`${message}: ${(error as Error).message}`, true);
 }
 
-// STANDARD RESPONSE - Simplified
-export function createStandardResponse(args: {
-  query?: string;
-  data: any;
-  suggestions?: string[];
-}): CallToolResult {
-  return createResult({
-    q: args.query,
-    results: args.data,
-    ...(args.suggestions?.length && { suggestions: args.suggestions }),
-  });
-}
-
 // ENHANCED PARSING UTILITY
 export function parseJsonResponse(
   responseText: string,
@@ -70,56 +43,6 @@ export function parseJsonResponse(
   } catch {
     return { data: fallback || responseText, parsed: false };
   }
-}
-
-/**
- * Detect organizational/private package patterns
- */
-export function detectOrganizationalQuery(query: string): {
-  isOrgQuery: boolean;
-  orgName?: string;
-  packageName?: string;
-  needsOrgAccess: boolean;
-} {
-  // Match @org/package pattern
-  const orgPackageMatch = query.match(/@([^/\s]+)\/([^/\s]+)/);
-  if (orgPackageMatch) {
-    return {
-      isOrgQuery: true,
-      orgName: orgPackageMatch[1],
-      packageName: `@${orgPackageMatch[1]}/${orgPackageMatch[2]}`,
-      needsOrgAccess: true,
-    };
-  }
-
-  // Common enterprise org patterns
-  const enterpriseOrgs = [
-    'wix',
-    'microsoft',
-    'google',
-    'facebook',
-    'netflix',
-    'uber',
-    'airbnb',
-  ];
-  const orgMatch = enterpriseOrgs.find(
-    org =>
-      query.toLowerCase().includes(org) ||
-      query.toLowerCase().includes(`@${org}`)
-  );
-
-  if (orgMatch) {
-    return {
-      isOrgQuery: true,
-      orgName: orgMatch,
-      needsOrgAccess: true,
-    };
-  }
-
-  return {
-    isOrgQuery: false,
-    needsOrgAccess: false,
-  };
 }
 
 /**
@@ -201,4 +124,18 @@ export function getErrorSuggestions(currentTool: string): string[] {
   }
 
   return suggestions.slice(0, 3);
+}
+
+/**
+ * Determines if a string needs quoting for GitHub search
+ */
+export function needsQuoting(str: string): boolean {
+  return (
+    str.includes(' ') ||
+    str.includes('"') ||
+    str.includes('\t') ||
+    str.includes('\n') ||
+    str.includes('\r') ||
+    /[<>(){}[\]\\|&;]/.test(str)
+  );
 }

@@ -5,7 +5,7 @@ import {
   createResult,
   getNoResultsSuggestions,
   getErrorSuggestions,
-} from '../../impl/util';
+} from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
 interface NpmPackage {
   name: string;

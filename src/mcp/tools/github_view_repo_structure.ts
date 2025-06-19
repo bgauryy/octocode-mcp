@@ -11,7 +11,7 @@ import {
   getErrorSuggestions,
   createErrorResult,
   createSuccessResult,
-} from '../../impl/util';
+} from '../../utils/responses';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';

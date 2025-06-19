@@ -8,7 +8,7 @@ import {
   createErrorResult,
   getErrorSuggestions,
   needsQuoting,
-} from '../../impl/util';
+} from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
