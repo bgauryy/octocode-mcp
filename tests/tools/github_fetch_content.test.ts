@@ -64,7 +64,7 @@ describe('GitHub Fetch Content Tool', () => {
           filePath: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Read File Content from GitHub Repositories',
+          title: 'github_get_file_content',
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,

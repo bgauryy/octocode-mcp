@@ -66,8 +66,8 @@ describe('GitHub Search Code Tool', () => {
           match: expect.any(Object),
         }),
         expect.objectContaining({
-          title: 'Search Code in GitHub Repositories',
-          description: expect.stringContaining('Search code across GitHub'),
+          title: 'github_search_code',
+          description: expect.stringContaining('SEMANTIC CODE DISCOVERY'),
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,
@@ -385,6 +385,38 @@ describe('GitHub Search Code Tool', () => {
           'test',
           '--repo=facebook/react', // Already has owner
           '--repo=facebook/jest', // Owner added
+          '--json=repository,path,textMatches,sha,url',
+        ],
+        { cache: false }
+      );
+    });
+
+    it('should handle repo parameter as single string', async () => {
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify([]),
+              command: 'gh search code test',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
+      await toolHandler({
+        query: 'test',
+        owner: 'facebook',
+        repo: 'react', // Single string instead of array
+      });
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        [
+          'code',
+          'test',
+          '--repo=facebook/react',
           '--json=repository,path,textMatches,sha,url',
         ],
         { cache: false }

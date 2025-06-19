@@ -65,7 +65,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         ),
     },
     {
-      title: 'Browse Repository Structure and Browse Directories',
+      title: TOOL_NAMES.GITHUB_GET_CONTENTS,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_CONTENTS],
       readOnlyHint: true,
       destructiveHint: false,

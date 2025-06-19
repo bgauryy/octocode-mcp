@@ -95,7 +95,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .describe('Maximum results (default: 25)'),
     },
     {
-      title: 'GitHub Commit Search',
+      title: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
       readOnlyHint: true,
       destructiveHint: false,

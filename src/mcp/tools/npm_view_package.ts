@@ -24,7 +24,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         ),
     },
     {
-      title: 'Get NPM Package Metadata',
+      title: TOOL_NAMES.NPM_VIEW_PACKAGE,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_VIEW_PACKAGE],
       readOnlyHint: true,
       destructiveHint: false,

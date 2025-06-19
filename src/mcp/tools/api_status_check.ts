@@ -9,7 +9,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
     TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
     {},
     {
-      title: 'Verify Tools Readiness and Authentication',
+      title: TOOL_NAMES.API_STATUS_CHECK,
       description: TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
       readOnlyHint: true,
       destructiveHint: false,
