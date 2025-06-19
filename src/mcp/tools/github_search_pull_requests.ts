@@ -1,14 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { GitHubPullRequestsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import { searchGitHubPullRequests } from '../../impl/github/searchGitHubPullRequests';
 import {
-  createResult,
-  parseJsonResponse,
-  getNoResultsSuggestions,
-  getErrorSuggestions,
-} from '../../impl/util';
+  GitHubPullRequestsSearchParams,
+  GitHubPullRequestsSearchResult,
+  GitHubPullRequestItem,
+} from '../../types';
+import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
+import { createSuccessResult, createErrorResult } from '../../impl/util';
+import { generateCacheKey, withCache } from '../../utils/cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { executeGitHubCommand, GhCommand } from '../../utils/exec';
+
+// TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
@@ -19,7 +22,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .string()
         .min(1, 'Search query is required and cannot be empty')
         .describe('Search query to find pull requests'),
-      owner: z.string().optional().describe(`Repository owner/organization`),
+      owner: z.string().optional().describe('Repository owner/organization'),
       repo: z.string().optional().describe('Repository name'),
       author: z.string().optional().describe('Filter by pull request author'),
       assignee: z.string().optional().describe('Filter by assignee'),
@@ -82,87 +85,137 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       openWorldHint: true,
     },
     async (args: GitHubPullRequestsSearchParams) => {
+      if (!args.query?.trim()) {
+        return createErrorResult(
+          'Search query is required and cannot be empty',
+          new Error('Invalid query')
+        );
+      }
+
+      if (args.query.length > 256) {
+        return createErrorResult(
+          'Search query is too long. Please limit to 256 characters or less.',
+          new Error('Query too long')
+        );
+      }
+
       try {
-        if (!args.query || args.query.trim().length === 0) {
-          return createResult(
-            'Search query is required and cannot be empty',
-            true
-          );
-        }
-
-        if (args.query.length > 256) {
-          return createResult(
-            'Search query is too long. Please limit to 256 characters or less.',
-            true
-          );
-        }
-
-        if (args.limit && (args.limit < 1 || args.limit > 50)) {
-          return createResult('Limit must be between 1 and 50', true);
-        }
-
-        // Validate date formats
-        const dateFields = [
-          { field: 'created', value: args.created },
-          { field: 'updated', value: args.updated },
-          { field: 'mergedAt', value: args.mergedAt },
-          { field: 'closed', value: args.closed },
-        ];
-
-        for (const { field, value } of dateFields) {
-          if (value && !/^[><]=?\d{4}-\d{2}-\d{2}$/.test(value)) {
-            return createResult(
-              `${field} must be in format ">2022-01-01", "<2023-12-31", etc.`,
-              true
-            );
-          }
-        }
-
-        const result = await searchGitHubPullRequests(args);
-
-        if (result.isError) {
-          return createResult(result.content[0].text, true);
-        }
-
-        if (result.content && result.content[0] && !result.isError) {
-          const { data, parsed } = parseJsonResponse(
-            result.content[0].text as string
-          );
-
-          if (parsed) {
-            // Handle different possible response formats
-            if (data.results && Array.isArray(data.results)) {
-              return createResult({
-                q: args.query,
-                results: data.results,
-                ...(data.metadata && { metadata: data.metadata }),
-              });
-            }
-            // Handle case where no results found but valid response
-            if (data.metadata && data.metadata.total_count === 0) {
-              const suggestions = getNoResultsSuggestions(
-                TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
-              );
-              return createResult('No pull requests found', true, suggestions);
-            }
-          }
-        }
-
-        // Handle no results or parsing failure
-        const suggestions = getNoResultsSuggestions(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
-        );
-        return createResult('No pull requests found', true, suggestions);
+        return await searchGitHubPullRequests(args);
       } catch (error) {
-        const suggestions = getErrorSuggestions(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
-        );
-        return createResult(
-          `PR search failed: ${(error as Error).message}`,
-          true,
-          suggestions
+        return createErrorResult(
+          'Failed to search GitHub pull requests',
+          error
         );
       }
     }
   );
+}
+
+async function searchGitHubPullRequests(
+  params: GitHubPullRequestsSearchParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-prs', params);
+
+  return withCache(cacheKey, async () => {
+    const { command, args } = buildGitHubPullRequestsAPICommand(params);
+    const result = await executeGitHubCommand(command, args, { cache: false });
+
+    if (result.isError) {
+      return result;
+    }
+
+    const execResult = JSON.parse(result.content[0].text as string);
+    const apiResponse = JSON.parse(execResult.result);
+    const pullRequests = apiResponse.items || [];
+
+    const cleanPRs: GitHubPullRequestItem[] = pullRequests.map((pr: any) => {
+      const result: GitHubPullRequestItem = {
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        author: pr.user?.login,
+        repository:
+          pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
+        labels: pr.labels?.map((l: any) => l.name) || [],
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        url: pr.html_url,
+        comments: pr.comments,
+        reactions: pr.reactions?.total_count || 0,
+        draft: pr.draft,
+      };
+
+      // Only include optional fields if they have values
+      if (pr.merged_at) result.merged_at = pr.merged_at;
+      if (pr.closed_at) result.closed_at = pr.closed_at;
+      if (pr.head?.ref) result.head = pr.head.ref;
+      if (pr.base?.ref) result.base = pr.base.ref;
+
+      return result;
+    });
+
+    const searchResult: GitHubPullRequestsSearchResult = {
+      searchType: 'prs',
+      query: params.query || '',
+      results: cleanPRs,
+      metadata: {
+        total_count: apiResponse.total_count || 0,
+        incomplete_results: apiResponse.incomplete_results || false,
+      },
+    };
+
+    return createSuccessResult(searchResult);
+  });
+}
+
+function buildGitHubPullRequestsAPICommand(
+  params: GitHubPullRequestsSearchParams
+): { command: GhCommand; args: string[] } {
+  const queryParts: string[] = [params.query?.trim() || ''];
+
+  // Repository/organization qualifiers
+  if (params.owner && params.repo) {
+    queryParts.push(`repo:${params.owner}/${params.repo}`);
+  } else if (params.owner) {
+    queryParts.push(`org:${params.owner}`);
+  }
+
+  // Build search qualifiers from params
+  const qualifiers: Record<string, string | undefined> = {
+    author: params.author,
+    assignee: params.assignee,
+    mentions: params.mentions,
+    commenter: params.commenter,
+    involves: params.involves,
+    state: params.state,
+    created: params.created,
+    updated: params.updated,
+    closed: params.closed,
+    language: params.language,
+  };
+
+  Object.entries(qualifiers).forEach(([key, value]) => {
+    if (value) queryParts.push(`${key}:${value}`);
+  });
+
+  // Special qualifiers
+  if (params.reviewedBy) queryParts.push(`reviewed-by:${params.reviewedBy}`);
+  if (params.reviewRequested)
+    queryParts.push(`review-requested:${params.reviewRequested}`);
+  if (params.head) queryParts.push(`head:${params.head}`);
+  if (params.base) queryParts.push(`base:${params.base}`);
+  if (params.mergedAt) queryParts.push(`merged:${params.mergedAt}`);
+  if (params.draft !== undefined) queryParts.push(`draft:${params.draft}`);
+
+  // Add type qualifier to search only pull requests
+  queryParts.push('type:pr');
+
+  const query = queryParts.filter(Boolean).join(' ');
+  const limit = Math.min(params.limit || 25, 100);
+
+  let apiPath = `search/issues?q=${encodeURIComponent(query)}&per_page=${limit}`;
+  if (params.sort) apiPath += `&sort=${params.sort}`;
+  if (params.order) apiPath += `&order=${params.order}`;
+
+  return { command: 'api', args: [apiPath] };
 }

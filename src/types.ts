@@ -462,6 +462,35 @@ export interface GitHubIssuesSearchResult {
   };
 }
 
+export interface GitHubPullRequestItem {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  author: string;
+  repository: string;
+  labels: string[];
+  created_at: string;
+  updated_at: string;
+  merged_at?: string;
+  closed_at?: string;
+  url: string;
+  comments: number;
+  reactions: number;
+  draft: boolean;
+  head?: string;
+  base?: string;
+}
+
+export interface GitHubPullRequestsSearchResult {
+  searchType: 'prs';
+  query: string;
+  results: GitHubPullRequestItem[];
+  metadata: {
+    total_count: number;
+    incomplete_results: boolean;
+  };
+}
+
 export interface NpmPackageInfo {
   name: string;
   version: string;
