@@ -57,9 +57,11 @@ export const TOOL_DESCRIPTIONS = {
   Use for finding actual implementation patterns and code examples.
   CRITICAL: When packages found in results or from user input, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} for metadata/paths.`,
 
-  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories by name/description. Use AFTER topics search provides context.
-  Repository names can be misleading - use github_search_topics first for semantic discovery.
-  Use stars:>100 for quality projects. CRITICAL: When finding packages, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} to get essential metadata and repository paths.`,
+  [TOOL_NAMES.GITHUB_SEARCH_REPOS]: `Search repositories by name/description. PRIMARY FILTERS work alone: owner, language, stars, topic, forks. SECONDARY FILTERS require query/primary filter: license, created, archived, includeForks, updated, visibility, match.
+  
+  PATTERNS: Use topic:["cli","typescript"] for semantic discovery. Use stars:">100" for quality. Use owner:"microsoft" for organization repos. Query supports GitHub syntax: "language:Go OR language:Rust".
+  
+  CRITICAL: When finding packages, use ${TOOL_NAMES.NPM_VIEW_PACKAGE} for metadata and repository paths.`,
 
   [TOOL_NAMES.GITHUB_GET_CONTENTS]: `Browse repository structure and verify file existence. ALWAYS use before github_get_file_content to confirm files exist and understand organization.`,
 
