@@ -129,6 +129,7 @@ export function getErrorSuggestions(currentTool: string): string[] {
 /**
  * Determines if a string needs quoting for GitHub search
  */
+//TODO: move to util.ts
 export function needsQuoting(str: string): boolean {
   return (
     str.includes(' ') ||
