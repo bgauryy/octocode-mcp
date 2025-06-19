@@ -42,7 +42,7 @@
   "type": "module",
   "bin": "./build/index.js",
   "scripts": {
-    "build": "yarn lint && rollup -c",
+    "build": "yarn lint && yarn test && rollup -c",
     "build:watch": "rollup -c --watch",
     "prepublishOnly": "yarn build",
     "test": "vitest run",
