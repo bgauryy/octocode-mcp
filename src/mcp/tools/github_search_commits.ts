@@ -13,7 +13,7 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_commits';
 
-const DESCRIPTION = `Search commit history. Use for understanding code evolution and development patterns. Discover implementation changes, bug fixes, and feature development over time. Filter by author, date ranges, or commit content.`;
+const DESCRIPTION = `Search commit history with powerful boolean logic and exact phrase matching. Use advanced GitHub search syntax including AND/OR operators for precise commit discovery. Understand code evolution patterns, track bug fixes, and analyze development workflows over time. Filter by author, date ranges, commit content, and repository metadata with surgical precision.`;
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   server.tool(
@@ -24,7 +24,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .string()
         .optional()
         .describe(
-          'Search query with full GitHub syntax support: "readme typo" (AND), "bug fix" (phrase), "author:john OR committer:jane" (OR), "-- -author:botuser" (exclude). Optional - can search with just filters.'
+          'Search query with POWERFUL boolean logic and exact phrase matching. BOOLEAN OPERATORS: "fix AND bug" (both required), "fix OR update" (either term), "readme typo" (implicit AND). EXACT PHRASES: "initial commit" (precise phrase matching). ADVANCED SYNTAX: "author:john OR committer:jane" (user qualifiers), "-- -author:botuser" (exclusions). STRENGTH: Surgical precision for commit discovery across millions of repositories. Optional - can search with just filters.'
         ),
 
       // Basic filters
