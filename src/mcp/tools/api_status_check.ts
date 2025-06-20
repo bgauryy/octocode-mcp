@@ -1,16 +1,18 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { createResult } from '../../utils/responses';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 
+export const TOOL_NAME = 'api_status_check';
+const DESCRIPTION = `Check GitHub & NPM authentication status and discover user organizations. Use when authentication status is unknown or operations fail due to auth issues. Returns connectivity status and organizations - essential for accessing private/organizational repositories.`;
+
 export function registerApiStatusCheckTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.API_STATUS_CHECK,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
+    TOOL_NAME,
+    DESCRIPTION,
     {},
     {
-      title: TOOL_NAMES.API_STATUS_CHECK,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.API_STATUS_CHECK],
+      title: 'Check API Connections and Github Organizations',
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -148,7 +150,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
         });
       } catch (error) {
         return createResult(
-          `API status check failed: ${(error as Error).message}`,
+          'API status check failed - verify GitHub CLI and NPM are installed and accessible',
           true
         );
       }

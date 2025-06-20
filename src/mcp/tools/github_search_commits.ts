@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCommitsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   createSuccessResult,
@@ -12,10 +11,14 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
+const TOOL_NAME = 'github_search_commits';
+
+const DESCRIPTION = `Search commit history. Use for understanding code evolution and development patterns. Discover implementation changes, bug fixes, and feature development over time. Filter by author, date ranges, or commit content.`;
+
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
@@ -91,11 +94,11 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .max(50)
         .optional()
         .default(25)
-        .describe('Maximum results (default: 25)'),
+        .describe('Maximum results (default: 25, max: 50)'),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -120,7 +123,10 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         const result = await searchGitHubCommits(args);
         return result;
       } catch (error) {
-        return createResult(`Search failed: ${(error as Error).message}`, true);
+        return createResult(
+          'Commit search failed - check query syntax, filters, or repository access',
+          true
+        );
       }
     }
   );
@@ -239,7 +245,10 @@ export async function searchGitHubCommits(
         commits: [],
       });
     } catch (error) {
-      return createErrorResult('Failed to search GitHub commits', error);
+      return createErrorResult(
+        'GitHub commit search failed - verify repository exists or try different filters',
+        error
+      );
     }
   });
 }

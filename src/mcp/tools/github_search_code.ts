@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { GitHubCodeSearchParams } from '../../types';
 import {
   createErrorResult,
@@ -11,31 +10,21 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 
-/**
- * Registers the GitHub Code Search tool with the MCP server.
- *
- * This tool provides semantic code search across GitHub repositories using the GitHub CLI.
- * It supports advanced search features like boolean operators, qualifiers, and filters.
- *
- * Key features:
- * - Boolean operator support (AND, OR, NOT) in queries
- * - GitHub qualifier support (language:, path:, etc.)
- * - Repository, owner, and organization filtering
- * - File type, size, and visibility filtering
- * - Multiple match scopes and filtering options
- */
+const TOOL_NAME = 'github_search_code';
+
+const DESCRIPTION = `using "gh search code" to search code in github. prefer to use advanced search syntax (boolean operators - AND NOT OR) since it has proven to be powerful.
+Try to be precised in your search query and smart, leveraging the power of boolean operators and filters, along exact  strings query.`;
+
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_CODE,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
         .min(1)
         .describe(
-          'Search query with boolean operators (AND, OR, NOT) and qualifiers. ' +
-            'Examples: "react lifecycle", "error handling", "logger AND debug", "config OR settings", "main NOT test". ' +
-            'Use quotes for exact phrases. Supports GitHub search syntax.'
+          'Search query with boolean operators (AND, OR, NOT) and qualifiers. Examples: "react lifecycle", "error handling", "logger AND debug", "config OR settings", "main NOT test". Use quotes for exact phrases. Supports GitHub search syntax.'
         ),
       owner: z
         .union([z.string(), z.array(z.string())])
@@ -47,7 +36,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         .union([z.string(), z.array(z.string())])
         .optional()
         .describe(
-          'Specific repositories in "owner/repo" format. Can be a single repository string or array of repository strings. Requires owner parameter to be set.'
+          'Specific repositories in "owner/repo" format. Single string or array. Requires owner parameter.'
         ),
       language: z
         .string()
@@ -79,12 +68,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         .describe(
           'File size filter in KB with operators (e.g., ">100", "<50", "10..100").'
         ),
-      visibility: z
-        .enum(['public', 'private', 'internal'])
-        .optional()
-        .describe(
-          'Repository visibility filter. "public" for public repos, "private" for private repos you have access to.'
-        ),
       limit: z
         .number()
         .int()
@@ -97,12 +80,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
         .optional()
         .describe(
-          'Search scope: "file" for content search, "path" for filename/path search. If array provided, only first value is used due to GitHub API limitations.'
+          'Search scope: "file" for content search, "path" for filename/path search. First value used if array provided.'
         ),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -112,7 +95,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       try {
         if (args.repo && !args.owner) {
           return createResult(
-            'Repository search requires owner parameter',
+            'Repository search requires owner parameter - specify owner when searching specific repositories',
             true
           );
         }
@@ -135,7 +118,10 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           items: items,
         });
       } catch (error) {
-        return createErrorResult('Code search failed', error as Error);
+        return createErrorResult(
+          'GitHub code search failed - check repository access or simplify query',
+          error as Error
+        );
       }
     }
   );
@@ -156,11 +142,6 @@ async function searchGitHubCode(
       // Add path filter to query if provided (GitHub search syntax)
       if (params.path) {
         query = `${query} path:${params.path}`;
-      }
-
-      // Add visibility filter to query if provided
-      if (params.visibility) {
-        query = `${query} visibility:${params.visibility}`;
       }
 
       args.push(query);
@@ -222,7 +203,7 @@ async function searchGitHubCode(
       return result;
     } catch (error) {
       return createErrorResult(
-        'Failed to execute search command',
+        'Code search command failed - verify GitHub CLI is authenticated',
         error as Error
       );
     }

@@ -5,16 +5,19 @@ import {
   GitHubIssuesSearchResult,
   GitHubIssueItem,
 } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { createSuccessResult, createErrorResult } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
+const TOOL_NAME = 'github_search_issues';
+
+const DESCRIPTION = `Find GitHub issues and problems with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, bug patterns, and community discussions. Filter by state, labels, assignee, or date ranges. Use for understanding project health and common user issues.`;
+
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_ISSUES],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
@@ -116,11 +119,11 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         .max(50)
         .optional()
         .default(25)
-        .describe('Maximum results (default: 25)'),
+        .describe('Maximum results (default: 25, max: 50)'),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_ISSUES],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -129,14 +132,14 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     async (args: GitHubIssuesSearchParams) => {
       if (!args.query?.trim()) {
         return createErrorResult(
-          'Search query is required and cannot be empty',
+          'Search query is required and cannot be empty - provide keywords to search for issues',
           new Error('Invalid query')
         );
       }
 
       if (args.query.length > 256) {
         return createErrorResult(
-          'Search query is too long. Please limit to 256 characters or less.',
+          'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
           new Error('Query too long')
         );
       }
@@ -144,7 +147,10 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       try {
         return await searchGitHubIssues(args);
       } catch (error) {
-        return createErrorResult('Failed to search GitHub issues', error);
+        return createErrorResult(
+          'GitHub issues search failed - check repository exists and query is valid',
+          error
+        );
       }
     }
   );

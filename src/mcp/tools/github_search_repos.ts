@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createErrorResult,
   createResult,
@@ -12,10 +11,21 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
+const TOOL_NAME = 'github_search_repositories';
+
+const DESCRIPTION = `Search repositories by name/description. Start shallow and go broad: use topics for exploratory discovery (e.g., topic:["cli","typescript","api"]) to find ecosystem patterns.
+  PRIMARY FILTERS work alone: owner, language, stars, topic, forks. SECONDARY FILTERS require a query or primary filter: license, created, archived, includeForks, updated, visibility, match.
+  SMART REPOS SEARCH PATTERNS: Use topic:["cli","typescript"] for semantic discovery; stars:">100" for quality; owner:"microsoft" for organization repos. Query supports GitHub syntax: "language:Go OR language:Rust".
+  
+  EFFICIENCY NOTE: If you have a package name, use npm_view_package FIRST to get repositoryGitUrl - this tool becomes UNNECESSARY
+  
+  SMART INTEGRATION: When finding packages → npm_view_package + npm_package_search provide direct repo access
+  AVOID: Searching for "react" repos when npm_view_package("react") gives you the exact repository instantly`;
+
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_REPOS,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOS],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
@@ -29,58 +39,52 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .string()
         .optional()
         .describe(
-          'Repository owner/organization. PRIMARY FILTER - works alone.'
+          'Repository owner/organization (e.g., "microsoft", "facebook").'
         ),
       language: z
         .string()
         .optional()
-        .describe('Programming language. PRIMARY FILTER - works alone.'),
+        .describe('Programming language (e.g., "javascript", "python", "go").'),
       stars: z
         .string()
         .optional()
         .describe(
-          'Stars count with ranges: "100", ">500", "<50", "10..100", ">=1000". PRIMARY FILTER - works alone. Use >100 for quality projects.'
+          'Stars count with ranges: "100", ">500", "<50", "10..100", ">=1000". Use >100 for quality projects.'
         ),
       topic: z
         .array(z.string())
         .optional()
-        .describe('Filter by topics. PRIMARY FILTER - works alone.'),
-      forks: z
-        .number()
-        .optional()
-        .describe('Exact forks count. PRIMARY FILTER - works alone.'),
+        .describe('Filter by topics (e.g., ["cli", "typescript", "api"]).'),
+      forks: z.number().optional().describe('Exact forks count.'),
 
       // SECONDARY FILTERS (require query or primary filter)
       license: z
         .array(z.string())
         .optional()
-        .describe('License types. REQUIRES query or primary filter.'),
+        .describe('License types (e.g., ["mit", "apache-2.0"]).'),
       match: z
         .enum(['name', 'description', 'readme'])
         .optional()
-        .describe('Search scope. REQUIRES query.'),
+        .describe('Search scope: "name", "description", or "readme".'),
       visibility: z
         .enum(['public', 'private', 'internal'])
         .optional()
-        .describe('Repository visibility. REQUIRES query or primary filter.'),
+        .describe('Repository visibility filter.'),
       created: z
         .string()
         .optional()
         .describe(
-          'Created date filter: ">2020-01-01", "<2023-12-31". REQUIRES query or primary filter.'
+          'Created date filter: ">2020-01-01", "<2023-12-31", "2022-01-01..2023-12-31".'
         ),
       updated: z
         .string()
         .optional()
-        .describe('Updated date filter. REQUIRES query or primary filter.'),
-      archived: z
-        .boolean()
-        .optional()
-        .describe('Archived state. REQUIRES query or primary filter.'),
+        .describe('Updated date filter (same format as created).'),
+      archived: z.boolean().optional().describe('Filter by archived state.'),
       includeForks: z
         .enum(['false', 'true', 'only'])
         .optional()
-        .describe('Include forks. REQUIRES query or primary filter.'),
+        .describe('Include forks: "false" (default), "true", or "only".'),
 
       // Sorting and limits
       sort: z
@@ -103,8 +107,8 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .describe('Maximum results (default: 25, max: 50)'),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_REPOS,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOS],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -133,7 +137,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         return result;
       } catch (error) {
-        return createResult(`Search failed: ${(error as Error).message}`, true);
+        return createResult(
+          'Repository search failed - check query syntax, filters, or try broader terms',
+          true
+        );
       }
     }
   );
@@ -264,7 +271,10 @@ export async function searchGitHubRepos(
             }),
       });
     } catch (error) {
-      return createErrorResult('Failed to search GitHub repositories', error);
+      return createErrorResult(
+        'GitHub repository search failed - verify connection or try simpler query',
+        error
+      );
     }
   });
 }

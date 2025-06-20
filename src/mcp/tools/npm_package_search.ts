@@ -1,17 +1,22 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { createResult } from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
+
+const TOOL_NAME = 'npm_package_search';
+
+const DESCRIPTION = `use npm search to find packages by keyword. required when you need to find packages by keyword, 
+in case the user or results haven't provided the package name directly. In case you have the pacakge name use package view tool directly.
+This reducing the need to use github search in case some package was found.`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export function registerNpmSearchTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.NPM_PACKAGE_SEARCH,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       queries: z
         .union([z.string(), z.array(z.string())])
@@ -23,11 +28,11 @@ export function registerNpmSearchTool(server: McpServer) {
         .max(50)
         .optional()
         .default(20)
-        .describe('Max results per query (default: 20)'),
+        .describe('Max results per query (default: 20, max: 50)'),
     },
     {
-      title: TOOL_NAMES.NPM_PACKAGE_SEARCH,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -71,7 +76,10 @@ export function registerNpmSearchTool(server: McpServer) {
 
         return createResult('No packages found', true);
       } catch (error) {
-        return createResult(`Search failed: ${(error as Error).message}`, true);
+        return createResult(
+          'NPM package search failed - check search terms or try different keywords',
+          true
+        );
       }
     }
   );

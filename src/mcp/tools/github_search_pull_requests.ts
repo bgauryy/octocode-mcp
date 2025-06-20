@@ -5,7 +5,6 @@ import {
   GitHubPullRequestsSearchResult,
   GitHubPullRequestItem,
 } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { createSuccessResult, createErrorResult } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -13,10 +12,14 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
+const TOOL_NAME = 'github_search_pull_requests';
+
+const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover how features were implemented, code review patterns, and development workflows. Filter by state, author, reviewer, or merge status. Essential for understanding project development practices.`;
+
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
@@ -53,7 +56,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .max(50)
         .optional()
         .default(25)
-        .describe('Maximum results (default: 25)'),
+        .describe('Maximum results (default: 25, max: 50)'),
       sort: z
         .enum([
           'comments',
@@ -77,8 +80,8 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         .describe('Order (default: desc)'),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -87,14 +90,14 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     async (args: GitHubPullRequestsSearchParams) => {
       if (!args.query?.trim()) {
         return createErrorResult(
-          'Search query is required and cannot be empty',
+          'Search query is required and cannot be empty - provide keywords to search for pull requests',
           new Error('Invalid query')
         );
       }
 
       if (args.query.length > 256) {
         return createErrorResult(
-          'Search query is too long. Please limit to 256 characters or less.',
+          'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
           new Error('Query too long')
         );
       }
@@ -103,7 +106,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         return await searchGitHubPullRequests(args);
       } catch (error) {
         return createErrorResult(
-          'Failed to search GitHub pull requests',
+          'GitHub pull requests search failed - verify repository access and query syntax',
           error
         );
       }

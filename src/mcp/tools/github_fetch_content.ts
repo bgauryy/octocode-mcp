@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   parseJsonResponse,
@@ -12,24 +11,34 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 
+const TOOL_NAME = 'github_get_file_content';
+
+const DESCRIPTION = `Read file content. This tool REQUIRES exact path verification from github_get_contents or package view exports. If fetching fails, re-check file existence with github_get_contents or branch name.`;
+
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_GET_FILE_CONTENT,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_FILE_CONTENT],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       owner: z
         .string()
         .min(1)
+        .max(100)
+        .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
         .describe(
           `Repository owner/organization (e.g., 'microsoft', 'facebook')`
         ),
       repo: z
         .string()
         .min(1)
+        .max(100)
+        .regex(/^[a-zA-Z0-9._-]+$/)
         .describe(`Repository name (e.g., 'vscode', 'react'). Case-sensitive.`),
       branch: z
         .string()
         .min(1)
+        .max(255)
+        .regex(/^[^\s]+$/)
         .describe(
           `Branch name (e.g., 'main', 'master'). Auto-fallback to common branches if not found.`
         ),
@@ -41,8 +50,8 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         ),
     },
     {
-      title: TOOL_NAMES.GITHUB_GET_FILE_CONTENT,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_FILE_CONTENT],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -83,11 +92,8 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
 
         return result;
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-
         return createResult(
-          `Failed to fetch file content: ${errorMessage}. Context: ${args.owner}/${args.repo}/${args.filePath} on ${args.branch}`,
+          'File fetch failed - verify file path exists or try github_get_contents first',
           true
         );
       }
@@ -147,19 +153,17 @@ async function fetchGitHubFileContent(
         // Handle common errors
         if (errorMsg.includes('404')) {
           return createErrorResult(
-            `File not found: ${filePath}`,
-            new Error(
-              `File does not exist in ${owner}/${repo} on branch ${branch}`
-            )
+            'File not found - verify path with github_get_contents first',
+            new Error(filePath)
           );
         } else if (errorMsg.includes('403')) {
           return createErrorResult(
-            `Access denied: ${filePath}`,
-            new Error(`Permission denied for ${owner}/${repo}`)
+            'Access denied - repository may be private or require authentication',
+            new Error(`${owner}/${repo}`)
           );
         } else {
           return createErrorResult(
-            `Failed to fetch file: ${filePath}`,
+            'Fetch failed - check repository and file path',
             new Error(errorMsg)
           );
         }
@@ -168,7 +172,7 @@ async function fetchGitHubFileContent(
       return await processFileContent(result, owner, repo, branch, filePath);
     } catch (error) {
       return createErrorResult(
-        `Unexpected error fetching file: ${filePath}`,
+        'Unexpected error during file fetch - check connection and permissions',
         error as Error
       );
     }
@@ -188,8 +192,8 @@ async function processFileContent(
   // Check if it's a directory
   if (Array.isArray(fileData)) {
     return createErrorResult(
-      `Path is a directory: ${filePath}`,
-      new Error(`"${filePath}" is a directory, not a file`)
+      'Path is directory - use github_get_contents to browse directory structure',
+      new Error(filePath)
     );
   }
 
@@ -199,10 +203,8 @@ async function processFileContent(
   // Check file size
   if (fileSize > MAX_FILE_SIZE) {
     return createErrorResult(
-      `File too large: ${filePath}`,
-      new Error(
-        `File size (${Math.round(fileSize / 1024)}KB) exceeds limit (500KB)`
-      )
+      'File too large - files over 500KB cannot be fetched',
+      new Error(`${Math.round(fileSize / 1024)}KB > 500KB`)
     );
   }
 
@@ -211,8 +213,8 @@ async function processFileContent(
 
   if (!base64Content) {
     return createErrorResult(
-      `Empty file: ${filePath}`,
-      new Error(`File appears to be empty`)
+      'Empty file - file has no content to display',
+      new Error(filePath)
     );
   }
 
@@ -223,16 +225,16 @@ async function processFileContent(
     // Simple binary check - look for null bytes
     if (buffer.indexOf(0) !== -1) {
       return createErrorResult(
-        `Binary file detected: ${filePath}`,
-        new Error(`Binary files cannot be displayed as text`)
+        'Binary file detected - cannot display binary content as text',
+        new Error(filePath)
       );
     }
 
     decodedContent = buffer.toString('utf-8');
   } catch (decodeError) {
     return createErrorResult(
-      `Failed to decode file: ${filePath}`,
-      new Error(`Unable to decode file as UTF-8`)
+      'Decode failed - file encoding not supported or corrupted',
+      new Error(filePath)
     );
   }
 

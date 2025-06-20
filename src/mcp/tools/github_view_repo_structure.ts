@@ -4,7 +4,6 @@ import {
   GitHubRepositoryContentsResult,
   GitHubRepositoryStructureParams,
 } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   parseJsonResponse,
@@ -15,10 +14,14 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
+const TOOL_NAME = 'github_get_contents';
+
+const DESCRIPTION = `Browse repository structure and verify file existence. Use before github_get_file_content to confirm files exist and understand organization, especially when the path is uncertain.`;
+
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_GET_CONTENTS,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_CONTENTS],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       owner: z
         .string()
@@ -64,8 +67,8 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         ),
     },
     {
-      title: TOOL_NAMES.GITHUB_GET_CONTENTS,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_CONTENTS],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -110,11 +113,8 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-
-        const context = `${args.owner}/${args.repo}`;
-
         return createResult(
-          `Repository exploration failed: ${errorMessage}. Context: ${context} on ${args.branch}${args.path ? ` at ${args.path}` : ''}`,
+          `Repository exploration failed: ${errorMessage} - verify repository exists and is accessible`,
           true
         );
       }
@@ -187,19 +187,20 @@ export async function viewRepositoryStructure(
         if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
           if (path) {
             throw new Error(
-              `Path "${path}" not found in repository ${owner}/${repo}.`
+              `Path "${path}" not found - verify path exists or use github_search_code to find files`
             );
           } else {
             throw new Error(
-              `Repository ${owner}/${repo} not found or no accessible branches. ` +
-                `Tried branches: ${branchesToTry.join(', ')}`
+              `Repository not found: ${owner}/${repo} - verify owner/repo names or use github_search_repositories`
             );
           }
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-          throw new Error(`Access denied to repository ${owner}/${repo}`);
+          throw new Error(
+            `Access denied to repository ${owner}/${repo} - repository may be private or require authentication`
+          );
         } else {
           throw new Error(
-            `Repository ${owner}/${repo} not found or path "${path}" doesn't exist`
+            `Access failed: ${owner}/${repo} - check connection or repository permissions`
           );
         }
       }
@@ -268,7 +269,7 @@ export async function viewRepositoryStructure(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       return createErrorResult(
-        `Repository access failed: ${owner}/${repo}${path ? ` at ${path}` : ''}`,
+        'Repository access failed - verify repository exists and check authentication',
         new Error(errorMessage)
       );
     }
