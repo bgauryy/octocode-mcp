@@ -3,7 +3,8 @@ import { createResult } from '../../utils/responses';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 
 export const TOOL_NAME = 'api_status_check';
-const DESCRIPTION = `Check GitHub & NPM authentication status and discover user organizations. Use when authentication status is unknown or operations fail due to auth issues. Returns connectivity status and organizations - essential for accessing private/organizational repositories.`;
+const DESCRIPTION = `Gets the list of user github  organizations (in case the tool needs to use them in "owner" fields in github search) and checks users gh cli and npm cli login status.
+Use when user asks on specific implementaon in his organization (e.g. - I work at Wix, or search Wix code about X) or when cli is failing.`;
 
 export function registerApiStatusCheckTool(server: McpServer) {
   server.tool(
