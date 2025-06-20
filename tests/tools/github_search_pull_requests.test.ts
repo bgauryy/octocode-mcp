@@ -638,7 +638,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub pull requests'
+        'GitHub pull requests search failed'
       );
     });
 
@@ -652,7 +652,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub pull requests'
+        'GitHub pull requests search failed'
       );
     });
 
@@ -710,7 +710,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search query is too long. Please limit to 256 characters or less.'
+        'Search query is too long. Please limit to 256 characters or less'
       );
     });
 
