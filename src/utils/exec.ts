@@ -67,8 +67,9 @@ export async function executeNpmCommand(
     );
   }
 
-  // Build command with validated prefix - no sanitization needed since we control the prefix
-  const fullCommand = `npm ${command} ${args.join(' ')}`;
+  // Build command with validated prefix and properly escaped arguments
+  const escapedArgs = args.map(escapeShellArg);
+  const fullCommand = `npm ${command} ${escapedArgs.join(' ')}`;
 
   const executeNpmCommand = () => executeCommand(fullCommand, 'npm', options);
 
@@ -78,6 +79,18 @@ export async function executeNpmCommand(
   }
 
   return executeNpmCommand();
+}
+
+/**
+ * Escape shell arguments to prevent shell injection and handle special characters
+ */
+function escapeShellArg(arg: string): string {
+  // If the argument contains special characters, wrap it in single quotes
+  // and escape any single quotes within the argument
+  if (/[^\w\-._/:=@]/.test(arg)) {
+    return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+  }
+  return arg;
 }
 
 /**
@@ -97,8 +110,9 @@ export async function executeGitHubCommand(
     );
   }
 
-  // Build command with validated prefix - no sanitization needed since we control the prefix
-  const fullCommand = `gh ${command} ${args.join(' ')}`;
+  // Build command with validated prefix and properly escaped arguments
+  const escapedArgs = args.map(escapeShellArg);
+  const fullCommand = `gh ${command} ${escapedArgs.join(' ')}`;
 
   const executeGhCommand = () => executeCommand(fullCommand, 'github', options);
 

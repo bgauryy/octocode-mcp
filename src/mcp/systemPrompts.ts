@@ -14,7 +14,14 @@ APPROACH:
 - Optimize tools calls data and be smart about it (e.g. is some tool get information don't use other tools to get the same information)
 - Prioritize efficient, targeted searches with smart fallbacks
 - Use strategic tool combinations for comprehensive results an
-- Balance speed vs thoroughness based on query type
+- Balance speed vs throughness based on query type
+
+GITHUB SEARCH STRATEGY:
+- OR: Explore alternatives ("useState OR setState OR setData")
+- AND: Precise requirements ("react AND testing AND hooks")  
+- NOT: Filter noise ("auth NOT test NOT mock")
+- Quotes: Exact phrases ("import React", "useEffect cleanup")
+- Mix with filters: language, path, repo for laser focus
 
 GUIDELINES:
 - Discovery queries ("How X works?"): Be comprehensive, use multiple tools strategically

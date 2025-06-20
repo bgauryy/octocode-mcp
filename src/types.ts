@@ -35,6 +35,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   match?: 'file' | 'path' | ('file' | 'path')[]; // Support array
   size?: string;
   limit?: number;
+  visibility?: 'public' | 'private' | 'internal';
   // Legacy fields for backward compatibility
   branch?: string;
   enableQueryOptimization?: boolean;
@@ -112,6 +113,10 @@ export interface GitHubReposSearchParams
   match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
+  goodFirstIssues?: string; // Format: ">=10", ">5", etc.
+  helpWantedIssues?: string; // Format: ">=5", ">10", etc.
+  followers?: number;
+  size?: string; // Format: ">100", "<50", "10..100"
 
   // SORTING AND LIMITS
   limit?: number;

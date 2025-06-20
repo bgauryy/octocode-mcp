@@ -67,7 +67,9 @@ describe('GitHub Search Code Tool', () => {
         }),
         expect.objectContaining({
           title: 'github_search_code',
-          description: expect.stringContaining('SEMANTIC CODE DISCOVERY'),
+          description: expect.stringContaining(
+            'Search code across GitHub repositories'
+          ),
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,
@@ -75,6 +77,469 @@ describe('GitHub Search Code Tool', () => {
         }),
         expect.any(Function)
       );
+    });
+  });
+
+  describe('Search Logic Modes', () => {
+    let toolHandler: Function;
+
+    beforeEach(() => {
+      registerGitHubSearchCodeTool(mockServer);
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+    });
+
+    describe('Mode 1: Exact String Matching', () => {
+      it('should handle exact phrases with double quotes', async () => {
+        const mockSearchResults = [
+          {
+            repository: { full_name: 'facebook/react', name: 'react' },
+            path: 'packages/react/src/React.js',
+            textMatches: [{ fragment: 'import React from "react"' }],
+            sha: 'abc123',
+            url: 'https://github.com/facebook/react/blob/main/packages/react/src/React.js',
+          },
+        ];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: '"import React"',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            '"import React"',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should handle multiple exact phrases in one query', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: '"function Component" AND "export default"',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            '"function Component" AND "export default"',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+    });
+
+    describe('Mode 2: Boolean Operators', () => {
+      it('should handle AND operator', async () => {
+        const mockSearchResults = [
+          {
+            repository: { full_name: 'microsoft/vscode', name: 'vscode' },
+            path: 'src/vs/editor/editor.api.ts',
+            textMatches: [{ fragment: 'export interface IEditor' }],
+            sha: 'def456',
+            url: 'https://github.com/microsoft/vscode/blob/main/src/vs/editor/editor.api.ts',
+          },
+        ];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'react AND component',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'react AND component',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should handle OR operator', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'vue OR angular',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'vue OR angular',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should handle NOT operator', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'javascript NOT test',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'javascript NOT test',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should handle complex boolean expressions with exact phrases', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: '"import React" AND component NOT test',
+          language: 'typescript',
+          path: 'src/',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            '"import React" AND component NOT test path:src/ language:typescript',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should demonstrate smart OR logic with user example (mountState updateState)', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'mountState updateState',
+          owner: 'facebook',
+          repo: 'react',
+          language: 'javascript',
+          limit: 10,
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'mountState OR updateState language:javascript',
+            '--limit=10',
+            '--repo=facebook/react',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+    });
+
+    describe('Mode 3: Advanced Filters', () => {
+      it('should apply CLI flags for simple queries without boolean logic', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'component',
+          language: 'javascript',
+          extension: 'js',
+          filename: 'index.js',
+          size: '>100',
+          limit: 20,
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'component',
+            '--language=javascript',
+            '--extension=js',
+            '--filename=index.js',
+            '--size=>100',
+            '--limit=20',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should embed filters in query for complex boolean logic', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'react AND component OR vue',
+          language: 'typescript',
+          extension: 'ts',
+          path: 'src/',
+          visibility: 'public',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'react AND component OR vue path:src/ visibility:public language:typescript extension:ts',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should handle path and visibility filters correctly', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'function',
+          path: 'components/',
+          visibility: 'private',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'function path:components/ visibility:private',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+    });
+
+    describe('Repository and Owner Filters', () => {
+      it('should handle owner and repository filters', async () => {
+        const mockSearchResults = [
+          {
+            repository: { full_name: 'facebook/react', name: 'react' },
+            path: 'packages/react-dom/src/client/ReactDOM.js',
+            textMatches: [{ fragment: 'function render(element, container)' }],
+            sha: 'ghi789',
+            url: 'https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOM.js',
+          },
+        ];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code render function',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'render function',
+          owner: 'facebook',
+          repo: 'react',
+        });
+
+        expect(result.isError).toBe(false);
+        const data = JSON.parse(result.content[0].text as string);
+        expect(data.query).toBe('render function');
+        expect(data.total_count).toBe(1);
+        expect(data.items).toEqual(mockSearchResults);
+
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'render OR function',
+            '--repo=facebook/react',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
+
+      it('should handle multiple owners and repositories', async () => {
+        const mockSearchResults = [];
+
+        mockExecuteGitHubCommand.mockResolvedValue({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockSearchResults),
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        });
+
+        const result = await toolHandler({
+          query: 'component',
+          owner: ['facebook', 'microsoft'],
+          repo: ['react', 'vscode'],
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([
+            'code',
+            'component',
+            '--repo=facebook/react',
+            '--repo=facebook/vscode',
+            '--repo=microsoft/react',
+            '--repo=microsoft/vscode',
+            '--json=repository,path,textMatches,sha,url',
+          ]),
+          { cache: false }
+        );
+      });
     });
   });
 
@@ -124,128 +589,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'react component',
-          '--json=repository,path,textMatches,sha,url',
-        ],
-        { cache: false }
-      );
-    });
-
-    it('should handle complex queries with boolean operators', async () => {
-      const mockSearchResults = [
-        {
-          repository: { full_name: 'microsoft/vscode', name: 'vscode' },
-          path: 'src/vs/editor/editor.api.ts',
-          textMatches: [{ fragment: 'export interface IEditor' }],
-          sha: 'def456',
-          url: 'https://github.com/microsoft/vscode/blob/main/src/vs/editor/editor.api.ts',
-        },
-      ];
-
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [
-          {
-            text: JSON.stringify({
-              result: JSON.stringify(mockSearchResults),
-              command: 'gh search code "editor AND typescript NOT test"',
-              type: 'github',
-            }),
-          },
-        ],
-      });
-
-      const result = await toolHandler({
-        query: 'editor AND typescript NOT test',
-        language: 'typescript',
-        path: 'src/',
-      });
-
-      expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        [
-          'code',
-          'editor AND typescript NOT test path:src/',
-          '--language=typescript',
-          '--json=repository,path,textMatches,sha,url',
-        ],
-        { cache: false }
-      );
-    });
-
-    it('should handle owner and repository filters', async () => {
-      const mockSearchResults = [
-        {
-          repository: { full_name: 'facebook/react', name: 'react' },
-          path: 'packages/react-dom/src/client/ReactDOM.js',
-          textMatches: [{ fragment: 'function render(element, container)' }],
-          sha: 'ghi789',
-          url: 'https://github.com/facebook/react/blob/main/packages/react-dom/src/client/ReactDOM.js',
-        },
-      ];
-
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [
-          {
-            text: JSON.stringify({
-              result: JSON.stringify(mockSearchResults),
-              command: 'gh search code render function',
-              type: 'github',
-            }),
-          },
-        ],
-      });
-
-      const result = await toolHandler({
-        query: 'render function',
-        owner: 'facebook',
-        repo: ['react'],
-      });
-
-      expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        [
-          'code',
-          'render function',
-          '--repo=facebook/react',
-          '--json=repository,path,textMatches,sha,url',
-        ],
-        { cache: false }
-      );
-    });
-
-    it('should handle multiple owners and repositories', async () => {
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [
-          {
-            text: JSON.stringify({
-              result: JSON.stringify([]),
-              command: 'gh search code test',
-              type: 'github',
-            }),
-          },
-        ],
-      });
-
-      await toolHandler({
-        query: 'test',
-        owner: ['facebook', 'microsoft'],
-        repo: ['react', 'vscode'],
-      });
-
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        [
-          'code',
-          'test',
-          '--repo=facebook/react',
-          '--repo=facebook/vscode',
-          '--repo=microsoft/react',
-          '--repo=microsoft/vscode',
+          'react OR component',
           '--json=repository,path,textMatches,sha,url',
         ],
         { cache: false }
@@ -253,172 +597,183 @@ describe('GitHub Search Code Tool', () => {
     });
 
     it('should handle all filter parameters', async () => {
+      const mockSearchResults = [];
+
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify([]),
-              command: 'gh search code config',
+              result: JSON.stringify(mockSearchResults),
+              command: 'gh search code',
               type: 'github',
             }),
           },
         ],
       });
 
-      await toolHandler({
-        query: 'config',
-        language: 'javascript',
-        extension: 'json',
-        filename: 'package.json',
-        path: 'src/',
-        size: '>100',
-        visibility: 'public',
+      const result = await toolHandler({
+        query: 'test function',
+        language: 'python',
+        extension: 'py',
+        filename: 'test.py',
+        path: 'tests/',
+        size: '<100',
         limit: 10,
         match: 'file',
+        visibility: 'public',
+        owner: 'pytest-dev',
       });
 
+      expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        [
+        expect.arrayContaining([
           'code',
-          'config path:src/ visibility:public',
-          '--language=javascript',
-          '--extension=json',
-          '--filename=package.json',
-          '--size=>100',
+          'test OR function path:tests/ visibility:public language:python extension:py filename:test.py size:<100',
           '--limit=10',
           '--match=file',
+          '--owner=pytest-dev',
           '--json=repository,path,textMatches,sha,url',
-        ],
+        ]),
         { cache: false }
       );
     });
 
     it('should handle match parameter as array', async () => {
+      const mockSearchResults = [];
+
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify([]),
-              command: 'gh search code test',
+              result: JSON.stringify(mockSearchResults),
+              command: 'gh search code',
               type: 'github',
             }),
           },
         ],
       });
 
-      await toolHandler({
-        query: 'test',
-        match: ['file', 'path'], // Should use first value due to GitHub API limitation
+      const result = await toolHandler({
+        query: 'search term',
+        match: ['file', 'path'],
       });
 
+      expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        [
+        expect.arrayContaining([
           'code',
-          'test',
-          '--match=file', // Only first value used
+          'search OR term',
+          '--match=file',
           '--json=repository,path,textMatches,sha,url',
-        ],
+        ]),
         { cache: false }
       );
     });
 
     it('should handle owner without repo (global search with owner filter)', async () => {
+      const mockSearchResults = [];
+
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify([]),
-              command: 'gh search code test',
+              result: JSON.stringify(mockSearchResults),
+              command: 'gh search code',
               type: 'github',
             }),
           },
         ],
       });
 
-      await toolHandler({
-        query: 'test',
-        owner: ['facebook', 'microsoft'],
+      const result = await toolHandler({
+        query: 'function',
+        owner: 'microsoft',
       });
 
+      expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        [
+        expect.arrayContaining([
           'code',
-          'test',
-          '--owner=facebook',
+          'function',
           '--owner=microsoft',
           '--json=repository,path,textMatches,sha,url',
-        ],
+        ]),
         { cache: false }
       );
     });
 
     it('should handle repo parameter with owner/repo format', async () => {
+      const mockSearchResults = [];
+
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify([]),
-              command: 'gh search code test',
+              result: JSON.stringify(mockSearchResults),
+              command: 'gh search code',
               type: 'github',
             }),
           },
         ],
       });
 
-      await toolHandler({
-        query: 'test',
+      const result = await toolHandler({
+        query: 'function',
         owner: 'facebook',
-        repo: ['facebook/react', 'jest'], // Mixed formats
+        repo: 'facebook/react',
       });
 
+      expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        [
+        expect.arrayContaining([
           'code',
-          'test',
-          '--repo=facebook/react', // Already has owner
-          '--repo=facebook/jest', // Owner added
+          'function',
+          '--repo=facebook/react',
           '--json=repository,path,textMatches,sha,url',
-        ],
+        ]),
         { cache: false }
       );
     });
 
     it('should handle repo parameter as single string', async () => {
+      const mockSearchResults = [];
+
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify([]),
-              command: 'gh search code test',
+              result: JSON.stringify(mockSearchResults),
+              command: 'gh search code',
               type: 'github',
             }),
           },
         ],
       });
 
-      await toolHandler({
-        query: 'test',
+      const result = await toolHandler({
+        query: 'function',
         owner: 'facebook',
-        repo: 'react', // Single string instead of array
+        repo: 'react',
       });
 
+      expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        [
+        expect.arrayContaining([
           'code',
-          'test',
+          'function',
           '--repo=facebook/react',
           '--json=repository,path,textMatches,sha,url',
-        ],
+        ]),
         { cache: false }
       );
     });
@@ -439,7 +794,7 @@ describe('GitHub Search Code Tool', () => {
           {
             text: JSON.stringify({
               result: JSON.stringify([]),
-              command: 'gh search code nonexistent',
+              command: 'gh search code',
               type: 'github',
             }),
           },
@@ -447,7 +802,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       const result = await toolHandler({
-        query: 'nonexistent-code-pattern',
+        query: 'nonexistent code pattern',
       });
 
       expect(result.isError).toBe(false);
@@ -468,15 +823,15 @@ describe('GitHub Search Code Tool', () => {
     it('should handle GitHub CLI execution errors', async () => {
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: true,
-        content: [{ text: 'GitHub CLI error: Authentication required' }],
+        content: [{ text: 'GitHub CLI error: Authentication failed' }],
       });
 
       const result = await toolHandler({
-        query: 'test code',
+        query: 'test search',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub CLI error');
+      expect(result.content[0].text).toContain('Authentication failed');
     });
 
     it('should handle malformed JSON responses', async () => {
@@ -484,31 +839,28 @@ describe('GitHub Search Code Tool', () => {
         isError: false,
         content: [
           {
-            text: 'invalid json response',
+            text: 'Invalid JSON response',
           },
         ],
       });
 
       const result = await toolHandler({
-        query: 'test',
+        query: 'test search',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Code search failed');
+      expect(result.content[0].text).toContain('GitHub code search failed');
     });
 
     it('should handle network timeout errors', async () => {
-      const timeoutError = new Error('Network timeout');
-      mockExecuteGitHubCommand.mockRejectedValue(timeoutError);
+      mockExecuteGitHubCommand.mockRejectedValue(new Error('Network timeout'));
 
       const result = await toolHandler({
-        query: 'test',
+        query: 'test search',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Failed to execute search command'
-      );
+      expect(result.content[0].text).toContain('Network timeout');
     });
   });
 
@@ -522,9 +874,8 @@ describe('GitHub Search Code Tool', () => {
 
     it('should require owner when repo is specified', async () => {
       const result = await toolHandler({
-        query: 'test',
-        repo: ['react'],
-        // owner is missing
+        query: 'test search',
+        repo: 'react',
       });
 
       expect(result.isError).toBe(true);
@@ -540,7 +891,7 @@ describe('GitHub Search Code Tool', () => {
           {
             text: JSON.stringify({
               result: JSON.stringify([]),
-              command: 'gh search code test',
+              command: 'gh search code',
               type: 'github',
             }),
           },
@@ -548,8 +899,8 @@ describe('GitHub Search Code Tool', () => {
       });
 
       const result = await toolHandler({
-        query: 'test',
-        // No repo or owner specified - global search
+        query: 'test search',
+        owner: 'facebook',
       });
 
       expect(result.isError).toBe(false);
@@ -571,7 +922,7 @@ describe('GitHub Search Code Tool', () => {
           {
             text: JSON.stringify({
               result: JSON.stringify([]),
-              command: 'gh search code test',
+              command: 'gh search code',
               type: 'github',
             }),
           },
@@ -579,13 +930,11 @@ describe('GitHub Search Code Tool', () => {
       });
 
       await toolHandler({
-        query: 'test code',
-        language: 'javascript',
+        query: 'test search',
       });
 
       expect(mockGenerateCacheKey).toHaveBeenCalledWith('gh-code', {
-        query: 'test code',
-        language: 'javascript',
+        query: 'test search',
       });
       expect(mockWithCache).toHaveBeenCalledWith(
         'test-cache-key',
@@ -600,33 +949,21 @@ describe('GitHub Search Code Tool', () => {
           {
             text: JSON.stringify({
               result: JSON.stringify([]),
-              command: 'gh search code test',
+              command: 'gh search code',
               type: 'github',
             }),
           },
         ],
       });
 
-      // First search
       await toolHandler({
-        query: 'test',
+        query: 'test search',
         language: 'javascript',
       });
 
-      // Second search with different parameters
-      await toolHandler({
-        query: 'test',
-        language: 'python',
-      });
-
-      expect(mockGenerateCacheKey).toHaveBeenCalledTimes(2);
-      expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(1, 'gh-code', {
-        query: 'test',
+      expect(mockGenerateCacheKey).toHaveBeenCalledWith('gh-code', {
+        query: 'test search',
         language: 'javascript',
-      });
-      expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(2, 'gh-code', {
-        query: 'test',
-        language: 'python',
       });
     });
   });

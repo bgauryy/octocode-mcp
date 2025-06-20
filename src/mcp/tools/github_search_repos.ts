@@ -85,6 +85,24 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .enum(['false', 'true', 'only'])
         .optional()
         .describe('Include forks: "false" (default), "true", or "only".'),
+      goodFirstIssues: z
+        .string()
+        .optional()
+        .describe('Filter by good first issues count (e.g., ">=10", ">5").'),
+      helpWantedIssues: z
+        .string()
+        .optional()
+        .describe('Filter by help wanted issues count (e.g., ">=5", ">10").'),
+      followers: z
+        .number()
+        .optional()
+        .describe('Filter by number of followers.'),
+      size: z
+        .string()
+        .optional()
+        .describe(
+          'Repository size filter in KB (e.g., ">100", "<50", "10..100").'
+        ),
 
       // Sorting and limits
       sort: z
@@ -243,7 +261,7 @@ export async function searchGitHubRepos(
           isPrivate: repo.isPrivate || false,
           isArchived: repo.isArchived || false,
           isFork: repo.isFork || false,
-          topics: [], // Topics not available via CLI JSON output
+          topics: [], // GitHub CLI search repos doesn't provide topics in JSON output
           license: repo.license?.name || null,
           hasIssues: repo.hasIssues || false,
           openIssuesCount: repo.openIssuesCount || 0,
@@ -313,13 +331,22 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
         }
       });
     } else {
-      // For simple queries, use quoting logic
-      const queryString = needsQuoting(query) ? `"${query}"` : query;
-      args.push(queryString);
+      // For simple queries, split by spaces to match GitHub CLI examples
+      // "cli shell" becomes separate args: cli shell
+      const queryParts = query.split(/\s+/).filter(part => part.length > 0);
+      queryParts.forEach(part => {
+        // Only quote if the part contains special characters
+        if (needsQuoting(part)) {
+          args.push(`"${part}"`);
+        } else {
+          args.push(part);
+        }
+      });
     }
   }
 
   // Add JSON output with specific fields for structured data parsing
+  // Note: 'topics' field is not available in GitHub CLI search repos JSON output
   args.push(
     '--json',
     'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
@@ -349,7 +376,7 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
       starsValue
     );
     if (isValidStars) {
-      args.push(`--stars="${params.stars}"`);
+      args.push(`--stars=${params.stars}`);
     }
   }
 
@@ -362,6 +389,13 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   if (params.match) args.push(`--match=${params.match}`);
   if (params.updated) args.push(`--updated="${params.updated}"`);
   if (params.visibility) args.push(`--visibility=${params.visibility}`);
+  if (params.goodFirstIssues)
+    args.push(`--good-first-issues=${params.goodFirstIssues}`);
+  if (params.helpWantedIssues)
+    args.push(`--help-wanted-issues=${params.helpWantedIssues}`);
+  if (params.followers !== undefined)
+    args.push(`--followers=${params.followers}`);
+  if (params.size) args.push(`--size=${params.size}`);
 
   // SORTING AND LIMITS
   if (params.limit) args.push(`--limit=${params.limit}`);
