@@ -6,6 +6,10 @@ import {
 } from '../fixtures/mcp-fixtures.js';
 import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
 
+const TOOL_NAMES = {
+  API_STATUS_CHECK: 'api_status_check',
+} as const;
+
 interface ApiStatusResponse {
   github: {
     connected: boolean;
@@ -55,7 +59,7 @@ describe('API Status Check Tool', () => {
         expect.any(String),
         {},
         expect.objectContaining({
-          title: 'api_status_check',
+          title: 'Check API Connections and Github Organizations',
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,
@@ -317,7 +321,7 @@ describe('API Status Check Tool', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('API status check failed');
       expect(result.content[0].text).toContain(
-        'Unexpected error during GitHub check'
+        'verify GitHub CLI and NPM are installed'
       );
     });
 

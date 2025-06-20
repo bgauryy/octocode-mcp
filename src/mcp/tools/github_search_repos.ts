@@ -56,6 +56,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         .optional()
         .describe('Filter by topics (e.g., ["cli", "typescript", "api"]).'),
       forks: z.number().optional().describe('Exact forks count.'),
+      numberOfTopics: z
+        .number()
+        .optional()
+        .describe('Filter on number of topics.'),
 
       // SECONDARY FILTERS (require query or primary filter)
       license: z
@@ -363,6 +367,8 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   if (params.forks !== undefined) args.push(`--forks=${params.forks}`);
   if (params.topic && params.topic.length > 0)
     args.push(`--topic=${params.topic.join(',')}`);
+  if (params.numberOfTopics !== undefined)
+    args.push(`--number-topics=${params.numberOfTopics}`);
 
   // Only add stars filter if it's a valid numeric value or range
   if (

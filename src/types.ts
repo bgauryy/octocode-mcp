@@ -75,11 +75,13 @@ export interface GitHubPullRequestsSearchParams
   head?: string;
   base?: string;
   language?: string;
-  merged?: string;
+  merged?: string | boolean;
   mergedAt?: string;
   draft?: boolean;
   reviewedBy?: string;
   reviewRequested?: string;
+  checks?: 'pending' | 'success' | 'failure';
+  review?: 'none' | 'required' | 'approved' | 'changes_requested';
   sort?:
     | 'comments'
     | 'reactions'
@@ -104,6 +106,7 @@ export interface GitHubReposSearchParams
   forks?: number;
   stars?: string;
   topic?: string[];
+  numberOfTopics?: number;
 
   // SECONDARY FILTERS (require query or primary filter)
   archived?: boolean;

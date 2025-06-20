@@ -472,7 +472,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search failed: Network timeout'
+        'NPM package search failed'
       );
     });
 

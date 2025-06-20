@@ -14,7 +14,15 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_pull_requests';
 
-const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover how features were implemented, code review patterns, and development workflows. Filter by state, author, reviewer, or merge status. Essential for understanding project development practices.`;
+const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover how features were implemented, code review patterns, and development workflows.
+
+SEARCH PATTERNS SUPPORTED:
+• BOOLEAN OPERATORS: "fix AND bug" (both required), "refactor OR cleanup" (either term), "feature NOT draft" (excludes draft)
+• EXACT PHRASES: "initial commit" (precise phrase matching)
+• GITHUB QUALIFIERS: Built-in support for "is:merged", "review:approved", "base:main", etc.
+• COMBINABLE: Mix search terms with filters for targeted PR discovery
+
+Filter by state, author, reviewer, or merge status for comprehensive development workflow analysis.`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(
@@ -24,7 +32,9 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       query: z
         .string()
         .min(1, 'Search query is required and cannot be empty')
-        .describe('Search query to find pull requests'),
+        .describe(
+          'Search query with GITHUB SEARCH SYNTAX support. BOOLEAN OPERATORS: "fix AND bug" (both required), "refactor OR cleanup" (either term), "feature NOT draft" (excludes). EXACT PHRASES: "initial commit" (precise matching). GITHUB QUALIFIERS: "is:merged review:approved base:main" (native GitHub syntax). COMBINED: Mix boolean logic with qualifiers for precise PR discovery.'
+        ),
       owner: z.string().optional().describe('Repository owner/organization'),
       repo: z.string().optional().describe('Repository name'),
       author: z.string().optional().describe('Filter by pull request author'),
@@ -49,6 +59,15 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       mergedAt: z.string().optional().describe('Filter by merged date'),
       closed: z.string().optional().describe('Filter by closed date'),
       draft: z.boolean().optional().describe('Filter by draft state'),
+      checks: z
+        .enum(['pending', 'success', 'failure'])
+        .optional()
+        .describe('Filter based on status of the checks'),
+      merged: z.boolean().optional().describe('Filter based on merged state'),
+      review: z
+        .enum(['none', 'required', 'approved', 'changes_requested'])
+        .optional()
+        .describe('Filter based on review status'),
       limit: z
         .number()
         .int()
@@ -228,6 +247,10 @@ function buildGitHubPullRequestsAPICommand(
   if (params.base) queryParts.push(`base:${params.base}`);
   if (params.mergedAt) queryParts.push(`merged:${params.mergedAt}`);
   if (params.draft !== undefined) queryParts.push(`draft:${params.draft}`);
+  if (params.checks) queryParts.push(`status:${params.checks}`);
+  if (params.merged !== undefined)
+    queryParts.push(`is:${params.merged ? 'merged' : 'unmerged'}`);
+  if (params.review) queryParts.push(`review:${params.review}`);
 
   // Add type qualifier to search only pull requests
   queryParts.push('type:pr');

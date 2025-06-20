@@ -6,9 +6,14 @@ import { NpmPackage } from '../../types';
 
 const TOOL_NAME = 'npm_package_search';
 
-const DESCRIPTION = `use npm search to find packages by keyword. required when you need to find packages by keyword, 
-in case the user or results haven't provided the package name directly. In case you have the pacakge name use package view tool directly.
-This reducing the need to use github search in case some package was found.`;
+const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. 
+
+IMPORTANT LIMITATIONS:
+• NO BOOLEAN OPERATORS: NPM search does NOT support AND/OR/NOT - use space-separated keywords for broader search
+• FUZZY MATCHING ONLY: No exact phrase matching - searches are approximate keyword matching
+• KEYWORD-BASED: Best results with simple, space-separated terms like "react hooks" or "cli typescript"
+
+Required when package name is unknown. If you have the exact package name, use npm_view_package directly. This reduces the need to use GitHub search when packages are found.`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
@@ -20,7 +25,9 @@ export function registerNpmSearchTool(server: McpServer) {
     {
       queries: z
         .union([z.string(), z.array(z.string())])
-        .describe('Package names or keywords to search for'),
+        .describe(
+          'Package names or keywords to search for. NOTE: No boolean operators (AND/OR/NOT) supported - use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
+        ),
       searchlimit: z
         .number()
         .int()

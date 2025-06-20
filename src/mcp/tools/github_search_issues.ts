@@ -12,7 +12,15 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_issues';
 
-const DESCRIPTION = `Find GitHub issues and problems with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, bug patterns, and community discussions. Filter by state, labels, assignee, or date ranges. Use for understanding project health and common user issues.`;
+const DESCRIPTION = `Find GitHub issues and problems with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, bug patterns, and community discussions.
+
+SEARCH PATTERNS SUPPORTED:
+• BOOLEAN OPERATORS: "bug AND crash" (both required), "feature OR enhancement" (either term), "error NOT test" (excludes test)
+• EXACT PHRASES: "memory leak" (precise phrase matching)
+• GITHUB QUALIFIERS: Built-in support for "is:open", "label:bug", "author:username", etc.
+• COMBINABLE: Mix search terms with filters for surgical precision
+
+Filter by state, labels, assignee, or date ranges for comprehensive issue discovery.`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
@@ -22,7 +30,9 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       query: z
         .string()
         .min(1, 'Search query is required and cannot be empty')
-        .describe('Search query to find issues'),
+        .describe(
+          'Search query with GITHUB SEARCH SYNTAX support. BOOLEAN OPERATORS: "bug AND crash" (both required), "feature OR enhancement" (either term), "error NOT test" (excludes). EXACT PHRASES: "memory leak" (precise matching). GITHUB QUALIFIERS: "is:open label:bug author:username" (native GitHub syntax). COMBINED: Mix boolean logic with qualifiers for precise issue discovery.'
+        ),
       owner: z
         .string()
         .min(1)
