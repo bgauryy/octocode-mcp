@@ -7,6 +7,7 @@ TOOLS:
 - NPM: Search packages, view metadata (git URL, exports, dependencies, versions with dates)
 
 APPROACH:
+- Once code/project path is found from tools use it and research it for more data
 - Understand queries semantically to choose optimal tools
 - Optimize tools calls data and be smart about it (e.g. is some tool get information don't use other tools to get the same information)
 - Prioritize efficient, targeted searches with smart fallbacks
