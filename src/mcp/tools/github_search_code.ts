@@ -12,40 +12,31 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-/**
- * STRATEGIC SEARCH PATTERNS FOR LLM USAGE:
- *
- * 🔍 EXPLORATION (use OR):
- *   - Finding alternatives: "useState OR setState OR setData"
- *   - Synonyms/variations: "authenticate OR login OR signin"
- *   - Multiple approaches: "fetch OR axios OR request"
- *
- * 🎯 PRECISION (use AND):
- *   - Specific intersections: "react AND testing AND hooks"
- *   - Combined concepts: "error AND handling AND async"
- *   - Technology stacks: "docker AND kubernetes AND deployment"
- *
- * 🚫 FILTERING (use NOT):
- *   - Remove noise: "authentication NOT test NOT mock"
- *   - Exclude examples: "production NOT demo NOT example"
- *   - Filter versions: "react NOT legacy NOT deprecated"
- *
- * 💡 SMART COMBINATIONS:
- *   - Mix operators: "useState OR setState AND hooks NOT test"
- *   - Use with filters: combine with language, path, repo filters
- *   - Exact phrases: "import React" AND component
- */
+const DESCRIPTION = `Search code across GitHub repositories using strategic boolean operators and filters usign "gh code search" command.
 
-const DESCRIPTION = `Search code across GitHub repositories using strategic boolean operators and filters.
+STRATEGIC SEARCH PATTERNS:
 
-SMART DEFAULTS: Multiple terms automatically use OR for broader discovery (e.g., "useState hook" → "useState OR hook").
+ OR LOGIC (Exploratory Discovery):
+• Auto-applied to multi-word queries: "useState hook" → "useState OR hook"
+• Best for: Learning, finding alternatives, casting wide nets
+• Scope: BROADEST - finds files with ANY of the terms
 
-STRATEGIC BOOLEAN USAGE:
-• OR: Explore alternatives/synonyms - "useState OR setState OR setData" (cast wide net for state management)
-• AND: Require multiple concepts - "react AND testing AND hooks" (precise intersection)  
-• NOT: Exclude noise - "authentication NOT test NOT mock" (filter out test/mock code)
+AND LOGIC (Precise Intersection):
+• Explicit requirement: "react AND hooks" requires BOTH terms present
+• Best for: Finding specific combinations, technology intersections
+• Scope: RESTRICTIVE - only files containing ALL terms
 
-EXACT SEARCH: Use quotes for exact phrases: "import React", "useEffect cleanup".
+EXACT PHRASE (Laser Targeting):
+• Escaped quotes: "useState hook" finds literal "useState hook" sequence
+• Best for: Documentation titles, specific API calls, exact implementations
+• Scope: MOST PRECISE - only exact sequence matches
+
+NOT LOGIC (Noise Filtering):
+• Exclude unwanted results: "authentication NOT test NOT mock"
+• Best for: Removing examples, tests, deprecated code
+
+RESTRICTIVENESS SCALE: OR < AND < Exact Phrase (Broadest → Most Precise)
+
 COMBINE FILTERS: Mix query with language, owner, path filters for laser-focused results.`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
@@ -57,7 +48,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         .string()
         .min(1)
         .describe(
-          'Search query with strategic boolean operators. DEFAULTS: Multiple terms use OR automatically ("useState hook" → "useState OR hook"). STRATEGIC USAGE: Use OR for exploration ("useState OR setState OR setData"), AND for precision ("react AND testing AND hooks"), NOT for filtering ("auth NOT test NOT mock"). EXACT: Use quotes ("import React", "useEffect cleanup"). No parentheses - simple boolean logic only.'
+          'Search query with strategic boolean operators. SEARCH PATTERNS: OR (auto-default): "useState hook" → "useState OR hook" for BROADEST discovery. AND (explicit): "react AND hooks" requires BOTH terms for RESTRICTIVE intersection. EXACT PHRASE (escaped quotes): "useState hook" finds literal sequence for MOST PRECISE targeting. NOT (filtering): "auth NOT test" excludes unwanted results. USAGE GUIDE: Use OR for exploration/alternatives, AND for specific combinations, exact phrases for documentation/APIs, NOT for removing noise. RESTRICTIVENESS: OR < AND < Exact Phrase. No parentheses - simple boolean logic only.'
         ),
       owner: z
         .union([z.string(), z.array(z.string())])
