@@ -4,7 +4,6 @@ import {
   createMockMcpServer,
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
-import { TOOL_NAMES } from '../../src/mcp/systemPrompts.js';
 import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
 
 interface ApiStatusResponse {
