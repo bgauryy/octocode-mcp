@@ -6,6 +6,10 @@ import {
 } from '../fixtures/mcp-fixtures.js';
 import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
 
+const TOOL_NAMES = {
+  GITHUB_SEARCH_COMMITS: 'github_search_commits',
+} as const;
+
 interface GitHubCommitsSearchResponse {
   query?: string;
   total: number;
@@ -521,7 +525,7 @@ describe('GitHub Search Commits Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub commits'
+        'GitHub commit search failed'
       );
     });
 
@@ -539,7 +543,7 @@ describe('GitHub Search Commits Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub commits'
+        'GitHub commit search failed'
       );
     });
   });
