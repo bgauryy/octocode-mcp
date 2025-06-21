@@ -118,7 +118,7 @@ describe('Cache Utilities', () => {
       };
       const params2 = {
         query: 'test',
-        author: 'jane', 
+        author: 'jane',
         date: '>2023-01-01',
       };
 

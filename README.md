@@ -166,7 +166,12 @@ npm login
   - GitHub CLI: `search`, `api`, `auth`, `org`
 - **🛡️ Argument Sanitization** - All command arguments are properly escaped to prevent shell injection attacks
 - **✅ Pre-execution Validation** - Every command is validated against allowed lists before execution
-- **🔧 Controlled Environment** - Commands run in a secure shell environment (`/bin/sh`) with controlled variables
+- **🔧 Controlled Environment** - Commands run in a secure, cross-platform shell environment with controlled variables
+  - **Cross-platform shells**: Uses `/bin/sh` on Unix/macOS, `cmd.exe` or `powershell.exe` on Windows - minimal, standard shells
+  - **PowerShell support**: Modern Windows environments can optionally use PowerShell with enhanced security
+  - **Why minimal shells are safe**: Avoids user's potentially customized shells with aliases, functions, plugins, or advanced features
+  - **Controlled variables**: Only essential environment variables (`PATH`, `SHELL`) are passed, preventing environment-based attacks
+  - **Platform-specific escaping**: Uses appropriate argument escaping for each platform (single quotes on Unix, double quotes for CMD, single quotes for PowerShell)
 - **🚫 No Arbitrary Execution** - System cannot execute arbitrary shell commands or scripts
 - **⏱️ Timeout Protection** - All commands have execution timeouts to prevent resource exhaustion
 
@@ -214,6 +219,12 @@ npm whoami
 - **Automatic detection** - Octocode automatically discovers your GitHub organizations
 - **No additional setup** - If you have access to private repos through your organization, they work immediately
 - **Verify access** - Run `gh auth status` to see your organization memberships
+
+**💻 Windows PowerShell Support:**
+- **Modern shell support** - Optionally use PowerShell instead of cmd.exe on Windows
+- **Enhanced security** - PowerShell provides better argument escaping and modern features
+- **Automatic detection** - The system automatically detects Windows and applies appropriate shell configurations
+- **Zero configuration** - Works seamlessly with existing setups, no additional configuration needed
 
 **Why GitHub CLI Authentication?**
 - ✅ **No token creation** - GitHub CLI handles OAuth flow automatically

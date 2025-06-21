@@ -5,6 +5,41 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.4] - 2024-12-20 - PowerShell Support & Cross-Platform Command Execution Enhancement
+
+### 🚀 NEW FEATURE: Windows PowerShell Support
+
+#### Added
+- **Windows PowerShell Support**: Native PowerShell execution option for modern Windows environments
+- **Enhanced Shell Selection**: Configurable shell choice between `cmd.exe` and `powershell.exe` on Windows
+- **PowerShell-Specific Escaping**: Dedicated argument escaping for PowerShell special characters (`$`, ``` ` ```, `@`, `()`, `[]`, `{}`, etc.)
+- **Cross-Platform Shell Type Detection**: Automatic platform detection with appropriate shell configuration
+- **Shell Type in Cache Keys**: Enhanced caching with shell type differentiation for better performance
+
+#### Enhanced
+- **Command Execution Security**: Improved injection prevention with PowerShell-specific attack vector protection
+- **Cross-Platform Compatibility**: Seamless operation across Unix/macOS (`/bin/sh`), Windows CMD (`cmd.exe`), and Windows PowerShell (`powershell.exe`)
+- **Argument Escaping Architecture**: Modular escaping system with dedicated functions for each shell type
+- **Test Coverage**: Comprehensive test suite with 64 tests covering all cross-platform scenarios and security validations
+
+#### Technical Improvements
+- **Shell Configuration System**: New `getShellConfig()` with platform-specific shell selection
+- **Modular Escaping Functions**: Separate `escapeUnixShellArg()`, `escapeWindowsCmdArg()`, and `escapePowerShellArg()` implementations
+- **Enhanced Type System**: New `WindowsShell` and `ShellConfig` types for better type safety
+- **Security Validation**: PowerShell injection prevention for `Remove-Item`, `Get-Content`, command substitution, and .NET method calls
+
+#### Fixed
+- **Cache Key Generation**: Updated cache keys to include shell type for proper cache differentiation
+- **Test Expectations**: Corrected PowerShell injection test assertions to match actual command structure
+- **Code Formatting**: Applied consistent formatting with trailing commas and proper line breaks
+
+#### Documentation
+- **README Updates**: Enhanced security documentation to reflect PowerShell support and cross-platform capabilities
+- **Windows PowerShell Section**: New documentation section explaining modern shell support and benefits
+- **Cross-Platform Shell Guide**: Updated explanations of shell choices and security benefits
+
+---
+
 ## [2.3.3] - 2024-12-20 - Critical GitHub Repository Search & File Handling Fixes
 
 ### 🐛 CRITICAL FIXES: GitHub Repository Search Command Generation
