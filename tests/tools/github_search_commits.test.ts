@@ -4,8 +4,11 @@ import {
   createMockMcpServer,
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
-import { TOOL_NAMES } from '../../src/mcp/systemPrompts.js';
 import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
+
+const TOOL_NAMES = {
+  GITHUB_SEARCH_COMMITS: 'github_search_commits',
+} as const;
 
 interface GitHubCommitsSearchResponse {
   query?: string;
@@ -39,7 +42,7 @@ interface GitHubCommitsSearchResponse {
     topAuthors: Array<{ name: string; commits: number }>;
     repositories: string[];
   };
-  suggestions?: string[];
+
 }
 
 // Mock the exec utilities
@@ -486,7 +489,6 @@ describe('GitHub Search Commits Tool', () => {
       expect(result.isError).toBe(false);
       expect(data.total).toBe(0);
       expect(data.commits).toEqual([]);
-      expect(data.suggestions).toContain('Try broader search terms');
     });
   });
 
@@ -523,7 +525,7 @@ describe('GitHub Search Commits Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub commits'
+        'GitHub commit search failed'
       );
     });
 
@@ -541,7 +543,7 @@ describe('GitHub Search Commits Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub commits'
+        'GitHub commit search failed'
       );
     });
   });

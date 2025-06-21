@@ -1,28 +1,30 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCommitsSearchParams } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   createSuccessResult,
   createErrorResult,
-  getErrorSuggestions,
   needsQuoting,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
+const TOOL_NAME = 'github_search_commits';
+
+const DESCRIPTION = `Search commit history with powerful boolean logic and exact phrase matching. Use advanced GitHub search syntax including AND/OR operators for precise commit discovery. Understand code evolution patterns, track bug fixes, and analyze development workflows over time. Filter by author, date ranges, commit content, and repository metadata with surgical precision.`;
+
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
         .optional()
         .describe(
-          'Search query with full GitHub syntax support: "readme typo" (AND), "bug fix" (phrase), "author:john OR committer:jane" (OR), "-- -author:botuser" (exclude). Optional - can search with just filters.'
+          'Search query with POWERFUL boolean logic and exact phrase matching. BOOLEAN OPERATORS: "fix AND bug" (both required), "fix OR update" (either term), "readme typo" (implicit AND). EXACT PHRASES: "initial commit" (precise phrase matching). ADVANCED SYNTAX: "author:john OR committer:jane" (user qualifiers), "-- -author:botuser" (exclusions). STRENGTH: Surgical precision for commit discovery across millions of repositories. Optional - can search with just filters.'
         ),
 
       // Basic filters
@@ -92,11 +94,11 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         .max(50)
         .optional()
         .default(25)
-        .describe('Maximum results (default: 25)'),
+        .describe('Maximum results (default: 25, max: 50)'),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -122,9 +124,8 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult(
-          `Search failed: ${(error as Error).message}`,
-          true,
-          getErrorSuggestions(TOOL_NAMES.GITHUB_SEARCH_COMMITS)
+          'Commit search failed - check query syntax, filters, or repository access',
+          true
         );
       }
     }
@@ -242,16 +243,12 @@ export async function searchGitHubCommits(
         query: params.query,
         total: 0,
         commits: [],
-        suggestions: [
-          `${TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS} "${params.query || 'pr'}"`,
-          `${TOOL_NAMES.GITHUB_SEARCH_ISSUES} "${params.query || 'issue'}"`,
-          `${TOOL_NAMES.GITHUB_SEARCH_CODE} "${params.query || 'code'}"`,
-          'Try broader search terms',
-          'Check spelling and try synonyms',
-        ],
       });
     } catch (error) {
-      return createErrorResult('Failed to search GitHub commits', error);
+      return createErrorResult(
+        'GitHub commit search failed - verify repository exists or try different filters',
+        error
+      );
     }
   });
 }

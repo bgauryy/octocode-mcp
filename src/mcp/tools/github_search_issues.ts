@@ -5,21 +5,34 @@ import {
   GitHubIssuesSearchResult,
   GitHubIssueItem,
 } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import { createSuccessResult, createErrorResult } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
+const TOOL_NAME = 'github_search_issues';
+
+const DESCRIPTION = `Find GitHub issues and problems with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, bug patterns, and community discussions.
+
+SEARCH PATTERNS SUPPORTED:
+• BOOLEAN OPERATORS: "bug AND crash" (both required), "feature OR enhancement" (either term), "error NOT test" (excludes test)
+• EXACT PHRASES: "memory leak" (precise phrase matching)
+• GITHUB QUALIFIERS: Built-in support for "is:open", "label:bug", "author:username", etc.
+• COMBINABLE: Mix search terms with filters for surgical precision
+
+Filter by state, labels, assignee, or date ranges for comprehensive issue discovery.`;
+
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_ISSUES],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       query: z
         .string()
         .min(1, 'Search query is required and cannot be empty')
-        .describe('Search query to find issues'),
+        .describe(
+          'Search query with GITHUB SEARCH SYNTAX support. BOOLEAN OPERATORS: "bug AND crash" (both required), "feature OR enhancement" (either term), "error NOT test" (excludes). EXACT PHRASES: "memory leak" (precise matching). GITHUB QUALIFIERS: "is:open label:bug author:username" (native GitHub syntax). COMBINED: Mix boolean logic with qualifiers for precise issue discovery.'
+        ),
       owner: z
         .string()
         .min(1)
@@ -116,11 +129,11 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         .max(50)
         .optional()
         .default(25)
-        .describe('Maximum results (default: 25)'),
+        .describe('Maximum results (default: 25, max: 50)'),
     },
     {
-      title: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_ISSUES],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -129,14 +142,14 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     async (args: GitHubIssuesSearchParams) => {
       if (!args.query?.trim()) {
         return createErrorResult(
-          'Search query is required and cannot be empty',
+          'Search query is required and cannot be empty - provide keywords to search for issues',
           new Error('Invalid query')
         );
       }
 
       if (args.query.length > 256) {
         return createErrorResult(
-          'Search query is too long. Please limit to 256 characters or less.',
+          'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
           new Error('Query too long')
         );
       }
@@ -144,7 +157,10 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       try {
         return await searchGitHubIssues(args);
       } catch (error) {
-        return createErrorResult('Failed to search GitHub issues', error);
+        return createErrorResult(
+          'GitHub issues search failed - check repository exists and query is valid',
+          error
+        );
       }
     }
   );

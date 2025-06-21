@@ -188,7 +188,6 @@ Root level files:
 Bash
 
 gh search code "config" "path:/"
-Meaning: Find "config" in files located directly at the root of repositories.
 Globbing in paths (advanced GitHub search syntax, might need direct gh api for full regex):
 Bash
 

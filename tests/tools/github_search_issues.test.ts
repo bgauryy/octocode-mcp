@@ -541,7 +541,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub issues'
+        'GitHub issues search failed'
       );
     });
 
@@ -555,7 +555,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub issues'
+        'GitHub issues search failed'
       );
     });
 
@@ -613,7 +613,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search query is too long. Please limit to 256 characters or less.'
+        'Search query is too long. Please limit to 256 characters or less'
       );
     });
 

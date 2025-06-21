@@ -4,11 +4,9 @@ import {
   GitHubRepositoryContentsResult,
   GitHubRepositoryStructureParams,
 } from '../../types';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createResult,
   parseJsonResponse,
-  getErrorSuggestions,
   createErrorResult,
   createSuccessResult,
 } from '../../utils/responses';
@@ -16,10 +14,14 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
+const TOOL_NAME = 'github_get_contents';
+
+const DESCRIPTION = `Browse repository structure and verify file existence. Use before github_get_file_content to confirm files exist and understand organization, especially when the path is uncertain.`;
+
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.GITHUB_GET_CONTENTS,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_CONTENTS],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       owner: z
         .string()
@@ -65,8 +67,8 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         ),
     },
     {
-      title: TOOL_NAMES.GITHUB_GET_CONTENTS,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.GITHUB_GET_CONTENTS],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -111,55 +113,9 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-
-        // Enhanced context-aware error suggestions
-        let suggestions: string[] = [];
-        const context = `${args.owner}/${args.repo}`;
-
-        if (
-          errorMessage.includes('404') ||
-          errorMessage.includes('Not Found')
-        ) {
-          if (args.path) {
-            suggestions = [
-              `Try exploring root first: github_get_contents(owner: "${args.owner}", repo: "${args.repo}", branch: "${args.branch}", path: "")`,
-              `Search for similar paths: github_search_code with path filters`,
-            ];
-          } else {
-            suggestions = [
-              `Search for repository: github_search_repositories(query: "${args.repo}")`,
-              `Verify owner exists: github_search_repositories(owner: "${args.owner}")`,
-            ];
-          }
-        } else if (
-          errorMessage.includes('403') ||
-          errorMessage.includes('Forbidden')
-        ) {
-          suggestions = [
-            `Check authentication status: api_status_check`,
-            `Try public repositories first to verify access`,
-          ];
-        } else if (errorMessage.includes('rate limit')) {
-          suggestions = [
-            `Check rate limit status: api_status_check`,
-            `Wait before retrying or use authenticated requests`,
-          ];
-        } else if (
-          errorMessage.includes('invalid') ||
-          errorMessage.includes('branch')
-        ) {
-          suggestions = [
-            `Find valid branches: github_search_repositories(query: "${context}")`,
-            `Try common branches: main, master, develop`,
-          ];
-        } else {
-          suggestions = getErrorSuggestions(TOOL_NAMES.GITHUB_GET_CONTENTS);
-        }
-
         return createResult(
-          `Repository exploration failed: ${errorMessage}. Context: ${context} on ${args.branch}${args.path ? ` at ${args.path}` : ''}`,
-          true,
-          suggestions
+          `Repository exploration failed: ${errorMessage} - verify repository exists and is accessible`,
+          true
         );
       }
     }
@@ -173,7 +129,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
  * - Smart branch detection: fetches repository default branch automatically
  * - Intelligent fallback: tries requested -> default -> common branches
  * - Input validation: prevents path traversal and validates GitHub naming
- * - Enhanced error context: provides actionable suggestions for recovery
+ * - Clear error context: provides descriptive error messages
  * - Efficient caching: avoids redundant API calls
  */
 export async function viewRepositoryStructure(
@@ -231,20 +187,20 @@ export async function viewRepositoryStructure(
         if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
           if (path) {
             throw new Error(
-              `Path "${path}" not found in repository ${owner}/${repo}. ` +
-                `Use github_get_contents with empty path first to discover the repository structure.`
+              `Path "${path}" not found - verify path exists or use github_search_code to find files`
             );
           } else {
             throw new Error(
-              `Repository ${owner}/${repo} not found or no accessible branches. ` +
-                `Tried branches: ${branchesToTry.join(', ')}`
+              `Repository not found: ${owner}/${repo} - verify owner/repo names or use github_search_repositories`
             );
           }
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-          throw new Error(`Access denied to repository ${owner}/${repo}`);
+          throw new Error(
+            `Access denied to repository ${owner}/${repo} - repository may be private or require authentication`
+          );
         } else {
           throw new Error(
-            `Repository ${owner}/${repo} not found or path "${path}" doesn't exist`
+            `Access failed: ${owner}/${repo} - check connection or repository permissions`
           );
         }
       }
@@ -313,7 +269,7 @@ export async function viewRepositoryStructure(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       return createErrorResult(
-        `Repository access failed: ${owner}/${repo}${path ? ` at ${path}` : ''}`,
+        'Repository access failed - verify repository exists and check authentication',
         new Error(errorMessage)
       );
     }

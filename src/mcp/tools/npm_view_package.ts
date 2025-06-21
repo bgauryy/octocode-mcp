@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
 import {
   createErrorResult,
   createResult,
@@ -11,10 +10,17 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmViewPackageParams, NpmViewPackageResult } from '../../types';
 
+const TOOL_NAME = 'npm_view_package';
+
+const DESCRIPTION = `use npm view to get package metadata. You can get the package
+name from search results or user input. This tool is effieicnt since it gets important package metadata
+on a package fast to optimize tools calls. get package git repository path easily without need to search it (using repo/code search tools),
+exported files of a package are there, along with dependencies and version history.`;
+
 export function registerNpmViewPackageTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.NPM_VIEW_PACKAGE,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_VIEW_PACKAGE],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       packageName: z
         .string()
@@ -24,8 +30,8 @@ export function registerNpmViewPackageTool(server: McpServer) {
         ),
     },
     {
-      title: TOOL_NAMES.NPM_VIEW_PACKAGE,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_VIEW_PACKAGE],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -34,19 +40,25 @@ export function registerNpmViewPackageTool(server: McpServer) {
     async (args: NpmViewPackageParams) => {
       try {
         if (!args.packageName || args.packageName.trim() === '') {
-          return createResult('Package name is required', true);
+          return createResult(
+            'Package name is required - provide a valid NPM package name',
+            true
+          );
         }
 
         // Basic package name validation
         if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
-          return createResult('Invalid package name format', true);
+          return createResult(
+            'Invalid package name format - use standard NPM naming (e.g., "package-name" or "@scope/package")',
+            true
+          );
         }
 
         const result = await npmViewPackage(args.packageName);
         return result;
       } catch (error) {
         return createResult(
-          `Failed to get package metadata: ${(error as Error).message}`,
+          'Failed to get package metadata - verify package exists on NPM registry',
           true
         );
       }
@@ -120,7 +132,10 @@ export async function npmViewPackage(
 
       return createSuccessResult(viewResult);
     } catch (error) {
-      return createErrorResult('Failed to get npm package metadata', error);
+      return createErrorResult(
+        'Failed to get npm package metadata - package may not exist or registry unavailable',
+        error
+      );
     }
   });
 }

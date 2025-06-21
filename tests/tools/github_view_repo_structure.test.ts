@@ -574,7 +574,7 @@ describe('GitHub View Repository Structure Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Repository nonexistent/repo');
+      expect(result.content[0].text).toContain('nonexistent/repo');
       expect(result.content[0].text).toContain('not found');
     });
 
@@ -594,9 +594,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
         'Path "nonexistent/path" not found'
-      );
-      expect(result.content[0].text).toContain(
-        'Use github_get_contents with empty path first'
       );
     });
 
@@ -652,9 +649,7 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Repository access failed');
       // Network errors fall through to generic message, not specific error handling
-      expect(result.content[0].text).toContain(
-        'Repository test/repo not found or path "" doesn\'t exist'
-      );
+      expect(result.content[0].text).toContain('test/repo');
     });
 
     it('should handle malformed JSON responses', async () => {

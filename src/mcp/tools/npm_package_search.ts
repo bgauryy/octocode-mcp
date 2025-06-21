@@ -1,25 +1,33 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { TOOL_DESCRIPTIONS, TOOL_NAMES } from '../systemPrompts';
-import {
-  createResult,
-  getNoResultsSuggestions,
-  getErrorSuggestions,
-} from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
+
+const TOOL_NAME = 'npm_package_search';
+
+const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. 
+
+IMPORTANT LIMITATIONS:
+• NO BOOLEAN OPERATORS: NPM search does NOT support AND/OR/NOT - use space-separated keywords for broader search
+• FUZZY MATCHING ONLY: No exact phrase matching - searches are approximate keyword matching
+• KEYWORD-BASED: Best results with simple, space-separated terms like "react hooks" or "cli typescript"
+
+Required when package name is unknown. If you have the exact package name, use npm_view_package directly. This reduces the need to use GitHub search when packages are found.`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export function registerNpmSearchTool(server: McpServer) {
   server.tool(
-    TOOL_NAMES.NPM_PACKAGE_SEARCH,
-    TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
+    TOOL_NAME,
+    DESCRIPTION,
     {
       queries: z
         .union([z.string(), z.array(z.string())])
-        .describe('Package names or keywords to search for'),
+        .describe(
+          'Package names or keywords to search for. NOTE: No boolean operators (AND/OR/NOT) supported - use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
+        ),
       searchlimit: z
         .number()
         .int()
@@ -27,11 +35,11 @@ export function registerNpmSearchTool(server: McpServer) {
         .max(50)
         .optional()
         .default(20)
-        .describe('Max results per query (default: 20)'),
+        .describe('Max results per query (default: 20, max: 50)'),
     },
     {
-      title: TOOL_NAMES.NPM_PACKAGE_SEARCH,
-      description: TOOL_DESCRIPTIONS[TOOL_NAMES.NPM_PACKAGE_SEARCH],
+      title: TOOL_NAME,
+      description: DESCRIPTION,
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -73,16 +81,11 @@ export function registerNpmSearchTool(server: McpServer) {
           });
         }
 
-        const suggestions = getNoResultsSuggestions(
-          TOOL_NAMES.NPM_PACKAGE_SEARCH
-        );
-        return createResult('No packages found', true, suggestions);
+        return createResult('No packages found', true);
       } catch (error) {
-        const suggestions = getErrorSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH);
         return createResult(
-          `Search failed: ${(error as Error).message}`,
-          true,
-          suggestions
+          'NPM package search failed - check search terms or try different keywords',
+          true
         );
       }
     }

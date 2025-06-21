@@ -490,7 +490,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name is required');
+      expect(result.content[0].text).toBe('Package name is required - provide a valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
 
@@ -500,7 +500,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name is required');
+      expect(result.content[0].text).toBe('Package name is required - provide a valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
 
@@ -519,7 +519,7 @@ describe('NPM View Package Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toBe('Invalid package name format');
+        expect(result.content[0].text).toBe('Invalid package name format - use standard NPM naming (e.g., "package-name" or "@scope/package")');
       }
 
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
@@ -570,7 +570,7 @@ describe('NPM View Package Tool', () => {
       const result = await toolHandler({});
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name is required');
+      expect(result.content[0].text).toBe('Package name is required - provide a valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
   });

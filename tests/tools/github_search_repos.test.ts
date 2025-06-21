@@ -4,10 +4,9 @@ import {
   createMockMcpServer,
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
-import { TOOL_NAMES } from '../../src/mcp/systemPrompts.js';
 import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
 
-interface GitHubRepoSearchResponse {
+interface GitHubReposSearchResponse {
   query?: string;
   total: number;
   repositories: Array<{
@@ -34,63 +33,24 @@ interface GitHubRepoSearchResponse {
     avgStars: number;
     recentlyUpdated: number;
   };
-  suggestions?: string[];
 }
 
-// Mock the exec utilities and cache
+// Mock the exec utilities
 vi.mock('../../src/utils/exec.js', () => ({
   executeGitHubCommand: vi.fn(),
 }));
 
+// Mock the cache utilities
 vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: vi.fn(() => 'test-cache-key'),
-  withCache: vi.fn((cacheKey, operation) => operation()),
+  generateCacheKey: vi.fn(
+    (prefix: string, params: any) => `${prefix}-${JSON.stringify(params)}`
+  ),
+  withCache: vi.fn((key: string, fn: () => Promise<any>) => fn()),
 }));
 
-describe('GitHub Repository Search Tool', () => {
+describe('GitHub Search Repositories Tool', () => {
   let mockServer: MockMcpServer;
   let mockExecuteGitHubCommand: any;
-
-  const mockRepoResponse = [
-    {
-      name: 'test-repo',
-      fullName: 'owner/test-repo',
-      description: 'A test repository',
-      language: 'TypeScript',
-      stargazersCount: 1500,
-      forksCount: 200,
-      updatedAt: '2024-01-15T12:00:00Z',
-      createdAt: '2023-06-01T12:00:00Z',
-      url: 'https://github.com/owner/test-repo',
-      owner: { login: 'owner' },
-      isPrivate: false,
-      license: { name: 'MIT License' },
-      hasIssues: true,
-      openIssuesCount: 25,
-      isArchived: false,
-      isFork: false,
-      visibility: 'public',
-    },
-    {
-      name: 'another-repo',
-      fullName: 'microsoft/another-repo',
-      description: 'Another test repository',
-      language: 'JavaScript',
-      stargazersCount: 800,
-      forksCount: 50,
-      updatedAt: '2024-02-10T12:00:00Z',
-      createdAt: '2023-05-01T12:00:00Z',
-      url: 'https://github.com/microsoft/another-repo',
-      owner: { login: 'microsoft' },
-      isPrivate: false,
-      license: { name: 'Apache License 2.0' },
-      hasIssues: true,
-      openIssuesCount: 12,
-      isArchived: false,
-      isFork: false,
-      visibility: 'public',
-    },
-  ];
 
   beforeEach(async () => {
     mockServer = createMockMcpServer();
@@ -99,7 +59,7 @@ describe('GitHub Repository Search Tool', () => {
     const execModule = await import('../../src/utils/exec.js');
     mockExecuteGitHubCommand = vi.mocked(execModule.executeGitHubCommand);
 
-    // Clear the exec mocks
+    // Clear mocks
     mockExecuteGitHubCommand.mockClear();
 
     // Register tool after getting references to mocked functions
@@ -111,10 +71,10 @@ describe('GitHub Repository Search Tool', () => {
   });
 
   describe('Tool Registration', () => {
-    it('should register the GitHub repository search tool', () => {
+    it('should register the GitHub search repositories tool', () => {
       expect(mockServer.server.tool).toHaveBeenCalledWith(
-        TOOL_NAMES.GITHUB_SEARCH_REPOS,
-        expect.any(String),
+        'github_search_repositories',
+        expect.stringContaining('Search repositories by name/description'),
         expect.objectContaining({
           query: expect.any(Object),
           owner: expect.any(Object),
@@ -129,6 +89,10 @@ describe('GitHub Repository Search Tool', () => {
           updated: expect.any(Object),
           archived: expect.any(Object),
           includeForks: expect.any(Object),
+          goodFirstIssues: expect.any(Object),
+          helpWantedIssues: expect.any(Object),
+          followers: expect.any(Object),
+          size: expect.any(Object),
           sort: expect.any(Object),
           order: expect.any(Object),
           limit: expect.any(Object),
@@ -145,30 +109,139 @@ describe('GitHub Repository Search Tool', () => {
     });
   });
 
-  describe('PRIMARY Filters (Work Alone)', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+  describe('Basic Query Searches', () => {
+    it('should search repositories with simple query', async () => {
+      const mockRepos = [
+        {
+          name: 'cli-tool',
+          fullName: 'user/cli-tool',
+          description: 'A command line interface tool',
+          language: 'JavaScript',
+          stargazersCount: 150,
+          forksCount: 25,
+          url: 'https://github.com/user/cli-tool',
+          owner: { login: 'user' },
+          isPrivate: false,
+          isArchived: false,
+          isFork: false,
+          license: { name: 'MIT' },
+          hasIssues: true,
+          openIssuesCount: 5,
+          createdAt: '2023-01-15T10:00:00Z',
+          updatedAt: '2023-12-01T15:30:00Z',
+          visibility: 'public',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
-    });
 
-    it('should work with owner filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 2,
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'cli shell',
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
-      expect(data.repositories).toHaveLength(2);
+      expect(data.total).toBe(1);
+      expect(data.repositories).toHaveLength(1);
+      expect(data.repositories[0].name).toBe('user/cli-tool');
+      expect(data.repositories[0].stars).toBe(150);
+      expect(data.repositories[0].language).toBe('JavaScript');
+      expect(data.summary?.languages).toContain('JavaScript');
+      expect(data.summary?.avgStars).toBe(150);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining([
+          'repos',
+          'cli',
+          'shell',
+          '--json',
+          'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
+        ]),
+        { cache: false }
+      );
+    });
+
+    it('should handle quoted phrases in queries', async () => {
+      const mockRepos = [
+        {
+          name: 'vim-plugin',
+          fullName: 'author/vim-plugin',
+          description: 'Vim plugin for better editing',
+          language: 'Vim script',
+          stargazersCount: 75,
+          forksCount: 12,
+          url: 'https://github.com/author/vim-plugin',
+          owner: { login: 'author' },
+          isPrivate: false,
+          isArchived: false,
+          isFork: false,
+          license: { name: 'Apache-2.0' },
+          hasIssues: true,
+          openIssuesCount: 3,
+          createdAt: '2023-03-10T08:00:00Z',
+          updatedAt: '2023-11-20T12:45:00Z',
+          visibility: 'public',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: '"vim plugin"',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(1);
+      expect(data.repositories[0].name).toBe('author/vim-plugin');
+    });
+  });
+
+  describe('Primary Filters', () => {
+    it('should filter by owner', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        owner: 'microsoft',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         expect.arrayContaining(['--owner=microsoft']),
@@ -176,15 +249,29 @@ describe('GitHub Repository Search Tool', () => {
       );
     });
 
-    it('should work with language filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        language: 'typescript',
-        limit: 2,
+    it('should filter by language', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
+      const result = await mockServer.callTool('github_search_repositories', {
+        language: 'typescript',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         expect.arrayContaining(['--language=typescript']),
@@ -192,31 +279,59 @@ describe('GitHub Repository Search Tool', () => {
       );
     });
 
-    it('should work with stars filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        stars: '>=1000',
-        limit: 2,
+    it('should filter by stars count', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
+      const result = await mockServer.callTool('github_search_repositories', {
+        stars: '>100',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['--stars=">=1000"']),
+        expect.arrayContaining(['--stars=>100']),
         { cache: false }
       );
     });
 
-    it('should work with topic filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        topic: ['cli', 'typescript'],
-        limit: 2,
+    it('should filter by topics', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
+      const result = await mockServer.callTool('github_search_repositories', {
+        topic: ['cli', 'typescript'],
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         expect.arrayContaining(['--topic=cli,typescript']),
@@ -224,616 +339,740 @@ describe('GitHub Repository Search Tool', () => {
       );
     });
 
-    it('should work with forks filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        forks: 100,
-        limit: 2,
+    it('should filter by forks count', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
-      expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining(['--forks=100']),
-        { cache: false }
-      );
-    });
-
-    it('should work with query alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'test repo',
-        limit: 2,
+      const result = await mockServer.callTool('github_search_repositories', {
+        forks: 50,
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
-      expect(data.query).toBe('test repo');
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['repos', '"test repo"']),
+        expect.arrayContaining(['--forks=50']),
         { cache: false }
       );
     });
   });
 
-  describe('SECONDARY Filters Validation', () => {
-    it('should reject license filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        license: ['MIT'],
-        limit: 2,
+  describe('Secondary Filters', () => {
+    it('should apply license filter with primary filter', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter (owner, language, stars, topic, forks)'
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'test',
+        license: ['mit', 'apache-2.0'],
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--license=mit,apache-2.0']),
+        { cache: false }
       );
     });
 
-    it('should reject created filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        created: '>2023-01-01',
-        limit: 2,
+    it('should apply visibility filter', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
+      const result = await mockServer.callTool('github_search_repositories', {
+        owner: 'microsoft',
+        visibility: 'public',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--visibility=public']),
+        { cache: false }
       );
     });
 
-    it('should reject archived filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
+    it('should apply date filters', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        language: 'javascript',
+        created: '>2020-01-01',
+        updated: '<2023-12-31',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining([
+          '--created=">2020-01-01"',
+          '--updated="<2023-12-31"',
+        ]),
+        { cache: false }
+      );
+    });
+
+    it('should apply archived filter', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        owner: 'facebook',
         archived: false,
-        limit: 2,
       });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--archived=false']),
+        { cache: false }
       );
     });
 
-    it('should reject includeForks filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
+    it('should apply include forks filter', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        language: 'go',
         includeForks: 'only',
-        limit: 2,
       });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--include-forks=only']),
+        { cache: false }
       );
     });
 
-    it('should reject updated filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        updated: '>2024-01-01',
-        limit: 2,
-      });
+    it('should apply good first issues filter', async () => {
+      const mockRepos = [];
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
-      );
-    });
-
-    it('should reject visibility filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        visibility: 'public',
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
-      );
-    });
-
-    it('should reject match filter alone', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        match: 'name',
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
-      );
-    });
-  });
-
-  describe('SECONDARY Filters with Query', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
-    });
 
-    it('should work with query + license filter', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'react',
-        license: ['MIT'],
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining(['react', '--license=MIT']),
-        { cache: false }
-      );
-    });
-
-    it('should work with query + created filter', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'vue',
-        created: '>2023-01-01',
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining(['vue', '--created=">2023-01-01"']),
-        { cache: false }
-      );
-    });
-
-    it('should work with query + multiple secondary filters', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'python',
-        license: ['MIT', 'Apache-2.0'],
-        archived: false,
-        visibility: 'public',
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining([
-          'python',
-          '--archived=false',
-          '--license=MIT,Apache-2.0',
-          '--visibility=public',
-        ]),
-        { cache: false }
-      );
-    });
-  });
-
-  describe('SECONDARY Filters with PRIMARY Filters', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [
-          {
-            text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
-            }),
-          },
-        ],
-      });
-    });
-
-    it('should work with owner + license filter', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        license: ['MIT'],
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining(['--owner=microsoft', '--license=MIT']),
-        { cache: false }
-      );
-    });
-
-    it('should work with language + created filter', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
+      const result = await mockServer.callTool('github_search_repositories', {
         language: 'python',
-        created: '>2020-01-01',
-        limit: 2,
+        goodFirstIssues: '>=10',
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining([
-          '--language=python',
-          '--created=">2020-01-01"',
-        ]),
+        expect.arrayContaining(['--good-first-issues=>=10']),
         { cache: false }
       );
     });
 
-    it('should work with stars + archived filter', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        stars: '>=1000',
-        archived: false,
-        limit: 2,
-      });
+    it('should apply help wanted issues filter', async () => {
+      const mockRepos = [];
 
-      expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining(['--stars=">=1000"', '--archived=false']),
-        { cache: false }
-      );
-    });
-  });
-
-  describe('Complex Filter Combinations', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
-    });
 
-    it('should handle complex multi-filter combinations', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        language: 'typescript',
-        stars: '>=500',
-        license: ['MIT'],
-        created: '>2020-01-01',
-        archived: false,
-        sort: 'stars',
-        order: 'desc',
-        limit: 5,
+      const result = await mockServer.callTool('github_search_repositories', {
+        topic: ['open-source'],
+        helpWantedIssues: '>5',
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-      expect(data.total).toBe(2);
+      expect(data.total).toBe(0);
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining([
-          'repos',
-          '--owner=microsoft',
-          '--language=typescript',
-          '--stars=">=500"',
-          '--archived=false',
-          '--created=">2020-01-01"',
-          '--license=MIT',
-          '--limit=5',
-          '--order=desc',
-          '--sort=stars',
-        ]),
+        expect.arrayContaining(['--help-wanted-issues=>5']),
+        { cache: false }
+      );
+    });
+
+    it('should apply size and followers filters', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        owner: 'google',
+        size: '>1000',
+        followers: 100,
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--size=>1000', '--followers=100']),
         { cache: false }
       );
     });
   });
 
   describe('Sorting and Limits', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+    it('should apply custom sort and order', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
-    });
 
-    it('should handle sort by stars', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
+      const result = await mockServer.callTool('github_search_repositories', {
         query: 'test',
         sort: 'stars',
-        order: 'desc',
-        limit: 3,
+        order: 'asc',
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['--sort=stars', '--order=desc', '--limit=3']),
+        expect.arrayContaining(['--sort=stars', '--order=asc']),
         { cache: false }
       );
     });
 
-    it('should use default sort when not specified', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 5,
-      });
+    it('should apply custom limit', async () => {
+      const mockRepos = [];
 
-      expect(result.isError).toBe(false);
-      const args = mockExecuteGitHubCommand.mock.calls[0][1];
-      expect(args).not.toContain('--sort=best-match'); // Default shouldn't be explicitly added
-    });
-  });
-
-  describe('Stars Filter Validation', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        language: 'rust',
+        limit: 10,
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--limit=10']),
+        { cache: false }
+      );
     });
 
-    it('should accept valid stars ranges', async () => {
-      const validStarsValues = [
-        '100',
-        '>500',
-        '<50',
-        '10..100',
-        '>=1000',
-        '<=500',
+    it('should use default values when not specified', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'test',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['test']),
+        { cache: false }
+      );
+    });
+  });
+
+  describe('Complex Queries', () => {
+    it('should handle GitHub syntax queries', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'language:Go OR language:Rust',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['language:Go', 'OR', 'language:Rust']),
+        { cache: false }
+      );
+    });
+
+    it('should handle queries with special characters', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'query>with<special&chars',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+    });
+  });
+
+  describe('Data Analysis', () => {
+    it('should provide comprehensive analysis for multiple repositories', async () => {
+      const mockRepos = [
+        {
+          name: 'repo1',
+          fullName: 'user/repo1',
+          description: 'First repository',
+          language: 'JavaScript',
+          stargazersCount: 100,
+          forksCount: 20,
+          url: 'https://github.com/user/repo1',
+          owner: { login: 'user' },
+          isPrivate: false,
+          isArchived: false,
+          isFork: false,
+          license: { name: 'MIT' },
+          hasIssues: true,
+          openIssuesCount: 5,
+          createdAt: '2023-01-15T10:00:00Z',
+          updatedAt: '2023-12-01T15:30:00Z',
+          visibility: 'public',
+        },
+        {
+          name: 'repo2',
+          fullName: 'user/repo2',
+          description: 'Second repository',
+          language: 'TypeScript',
+          stargazersCount: 200,
+          forksCount: 40,
+          url: 'https://github.com/user/repo2',
+          owner: { login: 'user' },
+          isPrivate: false,
+          isArchived: false,
+          isFork: false,
+          license: { name: 'Apache-2.0' },
+          hasIssues: true,
+          openIssuesCount: 10,
+          createdAt: '2023-02-10T08:00:00Z',
+          updatedAt: '2023-11-25T12:45:00Z',
+          visibility: 'public',
+        },
       ];
 
-      for (const stars of validStarsValues) {
-        mockExecuteGitHubCommand.mockClear();
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_REPOS,
-          {
-            stars,
-            limit: 1,
-          }
-        );
-
-        expect(result.isError).toBe(false);
-        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-          'search',
-          expect.arrayContaining([`--stars="${stars}"`]),
-          { cache: false }
-        );
-      }
-    });
-
-    it('should reject invalid stars values', async () => {
-      mockExecuteGitHubCommand.mockClear();
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        stars: 'invalid',
-        limit: 1,
-      });
-
-      expect(result.isError).toBe(false);
-
-      // Should still call but without stars parameter
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.not.arrayContaining([expect.stringContaining('--stars=')]),
-        { cache: false }
-      );
-    });
-  });
-
-  describe('Query Parsing', () => {
-    beforeEach(() => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockRepoResponse),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
-    });
 
-    it('should handle simple queries', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'test repo',
-        limit: 2,
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'test',
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining(['repos', '"test repo"']),
-        { cache: false }
-      );
+      expect(data.total).toBe(2);
+      expect(data.repositories).toHaveLength(2);
+      expect(data.summary?.languages).toEqual(['JavaScript', 'TypeScript']);
+      expect(data.summary?.avgStars).toBe(150); // (100 + 200) / 2
+      expect(data.summary?.recentlyUpdated).toBeGreaterThanOrEqual(0);
     });
 
-    it('should handle complex queries with operators', async () => {
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'language:TypeScript OR language:JavaScript',
-        limit: 2,
+    it('should handle repositories without optional fields', async () => {
+      const mockRepos = [
+        {
+          name: 'minimal-repo',
+          fullName: 'user/minimal-repo',
+          description: null,
+          language: null,
+          stargazersCount: 0,
+          forksCount: 0,
+          url: 'https://github.com/user/minimal-repo',
+          owner: { login: 'user' },
+          isPrivate: false,
+          isArchived: false,
+          isFork: false,
+          license: null,
+          hasIssues: false,
+          openIssuesCount: 0,
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-01T00:00:00Z',
+          visibility: 'public',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'minimal',
+      });
+
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        expect.arrayContaining([
-          'repos',
-          'language:TypeScript',
-          'OR',
-          'language:JavaScript',
-        ]),
-        { cache: false }
-      );
+      expect(data.total).toBe(1);
+      expect(data.repositories[0].description).toBe('No description');
+      expect(data.repositories[0].language).toBe('Unknown');
+      expect(data.repositories[0].license).toBe(null);
     });
   });
 
   describe('Error Handling', () => {
-    it('should handle GitHub CLI command failures', async () => {
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: true,
-        content: [{ text: 'GitHub CLI command failed' }],
-      });
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub CLI command failed');
-    });
-
-    it('should handle GitHub CLI not available', async () => {
-      mockExecuteGitHubCommand.mockRejectedValue(
-        new Error('gh: command not found')
-      );
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 2,
+    it('should require query or primary filter', async () => {
+      const result = await mockServer.callTool('github_search_repositories', {
+        // No query or primary filters
+        license: ['mit'],
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub repositories'
+        'Requires query or primary filter'
       );
-      expect(result.content[0].text).toContain('gh: command not found');
     });
 
-    it('should handle malformed JSON responses', async () => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+    it('should handle GitHub CLI execution errors', async () => {
+      mockExecuteGitHubCommand.mockRejectedValueOnce(
+        new Error('GitHub CLI not authenticated')
+      );
+
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'test',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'GitHub repository search failed'
+      );
+    });
+
+    it('should handle invalid JSON responses', async () => {
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
-        content: [{ text: 'not valid json' }],
+        content: [
+          {
+            text: 'invalid json',
+          },
+        ],
       });
 
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 2,
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'test',
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to search GitHub repositories'
+        'GitHub repository search failed'
       );
     });
+  });
 
-    it('should handle unexpected errors', async () => {
-      mockExecuteGitHubCommand.mockImplementation(() => {
-        throw new Error('Unexpected error during search');
+  describe('Stars Filter Validation', () => {
+    it('should handle valid stars patterns', async () => {
+      const validStarsValues = ['100', '>500', '<50', '10..100', '>=1000'];
+      for (const stars of validStarsValues) {
+        const mockRepos = [];
+
+        mockExecuteGitHubCommand.mockResolvedValueOnce({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockRepos),
+              }),
+            },
+          ],
+        });
+
+        const result = await mockServer.callTool('github_search_repositories', {
+          stars,
+        });
+
+        const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+        expect(result.isError).toBe(false);
+        expect(data.total).toBe(0);
+
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          expect.arrayContaining([`--stars=${stars}`]),
+          { cache: false }
+        );
+
+        mockExecuteGitHubCommand.mockClear();
+      }
+    });
+
+    it('should skip invalid stars patterns', async () => {
+      const invalidStarsValues = ['*', '', 'invalid', 'abc123'];
+
+      for (const stars of invalidStarsValues) {
+        const mockRepos = [];
+
+        mockExecuteGitHubCommand.mockResolvedValueOnce({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: JSON.stringify(mockRepos),
+              }),
+            },
+          ],
+        });
+
+        const result = await mockServer.callTool('github_search_repositories', {
+          stars,
+          query: 'test', // Add query to make it valid
+        });
+
+        const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+        expect(result.isError).toBe(false);
+        expect(data.total).toBe(0);
+
+        // Should not include stars filter for invalid values
+        const callArgs = mockExecuteGitHubCommand.mock.calls[0][1];
+        expect(callArgs.some((arg: string) => arg.includes('--stars='))).toBe(
+          false
+        );
+
+        mockExecuteGitHubCommand.mockClear();
+      }
+    });
+  });
+
+  describe('Match Filter', () => {
+    it('should apply match filter for search scope', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockRepos),
+            }),
+          },
+        ],
       });
 
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 2,
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'test',
+        match: 'description',
       });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Failed to search GitHub repositories'
-      );
-      expect(result.content[0].text).toContain(
-        'Unexpected error during search'
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.total).toBe(0);
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['--match=description']),
+        { cache: false }
       );
     });
   });
 
   describe('Empty Results', () => {
-    it('should handle empty search results', async () => {
-      mockExecuteGitHubCommand.mockResolvedValue({
+    it('should handle no repositories found', async () => {
+      const mockRepos = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify([]),
+              result: JSON.stringify(mockRepos),
             }),
           },
         ],
       });
 
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        query: 'nonexistent-repo-12345',
-        limit: 2,
+      const result = await mockServer.callTool('github_search_repositories', {
+        query: 'nonexistent-search-term',
       });
 
+      const data = parseResultJson<GitHubReposSearchResponse>(result);
+
       expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
       expect(data.total).toBe(0);
       expect(data.repositories).toEqual([]);
-      expect(data.suggestions).toBeDefined();
-      expect(data.suggestions).toContain('Try broader search terms');
-    });
-  });
-
-  describe('Repository Data Processing', () => {
-    it('should correctly process repository data and calculate summary', async () => {
-      const recentDate = new Date().toISOString();
-      const testRepos = [
-        {
-          ...mockRepoResponse[0],
-          updatedAt: recentDate, // Recent update
-          stargazersCount: 1000,
-        },
-        {
-          ...mockRepoResponse[1],
-          updatedAt: '2020-01-01T12:00:00Z', // Old update
-          stargazersCount: 2000,
-          language: 'Python',
-        },
-      ];
-
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [
-          {
-            text: JSON.stringify({
-              result: JSON.stringify(testRepos),
-            }),
-          },
-        ],
-      });
-
-      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOS, {
-        owner: 'microsoft',
-        limit: 2,
-      });
-
-      expect(result.isError).toBe(false);
-      const data = parseResultJson<GitHubRepoSearchResponse>(result);
-
-      expect(data.total).toBe(2);
-      expect(data.summary?.avgStars).toBe(1500); // (1000 + 2000) / 2
-      expect(data.summary?.languages).toContain('TypeScript');
-      expect(data.summary?.languages).toContain('Python');
-      expect(data.summary?.recentlyUpdated).toBe(1); // Only one recent update
-
-      // Check repository data structure
-      expect(data.repositories[0]).toMatchObject({
-        name: 'owner/test-repo',
-        stars: 1000,
-        description: 'A test repository',
-        language: 'TypeScript',
-        url: 'https://github.com/owner/test-repo',
-        forks: 200,
-        isPrivate: false,
-        isArchived: false,
-        isFork: false,
-        license: 'MIT License',
-        hasIssues: true,
-        openIssuesCount: 25,
-        visibility: 'public',
-        owner: 'owner',
-      });
+      expect(data.summary).toBeUndefined();
     });
   });
 });

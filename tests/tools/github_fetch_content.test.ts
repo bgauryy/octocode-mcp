@@ -4,8 +4,11 @@ import {
   createMockMcpServer,
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
-import { TOOL_NAMES } from '../../src/mcp/systemPrompts.js';
 import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
+
+const TOOL_NAMES = {
+  GITHUB_GET_FILE_CONTENT: 'github_get_file_content',
+} as const;
 
 interface GitHubFileContentResponse {
   file: string;
@@ -332,7 +335,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Access denied');
-      expect(result.content[0].text).toContain('secret.js');
+      expect(result.content[0].text).toContain('private/repo');
     });
 
     it('should handle directory instead of file', async () => {
@@ -363,7 +366,7 @@ describe('GitHub Fetch Content Tool', () => {
       );
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Path is a directory');
+      expect(result.content[0].text).toContain('Path is directory');
       expect(result.content[0].text).toContain('src');
     });
 

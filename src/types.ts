@@ -34,8 +34,8 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   path?: string;
   match?: 'file' | 'path' | ('file' | 'path')[]; // Support array
   size?: string;
-  visibility?: 'public' | 'private' | 'internal';
   limit?: number;
+  visibility?: 'public' | 'private' | 'internal';
   // Legacy fields for backward compatibility
   branch?: string;
   enableQueryOptimization?: boolean;
@@ -75,11 +75,13 @@ export interface GitHubPullRequestsSearchParams
   head?: string;
   base?: string;
   language?: string;
-  merged?: string;
+  merged?: string | boolean;
   mergedAt?: string;
   draft?: boolean;
   reviewedBy?: string;
   reviewRequested?: string;
+  checks?: 'pending' | 'success' | 'failure';
+  review?: 'none' | 'required' | 'approved' | 'changes_requested';
   sort?:
     | 'comments'
     | 'reactions'
@@ -104,6 +106,7 @@ export interface GitHubReposSearchParams
   forks?: number;
   stars?: string;
   topic?: string[];
+  numberOfTopics?: number;
 
   // SECONDARY FILTERS (require query or primary filter)
   archived?: boolean;
@@ -113,6 +116,10 @@ export interface GitHubReposSearchParams
   match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
+  goodFirstIssues?: string; // Format: ">=10", ">5", etc.
+  helpWantedIssues?: string; // Format: ">=5", ">10", etc.
+  followers?: number;
+  size?: string; // Format: ">100", "<50", "10..100"
 
   // SORTING AND LIMITS
   limit?: number;
