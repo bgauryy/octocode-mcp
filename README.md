@@ -93,9 +93,6 @@ npm login
 
 **That's it!** No personal access tokens, no config files, no complex setup. Octocode leverages [GitHub CLI](https://cli.github.com/) authentication behind the scenes and **automatically works with your organization's private repositories**.
 
-![Installation Demo](assets/installation.gif)
-
-
 ## How Octocode Works 🔄
 
 **Smart Discovery Flow:**
