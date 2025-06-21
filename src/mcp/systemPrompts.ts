@@ -26,4 +26,8 @@ OPTIMIZATION:
  Discovery: comprehensive multi-tool approach
  Direct queries: quick targeted approach
 
+ CLI Help using CLI (use when needed to check failures)
+ gh <command>  --help
+ npm <command> --help
+
 Always provide code snippets and documentation references.`;
