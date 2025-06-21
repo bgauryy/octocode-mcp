@@ -63,8 +63,9 @@ describe('GitHub Search Code Tool', () => {
     const execModule = await import('../../src/utils/exec.js');
     mockExecuteGitHubCommand = vi.mocked(execModule.executeGitHubCommand);
 
-    // Clear mocks
+    // Clear mocks and reset modules to clear API status cache
     mockExecuteGitHubCommand.mockClear();
+    vi.resetModules();
 
     // Register tool after getting references to mocked functions
     registerGitHubSearchCodeTool(mockServer.server);
@@ -72,6 +73,7 @@ describe('GitHub Search Code Tool', () => {
 
   afterEach(() => {
     mockServer.cleanup();
+    vi.clearAllMocks();
   });
 
   describe('Tool Registration', () => {
@@ -424,9 +426,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Repository search requires owner parameter'
-      );
+      expect(result.content[0].text).toContain('Missing owner parameter');
     });
 
     it('should handle GitHub CLI execution errors', async () => {
@@ -439,7 +439,391 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Code search command failed');
+      expect(result.content[0].text).toContain('api_status_check tool');
+    });
+
+    it('should return error for excessively long queries', async () => {
+      const longQuery = 'a'.repeat(1001);
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: longQuery,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Search query too long');
+    });
+
+    it('should return error for empty queries', async () => {
+      const result = await mockServer.callTool('github_search_code', {
+        query: '   ', // Empty/whitespace query
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Empty search query');
+    });
+
+    it('should return error for unmatched quotes', async () => {
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState "unmatched quote',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Unmatched quotes in query');
+    });
+
+    it('should return error for lowercase boolean operators', async () => {
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState and hooks',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'Boolean operators must be uppercase'
+      );
+      expect(result.content[0].text).toContain('use AND instead of and');
+    });
+
+    it('should return error for invalid size format', async () => {
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState',
+        size: 'invalid-size',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid size format');
+    });
+
+    it('should return error for invalid escape characters', async () => {
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState\\hook', // Invalid escape without quotes
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid escape characters');
+    });
+
+    it('should direct to api_status_check for authentication errors', async () => {
+      mockExecuteGitHubCommand.mockRejectedValueOnce(
+        new Error('authentication failed')
+      );
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('api_status_check tool');
+    });
+
+    it('should direct to api_status_check for owner not found errors', async () => {
+      mockExecuteGitHubCommand.mockRejectedValueOnce(
+        new Error('owner not found')
+      );
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState',
+        owner: 'nonexistent-org',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('api_status_check tool');
+    });
+  });
+
+  describe('Parameter Validation Fixes', () => {
+    it('should handle complex queries with language and extension by prioritizing language', async () => {
+      const mockResults = [
+        {
+          path: 'src/components/App.tsx',
+          repository: {
+            id: 'R_validation123',
+            isFork: false,
+            isPrivate: false,
+            nameWithOwner: 'microsoft/vscode',
+            url: 'https://github.com/microsoft/vscode',
+          },
+          sha: 'valid123',
+          textMatches: [
+            {
+              fragment: 'useState and useEffect implementation',
+              matches: [
+                {
+                  indices: [0, 8] as [number, number],
+                  text: 'useState',
+                },
+                {
+                  indices: [13, 22] as [number, number],
+                  text: 'useEffect',
+                },
+              ],
+              property: 'content',
+              type: 'FileContent',
+            },
+          ],
+          url: 'https://github.com/microsoft/vscode/blob/main/src/components/App.tsx',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState AND useEffect language:typescript" --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState AND useEffect',
+        language: 'typescript',
+        extension: 'tsx', // This should be ignored in favor of language for complex queries
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.processed_query).toBe(
+        'useState AND useEffect language:typescript'
+      );
+      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
+      expect(data.total_count).toBe(1);
+    });
+
+    it('should use extension filter when language is not specified in complex queries', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState AND useEffect extension:tsx" --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState AND useEffect',
+        extension: 'tsx', // Should be included since no language specified
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.processed_query).toBe('useState AND useEffect extension:tsx');
+      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
+    });
+
+    it('should use CLI flags for simple queries with both language and extension', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState OR hook" --language=typescript --extension=tsx --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState hook', // Simple query - auto-converted to OR
+        language: 'typescript',
+        extension: 'tsx',
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      // The processed_query shows the OR logic
+      expect(data.processed_query).toBe('useState OR hook');
+      expect(data.debug_info.has_complex_boolean_logic).toBe(false);
+      // For simple queries, both language and extension should be CLI flags
+      expect(data.debug_info.escaped_args).toContain('--language=typescript');
+      expect(data.debug_info.escaped_args).toContain('--extension=tsx');
+    });
+
+    it('should handle multiple match types by using the first one', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState" --match=file --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState',
+        match: ['file', 'path'], // Should use first one (file)
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.debug_info.escaped_args).toContain('--match=file');
+      expect(data.debug_info.escaped_args).not.toContain('--match=path');
+    });
+
+    it('should properly combine path and visibility filters in query string', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState path:src/ visibility:public" --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState',
+        path: 'src/',
+        visibility: 'public',
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.processed_query).toBe('useState path:src/ visibility:public');
+    });
+
+    it('should handle owner/repo combinations correctly', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState" --repo=facebook/react --repo=microsoft/vscode --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState',
+        owner: ['facebook', 'microsoft'],
+        repo: ['react', 'vscode'],
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.debug_info.escaped_args).toContain('--repo=facebook/react');
+      expect(data.debug_info.escaped_args).toContain('--repo=facebook/vscode');
+      expect(data.debug_info.escaped_args).toContain('--repo=microsoft/react');
+      expect(data.debug_info.escaped_args).toContain('--repo=microsoft/vscode');
+    });
+  });
+
+  describe('Query Processing Edge Cases', () => {
+    it('should handle escaped quotes properly', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState hook" --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: '\\"useState hook\\"', // Escaped quotes should become regular quotes
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.processed_query).toBe('"useState hook"');
+    });
+
+    it('should preserve multiple exact phrases', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "import React" OR "from react" --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: '\\"import React\\" \\"from react\\"',
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      // Multiple quoted phrases get OR logic applied between them
+      expect(data.processed_query).toBe('"import React" OR "from react"');
+    });
+
+    it('should handle mixed boolean operators and exact phrases', async () => {
+      const mockResults = [];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: JSON.stringify(mockResults),
+              command:
+                'gh search code "useState AND "React Hook" language:typescript" --limit=30 --json=repository,path,textMatches,sha,url',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool('github_search_code', {
+        query: 'useState AND \\"React Hook\\"',
+        language: 'typescript',
+      });
+
+      const data = parseResultJson<GitHubCodeSearchResponse>(result);
+
+      expect(result.isError).toBe(false);
+      expect(data.processed_query).toBe(
+        'useState AND "React Hook" language:typescript'
+      );
+      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
     });
   });
 });
