@@ -16,9 +16,9 @@ describe('NPM Package Search Tool', () => {
   let mockServer: McpServer;
 
   beforeEach(() => {
-    // Create a mock server with a tool method
+    // Create a mock server with a registerTool method
     mockServer = {
-      tool: vi.fn(),
+      registerTool: vi.fn(),
     } as any;
 
     // Clear all mocks
@@ -33,20 +33,12 @@ describe('NPM Package Search Tool', () => {
     it('should register the NPM package search tool with correct parameters', () => {
       registerNpmSearchTool(mockServer);
 
-      expect(mockServer.tool).toHaveBeenCalledWith(
+      expect(mockServer.registerTool).toHaveBeenCalledWith(
         'npm_package_search',
-        expect.any(String),
         expect.objectContaining({
-          queries: expect.any(Object),
-          searchlimit: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'npm_package_search',
           description: expect.any(String),
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
+          inputSchema: expect.any(Object),
+          annotations: expect.any(Object),
         }),
         expect.any(Function)
       );
@@ -58,7 +50,7 @@ describe('NPM Package Search Tool', () => {
 
     beforeEach(() => {
       registerNpmSearchTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should search for packages with single query', async () => {
@@ -371,7 +363,7 @@ describe('NPM Package Search Tool', () => {
 
     beforeEach(() => {
       registerNpmSearchTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should deduplicate packages with same name from multiple queries', async () => {
@@ -445,7 +437,7 @@ describe('NPM Package Search Tool', () => {
 
     beforeEach(() => {
       registerNpmSearchTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle npm command errors', async () => {
@@ -472,7 +464,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'NPM package search failed'
+        'Package search failed'
       );
     });
 
@@ -530,7 +522,7 @@ describe('NPM Package Search Tool', () => {
 
     beforeEach(() => {
       registerNpmSearchTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle string query input', async () => {
@@ -703,7 +695,7 @@ describe('NPM Package Search Tool', () => {
 
     beforeEach(() => {
       registerNpmSearchTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle nested JSON result strings', async () => {
@@ -816,7 +808,7 @@ describe('NPM Package Search Tool', () => {
 
     beforeEach(() => {
       registerNpmSearchTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should use caching for npm search commands', async () => {

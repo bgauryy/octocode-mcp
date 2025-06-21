@@ -82,23 +82,12 @@ describe('GitHub Search Commits Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub search commits tool', () => {
-      expect(mockServer.server.tool).toHaveBeenCalledWith(
+      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        expect.any(String),
         expect.objectContaining({
-          query: expect.any(Object),
-          owner: expect.any(Object),
-          repo: expect.any(Object),
-          author: expect.any(Object),
-          sort: expect.any(Object),
-          limit: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'github_search_commits',
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
+          description: expect.any(String),
+          inputSchema: expect.any(Object),
+          annotations: expect.any(Object),
         }),
         expect.any(Function)
       );

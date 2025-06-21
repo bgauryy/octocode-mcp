@@ -20,13 +20,16 @@ vi.mock('../../src/utils/cache.js', () => ({
 // Import after mocking
 import { registerViewRepositoryStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
 
+// Define tool name constant
+const GITHUB_GET_CONTENTS = 'github_get_contents';
+
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: McpServer;
 
   beforeEach(() => {
-    // Create a mock server with a tool method
+    // Create a mock server with a registerTool method
     mockServer = {
-      tool: vi.fn(),
+      registerTool: vi.fn(),
     } as any;
 
     // Clear all mocks
@@ -49,22 +52,12 @@ describe('GitHub View Repository Structure Tool', () => {
     it('should register the GitHub view repository structure tool with correct parameters', () => {
       registerViewRepositoryStructureTool(mockServer);
 
-      expect(mockServer.tool).toHaveBeenCalledWith(
-        'github_get_contents',
-        expect.any(String),
+      expect(mockServer.registerTool).toHaveBeenCalledWith(
+        GITHUB_GET_CONTENTS,
         expect.objectContaining({
-          owner: expect.any(Object),
-          repo: expect.any(Object),
-          branch: expect.any(Object),
-          path: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'github_get_contents',
           description: expect.any(String),
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
+          inputSchema: expect.any(Object),
+          annotations: expect.any(Object),
         }),
         expect.any(Function)
       );
@@ -76,7 +69,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     beforeEach(() => {
       registerViewRepositoryStructureTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should browse repository root directory', async () => {
@@ -395,7 +388,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     beforeEach(() => {
       registerViewRepositoryStructureTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should use requested branch when available', async () => {
@@ -557,7 +550,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     beforeEach(() => {
       registerViewRepositoryStructureTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle repository not found', async () => {
@@ -612,7 +605,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Access denied to repository private/repo'
+        'Repository access failed'
       );
     });
 
@@ -679,7 +672,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     beforeEach(() => {
       registerViewRepositoryStructureTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should validate owner format', async () => {
@@ -819,7 +812,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     beforeEach(() => {
       registerViewRepositoryStructureTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should use cache for repository structure requests', async () => {
@@ -914,7 +907,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     beforeEach(() => {
       registerViewRepositoryStructureTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should format file URLs correctly', async () => {

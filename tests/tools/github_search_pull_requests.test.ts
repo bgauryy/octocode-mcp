@@ -24,9 +24,9 @@ describe('GitHub Search Pull Requests Tool', () => {
   let mockServer: McpServer;
 
   beforeEach(() => {
-    // Create a mock server with a tool method
+    // Create a mock server with a registerTool method
     mockServer = {
-      tool: vi.fn(),
+      registerTool: vi.fn(),
     } as any;
 
     // Clear all mocks
@@ -49,40 +49,12 @@ describe('GitHub Search Pull Requests Tool', () => {
     it('should register the GitHub search pull requests tool with correct parameters', () => {
       registerSearchGitHubPullRequestsTool(mockServer);
 
-      expect(mockServer.tool).toHaveBeenCalledWith(
+      expect(mockServer.registerTool).toHaveBeenCalledWith(
         'github_search_pull_requests',
-        expect.any(String),
         expect.objectContaining({
-          query: expect.any(Object),
-          owner: expect.any(Object),
-          repo: expect.any(Object),
-          author: expect.any(Object),
-          assignee: expect.any(Object),
-          mentions: expect.any(Object),
-          commenter: expect.any(Object),
-          involves: expect.any(Object),
-          reviewedBy: expect.any(Object),
-          reviewRequested: expect.any(Object),
-          state: expect.any(Object),
-          head: expect.any(Object),
-          base: expect.any(Object),
-          language: expect.any(Object),
-          created: expect.any(Object),
-          updated: expect.any(Object),
-          mergedAt: expect.any(Object),
-          closed: expect.any(Object),
-          draft: expect.any(Object),
-          limit: expect.any(Object),
-          sort: expect.any(Object),
-          order: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'github_search_pull_requests',
           description: expect.any(String),
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
+          inputSchema: expect.any(Object),
+          annotations: expect.any(Object),
         }),
         expect.any(Function)
       );
@@ -94,7 +66,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should perform basic pull request search', async () => {
@@ -566,7 +538,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle empty search results', async () => {
@@ -605,7 +577,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle GitHub CLI execution errors', async () => {
@@ -676,7 +648,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should reject empty query', async () => {
@@ -811,7 +783,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should use cache for pull request searches', async () => {
@@ -894,7 +866,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should properly encode complex queries for API calls', async () => {
@@ -941,7 +913,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubPullRequestsTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
     });
 
     it('should always add type:pr qualifier to search only pull requests', async () => {

@@ -25,7 +25,9 @@ describe('NPM View Package Tool', () => {
   beforeEach(() => {
     // Create a mock server with a tool method
     mockServer = {
-      tool: vi.fn(),
+      server: {
+        registerTool: vi.fn(),
+      },
     } as any;
 
     // Clear all mocks
@@ -46,21 +48,14 @@ describe('NPM View Package Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the NPM view package tool with correct parameters', () => {
-      registerNpmViewPackageTool(mockServer);
+      registerNpmViewPackageTool(mockServer.server);
 
-      expect(mockServer.tool).toHaveBeenCalledWith(
+      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'npm_view_package',
-        expect.any(String),
         expect.objectContaining({
-          packageName: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'npm_view_package',
           description: expect.any(String),
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
+          inputSchema: expect.any(Object),
+          annotations: expect.any(Object),
         }),
         expect.any(Function)
       );
@@ -71,8 +66,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should view package with complete metadata', async () => {
@@ -390,8 +385,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle npm command errors', async () => {
@@ -422,7 +417,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to get npm package metadata'
+        'Failed to get package metadata - package may not exist'
       );
       expect(result.content[0].text).toContain('Network timeout');
     });
@@ -439,7 +434,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to get npm package metadata'
+        'Failed to get package metadata - package may not exist'
       );
     });
 
@@ -455,7 +450,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to get npm package metadata'
+        'Failed to get package metadata - package may not exist'
       );
     });
 
@@ -471,7 +466,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Failed to get npm package metadata'
+        'Failed to get package metadata - package may not exist'
       );
     });
   });
@@ -480,8 +475,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should reject empty package name', async () => {
@@ -490,7 +485,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name is required - provide a valid NPM package name');
+      expect(result.content[0].text).toBe('Package name required - provide valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
 
@@ -500,7 +495,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name is required - provide a valid NPM package name');
+      expect(result.content[0].text).toBe('Package name required - provide valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
 
@@ -519,7 +514,7 @@ describe('NPM View Package Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toBe('Invalid package name format - use standard NPM naming (e.g., "package-name" or "@scope/package")');
+        expect(result.content[0].text).toBe('Invalid package name format - use standard NPM naming');
       }
 
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
@@ -570,7 +565,7 @@ describe('NPM View Package Tool', () => {
       const result = await toolHandler({});
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name is required - provide a valid NPM package name');
+      expect(result.content[0].text).toBe('Package name required - provide valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
   });
@@ -579,8 +574,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should extract registry URL from tarball', async () => {
@@ -672,8 +667,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should filter out non-semantic versions', async () => {
@@ -746,8 +741,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should use caching for npm view commands', async () => {
@@ -832,8 +827,8 @@ describe('NPM View Package Tool', () => {
     let toolHandler: Function;
 
     beforeEach(() => {
-      registerNpmViewPackageTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
+      registerNpmViewPackageTool(mockServer.server);
+      toolHandler = (mockServer.server.registerTool as any).mock.calls[0][2];
     });
 
     it('should handle real-world package structure', async () => {

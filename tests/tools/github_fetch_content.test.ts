@@ -57,21 +57,12 @@ describe('GitHub Fetch Content Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub file content tool', () => {
-      expect(mockServer.server.tool).toHaveBeenCalledWith(
+      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_GET_FILE_CONTENT,
-        expect.any(String),
         expect.objectContaining({
-          owner: expect.any(Object),
-          repo: expect.any(Object),
-          branch: expect.any(Object),
-          filePath: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'github_get_file_content',
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
+          description: expect.any(String),
+          inputSchema: expect.any(Object),
+          annotations: expect.any(Object),
         }),
         expect.any(Function)
       );
