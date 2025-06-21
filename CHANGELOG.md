@@ -38,6 +38,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows PowerShell Section**: New documentation section explaining modern shell support and benefits
 - **Cross-Platform Shell Guide**: Updated explanations of shell choices and security benefits
 
+### 🛠️ ENHANCED: GitHub Search Code Tool Reliability & User Experience
+
+#### Enhanced
+- **Smart Tool Integration**: Removed redundant API status logic, now leverages existing `api_status_check` tool for authentication and organization validation
+- **Improved Error Handling**: Enhanced error messages that direct users to appropriate tools for resolution
+- **Query Processing Logic**: Fixed boolean logic detection to properly distinguish between original complex queries and auto-generated OR logic
+- **Parameter Validation**: Comprehensive validation with clear, actionable error messages for common mistakes
+
+#### Fixed
+- **Boolean Logic Detection**: Corrected complexity detection to check original query before auto-OR processing, ensuring proper CLI flag vs query string handling
+- **Authentication Errors**: Error messages now direct users to run `api_status_check` tool instead of generic CLI commands
+- **Organization Access**: Simplified ownership validation to rely on existing API status infrastructure
+- **Test Suite**: All 26 tests passing with simplified mocking and focused functionality testing
+
+#### Technical Improvements
+- **Code Simplification**: Removed 100+ lines of redundant API status caching and validation logic
+- **Clean Architecture**: Follows single responsibility principle with proper tool composition
+- **Filter Logic**: Correctly handles language/extension filters based on query complexity (CLI flags for simple queries, query string for complex)
+- **Validation Flow**: Streamlined parameter validation without async complexity
+
+#### Removed
+- **Redundant Logic**: Eliminated duplicate authentication checking and API status caching
+- **Over-Engineering**: Removed complex ownership validation in favor of existing tool integration
+- **Complex Mocking**: Simplified test suite by removing authentication edge case testing
+
+#### User Experience
+- **Clear Error Messages**: Users get specific, actionable guidance when queries fail
+- **Tool Discovery**: Error messages guide users to relevant tools (`api_status_check`) for resolution
+- **Validation Feedback**: Immediate feedback on query syntax, parameter combinations, and format issues
+- **Smart Defaults**: Auto-OR logic for multi-word queries with proper complexity detection
+
 ---
 
 ## [2.3.3] - 2024-12-20 - Critical GitHub Repository Search & File Handling Fixes
