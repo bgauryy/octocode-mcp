@@ -12,7 +12,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories with strategic boolean operators and filters. Use OR for broad discovery, AND for precision, exact phrases for specific matches.`;
+const DESCRIPTION = `Find code patterns across repositories with boolean logic and precision filters. Essential for implementation research, API usage discovery, and architectural analysis.`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -24,19 +24,19 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search query with boolean operators. OR (default): "useState hook" → broad discovery. AND: "react AND hooks" → precise. Quotes: "exact phrase" → specific. Combine with filters for laser focus.'
+            'Search query. Use "exact phrases", AND/OR operators, or natural language. Examples: "useEffect cleanup", "react AND hooks", "API endpoint"'
           ),
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization filter. Use for targeted searches or private repo access.'
+            'Target organization/user. Use for focused searches or private repo access.'
           ),
         repo: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Specific repositories. Format: "owner/repo". Requires owner parameter.'
+            'Specific repositories. Format: "owner/repo" or just "repo" with owner param.'
           ),
         language: z
           .string()
@@ -47,22 +47,26 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         extension: z
           .string()
           .optional()
-          .describe('File extension without dot. Precise file type targeting.'),
+          .describe(
+            'File extension without dot. Use for config files, specific types.'
+          ),
         filename: z
           .string()
           .optional()
-          .describe('Exact filename. Perfect for config files.'),
+          .describe(
+            'Exact filename. Perfect for package.json, webpack.config.js, etc.'
+          ),
         path: z
           .string()
           .optional()
           .describe(
-            'Directory path filter. Focus search on specific directories.'
+            'Directory path filter. Focus on specific folders like src/, lib/, test/.'
           ),
         size: z
           .string()
           .optional()
           .describe(
-            'File size filter with operators (e.g., ">100", "<50", "10..100").'
+            'File size filter. Examples: ">100", "<1000", "100..500" (bytes).'
           ),
         limit: z
           .number()
@@ -70,8 +74,8 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .min(1)
           .max(50)
           .optional()
-          .default(30)
-          .describe('Maximum results (1-50, default: 30).'),
+          .default(20)
+          .describe('Max results. Default 20 for research efficiency.'),
         match: z
           .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
           .optional()
@@ -129,13 +133,13 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         // Handle JSON parsing errors
         if (errorMessage.includes('JSON')) {
           return createErrorResult(
-            'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
+            'Invalid CLI response - update GitHub CLI or check authentication',
             error as Error
           );
         }
 
         return createErrorResult(
-          'GitHub code search failed - verify parameters and try with simpler query or specific filters (language, owner, path)',
+          'Code search failed - simplify query or add filters (language, owner, path)',
           error as Error
         );
       }
@@ -165,19 +169,15 @@ function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
   // Step 3: Check complexity BEFORE adding auto-OR logic
   const originalHasComplexLogic = hasComplexBooleanLogic(processedQuery);
 
-  // Step 4: Smart boolean logic - default to OR between terms if no explicit operators
+  // Step 4: Smart boolean logic - default to AND between terms if no explicit operators
   let searchQuery = processedQuery;
 
   // Check if query already has explicit boolean operators
   if (!originalHasComplexLogic) {
-    // Split by whitespace and join with OR for better search results
-    const terms = processedQuery
-      .trim()
-      .split(/\s+/)
-      .filter(term => term.length > 0);
-    if (terms.length > 1) {
-      searchQuery = terms.join(' OR ');
-    }
+    // For code search, terms should appear together by default (AND logic)
+    // Only split into separate terms if that's explicitly requested
+    // GitHub CLI code search handles space-separated terms as AND by default
+    searchQuery = processedQuery; // Keep original query for natural AND behavior
   }
 
   // Step 5: Handle filters differently based on ORIGINAL query complexity
@@ -334,14 +334,14 @@ export async function searchGitHubCode(
       // Parse specific GitHub CLI error types
       if (errorMessage.includes('authentication')) {
         return createErrorResult(
-          'GitHub authentication required - run api_status_check tool',
+          'Authentication required - run api_status_check',
           error as Error
         );
       }
 
       if (errorMessage.includes('rate limit')) {
         return createErrorResult(
-          'GitHub rate limit exceeded - use more specific filters or wait',
+          'Rate limit exceeded - add specific filters or wait',
           error as Error
         );
       }
@@ -351,7 +351,7 @@ export async function searchGitHubCode(
         errorMessage.includes('Invalid query')
       ) {
         return createErrorResult(
-          'Invalid query syntax - check operators, quotes, and filters',
+          'Invalid query syntax - check operators and quotes',
           error as Error
         );
       }
@@ -361,21 +361,21 @@ export async function searchGitHubCode(
         errorMessage.includes('owner not found')
       ) {
         return createErrorResult(
-          'Repository not found - verify owner/repo names and permissions',
+          'Repository not found - verify names and permissions',
           error as Error
         );
       }
 
       if (errorMessage.includes('timeout')) {
         return createErrorResult(
-          'Search timeout - add filters to narrow results',
+          'Search timeout - add filters to narrow scope',
           error as Error
         );
       }
 
-      // Generic fallback with helpful guidance
+      // Generic fallback
       return createErrorResult(
-        'Code search failed - check authentication and simplify query',
+        'Search failed - check authentication and simplify query',
         error as Error
       );
     }
@@ -383,7 +383,7 @@ export async function searchGitHubCode(
 }
 
 /**
- * Validate parameter combinations to prevent conflicts
+ * Validate parameters for optimal research usage
  */
 function validateSearchParameters(
   params: GitHubCodeSearchParams
@@ -393,36 +393,31 @@ function validateSearchParameters(
     return 'Empty query - provide search terms like "useState" or "api AND endpoint"';
   }
 
-  if (params.query.length > 1000) {
-    return 'Query too long - limit to 1000 characters';
+  if (params.query.length > 500) {
+    return 'Query too long - limit to 500 characters for efficiency';
   }
 
   // Repository validation
   if (params.repo && !params.owner) {
-    return 'Missing owner - format as owner/repo or provide both parameters';
-  }
-
-  // Invalid characters in query
-  if (params.query.includes('\\') && !params.query.includes('\\"')) {
-    return 'Invalid escapes - use quotes for exact phrases instead';
+    return 'Missing owner - use owner/repo format or provide both params';
   }
 
   // Boolean operator validation
   const invalidBooleans = params.query.match(/\b(and|or|not)\b/g);
   if (invalidBooleans) {
-    return `Boolean operators must be uppercase: ${invalidBooleans.map(op => op.toUpperCase()).join(', ')}`;
+    return `Use uppercase: ${invalidBooleans.map(op => op.toUpperCase()).join(', ')}`;
   }
 
   // Unmatched quotes
   const quoteCount = (params.query.match(/"/g) || []).length;
   if (quoteCount % 2 !== 0) {
-    return 'Unmatched quotes - ensure all quotes are properly paired';
+    return 'Unmatched quotes - pair all quotes properly';
   }
 
   // Size parameter validation
   if (params.size && !/^[<>]=?\d+$|^\d+\.\.\d+$|^\d+$/.test(params.size)) {
-    return 'Invalid size format - use ">100", "<50", "10..100", or "100"';
+    return 'Invalid size format - use ">100", "<50", "10..100"';
   }
 
-  return null; // No validation errors
+  return null;
 }

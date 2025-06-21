@@ -1,102 +1,37 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
-import { Implementation } from '@modelcontextprotocol/sdk/types.js';
-import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
-import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerNpmSearchTool } from './mcp/tools/npm_package_search.js';
-import { registerViewRepositoryStructureTool } from './mcp/tools/github_view_repo_structure.js';
-import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
-import { registerNpmViewPackageTool } from './mcp/tools/npm_view_package.js';
+import { ServerManager } from './utils/server-manager.js';
+import { Logger } from './utils/logger.js';
 
-const SERVER_CONFIG: Implementation = {
-  name: 'octocode-mcp',
-  version: '1.0.0',
-  description: `Comprehensive code analysis assistant: Deep exploration and understanding of complex implementations in GitHub repositories and npm packages.
-       Specialized in architectural analysis, algorithm explanations, and complete technical documentation.`,
-};
+/**
+ * Octocode MCP Server - Optimized for Code Research & Analysis
+ *
+ * Research-focused features:
+ * - Smart workflow chaining (NPM → GitHub → code analysis)
+ * - Token-efficient responses for LLM consumption
+ * - Quality-first defaults (stars >1000, focused limits)
+ * - Comprehensive error handling with actionable guidance
+ *
+ * Architecture optimized for:
+ * - Implementation discovery and analysis
+ * - Architectural pattern research
+ * - Bug investigation workflows
+ * - Performance optimization studies
+ */
 
-function registerAllTools(server: McpServer) {
-  const toolRegistrations = [
-    { name: 'ApiStatusCheck', fn: registerApiStatusCheckTool },
-    { name: 'GitHubSearchCode', fn: registerGitHubSearchCodeTool },
-    {
-      name: 'FetchGitHubFileContent',
-      fn: registerFetchGitHubFileContentTool,
-    },
-    { name: 'SearchGitHubRepos', fn: registerSearchGitHubReposTool },
-    { name: 'SearchGitHubCommits', fn: registerSearchGitHubCommitsTool },
-    {
-      name: 'SearchGitHubPullRequests',
-      fn: registerSearchGitHubPullRequestsTool,
-    },
-    { name: 'NpmSearch', fn: registerNpmSearchTool },
-    {
-      name: 'ViewRepositoryStructure',
-      fn: registerViewRepositoryStructureTool,
-    },
-    { name: 'SearchGitHubIssues', fn: registerSearchGitHubIssuesTool },
-    { name: 'NpmViewPackage', fn: registerNpmViewPackageTool },
-  ];
-
-  for (const tool of toolRegistrations) {
-    try {
-      tool.fn(server);
-    } catch (error) {
-      // ignore
-    }
-  }
-}
-
-async function startServer() {
+async function main(): Promise<void> {
   try {
-    const server = new McpServer(SERVER_CONFIG, {
-      capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {},
-      },
-      instructions: `
-    ${PROMPT_SYSTEM_PROMPT}
-  `,
-    });
+    // Initialize server manager
+    const serverManager = new ServerManager();
 
-    registerAllTools(server);
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-
-    const gracefulShutdown = async (_signal: string) => {
-      try {
-        await server.close();
-        process.exit(0);
-      } catch (error) {
-        process.exit(1);
-      }
-    };
-
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-
-    process.stdin.on('close', async () => {
-      await gracefulShutdown('STDIN_CLOSE');
-    });
-
-    process.on('uncaughtException', () => {
-      gracefulShutdown('UNCAUGHT_EXCEPTION');
-    });
-
-    process.on('unhandledRejection', () => {
-      gracefulShutdown('UNHANDLED_REJECTION');
-    });
+    // Start the server
+    await serverManager.start();
   } catch (error) {
+    Logger.error('Critical error during server startup', error);
     process.exit(1);
   }
 }
 
-startServer().catch(() => {
+// Bootstrap the application
+main().catch(error => {
+  Logger.error('Unhandled error in main process', error);
   process.exit(1);
 });
