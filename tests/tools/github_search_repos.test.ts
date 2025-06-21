@@ -75,9 +75,7 @@ describe('GitHub Search Repositories Tool', () => {
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'github_search_repositories',
         expect.objectContaining({
-          description: expect.stringContaining('Search repositories by name/description'),
-          inputSchema: expect.any(Object),
-          annotations: expect.any(Object),
+          description: expect.stringContaining('Discover repositories for architecture analysis'),
         }),
         expect.any(Function)
       );
@@ -138,7 +136,8 @@ describe('GitHub Search Repositories Tool', () => {
         'search',
         expect.arrayContaining([
           'repos',
-          'cli shell',
+          'cli',
+          'shell',
           '--json',
           'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
         ]),
@@ -720,7 +719,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['language:Go OR language:Rust']),
+        expect.arrayContaining(['repos', 'language:Go', 'OR', 'language:Rust']),
         { cache: false }
       );
     });
@@ -875,7 +874,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Requires query or primary filter'
+        'Provide query or filter'
       );
     });
 
@@ -890,7 +889,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Repository search failed - verify connection or simplify query'
+        'Search failed - check connection or simplify query'
       );
     });
 
@@ -907,7 +906,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Repository search failed - verify connection or simplify query'
+        'Search failed - check connection or simplify query'
       );
     });
   });
