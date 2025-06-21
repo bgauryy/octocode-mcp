@@ -14,15 +14,13 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_pull_requests';
 
-const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover how features were implemented, code review patterns, and development workflows.
+const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover feature implementations, code review patterns, and development workflows.
 
-SEARCH PATTERNS SUPPORTED:
-• BOOLEAN OPERATORS: "fix AND bug" (both required), "refactor OR cleanup" (either term), "feature NOT draft" (excludes draft)
-• EXACT PHRASES: "initial commit" (precise phrase matching)
-• GITHUB QUALIFIERS: Built-in support for "is:merged", "review:approved", "base:main", etc.
-• COMBINABLE: Mix search terms with filters for targeted PR discovery
-
-Filter by state, author, reviewer, or merge status for comprehensive development workflow analysis.`;
+SEARCH PATTERNS:
+ Boolean: "fix AND bug", "refactor OR cleanup", "feature NOT draft"
+ Exact phrases: "initial commit" (quoted)
+ GitHub qualifiers: "is:merged review:approved base:main"
+ Combine with filters for targeted PR discovery`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.tool(

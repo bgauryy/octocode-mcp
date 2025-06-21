@@ -137,6 +137,7 @@ async function executeCommand(
     const defaultTimeout = type === 'npm' ? 30000 : 60000;
     const execOptions = {
       timeout: options.timeout || defaultTimeout,
+      maxBuffer: 5 * 1024 * 1024, // 5MB buffer limit (increased from default 1MB)
       cwd: options.cwd,
       env: {
         ...process.env,

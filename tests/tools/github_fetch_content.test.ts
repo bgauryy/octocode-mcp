@@ -373,7 +373,7 @@ describe('GitHub Fetch Content Tool', () => {
     it('should handle file too large error', async () => {
       const mockResponse = {
         type: 'file',
-        size: 600 * 1024, // 600KB - exceeds 500KB limit
+        size: 400 * 1024, // 400KB - exceeds 300KB limit
         content: 'dGVzdA==', // base64 for "test"
         encoding: 'base64',
       };
@@ -401,8 +401,8 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('File too large');
-      expect(result.content[0].text).toContain('600KB');
-      expect(result.content[0].text).toContain('500KB');
+      expect(result.content[0].text).toContain('400KB');
+      expect(result.content[0].text).toContain('300KB');
     });
 
     it('should handle empty file', async () => {

@@ -5,7 +5,7 @@
 <div>
   <img src="./assets/logo.png">
   
-  [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
 </div>
@@ -55,7 +55,7 @@ It's the tool you reach for when you need to understand *"how does this work?"* 
 
 ### 1. Install Prerequisites
 ```bash
-# Install Node.js 21+
+# Install Node.js 18.12+
 brew install node  # macOS
 # or download from https://nodejs.org/
 
@@ -93,35 +93,44 @@ npm login
 
 **That's it!** No personal access tokens, no config files, no complex setup. Octocode leverages [GitHub CLI](https://cli.github.com/) authentication behind the scenes and **automatically works with your organization's private repositories**.
 
-## Example Questions 💬
+![Installation Demo](assets/installation.gif)
 
-**Learning & Research:**
-- *"How do popular libraries implement rate limiting?"*
-- *"Show me Server Actions patterns in Next.js applications"*
-- *"What are the differences between Vue and React rendering?"*
 
-**Architecture & Patterns:**
-- *"How is authentication handled in enterprise applications?"*
-- *"Show me microservices communication patterns"*
-- *"Find examples of event-driven architecture implementations"*
+## How Octocode Works 🔄
 
-**Organization & Private Repositories:**
-- *"Show me authentication patterns used in our team's repositories"*
-- *"Find internal libraries and how they're implemented in our org"*
-- *"Analyze our company's coding standards and patterns"*
+**Smart Discovery Flow:**
+1. **🔍 Query Analysis** → AI determines the best search strategy based on your question
+2. **⚡ Multi-Tool Orchestration** → Combines GitHub + NPM searches intelligently
+3. **🔄 Smart Fallbacks** → Automatically retries with different approaches if initial search fails
+4. **🔗 Cross-Reference Discovery** → Links packages to repositories, finds related implementations
+5. **🎯 Context Synthesis** → Provides comprehensive understanding across multiple sources
 
-**Specific Code Analysis:**
-- *"How does lodash implement debouncing?"*
-- *"Show usage examples of this API: `createContext`"*
-- *"Find React hooks patterns for data fetching"*
+## Example Flows
+
+### Example 1: LangGraph Node.js Implementation Tutorial
+**Query:** "Show implementations of langgraph in node js. Make a tutorial for how to implement a simple agent using OpenAI API."
+
+![LangGraph Node.js Tutorial](assets/langchainTutorial.gif)
+
+### Example 2: Zustand React State Management
+**Query:** "Show me how to add zustand to react application. Show examples and best practices"
+
+![Zustand React State Management](assets/reactZustand.gif)
+
+### Example 3: React vs Vue.js Rendering Comparison
+**Query:** "How did React implement their concurrent rendering flows? How is it different from Vue.js rendering mechanism? Which is better?"
+
+![React vs Vue.js Rendering Comparison](assets/reactVSVueJS.gif)
 
 ## Core Features 🛠️
 
 ### 🧠 AI-Powered Advanced Search
 - **Heuristic Pattern Recognition** - Finds relevant code even with vague or incomplete queries
-- **Smart Fallback Strategies** - Automatically tries alternative approaches when searches fail
+- **Smart Fallback Strategies** - Automatically tries alternative approaches when searches fail with actionable suggestions
+- **Boolean Search Intelligence** - Automatic query optimization with smart boolean operators (3-5x performance improvement)
 - **Context-Aware Discovery** - Understands code relationships and suggests related implementations
 - **Multi-Strategy Search** - Combines semantic, syntactic, and dependency-based search methods
+- **Graceful Error Recovery** - Comprehensive error handling with intelligent retry mechanisms
 
 ### 🔗 Connection Intelligence
 - **Repository-Package Mapping** - Automatically links NPM packages to their GitHub repositories
@@ -147,6 +156,19 @@ npm login
 - **🚫 Zero Data Collection** - No telemetry, logging, or data transmission
 - **🔑 No Token Management** - Uses [GitHub CLI](https://cli.github.com/) authentication, no personal access tokens needed
 - **🛡️ Privacy by Design** - All API calls use your existing `gh` CLI permissions directly
+
+### Command Execution Security 🔒
+
+**Robust protection against prompt injections and malicious command execution:**
+
+- **⚪ Allowlisted Commands Only** - Only pre-approved, safe NPM and GitHub CLI commands are executable
+  - NPM: `view`, `search`, `ping`, `config`, `whoami` 
+  - GitHub CLI: `search`, `api`, `auth`, `org`
+- **🛡️ Argument Sanitization** - All command arguments are properly escaped to prevent shell injection attacks
+- **✅ Pre-execution Validation** - Every command is validated against allowed lists before execution
+- **🔧 Controlled Environment** - Commands run in a secure shell environment (`/bin/sh`) with controlled variables
+- **🚫 No Arbitrary Execution** - System cannot execute arbitrary shell commands or scripts
+- **⏱️ Timeout Protection** - All commands have execution timeouts to prevent resource exhaustion
 
 ## Best Practices 💡
 

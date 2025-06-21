@@ -9,9 +9,9 @@ const TOOL_NAME = 'npm_package_search';
 const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. 
 
 IMPORTANT LIMITATIONS:
-• NO BOOLEAN OPERATORS: NPM search does NOT support AND/OR/NOT - use space-separated keywords for broader search
-• FUZZY MATCHING ONLY: No exact phrase matching - searches are approximate keyword matching
-• KEYWORD-BASED: Best results with simple, space-separated terms like "react hooks" or "cli typescript"
+ NO BOOLEAN OPERATORS: NPM search does NOT support AND/OR/NOT - use space-separated keywords for broader search
+ FUZZY MATCHING ONLY: No exact phrase matching - searches are approximate keyword matching
+ KEYWORD-BASED: Best results with simple, space-separated terms like "react hooks" or "cli typescript"
 
 Required when package name is unknown. If you have the exact package name, use npm_view_package directly. This reduces the need to use GitHub search when packages are found.`;
 

@@ -12,10 +12,7 @@ import { NpmViewPackageParams, NpmViewPackageResult } from '../../types';
 
 const TOOL_NAME = 'npm_view_package';
 
-const DESCRIPTION = `use npm view to get package metadata. You can get the package
-name from search results or user input. This tool is effieicnt since it gets important package metadata
-on a package fast to optimize tools calls. get package git repository path easily without need to search it (using repo/code search tools),
-exported files of a package are there, along with dependencies and version history.`;
+const DESCRIPTION = `Get comprehensive NPM package metadata efficiently. Returns repository URL, exports, dependencies, and version history without needing GitHub searches. Essential for finding package source code and understanding project structure.`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.tool(

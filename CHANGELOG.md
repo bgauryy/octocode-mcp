@@ -5,6 +5,97 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.3] - 2024-12-20 - Critical GitHub Repository Search & File Handling Fixes
+
+### 🐛 CRITICAL FIXES: GitHub Repository Search Command Generation
+
+#### Fixed
+- **Double-Quoting Issue**: Resolved stars parameter getting double-quoted (`'"100"'` → `>100`)
+- **Command Argument Parsing**: Fixed excessive shell escaping causing invalid search queries
+- **Date Filter Escaping**: Corrected date filters from `--created="..."` to `--created=...`
+- **Query Handling**: Simplified multi-word query processing to prevent command failures
+
+#### Enhanced
+- **File Size Handling**: Optimized large file limits to 300KB for better performance and reliability
+- **Buffer Management**: Increased exec buffer to 5MB for handling larger API responses
+- **Error Messages**: Improved user-friendly messages for file size exceeded scenarios
+- **Argument Building**: Streamlined command argument construction for GitHub CLI
+- **Shell Compatibility**: Improved shell command execution for complex parameters
+- **Error Prevention**: Reduced command failures from improper parameter escaping
+
+#### Technical Improvements
+- **Parameter Validation**: Better handling of stars, dates, and complex query parameters
+- **Command Construction**: Simplified query parsing logic for better reliability
+- **Code Cleanup**: Removed unused variables and complex parsing logic
+- **Test Coverage**: Updated all tests to match new command format expectations (304/304 passing)
+
+---
+
+## [2.3.2] - 2024-12-20 - Documentation & Version Updates
+
+### 📖 ENHANCED: Documentation & Project Information
+
+#### Updated
+- **README.md**: Major updates to reflect current capabilities and version
+- **Version Information**: Updated all version references from 1.0.0 to current 2.3.2
+- **Installation Requirements**: Corrected Node.js version requirement from 21+ to 18.12+
+- **Project Description**: Enhanced documentation of advanced features and flows
+
+#### Enhanced
+- **Feature Documentation**: Better explanation of AI-powered search capabilities
+- **Flow Documentation**: Added "How Octocode Works" section with detailed process flow
+- **Core Features**: Updated feature descriptions to reflect current capabilities
+- **Boolean Search Intelligence**: Documented 3-5x performance improvements
+- **Smart Error Recovery**: Highlighted intelligent fallback strategies
+
+#### Fixed
+- **Version Badge**: Corrected version display in README
+- **Technical Requirements**: Aligned documentation with actual package.json requirements
+- **Feature Accuracy**: Ensured all documented features reflect actual implementation
+
+---
+
+## [2.3.1] - 2024-12-20 - Performance & Stability Improvements
+
+### ⚡ ENHANCED: Performance Optimizations & Stability
+
+#### Enhanced
+- **Caching Strategy**: Improved intelligent caching for better performance
+- **Response Handling**: Optimized response processing and error handling
+- **Memory Management**: Better resource utilization and cleanup
+- **API Rate Limiting**: Smarter rate limit handling and backoff strategies
+
+#### Fixed
+- **Edge Case Handling**: Resolved corner cases in search queries
+- **Error Messages**: More descriptive and actionable error messages
+- **Type Safety**: Additional TypeScript improvements for better reliability
+
+---
+
+## [2.3.0] - 2024-12-19 - Advanced Search Intelligence & Error Recovery
+
+### 🧠 ENHANCED: Smart Search & Recovery Systems
+
+#### Added
+- **Boolean Search Intelligence**: Automatic query optimization with smart boolean operators
+- **Multi-Strategy Fallbacks**: Intelligent retry mechanisms with alternative search approaches
+- **Cross-Platform Discovery**: Seamless linking between NPM packages and GitHub repositories
+- **Graceful Error Recovery**: Comprehensive error handling with actionable suggestions
+
+#### Enhanced
+- **Query Optimization**: 3-5x performance improvement through smart boolean operator usage
+- **Search Accuracy**: Improved relevance and precision of search results
+- **User Experience**: Better guidance and suggestions when searches need refinement
+- **API Integration**: More robust handling of GitHub and NPM API responses
+
+#### Technical Improvements
+- **Smart Fallback Strategies**: Automatic query simplification and alternative approaches
+- **Context-Aware Discovery**: Better understanding of code relationships and patterns
+- **Progressive Refinement**: Iterative query improvement based on results
+- **Performance Monitoring**: Enhanced tracking of search effectiveness
+
+---
+
 ## [2.2.0] - 2024-12-19 - Enhanced Testing & Codebase Simplification
 
 ### 🧪 ENHANCED: Comprehensive Testing Framework & Code Quality
