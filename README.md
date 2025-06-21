@@ -93,6 +93,9 @@ npm login
 
 **That's it!** No personal access tokens, no config files, no complex setup. Octocode leverages [GitHub CLI](https://cli.github.com/) authentication behind the scenes and **automatically works with your organization's private repositories**.
 
+![Installation Demo](assets/installation.gif)
+
+
 ## How Octocode Works 🔄
 
 **Smart Discovery Flow:**
@@ -102,42 +105,22 @@ npm login
 4. **🔗 Cross-Reference Discovery** → Links packages to repositories, finds related implementations
 5. **🎯 Context Synthesis** → Provides comprehensive understanding across multiple sources
 
-**Example Flow:**
-```
-"How do popular libraries implement authentication?"
-    ↓
-🔍 Semantic analysis → Authentication + Libraries + Patterns
-    ↓  
-⚡ Multi-search: GitHub code + NPM packages + Repository analysis
-    ↓
-🔄 Smart fallbacks if needed: Broaden terms, try alternatives
-    ↓
-🔗 Cross-reference: Link packages to implementations
-    ↓
-🎯 Synthesized result: Complete authentication patterns with examples
-```
+## Example Flows
 
-## Example Questions 💬
+### Example 1: LangGraph Node.js Implementation Tutorial
+**Query:** "Show implementations of langgraph in node js. Make a tutorial for how to implement a simple agent using OpenAI API."
 
-**Learning & Research:**
-- *"How do popular libraries implement rate limiting?"*
-- *"Show me Server Actions patterns in Next.js applications"*
-- *"What are the differences between Vue and React rendering?"*
+![LangGraph Node.js Tutorial](assets/langchainTutorial.gif)
 
-**Architecture & Patterns:**
-- *"How is authentication handled in enterprise applications?"*
-- *"Show me microservices communication patterns"*
-- *"Find examples of event-driven architecture implementations"*
+### Example 2: Zustand React State Management
+**Query:** "Show me how to add zustand to react application. Show examples and best practices"
 
-**Organization & Private Repositories:**
-- *"Show me authentication patterns used in our team's repositories"*
-- *"Find internal libraries and how they're implemented in our org"*
-- *"Analyze our company's coding standards and patterns"*
+![Zustand React State Management](assets/reactZustand.gif)
 
-**Specific Code Analysis:**
-- *"How does lodash implement debouncing?"*
-- *"Show usage examples of this API: `createContext`"*
-- *"Find React hooks patterns for data fetching"*
+### Example 3: React vs Vue.js Rendering Comparison
+**Query:** "How did React implement their concurrent rendering flows? How is it different from Vue.js rendering mechanism? Which is better?"
+
+![React vs Vue.js Rendering Comparison](assets/reactVSVueJS.gif)
 
 ## Core Features 🛠️
 
@@ -173,6 +156,19 @@ npm login
 - **🚫 Zero Data Collection** - No telemetry, logging, or data transmission
 - **🔑 No Token Management** - Uses [GitHub CLI](https://cli.github.com/) authentication, no personal access tokens needed
 - **🛡️ Privacy by Design** - All API calls use your existing `gh` CLI permissions directly
+
+### Command Execution Security 🔒
+
+**Robust protection against prompt injections and malicious command execution:**
+
+- **⚪ Allowlisted Commands Only** - Only pre-approved, safe NPM and GitHub CLI commands are executable
+  - NPM: `view`, `search`, `ping`, `config`, `whoami` 
+  - GitHub CLI: `search`, `api`, `auth`, `org`
+- **🛡️ Argument Sanitization** - All command arguments are properly escaped to prevent shell injection attacks
+- **✅ Pre-execution Validation** - Every command is validated against allowed lists before execution
+- **🔧 Controlled Environment** - Commands run in a secure shell environment (`/bin/sh`) with controlled variables
+- **🚫 No Arbitrary Execution** - System cannot execute arbitrary shell commands or scripts
+- **⏱️ Timeout Protection** - All commands have execution timeouts to prevent resource exhaustion
 
 ## Best Practices 💡
 
