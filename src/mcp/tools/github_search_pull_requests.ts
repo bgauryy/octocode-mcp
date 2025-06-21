@@ -14,97 +14,95 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_pull_requests';
 
-const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover feature implementations, code review patterns, and development workflows.
-
-SEARCH PATTERNS:
- Boolean: "fix AND bug", "refactor OR cleanup", "feature NOT draft"
- Exact phrases: "initial commit" (quoted)
- GitHub qualifiers: "is:merged review:approved base:main"
- Combine with filters for targeted PR discovery`;
+const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover feature implementations, code review patterns, and development workflows.`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      query: z
-        .string()
-        .min(1, 'Search query is required and cannot be empty')
-        .describe(
-          'Search query with GITHUB SEARCH SYNTAX support. BOOLEAN OPERATORS: "fix AND bug" (both required), "refactor OR cleanup" (either term), "feature NOT draft" (excludes). EXACT PHRASES: "initial commit" (precise matching). GITHUB QUALIFIERS: "is:merged review:approved base:main" (native GitHub syntax). COMBINED: Mix boolean logic with qualifiers for precise PR discovery.'
-        ),
-      owner: z.string().optional().describe('Repository owner/organization'),
-      repo: z.string().optional().describe('Repository name'),
-      author: z.string().optional().describe('Filter by pull request author'),
-      assignee: z.string().optional().describe('Filter by assignee'),
-      mentions: z.string().optional().describe('Filter by user mentions'),
-      commenter: z.string().optional().describe('Filter by comments by user'),
-      involves: z.string().optional().describe('Filter by user involvement'),
-      reviewedBy: z.string().optional().describe('Filter by user who reviewed'),
-      reviewRequested: z
-        .string()
-        .optional()
-        .describe('Filter by user or team requested to review'),
-      state: z.enum(['open', 'closed']).optional().describe('Filter by state'),
-      head: z.string().optional().describe('Filter by head branch name'),
-      base: z.string().optional().describe('Filter by base branch name'),
-      language: z.string().optional().describe('Filter by coding language'),
-      created: z
-        .string()
-        .optional()
-        .describe("Filter by created date (e.g., '>2022-01-01')"),
-      updated: z.string().optional().describe('Filter by last updated date'),
-      mergedAt: z.string().optional().describe('Filter by merged date'),
-      closed: z.string().optional().describe('Filter by closed date'),
-      draft: z.boolean().optional().describe('Filter by draft state'),
-      checks: z
-        .enum(['pending', 'success', 'failure'])
-        .optional()
-        .describe('Filter based on status of the checks'),
-      merged: z.boolean().optional().describe('Filter based on merged state'),
-      review: z
-        .enum(['none', 'required', 'approved', 'changes_requested'])
-        .optional()
-        .describe('Filter based on review status'),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(50)
-        .optional()
-        .default(25)
-        .describe('Maximum results (default: 25, max: 50)'),
-      sort: z
-        .enum([
-          'comments',
-          'reactions',
-          'reactions-+1',
-          'reactions--1',
-          'reactions-smile',
-          'reactions-thinking_face',
-          'reactions-heart',
-          'reactions-tada',
-          'interactions',
-          'created',
-          'updated',
-        ])
-        .optional()
-        .describe('Sort criteria'),
-      order: z
-        .enum(['asc', 'desc'])
-        .optional()
-        .default('desc')
-        .describe('Order (default: desc)'),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        query: z
+          .string()
+          .min(1, 'Search query is required and cannot be empty')
+          .describe(
+            'Search query with GitHub syntax. Boolean: "fix AND bug", exact phrases: "initial commit", qualifiers: "is:merged review:approved".'
+          ),
+        owner: z.string().optional().describe('Repository owner/organization'),
+        repo: z.string().optional().describe('Repository name'),
+        author: z.string().optional().describe('Filter by pull request author'),
+        assignee: z.string().optional().describe('Filter by assignee'),
+        mentions: z.string().optional().describe('Filter by user mentions'),
+        commenter: z.string().optional().describe('Filter by comments by user'),
+        involves: z.string().optional().describe('Filter by user involvement'),
+        reviewedBy: z
+          .string()
+          .optional()
+          .describe('Filter by user who reviewed'),
+        reviewRequested: z
+          .string()
+          .optional()
+          .describe('Filter by user or team requested to review'),
+        state: z
+          .enum(['open', 'closed'])
+          .optional()
+          .describe('Filter by state'),
+        head: z.string().optional().describe('Filter by head branch name'),
+        base: z.string().optional().describe('Filter by base branch name'),
+        language: z.string().optional().describe('Filter by coding language'),
+        created: z.string().optional().describe('Filter by created date'),
+        updated: z.string().optional().describe('Filter by last updated date'),
+        mergedAt: z.string().optional().describe('Filter by merged date'),
+        closed: z.string().optional().describe('Filter by closed date'),
+        draft: z.boolean().optional().describe('Filter by draft state'),
+        checks: z
+          .enum(['pending', 'success', 'failure'])
+          .optional()
+          .describe('Filter based on status of the checks'),
+        merged: z.boolean().optional().describe('Filter based on merged state'),
+        review: z
+          .enum(['none', 'required', 'approved', 'changes_requested'])
+          .optional()
+          .describe('Filter based on review status'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .default(25)
+          .describe('Maximum results (default: 25, max: 50)'),
+        sort: z
+          .enum([
+            'comments',
+            'reactions',
+            'reactions-+1',
+            'reactions--1',
+            'reactions-smile',
+            'reactions-thinking_face',
+            'reactions-heart',
+            'reactions-tada',
+            'interactions',
+            'created',
+            'updated',
+          ])
+          .optional()
+          .describe('Sort criteria'),
+        order: z
+          .enum(['asc', 'desc'])
+          .optional()
+          .default('desc')
+          .describe('Order (default: desc)'),
+      },
+      annotations: {
+        title: 'GitHub Pull Requests Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async (args: GitHubPullRequestsSearchParams) => {
+    async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
         return createErrorResult(
           'Search query is required and cannot be empty - provide keywords to search for pull requests',

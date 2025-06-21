@@ -107,17 +107,17 @@ npm login
 ### Example 1: LangGraph Node.js Implementation Tutorial
 **Query:** "Show implementations of langgraph in node js. Make a tutorial for how to implement a simple agent using OpenAI API."
 
-![LangGraph Node.js Tutorial](assets/langchainTutorial.gif)
+[![LangGraph Node.js Tutorial](assets/langchainTutorial.gif)](https://youtu.be/E5HUlRckpvg?si=XXLle59C92esDscS)
 
 ### Example 2: Zustand React State Management
 **Query:** "Show me how to add zustand to react application. Show examples and best practices"
 
-![Zustand React State Management](assets/reactZustand.gif)
+[![Zustand React State Management](assets/reactZustand.gif)](https://youtu.be/EgYbsuWmqsI?si=CN_KwCPgwprImynU)
 
 ### Example 3: React vs Vue.js Rendering Comparison
 **Query:** "How did React implement their concurrent rendering flows? How is it different from Vue.js rendering mechanism? Which is better?"
 
-![React vs Vue.js Rendering Comparison](assets/reactVSVueJS.gif)
+[![React vs Vue.js Rendering Comparison](assets/reactVSVueJS.gif)](https://youtu.be/-_pbCbLXKDc?si=KiPeGCzmwWtb6G3r)
 
 ## Core Features 🛠️
 

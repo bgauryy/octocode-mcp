@@ -3,49 +3,47 @@ import z from 'zod';
 import { createResult } from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 const TOOL_NAME = 'npm_package_search';
 
-const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. 
-
-IMPORTANT LIMITATIONS:
- NO BOOLEAN OPERATORS: NPM search does NOT support AND/OR/NOT - use space-separated keywords for broader search
- FUZZY MATCHING ONLY: No exact phrase matching - searches are approximate keyword matching
- KEYWORD-BASED: Best results with simple, space-separated terms like "react hooks" or "cli typescript"
-
-Required when package name is unknown. If you have the exact package name, use npm_view_package directly. This reduces the need to use GitHub search when packages are found.`;
+const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. Use space-separated keywords like "react hooks" or "cli typescript". No boolean operators supported.`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export function registerNpmSearchTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      queries: z
-        .union([z.string(), z.array(z.string())])
-        .describe(
-          'Package names or keywords to search for. NOTE: No boolean operators (AND/OR/NOT) supported - use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
-        ),
-      searchlimit: z
-        .number()
-        .int()
-        .min(1)
-        .max(50)
-        .optional()
-        .default(20)
-        .describe('Max results per query (default: 20, max: 50)'),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        queries: z
+          .union([z.string(), z.array(z.string())])
+          .describe(
+            'Package names or keywords to search for. Use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
+          ),
+        searchlimit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .default(20)
+          .describe('Max results per query (default: 20, max: 50)'),
+      },
+      annotations: {
+        title: 'NPM Package Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async (args: { queries: string | string[]; searchlimit?: number }) => {
+    async (args: {
+      queries: string | string[];
+      searchlimit?: number;
+    }): Promise<CallToolResult> => {
       try {
         const queries = Array.isArray(args.queries)
           ? args.queries
@@ -84,7 +82,7 @@ export function registerNpmSearchTool(server: McpServer) {
         return createResult('No packages found', true);
       } catch (error) {
         return createResult(
-          'NPM package search failed - check search terms or try different keywords',
+          'Package search failed - check terms or try different keywords',
           true
         );
       }

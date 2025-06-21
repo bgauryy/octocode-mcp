@@ -16,65 +16,55 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_get_contents';
 
-const DESCRIPTION = `Browse repository structure and verify file existence. Use before github_get_file_content to confirm files exist and understand organization, especially when the path is uncertain.`;
+const DESCRIPTION = `Browse repository structure and verify file existence. Smart branch detection with fallbacks. Use before fetching files to understand organization.`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      owner: z
-        .string()
-        .min(1)
-        .max(100)
-        .regex(
-          /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/,
-          'Invalid GitHub username/org format'
-        )
-        .describe(
-          `Repository owner/organization (e.g., 'microsoft', 'facebook'). Use github_search_repositories to discover valid owners.`
-        ),
-
-      repo: z
-        .string()
-        .min(1)
-        .max(100)
-        .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid repository name format')
-        .describe(
-          'Repository name (e.g., "vscode", "react"). Case-sensitive. Use github_search_repositories to find exact names.'
-        ),
-
-      branch: z
-        .string()
-        .min(1)
-        .max(255)
-        .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
-        .describe(
-          "Target branch name (e.g., 'main', 'canary', 'develop'). " +
-            'Auto-detects repository default if not found. ' +
-            'Use github_search_repositories or api calls to discover valid branches first.'
-        ),
-
-      path: z
-        .string()
-        .optional()
-        .default('')
-        .refine(path => !path.includes('..'), 'Path traversal not allowed')
-        .refine(path => path.length <= 500, 'Path too long')
-        .describe(
-          'Directory path within repository (e.g., "src/components", "packages/core"). ' +
-            'Leave empty for root. Use previous results to navigate deeper.'
-        ),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        owner: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(
+            /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/,
+            'Invalid GitHub username/org format'
+          )
+          .describe(`Repository owner/organization.`),
+
+        repo: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid repository name format')
+          .describe('Repository name. Case-sensitive.'),
+
+        branch: z
+          .string()
+          .min(1)
+          .max(255)
+          .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
+          .describe('Target branch name. Auto-detects default if not found.'),
+
+        path: z
+          .string()
+          .optional()
+          .default('')
+          .refine(path => !path.includes('..'), 'Path traversal not allowed')
+          .refine(path => path.length <= 500, 'Path too long')
+          .describe('Directory path within repository. Leave empty for root.'),
+      },
+      annotations: {
+        title: 'GitHub Repository Contents',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async (args: GitHubRepositoryStructureParams) => {
+    async (args: GitHubRepositoryStructureParams): Promise<CallToolResult> => {
       try {
         const result = await viewRepositoryStructure(args);
 
@@ -114,7 +104,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
         return createResult(
-          `Repository exploration failed: ${errorMessage} - verify repository exists and is accessible`,
+          `Repository exploration failed: ${errorMessage} - verify access and permissions`,
           true
         );
       }
@@ -187,21 +177,19 @@ export async function viewRepositoryStructure(
         if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
           if (path) {
             throw new Error(
-              `Path "${path}" not found - verify path exists or use github_search_code to find files`
+              `Path "${path}" not found - verify path or use code search`
             );
           } else {
             throw new Error(
-              `Repository not found: ${owner}/${repo} - verify owner/repo names or use github_search_repositories`
+              `Repository not found: ${owner}/${repo} - verify names`
             );
           }
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
           throw new Error(
-            `Access denied to repository ${owner}/${repo} - repository may be private or require authentication`
+            `Access denied to ${owner}/${repo} - check permissions`
           );
         } else {
-          throw new Error(
-            `Access failed: ${owner}/${repo} - check connection or repository permissions`
-          );
+          throw new Error(`Access failed: ${owner}/${repo} - check connection`);
         }
       }
 
@@ -269,7 +257,7 @@ export async function viewRepositoryStructure(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       return createErrorResult(
-        'Repository access failed - verify repository exists and check authentication',
+        'Repository access failed - verify repository and authentication',
         new Error(errorMessage)
       );
     }

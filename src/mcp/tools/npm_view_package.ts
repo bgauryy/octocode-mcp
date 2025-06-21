@@ -12,33 +12,34 @@ import { NpmViewPackageParams, NpmViewPackageResult } from '../../types';
 
 const TOOL_NAME = 'npm_view_package';
 
-const DESCRIPTION = `Get comprehensive NPM package metadata efficiently. Returns repository URL, exports, dependencies, and version history without needing GitHub searches. Essential for finding package source code and understanding project structure.`;
+const DESCRIPTION = `Get comprehensive NPM package metadata efficiently. Returns repository URL, exports, dependencies, and version history. Essential for finding package source code and understanding project structure.`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      packageName: z
-        .string()
-        .min(1, 'Package name is required')
-        .describe(
-          'NPM package name to analyze. Returns complete package context including exports (critical for GitHub file discovery), repository URL, dependencies, and version history.'
-        ),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        packageName: z
+          .string()
+          .min(1, 'Package name is required')
+          .describe(
+            'NPM package name to analyze. Returns complete package context including exports (critical for GitHub file discovery), repository URL, dependencies, and version history.'
+          ),
+      },
+      annotations: {
+        title: 'NPM Package Metadata Analysis',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async (args: NpmViewPackageParams) => {
+    async (args: NpmViewPackageParams): Promise<CallToolResult> => {
       try {
         if (!args.packageName || args.packageName.trim() === '') {
           return createResult(
-            'Package name is required - provide a valid NPM package name',
+            'Package name required - provide valid NPM package name',
             true
           );
         }
@@ -46,7 +47,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         // Basic package name validation
         if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
           return createResult(
-            'Invalid package name format - use standard NPM naming (e.g., "package-name" or "@scope/package")',
+            'Invalid package name format - use standard NPM naming',
             true
           );
         }
@@ -55,7 +56,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult(
-          'Failed to get package metadata - verify package exists on NPM registry',
+          'Failed to get package metadata - package may not exist',
           true
         );
       }
@@ -130,7 +131,7 @@ export async function npmViewPackage(
       return createSuccessResult(viewResult);
     } catch (error) {
       return createErrorResult(
-        'Failed to get npm package metadata - package may not exist or registry unavailable',
+        'Failed to get package metadata - package may not exist',
         error
       );
     }

@@ -12,132 +12,133 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_issues';
 
-const DESCRIPTION = `Find GitHub issues with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, and bug patterns with boolean logic and GitHub qualifiers.
-
-SEARCH PATTERNS:
- Boolean: "bug AND crash", "feature OR enhancement", "error NOT test"
- Exact phrases: "memory leak" (quoted)
- GitHub qualifiers: "is:open label:bug author:username"
- Combine with filters for precision`;
+const DESCRIPTION = `Find GitHub issues with rich metadata. Discover pain points, feature requests, and bug patterns with boolean logic and GitHub qualifiers.`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      query: z
-        .string()
-        .min(1, 'Search query is required and cannot be empty')
-        .describe(
-          'Search query with GITHUB SEARCH SYNTAX support. BOOLEAN OPERATORS: "bug AND crash" (both required), "feature OR enhancement" (either term), "error NOT test" (excludes). EXACT PHRASES: "memory leak" (precise matching). GITHUB QUALIFIERS: "is:open label:bug author:username" (native GitHub syntax). COMBINED: Mix boolean logic with qualifiers for precise issue discovery.'
-        ),
-      owner: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          'Repository owner/organization. Leave empty for global search.'
-        ),
-      repo: z
-        .string()
-        .optional()
-        .describe(
-          'Repository name. Do exploratory search without repo filter first'
-        ),
-      app: z.string().optional().describe('Filter by GitHub App author'),
-      archived: z
-        .boolean()
-        .optional()
-        .describe('Filter by repository archived state'),
-      assignee: z.string().optional().describe('Filter by assignee'),
-      author: z.string().optional().describe('Filter by issue author'),
-      closed: z.string().optional().describe('Filter by closed date'),
-      commenter: z.string().optional().describe('Filter by user who commented'),
-      comments: z.number().optional().describe('Filter by number of comments'),
-      created: z
-        .string()
-        .optional()
-        .describe("Filter by created date (e.g., '>2022-01-01')"),
-      includePrs: z
-        .boolean()
-        .optional()
-        .describe('Include pull requests in results'),
-      interactions: z
-        .number()
-        .optional()
-        .describe('Filter by reactions and comments count'),
-      involves: z.string().optional().describe('Filter by user involvement'),
-      labels: z.string().optional().describe('Filter by labels'),
-      language: z.string().optional().describe('Filter by coding language'),
-      locked: z
-        .boolean()
-        .optional()
-        .describe('Filter by locked conversation status'),
-      match: z
-        .enum(['title', 'body', 'comments'])
-        .optional()
-        .describe('Restrict search to specific field'),
-      mentions: z.string().optional().describe('Filter by user mentions'),
-      milestone: z.string().optional().describe('Filter by milestone title'),
-      noAssignee: z.boolean().optional().describe('Filter by missing assignee'),
-      noLabel: z.boolean().optional().describe('Filter by missing label'),
-      noMilestone: z
-        .boolean()
-        .optional()
-        .describe('Filter by missing milestone'),
-      noProject: z.boolean().optional().describe('Filter by missing project'),
-      project: z.string().optional().describe('Filter by project board'),
-      reactions: z.number().optional().describe('Filter by reactions count'),
-      state: z
-        .enum(['open', 'closed'])
-        .optional()
-        .describe('Filter by issue state'),
-      teamMentions: z.string().optional().describe('Filter by team mentions'),
-      updated: z.string().optional().describe('Filter by last updated date'),
-      visibility: z
-        .enum(['public', 'private', 'internal'])
-        .optional()
-        .describe('Filter by repository visibility'),
-      sort: z
-        .enum([
-          'comments',
-          'created',
-          'interactions',
-          'reactions',
-          'reactions-+1',
-          'reactions--1',
-          'reactions-heart',
-          'reactions-smile',
-          'reactions-tada',
-          'reactions-thinking_face',
-          'updated',
-          'best-match',
-        ])
-        .optional()
-        .describe('Sort criteria'),
-      order: z
-        .enum(['asc', 'desc'])
-        .optional()
-        .default('desc')
-        .describe('Order (default: desc)'),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(50)
-        .optional()
-        .default(25)
-        .describe('Maximum results (default: 25, max: 50)'),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        query: z
+          .string()
+          .min(1, 'Search query is required and cannot be empty')
+          .describe(
+            'Search query with GitHub syntax. Boolean: "bug AND crash", exact phrases: "memory leak", qualifiers: "is:open label:bug".'
+          ),
+        owner: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            'Repository owner/organization. Leave empty for global search.'
+          ),
+        repo: z
+          .string()
+          .optional()
+          .describe(
+            'Repository name. Do exploratory search without repo filter first'
+          ),
+        app: z.string().optional().describe('Filter by GitHub App author'),
+        archived: z
+          .boolean()
+          .optional()
+          .describe('Filter by repository archived state'),
+        assignee: z.string().optional().describe('Filter by assignee'),
+        author: z.string().optional().describe('Filter by issue author'),
+        closed: z.string().optional().describe('Filter by closed date'),
+        commenter: z
+          .string()
+          .optional()
+          .describe('Filter by user who commented'),
+        comments: z
+          .number()
+          .optional()
+          .describe('Filter by number of comments'),
+        created: z.string().optional().describe('Filter by created date'),
+        includePrs: z
+          .boolean()
+          .optional()
+          .describe('Include pull requests in results'),
+        interactions: z
+          .number()
+          .optional()
+          .describe('Filter by reactions and comments count'),
+        involves: z.string().optional().describe('Filter by user involvement'),
+        labels: z.string().optional().describe('Filter by labels'),
+        language: z.string().optional().describe('Filter by coding language'),
+        locked: z
+          .boolean()
+          .optional()
+          .describe('Filter by locked conversation status'),
+        match: z
+          .enum(['title', 'body', 'comments'])
+          .optional()
+          .describe('Restrict search to specific field'),
+        mentions: z.string().optional().describe('Filter by user mentions'),
+        milestone: z.string().optional().describe('Filter by milestone title'),
+        noAssignee: z
+          .boolean()
+          .optional()
+          .describe('Filter by missing assignee'),
+        noLabel: z.boolean().optional().describe('Filter by missing label'),
+        noMilestone: z
+          .boolean()
+          .optional()
+          .describe('Filter by missing milestone'),
+        noProject: z.boolean().optional().describe('Filter by missing project'),
+        project: z.string().optional().describe('Filter by project board'),
+        reactions: z.number().optional().describe('Filter by reactions count'),
+        state: z
+          .enum(['open', 'closed'])
+          .optional()
+          .describe('Filter by issue state'),
+        teamMentions: z.string().optional().describe('Filter by team mentions'),
+        updated: z.string().optional().describe('Filter by last updated date'),
+        visibility: z
+          .enum(['public', 'private', 'internal'])
+          .optional()
+          .describe('Filter by repository visibility'),
+        sort: z
+          .enum([
+            'comments',
+            'created',
+            'interactions',
+            'reactions',
+            'reactions-+1',
+            'reactions--1',
+            'reactions-heart',
+            'reactions-smile',
+            'reactions-tada',
+            'reactions-thinking_face',
+            'updated',
+            'best-match',
+          ])
+          .optional()
+          .describe('Sort criteria'),
+        order: z
+          .enum(['asc', 'desc'])
+          .optional()
+          .default('desc')
+          .describe('Order (default: desc)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .default(25)
+          .describe('Maximum results (default: 25, max: 50)'),
+      },
+      annotations: {
+        title: 'GitHub Issues Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async (args: GitHubIssuesSearchParams) => {
+    async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
         return createErrorResult(
           'Search query is required and cannot be empty - provide keywords to search for issues',
@@ -155,9 +156,25 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       try {
         return await searchGitHubIssues(args);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '';
+        if (errorMessage.includes('authentication')) {
+          return createErrorResult(
+            'GitHub authentication required - run api_status_check tool',
+            error as Error
+          );
+        }
+
+        if (errorMessage.includes('rate limit')) {
+          return createErrorResult(
+            'GitHub rate limit exceeded - wait or use specific filters',
+            error as Error
+          );
+        }
+
+        // Generic fallback
         return createErrorResult(
-          'GitHub issues search failed - check repository exists and query is valid',
-          error
+          'GitHub issue search failed - check authentication or simplify query',
+          error as Error
         );
       }
     }

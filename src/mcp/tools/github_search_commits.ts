@@ -13,98 +13,104 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_commits';
 
-const DESCRIPTION = `Search commit history with powerful boolean logic and exact phrase matching. Use advanced GitHub search syntax including AND/OR operators for precise commit discovery. Understand code evolution patterns, track bug fixes, and analyze development workflows over time. Filter by author, date ranges, commit content, and repository metadata with surgical precision.`;
+const DESCRIPTION = `Search commit history with powerful boolean logic and exact phrase matching. Track code evolution, bug fixes, and development workflows with surgical precision.`;
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      query: z
-        .string()
-        .optional()
-        .describe(
-          'Search query with POWERFUL boolean logic and exact phrase matching. BOOLEAN OPERATORS: "fix AND bug" (both required), "fix OR update" (either term), "readme typo" (implicit AND). EXACT PHRASES: "initial commit" (precise phrase matching). ADVANCED SYNTAX: "author:john OR committer:jane" (user qualifiers), "-- -author:botuser" (exclusions). STRENGTH: Surgical precision for commit discovery across millions of repositories. Optional - can search with just filters.'
-        ),
-
-      // Basic filters
-      owner: z
-        .string()
-        .optional()
-        .describe(
-          'Repository owner/organization. Leave empty for global search.'
-        ),
-      repo: z
-        .string()
-        .optional()
-        .describe(
-          'Repository name. Do exploratory search without repo filter first'
-        ),
-
-      // Author filters
-      author: z.string().optional().describe('Filter by commit author'),
-      authorDate: z
-        .string()
-        .optional()
-        .describe('Filter by authored date (format: >2020-01-01, <2023-12-31)'),
-      authorEmail: z.string().optional().describe('Filter by author email'),
-      authorName: z.string().optional().describe('Filter by author name'),
-
-      // Committer filters
-      committer: z.string().optional().describe('Filter by committer'),
-      committerDate: z
-        .string()
-        .optional()
-        .describe(
-          'Filter by committed date (format: >2020-01-01, <2023-12-31)'
-        ),
-      committerEmail: z
-        .string()
-        .optional()
-        .describe('Filter by committer email'),
-      committerName: z.string().optional().describe('Filter by committer name'),
-
-      // Hash filters
-      hash: z.string().optional().describe('Filter by commit hash'),
-      parent: z.string().optional().describe('Filter by parent hash'),
-      tree: z.string().optional().describe('Filter by tree hash'),
-
-      // Boolean filters
-      merge: z.boolean().optional().describe('Filter merge commits'),
-      visibility: z
-        .enum(['public', 'private', 'internal'])
-        .optional()
-        .describe('Filter by repository visibility'),
-
-      // Sorting and limits
-      sort: z
-        .enum(['author-date', 'committer-date', 'best-match'])
-        .optional()
-        .default('best-match')
-        .describe('Sort criteria (default: best-match)'),
-      order: z
-        .enum(['asc', 'desc'])
-        .optional()
-        .default('desc')
-        .describe('Order (default: desc)'),
-      limit: z
-        .number()
-        .int()
-        .min(1)
-        .max(50)
-        .optional()
-        .default(25)
-        .describe('Maximum results (default: 25, max: 50)'),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        query: z
+          .string()
+          .optional()
+          .describe(
+            'Search query with boolean logic. Boolean: "fix AND bug", exact phrases: "initial commit", advanced syntax: "author:john OR committer:jane".'
+          ),
+
+        // Basic filters
+        owner: z
+          .string()
+          .optional()
+          .describe(
+            'Repository owner/organization. Leave empty for global search.'
+          ),
+        repo: z
+          .string()
+          .optional()
+          .describe(
+            'Repository name. Do exploratory search without repo filter first'
+          ),
+
+        // Author filters
+        author: z.string().optional().describe('Filter by commit author'),
+        authorDate: z
+          .string()
+          .optional()
+          .describe(
+            'Filter by authored date (format: >2020-01-01, <2023-12-31)'
+          ),
+        authorEmail: z.string().optional().describe('Filter by author email'),
+        authorName: z.string().optional().describe('Filter by author name'),
+
+        // Committer filters
+        committer: z.string().optional().describe('Filter by committer'),
+        committerDate: z
+          .string()
+          .optional()
+          .describe(
+            'Filter by committed date (format: >2020-01-01, <2023-12-31)'
+          ),
+        committerEmail: z
+          .string()
+          .optional()
+          .describe('Filter by committer email'),
+        committerName: z
+          .string()
+          .optional()
+          .describe('Filter by committer name'),
+
+        // Hash filters
+        hash: z.string().optional().describe('Filter by commit hash'),
+        parent: z.string().optional().describe('Filter by parent hash'),
+        tree: z.string().optional().describe('Filter by tree hash'),
+
+        // Boolean filters
+        merge: z.boolean().optional().describe('Filter merge commits'),
+        visibility: z
+          .enum(['public', 'private', 'internal'])
+          .optional()
+          .describe('Filter by repository visibility'),
+
+        // Sorting and limits
+        sort: z
+          .enum(['author-date', 'committer-date', 'best-match'])
+          .optional()
+          .default('best-match')
+          .describe('Sort criteria (default: best-match)'),
+        order: z
+          .enum(['asc', 'desc'])
+          .optional()
+          .default('desc')
+          .describe('Order (default: desc)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .default(25)
+          .describe('Maximum results (default: 25, max: 50)'),
+      },
+      annotations: {
+        title: 'GitHub Commits Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async args => {
+    async (args: GitHubCommitsSearchParams): Promise<CallToolResult> => {
       try {
         // Query is optional - can search with just filters
         if (

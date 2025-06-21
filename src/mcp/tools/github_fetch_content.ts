@@ -13,51 +13,50 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_get_file_content';
 
-const DESCRIPTION = `Read file content. This tool REQUIRES exact path verification from github_get_contents or package view exports. If fetching fails, re-check file existence with github_get_contents or branch name.`;
+const DESCRIPTION = `Read file content with exact path verification. Smart branch fallbacks and size limits. Use github_get_contents first to verify file existence.`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
-  server.tool(
+  server.registerTool(
     TOOL_NAME,
-    DESCRIPTION,
     {
-      owner: z
-        .string()
-        .min(1)
-        .max(100)
-        .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
-        .describe(
-          `Repository owner/organization (e.g., 'microsoft', 'facebook')`
-        ),
-      repo: z
-        .string()
-        .min(1)
-        .max(100)
-        .regex(/^[a-zA-Z0-9._-]+$/)
-        .describe(`Repository name (e.g., 'vscode', 'react'). Case-sensitive.`),
-      branch: z
-        .string()
-        .min(1)
-        .max(255)
-        .regex(/^[^\s]+$/)
-        .describe(
-          `Branch name (e.g., 'main', 'master'). Auto-fallback to common branches if not found.`
-        ),
-      filePath: z
-        .string()
-        .min(1)
-        .describe(
-          `File path from repository root (e.g., 'README.md', 'src/index.js'). Use github_get_contents to explore structure.`
-        ),
-    },
-    {
-      title: TOOL_NAME,
       description: DESCRIPTION,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
+      inputSchema: {
+        owner: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
+          .describe(`Repository owner/organization`),
+        repo: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9._-]+$/)
+          .describe(`Repository name. Case-sensitive.`),
+        branch: z
+          .string()
+          .min(1)
+          .max(255)
+          .regex(/^[^\s]+$/)
+          .describe(
+            `Branch name. Auto-fallback to common branches if not found.`
+          ),
+        filePath: z
+          .string()
+          .min(1)
+          .describe(
+            `File path from repository root. Use github_get_contents to explore structure.`
+          ),
+      },
+      annotations: {
+        title: 'GitHub File Content Reader',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
-    async (args: GitHubFileContentParams) => {
+    async (args: GitHubFileContentParams): Promise<CallToolResult> => {
       try {
         const result = await fetchGitHubFileContent(args);
 
@@ -93,7 +92,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult(
-          'File fetch failed - verify file path exists or try github_get_contents first',
+          'File fetch failed - verify path or try github_get_contents first',
           true
         );
       }
@@ -153,12 +152,12 @@ async function fetchGitHubFileContent(
         // Handle common errors
         if (errorMsg.includes('404')) {
           return createErrorResult(
-            'File not found - verify path with github_get_contents first',
+            'File not found - verify path with github_get_contents',
             new Error(filePath)
           );
         } else if (errorMsg.includes('403')) {
           return createErrorResult(
-            'Access denied - repository may be private or require authentication',
+            'Access denied - repository may be private',
             new Error(`${owner}/${repo}`)
           );
         } else if (
@@ -166,10 +165,7 @@ async function fetchGitHubFileContent(
           errorMsg.includes('stdout maxBuffer length exceeded')
         ) {
           return createErrorResult(
-            ` File too large to fetch (buffer limit exceeded)\n\n` +
-              `This usually happens with files >300KB. Consider:\n` +
-              `    Use github_search_code to find specific patterns\n` +
-              `    Browse directory structure with github_get_contents`,
+            'File too large (>300KB) - use github_search_code for patterns instead',
             new Error(`Buffer overflow: ${filePath}`)
           );
         } else {
@@ -190,16 +186,13 @@ async function fetchGitHubFileContent(
         errorMessage.includes('stdout maxBuffer length exceeded')
       ) {
         return createErrorResult(
-          ` File too large to fetch (buffer limit exceeded)\n\n` +
-            `This usually happens with files >300KB. Consider:\n` +
-            `    Use github_search_code to find specific patterns instead of fetching the whole file\n` +
-            `    Browse directory structure with github_get_contents`,
+          'File too large (>300KB) - use github_search_code for patterns instead',
           error as Error
         );
       }
 
       return createErrorResult(
-        'Unexpected error during file fetch - check connection and permissions',
+        'Unexpected error during file fetch - check connection',
         error as Error
       );
     }
@@ -219,7 +212,7 @@ async function processFileContent(
   // Check if it's a directory
   if (Array.isArray(fileData)) {
     return createErrorResult(
-      'Path is directory - use github_get_contents to browse directory structure',
+      'Path is directory - use github_get_contents instead',
       new Error(filePath)
     );
   }
@@ -233,10 +226,7 @@ async function processFileContent(
     const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
     return createErrorResult(
-      ` File too large to display (${fileSizeKB}KB > ${maxSizeKB}KB limit)\n\n` +
-        `For large files like this, consider:\n` +
-        `    Use github_get_contents to browse directory structure\n` +
-        `    Search specific code patterns with github_search_code`,
+      `File too large (${fileSizeKB}KB > ${maxSizeKB}KB) - use github_search_code for patterns`,
       new Error(`File: ${filePath} (${fileSizeKB}KB)`)
     );
   }
@@ -246,7 +236,7 @@ async function processFileContent(
 
   if (!base64Content) {
     return createErrorResult(
-      'Empty file - file has no content to display',
+      'Empty file - no content to display',
       new Error(filePath)
     );
   }
@@ -258,7 +248,7 @@ async function processFileContent(
     // Simple binary check - look for null bytes
     if (buffer.indexOf(0) !== -1) {
       return createErrorResult(
-        'Binary file detected - cannot display binary content as text',
+        'Binary file detected - cannot display as text',
         new Error(filePath)
       );
     }
@@ -266,7 +256,7 @@ async function processFileContent(
     decodedContent = buffer.toString('utf-8');
   } catch (decodeError) {
     return createErrorResult(
-      'Decode failed - file encoding not supported or corrupted',
+      'Decode failed - file encoding not supported',
       new Error(filePath)
     );
   }
