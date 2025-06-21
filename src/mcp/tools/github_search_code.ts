@@ -12,32 +12,16 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories using strategic boolean operators and filters usign "gh code search" command.
+const DESCRIPTION = `Search code across GitHub repositories using strategic boolean operators and filters with "gh code search" command.
 
-STRATEGIC SEARCH PATTERNS:
+SEARCH PATTERNS:
+ OR (broad): "useState hook" → "useState OR hook" (auto-default for multi-word)
+ AND (precise): "react AND hooks" (both terms required)
+ NOT (filter): "auth NOT test" (exclude unwanted)
+ Exact phrases: "useState hook" (quoted for literal match)
+ Combine with filters: language, owner, path for laser focus
 
- OR LOGIC (Exploratory Discovery):
-• Auto-applied to multi-word queries: "useState hook" → "useState OR hook"
-• Best for: Learning, finding alternatives, casting wide nets
-• Scope: BROADEST - finds files with ANY of the terms
-
-AND LOGIC (Precise Intersection):
-• Explicit requirement: "react AND hooks" requires BOTH terms present
-• Best for: Finding specific combinations, technology intersections
-• Scope: RESTRICTIVE - only files containing ALL terms
-
-EXACT PHRASE (Laser Targeting):
-• Escaped quotes: "useState hook" finds literal "useState hook" sequence
-• Best for: Documentation titles, specific API calls, exact implementations
-• Scope: MOST PRECISE - only exact sequence matches
-
-NOT LOGIC (Noise Filtering):
-• Exclude unwanted results: "authentication NOT test NOT mock"
-• Best for: Removing examples, tests, deprecated code
-
-RESTRICTIVENESS SCALE: OR < AND < Exact Phrase (Broadest → Most Precise)
-
-COMBINE FILTERS: Mix query with language, owner, path filters for laser-focused results.`;
+RESTRICTIVENESS: OR (broadest) < AND < Exact Phrase (most precise)`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.tool(

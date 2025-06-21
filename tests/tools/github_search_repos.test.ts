@@ -163,8 +163,7 @@ describe('GitHub Search Repositories Tool', () => {
         'search',
         expect.arrayContaining([
           'repos',
-          'cli',
-          'shell',
+          'cli shell',
           '--json',
           'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
         ]),
@@ -461,8 +460,8 @@ describe('GitHub Search Repositories Tool', () => {
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         expect.arrayContaining([
-          '--created=">2020-01-01"',
-          '--updated="<2023-12-31"',
+          '--created=>2020-01-01',
+          '--updated=<2023-12-31',
         ]),
         { cache: false }
       );
@@ -746,7 +745,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['language:Go', 'OR', 'language:Rust']),
+        expect.arrayContaining(['language:Go OR language:Rust']),
         { cache: false }
       );
     });

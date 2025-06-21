@@ -161,6 +161,17 @@ async function fetchGitHubFileContent(
             'Access denied - repository may be private or require authentication',
             new Error(`${owner}/${repo}`)
           );
+        } else if (
+          errorMsg.includes('maxBuffer') ||
+          errorMsg.includes('stdout maxBuffer length exceeded')
+        ) {
+          return createErrorResult(
+            ` File too large to fetch (buffer limit exceeded)\n\n` +
+              `This usually happens with files >300KB. Consider:\n` +
+              `    Use github_search_code to find specific patterns\n` +
+              `    Browse directory structure with github_get_contents`,
+            new Error(`Buffer overflow: ${filePath}`)
+          );
         } else {
           return createErrorResult(
             'Fetch failed - check repository and file path',
@@ -171,6 +182,22 @@ async function fetchGitHubFileContent(
 
       return await processFileContent(result, owner, repo, branch, filePath);
     } catch (error) {
+      const errorMessage = (error as Error).message;
+
+      // Handle maxBuffer errors that escape the main try-catch
+      if (
+        errorMessage.includes('maxBuffer') ||
+        errorMessage.includes('stdout maxBuffer length exceeded')
+      ) {
+        return createErrorResult(
+          ` File too large to fetch (buffer limit exceeded)\n\n` +
+            `This usually happens with files >300KB. Consider:\n` +
+            `    Use github_search_code to find specific patterns instead of fetching the whole file\n` +
+            `    Browse directory structure with github_get_contents`,
+          error as Error
+        );
+      }
+
       return createErrorResult(
         'Unexpected error during file fetch - check connection and permissions',
         error as Error
@@ -198,13 +225,19 @@ async function processFileContent(
   }
 
   const fileSize = fileData.size || 0;
-  const MAX_FILE_SIZE = 500 * 1024; // 500KB limit for simplicity
+  const MAX_FILE_SIZE = 300 * 1024; // 300KB limit for better performance and reliability
 
-  // Check file size
+  // Check file size with helpful message
   if (fileSize > MAX_FILE_SIZE) {
+    const fileSizeKB = Math.round(fileSize / 1024);
+    const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
+
     return createErrorResult(
-      'File too large - files over 500KB cannot be fetched',
-      new Error(`${Math.round(fileSize / 1024)}KB > 500KB`)
+      ` File too large to display (${fileSizeKB}KB > ${maxSizeKB}KB limit)\n\n` +
+        `For large files like this, consider:\n` +
+        `    Use github_get_contents to browse directory structure\n` +
+        `    Search specific code patterns with github_search_code`,
+      new Error(`File: ${filePath} (${fileSizeKB}KB)`)
     );
   }
 

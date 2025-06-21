@@ -12,15 +12,13 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_issues';
 
-const DESCRIPTION = `Find GitHub issues and problems with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, bug patterns, and community discussions.
+const DESCRIPTION = `Find GitHub issues with rich metadata (labels, reactions, comments, state). Discover pain points, feature requests, and bug patterns with boolean logic and GitHub qualifiers.
 
-SEARCH PATTERNS SUPPORTED:
-• BOOLEAN OPERATORS: "bug AND crash" (both required), "feature OR enhancement" (either term), "error NOT test" (excludes test)
-• EXACT PHRASES: "memory leak" (precise phrase matching)
-• GITHUB QUALIFIERS: Built-in support for "is:open", "label:bug", "author:username", etc.
-• COMBINABLE: Mix search terms with filters for surgical precision
-
-Filter by state, labels, assignee, or date ranges for comprehensive issue discovery.`;
+SEARCH PATTERNS:
+ Boolean: "bug AND crash", "feature OR enhancement", "error NOT test"
+ Exact phrases: "memory leak" (quoted)
+ GitHub qualifiers: "is:open label:bug author:username"
+ Combine with filters for precision`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.tool(

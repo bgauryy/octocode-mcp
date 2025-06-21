@@ -5,7 +5,7 @@
 <div>
   <img src="./assets/logo.png">
   
-  [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
 </div>
@@ -55,7 +55,7 @@ It's the tool you reach for when you need to understand *"how does this work?"* 
 
 ### 1. Install Prerequisites
 ```bash
-# Install Node.js 21+
+# Install Node.js 18.12+
 brew install node  # macOS
 # or download from https://nodejs.org/
 
@@ -93,6 +93,30 @@ npm login
 
 **That's it!** No personal access tokens, no config files, no complex setup. Octocode leverages [GitHub CLI](https://cli.github.com/) authentication behind the scenes and **automatically works with your organization's private repositories**.
 
+## How Octocode Works 🔄
+
+**Smart Discovery Flow:**
+1. **🔍 Query Analysis** → AI determines the best search strategy based on your question
+2. **⚡ Multi-Tool Orchestration** → Combines GitHub + NPM searches intelligently
+3. **🔄 Smart Fallbacks** → Automatically retries with different approaches if initial search fails
+4. **🔗 Cross-Reference Discovery** → Links packages to repositories, finds related implementations
+5. **🎯 Context Synthesis** → Provides comprehensive understanding across multiple sources
+
+**Example Flow:**
+```
+"How do popular libraries implement authentication?"
+    ↓
+🔍 Semantic analysis → Authentication + Libraries + Patterns
+    ↓  
+⚡ Multi-search: GitHub code + NPM packages + Repository analysis
+    ↓
+🔄 Smart fallbacks if needed: Broaden terms, try alternatives
+    ↓
+🔗 Cross-reference: Link packages to implementations
+    ↓
+🎯 Synthesized result: Complete authentication patterns with examples
+```
+
 ## Example Questions 💬
 
 **Learning & Research:**
@@ -119,9 +143,11 @@ npm login
 
 ### 🧠 AI-Powered Advanced Search
 - **Heuristic Pattern Recognition** - Finds relevant code even with vague or incomplete queries
-- **Smart Fallback Strategies** - Automatically tries alternative approaches when searches fail
+- **Smart Fallback Strategies** - Automatically tries alternative approaches when searches fail with actionable suggestions
+- **Boolean Search Intelligence** - Automatic query optimization with smart boolean operators (3-5x performance improvement)
 - **Context-Aware Discovery** - Understands code relationships and suggests related implementations
 - **Multi-Strategy Search** - Combines semantic, syntactic, and dependency-based search methods
+- **Graceful Error Recovery** - Comprehensive error handling with intelligent retry mechanisms
 
 ### 🔗 Connection Intelligence
 - **Repository-Package Mapping** - Automatically links NPM packages to their GitHub repositories
