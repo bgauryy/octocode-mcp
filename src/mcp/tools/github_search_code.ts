@@ -12,32 +12,16 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories using strategic boolean operators and filters usign "gh code search" command.
+const DESCRIPTION = `Search code across GitHub repositories using strategic boolean operators and filters with "gh code search" command.
 
-STRATEGIC SEARCH PATTERNS:
+SEARCH PATTERNS:
+ OR (broad): "useState hook" → "useState OR hook" (auto-default for multi-word)
+ AND (precise): "react AND hooks" (both terms required)
+ NOT (filter): "auth NOT test" (exclude unwanted)
+ Exact phrases: "useState hook" (quoted for literal match)
+ Combine with filters: language, owner, path for laser focus
 
- OR LOGIC (Exploratory Discovery):
-• Auto-applied to multi-word queries: "useState hook" → "useState OR hook"
-• Best for: Learning, finding alternatives, casting wide nets
-• Scope: BROADEST - finds files with ANY of the terms
-
-AND LOGIC (Precise Intersection):
-• Explicit requirement: "react AND hooks" requires BOTH terms present
-• Best for: Finding specific combinations, technology intersections
-• Scope: RESTRICTIVE - only files containing ALL terms
-
-EXACT PHRASE (Laser Targeting):
-• Escaped quotes: "useState hook" finds literal "useState hook" sequence
-• Best for: Documentation titles, specific API calls, exact implementations
-• Scope: MOST PRECISE - only exact sequence matches
-
-NOT LOGIC (Noise Filtering):
-• Exclude unwanted results: "authentication NOT test NOT mock"
-• Best for: Removing examples, tests, deprecated code
-
-RESTRICTIVENESS SCALE: OR < AND < Exact Phrase (Broadest → Most Precise)
-
-COMBINE FILTERS: Mix query with language, owner, path filters for laser-focused results.`;
+RESTRICTIVENESS: OR (broadest) < AND < Exact Phrase (most precise)`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.tool(
@@ -123,11 +107,10 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     },
     async (args: GitHubCodeSearchParams) => {
       try {
-        if (args.repo && !args.owner) {
-          return createResult(
-            'Repository search requires owner parameter - specify owner when searching specific repositories',
-            true
-          );
+        // Validate parameter combinations
+        const validationError = validateSearchParameters(args);
+        if (validationError) {
+          return createResult(validationError, true);
         }
 
         const result = await searchGitHubCode(args);
@@ -155,8 +138,18 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           },
         });
       } catch (error) {
+        const errorMessage = (error as Error).message || '';
+
+        // Handle JSON parsing errors
+        if (errorMessage.includes('JSON')) {
+          return createErrorResult(
+            'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
+            error as Error
+          );
+        }
+
         return createErrorResult(
-          'GitHub code search failed - check repository access or simplify query',
+          'GitHub code search failed - verify parameters and try with simpler query or specific filters (language, owner, path)',
           error as Error
         );
       }
@@ -183,11 +176,14 @@ function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
     processedQuery = processedQuery.replace(match, placeholder);
   });
 
-  // Step 3: Smart boolean logic - default to OR between terms if no explicit operators
+  // Step 3: Check complexity BEFORE adding auto-OR logic
+  const originalHasComplexLogic = hasComplexBooleanLogic(processedQuery);
+
+  // Step 4: Smart boolean logic - default to OR between terms if no explicit operators
   let searchQuery = processedQuery;
 
   // Check if query already has explicit boolean operators
-  if (!hasComplexBooleanLogic(processedQuery)) {
+  if (!originalHasComplexLogic) {
     // Split by whitespace and join with OR for better search results
     const terms = processedQuery
       .trim()
@@ -198,9 +194,10 @@ function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
     }
   }
 
-  // Step 4: Add GitHub-specific filters that go in the query string
+  // Step 5: Handle filters differently based on ORIGINAL query complexity
   const githubFilters: string[] = [];
 
+  // Always add path and visibility to query string (they don't have CLI equivalents)
   if (filters.path) {
     githubFilters.push(`path:${filters.path}`);
   }
@@ -209,14 +206,14 @@ function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
     githubFilters.push(`visibility:${filters.visibility}`);
   }
 
-  // For complex boolean queries, add language/extension/filename/size to query string
-  const hasComplexLogic = hasComplexBooleanLogic(searchQuery);
-  if (hasComplexLogic) {
+  // For complex boolean queries, add ALL filters to query string to avoid CLI conflicts
+  if (originalHasComplexLogic) {
     if (filters.language) {
       githubFilters.push(`language:${filters.language}`);
     }
 
-    if (filters.extension) {
+    // For complex queries with both language and extension, prioritize language
+    if (filters.extension && !filters.language) {
       githubFilters.push(`extension:${filters.extension}`);
     }
 
@@ -229,12 +226,12 @@ function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
     }
   }
 
-  // Step 5: Combine query with GitHub filters
+  // Step 6: Combine query with GitHub filters using proper spacing
   if (githubFilters.length > 0) {
     searchQuery = `${searchQuery} ${githubFilters.join(' ')}`;
   }
 
-  // Step 6: Restore exact phrases
+  // Step 7: Restore exact phrases
   exactPhrases.forEach((phrase, index) => {
     const placeholder = `__EXACT_PHRASE_${index}__`;
     searchQuery = searchQuery.replace(placeholder, phrase);
@@ -252,7 +249,7 @@ function hasComplexBooleanLogic(query: string): boolean {
 }
 
 /**
- * Build command line arguments for GitHub CLI
+ * Build command line arguments for GitHub CLI with improved parameter handling
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   const args = ['code'];
@@ -261,15 +258,11 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   const searchQuery = parseSearchQuery(params.query, params);
   args.push(searchQuery);
 
-  // Add CLI flags - Always add basic flags, but be careful with complex boolean queries
-  const hasComplexLogic = hasComplexBooleanLogic(searchQuery);
+  // Determine strategy based on ORIGINAL query complexity, not processed query
+  const hasComplexLogic = hasComplexBooleanLogic(params.query);
 
-  // For complex boolean queries, add filters to the query string instead of CLI flags
-  if (hasComplexLogic) {
-    // Complex boolean queries: filters go in query string, handled by parseSearchQuery
-    // Note: Complex boolean logic detected, filters added to query string
-  } else {
-    // Simple queries: use CLI flags for better performance
+  // For simple queries, use CLI flags for better performance and validation
+  if (!hasComplexLogic) {
     if (params.language) {
       args.push(`--language=${params.language}`);
     }
@@ -286,17 +279,18 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
       args.push(`--size=${params.size}`);
     }
   }
+  // For complex queries, filters are already in the query string (handled by parseSearchQuery)
 
+  // Always add limit
   if (params.limit) {
     args.push(`--limit=${params.limit}`);
   }
 
-  // Handle match parameter - can be string or array
+  // Handle match parameter with conflict resolution
   if (params.match) {
     const matchValues = Array.isArray(params.match)
       ? params.match
       : [params.match];
-    // GitHub API limitation: can't use both in:file and in:path in same query
     // Use the first match type when multiple are provided
     const matchValue = matchValues[0];
     args.push(`--match=${matchValue}`);
@@ -310,7 +304,7 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
     ownerValues.forEach(owner => args.push(`--owner=${owner}`));
   }
 
-  // Handle repository filters
+  // Handle repository filters with improved validation
   if (params.owner && params.repo) {
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
@@ -349,10 +343,100 @@ async function searchGitHubCode(
 
       return result;
     } catch (error) {
+      const errorMessage = (error as Error).message || '';
+
+      // Parse specific GitHub CLI error types
+      if (errorMessage.includes('authentication')) {
+        return createErrorResult(
+          'GitHub CLI authentication required - run the api_status_check tool to verify authentication and available organizations',
+          error as Error
+        );
+      }
+
+      if (errorMessage.includes('rate limit')) {
+        return createErrorResult(
+          'GitHub API rate limit exceeded - wait a few minutes before searching again or use more specific filters to reduce results',
+          error as Error
+        );
+      }
+
+      if (
+        errorMessage.includes('validation failed') ||
+        errorMessage.includes('Invalid query')
+      ) {
+        return createErrorResult(
+          'Invalid search query syntax - check boolean operators (AND/OR/NOT), quotes for exact phrases, and filter formats. Try simplifying your query',
+          error as Error
+        );
+      }
+
+      if (
+        errorMessage.includes('repository not found') ||
+        errorMessage.includes('owner not found')
+      ) {
+        return createErrorResult(
+          'Repository or owner not found - run api_status_check tool to verify available organizations and access permissions',
+          error as Error
+        );
+      }
+
+      if (errorMessage.includes('timeout')) {
+        return createErrorResult(
+          'Search timeout - query too broad or complex. Try adding filters like language, owner, or path to narrow results',
+          error as Error
+        );
+      }
+
+      // Generic fallback with helpful guidance
       return createErrorResult(
-        'Code search command failed - verify GitHub CLI is authenticated',
+        'GitHub code search failed - run api_status_check tool to verify authentication and permissions, or try simplifying your query',
         error as Error
       );
     }
   });
+}
+
+/**
+ * Validate parameter combinations to prevent conflicts
+ */
+function validateSearchParameters(
+  params: GitHubCodeSearchParams
+): string | null {
+  // Query validation
+  if (!params.query.trim()) {
+    return 'Empty search query - provide a search term like "useState", "function init", or "api AND endpoint"';
+  }
+
+  if (params.query.length > 1000) {
+    return 'Search query too long - limit to 1000 characters. Try breaking into smaller, focused searches';
+  }
+
+  // Repository validation
+  if (params.repo && !params.owner) {
+    return 'Missing owner parameter - when searching specific repositories, format as owner/repo (e.g., "microsoft/vscode") or provide both owner and repo parameters';
+  }
+
+  // Invalid characters in query
+  if (params.query.includes('\\') && !params.query.includes('\\"')) {
+    return 'Invalid escape characters in query - use quotes for exact phrases: "exact phrase" instead of escaping';
+  }
+
+  // Boolean operator validation
+  const invalidBooleans = params.query.match(/\b(and|or|not)\b/g);
+  if (invalidBooleans) {
+    return `Boolean operators must be uppercase - use ${invalidBooleans.map(op => op.toUpperCase()).join(', ')} instead of ${invalidBooleans.join(', ')}`;
+  }
+
+  // Unmatched quotes
+  const quoteCount = (params.query.match(/"/g) || []).length;
+  if (quoteCount % 2 !== 0) {
+    return 'Unmatched quotes in query - ensure all quotes are properly paired for exact phrase matching';
+  }
+
+  // Size parameter validation
+  if (params.size && !/^[<>]=?\d+$|^\d+\.\.\d+$|^\d+$/.test(params.size)) {
+    return 'Invalid size format - use ">100", "<50", "10..100", or "100" for file size filtering';
+  }
+
+  return null; // No validation errors
 }

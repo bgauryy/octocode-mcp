@@ -4,7 +4,6 @@ import {
   createErrorResult,
   createResult,
   createSuccessResult,
-  needsQuoting,
 } from '../../utils/responses';
 import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
@@ -307,45 +306,16 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 } {
   // Build query following GitHub CLI patterns
   const query = params.query?.trim() || '';
-
-  // Handle complex queries (with qualifiers, operators, or --) differently
-  const hasComplexSyntax =
-    query.includes('--') ||
-    query.includes(':') ||
-    query.includes('OR') ||
-    query.includes('AND') ||
-    query.includes('(') ||
-    query.includes(')') ||
-    query.startsWith('-');
-
   const args = ['repos'];
 
-  // Only add query if it exists
+  // Only add query if it exists and handle it properly
   if (query) {
-    if (hasComplexSyntax) {
-      // For complex queries with special syntax, we need to be more careful
-      // Split by spaces but preserve quoted strings and handle special characters
-      const queryParts = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-      queryParts.forEach(part => {
-        // If part contains shell special characters, quote it
-        if (/[><=&|$`(){}[\];\\]/.test(part) && !part.includes('"')) {
-          args.push(`"${part}"`);
-        } else {
-          args.push(part);
-        }
-      });
+    // For repository search, treat multi-word queries as a single quoted string
+    // This matches GitHub CLI expected behavior for repo searches
+    if (query.includes(' ')) {
+      args.push(query); // Let GitHub CLI handle the quoting
     } else {
-      // For simple queries, split by spaces to match GitHub CLI examples
-      // "cli shell" becomes separate args: cli shell
-      const queryParts = query.split(/\s+/).filter(part => part.length > 0);
-      queryParts.forEach(part => {
-        // Only quote if the part contains special characters
-        if (needsQuoting(part)) {
-          args.push(`"${part}"`);
-        } else {
-          args.push(part);
-        }
-      });
+      args.push(query);
     }
   }
 
@@ -382,18 +352,19 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
       starsValue
     );
     if (isValidStars) {
-      args.push(`--stars=${params.stars}`);
+      // Don't add quotes around the stars value - GitHub CLI handles this internally
+      args.push(`--stars=${starsValue}`);
     }
   }
 
   // SECONDARY FILTERS - only add if we have primary filters
   if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
-  if (params.created) args.push(`--created="${params.created}"`);
+  if (params.created) args.push(`--created=${params.created}`);
   if (params.includeForks) args.push(`--include-forks=${params.includeForks}`);
   if (params.license && params.license.length > 0)
     args.push(`--license=${params.license.join(',')}`);
   if (params.match) args.push(`--match=${params.match}`);
-  if (params.updated) args.push(`--updated="${params.updated}"`);
+  if (params.updated) args.push(`--updated=${params.updated}`);
   if (params.visibility) args.push(`--visibility=${params.visibility}`);
   if (params.goodFirstIssues)
     args.push(`--good-first-issues=${params.goodFirstIssues}`);

