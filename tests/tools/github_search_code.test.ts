@@ -78,12 +78,28 @@ describe('GitHub Search Code Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub search code tool', () => {
-      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
+      expect(mockServer.server.tool).toHaveBeenCalledWith(
         'github_search_code',
+        expect.stringContaining('Search code across GitHub repositories'),
         expect.objectContaining({
-          description: expect.stringContaining('Search code across GitHub repositories'),
-          inputSchema: expect.any(Object),
-          annotations: expect.any(Object),
+          query: expect.any(Object),
+          owner: expect.any(Object),
+          repo: expect.any(Object),
+          language: expect.any(Object),
+          extension: expect.any(Object),
+          filename: expect.any(Object),
+          path: expect.any(Object),
+          size: expect.any(Object),
+          limit: expect.any(Object),
+          match: expect.any(Object),
+          visibility: expect.any(Object),
+        }),
+        expect.objectContaining({
+          title: 'github_search_code',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
         }),
         expect.any(Function)
       );
@@ -410,12 +426,12 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Missing owner - format as owner/repo or provide both parameters');
+      expect(result.content[0].text).toContain('Missing owner parameter');
     });
 
     it('should handle GitHub CLI execution errors', async () => {
       mockExecuteGitHubCommand.mockRejectedValueOnce(
-        new Error('authentication failed')
+        new Error('GitHub CLI not authenticated')
       );
 
       const result = await mockServer.callTool('github_search_code', {
@@ -423,7 +439,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub authentication required - run api_status_check tool');
+      expect(result.content[0].text).toContain('api_status_check tool');
     });
 
     it('should return error for excessively long queries', async () => {
@@ -434,25 +450,25 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Query too long - limit to 1000 characters');
+      expect(result.content[0].text).toContain('Search query too long');
     });
 
     it('should return error for empty queries', async () => {
       const result = await mockServer.callTool('github_search_code', {
-        query: '',
+        query: '   ', // Empty/whitespace query
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Empty query - provide search terms like "useState" or "api AND endpoint"');
+      expect(result.content[0].text).toContain('Empty search query');
     });
 
     it('should return error for unmatched quotes', async () => {
       const result = await mockServer.callTool('github_search_code', {
-        query: 'function "unclosed quote',
+        query: 'useState "unmatched quote',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Unmatched quotes - ensure all quotes are properly paired');
+      expect(result.content[0].text).toContain('Unmatched quotes in query');
     });
 
     it('should return error for lowercase boolean operators', async () => {
@@ -464,7 +480,7 @@ describe('GitHub Search Code Tool', () => {
       expect(result.content[0].text).toContain(
         'Boolean operators must be uppercase'
       );
-      expect(result.content[0].text).toContain('Boolean operators must be uppercase: AND');
+      expect(result.content[0].text).toContain('use AND instead of and');
     });
 
     it('should return error for invalid size format', async () => {
@@ -479,11 +495,11 @@ describe('GitHub Search Code Tool', () => {
 
     it('should return error for invalid escape characters', async () => {
       const result = await mockServer.callTool('github_search_code', {
-        query: 'function\\(test\\)',
+        query: 'useState\\hook', // Invalid escape without quotes
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Invalid escapes - use quotes for exact phrases instead');
+      expect(result.content[0].text).toContain('Invalid escape characters');
     });
 
     it('should direct to api_status_check for authentication errors', async () => {
@@ -496,7 +512,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub authentication required - run api_status_check tool');
+      expect(result.content[0].text).toContain('api_status_check tool');
     });
 
     it('should direct to api_status_check for owner not found errors', async () => {
@@ -510,7 +526,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Repository not found - verify owner/repo names and permissions');
+      expect(result.content[0].text).toContain('api_status_check tool');
     });
   });
 

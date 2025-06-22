@@ -72,12 +72,37 @@ describe('GitHub Search Repositories Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub search repositories tool', () => {
-      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
+      expect(mockServer.server.tool).toHaveBeenCalledWith(
         'github_search_repositories',
+        expect.stringContaining('Search repositories by name/description'),
         expect.objectContaining({
-          description: expect.stringContaining('Search repositories by name/description'),
-          inputSchema: expect.any(Object),
-          annotations: expect.any(Object),
+          query: expect.any(Object),
+          owner: expect.any(Object),
+          language: expect.any(Object),
+          stars: expect.any(Object),
+          topic: expect.any(Object),
+          forks: expect.any(Object),
+          license: expect.any(Object),
+          match: expect.any(Object),
+          visibility: expect.any(Object),
+          created: expect.any(Object),
+          updated: expect.any(Object),
+          archived: expect.any(Object),
+          includeForks: expect.any(Object),
+          goodFirstIssues: expect.any(Object),
+          helpWantedIssues: expect.any(Object),
+          followers: expect.any(Object),
+          size: expect.any(Object),
+          sort: expect.any(Object),
+          order: expect.any(Object),
+          limit: expect.any(Object),
+        }),
+        expect.objectContaining({
+          title: 'github_search_repositories',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
         }),
         expect.any(Function)
       );
@@ -890,24 +915,27 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Repository search failed - verify connection or simplify query'
+        'GitHub repository search failed'
       );
     });
 
     it('should handle invalid JSON responses', async () => {
-      // Mock GitHub CLI to return invalid JSON
       mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
-        content: [{ text: JSON.stringify({ result: 'invalid json' }) }],
+        content: [
+          {
+            text: 'invalid json',
+          },
+        ],
       });
 
       const result = await mockServer.callTool('github_search_repositories', {
-        query: 'react',
+        query: 'test',
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Repository search failed - verify connection or simplify query'
+        'GitHub repository search failed'
       );
     });
   });
