@@ -1,10 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import {
-  createErrorResult,
-  createResult,
-  createSuccessResult,
-} from '../../utils/responses';
+import { createErrorResult, createSuccessResult } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
@@ -36,44 +32,43 @@ export function registerNpmViewPackageTool(server: McpServer) {
       },
     },
     async (args: NpmViewPackageParams): Promise<CallToolResult> => {
-      try {
-        if (!args.packageName || args.packageName.trim() === '') {
-          return createResult('Package name required', true);
-        }
-
-        // Package name validation
-        if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
-          return createResult('Invalid package name format', true);
-        }
-
-        const result = await npmViewPackage(args.packageName);
-        return result;
-      } catch (error) {
-        return createResult(
-          'Package metadata failed - package may not exist',
-          true
-        );
-      }
+      return npmViewPackage(args.packageName);
     }
   );
 }
 
-// Helper function to process versions
-function processVersions(time: Record<string, string>) {
-  const semanticVersionRegex = /^\d+\.\d+\.\d+$/;
+// Helper function to process versions from the 'time' field in npm view output
+function processVersions(time: Record<string, string> | undefined) {
+  if (!time) {
+    return {
+      recent: null,
+      stats: null,
+    };
+  }
 
-  const versions = Object.entries(time || {})
+  const semanticVersionRegex = /^\d+\.\d+\.\d+$/; // Matches stable versions like 1.2.3
+
+  // Filter out 'created' and 'modified', keep only version entries,
+  // then filter for actual semantic versions, and sort descending by date.
+  const versions = Object.entries(time)
     .filter(([key]) => key !== 'created' && key !== 'modified')
-    .filter(([version]) => semanticVersionRegex.test(version))
-    .sort(([, a], [, b]) => new Date(b).getTime() - new Date(a).getTime());
+    .filter(([version]) => semanticVersionRegex.test(version)) // Consider only official releases for "recent"
+    .sort(
+      ([, aDate], [, bDate]) =>
+        new Date(bDate).getTime() - new Date(aDate).getTime()
+    );
+
+  const totalVersionsInTime = Object.keys(time).filter(
+    key => key !== 'created' && key !== 'modified'
+  ).length;
 
   return {
     recent: versions
-      .slice(0, 10)
+      .slice(0, 10) // Get top 10 most recent official releases
       .map(([version, releaseDate]) => ({ version, releaseDate })),
     stats: {
-      total: Object.keys(time || {}).length - 2, // exclude 'created' and 'modified'
-      official: versions.length,
+      total: totalVersionsInTime, // Total versions listed (including pre-releases etc. in 'time')
+      official: versions.length, // Count of official semantic versions found in 'time'
     },
   };
 }
@@ -86,47 +81,73 @@ export async function npmViewPackage(
   return withCache(cacheKey, async () => {
     try {
       const result = await executeNpmCommand('view', [packageName, '--json'], {
-        cache: true,
+        cache: true, // Assuming executeNpmCommand handles its own caching logic if needed based on this flag
       });
 
-      if (result.isError) {
-        return result;
+      if (
+        result.isError ||
+        !result.content ||
+        result.content.length === 0 ||
+        !result.content[0].text
+      ) {
+        // If executeNpmCommand indicates an error or has no content, return that error or a generic one.
+        return result.isError
+          ? result
+          : createErrorResult(
+              `Failed to fetch package data for "${packageName}". Output was empty or invalid.`
+            );
       }
 
-      // Parse the result from the executed command
-      const commandOutput = JSON.parse(result.content[0].text as string);
-      const npmData = JSON.parse(commandOutput.result);
+      let npmData: any;
+      try {
+        // Assuming result.content[0].text is the direct JSON string output from `npm view --json`
+        npmData = JSON.parse(result.content[0].text as string);
+      } catch (parseError) {
+        return createErrorResult(
+          `Invalid JSON response from npm view for package "${packageName}".`
+        );
+      }
 
-      // Process versions
+      // Process versions using the 'time' field from npmData
       const versionData = processVersions(npmData.time);
 
-      // Extract registry URL from tarball
+      // Extract registry URL from tarball (if available)
       const registryUrl =
-        npmData.dist?.tarball?.match(/^(https?:\/\/[^/]+)/)?.[1] || '';
+        npmData.dist?.tarball?.match(/^(https?:\/\/[^/]+)/)?.[1] || null;
 
-      // Build result
+      // Build result according to the updated NpmViewPackageResult interface
       const viewResult: NpmViewPackageResult = {
-        name: npmData.name,
-        latest: npmData['dist-tags']?.latest || '',
-        license: npmData.license || '',
-        timeCreated: npmData.time?.created || '',
-        timeModified: npmData.time?.modified || '',
-        repositoryGitUrl: npmData.repository?.url || '',
-        registryUrl,
-        description: npmData.description || '',
-        size: npmData.dist?.unpackedSize || 0,
-        dependencies: npmData.dependencies || {},
-        devDependencies: npmData.devDependencies || {},
-        exports: npmData.exports || {},
-        versions: versionData.recent,
+        name: npmData.name || packageName, // Fallback to packageName if name is missing
+        latest: npmData['dist-tags']?.latest || null,
+        license: npmData.license || null,
+        timeCreated: npmData.time?.created || null,
+        timeModified: npmData.time?.modified || null,
+        repository: npmData.repository || null,
+        registryUrl: registryUrl,
+        description: npmData.description || null,
+        size: npmData.dist?.unpackedSize || null,
+        dependencies: npmData.dependencies || null,
+        devDependencies: npmData.devDependencies || null,
+        peerDependencies: npmData.peerDependencies || null, // New
+        exports: npmData.exports || null,
+        versions:
+          versionData.recent && versionData.recent.length > 0
+            ? versionData.recent
+            : null,
         versionStats: versionData.stats,
+        homepage: npmData.homepage || null, // New
+        keywords: npmData.keywords || null, // New
+        maintainers: npmData.maintainers || null, // New
+        bugs: npmData.bugs || null, // New
+        main: npmData.main || null, // New
+        engines: npmData.engines || null, // New
       };
 
       return createSuccessResult(viewResult);
     } catch (error) {
+      // General error catch for issues within the withCache block or unexpected errors
       return createErrorResult(
-        'Package metadata failed - package may not exist',
-        error
+        `Package metadata retrieval failed for "${packageName}".`
       );
     }
   });

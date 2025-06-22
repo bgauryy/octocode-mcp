@@ -1,14 +1,51 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCodeSearchParams } from '../../types';
-import {
-  createErrorResult,
-  createResult,
-  createSuccessResult,
-} from '../../utils/responses';
+import { createErrorResult, createSuccessResult } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
+
+// Define interfaces for the structured success result
+interface GhCliRepository {
+  // Define only fields that are actually used or potentially available and useful
+  fullName?: string; // Typically from REST API, less common in CLI --json
+  nameWithOwner?: string; // Common in gh CLI --json output
+  // id?: string;
+  // name?: string;
+  // owner?: { login?: string; id?: string; type?: string };
+  // visibility?: string;
+  // etc.
+}
+
+interface GhCliTextMatch {
+  // Structure of individual text match, if needed for 'matches' count or details
+  // For now, we only use .length, so a complex type isn't strictly necessary here
+  // fragment?: string;
+  // property?: string;
+  // matches?: { text?: string; indices?: number[] }[];
+}
+
+interface GhCliSearchCodeItem {
+  path: string;
+  repository: GhCliRepository;
+  url: string;
+  sha: string; // Available from --json, though not used in current simplified output
+  textMatches?: GhCliTextMatch[];
+}
+
+interface GitHubSearchCodeResultItem {
+  file: string;
+  repository: string;
+  url: string;
+  matches: number;
+}
+
+interface GitHubSearchCodeSuccessData {
+  query: string;
+  total: number; // Total items returned by the CLI call (respecting its limit)
+  results: GitHubSearchCodeResultItem[];
+}
 
 const TOOL_NAME = 'github_search_code';
 
@@ -66,7 +103,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'File size filter. Examples: ">100", "<1000", "100..500" (bytes).'
+            'File size filter in kilobytes. Examples: ">100", "<1000", "100..500" (kilobytes).'
           ),
         limit: z
           .number()
@@ -100,7 +137,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         // Validate parameter combinations
         const validationError = validateSearchParameters(args);
         if (validationError) {
-          return createResult(validationError, true);
+          return createErrorResult(validationError);
         }
 
         const result = await searchGitHubCode(args);
@@ -109,35 +146,51 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           return result;
         }
 
-        const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults = JSON.parse(execResult.result);
+        // Assuming result.content[0].text is the direct JSON string (array) from gh CLI
+        let rawItems: GhCliSearchCodeItem[];
+        try {
+          rawItems = JSON.parse(result.content[0].text as string);
+        } catch (parseError) {
+          // Handle cases where the output isn't valid JSON as expected
+          return createErrorResult(
+            'Invalid JSON response from GitHub CLI | Try: update GitHub CLI, check installation, or verify output format',
+            parseError as Error
+          );
+        }
 
-        // GitHub CLI returns a direct array, not an object with total_count and items
-        const items = Array.isArray(codeResults) ? codeResults : [];
+        const items = Array.isArray(rawItems) ? rawItems : [];
 
-        return createSuccessResult({
+        const successData: GitHubSearchCodeSuccessData = {
           query: args.query,
-          total: items.length,
-          results: items.slice(0, args.limit || 20).map(item => ({
-            file: item.path || '',
-            repository: item.repository?.fullName || '',
-            url: item.url || '',
-            matches: item.textMatches?.length || 0,
-          })),
-        });
+          total: items.length, // This is the count of items received from the CLI
+          results: items
+            .slice(0, args.limit || 20) // Apply tool-defined limit if different from CLI's
+            .map(
+              (item: GhCliSearchCodeItem): GitHubSearchCodeResultItem => ({
+                file: item.path || '',
+                repository:
+                  item.repository?.nameWithOwner ||
+                  item.repository?.fullName ||
+                  '',
+                url: item.url || '',
+                matches: item.textMatches?.length || 0,
+              })
+            ),
+        };
+        return createSuccessResult(successData);
       } catch (error) {
         const errorMessage = (error as Error).message || '';
 
         // Handle JSON parsing errors
         if (errorMessage.includes('JSON')) {
           return createErrorResult(
-            'Invalid CLI response - update GitHub CLI or check authentication',
+            'Invalid CLI response | Try: update GitHub CLI, check authentication, or verify installation',
             error as Error
           );
         }
 
         return createErrorResult(
-          'Code search failed - simplify query or add filters (language, owner, path)',
+          'Code search failed | Try: simplify query, add filters, or check authentication',
           error as Error
         );
       }
@@ -280,34 +333,38 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
     args.push(`--match=${matchValue}`);
   }
 
-  // Handle owner parameter - can be string or array
-  if (params.owner && !params.repo) {
-    const ownerValues = Array.isArray(params.owner)
-      ? params.owner
-      : [params.owner];
-    ownerValues.forEach(owner => args.push(`--owner=${owner}`));
-  }
-
-  // Handle repository filters with improved validation
-  if (params.owner && params.repo) {
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+  // Refined handling for owner and repo parameters
+  const cliRepoArgs: string[] = [];
+  if (params.repo) {
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    const owners = params.owner
+      ? Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner]
+      : null;
 
-    // Create repo filters for each owner/repo combination
-    owners.forEach(owner => {
-      repos.forEach(repo => {
-        // Handle both "owner/repo" format and just "repo" format
-        if (repo.includes('/')) {
-          args.push(`--repo=${repo}`);
-        } else {
-          args.push(`--repo=${owner}/${repo}`);
-        }
-      });
+    repos.forEach(repoName => {
+      if (repoName.includes('/')) {
+        cliRepoArgs.push(`--repo=${repoName}`);
+      } else if (owners) {
+        owners.forEach(ownerName => {
+          cliRepoArgs.push(`--repo=${ownerName}/${repoName}`);
+        });
+      }
+      // If repoName doesn't include '/' and owners is null, validation should have caught this.
+    });
+  } else if (params.owner) {
+    // Only owner is specified, no specific repo
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(ownerName => {
+      args.push(`--owner=${ownerName}`);
     });
   }
+  args.push(...cliRepoArgs);
 
-  // JSON output with all available fields
-  args.push('--json=repository,path,textMatches,sha,url');
+  // JSON output with all available fields from CLI help
+  // The CLI help lists: path, repository, sha, textMatches, url
+  args.push('--json=path,repository,sha,textMatches,url');
 
   return args;
 }
@@ -332,14 +389,14 @@ export async function searchGitHubCode(
       // Parse specific GitHub CLI error types
       if (errorMessage.includes('authentication')) {
         return createErrorResult(
-          'Authentication required - run api_status_check',
+          'Authentication required | Try: run api_status_check tool or verify GitHub CLI login',
           error as Error
         );
       }
 
       if (errorMessage.includes('rate limit')) {
         return createErrorResult(
-          'Rate limit exceeded - add specific filters or wait',
+          'Rate limit exceeded | Try: add specific filters, wait, or use narrower search scope',
           error as Error
         );
       }
@@ -349,7 +406,7 @@ export async function searchGitHubCode(
         errorMessage.includes('Invalid query')
       ) {
         return createErrorResult(
-          'Invalid query syntax - check operators and quotes',
+          'Invalid query syntax | Try: check operators, fix quotes, or simplify search terms',
           error as Error
         );
       }
@@ -359,21 +416,21 @@ export async function searchGitHubCode(
         errorMessage.includes('owner not found')
       ) {
         return createErrorResult(
-          'Repository not found - verify names and permissions',
+          'Repository not found | Try: verify names, check permissions, or confirm repository exists',
           error as Error
         );
       }
 
       if (errorMessage.includes('timeout')) {
         return createErrorResult(
-          'Search timeout - add filters to narrow scope',
+          'Search timeout | Try: add filters, narrow scope, or use more specific terms',
           error as Error
         );
       }
 
       // Generic fallback
       return createErrorResult(
-        'Search failed - check authentication and simplify query',
+        'Search failed | Try: check authentication, simplify query, or verify connection',
         error as Error
       );
     }
@@ -391,13 +448,25 @@ function validateSearchParameters(
     return 'Empty query - provide search terms like "useState" or "api AND endpoint"';
   }
 
-  if (params.query.length > 500) {
-    return 'Query too long - limit to 500 characters for efficiency';
+  if (params.query.length > 256) {
+    return 'Query too long - limit to 256 characters for efficiency';
   }
 
   // Repository validation
   if (params.repo && !params.owner) {
-    return 'Missing owner - use owner/repo format or provide both params';
+    // This validation is a bit tricky. If 'repo' is 'owner/repo', owner is not strictly needed.
+    // However, if 'repo' is just 'reponame', then owner IS needed.
+    // The refined validation below handles this.
+    // return 'Missing owner - use owner/repo format or provide both params';
+  }
+
+  // Repository validation: If repo is specified and any repo name is simple (no '/'), owner is required.
+  if (params.repo) {
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    const hasSimpleRepoName = repos.some(r => !r.includes('/'));
+    if (hasSimpleRepoName && !params.owner) {
+      return 'Owner parameter is required if any repository name is specified without an "owner/" prefix.';
+    }
   }
 
   // Boolean operator validation

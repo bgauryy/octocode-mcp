@@ -1,13 +1,22 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
-export function createResult(
+// Private helper function - not exported
+function createResult(
   data: unknown,
   isError = false,
   suggestions?: string[]
 ): CallToolResult {
-  const text = isError
-    ? `${data}${suggestions ? ` | Try: ${suggestions.join(', ')}` : ''}`
-    : JSON.stringify(data, null, 2);
+  let text: string;
+
+  if (isError) {
+    // For errors, handle both string and object types
+    const errorText =
+      typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    text = `ERROR: ${errorText}${suggestions ? ` | Try: ${suggestions.join(', ')}` : ''}`;
+  } else {
+    // For success, format as JSON if it's an object, otherwise as string
+    text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  }
 
   return {
     content: [{ type: 'text', text }],
@@ -15,16 +24,23 @@ export function createResult(
   };
 }
 
-// LEGACY SUPPORT - Remove these once all tools are updated
-export function createSuccessResult(data: unknown): CallToolResult {
+export function createSuccessResult(data: unknown | string): CallToolResult {
   return createResult(data, false);
 }
 
 export function createErrorResult(
-  message: string,
-  error: unknown
+  message: unknown | string,
+  error?: unknown
 ): CallToolResult {
-  return createResult(`${message}: ${(error as Error).message}`, true);
+  let errorMessage: string;
+
+  if (typeof message === 'string') {
+    errorMessage = error ? `${message}: ${(error as Error).message}` : message;
+  } else {
+    errorMessage = JSON.stringify(message, null, 2);
+  }
+
+  return createResult(errorMessage, true);
 }
 
 // ENHANCED PARSING UTILITY
@@ -56,4 +72,30 @@ export function needsQuoting(str: string): boolean {
     str.includes('\r') ||
     /[<>(){}[\]\\|&;]/.test(str)
   );
+}
+
+/**
+ * Formats an ISO date string or null/undefined to YYYY-MM-DD format
+ * @param dateStr - ISO date string (e.g., "2023-10-26T12:00:00Z") or null/undefined
+ * @returns Formatted date string "YYYY-MM-DD" or null if input is null/undefined
+ */
+export function formatDateToYYYYMMDD(
+  dateStr: string | null | undefined
+): string | null {
+  if (!dateStr) {
+    return null;
+  }
+
+  try {
+    const date = new Date(dateStr);
+    // Check if the date is valid
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+
+    // Format to YYYY-MM-DD
+    return date.toISOString().split('T')[0];
+  } catch {
+    return null;
+  }
 }

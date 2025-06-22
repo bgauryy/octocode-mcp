@@ -1,8 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult } from '../../utils/responses';
+import { createSuccessResult, createErrorResult } from '../../utils/responses';
 import { executeNpmCommand } from '../../utils/exec';
-import { NpmPackage } from '../../types';
+import {
+  NpmSearchedPackageItem,
+  NpmPackageSearchResultData,
+  NpmPackageLinkInfo,
+  NpmPackageUserInfo,
+} from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 const TOOL_NAME = 'npm_package_search';
@@ -30,7 +35,9 @@ export function registerNpmSearchTool(server: McpServer) {
           .max(50)
           .optional()
           .default(15)
-          .describe('Max results per query. Default 15 for research focus.'),
+          .describe(
+            'Max results per query. Default 15 for research focus. Max 50.'
+          ),
       },
       annotations: {
         title: 'NPM Package Search',
@@ -45,14 +52,15 @@ export function registerNpmSearchTool(server: McpServer) {
       searchlimit?: number;
     }): Promise<CallToolResult> => {
       try {
-        const queries = Array.isArray(args.queries)
+        const searchQueries = Array.isArray(args.queries)
           ? args.queries
           : [args.queries];
         const searchLimit = args.searchlimit || 15;
-        const allPackages: NpmPackage[] = [];
+        const allFoundPackages: NpmSearchedPackageItem[] = [];
 
-        // Search for each query term
-        for (const query of queries) {
+        for (const query of searchQueries) {
+          if (query.trim() === '') continue;
+
           const result = await executeNpmCommand(
             'search',
             [query, `--searchlimit=${searchLimit}`, '--json'],
@@ -63,34 +71,39 @@ export function registerNpmSearchTool(server: McpServer) {
             const packages = parseNpmSearchOutput(
               result.content[0].text as string
             );
-            allPackages.push(...packages);
+            allFoundPackages.push(...packages);
+          } else if (result.isError) {
+            return result;
           }
         }
 
-        const deduplicatedPackages = deduplicatePackages(allPackages);
+        const deduplicatedPackages = deduplicatePackages(allFoundPackages);
 
         if (deduplicatedPackages.length > 0) {
-          return createResult({
-            query: Array.isArray(args.queries)
-              ? args.queries.join(', ')
-              : args.queries,
-            total: deduplicatedPackages.length,
-            results: deduplicatedPackages,
-          });
+          const searchResultData: NpmPackageSearchResultData = {
+            search_terms: searchQueries.filter(q => q.trim() !== ''),
+            total_found_for_terms: deduplicatedPackages.length,
+            packages: deduplicatedPackages,
+          };
+          return createSuccessResult(searchResultData);
         }
 
-        return createResult('No packages found for query', true);
+        return createErrorResult(
+          `No packages found | Try: different keywords, broader terms, or check spelling`
+        );
       } catch (error) {
-        return createResult(
-          'Search failed - check keywords or try alternatives',
-          true
+        return createErrorResult(
+          'NPM search failed | Try: check internet connection, verify NPM installation, or use different keywords',
+          error
         );
       }
     }
   );
 }
 
-function deduplicatePackages(packages: NpmPackage[]): NpmPackage[] {
+function deduplicatePackages(
+  packages: NpmSearchedPackageItem[]
+): NpmSearchedPackageItem[] {
   const seen = new Set<string>();
   return packages.filter(pkg => {
     if (seen.has(pkg.name)) return false;
@@ -99,72 +112,62 @@ function deduplicatePackages(packages: NpmPackage[]): NpmPackage[] {
   });
 }
 
-function normalizePackage(pkg: {
-  name?: string;
-  version?: string;
-  description?: string;
-  keywords?: string[];
-  links?: { repository?: string };
-  repository?: { url?: string };
-}): NpmPackage {
-  const description = pkg.description || null;
+function normalizePackage(rawPkg: any): NpmSearchedPackageItem {
+  const description = rawPkg.description || null;
   const truncatedDescription =
     description && description.length > MAX_DESCRIPTION_LENGTH
       ? description.substring(0, MAX_DESCRIPTION_LENGTH) + '...'
       : description;
 
-  const keywords = pkg.keywords || [];
+  const keywords = Array.isArray(rawPkg.keywords) ? rawPkg.keywords : [];
   const limitedKeywords = keywords.slice(0, MAX_KEYWORDS);
 
+  const links: NpmPackageLinkInfo | null = rawPkg.links
+    ? {
+        npm: rawPkg.links.npm || null,
+        homepage: rawPkg.links.homepage || null,
+        repository: rawPkg.links.repository || null,
+        bugs: rawPkg.links.bugs || null,
+      }
+    : null;
+
+  const publisher: NpmPackageUserInfo | null = rawPkg.publisher
+    ? {
+        username: rawPkg.publisher.username,
+        email: rawPkg.publisher.email || null,
+      }
+    : null;
+
+  const maintainers: NpmPackageUserInfo[] | null = Array.isArray(
+    rawPkg.maintainers
+  )
+    ? rawPkg.maintainers.map((m: any) => ({
+        username: m.username,
+        email: m.email || null,
+      }))
+    : null;
+
   return {
-    name: pkg.name || '',
-    version: pkg.version || '',
+    name: rawPkg.name || 'N/A',
+    version: rawPkg.version || 'N/A',
     description: truncatedDescription,
-    keywords: limitedKeywords,
-    repository: pkg.links?.repository || pkg.repository?.url || null,
+    keywords: limitedKeywords.length > 0 ? limitedKeywords : null,
+    date: rawPkg.date || null,
+    links: links,
+    publisher: publisher,
+    maintainers: maintainers,
+    license: rawPkg.license || null,
   };
 }
 
-function parseNpmSearchOutput(output: string): NpmPackage[] {
+function parseNpmSearchOutput(output: string): NpmSearchedPackageItem[] {
   try {
-    const wrapper = JSON.parse(output);
-    const commandResult =
-      typeof wrapper.result === 'string'
-        ? JSON.parse(wrapper.result)
-        : wrapper.result;
-
-    let packages: Array<{
-      name?: string;
-      version?: string;
-      description?: string;
-      keywords?: string[];
-      links?: { repository?: string };
-      repository?: { url?: string };
-    }> = [];
-
-    // Handle different npm search output formats
-    if (Array.isArray(commandResult)) {
-      packages = commandResult;
-    } else if (commandResult?.objects && Array.isArray(commandResult.objects)) {
-      packages = commandResult.objects.map(
-        (obj: {
-          package?: {
-            name?: string;
-            version?: string;
-            description?: string;
-            keywords?: string[];
-            links?: { repository?: string };
-            repository?: { url?: string };
-          };
-          [key: string]: unknown;
-        }) => obj.package || obj
-      );
-    } else if (commandResult?.results && Array.isArray(commandResult.results)) {
-      packages = commandResult.results;
+    const rawPackages: any[] = JSON.parse(output);
+    if (Array.isArray(rawPackages)) {
+      return rawPackages.map(normalizePackage);
     }
-
-    return packages.map(normalizePackage);
-  } catch {
+    return [];
+  } catch (e) {
     return [];
   }
 }

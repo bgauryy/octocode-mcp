@@ -3,13 +3,11 @@ import z from 'zod';
 import {
   GitHubRepositoryContentsResult,
   GitHubRepositoryStructureParams,
+  GitHubRepositoryEntry,
+  GitHubRepositoryFileEntry,
+  GitHubRepositoryFolderEntry,
 } from '../../types';
-import {
-  createResult,
-  parseJsonResponse,
-  createErrorResult,
-  createSuccessResult,
-} from '../../utils/responses';
+import { createErrorResult, createSuccessResult } from '../../utils/responses';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -68,46 +66,11 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
     },
     async (args: GitHubRepositoryStructureParams): Promise<CallToolResult> => {
       try {
-        const result = await viewRepositoryStructure(args);
-
-        if (result.isError) {
-          return createResult(result.content[0].text, true);
-        }
-
-        if (result.content && result.content[0] && !result.isError) {
-          const { data, parsed } = parseJsonResponse<{
-            path: string;
-            baseUrl: string;
-            files: Array<{ name: string; size: number; url: string }>;
-            folders: string[];
-            branchFallback?: {
-              requested: string;
-              used: string;
-              message: string;
-            };
-          }>(result.content[0].text as string);
-
-          if (parsed) {
-            const typedResult: GitHubRepositoryContentsResult = {
-              path: data.path,
-              baseUrl: data.baseUrl,
-              files: data.files || [],
-              folders: data.folders || [],
-              ...(data.branchFallback && {
-                branchFallback: data.branchFallback,
-              }),
-            };
-            return createResult(typedResult);
-          }
-        }
-
-        return result;
+        return await viewRepositoryStructure(args);
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        return createResult(
-          `Repository exploration failed: ${errorMessage} - verify access and permissions`,
-          true
+        return createErrorResult(
+          `Repository exploration failed | Try: verify access, check permissions, or confirm repository exists`,
+          error as Error
         );
       }
     }
@@ -134,16 +97,22 @@ export async function viewRepositoryStructure(
 
     try {
       // Clean up path
-      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+      const cleanPath = path.startsWith('/')
+        ? path.substring(1)
+        : path.endsWith('/') && path.length > 1
+          ? path.substring(0, path.length - 1)
+          : path;
 
       // Try the requested branch first, then fallback to main/master
       const branchesToTry = await getSmartBranchFallback(owner, repo, branch);
-      let items: Array<{
+      let rawApiItems: Array<{
         name: string;
-        path: string;
+        path: string; // Full path from repo root
         size: number;
-        type: 'file' | 'dir';
-        url: string;
+        type: 'file' | 'dir' | 'symlink' | 'submodule'; // GitHub API can return other types
+        url: string; // API URL to the content
+        html_url: string; // URL to view in browser
+        download_url: string | null;
       }> = [];
       let usedBranch = branch;
       let lastError: Error | null = null;
@@ -159,7 +128,7 @@ export async function viewRepositoryStructure(
             const execResult = JSON.parse(result.content[0].text as string);
             const apiItems = JSON.parse(execResult.result);
 
-            items = Array.isArray(apiItems) ? apiItems : [apiItems];
+            rawApiItems = Array.isArray(apiItems) ? apiItems : [apiItems];
             usedBranch = tryBranch;
             break;
           } else {
@@ -172,31 +141,33 @@ export async function viewRepositoryStructure(
         }
       }
 
-      if (items.length === 0) {
+      if (rawApiItems.length === 0) {
         // Use the most descriptive error message
         const errorMsg = lastError?.message || 'Unknown error';
 
         if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
           if (path) {
             throw new Error(
-              `Path "${path}" not found - verify path or use code search`
+              `Path "${path}" not found | Try: verify path, check spelling, or use code search`
             );
           } else {
             throw new Error(
-              `Repository not found: ${owner}/${repo} - verify names`
+              `Repository not found: ${owner}/${repo} | Try: verify names, check spelling, or confirm access`
             );
           }
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
           throw new Error(
-            `Access denied to ${owner}/${repo} - check permissions`
+            `Access denied to ${owner}/${repo} | Try: check permissions, verify token, or confirm repository access`
           );
         } else {
-          throw new Error(`Access failed: ${owner}/${repo} - check connection`);
+          throw new Error(
+            `Access failed: ${owner}/${repo} | Try: check connection, verify authentication, or confirm repository exists`
+          );
         }
       }
 
       // Limit total items to 100 for efficiency
-      const limitedItems = items.slice(0, 100);
+      const limitedItems = rawApiItems.slice(0, 100);
 
       // Sort: directories first, then alphabetically
       limitedItems.sort((a, b) => {
@@ -206,61 +177,55 @@ export async function viewRepositoryStructure(
         return a.name.localeCompare(b.name);
       });
 
-      // Create base URL for GitHub API - construct it reliably from the parameters
-      const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath ? cleanPath + '/' : ''}`;
-
-      // Transform to lean structure with simplified paths and URLs
-      const files = limitedItems
-        .filter(item => item.type === 'file')
+      const processedItems: GitHubRepositoryEntry[] = limitedItems
         .map(item => {
-          // Simplify path by removing redundant prefix
-          let simplifiedPath = item.name; // Use just the filename for files in current directory
-
-          // If we're in a subdirectory and the item path is longer than just the name,
-          // show relative path from current directory
-          if (cleanPath && item.path.startsWith(cleanPath + '/')) {
-            simplifiedPath = item.path.substring(cleanPath.length + 1);
-          } else if (!cleanPath) {
-            // At root level, use the full path but without leading slash
-            simplifiedPath = item.path;
+          if (item.type === 'file') {
+            return {
+              name: item.name,
+              type: 'file',
+              size: item.size,
+              path_from_repo_root: item.path,
+              html_url: item.html_url,
+              download_url: item.download_url,
+            } as GitHubRepositoryFileEntry;
+          } else if (item.type === 'dir') {
+            return {
+              name: item.name, // GitHub API returns dir name without trailing slash
+              type: 'dir',
+              path_from_repo_root: item.path,
+              html_url: item.html_url,
+            } as GitHubRepositoryFolderEntry;
+          } else {
+            // Handle symlinks or other types if necessary, or filter them out
+            // For now, filter out unhandled types to ensure type safety for items array
+            return null;
           }
+        })
+        .filter(Boolean) as GitHubRepositoryEntry[]; // Filter out nulls and assert type
 
-          // Extract just the filename and query params from the URL
-          const urlParts = item.url.split('/');
-          const filename = urlParts[urlParts.length - 1]; // Gets "filename?ref=branch"
-
-          return {
-            name: simplifiedPath,
-            size: item.size,
-            url: filename, // Just the filename and query params
-          };
-        });
-
-      const folders = limitedItems
-        .filter(item => item.type === 'dir')
-        .map(item => `${item.name}/`);
-
-      const result: GitHubRepositoryContentsResult = {
-        path: `${owner}/${repo}${path ? `/${path}` : ''}`,
-        baseUrl: `${baseUrl}?ref=${usedBranch}`, // Include complete base URL with branch
-        files,
-        folders,
-        ...(usedBranch !== branch && {
-          branchFallback: {
-            requested: branch,
-            used: usedBranch,
-            message: `Used '${usedBranch}' instead of '${branch}'`,
-          },
-        }),
+      const successData: GitHubRepositoryContentsResult = {
+        repository_full_name: `${owner}/${repo}`,
+        listed_path_from_repo_root: cleanPath,
+        branch_used: usedBranch,
+        items: processedItems,
       };
 
-      return createSuccessResult(result);
+      if (usedBranch !== branch) {
+        successData.branch_fallback = {
+          requested_branch: branch,
+          used_branch: usedBranch,
+          message: `Requested branch '${branch}' not found. Using '${usedBranch}'.`,
+        };
+      }
+
+      return createSuccessResult(successData);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      // Ensure errors from this function are CallToolResult compliant
+      if (error instanceof Error) {
+        return createErrorResult(error.message);
+      }
       return createErrorResult(
-        'Repository access failed - verify repository and authentication',
-        new Error(errorMessage)
+        'Failed to view repository structure due to an unknown error.'
       );
     }
   });

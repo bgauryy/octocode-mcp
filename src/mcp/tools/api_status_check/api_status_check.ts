@@ -1,8 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import z from 'zod';
-import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec.js';
-import { createResult, createErrorResult } from '../../utils/responses.js';
+import {
+  executeGitHubCommand,
+  executeNpmCommand,
+} from '../../../utils/exec.js';
+import {
+  createSuccessResult,
+  createErrorResult,
+} from '../../../utils/responses.js';
 
 export const TOOL_NAME = 'api_status_check';
 const DESCRIPTION = `Get GitHub organizations list and check CLI authentication status. Use when searching private repos or when CLI tools fail.`;
@@ -195,7 +201,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
           content.push(`Organizations Found: ${organizations.length}`);
         }
 
-        return createResult({
+        return createSuccessResult({
           status: statusPrefix,
           github: {
             connected: githubConnected,

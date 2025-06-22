@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerApiStatusCheckTool } from '../mcp/tools/api_status_check.js';
+import { registerApiStatusCheckTool } from '../mcp/tools/api_status_check/api_status_check.js';
 import { registerGitHubSearchCodeTool } from '../mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../mcp/tools/github_search_repos.js';

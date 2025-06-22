@@ -3,6 +3,7 @@ import { exec as nodeExec } from 'child_process';
 import { promisify } from 'util';
 import { platform } from 'os';
 import { generateCacheKey, withCache } from './cache';
+import { createSuccessResult, createErrorResult } from './responses';
 
 const safeExecAsync = promisify(nodeExec);
 
@@ -35,22 +36,6 @@ type ShellConfig = {
   shellEnv: string;
   type: 'cmd' | 'powershell' | 'unix';
 };
-
-function createSuccessResult(data: unknown): CallToolResult {
-  return {
-    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
-    isError: false,
-  };
-}
-
-function createErrorResult(message: string, error: unknown): CallToolResult {
-  return {
-    content: [
-      { type: 'text', text: `${message}: ${(error as Error).message}` },
-    ],
-    isError: true,
-  };
-}
 
 function isValidNpmCommand(command: string): command is NpmCommand {
   return ALLOWED_NPM_COMMANDS.includes(command as NpmCommand);
@@ -275,7 +260,10 @@ async function executeCommand(
     if (shouldTreatAsError) {
       const errorType =
         type === 'npm' ? 'NPM command error' : 'GitHub CLI command error';
-      return createErrorResult(errorType, new Error(stderr));
+      return createErrorResult(
+        `${errorType} | Try: check command syntax, verify installation, or review error details`,
+        new Error(stderr)
+      );
     }
 
     return createSuccessResult({
@@ -291,8 +279,8 @@ async function executeCommand(
   } catch (error) {
     const errorMessage =
       type === 'npm'
-        ? 'Failed to execute NPM command'
-        : 'Failed to execute GitHub CLI command';
+        ? 'Failed to execute NPM command | Try: check NPM installation, verify command syntax, or review network connection'
+        : 'Failed to execute GitHub CLI command | Try: check GitHub CLI installation, verify authentication, or review command syntax';
     return createErrorResult(errorMessage, error);
   }
 }

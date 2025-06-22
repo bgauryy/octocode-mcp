@@ -207,7 +207,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['--owner=microsoft']),
+        expect.arrayContaining(['repos', 'user:microsoft', '--json=fullName,name,stargazersCount,description,language,url,owner,updatedAt,forksCount,topics,license']),
         { cache: false }
       );
     });
@@ -863,7 +863,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Provide query or filter'
+        'ERROR: Query or filter required'
       );
     });
 
@@ -878,7 +878,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search failed - check connection or simplify query'
+        'ERROR: Search failed'
       );
     });
 
@@ -895,7 +895,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search failed - check connection or simplify query'
+        'ERROR: Search failed'
       );
     });
   });
