@@ -81,16 +81,10 @@ export async function npmViewPackage(
   return withCache(cacheKey, async () => {
     try {
       const result = await executeNpmCommand('view', [packageName, '--json'], {
-        cache: true, // Assuming executeNpmCommand handles its own caching logic if needed based on this flag
+        cache: true,
       });
 
-      if (
-        result.isError ||
-        !result.content ||
-        result.content.length === 0 ||
-        !result.content[0].text
-      ) {
-        // If executeNpmCommand indicates an error or has no content, return that error or a generic one.
+      if (result.isError || !result.content?.[0]?.text) {
         return result.isError
           ? result
           : createErrorResult(
@@ -100,8 +94,9 @@ export async function npmViewPackage(
 
       let npmData: any;
       try {
-        // Assuming result.content[0].text is the direct JSON string output from `npm view --json`
-        npmData = JSON.parse(result.content[0].text as string);
+        // Parse the response - it's wrapped in an object with a 'result' field
+        const responseData = JSON.parse(result.content[0].text as string);
+        npmData = JSON.parse(responseData.result);
       } catch (parseError) {
         return createErrorResult(
           `Invalid JSON response from npm view for package "${packageName}".`

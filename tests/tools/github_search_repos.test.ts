@@ -207,7 +207,11 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['repos', 'user:microsoft', '--json=fullName,name,stargazersCount,description,language,url,owner,updatedAt,forksCount,topics,license']),
+        expect.arrayContaining([
+          'repos',
+          'user:microsoft',
+          '--json=fullName,name,stargazersCount,description,language,url,owner,updatedAt,forksCount,topics,license',
+        ]),
         { cache: false }
       );
     });

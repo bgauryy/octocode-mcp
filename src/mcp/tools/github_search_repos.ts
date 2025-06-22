@@ -10,30 +10,18 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
-// Define interfaces for the structured success result
-interface GhCliRepoOwner {
-  login: string;
-  id?: string;
-  type?: string;
-}
-
-// Raw item from GH CLI `search repos --json`
+// Raw item from GH CLI `search repos --json` - simplified to match actual CLI fields
 interface GhCliRepoItem {
-  fullName?: string;
-  name?: string;
-  stargazersCount?: number;
+  fullName: string;
+  name: string;
+  stargazersCount: number;
   description?: string | null;
   language?: string | null;
   url: string;
-  owner?: GhCliRepoOwner | string; // owner can be an object with login, or sometimes just a string
-  updatedAt?: string; // ISO date string e.g., "2023-10-26T12:00:00Z"
+  owner: { login: string };
+  updatedAt: string;
   forksCount?: number;
-  topics?: string[];
-  license?: { spdxId?: string; name?: string } | null;
-  // Add other fields from `gh search repos --help` JSON FIELDS if needed for analysis
-  // createdAt, defaultBranch, hasDownloads, hasIssues, hasPages, hasProjects, hasWiki,
-  // homepage, id, isArchived, isDisabled, isFork, isPrivate, openIssuesCount, pushedAt,
-  // size, visibility, watchersCount
+  license?: { name?: string } | null;
 }
 
 // Processed item for the tool's output
@@ -44,27 +32,40 @@ interface GitHubSearchedRepoItem {
   language: string;
   url: string;
   owner: string;
-  updated: string; // Date string "YYYY-MM-DD"
-  forks?: number;
-  topics?: string[];
-}
-
-interface GitHubSearchReposSummary {
-  languages: string[];
-  averageStars: number;
-  recentlyUpdatedCount: number;
+  updated: string;
+  forks: number;
 }
 
 interface GitHubSearchReposSuccessData {
-  query?: string;
-  total: number; // Total items returned by the CLI respecting its limit
-  summary: GitHubSearchReposSummary;
+  query: string;
+  total: number;
   repositories: GitHubSearchedRepoItem[];
 }
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Discover repositories for architecture analysis and implementation research. Use quality filters and topic targeting for curated results.`;
+const DESCRIPTION = `Discover repositories for architecture analysis and implementation research. Use quality filters and topic targeting for curated results.
+
+SEARCH STRATEGY:
+• Individual terms work best: "react hooks" finds repos with both terms (AND logic)
+• Use OR for alternatives: "webpack OR vite", "vue OR angular" 
+• Quality filters essential: stars>1000 for established projects, >10000 for major libraries
+• Language filter more effective than query complexity: prefer --language over "language:X"
+• Owner targeting from api_status_check results enables private repo access
+
+EXAMPLES:
+• Framework research: query="state management" language="javascript" stars=">1000"
+• Architecture study: query="microservices" language="go" owner="google"  
+• Library comparison: query="testing OR test" language="typescript" stars=">500"
+• Recent projects: query="machine learning" updated=">2023-01-01" stars=">100"
+
+ANTI-PATTERNS:
+❌ Overly complex queries: "concurrent rendering scheduler implementation"
+✅ Simple terms: "scheduler", "workloop", "concurrent"
+❌ No quality filters → noise
+✅ Apply stars/activity filters early
+❌ Broad search without context
+✅ Use owner parameter from api_status_check`;
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
@@ -76,97 +77,102 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search terms. Examples: "react hooks", "build tools", "state management". Optional with filters.'
+            'Search terms - USE INDIVIDUAL TERMS for best results. GitHub searches for ALL terms by default (AND logic). EFFECTIVE PATTERNS: (1) Individual terms: "react hooks", "machine learning", "web framework" (searches for repos containing ALL these terms); (2) Exact phrases: "exact phrase" (use quotes sparingly); (3) OR logic: "vue OR angular" (explicit OR for alternatives); (4) Exclusion: "react -tutorial" (exclude tutorials). AVOID: Complex boolean expressions. If zero results: try fewer terms, broader terms, or remove quotes. Examples: "react", "machine learning", "testing framework", "vue OR angular"'
           ),
 
-        // PRIMARY FILTERS (high-value for research)
+        // PRIMARY FILTERS
         owner: z
           .string()
           .optional()
           .describe(
-            'Repository owner/organization from api_status_check results. Essential for accessing your private repositories.'
+            'Repository owner/organization from api_status_check results. Examples: "microsoft", "google", "facebook".'
           ),
         language: z
           .string()
           .optional()
-          .describe('Programming language. Essential for targeted discovery.'),
+          .describe(
+            'Programming language filter. Examples: "javascript", "typescript", "python".'
+          ),
         stars: z
           .string()
           .optional()
           .describe(
-            'Quality filter. Use ">1000" for established projects, ">10000" for major libraries.'
+            'Star count filter. Use ">1000" for established projects, ">10000" for major libraries, "100..1000" for ranges.'
           ),
         topic: z
           .array(z.string())
           .optional()
           .describe(
-            'Topic tags for semantic discovery. Highly effective for research.'
+            'Topic tags for semantic discovery. Example: ["web-framework", "javascript"].'
           ),
         forks: z
           .string()
           .optional()
-          .describe('Fork count filter (e.g., ">100", "10..50").'),
-        numberOfTopics: z
-          .string()
-          .optional()
-          .describe(
-            'Minimum topic count for well-documented projects (e.g., ">=3").'
-          ),
+          .describe('Fork count filter. Examples: ">100", "10..50".'),
 
         // SECONDARY FILTERS
         license: z
           .array(z.string())
           .optional()
-          .describe('License types. Important for commercial research.'),
+          .describe('License types. Examples: ["mit", "apache-2.0"].'),
+        archived: z
+          .boolean()
+          .optional()
+          .describe('Include/exclude archived repositories.'),
+        created: z
+          .string()
+          .optional()
+          .describe(
+            'Creation date filter. Examples: ">2020-01-01", "<2023-12-31".'
+          ),
+        updated: z
+          .string()
+          .optional()
+          .describe('Last update filter. Examples: ">2023-01-01".'),
+        size: z
+          .string()
+          .optional()
+          .describe('Repository size in KB. Examples: ">1000", "<500".'),
+        followers: z
+          .string()
+          .optional()
+          .describe('Follower count filter. Examples: ">1000".'),
+        'good-first-issues': z
+          .string()
+          .optional()
+          .describe('Good first issues count. Examples: ">=3".'),
+        'help-wanted-issues': z
+          .string()
+          .optional()
+          .describe('Help wanted issues count. Examples: ">=5".'),
+        'include-forks': z
+          .enum(['false', 'true', 'only'])
+          .optional()
+          .describe('Fork inclusion policy.'),
         match: z
           .enum(['name', 'description', 'readme'])
           .optional()
           .describe('Search scope restriction.'),
+        'number-topics': z
+          .string()
+          .optional()
+          .describe('Minimum topic count. Examples: ">=3".'),
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
-          .describe('Repository visibility.'),
-        created: z.string().optional().describe('Creation date filter.'),
-        updated: z.string().optional().describe('Last update filter.'),
-        archived: z
-          .boolean()
-          .optional()
-          .describe('Include/exclude archived repos.'),
-        includeForks: z
-          .enum(['false', 'true', 'only'])
-          .optional()
-          .describe('Fork inclusion policy.'),
-        goodFirstIssues: z
-          .string()
-          .optional()
-          .describe('Good first issues count.'),
-        helpWantedIssues: z
-          .string()
-          .optional()
-          .describe('Help wanted issues count.'),
-        followers: z
-          .string()
-          .optional()
-          .describe('Follower count filter (e.g., ">1000").'),
-        size: z.string().optional().describe('Repository size in KB.'),
+          .describe('Repository visibility filter.'),
 
-        // Sorting and limits
+        // SORTING AND LIMITS
         sort: z
-          .enum([
-            'forks',
-            'help-wanted-issues',
-            'stars',
-            'updated',
-            'best-match',
-          ])
+          .enum(['forks', 'help-wanted-issues', 'stars', 'updated'])
           .optional()
           .default('stars')
-          .describe('Sort by stars for research quality.'),
+          .describe('Sort criteria. Default: stars.'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Sort order.'),
+          .describe('Sort order. Default: desc.'),
         limit: z
           .number()
           .int()
@@ -174,7 +180,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .max(50)
           .optional()
           .default(15)
-          .describe('Max results. Default 15 for research focus.'),
+          .describe('Maximum results. Default: 15.'),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -186,8 +192,8 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     },
     async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
       try {
-        // Research-focused validation
-        const hasPrimaryFilter =
+        // Validation: require at least one filter
+        const hasFilter =
           args.query?.trim() ||
           args.owner ||
           args.language ||
@@ -195,19 +201,16 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           args.stars ||
           args.forks;
 
-        if (!hasPrimaryFilter) {
+        if (!hasFilter) {
           return createErrorResult(
-            'Query or filter required | Try: add search query, owner filter, language filter, or stars filter'
+            'Query or filter required | Try: add search query, owner, language, stars, or topic filter'
           );
         }
 
-        // Search repositories using GitHub CLI
-        const result = await searchGitHubRepos(args);
-
-        return result;
+        return await searchGitHubRepos(args);
       } catch (error) {
         return createErrorResult(
-          'Search failed | Try: simplify query, check connection, or verify GitHub CLI authentication',
+          'Search failed | Try: simplify query, check connection, or verify authentication',
           error
         );
       }
@@ -231,10 +234,11 @@ export async function searchGitHubRepos(
         return result;
       }
 
-      // Extract the actual content from the exec result
+      // Parse the CLI response
       let ghCliItems: GhCliRepoItem[];
       try {
-        ghCliItems = JSON.parse(result.content[0].text as string);
+        const execResult = JSON.parse(result.content[0].text as string);
+        ghCliItems = JSON.parse(execResult.result);
       } catch (parseError) {
         return createErrorResult(
           'Invalid GitHub CLI response | Try: update GitHub CLI or check installation',
@@ -244,90 +248,30 @@ export async function searchGitHubRepos(
 
       const repositories = Array.isArray(ghCliItems) ? ghCliItems : [];
 
-      // Parse JSON results and provide structured analysis
-      const analysis: {
-        totalFound: number;
-        languages: Set<string>;
-        avgStars: number;
-        recentlyUpdated: number;
-        topStarred: GitHubSearchedRepoItem[];
-      } = {
-        totalFound: 0,
-        languages: new Set<string>(),
-        avgStars: 0,
-        recentlyUpdated: 0,
-        topStarred: [],
-      };
-
-      if (repositories.length > 0) {
-        analysis.totalFound = repositories.length;
-
-        // Analyze repository data
-        let totalStars = 0;
-        const now = new Date();
-        const thirtyDaysAgo = new Date(
-          now.getTime() - 30 * 24 * 60 * 60 * 1000
-        );
-
-        repositories.forEach((repo: GhCliRepoItem) => {
-          // Collect languages
-          if (repo.language) {
-            analysis.languages.add(repo.language);
-          }
-
-          // Calculate average stars (use correct field name)
-          if (repo.stargazersCount) {
-            totalStars += repo.stargazersCount;
-          }
-
-          // Count recently updated repositories (use correct field name)
-          if (repo.updatedAt) {
-            const updatedDate = new Date(repo.updatedAt);
-            if (updatedDate > thirtyDaysAgo) {
-              analysis.recentlyUpdated++;
-            }
-          }
-        });
-
-        analysis.avgStars =
-          repositories.length > 0
-            ? Math.round(totalStars / repositories.length)
-            : 0;
-
-        // Get essential repository data only
-        analysis.topStarred = repositories.map(
-          (repo: GhCliRepoItem): GitHubSearchedRepoItem => ({
-            name: repo.fullName || repo.name || 'N/A',
-            stars: repo.stargazersCount || 0,
-            description: (repo.description || '').substring(0, 150),
-            language: repo.language || 'N/A',
-            url: repo.url,
-            owner:
-              typeof repo.owner === 'string'
-                ? repo.owner
-                : repo.owner?.login || 'N/A',
-            updated: formatDateToYYYYMMDD(repo.updatedAt) || 'N/A',
-            forks: repo.forksCount,
-            topics: repo.topics,
-          })
-        );
-      }
+      // Process repository data
+      const processedRepos: GitHubSearchedRepoItem[] = repositories.map(
+        (repo: GhCliRepoItem): GitHubSearchedRepoItem => ({
+          name: repo.fullName,
+          stars: repo.stargazersCount,
+          description: repo.description?.substring(0, 150) || '',
+          language: repo.language || 'N/A',
+          url: repo.url,
+          owner: repo.owner.login,
+          updated: formatDateToYYYYMMDD(repo.updatedAt) || 'N/A',
+          forks: repo.forksCount || 0,
+        })
+      );
 
       const successData: GitHubSearchReposSuccessData = {
-        query: params.query,
-        total: analysis.totalFound,
-        summary: {
-          languages: Array.from(analysis.languages),
-          averageStars: analysis.avgStars,
-          recentlyUpdatedCount: analysis.recentlyUpdated,
-        },
-        repositories: analysis.topStarred,
+        query: params.query || '',
+        total: repositories.length,
+        repositories: processedRepos,
       };
 
       return createSuccessResult(successData);
     } catch (error) {
       return createErrorResult(
-        'Search failed | Try: simplify query, check connection, or verify GitHub CLI authentication',
+        'Search failed | Try: simplify query, check connection, or verify authentication',
         error
       );
     }
@@ -341,86 +285,71 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   const command: GhCommand = 'search';
   const args: string[] = ['repos'];
 
-  // Query: Either use the provided query or build one from filters
-  let searchQuery = params.query?.trim() || '';
-  const queryParts: string[] = [];
+  // Add the main query if provided
+  if (params.query?.trim()) {
+    args.push(params.query.trim());
+  }
 
-  // Add specific filters to the query string as gh search repos primarily uses query syntax for these
-  if (params.owner) queryParts.push(`user:${params.owner}`); // or org:${params.owner} - user is more general
-  if (params.language) queryParts.push(`language:${params.language}`);
-  if (params.stars) queryParts.push(`stars:${params.stars}`);
-  if (params.forks) queryParts.push(`forks:${params.forks}`);
-  if (params.created) queryParts.push(`created:${params.created}`);
-  if (params.updated) queryParts.push(`updated:${params.updated}`);
+  // Add CLI flags that match the actual CLI API
+  if (params.owner) args.push(`--owner=${params.owner}`);
+  if (params.language) args.push(`--language=${params.language}`);
+  if (params.stars) args.push(`--stars=${params.stars}`);
+  if (params.forks) args.push(`--forks=${params.forks}`);
+  if (params.created) args.push(`--created=${params.created}`);
+  if (params.updated) args.push(`--updated=${params.updated}`);
+  if (params.size) args.push(`--size=${params.size}`);
+  if (params.followers) args.push(`--followers=${params.followers}`);
+
+  // Handle array parameters
   if (params.license && params.license.length > 0) {
-    params.license.forEach(l => queryParts.push(`license:${l}`));
+    args.push(`--license=${params.license.join(',')}`);
   }
   if (params.topic && params.topic.length > 0) {
-    params.topic.forEach(t => queryParts.push(`topic:${t}`));
+    args.push(`--topic=${params.topic.join(',')}`);
   }
-  if (params.goodFirstIssues)
-    queryParts.push(`good-first-issues:${params.goodFirstIssues}`);
-  if (params.helpWantedIssues)
-    queryParts.push(`help-wanted-issues:${params.helpWantedIssues}`);
-  if (params.followers) queryParts.push(`followers:${params.followers}`);
-  if (params.numberOfTopics) queryParts.push(`topics:${params.numberOfTopics}`); // e.g. topics:>=5
-  if (params.size) queryParts.push(`size:${params.size}`);
 
-  if (typeof params.archived === 'boolean') {
-    queryParts.push(`archived:${params.archived}`);
+  // Handle special parameter names that have hyphens
+  if (params['good-first-issues']) {
+    args.push(`--good-first-issues=${params['good-first-issues']}`);
   }
-  if (params.includeForks) {
-    queryParts.push(
-      `fork:${params.includeForks === 'only' ? 'only' : params.includeForks}`
-    );
+  if (params['help-wanted-issues']) {
+    args.push(`--help-wanted-issues=${params['help-wanted-issues']}`);
+  }
+  if (params['include-forks']) {
+    args.push(`--include-forks=${params['include-forks']}`);
+  }
+  if (params['number-topics']) {
+    args.push(`--number-topics=${params['number-topics']}`);
+  }
+
+  // Handle boolean parameters
+  if (typeof params.archived === 'boolean') {
+    args.push(`--archived=${params.archived}`);
   }
   if (params.visibility) {
-    queryParts.push(`is:${params.visibility}`);
+    args.push(`--visibility=${params.visibility}`);
   }
-
-  // Combine query parts with the main query
-  if (queryParts.length > 0) {
-    searchQuery = `${searchQuery} ${queryParts.join(' ')}`.trim();
-  }
-
-  if (searchQuery) {
-    args.push(searchQuery);
-  } else if (
-    Object.keys(params).filter(
-      k => k !== 'sort' && k !== 'order' && k !== 'limit'
-    ).length === 0
-  ) {
-    // If no query and no other filters (excluding sort, order, limit), it might be an invalid state.
-    // However, the initial validation in the calling function should catch empty primary filters.
-    // For safety, gh cli might require a query if no other arguments are effectively filters.
-    // This case should ideally be handled by the primary filter validation earlier.
-  }
-
-  // CLI flags for sorting and limits
-  if (params.sort) args.push(`--sort=${params.sort}`);
-  if (params.order) args.push(`--order=${params.order}`);
-  if (params.limit) args.push(`--limit=${params.limit}`);
-
-  // Match flag if present
   if (params.match) {
     args.push(`--match=${params.match}`);
   }
 
-  // Request necessary JSON fields for analysis and output
+  // Add sorting and limits
+  if (params.sort) args.push(`--sort=${params.sort}`);
+  if (params.order) args.push(`--order=${params.order}`);
+  if (params.limit) args.push(`--limit=${params.limit}`);
+
+  // Request JSON fields
   const jsonFields = [
     'fullName',
-    'name', // for name
-    'stargazersCount', // for stars, avgStars
-    'description', // for description
-    'language', // for language, languages summary
-    'url', // for url
-    'owner', // for owner
-    'updatedAt', // for updated, recentlyUpdatedCount
-    'forksCount', // for forks in output item
-    'topics', // for topics in output item
-    'license', // potentially useful, for GhCliRepoItem
-    // Add other fields if they become part of analysis or output:
-    // 'createdAt', 'defaultBranch', 'hasIssues', 'openIssuesCount', 'pushedAt', 'size', 'visibility'
+    'name',
+    'stargazersCount',
+    'description',
+    'language',
+    'url',
+    'owner',
+    'updatedAt',
+    'forksCount',
+    'license',
   ];
   args.push(`--json=${jsonFields.join(',')}`);
 

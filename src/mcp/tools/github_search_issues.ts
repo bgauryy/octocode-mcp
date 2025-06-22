@@ -11,7 +11,6 @@ import {
 import {
   createSuccessResult,
   createErrorResult,
-  needsQuoting,
   formatDateToYYYYMMDD,
 } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -102,19 +101,11 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           .string()
           .optional()
           .describe('Filter by user involvement (username).'),
-        // `label` (singular) is often used for one label in CLI, `labels` (plural) for multiple.
-        // GitHub search query syntax uses `label:name` which can be repeated.
         label: z
           .string()
           .optional()
           .describe(
-            'Filter by a single label name. For multiple, include in query string e.g., "label:bug label:docs".'
-          ),
-        labels: z
-          .string()
-          .optional()
-          .describe(
-            'DEPRECATED: Use `label` for a single label or include multiple `label:name` in the main query string.'
+            'Filter by label name. For multiple labels, include them in the query string e.g., "label:bug label:docs".'
           ),
         language: z
           .string()
@@ -256,17 +247,24 @@ async function searchGitHubIssuesLogic(
     });
 
     if (cliResult.isError) {
-      // Pass CLI errors directly if they are already CallToolResult
       return cliResult;
     }
 
-    const execResult = JSON.parse(cliResult.content[0].text as string);
-    // gh search issues --json returns a direct array of issues
-    const rawIssues = JSON.parse(execResult.result) as GhCliIssueItem[];
+    // Parse the CLI response correctly
+    let rawIssues: GhCliIssueItem[];
+    try {
+      const execResult = JSON.parse(cliResult.content[0].text as string);
+      rawIssues = JSON.parse(execResult.result);
+    } catch (parseError) {
+      return createErrorResult(
+        'Invalid GitHub CLI response format',
+        parseError as Error
+      );
+    }
 
     if (!Array.isArray(rawIssues)) {
       return createErrorResult(
-        'GitHub CLI returned non-array data for issues search.'
+        'GitHub CLI returned invalid data format for issues search'
       );
     }
 
@@ -307,24 +305,26 @@ async function searchGitHubIssuesLogic(
 
     return createSuccessResult(searchResult);
   } catch (error) {
-    // Catch errors from JSON parsing or other internal issues
     const message =
       error instanceof Error
         ? error.message
-        : 'Unknown error during issue search logic.';
+        : 'Unknown error during issue search';
+
     if (message.includes('authentication')) {
       return createErrorResult(
         'GitHub authentication required | Try: run api_status_check tool or verify GitHub CLI login',
         error as Error
       );
     }
+
     if (message.includes('rate limit')) {
       return createErrorResult(
         'GitHub rate limit exceeded | Try: wait, use specific filters, or narrow search scope',
         error as Error
       );
     }
-    return createErrorResult(`Issue search failed internally: ${message}`);
+
+    return createErrorResult(`Issue search failed: ${message}`, error as Error);
   }
 }
 
@@ -336,79 +336,73 @@ function buildGitHubIssuesCLICommand(params: GitHubIssuesSearchParams): {
   const command: GhCommand = 'search';
   const cliArgs: string[] = ['issues'];
 
-  // Start with the main query from params.query
+  // Build query with minimal query syntax, prefer CLI flags
   let queryString = params.query.trim();
 
-  // Append other filters to the query string itself using GitHub search syntax
-  const queryFilters: string[] = [];
-
+  // Only use query syntax for repo filtering when needed
   if (params.owner && params.repo) {
-    queryFilters.push(`repo:${params.owner}/${params.repo}`);
+    queryString += ` repo:${params.owner}/${params.repo}`;
   } else if (params.owner) {
-    queryFilters.push(`org:${params.owner}`); // or user:${params.owner}
+    queryString += ` org:${params.owner}`;
   } else if (params.repo) {
-    // If repo is specified without owner, it might be ambiguous.
-    // For 'gh search issues', repo usually needs owner context.
-    // However, let gh cli handle if it's part of a global search intent.
-    queryFilters.push(`repo:${params.repo}`);
+    queryString += ` repo:${params.repo}`;
   }
 
-  if (params.app) queryFilters.push(`app:${params.app}`);
-  if (typeof params.archived === 'boolean')
-    queryFilters.push(`archived:${params.archived}`);
-  if (params.assignee) queryFilters.push(`assignee:${params.assignee}`);
-  if (params.author) queryFilters.push(`author:${params.author}`);
-  if (params.closed) queryFilters.push(`closed:${params.closed}`);
-  if (params.commenter) queryFilters.push(`commenter:${params.commenter}`);
-  if (params.comments) queryFilters.push(`comments:${params.comments}`);
-  if (params.created) queryFilters.push(`created:${params.created}`);
-  if (typeof params.includePrs === 'boolean') {
-    // Only add if explicitly set
-    queryFilters.push(params.includePrs ? 'is:pr' : 'is:issue'); // map to is:pr or is:issue
-  }
-  if (params.interactions)
-    queryFilters.push(`interactions:${params.interactions}`);
-  if (params.involves) queryFilters.push(`involves:${params.involves}`);
-  if (params.label)
-    queryFilters.push(
-      `label:${needsQuoting(params.label) ? `"${params.label}"` : params.label}`
-    );
-  // `labels` (plural) is deprecated in favor of `label` or in-query `label:name label:another`
-  if (params.language) queryFilters.push(`language:${params.language}`);
-  if (typeof params.locked === 'boolean')
-    queryFilters.push(`is:locked:${params.locked}`); // is:locked or -is:locked (gh syntax doesn't use true/false here)
-  // actually gh cli flag is just --locked for true. For query, it's is:locked or -is:locked
-  // For query string: is:locked or NOT is:locked
-  if (params.match) queryFilters.push(`in:${params.match}`); // `in:` qualifier in GitHub search
-  if (params.mentions) queryFilters.push(`mentions:${params.mentions}`);
-  if (params.milestone)
-    queryFilters.push(
-      `milestone:${needsQuoting(params.milestone) ? `"${params.milestone}"` : params.milestone}`
-    );
-  if (params.noAssignee) queryFilters.push('no:assignee');
-  if (params.noLabel) queryFilters.push('no:label');
-  if (params.noMilestone) queryFilters.push('no:milestone');
-  if (params.noProject) queryFilters.push('no:project');
-  if (params.project) queryFilters.push(`project:${params.project}`);
-  if (params.reactions) queryFilters.push(`reactions:${params.reactions}`);
-  if (params.state) queryFilters.push(`state:${params.state}`); // or is:open, is:closed
-  if (params.teamMentions) queryFilters.push(`team:${params.teamMentions}`);
-  if (params.updated) queryFilters.push(`updated:${params.updated}`);
-  if (params.visibility) queryFilters.push(`is:${params.visibility}`);
-
-  if (queryFilters.length > 0) {
-    queryString = `${queryString} ${queryFilters.join(' ')}`.trim();
+  // Add the query
+  if (queryString.trim()) {
+    cliArgs.push(queryString.trim());
   }
 
-  cliArgs.push(queryString);
+  // Use CLI flags for all supported parameters
+  if (params.app) cliArgs.push(`--app=${params.app}`);
+  if (typeof params.archived === 'boolean') {
+    cliArgs.push(`--archived=${params.archived}`);
+  }
+  if (params.assignee) cliArgs.push(`--assignee=${params.assignee}`);
+  if (params.author) cliArgs.push(`--author=${params.author}`);
+  if (params.closed) cliArgs.push(`--closed=${params.closed}`);
+  if (params.commenter) cliArgs.push(`--commenter=${params.commenter}`);
+  if (params.comments) cliArgs.push(`--comments=${params.comments}`);
+  if (params.created) cliArgs.push(`--created=${params.created}`);
+  if (params.includePrs) cliArgs.push('--include-prs');
+  if (params.interactions) {
+    cliArgs.push(`--interactions=${params.interactions}`);
+  }
+  if (params.involves) cliArgs.push(`--involves=${params.involves}`);
+  if (params.label) cliArgs.push(`--label=${params.label}`);
+  if (params.language) cliArgs.push(`--language=${params.language}`);
+  if (typeof params.locked === 'boolean') {
+    if (params.locked) {
+      cliArgs.push('--locked');
+    }
+  }
+  if (params.match) cliArgs.push(`--match=${params.match}`);
+  if (params.mentions) cliArgs.push(`--mentions=${params.mentions}`);
+  if (params.milestone) cliArgs.push(`--milestone=${params.milestone}`);
+  if (params.noAssignee) cliArgs.push('--no-assignee');
+  if (params.noLabel) cliArgs.push('--no-label');
+  if (params.noMilestone) cliArgs.push('--no-milestone');
+  if (params.noProject) cliArgs.push('--no-project');
+  if (params.project) cliArgs.push(`--project=${params.project}`);
+  if (params.reactions) cliArgs.push(`--reactions=${params.reactions}`);
+  if (params.state) cliArgs.push(`--state=${params.state}`);
+  if (params.teamMentions)
+    cliArgs.push(`--team-mentions=${params.teamMentions}`);
+  if (params.updated) cliArgs.push(`--updated=${params.updated}`);
+  if (params.visibility) cliArgs.push(`--visibility=${params.visibility}`);
 
-  // Add CLI-specific flags
-  if (params.sort && params.sort !== 'best-match')
+  // Add sorting and limits
+  if (params.sort && params.sort !== 'best-match') {
     cliArgs.push(`--sort=${params.sort}`);
-  if (params.order) cliArgs.push(`--order=${params.order}`);
-  if (params.limit) cliArgs.push(`--limit=${params.limit}`);
+  }
+  if (params.order) {
+    cliArgs.push(`--order=${params.order}`);
+  }
+  if (params.limit) {
+    cliArgs.push(`--limit=${params.limit}`);
+  }
 
-  // JSON fields from gh search issues --help
+  // Request JSON output with required fields
   const jsonFields = [
     'number',
     'title',
@@ -426,7 +420,6 @@ function buildGitHubIssuesCLICommand(params: GitHubIssuesSearchParams): {
     'assignees',
     'body',
     'id',
-    // 'authorAssociation' // Not strictly needed for ProcessedIssueItem
   ];
   cliArgs.push(`--json=${jsonFields.join(',')}`);
 

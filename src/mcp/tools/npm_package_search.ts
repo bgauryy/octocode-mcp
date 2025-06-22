@@ -68,9 +68,9 @@ export function registerNpmSearchTool(server: McpServer) {
           );
 
           if (!result.isError && result.content?.[0]?.text) {
-            const packages = parseNpmSearchOutput(
-              result.content[0].text as string
-            );
+            // Parse the response - it's wrapped in an object with a 'result' field
+            const responseData = JSON.parse(result.content[0].text as string);
+            const packages = parseNpmSearchOutput(responseData.result);
             allFoundPackages.push(...packages);
           } else if (result.isError) {
             return result;

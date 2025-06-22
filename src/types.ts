@@ -26,24 +26,16 @@ export type UserInvolvement = {
 
 export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   query: string;
-  owner?: string | string[]; // Override to support array
+  owner?: string | string[];
   repo?: string | string[];
   language?: string;
   filename?: string;
   extension?: string;
   path?: string;
-  match?: 'file' | 'path' | ('file' | 'path')[]; // Support array
+  match?: 'file' | 'path' | ('file' | 'path')[];
   size?: string;
   limit?: number;
   visibility?: 'public' | 'private' | 'internal';
-  // Legacy fields for backward compatibility
-  branch?: string;
-  enableQueryOptimization?: boolean;
-  symbol?: string;
-  content?: string;
-  is?: ('archived' | 'fork' | 'vendored' | 'generated')[];
-  user?: string;
-  org?: string;
 }
 
 export interface GitHubCommitsSearchParams
@@ -126,24 +118,24 @@ export interface GitHubReposSearchParams
   forks?: string;
   stars?: string;
   topic?: string[];
-  numberOfTopics?: string;
 
   // SECONDARY FILTERS (require query or primary filter)
   archived?: boolean;
   created?: string;
-  includeForks?: 'false' | 'true' | 'only';
+  'include-forks'?: 'false' | 'true' | 'only';
   license?: string[];
   match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
-  goodFirstIssues?: string; // Format: ">=10", ">5", etc.
-  helpWantedIssues?: string; // Format: ">=5", ">10", etc.
+  'good-first-issues'?: string; // Format: ">=10", ">5", etc.
+  'help-wanted-issues'?: string; // Format: ">=5", ">10", etc.
   followers?: string;
   size?: string; // Format: ">100", "<50", "10..100"
+  'number-topics'?: string; // Format: ">=3"
 
   // SORTING AND LIMITS
   limit?: number;
-  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
+  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated';
 }
 
 export interface GithubFetchRequestParams {
@@ -206,7 +198,6 @@ export interface GitHubIssuesSearchParams {
   interactions?: string;
   state?: 'open' | 'closed';
   label?: string;
-  labels?: string;
   milestone?: string;
   project?: string;
   language?: string;

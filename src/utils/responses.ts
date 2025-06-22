@@ -60,21 +60,6 @@ export function parseJsonResponse<T = unknown>(
 }
 
 /**
- * Determines if a string needs quoting for GitHub search
- */
-//TODO: move to util.ts
-export function needsQuoting(str: string): boolean {
-  return (
-    str.includes(' ') ||
-    str.includes('"') ||
-    str.includes('\t') ||
-    str.includes('\n') ||
-    str.includes('\r') ||
-    /[<>(){}[\]\\|&;]/.test(str)
-  );
-}
-
-/**
  * Formats an ISO date string or null/undefined to YYYY-MM-DD format
  * @param dateStr - ISO date string (e.g., "2023-10-26T12:00:00Z") or null/undefined
  * @returns Formatted date string "YYYY-MM-DD" or null if input is null/undefined

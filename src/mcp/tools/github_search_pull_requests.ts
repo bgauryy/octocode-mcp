@@ -9,11 +9,10 @@ import {
 import {
   createSuccessResult,
   createErrorResult,
-  needsQuoting,
   formatDateToYYYYMMDD,
 } from '../../utils/responses';
-import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
@@ -90,6 +89,8 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .enum(['open', 'closed'])
           .optional()
           .describe('Filter by PR state.'),
+        base: z.string().optional().describe('Filter by base branch name.'),
+        head: z.string().optional().describe('Filter by head branch name.'),
         draft: z
           .boolean()
           .optional()
@@ -272,22 +273,15 @@ async function searchGitHubPullRequestsWithGhCli(
       cache: false,
     });
 
-    if (
-      execResult.isError ||
-      !execResult.content ||
-      execResult.content.length === 0 ||
-      !execResult.content[0].text
-    ) {
-      return execResult.isError
-        ? execResult
-        : createErrorResult(
-            `Failed to execute 'gh search prs'. Output was empty or invalid. Query: ${composedQuery}`
-          );
+    if (execResult.isError) {
+      return execResult;
     }
 
+    // Parse the CLI response correctly
     let rawItems: GhRawPullRequestItem[];
     try {
-      rawItems = JSON.parse(execResult.content[0].text as string);
+      const execResultData = JSON.parse(execResult.content[0].text as string);
+      rawItems = JSON.parse(execResultData.result);
     } catch (parseError) {
       return createErrorResult(
         `Invalid JSON response from 'gh search prs'. Query: ${composedQuery}`,
@@ -349,14 +343,12 @@ function buildGitHubPrsSearchCLICommand(
   composedQuery: string;
 } {
   const command: GhCommand = 'search';
-  const cliArgs: string[] = ['prs']; // Subcommand for gh search
+  const cliArgs: string[] = ['prs'];
 
-  const queryParts: string[] = [];
-  if (params.query && params.query.trim() !== '') {
-    queryParts.push(params.query.trim());
-  }
+  // Build minimal query, prefer CLI flags
+  let queryString = params.query?.trim() || '';
 
-  // Handle repo and owner filters to form repo:owner/name strings
+  // Only use query syntax for repo filtering when needed
   if (params.repo) {
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
     const owners = Array.isArray(params.owner)
@@ -365,108 +357,96 @@ function buildGitHubPrsSearchCLICommand(
         ? [params.owner]
         : [];
     repos.forEach((repoName, index) => {
-      // If owners array is shorter, reuse last owner or none
       const ownerName =
         owners[index] || (owners.length > 0 ? owners[owners.length - 1] : null);
       if (ownerName) {
-        queryParts.push(`repo:${ownerName}/${repoName}`);
+        queryString += ` repo:${ownerName}/${repoName}`;
       } else {
-        // If only repo is specified, and no general owner filter. This might be ambiguous.
-        // gh CLI might search repos named `repoName` across user's accessible repos.
-        // Or, if a single --owner is globally specified, it might combine. For clarity, prefer explicit owner/repo.
-        queryParts.push(`repo:${repoName}`);
+        queryString += ` repo:${repoName}`;
       }
     });
   } else if (params.owner) {
-    // Only owner(s), no specific repo(s)
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(ownerName => queryParts.push(`owner:${ownerName}`)); // or user:${ownerName}, org:${ownerName}
+    owners.forEach(ownerName => {
+      queryString += ` owner:${ownerName}`;
+    });
   }
 
-  // Standard simple filters
-  if (params.author) queryParts.push(`author:${params.author}`);
-  if (params.assignee) queryParts.push(`assignee:${params.assignee}`);
-  if (params.mentions) queryParts.push(`mentions:${params.mentions}`);
-  if (params.commenter) queryParts.push(`commenter:${params.commenter}`);
-  if (params.involves) queryParts.push(`involves:${params.involves}`);
-  if (params.reviewedBy) queryParts.push(`reviewed-by:${params.reviewedBy}`);
-  if (params.reviewRequested)
-    queryParts.push(`review-requested:${params.reviewRequested}`);
-  if (params.teamMentions) queryParts.push(`team:${params.teamMentions}`); // gh uses `team:` for team-mentions
-  if (params.state) queryParts.push(`state:${params.state}`);
-  if (params.head) queryParts.push(`head:${params.head}`);
-  if (params.base) queryParts.push(`base:${params.base}`);
-  if (params.language) queryParts.push(`language:${params.language}`);
-  if (params.milestone)
-    queryParts.push(
-      `milestone:${needsQuoting(params.milestone) ? `"${params.milestone}"` : params.milestone}`
-    );
-  if (params.project) queryParts.push(`project:${params.project}`); // Format: org/project_number
-  if (params.app) queryParts.push(`app:${params.app}`);
+  // Add the query
+  if (queryString.trim()) {
+    cliArgs.push(queryString.trim());
+  }
+
+  // Use CLI flags for all supported parameters
+  if (params.author) cliArgs.push(`--author=${params.author}`);
+  if (params.assignee) cliArgs.push(`--assignee=${params.assignee}`);
+  if (params.mentions) cliArgs.push(`--mentions=${params.mentions}`);
+  if (params.commenter) cliArgs.push(`--commenter=${params.commenter}`);
+  if (params.involves) cliArgs.push(`--involves=${params.involves}`);
+  if (params.reviewedBy) cliArgs.push(`--reviewed-by=${params.reviewedBy}`);
+  if (params.reviewRequested) {
+    cliArgs.push(`--review-requested=${params.reviewRequested}`);
+  }
+  if (params.teamMentions)
+    cliArgs.push(`--team-mentions=${params.teamMentions}`);
+  if (params.state) cliArgs.push(`--state=${params.state}`);
+  if (params.base) cliArgs.push(`--base=${params.base}`);
+  if (params.head) cliArgs.push(`--head=${params.head}`);
+  if (params.language) cliArgs.push(`--language=${params.language}`);
+  if (params.milestone) cliArgs.push(`--milestone=${params.milestone}`);
+  if (params.project) cliArgs.push(`--project=${params.project}`);
+  if (params.app) cliArgs.push(`--app=${params.app}`);
 
   // Date filters
-  if (params.created) queryParts.push(`created:${params.created}`);
-  if (params.updated) queryParts.push(`updated:${params.updated}`);
-  if (params.mergedAt) queryParts.push(`merged:${params.mergedAt}`); // `merged` qualifier takes date/range
-  if (params.closed) queryParts.push(`closed:${params.closed}`);
+  if (params.created) cliArgs.push(`--created=${params.created}`);
+  if (params.updated) cliArgs.push(`--updated=${params.updated}`);
+  if (params.mergedAt) cliArgs.push(`--merged-at=${params.mergedAt}`);
+  if (params.closed) cliArgs.push(`--closed=${params.closed}`);
 
   // Numeric range filters
-  if (params.comments) queryParts.push(`comments:${params.comments}`);
-  if (params.reactions) queryParts.push(`reactions:${params.reactions}`);
+  if (params.comments) cliArgs.push(`--comments=${params.comments}`);
+  if (params.reactions) cliArgs.push(`--reactions=${params.reactions}`);
   if (params.interactions)
-    queryParts.push(`interactions:${params.interactions}`);
+    cliArgs.push(`--interactions=${params.interactions}`);
 
-  // Boolean-like flags / keyword filters
-  if (params.draft === true) queryParts.push('is:draft');
-  if (params.draft === false) queryParts.push('-is:draft'); // or is:open (if not draft is sought among open)
-  if (params.merged === true) queryParts.push('is:merged');
-  if (params.merged === false) queryParts.push('is:unmerged');
-  if (params.locked === true) queryParts.push('is:locked');
-  if (params.locked === false) queryParts.push('-is:locked');
-  if (params.archived === true) queryParts.push('archived:true');
-  if (params.archived === false) queryParts.push('archived:false');
-  if (params.noAssignee) queryParts.push('no:assignee');
-  if (params.noLabel) queryParts.push('no:label');
-  if (params.noMilestone) queryParts.push('no:milestone');
-  if (params.noProject) queryParts.push('no:project');
+  // Boolean flags
+  if (params.draft === true) cliArgs.push('--draft');
+  if (params.merged === true) cliArgs.push('--merged');
+  if (params.locked === true) cliArgs.push('--locked');
+  if (typeof params.archived === 'boolean') {
+    cliArgs.push(`--archived=${params.archived}`);
+  }
+  if (params.noAssignee) cliArgs.push('--no-assignee');
+  if (params.noLabel) cliArgs.push('--no-label');
+  if (params.noMilestone) cliArgs.push('--no-milestone');
+  if (params.noProject) cliArgs.push('--no-project');
 
   // Array filters
   if (params.label) {
     const labels = Array.isArray(params.label) ? params.label : [params.label];
-    labels.forEach(l =>
-      queryParts.push(`label:${needsQuoting(l) ? `"${l}"` : l}`)
-    );
+    labels.forEach(l => cliArgs.push(`--label=${l}`));
   }
   if (params.match) {
     const matches = Array.isArray(params.match) ? params.match : [params.match];
-    matches.forEach(m => queryParts.push(`in:${m}`));
+    matches.forEach(m => cliArgs.push(`--match=${m}`));
   }
   if (params.visibility) {
     const visibilities = Array.isArray(params.visibility)
       ? params.visibility
       : [params.visibility];
-    visibilities.forEach(v => queryParts.push(`is:${v}`));
+    visibilities.forEach(v => cliArgs.push(`--visibility=${v}`));
   }
 
   // Status and review filters
-  if (params.checks) queryParts.push(`checks:${params.checks}`);
-  if (params.review) queryParts.push(`review:${params.review}`);
+  if (params.checks) cliArgs.push(`--checks=${params.checks}`);
+  if (params.review) cliArgs.push(`--review=${params.review}`);
 
-  const composedQuery = queryParts.filter(Boolean).join(' ');
-  if (composedQuery) {
-    cliArgs.push(composedQuery);
-  }
-  // If composedQuery is empty, gh search prs will show an error, which is fine.
-  // Zod schema ensures params.query is min(1), so it won't be empty unless only filters are used
-  // and those filters also result in an empty string (e.g. all optional filters are undefined)
-  // In such a case, the gh command would be `gh search prs --limit X --json Y` which is valid and shows recent PRs.
-
-  // CLI flags for sorting and limits
+  // Sorting and limits
   if (params.sort) cliArgs.push(`--sort=${params.sort}`);
-  if (params.order) cliArgs.push(`--order=${params.order}`); // gh default is desc
+  if (params.order) cliArgs.push(`--order=${params.order}`);
   cliArgs.push(`--limit=${params.limit || 30}`);
 
-  // Request necessary JSON fields
+  // Request JSON fields
   const jsonFields = [
     'id',
     'number',
@@ -480,13 +460,13 @@ function buildGitHubPrsSearchCLICommand(
     'closedAt',
     'body',
     'commentsCount',
-    'author', // object with login
-    'repository', // object with fullName
-    'labels', // array of objects with name
-    'assignees', // array of objects with login
+    'author',
+    'repository',
+    'labels',
+    'assignees',
     'authorAssociation',
   ];
   cliArgs.push(`--json=${jsonFields.join(',')}`);
 
-  return { command, cliArgs, composedQuery };
+  return { command, cliArgs, composedQuery: queryString };
 }

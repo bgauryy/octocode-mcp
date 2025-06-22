@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { registerApiStatusCheckTool } from '../../src/mcp/tools/api_status_check.js';
+import { registerApiStatusCheckTool } from '../../src/mcp/tools/api_status_check/api_status_check.js';
 import {
   createMockMcpServer,
   parseResultJson,
@@ -21,6 +21,32 @@ interface ApiStatusResponse {
     registry: string;
   };
   summary: string;
+}
+
+// Helper function to parse the new simple string response
+function parseSimpleResponse(response: string): {
+  npmConnected: boolean;
+  githubConnected: boolean;
+  organizations: string[];
+} {
+  const lines = response.split('\n');
+  const npmConnected = lines[0]?.includes('NPM connected: true') || false;
+  const githubConnected = lines[1]?.includes('GitHub connected: true') || false;
+  
+  const organizations: string[] = [];
+  let inOrgSection = false;
+  
+  for (const line of lines) {
+    if (line.includes('User organizations')) {
+      inOrgSection = true;
+      continue;
+    }
+    if (inOrgSection && line.startsWith('- ')) {
+      organizations.push(line.substring(2));
+    }
+  }
+  
+  return { npmConnected, githubConnected, organizations };
 }
 
 // Mock the exec utilities
@@ -96,21 +122,18 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
-
+      
       expect(result.isError).toBe(false);
-      expect(data).toEqual({
-        status: 'PARTIAL',
-        github: {
-          connected: true,
-          organizations: ['org1', 'org2', 'org3'],
-        },
-        npm: {
-          connected: false,
-          registry: '',
-        },
-        summary: expect.any(String)
-      });
+      
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
+      
+      expect(parsed.npmConnected).toBe(false);
+      expect(parsed.githubConnected).toBe(true);
+      expect(parsed.organizations).toEqual(['org1', 'org2', 'org3']);
+      expect(responseText).toContain('NPM connected: false');
+      expect(responseText).toContain('GitHub connected: true');
+      expect(responseText).toContain('User organizations (use as owner for private repo search):');
     });
 
     it('should handle GitHub authentication without organizations', async () => {
@@ -130,12 +153,11 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.github).toEqual({
-        connected: true,
-        organizations: [],
-      });
+      expect(parsed.githubConnected).toBe(true);
+      expect(parsed.organizations).toEqual([]);
     });
 
     it('should detect failed GitHub authentication', async () => {
@@ -150,12 +172,11 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.github).toEqual({
-        connected: false,
-        organizations: [],
-      });
+      expect(parsed.githubConnected).toBe(false);
+      expect(parsed.organizations).toEqual([]);
     });
 
     it('should handle GitHub CLI not available', async () => {
@@ -167,65 +188,32 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.github).toEqual({
-        connected: false,
-        organizations: [],
-      });
+      expect(parsed.githubConnected).toBe(false);
+      expect(parsed.organizations).toEqual([]);
     });
   });
 
   describe('NPM Authentication', () => {
-    it('should detect successful NPM authentication with registry', async () => {
+    it('should detect successful NPM authentication', async () => {
       mockExecuteGitHubCommand.mockRejectedValueOnce(
         new Error('GitHub CLI not available')
       );
 
       // Mock successful NPM whoami
-      mockExecuteNpmCommand
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [{ text: JSON.stringify({ result: 'testuser' }) }],
-        })
-        // Mock successful registry fetch
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [
-            { text: JSON.stringify({ result: 'https://registry.npmjs.org/' }) },
-          ],
-        });
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify({ result: 'testuser' }) }],
+      });
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.npm).toEqual({
-        connected: true,
-        registry: 'https://registry.npmjs.org/',
-      });
-    });
-
-    it('should handle NPM authentication without registry info', async () => {
-      mockExecuteGitHubCommand.mockRejectedValueOnce(
-        new Error('GitHub CLI not available')
-      );
-
-      // Mock successful NPM whoami
-      mockExecuteNpmCommand
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [{ text: JSON.stringify({ result: 'testuser' }) }],
-        })
-        // Mock failed registry fetch
-        .mockRejectedValueOnce(new Error('Registry fetch failed'));
-
-      const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
-
-      expect(data.npm).toEqual({
-        connected: true,
-        registry: 'https://registry.npmjs.org/', // fallback
-      });
+      expect(parsed.npmConnected).toBe(true);
+      expect(responseText).toContain('NPM connected: true');
     });
 
     it('should detect failed NPM authentication', async () => {
@@ -237,12 +225,11 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.npm).toEqual({
-        connected: false,
-        registry: '',
-      });
+      expect(parsed.npmConnected).toBe(false);
+      expect(responseText).toContain('NPM connected: false');
     });
   });
 
@@ -262,34 +249,21 @@ describe('API Status Check Tool', () => {
         });
 
       // Mock successful NPM auth
-      mockExecuteNpmCommand
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [{ text: JSON.stringify({ result: 'myusername' }) }],
-        })
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [
-            { text: JSON.stringify({ result: 'https://npm.company.com/' }) },
-          ],
-        });
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify({ result: 'myusername' }) }],
+      });
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
       expect(result.isError).toBe(false);
-      expect(data).toEqual({
-        status: 'CONNECTED',
-        github: {
-          connected: true,
-          organizations: ['myorg', 'mycompany'],
-        },
-        npm: {
-          connected: true,
-          registry: 'https://npm.company.com/',
-        },
-        summary: expect.any(String)
-      });
+      expect(parsed.npmConnected).toBe(true);
+      expect(parsed.githubConnected).toBe(true);
+      expect(parsed.organizations).toEqual(['myorg', 'mycompany']);
+      expect(responseText).toContain('NPM connected: true');
+      expect(responseText).toContain('GitHub connected: true');
     });
 
     it('should handle neither GitHub nor NPM authenticated', async () => {
@@ -301,40 +275,35 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
       expect(result.isError).toBe(false);
-      expect(data).toEqual({
-        status: 'DISCONNECTED',
-        github: {
-          connected: false,
-          organizations: [],
-        },
-        npm: {
-          connected: false,
-          registry: '',
-        },
-        summary: expect.any(String)
-      });
+      expect(parsed.npmConnected).toBe(false);
+      expect(parsed.githubConnected).toBe(false);
+      expect(parsed.organizations).toEqual([]);
+      expect(responseText).toContain('NPM connected: false');
+      expect(responseText).toContain('GitHub connected: false');
     });
   });
 
   describe('Error Handling', () => {
     it('should handle unexpected errors gracefully', async () => {
-      // Mock an unexpected error during execution
+      // Mock an unexpected error during execution that escapes the inner try-catch
       mockExecuteGitHubCommand.mockImplementationOnce(() => {
         throw new Error('Unexpected error during GitHub check');
       });
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('API status check failed');
-      expect(result.content[0].text).toContain('Unexpected error during GitHub check');
+      // The new implementation catches GitHub errors and continues, so this should succeed
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0].text;
+      expect(responseText).toContain('GitHub connected: false');
     });
 
-    it('should handle malformed JSON responses', async () => {
-      // Mock malformed JSON response
+    it('should handle malformed JSON responses gracefully', async () => {
+      // Mock malformed JSON response - this should be caught and handled
       mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
         content: [{ text: 'not valid json' }],
@@ -346,8 +315,11 @@ describe('API Status Check Tool', () => {
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('API status check failed');
+      // The new implementation catches JSON errors and treats GitHub as disconnected
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0].text;
+      expect(responseText).toContain('GitHub connected: false');
+      expect(responseText).toContain('NPM connected: false');
     });
   });
 
@@ -372,9 +344,10 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.github.organizations).toEqual(['org1', 'org2', 'org3']);
+      expect(parsed.organizations).toEqual(['org1', 'org2', 'org3']);
     });
 
     it('should handle empty organizations response', async () => {
@@ -395,9 +368,10 @@ describe('API Status Check Tool', () => {
       );
 
       const result = await mockServer.callTool(TOOL_NAMES.API_STATUS_CHECK);
-      const data = parseResultJson<ApiStatusResponse>(result);
+      const responseText = result.content[0].text;
+      const parsed = parseSimpleResponse(responseText);
 
-      expect(data.github.organizations).toEqual([]);
+      expect(parsed.organizations).toEqual([]);
     });
   });
 });

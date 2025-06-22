@@ -9,7 +9,6 @@ import {
 import {
   createSuccessResult,
   createErrorResult,
-  needsQuoting,
   formatDateToYYYYMMDD,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -252,64 +251,57 @@ function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
 } {
   const command: GhCommand = 'search';
   const args: string[] = ['commits'];
-  const mainQuery = params.query?.trim() || '';
-  const queryFilters: string[] = [];
 
+  // Add the main query if provided
+  if (params.query?.trim()) {
+    args.push(params.query.trim());
+  }
+
+  // Use CLI flags for all supported parameters
   if (params.owner) {
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(o => queryFilters.push(`org:${o}`));
+    owners.forEach(o => args.push(`--owner=${o}`));
   }
   if (params.repo) {
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
-    repos.forEach(r => {
-      if (r.includes('/')) {
-        queryFilters.push(`repo:${r}`);
-      } else if (params.owner) {
-        const firstOwner = Array.isArray(params.owner)
-          ? params.owner[0]
-          : params.owner;
-        if (firstOwner) queryFilters.push(`repo:${firstOwner}/${r}`);
-      } else {
-        queryFilters.push(`repo:${r}`);
-      }
-    });
+    repos.forEach(r => args.push(`--repo=${r}`));
   }
 
-  if (params.author) queryFilters.push(`author:${params.author}`);
-  if (params.authorName)
-    queryFilters.push(
-      `author-name:${needsQuoting(params.authorName) ? `"${params.authorName}"` : params.authorName}`
-    );
-  if (params.authorEmail)
-    queryFilters.push(`author-email:${params.authorEmail}`);
-  if (params.authorDate) queryFilters.push(`author-date:${params.authorDate}`);
+  // Author filters
+  if (params.author) args.push(`--author=${params.author}`);
+  if (params.authorName) args.push(`--author-name=${params.authorName}`);
+  if (params.authorEmail) args.push(`--author-email=${params.authorEmail}`);
+  if (params.authorDate) args.push(`--author-date=${params.authorDate}`);
 
-  if (params.committer) queryFilters.push(`committer:${params.committer}`);
-  if (params.committerName)
-    queryFilters.push(
-      `committer-name:${needsQuoting(params.committerName) ? `"${params.committerName}"` : params.committerName}`
-    );
-  if (params.committerEmail)
-    queryFilters.push(`committer-email:${params.committerEmail}`);
-  if (params.committerDate)
-    queryFilters.push(`committer-date:${params.committerDate}`);
-
-  if (params.hash) queryFilters.push(`hash:${params.hash}`);
-  if (params.parent) queryFilters.push(`parent:${params.parent}`);
-  if (params.tree) queryFilters.push(`tree:${params.tree}`);
-  if (params.merge) queryFilters.push('merge:true');
-  if (params.visibility) queryFilters.push(`is:${params.visibility}`);
-
-  const composedQuery = `${mainQuery} ${queryFilters.join(' ')}`.trim();
-  if (composedQuery) {
-    args.push(composedQuery);
+  // Committer filters
+  if (params.committer) args.push(`--committer=${params.committer}`);
+  if (params.committerName) {
+    args.push(`--committer-name=${params.committerName}`);
+  }
+  if (params.committerEmail) {
+    args.push(`--committer-email=${params.committerEmail}`);
+  }
+  if (params.committerDate) {
+    args.push(`--committer-date=${params.committerDate}`);
   }
 
-  if (params.sort && params.sort !== 'best-match')
+  // Hash filters
+  if (params.hash) args.push(`--hash=${params.hash}`);
+  if (params.parent) args.push(`--parent=${params.parent}`);
+  if (params.tree) args.push(`--tree=${params.tree}`);
+
+  // Boolean filters
+  if (params.merge) args.push('--merge');
+  if (params.visibility) args.push(`--visibility=${params.visibility}`);
+
+  // Sorting and limits
+  if (params.sort && params.sort !== 'best-match') {
     args.push(`--sort=${params.sort}`);
+  }
   if (params.order) args.push(`--order=${params.order}`);
   if (params.limit) args.push(`--limit=${params.limit}`);
 
+  // Request JSON fields
   const jsonFields = [
     'sha',
     'id',
@@ -322,5 +314,5 @@ function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
   ];
   args.push(`--json=${jsonFields.join(',')}`);
 
-  return { command, args, composedQuery };
+  return { command, args, composedQuery: params.query };
 }
