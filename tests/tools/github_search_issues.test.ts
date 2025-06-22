@@ -122,11 +122,9 @@ describe('GitHub Search Issues Tool', () => {
         author: 'developer1',
         repository: 'facebook/react',
         labels: ['bug', 'priority-high'],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-02T00:00:00Z',
+        created: '2023-01-01',
         url: 'https://github.com/facebook/react/issues/123',
         comments: 5,
-        reactions: 3,
       });
       expect(data.metadata.total_count).toBe(1);
       expect(data.metadata.incomplete_results).toBe(false);
@@ -376,13 +374,11 @@ describe('GitHub Search Issues Tool', () => {
         title: 'Issue without optional fields',
         state: 'closed',
         author: '',
-        repository: 'unknown',
+        repository: '',
         labels: [],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-02T00:00:00Z',
+        created: '2023-01-01',
         url: 'https://github.com/example/repo/issues/456',
         comments: 0,
-        reactions: 0,
       });
     });
 

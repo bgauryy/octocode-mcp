@@ -15,18 +15,8 @@ interface GitHubReposSearchResponse {
     description: string;
     language: string;
     url: string;
-    forks: number;
-    isPrivate: boolean;
-    isArchived: boolean;
-    isFork: boolean;
-    topics: string[];
-    license: string | null;
-    hasIssues: boolean;
-    openIssuesCount: number;
-    createdAt: string;
-    updatedAt: string;
-    visibility: string;
     owner: string;
+    updated: string;
   }>;
   summary?: {
     languages: string[];
@@ -859,9 +849,8 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(data.total).toBe(1);
-      expect(data.repositories[0].description).toBe('No description');
-      expect(data.repositories[0].language).toBe('Unknown');
-      expect(data.repositories[0].license).toBe(null);
+      expect(data.repositories[0].description).toBe('');
+      expect(data.repositories[0].language).toBe('');
     });
   });
 

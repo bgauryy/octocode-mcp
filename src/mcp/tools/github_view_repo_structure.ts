@@ -32,7 +32,9 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
             /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/,
             'Invalid GitHub username/org format'
           )
-          .describe(`Repository owner/organization.`),
+          .describe(
+            `Repository owner/organization from api_status_check results. Required for repository access.`
+          ),
 
         repo: z
           .string()

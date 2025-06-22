@@ -123,15 +123,10 @@ describe('GitHub Search Pull Requests Tool', () => {
         state: 'open',
         author: 'contributor1',
         repository: 'facebook/react',
-        labels: ['enhancement', 'authentication'],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-02T00:00:00Z',
+        created: '2023-01-01',
         url: 'https://github.com/facebook/react/pull/456',
-        comments: 3,
-        reactions: 5,
         draft: false,
-        head: 'feature/auth',
-        base: 'main',
+        branch: 'feature/auth',
       });
       expect(data.metadata.total_count).toBe(1);
       expect(data.metadata.incomplete_results).toBe(false);
@@ -399,8 +394,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.results[0].draft).toBe(true);
-      expect(data.results[0].head).toBe('experimental');
-      expect(data.results[0].base).toBe('develop');
+      expect(data.results[0].branch).toBe('experimental');
     });
 
     it('should handle merged pull requests', async () => {
@@ -455,17 +449,11 @@ describe('GitHub Search Pull Requests Tool', () => {
         state: 'closed',
         author: 'security-team',
         repository: 'company/app',
-        labels: ['security', 'critical'],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-03T00:00:00Z',
+        created: '2023-01-01',
         url: 'https://github.com/company/app/pull/101',
-        comments: 8,
-        reactions: 12,
         draft: false,
-        merged_at: '2023-01-03T00:00:00Z',
-        closed_at: '2023-01-03T00:00:00Z',
-        head: 'security/fix-vuln',
-        base: 'main',
+        merged: '2023-01-03',
+        branch: 'security/fix-vuln',
       });
     });
 
@@ -478,14 +466,10 @@ describe('GitHub Search Pull Requests Tool', () => {
             number: 999,
             title: 'Simple documentation update',
             state: 'open',
-            // Missing user, repository_url, labels, reactions, head, base
             created_at: '2023-01-01T00:00:00Z',
             updated_at: '2023-01-02T00:00:00Z',
             html_url: 'https://github.com/example/docs/pull/999',
-            comments: 0,
             draft: false,
-            merged_at: null,
-            closed_at: null,
           },
         ],
       };
@@ -514,15 +498,10 @@ describe('GitHub Search Pull Requests Tool', () => {
         title: 'Simple documentation update',
         state: 'open',
         author: '',
-        repository: 'unknown',
-        labels: [],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-02T00:00:00Z',
+        repository: '',
+        created: '2023-01-01',
         url: 'https://github.com/example/docs/pull/999',
-        comments: 0,
-        reactions: 0,
         draft: false,
-        // merged_at, closed_at, head, base should not be present
       });
 
       // Verify optional fields are not included when null/undefined

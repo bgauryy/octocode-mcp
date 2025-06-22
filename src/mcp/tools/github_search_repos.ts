@@ -31,7 +31,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         owner: z
           .string()
           .optional()
-          .describe('Target organization for focused research.'),
+          .describe(
+            'Repository owner/organization from api_status_check results. Essential for accessing your private repositories.'
+          ),
         language: z
           .string()
           .optional()
@@ -187,18 +189,8 @@ export async function searchGitHubRepos(
           description: string;
           language: string;
           url: string;
-          forks: number;
-          isPrivate: boolean;
-          isArchived: boolean;
-          isFork: boolean;
-          topics: string[];
-          license: string | null;
-          hasIssues: boolean;
-          openIssuesCount: number;
-          createdAt: string;
-          updatedAt: string;
-          visibility: string;
           owner: string;
+          updated: string;
         }>,
       };
 
@@ -240,25 +232,15 @@ export async function searchGitHubRepos(
             ? Math.round(totalStars / repositories.length)
             : 0;
 
-        // Get all repositories with comprehensive data
+        // Get essential repository data only
         analysis.topStarred = repositories.map(repo => ({
           name: repo.fullName || repo.name,
           stars: repo.stargazersCount || 0,
-          description: repo.description || 'No description',
-          language: repo.language || 'Unknown',
+          description: (repo.description || '').substring(0, 100),
+          language: repo.language || '',
           url: repo.url,
-          forks: repo.forksCount || 0,
-          isPrivate: repo.isPrivate || false,
-          isArchived: repo.isArchived || false,
-          isFork: repo.isFork || false,
-          topics: [], // GitHub CLI search repos doesn't provide topics in JSON output
-          license: repo.license?.name || null,
-          hasIssues: repo.hasIssues || false,
-          openIssuesCount: repo.openIssuesCount || 0,
-          createdAt: repo.createdAt,
-          updatedAt: repo.updatedAt,
-          visibility: repo.visibility || 'public',
           owner: repo.owner?.login || repo.owner,
+          updated: repo.updatedAt?.split('T')[0] || '', // Date only
         }));
       }
 

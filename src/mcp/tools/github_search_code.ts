@@ -30,7 +30,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Target organization/user. Use for focused searches or private repo access.'
+            'Target organization/user from api_status_check results. Use for focused searches within your accessible repositories.'
           ),
         repo: z
           .union([z.string(), z.array(z.string())])
@@ -117,15 +117,13 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 
         return createSuccessResult({
           query: args.query,
-          processed_query: parseSearchQuery(args.query, args),
-          total_count: items.length,
-          items: items,
-          cli_command: execResult.command,
-          debug_info: {
-            has_complex_boolean_logic: hasComplexBooleanLogic(args.query),
-            escaped_args: buildGitHubCliArgs(args),
-            original_query: args.query,
-          },
+          total: items.length,
+          results: items.slice(0, args.limit || 20).map(item => ({
+            file: item.path || '',
+            repository: item.repository?.fullName || '',
+            url: item.url || '',
+            matches: item.textMatches?.length || 0,
+          })),
         });
       } catch (error) {
         const errorMessage = (error as Error).message || '';

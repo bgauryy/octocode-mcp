@@ -28,7 +28,12 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .describe(
             'Search query with GitHub syntax. Boolean: "fix AND bug", exact phrases: "initial commit", qualifiers: "is:merged review:approved".'
           ),
-        owner: z.string().optional().describe('Repository owner/organization'),
+        owner: z
+          .string()
+          .optional()
+          .describe(
+            'Repository owner/organization from api_status_check results. Use for focused PR searches within your accessible repositories.'
+          ),
         repo: z.string().optional().describe('Repository name'),
         author: z.string().optional().describe('Filter by pull request author'),
         assignee: z.string().optional().describe('Filter by assignee'),
@@ -164,31 +169,18 @@ async function searchGitHubPullRequests(
         closed_at?: string;
         head?: { ref: string };
         base?: { ref: string };
-      }) => {
-        const result: GitHubPullRequestItem = {
-          number: pr.number,
-          title: pr.title,
-          state: pr.state,
-          author: pr.user?.login || '',
-          repository:
-            pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-          labels: pr.labels?.map(l => l.name) || [],
-          created_at: pr.created_at,
-          updated_at: pr.updated_at,
-          url: pr.html_url,
-          comments: pr.comments,
-          reactions: pr.reactions?.total_count || 0,
-          draft: pr.draft,
-        };
-
-        // Only include optional fields if they have values
-        if (pr.merged_at) result.merged_at = pr.merged_at;
-        if (pr.closed_at) result.closed_at = pr.closed_at;
-        if (pr.head?.ref) result.head = pr.head.ref;
-        if (pr.base?.ref) result.base = pr.base.ref;
-
-        return result;
-      }
+      }) => ({
+        number: pr.number,
+        title: pr.title.substring(0, 80), // Truncate long titles
+        state: pr.state,
+        author: pr.user?.login || '',
+        repository: pr.repository_url?.split('/').slice(-2).join('/') || '',
+        created: pr.created_at.split('T')[0], // Date only
+        url: pr.html_url,
+        draft: pr.draft,
+        ...(pr.merged_at && { merged: pr.merged_at.split('T')[0] }),
+        ...(pr.head?.ref && { branch: pr.head.ref }),
+      })
     );
 
     const searchResult: GitHubPullRequestsSearchResult = {

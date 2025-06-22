@@ -31,7 +31,7 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           .min(1)
           .optional()
           .describe(
-            'Repository owner/organization. Leave empty for global search.'
+            'Repository owner/organization from api_status_check results. Essential for searching your accessible repositories.'
           ),
         repo: z
           .string()
@@ -213,17 +213,14 @@ async function searchGitHubIssues(
         reactions?: { total_count: number };
       }) => ({
         number: issue.number,
-        title: issue.title,
+        title: issue.title.substring(0, 80),
         state: issue.state,
         author: issue.user?.login || '',
-        repository:
-          issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-        labels: issue.labels?.map(l => l.name) || [],
-        created_at: issue.created_at,
-        updated_at: issue.updated_at,
+        repository: issue.repository_url?.split('/').slice(-2).join('/') || '',
+        labels: (issue.labels?.map(l => l.name) || []).slice(0, 3),
+        created: issue.created_at.split('T')[0],
         url: issue.html_url,
         comments: issue.comments,
-        reactions: issue.reactions?.total_count || 0,
       })
     );
 

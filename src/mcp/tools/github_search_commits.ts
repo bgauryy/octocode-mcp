@@ -33,7 +33,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Repository owner/organization. Leave empty for global search.'
+            'Repository owner/organization from api_status_check results. Essential for searching commits in your accessible repositories.'
           ),
         repo: z
           .string()
@@ -205,32 +205,16 @@ export async function searchGitHubCommits(
           .slice(0, 5)
           .map(([name, count]) => ({ name, commits: count }));
 
-        // Format commits for output
+        // Format commits for output with essential info only
         const formattedCommits = commits.map(commit => ({
-          sha: commit.sha,
-          message: commit.commit?.message || '',
-          author: {
-            name: commit.commit?.author?.name,
-            email: commit.commit?.author?.email,
-            date: commit.commit?.author?.date,
-            login: commit.author?.login,
-          },
-          committer: {
-            name: commit.commit?.committer?.name,
-            email: commit.commit?.committer?.email,
-            date: commit.commit?.committer?.date,
-            login: commit.committer?.login,
-          },
-          repository: commit.repository
-            ? {
-                name: commit.repository.name,
-                fullName: commit.repository.fullName,
-                url: commit.repository.url,
-                description: commit.repository.description,
-              }
-            : null,
+          sha: commit.sha?.substring(0, 8) || '', // Short SHA
+          message: (commit.commit?.message || '')
+            .split('\n')[0]
+            .substring(0, 80), // First line only, truncated
+          author: commit.commit?.author?.name || commit.author?.login || '',
+          date: commit.commit?.author?.date?.split('T')[0] || '', // Date only
+          repository: commit.repository?.fullName || '',
           url: commit.url,
-          parents: commit.parents?.map((p: { sha: string }) => p.sha) || [],
         }));
 
         return createSuccessResult({

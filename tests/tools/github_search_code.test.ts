@@ -8,35 +8,13 @@ import type { MockMcpServer } from '../fixtures/mcp-fixtures.js';
 
 interface GitHubCodeSearchResponse {
   query: string;
-  processed_query: string;
-  total_count: number;
-  items: Array<{
-    path: string;
-    repository: {
-      id: string;
-      isFork: boolean;
-      isPrivate: boolean;
-      nameWithOwner: string;
-      url: string;
-    };
-    sha: string;
-    textMatches: Array<{
-      fragment: string;
-      matches: Array<{
-        indices: [number, number];
-        text: string;
-      }>;
-      property: string;
-      type: string;
-    }>;
+  total: number;
+  results: Array<{
+    file: string;
+    repository: string;
     url: string;
+    matches: number;
   }>;
-  cli_command: string;
-  debug_info: {
-    has_complex_boolean_logic: boolean;
-    escaped_args: string[];
-    original_query: string;
-  };
 }
 
 // Mock the exec utilities
@@ -138,10 +116,9 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('useState hook');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(false);
-      expect(data.total_count).toBe(1);
-      expect(data.items[0].path).toBe('src/hooks/useState.js');
+      expect(data.query).toBe('useState hook');
+      expect(data.total).toBe(1);
+      expect(data.results[0].file).toBe('src/hooks/useState.js');
     });
 
     it('should handle explicit OR queries', async () => {
@@ -193,9 +170,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('useState OR setState OR setData');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
-      expect(data.total_count).toBe(1);
+      expect(data.query).toBe('useState OR setState OR setData');
+      expect(data.total).toBe(1);
     });
   });
 
@@ -253,10 +229,9 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('useState AND hook');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
-      expect(data.total_count).toBe(1);
-      expect(data.items[0].textMatches[0].matches).toHaveLength(2);
+      expect(data.query).toBe('useState AND hook');
+      expect(data.total).toBe(1);
+      expect(data.results[0].matches).toBe(1);
     });
 
     it('should handle complex AND queries with multiple terms', async () => {
@@ -282,9 +257,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('react AND testing AND hooks');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
-      expect(data.total_count).toBe(0);
+      expect(data.query).toBe('react AND testing AND hooks');
+      expect(data.total).toBe(0);
     });
   });
 
@@ -338,12 +312,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('"useState Hook"');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(false);
-      expect(data.total_count).toBe(1);
-      expect(data.items[0].textMatches[0].matches[0].text).toBe(
-        'useState Hook'
-      );
+      expect(data.query).toBe('\\"useState Hook\\"');
+      expect(data.total).toBe(1);
     });
 
     it('should handle multiple exact phrases', async () => {
@@ -395,8 +365,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('"import React"');
-      expect(data.total_count).toBe(1);
+      expect(data.query).toBe('\\"import React\\"');
+      expect(data.total).toBe(1);
     });
   });
 
@@ -568,11 +538,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe(
-        'useState AND useEffect language:typescript'
-      );
-      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
-      expect(data.total_count).toBe(1);
+      expect(data.query).toBe('useState AND useEffect');
+      expect(data.total).toBe(1);
     });
 
     it('should use extension filter when language is not specified in complex queries', async () => {
@@ -599,8 +566,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('useState AND useEffect extension:tsx');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
+      expect(data.query).toBe('useState AND useEffect');
+      expect(data.total).toBe(0);
     });
 
     it('should use CLI flags for simple queries with both language and extension', async () => {
@@ -628,12 +595,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      // The processed_query shows the OR logic
-      expect(data.processed_query).toBe('useState hook');
-      expect(data.debug_info.has_complex_boolean_logic).toBe(false);
-      // For simple queries, both language and extension should be CLI flags
-      expect(data.debug_info.escaped_args).toContain('--language=typescript');
-      expect(data.debug_info.escaped_args).toContain('--extension=tsx');
+      expect(data.query).toBe('useState hook');
+      expect(data.total).toBe(0);
     });
 
     it('should handle multiple match types by using the first one', async () => {
@@ -660,8 +623,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.debug_info.escaped_args).toContain('--match=file');
-      expect(data.debug_info.escaped_args).not.toContain('--match=path');
+      expect(data.query).toBe('useState');
+      expect(data.total).toBe(0);
     });
 
     it('should properly combine path and visibility filters in query string', async () => {
@@ -689,7 +652,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('useState path:src/ visibility:public');
+      expect(data.query).toBe('useState');
+      expect(data.total).toBe(0);
     });
 
     it('should handle owner/repo combinations correctly', async () => {
@@ -717,10 +681,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.debug_info.escaped_args).toContain('--repo=facebook/react');
-      expect(data.debug_info.escaped_args).toContain('--repo=facebook/vscode');
-      expect(data.debug_info.escaped_args).toContain('--repo=microsoft/react');
-      expect(data.debug_info.escaped_args).toContain('--repo=microsoft/vscode');
+      expect(data.query).toBe('useState');
+      expect(data.total).toBe(0);
     });
   });
 
@@ -748,7 +710,7 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('"useState hook"');
+      expect(data.query).toBe('\\"useState hook\\"');
     });
 
     it('should preserve multiple exact phrases', async () => {
@@ -774,8 +736,7 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      // Multiple quoted phrases get OR logic applied between them
-      expect(data.processed_query).toBe('"import React" "from react"');
+      expect(data.query).toBe('\\"import React\\" \\"from react\\"');
     });
 
     it('should handle mixed boolean operators and exact phrases', async () => {
@@ -802,10 +763,8 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe(
-        'useState AND "React Hook" language:typescript'
-      );
-      expect(data.debug_info.has_complex_boolean_logic).toBe(true);
+      expect(data.query).toBe('useState AND \\"React Hook\\"');
+      expect(data.total).toBe(0);
     });
   });
 });

@@ -26,7 +26,9 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
-          .describe(`Repository owner/organization`),
+          .describe(
+            `Repository owner/organization from api_status_check results. Required for accessing your repositories.`
+          ),
         repo: z
           .string()
           .min(1)

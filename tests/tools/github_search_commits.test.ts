@@ -16,33 +16,16 @@ interface GitHubCommitsSearchResponse {
   commits: Array<{
     sha: string;
     message: string;
-    author: {
-      name?: string;
-      email?: string;
-      date?: string;
-      login?: string;
-    };
-    committer: {
-      name?: string;
-      email?: string;
-      date?: string;
-      login?: string;
-    };
-    repository?: {
-      name: string;
-      fullName: string;
-      url: string;
-      description?: string;
-    } | null;
+    author: string;
+    date: string;
+    repository: string;
     url: string;
-    parents: string[];
   }>;
   summary?: {
     recentCommits: number;
     topAuthors: Array<{ name: string; commits: number }>;
     repositories: string[];
   };
-
 }
 
 // Mock the exec utilities
@@ -150,8 +133,8 @@ describe('GitHub Search Commits Tool', () => {
       expect(data.commits).toHaveLength(1);
       expect(data.commits[0].sha).toBe('abc123');
       expect(data.commits[0].message).toBe('Fix bug in authentication');
-      expect(data.commits[0].author.name).toBe('John Doe');
-      expect(data.commits[0].repository?.fullName).toBe('owner/test-repo');
+      expect(data.commits[0].author).toBe('John Doe');
+      expect(data.commits[0].repository).toBe('owner/test-repo');
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
@@ -222,7 +205,7 @@ describe('GitHub Search Commits Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(data.total).toBe(1);
-      expect(data.commits[0].author.login).toBe('janesmith');
+      expect(data.commits[0].author).toBe('Jane Smith');
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
@@ -324,7 +307,8 @@ describe('GitHub Search Commits Tool', () => {
       const data = parseResultJson<GitHubCommitsSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.commits[0].parents).toEqual(['parent1', 'parent2']);
+      expect(data.total).toBe(1);
+      expect(data.commits[0].message).toBe('Merge pull request');
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',

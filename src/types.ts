@@ -213,11 +213,9 @@ export interface GitHubIssueItem {
   author: string;
   repository: string;
   labels: string[];
-  created_at: string;
-  updated_at: string;
+  created: string; // Date only format
   url: string;
   comments: number;
-  reactions: number;
 }
 
 export interface GitHubIssuesSearchResult {
@@ -236,17 +234,11 @@ export interface GitHubPullRequestItem {
   state: 'open' | 'closed';
   author: string;
   repository: string;
-  labels: string[];
-  created_at: string;
-  updated_at: string;
-  merged_at?: string;
-  closed_at?: string;
+  created: string; // Date only format
   url: string;
-  comments: number;
-  reactions: number;
   draft: boolean;
-  head?: string;
-  base?: string;
+  merged?: string; // Date only format if merged
+  branch?: string; // Head branch name
 }
 
 export interface GitHubPullRequestsSearchResult {
