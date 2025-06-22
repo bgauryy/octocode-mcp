@@ -417,7 +417,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Package metadata failed - package may not exist'
+        'Failed to get package metadata - package may not exist'
       );
       expect(result.content[0].text).toContain('Network timeout');
     });
@@ -434,7 +434,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Package metadata failed - package may not exist'
+        'Failed to get package metadata - package may not exist'
       );
     });
 
@@ -450,7 +450,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Package metadata failed - package may not exist'
+        'Failed to get package metadata - package may not exist'
       );
     });
 
@@ -466,7 +466,7 @@ describe('NPM View Package Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Package metadata failed - package may not exist'
+        'Failed to get package metadata - package may not exist'
       );
     });
   });
@@ -485,7 +485,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name required');
+      expect(result.content[0].text).toBe('Package name required - provide valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
 
@@ -495,7 +495,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name required');
+      expect(result.content[0].text).toBe('Package name required - provide valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
 
@@ -514,7 +514,7 @@ describe('NPM View Package Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toBe('Invalid package name format');
+        expect(result.content[0].text).toBe('Invalid package name format - use standard NPM naming');
       }
 
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
@@ -565,7 +565,7 @@ describe('NPM View Package Tool', () => {
       const result = await toolHandler({});
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Package name required');
+      expect(result.content[0].text).toBe('Package name required - provide valid NPM package name');
       expect(mockExecuteNpmCommand).not.toHaveBeenCalled();
     });
   });
