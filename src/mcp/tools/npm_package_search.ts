@@ -7,10 +7,10 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 const TOOL_NAME = 'npm_package_search';
 
-const DESCRIPTION = `Discover packages by keywords using fuzzy matching. Use for finding alternatives, implementations, and ecosystem exploration.`;
+const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. Use space-separated keywords like "react hooks" or "cli typescript". No boolean operators supported.`;
 
-const MAX_DESCRIPTION_LENGTH = 80;
-const MAX_KEYWORDS = 8;
+const MAX_DESCRIPTION_LENGTH = 100;
+const MAX_KEYWORDS = 10;
 
 export function registerNpmSearchTool(server: McpServer) {
   server.registerTool(
@@ -21,7 +21,7 @@ export function registerNpmSearchTool(server: McpServer) {
         queries: z
           .union([z.string(), z.array(z.string())])
           .describe(
-            'Keywords for fuzzy search. Examples: "react hooks", "build tools", "testing utilities". Space-separated only.'
+            'Package names or keywords to search for. Use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
           ),
         searchlimit: z
           .number()
@@ -29,8 +29,8 @@ export function registerNpmSearchTool(server: McpServer) {
           .min(1)
           .max(50)
           .optional()
-          .default(15)
-          .describe('Max results per query. Default 15 for research focus.'),
+          .default(20)
+          .describe('Max results per query (default: 20, max: 50)'),
       },
       annotations: {
         title: 'NPM Package Search',
@@ -48,7 +48,7 @@ export function registerNpmSearchTool(server: McpServer) {
         const queries = Array.isArray(args.queries)
           ? args.queries
           : [args.queries];
-        const searchLimit = args.searchlimit || 15;
+        const searchLimit = args.searchlimit || 20;
         const allPackages: NpmPackage[] = [];
 
         // Search for each query term
@@ -79,10 +79,10 @@ export function registerNpmSearchTool(server: McpServer) {
           });
         }
 
-        return createResult('No packages found for query', true);
+        return createResult('No packages found', true);
       } catch (error) {
         return createResult(
-          'Search failed - check keywords or try alternatives',
+          'Package search failed - check terms or try different keywords',
           true
         );
       }

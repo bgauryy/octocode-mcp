@@ -12,7 +12,7 @@ import { NpmViewPackageParams, NpmViewPackageResult } from '../../types';
 
 const TOOL_NAME = 'npm_view_package';
 
-const DESCRIPTION = `Get comprehensive package metadata for research. Returns repo URL, exports, dependencies, and version history. Essential for GitHub discovery workflow.`;
+const DESCRIPTION = `Get comprehensive NPM package metadata efficiently. Returns repository URL, exports, dependencies, and version history. Essential for finding package source code and understanding project structure.`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(
@@ -24,7 +24,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
           .string()
           .min(1, 'Package name is required')
           .describe(
-            'NPM package name. Returns complete metadata including GitHub repo URL, exports structure, and dependency analysis.'
+            'NPM package name to analyze. Returns complete package context including exports (critical for GitHub file discovery), repository URL, dependencies, and version history.'
           ),
       },
       annotations: {
@@ -38,19 +38,25 @@ export function registerNpmViewPackageTool(server: McpServer) {
     async (args: NpmViewPackageParams): Promise<CallToolResult> => {
       try {
         if (!args.packageName || args.packageName.trim() === '') {
-          return createResult('Package name required', true);
+          return createResult(
+            'Package name required - provide valid NPM package name',
+            true
+          );
         }
 
-        // Package name validation
+        // Basic package name validation
         if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
-          return createResult('Invalid package name format', true);
+          return createResult(
+            'Invalid package name format - use standard NPM naming',
+            true
+          );
         }
 
         const result = await npmViewPackage(args.packageName);
         return result;
       } catch (error) {
         return createResult(
-          'Package metadata failed - package may not exist',
+          'Failed to get package metadata - package may not exist',
           true
         );
       }
@@ -125,7 +131,7 @@ export async function npmViewPackage(
       return createSuccessResult(viewResult);
     } catch (error) {
       return createErrorResult(
-        'Package metadata failed - package may not exist',
+        'Failed to get package metadata - package may not exist',
         error
       );
     }

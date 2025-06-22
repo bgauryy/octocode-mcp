@@ -13,7 +13,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_get_file_content';
 
-const DESCRIPTION = `Read file content for implementation analysis. Smart branch detection and binary handling. Essential for code study workflows.`;
+const DESCRIPTION = `Read file content with exact path verification. Smart branch fallbacks and size limits. Use github_get_contents first to verify file existence.`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -45,7 +45,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            `File path from repository root. Use github_get_contents first to explore structure.`
+            `File path from repository root. Use github_get_contents to explore structure.`
           ),
       },
       annotations: {
@@ -92,7 +92,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult(
-          'File fetch failed - verify path or explore with github_get_contents',
+          'File fetch failed - verify path or try github_get_contents first',
           true
         );
       }
@@ -165,12 +165,12 @@ async function fetchGitHubFileContent(
           errorMsg.includes('stdout maxBuffer length exceeded')
         ) {
           return createErrorResult(
-            'File too large - use github_search_code for patterns',
+            'File too large (>300KB) - use github_search_code for patterns instead',
             new Error(`Buffer overflow: ${filePath}`)
           );
         } else {
           return createErrorResult(
-            'Fetch failed - check repository and path',
+            'Fetch failed - check repository and file path',
             new Error(errorMsg)
           );
         }
