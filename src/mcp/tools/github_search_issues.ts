@@ -5,7 +5,7 @@ import {
   GitHubIssuesSearchResult,
   GitHubIssueItem,
 } from '../../types';
-import { createSuccessResult, createErrorResult } from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
@@ -140,17 +140,17 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     },
     async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
-        return createErrorResult(
-          'Search query is required and cannot be empty - provide keywords to search for issues',
-          new Error('Invalid query')
-        );
+        return createResult({
+          error:
+            'Search query is required and cannot be empty - provide keywords to search for issues',
+        });
       }
 
       if (args.query.length > 256) {
-        return createErrorResult(
-          'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
-          new Error('Query too long')
-        );
+        return createResult({
+          error:
+            'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
+        });
       }
 
       try {
@@ -158,24 +158,22 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : '';
         if (errorMessage.includes('authentication')) {
-          return createErrorResult(
-            'GitHub authentication required - run api_status_check tool',
-            error as Error
-          );
+          return createResult({
+            error: 'GitHub authentication required - run api_status_check tool',
+          });
         }
 
         if (errorMessage.includes('rate limit')) {
-          return createErrorResult(
-            'GitHub rate limit exceeded - wait or use specific filters',
-            error as Error
-          );
+          return createResult({
+            error: 'GitHub rate limit exceeded - wait or use specific filters',
+          });
         }
 
         // Generic fallback
-        return createErrorResult(
-          'GitHub issue search failed - check authentication or simplify query',
-          error as Error
-        );
+        return createResult({
+          error:
+            'GitHub issue search failed - check authentication or simplify query',
+        });
       }
     }
   );
@@ -237,7 +235,7 @@ async function searchGitHubIssues(
       },
     };
 
-    return createSuccessResult(searchResult);
+    return createResult({ data: searchResult });
   });
 }
 

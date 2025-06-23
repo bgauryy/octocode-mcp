@@ -1,44 +1,40 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
-export function createResult(
-  data: unknown,
-  isError = false,
-  suggestions?: string[]
-): CallToolResult {
-  const text = isError
-    ? `${data}${suggestions ? ` | Try: ${suggestions.join(', ')}` : ''}`
-    : JSON.stringify(data, null, 2);
+export function createResult(options: {
+  data?: unknown;
+  error?: unknown | string;
+  suggestions?: string[];
+}): CallToolResult {
+  const { data, error, suggestions } = options;
+
+  if (error) {
+    const errorMessage =
+      typeof error === 'string'
+        ? error
+        : (error as Error).message || 'Unknown error';
+    const text = `${errorMessage}${suggestions ? ` | Try: ${suggestions.join(', ')}` : ''}`;
+
+    return {
+      content: [{ type: 'text', text }],
+      isError: true,
+    };
+  }
 
   return {
-    content: [{ type: 'text', text }],
-    isError,
+    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+    isError: false,
   };
 }
 
-// LEGACY SUPPORT - Remove these once all tools are updated
-export function createSuccessResult(data: unknown): CallToolResult {
-  return createResult(data, false);
-}
-
-export function createErrorResult(
-  message: string,
-  error: unknown
-): CallToolResult {
-  return createResult(`${message}: ${(error as Error).message}`, true);
-}
-
-// ENHANCED PARSING UTILITY
-export function parseJsonResponse<T = unknown>(
-  responseText: string,
-  fallback: T | null = null
-): {
+// Helper function for JSON parsing with error handling
+export function parseJsonResponse<T>(jsonString: string): {
   data: T;
   parsed: boolean;
 } {
   try {
-    const data = JSON.parse(responseText) as T;
-    return { data, parsed: true };
+    const parsed = JSON.parse(jsonString);
+    return { data: parsed, parsed: true };
   } catch {
-    return { data: (fallback || responseText) as T, parsed: false };
+    return { data: jsonString as unknown as T, parsed: false };
   }
 }

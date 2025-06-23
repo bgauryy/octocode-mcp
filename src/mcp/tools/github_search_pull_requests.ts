@@ -5,7 +5,7 @@ import {
   GitHubPullRequestsSearchResult,
   GitHubPullRequestItem,
 } from '../../types';
-import { createSuccessResult, createErrorResult } from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
@@ -104,26 +104,26 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     },
     async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
-        return createErrorResult(
-          'Search query is required and cannot be empty - provide keywords to search for pull requests',
-          new Error('Invalid query')
-        );
+        return createResult({
+          error:
+            'Search query is required and cannot be empty - provide keywords to search for pull requests',
+        });
       }
 
       if (args.query.length > 256) {
-        return createErrorResult(
-          'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
-          new Error('Query too long')
-        );
+        return createResult({
+          error:
+            'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
+        });
       }
 
       try {
         return await searchGitHubPullRequests(args);
       } catch (error) {
-        return createErrorResult(
-          'GitHub pull requests search failed - verify repository access and query syntax',
-          error
-        );
+        return createResult({
+          error:
+            'GitHub pull requests search failed - verify repository access and query syntax',
+        });
       }
     }
   );
@@ -201,7 +201,7 @@ async function searchGitHubPullRequests(
       },
     };
 
-    return createSuccessResult(searchResult);
+    return createResult({ data: searchResult });
   });
 }
 

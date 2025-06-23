@@ -1,11 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCommitsSearchParams } from '../../types';
-import {
-  createResult,
-  createSuccessResult,
-  createErrorResult,
-} from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { needsQuoting } from '../../utils/query';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -119,19 +115,18 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           !args.committer &&
           !args.repo
         ) {
-          return createResult(
-            'Either query or at least one filter is required',
-            true
-          );
+          return createResult({
+            error: 'Either query or at least one filter is required',
+          });
         }
 
         const result = await searchGitHubCommits(args);
         return result;
       } catch (error) {
-        return createResult(
-          'Commit search failed - check query syntax, filters, or repository access',
-          true
-        );
+        return createResult({
+          error:
+            'Commit search failed - check query syntax, filters, or repository access',
+        });
       }
     }
   );
@@ -232,28 +227,32 @@ export async function searchGitHubCommits(
           parents: commit.parents?.map((p: { sha: string }) => p.sha) || [],
         }));
 
-        return createSuccessResult({
-          query: params.query,
-          total: analysis.totalFound,
-          commits: formattedCommits,
-          summary: {
-            recentCommits: analysis.recentCommits,
-            topAuthors: analysis.topAuthors,
-            repositories: Array.from(analysis.repositories),
+        return createResult({
+          data: {
+            query: params.query,
+            total: analysis.totalFound,
+            commits: formattedCommits,
+            summary: {
+              recentCommits: analysis.recentCommits,
+              topAuthors: analysis.topAuthors,
+              repositories: Array.from(analysis.repositories),
+            },
           },
         });
       }
 
-      return createSuccessResult({
-        query: params.query,
-        total: 0,
-        commits: [],
+      return createResult({
+        data: {
+          query: params.query,
+          total: 0,
+          commits: [],
+        },
       });
     } catch (error) {
-      return createErrorResult(
-        'GitHub commit search failed - verify repository exists or try different filters',
-        error
-      );
+      return createResult({
+        error:
+          'GitHub commit search failed - verify repository exists or try different filters',
+      });
     }
   });
 }

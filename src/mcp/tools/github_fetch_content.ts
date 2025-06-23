@@ -3,8 +3,6 @@ import z from 'zod';
 import {
   createResult,
   parseJsonResponse,
-  createErrorResult,
-  createSuccessResult,
 } from '../../utils/responses';
 import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -69,32 +67,35 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
 
           if (parsed) {
             return createResult({
-              file: `${args.owner}/${args.repo}/${args.filePath}`,
-              content: data.content || data,
-              metadata: {
-                branch: args.branch,
-                size: data.size,
-                encoding: data.encoding,
-              },
+              data: {
+                file: `${args.owner}/${args.repo}/${args.filePath}`,
+                content: data.content || data,
+                metadata: {
+                  branch: args.branch,
+                  size: data.size,
+                  encoding: data.encoding,
+                },
+              }
             });
           } else {
             // Return raw file content
             return createResult({
-              file: `${args.owner}/${args.repo}/${args.filePath}`,
-              content: data,
-              metadata: {
-                branch: args.branch,
-              },
+              data: {
+                file: `${args.owner}/${args.repo}/${args.filePath}`,
+                content: data,
+                metadata: {
+                  branch: args.branch,
+                },
+              }
             });
           }
         }
 
         return result;
       } catch (error) {
-        return createResult(
-          'File fetch failed - verify path or try github_get_contents first',
-          true
-        );
+        return createResult({
+          error: 'File fetch failed - verify path or try github_get_contents first'
+        });
       }
     }
   );
@@ -151,28 +152,24 @@ async function fetchGitHubFileContent(
 
         // Handle common errors
         if (errorMsg.includes('404')) {
-          return createErrorResult(
-            'File not found - verify path with github_get_contents',
-            new Error(filePath)
-          );
+          return createResult({
+            error: 'File not found - verify path with github_get_contents'
+          });
         } else if (errorMsg.includes('403')) {
-          return createErrorResult(
-            'Access denied - repository may be private',
-            new Error(`${owner}/${repo}`)
-          );
+          return createResult({
+            error: 'Access denied - repository may be private'
+          });
         } else if (
           errorMsg.includes('maxBuffer') ||
           errorMsg.includes('stdout maxBuffer length exceeded')
         ) {
-          return createErrorResult(
-            'File too large (>300KB) - use github_search_code for patterns instead',
-            new Error(`Buffer overflow: ${filePath}`)
-          );
+          return createResult({
+            error: 'File too large (>300KB) - use github_search_code for patterns instead'
+          });
         } else {
-          return createErrorResult(
-            'Fetch failed - check repository and file path',
-            new Error(errorMsg)
-          );
+          return createResult({
+            error: 'Fetch failed - check repository and file path'
+          });
         }
       }
 
@@ -185,16 +182,14 @@ async function fetchGitHubFileContent(
         errorMessage.includes('maxBuffer') ||
         errorMessage.includes('stdout maxBuffer length exceeded')
       ) {
-        return createErrorResult(
-          'File too large (>300KB) - use github_search_code for patterns instead',
-          error as Error
-        );
+        return createResult({
+          error: 'File too large (>300KB) - use github_search_code for patterns instead'
+        });
       }
 
-      return createErrorResult(
-        'Unexpected error during file fetch - check connection',
-        error as Error
-      );
+      return createResult({
+        error: 'Unexpected error during file fetch - check connection'
+      });
     }
   });
 }
@@ -211,10 +206,9 @@ async function processFileContent(
   const fileData = JSON.parse(execResult.result);
   // Check if it's a directory
   if (Array.isArray(fileData)) {
-    return createErrorResult(
-      'Path is directory - use github_get_contents instead',
-      new Error(filePath)
-    );
+    return createResult({
+      error: 'Path is directory - use github_get_contents instead'
+    });
   }
 
   const fileSize = fileData.size || 0;
@@ -225,20 +219,18 @@ async function processFileContent(
     const fileSizeKB = Math.round(fileSize / 1024);
     const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
-    return createErrorResult(
-      `File too large (${fileSizeKB}KB > ${maxSizeKB}KB) - use github_search_code for patterns`,
-      new Error(`File: ${filePath} (${fileSizeKB}KB)`)
-    );
+    return createResult({
+      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB) - use github_search_code for patterns`
+    });
   }
 
   // Get and decode content
   const base64Content = fileData.content?.replace(/\s/g, ''); // Remove all whitespace
 
   if (!base64Content) {
-    return createErrorResult(
-      'Empty file - no content to display',
-      new Error(filePath)
-    );
+    return createResult({
+      error: 'Empty file - no content to display'
+    });
   }
 
   let decodedContent: string;
@@ -247,18 +239,16 @@ async function processFileContent(
 
     // Simple binary check - look for null bytes
     if (buffer.indexOf(0) !== -1) {
-      return createErrorResult(
-        'Binary file detected - cannot display as text',
-        new Error(filePath)
-      );
+      return createResult({
+        error: 'Binary file detected - cannot display as text'
+      });
     }
 
     decodedContent = buffer.toString('utf-8');
   } catch (decodeError) {
-    return createErrorResult(
-      'Decode failed - file encoding not supported',
-      new Error(filePath)
-    );
+    return createResult({
+      error: 'Decode failed - file encoding not supported'
+    });
   }
 
   // Return simplified response
@@ -275,5 +265,5 @@ async function processFileContent(
     },
   };
 
-  return createSuccessResult(response);
+  return createResult({ data: response });
 }

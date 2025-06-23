@@ -1,17 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   createResult,
-  createSuccessResult,
-  createErrorResult,
   parseJsonResponse,
-} from '../../src/utils/responses.js';
+} from '../../src/utils/responses';
 import { needsQuoting } from '../../src/utils/query.js';
 
 describe('Response Utilities', () => {
   describe('createResult', () => {
     it('should create success result with JSON data', () => {
       const data = { message: 'success', value: 42 };
-      const result = createResult(data);
+      const result = createResult({ data });
 
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
@@ -21,7 +19,7 @@ describe('Response Utilities', () => {
 
     it('should create error result with string message', () => {
       const errorMessage = 'Something went wrong';
-      const result = createResult(errorMessage, true);
+      const result = createResult({ error: errorMessage });
 
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
@@ -32,53 +30,52 @@ describe('Response Utilities', () => {
     it('should include suggestions in error result', () => {
       const errorMessage = 'Not found';
       const suggestions = ['try this', 'or that'];
-      const result = createResult(errorMessage, true, suggestions);
+      const result = createResult({ error: errorMessage, suggestions });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toBe('Not found | Try: try this, or that');
     });
-  });
 
-  describe('createSuccessResult (legacy)', () => {
-    it('should create success result', () => {
-      const data = { test: 'data' };
-      const result = createSuccessResult(data);
+    it('should handle error object', () => {
+      const error = new Error('Test error');
+      const result = createResult({ error });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe('Test error');
+    });
+
+    it('should create success result when no error provided', () => {
+      const data = { test: 'value' };
+      const result = createResult({ data });
 
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toBe(JSON.stringify(data, null, 2));
     });
   });
 
-  describe('createErrorResult (legacy)', () => {
-    it('should create error result with exception', () => {
-      const error = new Error('Test error');
-      const result = createErrorResult('Failed operation', error);
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Failed operation: Test error');
-    });
-  });
-
   describe('parseJsonResponse', () => {
     it('should parse valid JSON', () => {
-      const jsonString = '{"key": "value"}';
+      const jsonData = { message: 'test' };
+      const jsonString = JSON.stringify(jsonData);
+
       const result = parseJsonResponse(jsonString);
 
       expect(result.parsed).toBe(true);
-      expect(result.data).toEqual({ key: 'value' });
+      expect(result.data).toEqual(jsonData);
     });
 
     it('should handle invalid JSON with fallback', () => {
       const invalidJson = 'not json';
-      const fallback = { fallback: 'data' };
-      const result = parseJsonResponse(invalidJson, fallback);
+
+      const result = parseJsonResponse(invalidJson);
 
       expect(result.parsed).toBe(false);
-      expect(result.data).toEqual(fallback);
+      expect(result.data).toBe(invalidJson);
     });
 
     it('should use original text as fallback when no fallback provided', () => {
-      const invalidJson = 'not json';
+      const invalidJson = 'still not json';
+
       const result = parseJsonResponse(invalidJson);
 
       expect(result.parsed).toBe(false);

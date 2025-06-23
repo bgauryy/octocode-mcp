@@ -1,11 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { GitHubCodeSearchParams } from '../../types';
-import {
-  createErrorResult,
-  createResult,
-  createSuccessResult,
-} from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
@@ -100,7 +96,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         // Validate parameter combinations
         const validationError = validateSearchParameters(args);
         if (validationError) {
-          return createResult(validationError, true);
+          return createResult({ error: validationError });
         }
 
         const result = await searchGitHubCode(args);
@@ -134,22 +130,26 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           },
         };
 
-        return createSuccessResult(responseData);
+        return createResult({ data: responseData });
       } catch (error) {
         const errorMessage = (error as Error).message || '';
 
         // Handle JSON parsing errors
         if (errorMessage.includes('JSON')) {
-          return createErrorResult(
-            'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
-            error as Error
-          );
+          return createResult({
+            error:
+              'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
+          });
         }
 
-        return createErrorResult(
-          'GitHub code search failed. Try: 1) Simpler queries without NOT operators, 2) Use filters (language, owner, filename) instead of complex boolean, 3) Check authentication with api_status_check',
-          error as Error
-        );
+        return createResult({
+          error: 'GitHub code search failed',
+          suggestions: [
+            'Try simpler queries without NOT operators',
+            'Use filters (language, owner, filename) instead of complex boolean',
+            'Check authentication with api_status_check',
+          ],
+        });
       }
     }
   );
@@ -308,51 +308,48 @@ export async function searchGitHubCode(
 
       // Parse specific GitHub CLI error types
       if (errorMessage.includes('authentication')) {
-        return createErrorResult(
-          'GitHub authentication required - run api_status_check tool',
-          error as Error
-        );
+        return createResult({
+          error: 'GitHub authentication required - run api_status_check tool',
+        });
       }
 
       if (errorMessage.includes('rate limit')) {
-        return createErrorResult(
-          'GitHub rate limit exceeded - use more specific filters or wait',
-          error as Error
-        );
+        return createResult({
+          error:
+            'GitHub rate limit exceeded - use more specific filters or wait',
+        });
       }
 
       if (
         errorMessage.includes('validation failed') ||
         errorMessage.includes('Invalid query')
       ) {
-        return createErrorResult(
-          'Invalid query syntax. GitHub legacy search has limitations: avoid complex NOT logic, use simple OR patterns, prefer filters over complex boolean. Try: "react OR vue" instead of complex nested queries',
-          error as Error
-        );
+        return createResult({
+          error:
+            'Invalid query syntax. GitHub legacy search has limitations: avoid complex NOT logic, use simple OR patterns, prefer filters over complex boolean. Try: "react OR vue" instead of complex nested queries',
+        });
       }
 
       if (
         errorMessage.includes('repository not found') ||
         errorMessage.includes('owner not found')
       ) {
-        return createErrorResult(
-          'Repository not found - verify owner/repo names and permissions',
-          error as Error
-        );
+        return createResult({
+          error:
+            'Repository not found - verify owner/repo names and permissions',
+        });
       }
 
       if (errorMessage.includes('timeout')) {
-        return createErrorResult(
-          'Search timeout - add filters to narrow results',
-          error as Error
-        );
+        return createResult({
+          error: 'Search timeout - add filters to narrow results',
+        });
       }
 
       // Generic fallback with helpful guidance
-      return createErrorResult(
-        'Code search failed - check authentication and simplify query',
-        error as Error
-      );
+      return createResult({
+        error: 'Code search failed - check authentication and simplify query',
+      });
     }
   });
 }

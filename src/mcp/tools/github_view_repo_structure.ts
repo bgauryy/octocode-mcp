@@ -7,8 +7,6 @@ import {
 import {
   createResult,
   parseJsonResponse,
-  createErrorResult,
-  createSuccessResult,
 } from '../../utils/responses';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -69,7 +67,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         const result = await viewRepositoryStructure(args);
 
         if (result.isError) {
-          return createResult(result.content[0].text, true);
+          return createResult({ error: result.content[0].text });
         }
 
         if (result.content && result.content[0] && !result.isError) {
@@ -95,7 +93,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
                 branchFallback: data.branchFallback,
               }),
             };
-            return createResult(typedResult);
+            return createResult({ data: typedResult });
           }
         }
 
@@ -103,10 +101,9 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        return createResult(
-          `Repository exploration failed: ${errorMessage} - verify access and permissions`,
-          true
-        );
+        return createResult({
+          error: `Repository exploration failed: ${errorMessage} - verify access and permissions`
+        });
       }
     }
   );
@@ -252,14 +249,13 @@ export async function viewRepositoryStructure(
         }),
       };
 
-      return createSuccessResult(result);
+      return createResult({ data: result });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      return createErrorResult(
-        'Repository access failed - verify repository and authentication',
-        new Error(errorMessage)
-      );
+      return createResult({
+        error: 'Repository access failed - verify repository and authentication'
+      });
     }
   });
 }

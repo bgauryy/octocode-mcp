@@ -1,9 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import {
-  createErrorResult,
   createResult,
-  createSuccessResult,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -38,27 +36,24 @@ export function registerNpmViewPackageTool(server: McpServer) {
     async (args: NpmViewPackageParams): Promise<CallToolResult> => {
       try {
         if (!args.packageName || args.packageName.trim() === '') {
-          return createResult(
-            'Package name required - provide valid NPM package name',
-            true
-          );
+          return createResult({
+            error: 'Package name required - provide valid NPM package name'
+          });
         }
 
         // Basic package name validation
         if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
-          return createResult(
-            'Invalid package name format - use standard NPM naming',
-            true
-          );
+          return createResult({
+            error: 'Invalid package name format - use standard NPM naming'
+          });
         }
 
         const result = await npmViewPackage(args.packageName);
         return result;
       } catch (error) {
-        return createResult(
-          'Failed to get package metadata - package may not exist',
-          true
-        );
+        return createResult({
+          error: 'Failed to get package metadata - package may not exist'
+        });
       }
     }
   );
@@ -128,12 +123,11 @@ export async function npmViewPackage(
         versionStats: versionData.stats,
       };
 
-      return createSuccessResult(viewResult);
+      return createResult({ data: viewResult });
     } catch (error) {
-      return createErrorResult(
-        'Failed to get package metadata - package may not exist',
-        error
-      );
+      return createResult({
+        error: 'Failed to get package metadata - package may not exist'
+      });
     }
   });
 }

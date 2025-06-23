@@ -1,10 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import {
-  createErrorResult,
-  createResult,
-  createSuccessResult,
-} from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -278,10 +274,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           enhancedArgs.forks;
 
         if (!hasPrimaryFilter) {
-          return createResult(
-            'Requires query or primary filter (owner, language, stars, topic, forks). You can also use owner/repo format like "microsoft/vscode" in the query.',
-            true
-          );
+          return createResult({
+            error:
+              'Requires query or primary filter (owner, language, stars, topic, forks). You can also use owner/repo format like "microsoft/vscode" in the query.',
+          });
         }
 
         // First attempt: Search with current parameters
@@ -308,9 +304,11 @@ export function registerSearchGitHubReposTool(server: McpServer) {
               );
               if (privateData.total > 0) {
                 // Return private results with note
-                return createSuccessResult({
-                  ...privateData,
-                  note: 'Found results in private repositories within the specified organization.',
+                return createResult({
+                  data: {
+                    ...privateData,
+                    note: 'Found results in private repositories within the specified organization.',
+                  },
                 });
               }
             }
@@ -319,10 +317,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         return result;
       } catch (error) {
-        return createResult(
-          'Repository search failed - verify connection or simplify query',
-          true
-        );
+        return createResult({
+          error:
+            'Repository search failed - verify connection or simplify query',
+        });
       }
     }
   );
@@ -436,27 +434,28 @@ export async function searchGitHubRepos(
         }));
       }
 
-      return createSuccessResult({
-        query: params.query,
-        total: analysis.totalFound,
-        ...(analysis.totalFound > 0
-          ? {
-              repositories: analysis.topStarred,
-              summary: {
-                languages: Array.from(analysis.languages).slice(0, 10),
-                avgStars: analysis.avgStars,
-                recentlyUpdated: analysis.recentlyUpdated,
-              },
-            }
-          : {
-              repositories: [],
-            }),
+      return createResult({
+        data: {
+          query: params.query,
+          total: analysis.totalFound,
+          ...(analysis.totalFound > 0
+            ? {
+                repositories: analysis.topStarred,
+                summary: {
+                  languages: Array.from(analysis.languages).slice(0, 10),
+                  avgStars: analysis.avgStars,
+                  recentlyUpdated: analysis.recentlyUpdated,
+                },
+              }
+            : {
+                repositories: [],
+              }),
+        },
       });
     } catch (error) {
-      return createErrorResult(
-        'Repository search failed - verify connection or simplify query',
-        error
-      );
+      return createResult({
+        error: 'Repository search failed - verify connection or simplify query',
+      });
     }
   });
 }
