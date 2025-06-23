@@ -12,7 +12,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Discover repositories for architecture analysis and implementation research. Use quality filters and topic targeting for curated results.`;
+const DESCRIPTION = `Search repositories by name/description with powerful filtering. Use topics for discovery, stars for quality, owner for organization focus. Efficient alternative to manual GitHub browsing.`;
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
@@ -24,41 +24,39 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search terms. Examples: "react hooks", "build tools", "state management". Optional with filters.'
+            'Search query with GitHub syntax. Optional - can search with primary filters alone.'
           ),
 
-        // PRIMARY FILTERS (high-value for research)
+        // PRIMARY FILTERS (can work alone)
         owner: z
           .string()
           .optional()
-          .describe('Target organization for focused research.'),
+          .describe('Repository owner/organization for targeted search.'),
         language: z
           .string()
           .optional()
-          .describe('Programming language. Essential for targeted discovery.'),
+          .describe('Programming language filter.'),
         stars: z
           .string()
           .optional()
           .describe(
-            'Quality filter. Use ">1000" for established projects, ">10000" for major libraries.'
+            'Stars filter with ranges: ">100", "<50", "10..100". Use >100 for quality.'
           ),
         topic: z
           .array(z.string())
           .optional()
-          .describe(
-            'Topic tags for semantic discovery. Highly effective for research.'
-          ),
-        forks: z.number().optional().describe('Fork count filter.'),
+          .describe('Filter by topics for semantic discovery.'),
+        forks: z.number().optional().describe('Exact forks count.'),
         numberOfTopics: z
           .number()
           .optional()
-          .describe('Minimum topic count for well-documented projects.'),
+          .describe('Filter by number of topics.'),
 
         // SECONDARY FILTERS
         license: z
           .array(z.string())
           .optional()
-          .describe('License types. Important for commercial research.'),
+          .describe('License types filter.'),
         match: z
           .enum(['name', 'description', 'readme'])
           .optional()
@@ -66,27 +64,27 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
-          .describe('Repository visibility.'),
-        created: z.string().optional().describe('Creation date filter.'),
-        updated: z.string().optional().describe('Last update filter.'),
-        archived: z
-          .boolean()
+          .describe('Repository visibility filter.'),
+        created: z
+          .string()
           .optional()
-          .describe('Include/exclude archived repos.'),
+          .describe('Created date filter with ranges.'),
+        updated: z.string().optional().describe('Updated date filter.'),
+        archived: z.boolean().optional().describe('Filter by archived state.'),
         includeForks: z
           .enum(['false', 'true', 'only'])
           .optional()
-          .describe('Fork inclusion policy.'),
+          .describe('Include forks control.'),
         goodFirstIssues: z
           .string()
           .optional()
-          .describe('Good first issues count.'),
+          .describe('Filter by good first issues count.'),
         helpWantedIssues: z
           .string()
           .optional()
-          .describe('Help wanted issues count.'),
-        followers: z.number().optional().describe('Follower count filter.'),
-        size: z.string().optional().describe('Repository size in KB.'),
+          .describe('Filter by help wanted issues count.'),
+        followers: z.number().optional().describe('Filter by followers count.'),
+        size: z.string().optional().describe('Repository size filter in KB.'),
 
         // Sorting and limits
         sort: z
@@ -98,21 +96,21 @@ export function registerSearchGitHubReposTool(server: McpServer) {
             'best-match',
           ])
           .optional()
-          .default('stars')
-          .describe('Sort by stars for research quality.'),
+          .default('best-match')
+          .describe('Sort criteria (default: best-match)'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Sort order.'),
+          .describe('Result order (default: desc)'),
         limit: z
           .number()
           .int()
           .min(1)
           .max(50)
           .optional()
-          .default(15)
-          .describe('Max results. Default 15 for research focus.'),
+          .default(25)
+          .describe('Maximum results (default: 25, max: 50)'),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -124,7 +122,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     },
     async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
       try {
-        // Research-focused validation
+        // Updated validation logic for primary filters
         const hasPrimaryFilter =
           args.query?.trim() ||
           args.owner ||
@@ -135,7 +133,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         if (!hasPrimaryFilter) {
           return createResult(
-            'Provide query or filter (owner, language, stars, topic)',
+            'Requires query or primary filter (owner, language, stars, topic, forks)',
             true
           );
         }
@@ -146,7 +144,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult(
-          'Search failed - check connection or simplify query',
+          'Repository search failed - verify connection or simplify query',
           true
         );
       }
@@ -280,7 +278,7 @@ export async function searchGitHubRepos(
       });
     } catch (error) {
       return createErrorResult(
-        'Search failed - check connection or simplify query',
+        'Repository search failed - verify connection or simplify query',
         error
       );
     }
@@ -297,11 +295,10 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
   // Only add query if it exists and handle it properly
   if (query) {
-    // GitHub CLI supports multiple keywords as separate arguments (like "cli shell")
-    // Split multi-word queries into separate arguments to avoid over-quoting
+    // For repository search, treat multi-word queries as a single quoted string
+    // This matches GitHub CLI expected behavior for repo searches
     if (query.includes(' ')) {
-      const words = query.split(' ').filter(word => word.trim());
-      args.push(...words); // Spread individual words as separate arguments
+      args.push(query); // Let GitHub CLI handle the quoting
     } else {
       args.push(query);
     }
