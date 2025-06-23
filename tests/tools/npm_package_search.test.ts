@@ -72,7 +72,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/facebook/react' },
           },
         ]),
-        command: 'npm search react --searchlimit=15 --json',
+        command: 'npm search react --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -83,7 +83,7 @@ describe('NPM Package Search Tool', () => {
 
       const result = await toolHandler({
         queries: 'react',
-        searchlimit: 15,
+        searchlimit: 20,
       });
 
       expect(result.isError).toBe(false);
@@ -102,7 +102,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['react', '--searchlimit=15', '--json'],
+        ['react', '--searchlimit=20', '--json'],
         { cache: true }
       );
     });
@@ -118,7 +118,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/facebook/react' },
           },
         ]),
-        command: 'npm search react --searchlimit=15 --json',
+        command: 'npm search react --searchlimit=10 --json',
         type: 'npm',
       };
 
@@ -132,7 +132,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/vuejs/core' },
           },
         ]),
-        command: 'npm search vue --searchlimit=15 --json',
+        command: 'npm search vue --searchlimit=10 --json',
         type: 'npm',
       };
 
@@ -148,7 +148,7 @@ describe('NPM Package Search Tool', () => {
 
       const result = await toolHandler({
         queries: ['react', 'vue'],
-        searchlimit: 15,
+        searchlimit: 10,
       });
 
       expect(result.isError).toBe(false);
@@ -161,13 +161,13 @@ describe('NPM Package Search Tool', () => {
       expect(mockExecuteNpmCommand).toHaveBeenNthCalledWith(
         1,
         'search',
-        ['react', '--searchlimit=15', '--json'],
+        ['react', '--searchlimit=10', '--json'],
         { cache: true }
       );
       expect(mockExecuteNpmCommand).toHaveBeenNthCalledWith(
         2,
         'search',
-        ['vue', '--searchlimit=15', '--json'],
+        ['vue', '--searchlimit=10', '--json'],
         { cache: true }
       );
     });
@@ -187,7 +187,7 @@ describe('NPM Package Search Tool', () => {
             },
           ],
         }),
-        command: 'npm search lodash --searchlimit=15 --json',
+        command: 'npm search lodash --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -219,7 +219,7 @@ describe('NPM Package Search Tool', () => {
             },
           ],
         }),
-        command: 'npm search express --searchlimit=15 --json',
+        command: 'npm search express --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -243,7 +243,7 @@ describe('NPM Package Search Tool', () => {
     it('should use default search limit when not specified', async () => {
       const mockNpmResponse = {
         result: JSON.stringify([]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -258,7 +258,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['test', '--searchlimit=15', '--json'],
+        ['test', '--searchlimit=20', '--json'],
         { cache: true }
       );
     });
@@ -275,7 +275,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo' },
           },
         ]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -290,7 +290,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].description).toHaveLength(83); // 80 + '...'
+      expect(data.results[0].description).toHaveLength(103); // 100 + '...'
       expect(data.results[0].description).toContain('...');
     });
 
@@ -306,7 +306,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo' },
           },
         ]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -321,8 +321,8 @@ describe('NPM Package Search Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].keywords).toHaveLength(8);
-      expect(data.results[0].keywords).toEqual(manyKeywords.slice(0, 8));
+      expect(data.results[0].keywords).toHaveLength(10);
+      expect(data.results[0].keywords).toEqual(manyKeywords.slice(0, 10));
     });
 
     it('should handle packages with missing optional fields', async () => {
@@ -333,7 +333,7 @@ describe('NPM Package Search Tool', () => {
             // Missing version, description, keywords, repository
           },
         ]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -384,7 +384,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/facebook/react' },
           },
         ]),
-        command: 'npm search react --searchlimit=15 --json',
+        command: 'npm search react --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -405,7 +405,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/vuejs/core' },
           },
         ]),
-        command: 'npm search ui --searchlimit=15 --json',
+        command: 'npm search ui --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -464,7 +464,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search failed - check keywords or try alternatives'
+        'Package search failed'
       );
     });
 
@@ -485,7 +485,7 @@ describe('NPM Package Search Tool', () => {
     it('should handle empty search results', async () => {
       const mockNpmResponse = {
         result: JSON.stringify([]),
-        command: 'npm search nonexistent --searchlimit=15 --json',
+        command: 'npm search nonexistent --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -536,7 +536,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo' },
           },
         ]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -552,7 +552,7 @@ describe('NPM Package Search Tool', () => {
       expect(result.isError).toBe(false);
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['test', '--searchlimit=15', '--json'],
+        ['test', '--searchlimit=20', '--json'],
         { cache: true }
       );
     });
@@ -568,7 +568,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo1' },
           },
         ]),
-        command: 'npm search test1 --searchlimit=15 --json',
+        command: 'npm search test1 --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -582,7 +582,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo2' },
           },
         ]),
-        command: 'npm search test2 --searchlimit=15 --json',
+        command: 'npm search test2 --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -605,13 +605,13 @@ describe('NPM Package Search Tool', () => {
       expect(mockExecuteNpmCommand).toHaveBeenNthCalledWith(
         1,
         'search',
-        ['test1', '--searchlimit=15', '--json'],
+        ['test1', '--searchlimit=20', '--json'],
         { cache: true }
       );
       expect(mockExecuteNpmCommand).toHaveBeenNthCalledWith(
         2,
         'search',
-        ['test2', '--searchlimit=15', '--json'],
+        ['test2', '--searchlimit=20', '--json'],
         { cache: true }
       );
     });
@@ -709,7 +709,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo' },
           },
         ]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -738,7 +738,7 @@ describe('NPM Package Search Tool', () => {
             links: { repository: 'https://github.com/test/repo' },
           },
         ],
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -770,7 +770,7 @@ describe('NPM Package Search Tool', () => {
             },
           ],
         }),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -814,7 +814,7 @@ describe('NPM Package Search Tool', () => {
     it('should use caching for npm search commands', async () => {
       const mockNpmResponse = {
         result: JSON.stringify([]),
-        command: 'npm search test --searchlimit=15 --json',
+        command: 'npm search test --searchlimit=20 --json',
         type: 'npm',
       };
 
@@ -829,7 +829,7 @@ describe('NPM Package Search Tool', () => {
 
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['test', '--searchlimit=15', '--json'],
+        ['test', '--searchlimit=20', '--json'],
         { cache: true }
       );
     });
