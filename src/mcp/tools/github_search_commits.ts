@@ -28,20 +28,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
             'Search query with boolean logic. Boolean: "fix AND bug", exact phrases: "initial commit", advanced syntax: "author:john OR committer:jane".'
           ),
 
-        // Basic filters
-        owner: z
-          .string()
-          .optional()
-          .describe(
-            'Repository owner/organization. Leave empty for global search.'
-          ),
-        repo: z
-          .string()
-          .optional()
-          .describe(
-            'Repository name. Do exploratory search without repo filter first'
-          ),
-
         // Author filters
         author: z.string().optional().describe('Filter by commit author'),
         authorDate: z
@@ -82,7 +68,21 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           .optional()
           .describe('Filter by repository visibility'),
 
-        // Sorting and limits
+        // Repository filters
+        owner: z
+          .string()
+          .optional()
+          .describe(
+            'Repository owner/organization. Leave empty for global search.'
+          ),
+        repo: z
+          .string()
+          .optional()
+          .describe(
+            'Repository name. Do exploratory search without repo filter first'
+          ),
+
+        // Sorting and pagination
         sort: z
           .enum(['author-date', 'committer-date', 'best-match'])
           .optional()
@@ -95,7 +95,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           .describe('Order (default: desc)'),
         limit: z
           .number()
-          .int()
           .min(1)
           .max(50)
           .optional()

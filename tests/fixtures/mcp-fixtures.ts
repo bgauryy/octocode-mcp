@@ -32,6 +32,10 @@ export function createMockMcpServer(): MockMcpServer {
         toolHandlers.set(name, handler);
       }
     ),
+    // Add the registerTool method that the actual tools are calling
+    registerTool: vi.fn((name: string, options: any, handler: Function) => {
+      toolHandlers.set(name, handler);
+    }),
     // Add other server methods as needed
     addTool: vi.fn(),
     listTools: vi.fn(),
