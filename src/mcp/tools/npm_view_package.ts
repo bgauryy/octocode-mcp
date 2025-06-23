@@ -95,25 +95,26 @@ function transformToOptimizedFormat(
     ? simplifyExports(packageData.exports)
     : undefined;
 
-  // Limit versions to last 5 and convert dates
-  const allVersions = packageData.versions || [];
-  const recentVersions = allVersions.slice(0, 5).map((v: any) => ({
-    version: v.version,
-    date: toDDMMYYYY(v.releaseDate),
+  // Get version timestamps from time object and limit to last 5
+  const timeData = packageData.time || {};
+  const versionList = packageData.versions || [];
+  const recentVersions = versionList.slice(-5).map((version: string) => ({
+    version,
+    date: timeData[version] ? toDDMMYYYY(timeData[version]) : 'Unknown',
   }));
 
   const result: OptimizedNpmPackageResult = {
     name: packageData.name,
-    version: packageData.latest,
+    version: packageData.version,
     description: packageData.description || '',
     license: packageData.license || 'Unknown',
     repository,
-    size: humanizeBytes(packageData.size || 0),
-    created: toDDMMYYYY(packageData.timeCreated),
-    updated: toDDMMYYYY(packageData.timeModified),
+    size: humanizeBytes(packageData.dist?.unpackedSize || 0),
+    created: timeData.created ? toDDMMYYYY(timeData.created) : 'Unknown',
+    updated: timeData.modified ? toDDMMYYYY(timeData.modified) : 'Unknown',
     versions: recentVersions,
     stats: {
-      total_versions: packageData.versionStats?.total || allVersions.length,
+      total_versions: versionList.length,
       weekly_downloads: packageData.weeklyDownloads,
     },
   };

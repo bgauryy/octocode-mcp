@@ -8,7 +8,7 @@ import {
 import {
   createResult,
   simplifyRepoUrl,
-  toRelativeTime,
+  toDDMMYYYY,
   getCommitTitle,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -185,7 +185,7 @@ function transformCommitsToOptimizedFormat(
       sha: item.sha,
       message: getCommitTitle(item.commit?.message || ''),
       author: item.commit?.author?.name || item.author?.login || 'Unknown',
-      date: toRelativeTime(item.commit?.author?.date || ''),
+      date: toDDMMYYYY(item.commit?.author?.date || ''),
       repository: singleRepo
         ? undefined
         : simplifyRepoUrl(item.repository?.url || ''),
