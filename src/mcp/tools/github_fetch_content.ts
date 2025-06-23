@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult, parseJsonResponse } from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -54,40 +54,6 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
     async (args: GitHubFileContentParams): Promise<CallToolResult> => {
       try {
         const result = await fetchGitHubFileContent(args);
-
-        if (result.content && result.content[0] && !result.isError) {
-          const { data, parsed } = parseJsonResponse<{
-            content?: string;
-            size?: number;
-            encoding?: string;
-          }>(result.content[0].text as string);
-
-          if (parsed) {
-            return createResult({
-              data: {
-                file: `${args.owner}/${args.repo}/${args.filePath}`,
-                content: data.content || data,
-                metadata: {
-                  branch: args.branch,
-                  size: data.size,
-                  encoding: data.encoding,
-                },
-              },
-            });
-          } else {
-            // Return raw file content
-            return createResult({
-              data: {
-                file: `${args.owner}/${args.repo}/${args.filePath}`,
-                content: data,
-                metadata: {
-                  branch: args.branch,
-                },
-              },
-            });
-          }
-        }
-
         return result;
       } catch (error) {
         return createResult({

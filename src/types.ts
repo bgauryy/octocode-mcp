@@ -317,3 +317,51 @@ export interface NpmPackage {
     repository?: string;
   };
 }
+
+// GitHub API response types
+export interface GitHubApiFileItem {
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+  type: 'file' | 'dir';
+  url: string;
+  html_url: string;
+  git_url: string;
+  download_url: string | null;
+  _links: {
+    self: string;
+    git: string;
+    html: string;
+  };
+}
+
+// Simplified repository contents result - token efficient
+export interface SimplifiedRepositoryContents {
+  repository: string;
+  branch: string;
+  path: string;
+  githubBasePath: string;
+  files: {
+    count: number;
+    files: Array<{
+      name: string;
+      size: number;
+      url: string; // Relative path for fetching
+    }>;
+  };
+  folders: {
+    count: number;
+    folders: Array<{
+      name: string;
+      url: string; // Relative path for browsing
+    }>;
+  };
+  metadata?: {
+    branchFallback?: {
+      requested: string;
+      used: string;
+    };
+    truncated?: boolean;
+  };
+}

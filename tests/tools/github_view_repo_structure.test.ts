@@ -156,11 +156,9 @@ describe('GitHub View Repository Structure Tool', () => {
 
     it('should handle repository access errors', async () => {
       registerViewRepositoryStructureTool(mockServer.server);
-      
+
       // Mock a failed API call
-      mockExecuteGitHubCommand.mockRejectedValue(
-        new Error('Network error')
-      );
+      mockExecuteGitHubCommand.mockRejectedValue(new Error('Network error'));
 
       const result = await mockServer.callTool('github_get_contents', {
         owner: 'nonexistent',
@@ -170,7 +168,7 @@ describe('GitHub View Repository Structure Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Repository access failed');
+      expect(result.content[0].text).toContain('Access failed');
     });
   });
 });
