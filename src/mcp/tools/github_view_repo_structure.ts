@@ -16,7 +16,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_get_contents';
 
-const DESCRIPTION = `Explore repository structure for research navigation. Smart branch fallbacks and directory mapping. Essential first step for code analysis.`;
+const DESCRIPTION = `Browse repository structure and verify file existence. Smart branch detection with fallbacks. Use before fetching files to understand organization.`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(

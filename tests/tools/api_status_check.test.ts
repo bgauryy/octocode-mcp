@@ -11,7 +11,6 @@ const TOOL_NAMES = {
 } as const;
 
 interface ApiStatusResponse {
-  status: string;
   github: {
     connected: boolean;
     organizations: string[];
@@ -20,7 +19,6 @@ interface ApiStatusResponse {
     connected: boolean;
     registry: string;
   };
-  summary: string;
 }
 
 // Mock the exec utilities
@@ -56,18 +54,16 @@ describe('API Status Check Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the API status check tool', () => {
-      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
+      expect(mockServer.server.tool).toHaveBeenCalledWith(
         TOOL_NAMES.API_STATUS_CHECK,
+        expect.any(String),
+        {},
         expect.objectContaining({
-          description: expect.any(String),
-          inputSchema: expect.any(Object),
-          annotations: expect.objectContaining({
-            title: 'Check API Connections and Github Organizations',
-            readOnlyHint: true,
-            destructiveHint: false,
-            idempotentHint: true,
-            openWorldHint: false,
-          }),
+          title: 'Check API Connections and Github Organizations',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
         }),
         expect.any(Function)
       );
@@ -100,7 +96,6 @@ describe('API Status Check Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(data).toEqual({
-        status: 'PARTIAL',
         github: {
           connected: true,
           organizations: ['org1', 'org2', 'org3'],
@@ -109,7 +104,6 @@ describe('API Status Check Tool', () => {
           connected: false,
           registry: '',
         },
-        summary: expect.any(String)
       });
     });
 
@@ -279,7 +273,6 @@ describe('API Status Check Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(data).toEqual({
-        status: 'CONNECTED',
         github: {
           connected: true,
           organizations: ['myorg', 'mycompany'],
@@ -288,7 +281,6 @@ describe('API Status Check Tool', () => {
           connected: true,
           registry: 'https://npm.company.com/',
         },
-        summary: expect.any(String)
       });
     });
 
@@ -305,7 +297,6 @@ describe('API Status Check Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(data).toEqual({
-        status: 'DISCONNECTED',
         github: {
           connected: false,
           organizations: [],
@@ -314,7 +305,6 @@ describe('API Status Check Tool', () => {
           connected: false,
           registry: '',
         },
-        summary: expect.any(String)
       });
     });
   });
@@ -330,7 +320,9 @@ describe('API Status Check Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('API status check failed');
-      expect(result.content[0].text).toContain('Unexpected error during GitHub check');
+      expect(result.content[0].text).toContain(
+        'verify GitHub CLI and NPM are installed'
+      );
     });
 
     it('should handle malformed JSON responses', async () => {

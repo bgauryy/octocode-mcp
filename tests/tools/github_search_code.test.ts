@@ -78,10 +78,28 @@ describe('GitHub Search Code Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub search code tool', () => {
-      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
+      expect(mockServer.server.tool).toHaveBeenCalledWith(
         'github_search_code',
+        expect.stringContaining('Search code across GitHub repositories'),
         expect.objectContaining({
-          description: expect.stringContaining('Find code patterns across repositories'),
+          query: expect.any(Object),
+          owner: expect.any(Object),
+          repo: expect.any(Object),
+          language: expect.any(Object),
+          extension: expect.any(Object),
+          filename: expect.any(Object),
+          path: expect.any(Object),
+          size: expect.any(Object),
+          limit: expect.any(Object),
+          match: expect.any(Object),
+          visibility: expect.any(Object),
+        }),
+        expect.objectContaining({
+          title: 'github_search_code',
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
         }),
         expect.any(Function)
       );
@@ -125,7 +143,7 @@ describe('GitHub Search Code Tool', () => {
             text: JSON.stringify({
               result: JSON.stringify(mockResults),
               command:
-                'gh search code "useState hook" --limit=30 --json=repository,path,textMatches,sha,url',
+                'gh search code "useState OR hook" --limit=30 --json=repository,path,textMatches,sha,url',
             }),
           },
         ],
@@ -138,7 +156,7 @@ describe('GitHub Search Code Tool', () => {
       const data = parseResultJson<GitHubCodeSearchResponse>(result);
 
       expect(result.isError).toBe(false);
-      expect(data.processed_query).toBe('useState hook');
+      expect(data.processed_query).toBe('useState OR hook');
       expect(data.debug_info.has_complex_boolean_logic).toBe(false);
       expect(data.total_count).toBe(1);
       expect(data.items[0].path).toBe('src/hooks/useState.js');
@@ -408,12 +426,12 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Missing owner - use owner/repo format or provide both params');
+      expect(result.content[0].text).toContain('Missing owner parameter');
     });
 
     it('should handle GitHub CLI execution errors', async () => {
       mockExecuteGitHubCommand.mockRejectedValueOnce(
-        new Error('authentication failed')
+        new Error('GitHub CLI not authenticated')
       );
 
       const result = await mockServer.callTool('github_search_code', {
@@ -421,7 +439,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Authentication required - run api_status_check');
+      expect(result.content[0].text).toContain('api_status_check tool');
     });
 
     it('should return error for excessively long queries', async () => {
@@ -432,25 +450,25 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Query too long - limit to 500 characters for efficiency');
+      expect(result.content[0].text).toContain('Search query too long');
     });
 
     it('should return error for empty queries', async () => {
       const result = await mockServer.callTool('github_search_code', {
-        query: '',
+        query: '   ', // Empty/whitespace query
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Empty query - provide search terms like "useState" or "api AND endpoint"');
+      expect(result.content[0].text).toContain('Empty search query');
     });
 
     it('should return error for unmatched quotes', async () => {
       const result = await mockServer.callTool('github_search_code', {
-        query: 'function "unclosed quote',
+        query: 'useState "unmatched quote',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Unmatched quotes - pair all quotes properly');
+      expect(result.content[0].text).toContain('Unmatched quotes in query');
     });
 
     it('should return error for lowercase boolean operators', async () => {
@@ -460,9 +478,9 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Use uppercase: AND'
+        'Boolean operators must be uppercase'
       );
-      expect(result.content[0].text).toContain('Use uppercase: AND');
+      expect(result.content[0].text).toContain('use AND instead of and');
     });
 
     it('should return error for invalid size format', async () => {
@@ -477,11 +495,11 @@ describe('GitHub Search Code Tool', () => {
 
     it('should return error for invalid escape characters', async () => {
       const result = await mockServer.callTool('github_search_code', {
-        query: 'function\\(test\\)',
+        query: 'useState\\hook', // Invalid escape without quotes
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Code search failed - simplify query or add filters');
+      expect(result.content[0].text).toContain('Invalid escape characters');
     });
 
     it('should direct to api_status_check for authentication errors', async () => {
@@ -494,7 +512,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Authentication required - run api_status_check');
+      expect(result.content[0].text).toContain('api_status_check tool');
     });
 
     it('should direct to api_status_check for owner not found errors', async () => {
@@ -508,7 +526,7 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Repository not found - verify names and permissions');
+      expect(result.content[0].text).toContain('api_status_check tool');
     });
   });
 
@@ -613,7 +631,7 @@ describe('GitHub Search Code Tool', () => {
             text: JSON.stringify({
               result: JSON.stringify(mockResults),
               command:
-                'gh search code "useState hook" --language=typescript --extension=tsx --limit=30 --json=repository,path,textMatches,sha,url',
+                'gh search code "useState OR hook" --language=typescript --extension=tsx --limit=30 --json=repository,path,textMatches,sha,url',
             }),
           },
         ],
@@ -629,7 +647,7 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       // The processed_query shows the OR logic
-      expect(data.processed_query).toBe('useState hook');
+      expect(data.processed_query).toBe('useState OR hook');
       expect(data.debug_info.has_complex_boolean_logic).toBe(false);
       // For simple queries, both language and extension should be CLI flags
       expect(data.debug_info.escaped_args).toContain('--language=typescript');
@@ -775,7 +793,7 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       // Multiple quoted phrases get OR logic applied between them
-      expect(data.processed_query).toBe('"import React" "from react"');
+      expect(data.processed_query).toBe('"import React" OR "from react"');
     });
 
     it('should handle mixed boolean operators and exact phrases', async () => {

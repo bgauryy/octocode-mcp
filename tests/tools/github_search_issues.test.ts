@@ -20,16 +20,13 @@ vi.mock('../../src/utils/cache.js', () => ({
 // Import after mocking
 import { registerSearchGitHubIssuesTool } from '../../src/mcp/tools/github_search_issues.js';
 
-// Define tool name constant
-const GITHUB_SEARCH_ISSUES = 'github_search_issues';
-
 describe('GitHub Search Issues Tool', () => {
   let mockServer: McpServer;
 
   beforeEach(() => {
-    // Create a mock server with a registerTool method
+    // Create a mock server with a tool method
     mockServer = {
-      registerTool: vi.fn(),
+      tool: vi.fn(),
     } as any;
 
     // Clear all mocks
@@ -52,12 +49,51 @@ describe('GitHub Search Issues Tool', () => {
     it('should register the GitHub search issues tool with correct parameters', () => {
       registerSearchGitHubIssuesTool(mockServer);
 
-      expect(mockServer.registerTool).toHaveBeenCalledWith(
-        GITHUB_SEARCH_ISSUES,
+      expect(mockServer.tool).toHaveBeenCalledWith(
+        'github_search_issues',
+        expect.any(String),
         expect.objectContaining({
+          query: expect.any(Object),
+          owner: expect.any(Object),
+          repo: expect.any(Object),
+          app: expect.any(Object),
+          archived: expect.any(Object),
+          assignee: expect.any(Object),
+          author: expect.any(Object),
+          closed: expect.any(Object),
+          commenter: expect.any(Object),
+          comments: expect.any(Object),
+          created: expect.any(Object),
+          includePrs: expect.any(Object),
+          interactions: expect.any(Object),
+          involves: expect.any(Object),
+          labels: expect.any(Object),
+          language: expect.any(Object),
+          locked: expect.any(Object),
+          match: expect.any(Object),
+          mentions: expect.any(Object),
+          milestone: expect.any(Object),
+          noAssignee: expect.any(Object),
+          noLabel: expect.any(Object),
+          noMilestone: expect.any(Object),
+          noProject: expect.any(Object),
+          project: expect.any(Object),
+          reactions: expect.any(Object),
+          state: expect.any(Object),
+          teamMentions: expect.any(Object),
+          updated: expect.any(Object),
+          visibility: expect.any(Object),
+          sort: expect.any(Object),
+          order: expect.any(Object),
+          limit: expect.any(Object),
+        }),
+        expect.objectContaining({
+          title: 'github_search_issues',
           description: expect.any(String),
-          inputSchema: expect.any(Object),
-          annotations: expect.any(Object),
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
         }),
         expect.any(Function)
       );
@@ -69,7 +105,7 @@ describe('GitHub Search Issues Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
     });
 
     it('should perform basic issue search', async () => {
@@ -433,7 +469,7 @@ describe('GitHub Search Issues Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
     });
 
     it('should handle empty search results', async () => {
@@ -472,7 +508,7 @@ describe('GitHub Search Issues Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
     });
 
     it('should handle GitHub CLI execution errors', async () => {
@@ -505,7 +541,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'GitHub issue search failed'
+        'GitHub issues search failed'
       );
     });
 
@@ -519,7 +555,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'GitHub issue search failed'
+        'GitHub issues search failed'
       );
     });
 
@@ -543,7 +579,7 @@ describe('GitHub Search Issues Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
     });
 
     it('should reject empty query', async () => {
@@ -678,7 +714,7 @@ describe('GitHub Search Issues Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
     });
 
     it('should use cache for issue searches', async () => {
@@ -761,7 +797,7 @@ describe('GitHub Search Issues Tool', () => {
 
     beforeEach(() => {
       registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.registerTool as any).mock.calls[0][2];
+      toolHandler = (mockServer.tool as any).mock.calls[0][4];
     });
 
     it('should properly encode complex queries for API calls', async () => {
