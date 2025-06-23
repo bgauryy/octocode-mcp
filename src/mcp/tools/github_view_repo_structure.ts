@@ -4,10 +4,7 @@ import {
   GitHubRepositoryContentsResult,
   GitHubRepositoryStructureParams,
 } from '../../types';
-import {
-  createResult,
-  parseJsonResponse,
-} from '../../utils/responses';
+import { createResult, parseJsonResponse } from '../../utils/responses';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -102,7 +99,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
         return createResult({
-          error: `Repository exploration failed: ${errorMessage} - verify access and permissions`
+          error: `Repository exploration failed: ${errorMessage} - verify access and permissions`,
         });
       }
     }
@@ -254,7 +251,8 @@ export async function viewRepositoryStructure(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       return createResult({
-        error: 'Repository access failed - verify repository and authentication'
+        error:
+          'Repository access failed - verify repository and authentication',
       });
     }
   });

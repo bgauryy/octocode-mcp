@@ -164,11 +164,13 @@ export function registerApiStatusCheckTool(server: McpServer) {
 
         // Add actionable suggestions for failures
         if (!githubConnected) {
-          statusText += '\n\nGitHub Setup Required\nRun `gh auth login` to authenticate with GitHub CLI.\nThis enables repository searches and organization access.';
+          statusText +=
+            '\n\nGitHub Setup Required\nRun `gh auth login` to authenticate with GitHub CLI.\nThis enables repository searches and organization access.';
         }
 
         if (!npmConnected) {
-          statusText += '\n\nNPM Authentication Recommended\nRun `npm login` to access private packages and increase rate limits.\nPublic packages will still work without authentication.';
+          statusText +=
+            '\n\nNPM Authentication Recommended\nRun `npm login` to access private packages and increase rate limits.\nPublic packages will still work without authentication.';
         }
 
         // Add technical details if requested
@@ -179,7 +181,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
         return createResult({ data: statusText });
       } catch (error) {
         return createResult({
-          error: `API Status Check Failed\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`
+          error: `API Status Check Failed\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
         });
       }
     }

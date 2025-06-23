@@ -77,14 +77,15 @@ export function registerNpmSearchTool(server: McpServer) {
                 : args.queries,
               total: deduplicatedPackages.length,
               results: deduplicatedPackages,
-            }
+            },
           });
         }
 
         return createResult({ error: 'No packages found' });
       } catch (error) {
         return createResult({
-          error: 'Package search failed - check terms or try different keywords'
+          error:
+            'Package search failed - check terms or try different keywords',
         });
       }
     }

@@ -1,8 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import {
-  createResult,
-} from '../../utils/responses';
+import { createResult } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
@@ -37,14 +35,14 @@ export function registerNpmViewPackageTool(server: McpServer) {
       try {
         if (!args.packageName || args.packageName.trim() === '') {
           return createResult({
-            error: 'Package name required - provide valid NPM package name'
+            error: 'Package name required - provide valid NPM package name',
           });
         }
 
         // Basic package name validation
         if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
           return createResult({
-            error: 'Invalid package name format - use standard NPM naming'
+            error: 'Invalid package name format - use standard NPM naming',
           });
         }
 
@@ -52,7 +50,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult({
-          error: 'Failed to get package metadata - package may not exist'
+          error: 'Failed to get package metadata - package may not exist',
         });
       }
     }
@@ -126,7 +124,7 @@ export async function npmViewPackage(
       return createResult({ data: viewResult });
     } catch (error) {
       return createResult({
-        error: 'Failed to get package metadata - package may not exist'
+        error: 'Failed to get package metadata - package may not exist',
       });
     }
   });
