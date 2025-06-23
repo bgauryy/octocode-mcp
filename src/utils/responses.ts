@@ -42,18 +42,3 @@ export function parseJsonResponse<T = unknown>(
     return { data: (fallback || responseText) as T, parsed: false };
   }
 }
-
-/**
- * Determines if a string needs quoting for GitHub search
- */
-//TODO: move to util.ts
-export function needsQuoting(str: string): boolean {
-  return (
-    str.includes(' ') ||
-    str.includes('"') ||
-    str.includes('\t') ||
-    str.includes('\n') ||
-    str.includes('\r') ||
-    /[<>(){}[\]\\|&;]/.test(str)
-  );
-}

@@ -9,10 +9,60 @@ import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { safeQuote } from '../../utils/query';
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search repositories by name/description with powerful filtering. Use topics for discovery, stars for quality, owner for organization focus. Efficient alternative to manual GitHub browsing.`;
+const DESCRIPTION = `Search GitHub repositories with powerful filtering. For best results, use specific filters (topic, language, stars) rather than complex boolean queries. Simple OR logic works well, but prefer filter combinations for precise discovery.`;
+
+/**
+ * Extract owner/repo information from various query formats
+ */
+function extractOwnerRepoFromQuery(query: string): {
+  extractedOwner?: string;
+  extractedRepo?: string;
+  cleanedQuery: string;
+} {
+  let cleanedQuery = query;
+  let extractedOwner: string | undefined;
+  let extractedRepo: string | undefined;
+
+  // Pattern 1: GitHub URLs (https://github.com/owner/repo)
+  const githubUrlMatch = query.match(/github\.com\/([^\\s]+)\/([^\\s]+)/i);
+  if (githubUrlMatch) {
+    extractedOwner = githubUrlMatch[1];
+    extractedRepo = githubUrlMatch[2];
+    cleanedQuery = query
+      .replace(/https?:\/\/github\.com\/[^\\s]+\/[^\\s]+/gi, '')
+      .trim();
+  }
+
+  // Pattern 2: owner/repo format in query
+  const ownerRepoMatch = query.match(
+    /\b([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])\b/
+  );
+  if (ownerRepoMatch && !extractedOwner) {
+    extractedOwner = ownerRepoMatch[1];
+    extractedRepo = ownerRepoMatch[2];
+    cleanedQuery = query.replace(ownerRepoMatch[0], '').trim();
+  }
+
+  // Pattern 3: NPM package-like references (@scope/package)
+  const scopedPackageMatch = query.match(
+    /@([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])/
+  );
+  if (scopedPackageMatch && !extractedOwner) {
+    extractedOwner = scopedPackageMatch[1];
+    extractedRepo = scopedPackageMatch[2];
+    cleanedQuery = query.replace(scopedPackageMatch[0], '').trim();
+  }
+
+  return {
+    extractedOwner,
+    extractedRepo,
+    cleanedQuery: cleanedQuery || query,
+  };
+}
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
@@ -24,69 +74,139 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with GitHub syntax. Optional - can search with primary filters alone.'
+            'Search query with GitHub syntax. Simple terms work best. Can include owner/repo patterns like "microsoft/vscode" or GitHub URLs. For complex searches, prefer using dedicated filter parameters (topic, language, stars) instead of boolean operators for better results.'
           ),
 
-        // PRIMARY FILTERS (can work alone)
+        // CORE FILTERS (GitHub CLI flags)
         owner: z
-          .string()
+          .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Repository owner/organization for targeted search.'),
+          .describe(
+            'Repository owner/organization. Use for targeted org search. Can be array for multiple owners.'
+          ),
         language: z
           .string()
           .optional()
-          .describe('Programming language filter.'),
+          .describe(
+            'Programming language filter. Highly effective for discovery.'
+          ),
         stars: z
-          .string()
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid stars format. Use: number, ">100", ">=50", "<200", "<=100", or "10..100"'
+              ),
+          ])
           .optional()
           .describe(
-            'Stars filter with ranges: ">100", "<50", "10..100". Use >100 for quality.'
+            'Stars filter. Number (100) or range (">100", "<50", "10..100", ">=5"). Use >100 for quality projects.'
           ),
         topic: z
-          .array(z.string())
+          .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Filter by topics for semantic discovery.'),
-        forks: z.number().optional().describe('Exact forks count.'),
+          .describe(
+            'Topics filter. Single topic or array for semantic discovery. Note: Topics not available in JSON output but filtering works.'
+          ),
+        forks: z.number().optional().describe('Filter on number of forks.'),
+
+        // UPDATED: Match CLI parameter name exactly
         numberOfTopics: z
           .number()
           .optional()
-          .describe('Filter by number of topics.'),
+          .describe(
+            'Filter on number of topics (indicates well-documented projects).'
+          ),
 
-        // SECONDARY FILTERS
+        // QUALITY & STATE FILTERS
         license: z
-          .array(z.string())
+          .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('License types filter.'),
-        match: z
-          .enum(['name', 'description', 'readme'])
+          .describe(
+            'Filter based on license type (mit, apache-2.0, bsd-3-clause). Can be array.'
+          ),
+        archived: z
+          .boolean()
           .optional()
-          .describe('Search scope restriction.'),
-        visibility: z
-          .enum(['public', 'private', 'internal'])
-          .optional()
-          .describe('Repository visibility filter.'),
-        created: z
-          .string()
-          .optional()
-          .describe('Created date filter with ranges.'),
-        updated: z.string().optional().describe('Updated date filter.'),
-        archived: z.boolean().optional().describe('Filter by archived state.'),
+          .describe(
+            'Filter based on the repository archived state (true/false).'
+          ),
         includeForks: z
           .enum(['false', 'true', 'only'])
           .optional()
-          .describe('Include forks control.'),
-        goodFirstIssues: z
-          .string()
+          .describe(
+            'Include forks in fetched repositories: false (exclude), true (include), only (forks only).'
+          ),
+        visibility: z
+          .enum(['public', 'private', 'internal'])
           .optional()
-          .describe('Filter by good first issues count.'),
-        helpWantedIssues: z
-          .string()
-          .optional()
-          .describe('Filter by help wanted issues count.'),
-        followers: z.number().optional().describe('Filter by followers count.'),
-        size: z.string().optional().describe('Repository size filter in KB.'),
+          .describe(
+            'Filter based on visibility: public, private, or internal.'
+          ),
 
-        // Sorting and limits
+        // DATE & SIZE FILTERS
+        created: z
+          .string()
+          .optional()
+          .describe(
+            'Filter based on created at date. Use format: ">2020-01-01", "<2023-12-31".'
+          ),
+        updated: z
+          .string()
+          .optional()
+          .describe('Filter on last updated at date. Use for active projects.'),
+        size: z
+          .string()
+          .optional()
+          .describe(
+            'Filter on a size range, in kilobytes. Use format: ">1000", "<500".'
+          ),
+
+        // COMMUNITY FILTERS - Match CLI parameter names exactly
+        goodFirstIssues: z
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: number, ">5", ">=10", "<20", "<=15", or "5..20"'
+              ),
+          ])
+          .optional()
+          .describe(
+            'Filter on number of issues with the "good first issue" label. Great for contributors.'
+          ),
+        helpWantedIssues: z
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: number, ">5", ">=10", "<20", "<=15", or "5..20"'
+              ),
+          ])
+          .optional()
+          .describe(
+            'Filter on number of issues with the "help wanted" label. Find projects needing help.'
+          ),
+        followers: z
+          .number()
+          .optional()
+          .describe('Filter based on number of followers.'),
+
+        // SEARCH SCOPE
+        match: z
+          .enum(['name', 'description', 'readme'])
+          .optional()
+          .describe(
+            'Restrict search to specific field of repository: name, description, or readme.'
+          ),
+
+        // SORTING & LIMITS - Match CLI defaults exactly
         sort: z
           .enum([
             'forks',
@@ -97,20 +217,24 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .default('best-match')
-          .describe('Sort criteria (default: best-match)'),
+          .describe(
+            'Sort fetched repositories: forks, help-wanted-issues, stars, updated, best-match.'
+          ),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Result order (default: desc)'),
+          .describe(
+            'Order of repositories returned, ignored unless "sort" flag is specified: asc or desc.'
+          ),
         limit: z
           .number()
           .int()
           .min(1)
-          .max(50)
+          .max(100)
           .optional()
-          .default(25)
-          .describe('Maximum results (default: 25, max: 50)'),
+          .default(30)
+          .describe('Maximum number of repositories to fetch (default 30).'),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -120,26 +244,78 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
+    async (args): Promise<CallToolResult> => {
       try {
-        // Updated validation logic for primary filters
+        // Extract owner/repo from query if present
+        const queryInfo = args.query
+          ? extractOwnerRepoFromQuery(args.query)
+          : {
+              cleanedQuery: '',
+              extractedOwner: undefined,
+              extractedRepo: undefined,
+            };
+
+        // Merge extracted owner with explicit owner parameter
+        let finalOwner = args.owner;
+        if (queryInfo.extractedOwner && !finalOwner) {
+          finalOwner = queryInfo.extractedOwner;
+        }
+
+        // Update parameters with extracted information
+        const enhancedArgs = {
+          ...args,
+          query: queryInfo.cleanedQuery || args.query,
+          owner: finalOwner,
+        };
+
+        // Enhanced validation logic for primary filters
         const hasPrimaryFilter =
-          args.query?.trim() ||
-          args.owner ||
-          args.language ||
-          args.topic ||
-          args.stars ||
-          args.forks;
+          enhancedArgs.query?.trim() ||
+          enhancedArgs.owner ||
+          enhancedArgs.language ||
+          enhancedArgs.topic ||
+          enhancedArgs.stars ||
+          enhancedArgs.forks;
 
         if (!hasPrimaryFilter) {
           return createResult(
-            'Requires query or primary filter (owner, language, stars, topic, forks)',
+            'Requires query or primary filter (owner, language, stars, topic, forks). You can also use owner/repo format like "microsoft/vscode" in the query.',
             true
           );
         }
 
-        // Search repositories using GitHub CLI
-        const result = await searchGitHubRepos(args);
+        // First attempt: Search with current parameters
+        const result = await searchGitHubRepos(enhancedArgs);
+
+        // Fallback for private repositories: If no results and owner is specified, try with private visibility
+        if (!result.isError) {
+          const resultData = JSON.parse(result.content[0].text as string);
+          if (
+            resultData.total === 0 &&
+            enhancedArgs.owner &&
+            !enhancedArgs.visibility
+          ) {
+            // Try searching with private visibility for organization repos
+            const privateSearchArgs = {
+              ...enhancedArgs,
+              visibility: 'private' as const,
+            };
+
+            const privateResult = await searchGitHubRepos(privateSearchArgs);
+            if (!privateResult.isError) {
+              const privateData = JSON.parse(
+                privateResult.content[0].text as string
+              );
+              if (privateData.total > 0) {
+                // Return private results with note
+                return createSuccessResult({
+                  ...privateData,
+                  note: 'Found results in private repositories within the specified organization.',
+                });
+              }
+            }
+          }
+        }
 
         return result;
       } catch (error) {
@@ -295,13 +471,8 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
   // Only add query if it exists and handle it properly
   if (query) {
-    // For repository search, treat multi-word queries as a single quoted string
-    // This matches GitHub CLI expected behavior for repo searches
-    if (query.includes(' ')) {
-      args.push(query); // Let GitHub CLI handle the quoting
-    } else {
-      args.push(query);
-    }
+    // Use comprehensive quoting logic for better shell safety
+    args.push(safeQuote(query));
   }
 
   // Add JSON output with specific fields for structured data parsing
@@ -311,53 +482,76 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
     'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
   );
 
-  // PRIMARY FILTERS - Handle owner as single string (BaseSearchParams) or array
+  // CORE FILTERS - Handle arrays properly
   if (params.owner) {
-    const ownerValue = Array.isArray(params.owner)
-      ? params.owner.join(',')
-      : params.owner;
-    args.push(`--owner=${ownerValue}`);
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(owner => args.push(`--owner=${owner}`));
   }
   if (params.language) args.push(`--language=${params.language}`);
   if (params.forks !== undefined) args.push(`--forks=${params.forks}`);
-  if (params.topic && params.topic.length > 0)
-    args.push(`--topic=${params.topic.join(',')}`);
+
+  // Handle topic as string or array
+  if (params.topic) {
+    const topics = Array.isArray(params.topic) ? params.topic : [params.topic];
+    args.push(`--topic=${topics.join(',')}`);
+  }
   if (params.numberOfTopics !== undefined)
     args.push(`--number-topics=${params.numberOfTopics}`);
 
-  // Only add stars filter if it's a valid numeric value or range
-  if (
-    params.stars !== undefined &&
-    params.stars !== '*' &&
-    params.stars.trim() !== ''
-  ) {
-    // Validate that stars parameter contains valid numeric patterns
-    const starsValue = params.stars.trim();
-    const isValidStars = /^(\d+|>\d+|<\d+|\d+\.\.\d+|>=\d+|<=\d+)$/.test(
-      starsValue
-    );
-    if (isValidStars) {
-      // Don't add quotes around the stars value - GitHub CLI handles this internally
+  // Handle stars as number or string
+  if (params.stars !== undefined) {
+    const starsValue =
+      typeof params.stars === 'number'
+        ? params.stars.toString()
+        : params.stars.trim();
+
+    // Validate numeric patterns for string values
+    if (
+      typeof params.stars === 'number' ||
+      /^(\d+|>\d+|<\d+|\d+\.\.\d+|>=\d+|<=\d+)$/.test(starsValue)
+    ) {
       args.push(`--stars=${starsValue}`);
     }
   }
 
-  // SECONDARY FILTERS - only add if we have primary filters
+  // QUALITY & STATE FILTERS
   if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
-  if (params.created) args.push(`--created=${params.created}`);
   if (params.includeForks) args.push(`--include-forks=${params.includeForks}`);
-  if (params.license && params.license.length > 0)
-    args.push(`--license=${params.license.join(',')}`);
-  if (params.match) args.push(`--match=${params.match}`);
-  if (params.updated) args.push(`--updated=${params.updated}`);
   if (params.visibility) args.push(`--visibility=${params.visibility}`);
-  if (params.goodFirstIssues)
-    args.push(`--good-first-issues=${params.goodFirstIssues}`);
-  if (params.helpWantedIssues)
-    args.push(`--help-wanted-issues=${params.helpWantedIssues}`);
+
+  // Handle license as string or array
+  if (params.license) {
+    const licenses = Array.isArray(params.license)
+      ? params.license
+      : [params.license];
+    args.push(`--license=${licenses.join(',')}`);
+  }
+
+  // DATE & SIZE FILTERS
+  if (params.created) args.push(`--created=${params.created}`);
+  if (params.updated) args.push(`--updated=${params.updated}`);
+  if (params.size) args.push(`--size=${params.size}`);
+
+  // COMMUNITY FILTERS - handle both number and string
+  if (params.goodFirstIssues) {
+    const value =
+      typeof params.goodFirstIssues === 'number'
+        ? params.goodFirstIssues.toString()
+        : params.goodFirstIssues;
+    args.push(`--good-first-issues=${value}`);
+  }
+  if (params.helpWantedIssues) {
+    const value =
+      typeof params.helpWantedIssues === 'number'
+        ? params.helpWantedIssues.toString()
+        : params.helpWantedIssues;
+    args.push(`--help-wanted-issues=${value}`);
+  }
   if (params.followers !== undefined)
     args.push(`--followers=${params.followers}`);
-  if (params.size) args.push(`--size=${params.size}`);
+
+  // SEARCH SCOPE
+  if (params.match) args.push(`--match=${params.match}`);
 
   // SORTING AND LIMITS
   if (params.limit) args.push(`--limit=${params.limit}`);

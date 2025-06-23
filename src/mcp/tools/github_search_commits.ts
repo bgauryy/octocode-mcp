@@ -5,8 +5,8 @@ import {
   createResult,
   createSuccessResult,
   createErrorResult,
-  needsQuoting,
 } from '../../utils/responses';
+import { needsQuoting } from '../../utils/query';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';

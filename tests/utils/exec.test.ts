@@ -78,7 +78,7 @@ describe('Exec Utilities', () => {
           'npm view test-package',
           expect.objectContaining({
             timeout: 30000,
-            shell: '/bin/sh',
+            shell: process.env.SHELL || process.env.SHELL ,
           }),
           expect.any(Function)
         );
@@ -255,7 +255,7 @@ describe('Exec Utilities', () => {
           expect.objectContaining({
             env: expect.objectContaining({
               CUSTOM_VAR: 'value',
-              SHELL: '/bin/sh',
+              SHELL: process.env.SHELL || process.env.SHELL ,
             }),
           }),
           expect.any(Function)
@@ -320,7 +320,7 @@ describe('Exec Utilities', () => {
           'gh search repos react',
           expect.objectContaining({
             timeout: 60000,
-            shell: '/bin/sh',
+            shell: process.env.SHELL || process.env.SHELL ,
           }),
           expect.any(Function)
         );
@@ -703,9 +703,9 @@ describe('Exec Utilities', () => {
         expect(mockExec).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            shell: '/bin/sh',
+            shell: process.env.SHELL || process.env.SHELL ,
             env: expect.objectContaining({
-              SHELL: '/bin/sh',
+              SHELL: process.env.SHELL || process.env.SHELL ,
             }),
           }),
           expect.any(Function)
@@ -722,9 +722,9 @@ describe('Exec Utilities', () => {
         expect(mockExec).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            shell: '/bin/sh',
+            shell: process.env.SHELL || process.env.SHELL ,
             env: expect.objectContaining({
-              SHELL: '/bin/sh',
+              SHELL: process.env.SHELL || process.env.SHELL ,
             }),
           }),
           expect.any(Function)
@@ -767,7 +767,7 @@ describe('Exec Utilities', () => {
           expect.objectContaining({
             env: expect.objectContaining({
               CUSTOM_VAR: 'safe_value',
-              SHELL: '/bin/sh',
+              SHELL: process.env.SHELL || process.env.SHELL ,
               PATH: process.env.PATH, // Original PATH should be preserved
             }),
           }),
@@ -1052,7 +1052,7 @@ describe('Exec Utilities', () => {
         expect.any(String),
         expect.objectContaining({
           timeout: 30000, // Default NPM timeout
-          shell: '/bin/sh',
+          shell: process.env.SHELL || process.env.SHELL ,
         }),
         expect.any(Function)
       );
@@ -1276,17 +1276,23 @@ describe('Exec Utilities', () => {
         expect(result.isError).toBe(false);
         // Verify all dangerous patterns are quoted in the command string
         const actualCommand = mockExec.mock.calls[0][0];
-        expect(actualCommand).toContain("'test; Remove-Item -Path C:\\ -Recurse'");
+        expect(actualCommand).toContain(
+          "'test; Remove-Item -Path C:\\ -Recurse'"
+        );
         expect(actualCommand).toContain("'test & Remove-Item C:\\*'");
-        expect(actualCommand).toContain("'test | Get-Content C:\\Windows\\System32\\config\\sam'");
+        expect(actualCommand).toContain(
+          "'test | Get-Content C:\\Windows\\System32\\config\\sam'"
+        );
         expect(actualCommand).toContain("'test > C:\\malicious.ps1'");
         expect(actualCommand).toContain("'test $(Remove-Item C:\\)'");
         expect(actualCommand).toContain("'test `Remove-Item C:\\`'");
         expect(actualCommand).toContain("'test $env:TEMP\\malicious'");
-        expect(actualCommand).toContain("'test @(\"evil\", \"command\")'");
+        expect(actualCommand).toContain('\'test @("evil", "command")\'');
         expect(actualCommand).toContain("'test {Remove-Item C:\\}'");
         expect(actualCommand).toContain("'test (Get-Process)'");
-        expect(actualCommand).toContain("'test [System.IO.File]::Delete(\"C:\\\")'");
+        expect(actualCommand).toContain(
+          '\'test [System.IO.File]::Delete("C:\\")\''
+        );
       });
 
       it('should work with GitHub CLI commands in PowerShell', async () => {
@@ -1349,9 +1355,9 @@ describe('Exec Utilities', () => {
         expect(mockExec).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            shell: '/bin/sh',
+            shell: process.env.SHELL || process.env.SHELL ,
             env: expect.objectContaining({
-              SHELL: '/bin/sh',
+              SHELL: process.env.SHELL || process.env.SHELL ,
             }),
           }),
           expect.any(Function)
@@ -1359,7 +1365,7 @@ describe('Exec Utilities', () => {
 
         const data = JSON.parse(result.content[0].text as string);
         expect(data.platform).toBe('darwin');
-        expect(data.shell).toBe('/bin/sh');
+        expect(data.shell).toBe(process.env.SHELL );
         expect(data.shellType).toBe('unix');
       });
 
@@ -1376,7 +1382,7 @@ describe('Exec Utilities', () => {
         expect(mockExec).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            shell: '/bin/sh', // Should still use /bin/sh
+            shell: process.env.SHELL || process.env.SHELL , // Should still use /bin/sh
           }),
           expect.any(Function)
         );
@@ -1514,13 +1520,13 @@ describe('Exec Utilities', () => {
           {
             platform: 'darwin',
             windowsShell: undefined,
-            expectedShell: '/bin/sh',
+            expectedShell: process.env.SHELL ,
             expectedType: 'unix',
           },
           {
             platform: 'linux',
             windowsShell: 'powershell' as const, // Should be ignored
-            expectedShell: '/bin/sh',
+            expectedShell: process.env.SHELL ,
             expectedType: 'unix',
           },
         ];

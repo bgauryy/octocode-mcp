@@ -61,15 +61,17 @@ function isValidGhCommand(command: string): command is GhCommand {
 }
 
 /**
- * Get platform-specific shell configuration with PowerShell support
+ * Get platform-specific shell configuration with improved shell detection
  */
 function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
   const isWindows = platform() === 'win32';
 
   if (!isWindows) {
+    // Use user's actual shell instead of hardcoded /bin/sh to avoid alias/function conflicts
+    const userShell = process.env.SHELL || '/bin/sh';
     return {
-      shell: '/bin/sh',
-      shellEnv: '/bin/sh',
+      shell: userShell,
+      shellEnv: userShell,
       type: 'unix',
     };
   }
@@ -93,12 +95,12 @@ function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
 }
 
 /**
- * Escape shell arguments to prevent shell injection and handle special characters
- * Cross-platform compatible escaping for Windows CMD, PowerShell, and Unix shells
+ * Escape shell arguments with improved GitHub CLI boolean query handling
  */
 function escapeShellArg(
   arg: string,
-  shellType?: 'cmd' | 'powershell' | 'unix'
+  shellType?: 'cmd' | 'powershell' | 'unix',
+  isGitHubQuery?: boolean
 ): string {
   // Auto-detect shell type if not provided
   if (!shellType) {
@@ -113,7 +115,7 @@ function escapeShellArg(
       return escapeWindowsCmdArg(arg);
     case 'unix':
     default:
-      return escapeUnixShellArg(arg);
+      return escapeUnixShellArg(arg, isGitHubQuery);
   }
 }
 
@@ -143,10 +145,16 @@ function escapeWindowsCmdArg(arg: string): string {
 }
 
 /**
- * Escape arguments for Unix shells (/bin/sh, bash, etc.)
+ * Escape arguments for Unix shells with special handling for GitHub CLI queries
  */
-function escapeUnixShellArg(arg: string): string {
-  // Unix shell escaping
+function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
+  // Special handling for GitHub CLI search queries to preserve boolean logic
+  if (isGitHubQuery && /\b(AND|OR|NOT)\b/.test(arg)) {
+    // Use double quotes for GitHub CLI boolean queries to preserve operators
+    return `"${arg.replace(/"/g, '\\"')}"`;
+  }
+
+  // Standard Unix shell escaping for other arguments
   if (/[^\w\-._/:=@]/.test(arg)) {
     return `'${arg.replace(/'/g, "'\"'\"'")}'`;
   }
@@ -193,8 +201,7 @@ export async function executeNpmCommand(
 }
 
 /**
- * Execute GitHub CLI commands safely by validating against allowed commands
- * Security: Only executes commands that start with "gh {ALLOWED_COMMAND}"
+ * Execute GitHub CLI commands safely with improved boolean query handling
  */
 export async function executeGitHubCommand(
   command: GhCommand,
@@ -213,7 +220,13 @@ export async function executeGitHubCommand(
   const shellConfig = getShellConfig(options.windowsShell);
 
   // Build command with validated prefix and properly escaped arguments
-  const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
+  // First argument is typically the search query for GitHub CLI search commands
+  const escapedArgs = args.map((arg, index) => {
+    const isFirstArg = index === 0;
+    const isSearchQuery = command === 'search' && isFirstArg;
+    return escapeShellArg(arg, shellConfig.type, isSearchQuery);
+  });
+
   const fullCommand = `gh ${command} ${escapedArgs.join(' ')}`;
 
   const executeGhCommand = () =>
@@ -232,8 +245,7 @@ export async function executeGitHubCommand(
 }
 
 /**
- * Execute shell commands with timeout and error handling
- * Security: Should only be called with pre-validated command prefixes
+ * Execute shell commands with improved environment handling and error detection
  */
 async function executeCommand(
   fullCommand: string,
@@ -252,17 +264,23 @@ async function executeCommand(
       env: {
         ...process.env,
         ...options.env,
-        // Ensure clean shell environment - cross-platform compatible
+        // Clean environment to avoid shell alias/function conflicts
         SHELL: config.shellEnv,
         PATH: process.env.PATH,
+        // Ensure clean shell execution
+        ...(config.type === 'unix' && {
+          // Disable shell aliases and functions that might interfere
+          ENV: '',
+          BASH_ENV: '',
+        }),
       },
       encoding: 'utf-8' as const,
-      shell: config.shell, // Use platform-appropriate shell
+      shell: config.shell,
     };
 
     const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
 
-    // Handle different warning patterns for npm vs gh
+    // Improved error detection with better shell environment error handling
     const shouldTreatAsError =
       type === 'npm'
         ? stderr && !stderr.includes('npm WARN')
@@ -270,6 +288,8 @@ async function executeCommand(
           !stderr.includes('Warning:') &&
           !stderr.includes('notice:') &&
           !stderr.includes('No such file or directory') && // Ignore shell-related errors
+          !stderr.includes('head: |:') && // Ignore shell alias errors
+          !stderr.includes('head: cat:') && // Ignore shell alias errors
           stderr.trim() !== '';
 
     if (shouldTreatAsError) {

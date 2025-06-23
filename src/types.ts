@@ -104,20 +104,20 @@ export interface GitHubReposSearchParams
   // PRIMARY FILTERS (work alone)
   language?: string;
   forks?: number;
-  stars?: string;
-  topic?: string[];
+  stars?: string | number; // Support both string ranges and numbers
+  topic?: string | string[]; // Support both single and array
   numberOfTopics?: number;
 
   // SECONDARY FILTERS (require query or primary filter)
   archived?: boolean;
   created?: string;
   includeForks?: 'false' | 'true' | 'only';
-  license?: string[];
+  license?: string | string[]; // Support both single and array
   match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
-  goodFirstIssues?: string; // Format: ">=10", ">5", etc.
-  helpWantedIssues?: string; // Format: ">=5", ">10", etc.
+  goodFirstIssues?: string | number; // Support both string ranges and numbers
+  helpWantedIssues?: string | number; // Support both string ranges and numbers
   followers?: number;
   size?: string; // Format: ">100", "<50", "10..100"
 

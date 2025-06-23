@@ -272,7 +272,7 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
     if (value) queryParts.push(`${key}:${value}`);
   });
 
-  // Special qualifiers
+  // Special qualifiers - only quote when necessary for GitHub search syntax
   if (params.labels) queryParts.push(`label:"${params.labels}"`);
   if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
   if (params.noAssignee) queryParts.push('no:assignee');

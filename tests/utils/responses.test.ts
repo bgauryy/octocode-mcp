@@ -4,8 +4,8 @@ import {
   createSuccessResult,
   createErrorResult,
   parseJsonResponse,
-  needsQuoting,
 } from '../../src/utils/responses.js';
+import { needsQuoting } from '../../src/utils/query.js';
 
 describe('Response Utilities', () => {
   describe('createResult', () => {

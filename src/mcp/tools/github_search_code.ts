@@ -12,7 +12,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories with strategic boolean operators and filters. Use OR for broad discovery, AND for precision, exact phrases for specific matches.`;
+const DESCRIPTION = `Search code across GitHub repositories using GitHub's legacy code search engine. Boolean logic has limitations: simple OR queries work well, complex NOT operations may fail. For best results, use specific filters (language, owner, filename) rather than complex boolean queries.`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -24,8 +24,10 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search query with boolean operators. OR (default): "useState hook" → broad discovery. AND: "react AND hooks" → precise. Quotes: "exact phrase" → specific. Combine with filters for laser focus.'
+            'Search query (required). Simple terms and basic OR logic work best. Complex boolean (NOT, nested operations) may fail due to legacy search engine. Use filters for precision: language:python, owner:microsoft, filename:package.json'
           ),
+
+        // REPOSITORY FILTERS (GitHub CLI flags)
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
@@ -36,52 +38,54 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Specific repositories. Format: "owner/repo". Requires owner parameter.'
+            'Specific repositories in "owner/repo" format. Can be array for multiple repos.'
           ),
+
+        // FILE TYPE FILTERS (GitHub CLI flags)
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Highly effective for targeted searches.'
+            'Programming language filter (javascript, python, typescript). Highly effective for targeted searches.'
           ),
         extension: z
           .string()
           .optional()
-          .describe('File extension without dot. Precise file type targeting.'),
+          .describe(
+            'File extension without dot (js, py, ts). Precise file type targeting.'
+          ),
         filename: z
           .string()
           .optional()
-          .describe('Exact filename. Perfect for config files.'),
-        path: z
-          .string()
-          .optional()
           .describe(
-            'Directory path filter. Focus search on specific directories.'
+            'Exact filename filter (package.json, Dockerfile). Perfect for config files.'
           ),
         size: z
           .string()
           .optional()
           .describe(
-            'File size filter with operators (e.g., ">100", "<50", "10..100").'
+            'File size filter with operators (">100", "<50", "10..100"). Size in kilobytes.'
           ),
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(50)
-          .optional()
-          .default(30)
-          .describe('Maximum results (1-50, default: 30).'),
+
+        // SEARCH SCOPE (GitHub CLI flags)
         match: z
           .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
           .optional()
           .describe(
-            'Search scope: "file" for code content, "path" for filenames.'
+            'Search scope: "file" for code content, "path" for filenames, or both.'
           ),
-        visibility: z
-          .enum(['public', 'private', 'internal'])
+
+        // PAGINATION
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
           .optional()
-          .describe('Repository visibility filter.'),
+          .default(30)
+          .describe(
+            'Maximum results (1-100, default: 30). Note: GitHub CLI default is 30.'
+          ),
       },
       annotations: {
         title: 'GitHub Code Search',
@@ -111,18 +115,26 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         // GitHub CLI returns a direct array, not an object with total_count and items
         const items = Array.isArray(codeResults) ? codeResults : [];
 
-        return createSuccessResult({
+        const hasComplex = hasComplexBooleanLogic(args.query);
+        const responseData = {
           query: args.query,
-          processed_query: parseSearchQuery(args.query, args),
+          processed_query: parseSearchQuery(args.query),
           total_count: items.length,
           items: items,
           cli_command: execResult.command,
           debug_info: {
-            has_complex_boolean_logic: hasComplexBooleanLogic(args.query),
+            has_complex_boolean_logic: hasComplex,
             escaped_args: buildGitHubCliArgs(args),
             original_query: args.query,
+            ...(items.length === 0 &&
+              hasComplex && {
+                suggestion:
+                  'Zero results with complex boolean query. Try: 1) Simpler OR logic, 2) Use filters instead (language, owner, filename), 3) Single search terms',
+              }),
           },
-        });
+        };
+
+        return createSuccessResult(responseData);
       } catch (error) {
         const errorMessage = (error as Error).message || '';
 
@@ -135,7 +147,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         }
 
         return createErrorResult(
-          'GitHub code search failed - verify parameters and try with simpler query or specific filters (language, owner, path)',
+          'GitHub code search failed. Try: 1) Simpler queries without NOT operators, 2) Use filters (language, owner, filename) instead of complex boolean, 3) Check authentication with api_status_check',
           error as Error
         );
       }
@@ -146,7 +158,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 /**
  * Enhanced query parser that handles exact strings, boolean operators, and filters
  */
-function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
+function parseSearchQuery(query: string) {
   // Step 1: Handle quoted strings more intelligently
   // Convert escaped quotes to simple quotes to avoid shell escaping issues
   let processedQuery = query.replace(/\\"/g, '"');
@@ -165,54 +177,23 @@ function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
   // Step 3: Check complexity BEFORE adding auto-OR logic
   const originalHasComplexLogic = hasComplexBooleanLogic(processedQuery);
 
-  // Step 4: Smart boolean logic - default to OR between terms if no explicit operators
+  // Step 4: Smart boolean logic - REMOVED auto-OR logic to preserve exact phrase matching
+  // This was causing issues where "error handling" became "error OR handling"
+  // GitHub search is smart enough to handle multi-word queries properly
   let searchQuery = processedQuery;
 
-  // Check if query already has explicit boolean operators
-  if (!originalHasComplexLogic) {
-    // Split by whitespace and join with OR for better search results
-    const terms = processedQuery
-      .trim()
-      .split(/\s+/)
-      .filter(term => term.length > 0);
-    if (terms.length > 1) {
-      searchQuery = terms.join(' OR ');
-    }
-  }
-
-  // Step 5: Handle filters differently based on ORIGINAL query complexity
+  // Step 5: Handle filters - ALL filters should use CLI flags for better reliability
+  // Adding filters to query string causes parsing issues and conflicts
   const githubFilters: string[] = [];
 
-  // Always add path and visibility to query string (they don't have CLI equivalents)
-  if (filters.path) {
-    githubFilters.push(`path:${filters.path}`);
-  }
-
-  if (filters.visibility) {
-    githubFilters.push(`visibility:${filters.visibility}`);
-  }
-
-  // For complex boolean queries, add ALL filters to query string to avoid CLI conflicts
+  // Only add specific filters to query string if absolutely necessary
+  // For most cases, CLI flags provide better validation and performance
   if (originalHasComplexLogic) {
-    if (filters.language) {
-      githubFilters.push(`language:${filters.language}`);
-    }
-
-    // For complex queries with both language and extension, prioritize language
-    if (filters.extension && !filters.language) {
-      githubFilters.push(`extension:${filters.extension}`);
-    }
-
-    if (filters.filename) {
-      githubFilters.push(`filename:${filters.filename}`);
-    }
-
-    if (filters.size) {
-      githubFilters.push(`size:${filters.size}`);
-    }
+    // For complex boolean queries, we still prefer CLI flags over query string filters
+    // This avoids parsing issues and provides better error messages
   }
 
-  // Step 6: Combine query with GitHub filters using proper spacing
+  // Step 6: Combine query with GitHub filters (currently empty for better CLI compatibility)
   if (githubFilters.length > 0) {
     searchQuery = `${searchQuery} ${githubFilters.join(' ')}`;
   }
@@ -241,31 +222,25 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   const args = ['code'];
 
   // Parse and add the main search query
-  const searchQuery = parseSearchQuery(params.query, params);
+  const searchQuery = parseSearchQuery(params.query);
   args.push(searchQuery);
 
-  // Determine strategy based on ORIGINAL query complexity, not processed query
-  const hasComplexLogic = hasComplexBooleanLogic(params.query);
-
-  // For simple queries, use CLI flags for better performance and validation
-  if (!hasComplexLogic) {
-    if (params.language) {
-      args.push(`--language=${params.language}`);
-    }
-
-    if (params.extension) {
-      args.push(`--extension=${params.extension}`);
-    }
-
-    if (params.filename) {
-      args.push(`--filename=${params.filename}`);
-    }
-
-    if (params.size) {
-      args.push(`--size=${params.size}`);
-    }
+  // Always use CLI flags for all parameters for better reliability and validation
+  if (params.language) {
+    args.push(`--language=${params.language}`);
   }
-  // For complex queries, filters are already in the query string (handled by parseSearchQuery)
+
+  if (params.extension) {
+    args.push(`--extension=${params.extension}`);
+  }
+
+  if (params.filename) {
+    args.push(`--filename=${params.filename}`);
+  }
+
+  if (params.size) {
+    args.push(`--size=${params.size}`);
+  }
 
   // Always add limit
   if (params.limit) {
@@ -351,7 +326,7 @@ export async function searchGitHubCode(
         errorMessage.includes('Invalid query')
       ) {
         return createErrorResult(
-          'Invalid query syntax - check operators, quotes, and filters',
+          'Invalid query syntax. GitHub legacy search has limitations: avoid complex NOT logic, use simple OR patterns, prefer filters over complex boolean. Try: "react OR vue" instead of complex nested queries',
           error as Error
         );
       }
@@ -390,7 +365,7 @@ function validateSearchParameters(
 ): string | null {
   // Query validation
   if (!params.query.trim()) {
-    return 'Empty query - provide search terms like "useState" or "api AND endpoint"';
+    return 'Empty query - provide search terms like "useState", "react OR vue", or use filters (language, owner, filename)';
   }
 
   if (params.query.length > 1000) {
