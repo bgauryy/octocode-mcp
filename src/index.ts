@@ -6,7 +6,7 @@ import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
 import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
+import { registerGitHubSearchCommitsTool } from './mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import { registerNpmSearchTool } from './mcp/tools/npm_package_search.js';
 import { registerViewRepositoryStructureTool } from './mcp/tools/github_view_repo_structure.js';
@@ -29,7 +29,7 @@ function registerAllTools(server: McpServer) {
       fn: registerFetchGitHubFileContentTool,
     },
     { name: 'SearchGitHubRepos', fn: registerSearchGitHubReposTool },
-    { name: 'SearchGitHubCommits', fn: registerSearchGitHubCommitsTool },
+    { name: 'SearchGitHubCommits', fn: registerGitHubSearchCommitsTool },
     {
       name: 'SearchGitHubPullRequests',
       fn: registerSearchGitHubPullRequestsTool,

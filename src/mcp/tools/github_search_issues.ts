@@ -5,7 +5,7 @@ import {
   GitHubIssuesSearchResult,
   GitHubIssueItem,
 } from '../../types';
-import { createResult } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
@@ -217,8 +217,8 @@ async function searchGitHubIssues(
         repository:
           issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
         labels: issue.labels?.map(l => l.name) || [],
-        created_at: issue.created_at,
-        updated_at: issue.updated_at,
+        created_at: toDDMMYYYY(issue.created_at),
+        updated_at: toDDMMYYYY(issue.updated_at),
         url: issue.html_url,
         comments: issue.comments,
         reactions: issue.reactions?.total_count || 0,

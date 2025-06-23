@@ -78,7 +78,7 @@ describe('NPM View Package Tool', () => {
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'view',
         ['react', '--json'],
-        { cache: true }
+        { cache: false }
       );
     });
 
@@ -106,7 +106,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Package name required');
+      expect(result.content[0].text).toContain('NPM package lookup failed');
     });
   });
 }); 

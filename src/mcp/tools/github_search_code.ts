@@ -1,7 +1,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { GitHubCodeSearchParams } from '../../types';
-import { createResult } from '../../utils/responses';
+import {
+  GitHubCodeSearchParams,
+  GitHubCodeSearchItem,
+  OptimizedCodeSearchResult,
+} from '../../types';
+import {
+  createResult,
+  simplifyRepoUrl,
+  simplifyGitHubUrl,
+  optimizeTextMatch,
+} from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
@@ -106,31 +115,21 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults = JSON.parse(execResult.result);
+        const codeResults: GitHubCodeSearchItem[] = JSON.parse(
+          execResult.result
+        );
 
         // GitHub CLI returns a direct array, not an object with total_count and items
         const items = Array.isArray(codeResults) ? codeResults : [];
 
-        const hasComplex = hasComplexBooleanLogic(args.query);
-        const responseData = {
-          query: args.query,
-          processed_query: parseSearchQuery(args.query),
-          total_count: items.length,
-          items: items,
-          cli_command: execResult.command,
-          debug_info: {
-            has_complex_boolean_logic: hasComplex,
-            escaped_args: buildGitHubCliArgs(args),
-            original_query: args.query,
-            ...(items.length === 0 &&
-              hasComplex && {
-                suggestion:
-                  'Zero results with complex boolean query. Try: 1) Simpler OR logic, 2) Use filters instead (language, owner, filename), 3) Single search terms',
-              }),
-          },
-        };
+        // Transform to optimized format
+        const optimizedResult = transformToOptimizedFormat(
+          items,
+          args,
+          execResult.command
+        );
 
-        return createResult({ data: responseData });
+        return createResult({ data: optimizedResult });
       } catch (error) {
         const errorMessage = (error as Error).message || '';
 
@@ -153,6 +152,80 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       }
     }
   );
+}
+
+/**
+ * Transform GitHub CLI response to optimized format
+ */
+function transformToOptimizedFormat(
+  items: GitHubCodeSearchItem[],
+  params: GitHubCodeSearchParams,
+  cliCommand: string
+): OptimizedCodeSearchResult {
+  const hasComplexBoolean = hasComplexBooleanLogic(params.query);
+
+  // Extract repository info if single repo search
+  const singleRepo = extractSingleRepository(items);
+
+  const optimizedItems = items.map(item => ({
+    path: item.path,
+    matches: item.textMatches.map(match => ({
+      context: optimizeTextMatch(match.fragment, 80),
+      positions: match.matches.map(m => m.indices as [number, number]),
+    })),
+    url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
+  }));
+
+  const result: OptimizedCodeSearchResult = {
+    query: params.query,
+    total_count: items.length,
+    items: optimizedItems,
+  };
+
+  // Add repository info if single repo
+  if (singleRepo) {
+    result.repository = {
+      name: singleRepo.nameWithOwner,
+      url: simplifyRepoUrl(singleRepo.url),
+    };
+  }
+
+  // Add metadata only if needed
+  if (hasComplexBoolean || items.length === 0) {
+    result.metadata = {
+      has_filters: !!(
+        params.language ||
+        params.owner ||
+        params.filename ||
+        params.extension
+      ),
+      search_scope: params.match
+        ? Array.isArray(params.match)
+          ? params.match.join(',')
+          : params.match
+        : 'file',
+    };
+
+    if (items.length === 0 && hasComplexBoolean) {
+      result.metadata.cli_command = cliCommand;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Extract single repository if all results are from same repo
+ */
+function extractSingleRepository(items: GitHubCodeSearchItem[]) {
+  if (items.length === 0) return null;
+
+  const firstRepo = items[0].repository;
+  const allSameRepo = items.every(
+    item => item.repository.nameWithOwner === firstRepo.nameWithOwner
+  );
+
+  return allSameRepo ? firstRepo : null;
 }
 
 /**
@@ -266,21 +339,30 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   }
 
   // Handle repository filters with improved validation
-  if (params.owner && params.repo) {
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+  if (params.repo) {
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
 
-    // Create repo filters for each owner/repo combination
-    owners.forEach(owner => {
-      repos.forEach(repo => {
-        // Handle both "owner/repo" format and just "repo" format
-        if (repo.includes('/')) {
-          args.push(`--repo=${repo}`);
-        } else {
-          args.push(`--repo=${owner}/${repo}`);
-        }
+    if (params.owner) {
+      const owners = Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner];
+      // Create repo filters for each owner/repo combination
+      owners.forEach(owner => {
+        repos.forEach(repo => {
+          // Handle both "owner/repo" format and just "repo" format
+          if (repo.includes('/')) {
+            args.push(`--repo=${repo}`);
+          } else {
+            args.push(`--repo=${owner}/${repo}`);
+          }
+        });
       });
-    });
+    } else {
+      // Handle repo without owner (must be in owner/repo format)
+      repos.forEach(repo => {
+        args.push(`--repo=${repo}`);
+      });
+    }
   }
 
   // JSON output with all available fields
@@ -369,9 +451,13 @@ function validateSearchParameters(
     return 'Query too long - limit to 1000 characters';
   }
 
-  // Repository validation
+  // Repository validation - allow owner/repo format in repo field
   if (params.repo && !params.owner) {
-    return 'Missing owner - format as owner/repo or provide both parameters';
+    const repoValues = Array.isArray(params.repo) ? params.repo : [params.repo];
+    const hasOwnerFormat = repoValues.every(repo => repo.includes('/'));
+    if (!hasOwnerFormat) {
+      return 'Missing owner - format as owner/repo or provide both parameters';
+    }
   }
 
   // Invalid characters in query

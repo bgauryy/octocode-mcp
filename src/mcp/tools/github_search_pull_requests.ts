@@ -5,7 +5,7 @@ import {
   GitHubPullRequestsSearchResult,
   GitHubPullRequestItem,
 } from '../../types';
-import { createResult } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
@@ -173,8 +173,8 @@ async function searchGitHubPullRequests(
           repository:
             pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
           labels: pr.labels?.map(l => l.name) || [],
-          created_at: pr.created_at,
-          updated_at: pr.updated_at,
+          created_at: toDDMMYYYY(pr.created_at),
+          updated_at: toDDMMYYYY(pr.updated_at),
           url: pr.html_url,
           comments: pr.comments,
           reactions: pr.reactions?.total_count || 0,
@@ -183,7 +183,7 @@ async function searchGitHubPullRequests(
 
         // Only include optional fields if they have values
         if (pr.merged_at) result.merged_at = pr.merged_at;
-        if (pr.closed_at) result.closed_at = pr.closed_at;
+        if (pr.closed_at) result.closed_at = toDDMMYYYY(pr.closed_at);
         if (pr.head?.ref) result.head = pr.head.ref;
         if (pr.base?.ref) result.base = pr.base.ref;
 

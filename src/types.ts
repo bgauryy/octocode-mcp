@@ -46,7 +46,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   org?: string;
 }
 
-export interface GitHubCommitsSearchParams
+export interface GitHubCommitSearchParams
   extends Omit<BaseSearchParams, 'query'>,
     OrderSort {
   query?: string; // Make query optional
@@ -364,4 +364,150 @@ export interface SimplifiedRepositoryContents {
     };
     truncated?: boolean;
   };
+}
+
+// Optimized GitHub Search Code Types
+export interface GitHubCodeSearchMatch {
+  text: string;
+  indices: [number, number];
+}
+
+export interface GitHubCodeTextMatch {
+  fragment: string;
+  matches: GitHubCodeSearchMatch[];
+}
+
+export interface GitHubCodeSearchItem {
+  path: string;
+  repository: {
+    id: string;
+    nameWithOwner: string;
+    url: string;
+    isFork: boolean;
+    isPrivate: boolean;
+  };
+  sha: string;
+  textMatches: GitHubCodeTextMatch[];
+  url: string;
+}
+
+// Optimized response structure for code search
+export interface OptimizedCodeSearchResult {
+  query: string;
+  total_count: number;
+  items: Array<{
+    path: string;
+    matches: Array<{
+      context: string; // Simplified from fragment
+      positions: Array<[number, number]>; // Just indices
+    }>;
+    url: string; // Relative path only
+  }>;
+  repository?: {
+    name: string; // owner/repo format
+    url: string; // Shortened
+  };
+  metadata?: {
+    cli_command?: string;
+    has_filters: boolean;
+    search_scope: string;
+  };
+}
+
+// GitHub Search Commits Types
+export interface GitHubCommitAuthor {
+  name: string;
+  email: string;
+  date: string;
+  login?: string;
+}
+
+export interface GitHubCommitRepository {
+  name: string;
+  fullName: string;
+  url: string;
+  description?: string;
+}
+
+export interface GitHubCommitSearchItem {
+  sha: string;
+  commit?: {
+    message: string;
+    author: {
+      name: string;
+      email: string;
+      date: string;
+    };
+    committer: {
+      name: string;
+      email: string;
+      date: string;
+    };
+  };
+  author?: {
+    login: string;
+    id: string;
+    type: string;
+    url: string;
+  };
+  committer?: {
+    login: string;
+    id: string;
+    type: string;
+    url: string;
+  };
+  repository: {
+    name: string;
+    fullName: string;
+    url: string;
+    description?: string;
+  };
+  url: string;
+  parents?: Array<{
+    sha: string;
+    url: string;
+  }>;
+}
+
+// Optimized commit search response
+export interface OptimizedCommitSearchResult {
+  query: string;
+  total_count: number;
+  commits: Array<{
+    sha: string; // Full SHA hash
+    message: string; // First line only
+    author: string; // Just name
+    date: string; // Relative time
+    repository?: string; // owner/repo (only for multi-repo)
+    url: string; // SHA or repo@SHA
+  }>;
+  repository?: {
+    name: string;
+    description?: string;
+  };
+  metadata?: {
+    timeframe: string;
+    unique_authors: number;
+  };
+}
+
+// NPM Package Types - Optimized
+export interface OptimizedNpmPackageResult {
+  name: string;
+  version: string;
+  description: string;
+  license: string;
+  repository: string;
+  size: string;
+  created: string;
+  updated: string;
+  versions: Array<{
+    version: string;
+    date: string;
+  }>;
+  stats: {
+    total_versions: number;
+    weekly_downloads?: number;
+  };
+  exports?: { main: string; types?: string; [key: string]: any };
 }

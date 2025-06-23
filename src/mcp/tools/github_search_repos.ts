@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../../utils/responses';
 import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -427,8 +427,8 @@ export async function searchGitHubRepos(
           license: repo.license?.name || null,
           hasIssues: repo.hasIssues || false,
           openIssuesCount: repo.openIssuesCount || 0,
-          createdAt: repo.createdAt,
-          updatedAt: repo.updatedAt,
+          createdAt: toDDMMYYYY(repo.createdAt),
+          updatedAt: toDDMMYYYY(repo.updatedAt),
           visibility: repo.visibility || 'public',
           owner: repo.owner?.login || repo.owner,
         }));

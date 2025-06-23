@@ -20,7 +20,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 }));
 
 // Import after mocking
-import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
+import { registerGitHubSearchCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
 
 describe('GitHub Search Commits Tool', () => {
   let mockServer: MockMcpServer;
@@ -44,7 +44,7 @@ describe('GitHub Search Commits Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub search commits tool', () => {
-      registerSearchGitHubCommitsTool(mockServer.server);
+      registerGitHubSearchCommitsTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'github_search_commits',
@@ -56,7 +56,7 @@ describe('GitHub Search Commits Tool', () => {
 
   describe('Basic Functionality', () => {
     it('should handle successful commit search', async () => {
-      registerSearchGitHubCommitsTool(mockServer.server);
+      registerGitHubSearchCommitsTool(mockServer.server);
 
       const mockGitHubResponse = {
         result: JSON.stringify({
@@ -95,15 +95,14 @@ describe('GitHub Search Commits Tool', () => {
         [
           'commits',
           'fix',
-          '--json',
-          'author,commit,committer,id,parents,repository,sha,url',
+          '--json=sha,commit,author,committer,repository,url,parents',
         ],
         { cache: false }
       );
     });
 
     it('should handle no results found', async () => {
-      registerSearchGitHubCommitsTool(mockServer.server);
+      registerGitHubSearchCommitsTool(mockServer.server);
 
       const mockGitHubResponse = {
         result: JSON.stringify({
@@ -129,7 +128,7 @@ describe('GitHub Search Commits Tool', () => {
     });
 
     it('should handle search errors', async () => {
-      registerSearchGitHubCommitsTool(mockServer.server);
+      registerGitHubSearchCommitsTool(mockServer.server);
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: true,
