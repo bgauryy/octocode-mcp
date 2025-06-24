@@ -29,11 +29,24 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search GitHub repositories with advanced filtering. PROVEN PATTERNS: topic arrays ["react", "typescript"], owner arrays ["microsoft", "google"], stars ranges "1000..5000". 
+const DESCRIPTION = `Search GitHub repositories with powerful GitHub search syntax and advanced filtering.
 
-WORKS: OR queries alone, multiple owners/topics, good-first-issues filter
-LIMITATIONS: OR queries + filters are restrictive, complex combinations may yield 0 results
-TIP: Use limit parameter instead of adding more filters for broader results.`;
+EMBEDDED QUALIFIERS (MOST POWERFUL):
+- "vue OR react stars:>1000 language:javascript" - OR logic with constraints
+- "typescript AND framework stars:100..5000" - AND logic with star range  
+- "repo:facebook/react OR repo:vuejs/vue" - Multiple specific repositories
+- "org:microsoft OR org:google language:typescript" - Multiple organizations
+- "topic:react topic:typescript stars:>500" - Multiple topics with quality filter
+
+TRADITIONAL FILTERS (ALSO SUPPORTED):
+- owner: ["microsoft", "google"] - Multiple owners as array
+- topic: ["react", "typescript"] - Multiple topics as array
+- stars: "1000..5000" - Range or threshold filtering
+
+BEST PRACTICES:
+- Use embedded qualifiers for complex queries with OR/AND logic
+- Use traditional filters for simple, clean parameter-based searches
+- Combine both approaches: "vue OR react" + language:"javascript" + stars:">1000"`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -94,7 +107,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query. PROVEN: single terms ("react"), simple OR queries ("tensorflow OR pytorch"). AVOID: OR + additional filters (very restrictive). TIP: Use topic arrays for multiple topics instead.'
+            'Search query with GitHub search syntax. POWERFUL EXAMPLES: "vue OR react stars:>1000", "typescript AND framework stars:100..5000", "repo:facebook/react OR repo:vuejs/vue", "org:microsoft language:typescript", "topic:react topic:typescript stars:>500". SUPPORTS: OR/AND logic, embedded qualifiers (stars:, language:, org:, repo:, topic:, etc.), exact repository targeting. COMBINES with traditional filters for maximum flexibility.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -481,9 +494,18 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   const query = params.query?.trim() || '';
   const args = ['repos'];
 
-  // Only add query if it exists and handle it properly
+  // Detect embedded qualifiers in query to avoid conflicts and optimize
+  const hasEmbeddedQualifiers =
+    query &&
+    /\b(stars|language|org|repo|topic|user|created|updated|size|license|archived|fork|good-first-issues|help-wanted-issues):/i.test(
+      query
+    );
+
+  // Handle exact string search - preserve quotes and special characters
   if (query) {
-    // Pass query without pre-quoting - let exec.ts handle proper escaping for GitHub CLI
+    // For exact repository name searches (quoted strings), preserve the quotes
+    // For special characters, pass them through - GitHub CLI handles escaping
+    // Support searches like "microsoft/vscode", "@types/node", etc.
     args.push(query);
   }
 
@@ -493,25 +515,30 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
     '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
   );
 
+  // SMART FILTER HANDLING - Avoid conflicts with embedded qualifiers
+  // Only add CLI flags if not already specified in query to prevent conflicts
+
   // CORE FILTERS - Handle arrays properly
-  if (params.owner) {
+  if (params.owner && !hasEmbeddedQualifiers) {
     // GitHub CLI supports multiple owners with comma separation: --owner=owner1,owner2
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     args.push(`--owner=${owners.join(',')}`);
   }
-  if (params.language) args.push(`--language=${params.language}`);
-  if (params.forks !== undefined) args.push(`--forks=${params.forks}`);
+  if (params.language && !hasEmbeddedQualifiers)
+    args.push(`--language=${params.language}`);
+  if (params.forks !== undefined && !hasEmbeddedQualifiers)
+    args.push(`--forks=${params.forks}`);
 
   // Handle topic as string or array - GitHub CLI expects comma-separated topics
-  if (params.topic) {
+  if (params.topic && !hasEmbeddedQualifiers) {
     const topics = Array.isArray(params.topic) ? params.topic : [params.topic];
     args.push(`--topic=${topics.join(',')}`);
   }
   if (params.numberOfTopics !== undefined)
     args.push(`--number-topics=${params.numberOfTopics}`);
 
-  // Handle stars as number or string
-  if (params.stars !== undefined) {
+  // Handle stars as number or string - avoid conflicts with embedded qualifiers
+  if (params.stars !== undefined && !hasEmbeddedQualifiers) {
     const starsValue =
       typeof params.stars === 'number'
         ? params.stars.toString()

@@ -243,7 +243,7 @@ describe('GitHub Search Code Tool', () => {
       expect(data.metadata.search_efficiency.score).toBeLessThan(7);
       expect(data.metadata.performance_tips).toBeDefined();
       expect(data.metadata.performance_tips).toContain(
-        '🚀 Add language filter - single biggest performance boost'
+        'Add language filter - single biggest performance boost'
       );
     });
 

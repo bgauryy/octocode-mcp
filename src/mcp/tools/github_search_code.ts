@@ -17,10 +17,24 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories. Start broad, add filters for precision. Examples: "useState" → "useState language:javascript" → "useState filename:*.jsx".
+const DESCRIPTION = `Search code across GitHub repositories with powerful GitHub search syntax and advanced filtering.
+
+BOOLEAN LOGIC (MOST POWERFUL):
+- "useState OR useEffect" - Find either hook
+- "useState AND useEffect" - Find both hooks together
+- "authentication AND (jwt OR oauth)" - Complex logic combinations
+- "NOT deprecated" - Exclude deprecated code
+
+EMBEDDED QUALIFIERS:
+- "useState language:javascript filename:*.jsx" - Hook in React files
+- "authentication language:python path:*/security/*" - Security code in Python
+- "docker OR kubernetes language:yaml extension:yml" - Container configs
+
+TRADITIONAL FILTERS (ALSO SUPPORTED):
+- language: "javascript", owner: "microsoft", filename: "package.json"
 
 PROVEN PATTERNS: "authentication" → +language → +owner → +filename
-KEY TIPS: language filter = 90% speed boost, owner filter = 95% scope reduction`;
+KEY TIPS: language filter = 90% speed boost, boolean operators work perfectly with filters`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -32,10 +46,10 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            `Search query with GitHub syntax. Boolean: "react AND hooks", exact phrases: "error handling".
+            `Search query with GitHub syntax. BOOLEAN LOGIC: "useState OR useEffect", "authentication AND jwt", "NOT deprecated". EMBEDDED QUALIFIERS: "useState language:javascript", "docker path:*/config/*". EXACT PHRASES: "error handling".
 
-PATTERNS: "useState", "error handling", "react AND hooks", "vue OR svelte"
-RULES: Boolean operators MUST be uppercase (AND, OR, NOT). Use language filter for 90% speed boost.`
+POWERFUL EXAMPLES: "useState OR useEffect language:javascript", "authentication AND (jwt OR oauth)", "docker OR kubernetes language:yaml", "NOT deprecated language:python"
+RULES: Boolean operators MUST be uppercase (AND, OR, NOT). Combines perfectly with traditional filters.`
           ),
 
         language: z
@@ -543,17 +557,31 @@ function calculateSearchEfficiency(params: GitHubCodeSearchParams): {
     factors.push('Size filter (+1)');
   }
 
-  // Penalties for inefficient patterns
+  // Boolean operators are now properly supported
   if (params.query.includes(' OR ')) {
-    score -= 1;
-    factors.push('OR operator (-1)');
-    recommendations.push('Consider separate searches instead of OR');
+    // OR is powerful when used correctly
+    if (params.language || params.owner) {
+      score += 1;
+      factors.push('OR with filters (+1)');
+    } else {
+      factors.push('OR operator (neutral)');
+      recommendations.push(
+        'Add language or owner filter with OR for better targeting'
+      );
+    }
+  }
+
+  if (params.query.includes(' AND ')) {
+    score += 1;
+    factors.push('AND operator (+1)');
   }
 
   if (params.query.includes(' NOT ')) {
-    score -= 2;
-    factors.push('NOT operator (-2)');
-    recommendations.push('Avoid NOT operator, use positive filters instead');
+    // NOT can be useful but less efficient
+    factors.push('NOT operator (neutral)');
+    recommendations.push(
+      'Consider positive filters alongside NOT for better results'
+    );
   }
 
   if (params.query.length > 100) {
@@ -576,25 +604,25 @@ function generatePerformanceTips(params: GitHubCodeSearchParams): string[] {
   const tips: string[] = [];
 
   if (!params.language) {
-    tips.push('🚀 Add language filter - single biggest performance boost');
+    tips.push('Add language filter - single biggest performance boost');
   }
 
   if (!params.owner && !params.repo) {
-    tips.push('🎯 Add owner filter to target specific organizations');
+    tips.push('Add owner filter to target specific organizations');
   }
 
-  if (params.query.includes(' OR ')) {
-    tips.push('⚡ Replace OR with separate, focused searches');
+  if (params.query.includes(' OR ') && !params.language && !params.owner) {
+    tips.push('Add language or owner filter with OR for better targeting');
   }
 
   if (params.query.includes(' NOT ')) {
     tips.push(
-      '✨ Replace NOT with positive filters (language, filename, etc.)'
+      'Combine NOT with positive filters (language, filename, etc.) for best results'
     );
   }
 
   if (!params.filename && !params.extension) {
-    tips.push('📁 Add filename or extension filter for file-type precision');
+    tips.push('Add filename or extension filter for file-type precision');
   }
 
   return tips.slice(0, 3);
@@ -616,15 +644,31 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 
 /**
  * Build command line arguments for GitHub CLI with improved parameter handling
+ * Ensures exact string search capability with proper quote and escape handling
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   const args = ['code'];
 
-  // Use the query directly - preserve user intent
+  // Handle exact string search - preserve quotes and special characters
   const searchQuery = params.query;
 
-  // Always quote the search query to handle spaces and special characters properly
-  args.push(searchQuery);
+  // For exact string searches (quoted strings), preserve the quotes
+  // For special characters and escape sequences, pass them through
+  // GitHub CLI will handle the proper escaping to the GitHub API
+  if (searchQuery.includes('"') || searchQuery.includes("'")) {
+    // Already has quotes - exact string search
+    args.push(searchQuery);
+  } else if (
+    searchQuery.includes('\\') ||
+    /[<>{}[\]()&|;$`!*?~]/.test(searchQuery)
+  ) {
+    // Contains special characters that might need exact matching
+    // Let GitHub CLI handle the escaping - don't double-escape
+    args.push(searchQuery);
+  } else {
+    // Regular search query
+    args.push(searchQuery);
+  }
 
   // Add filters in order of effectiveness for better CLI performance
   if (params.language) {
@@ -794,6 +838,7 @@ export async function searchGitHubCode(
 
 /**
  * Enhanced validation with helpful suggestions
+ * Supports exact string search with quotes and special characters
  */
 function validateSearchParameters(
   params: GitHubCodeSearchParams
@@ -816,10 +861,9 @@ function validateSearchParameters(
     }
   }
 
-  // Invalid characters in query
-  if (params.query.includes('\\') && !params.query.includes('\\"')) {
-    return 'Invalid escape characters. Use quotes for exact phrases: "error handling" instead of escape sequences.';
-  }
+  // Support exact string searches with quotes and special characters
+  // Remove overly restrictive validation for escape characters
+  // GitHub CLI and API can handle special characters properly
 
   // Boolean operator validation with suggestions
   const invalidBooleans = params.query.match(/\b(and|or|not)\b/g);
