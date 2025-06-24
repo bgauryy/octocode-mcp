@@ -1,3 +1,8 @@
+- fetch code - partial / full
+- check all tools
+- concosed
+- smaller responses (metadata!)
+
 ## 🔥 Critical (Production Stability)
 
 ### Rate Limiting Management

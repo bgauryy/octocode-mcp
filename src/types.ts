@@ -407,11 +407,27 @@ export interface OptimizedCodeSearchResult {
     name: string; // owner/repo format
     url: string; // Shortened
   };
+  smart_suggestions?: {
+    message: string;
+    suggestions: string[];
+    fallback_queries: Array<{
+      query: string;
+      description: string;
+      rationale: string;
+    }>;
+    next_steps: string[];
+  };
   metadata?: {
     cli_command?: string;
     has_filters: boolean;
     search_scope: string;
     transformed_query?: string; // Shows the actual query sent to GitHub after OR transformation
+    search_efficiency?: {
+      score: number;
+      factors: string[];
+      recommendations: string[];
+    };
+    performance_tips?: string[];
   };
 }
 

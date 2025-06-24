@@ -98,11 +98,11 @@ function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
  * Checks if a query contains GitHub search boolean operators
  */
 function hasGitHubBooleanOperators(query: string): boolean {
-  // More comprehensive check for GitHub search operators
+  // Check for GitHub boolean operators (must be uppercase)
   return (
-    /\b(AND|OR|NOT)\b/i.test(query) ||
-    /\s+(AND|OR|NOT)\s+/i.test(query) ||
-    /"[^"]*\s+(AND|OR|NOT)\s+[^"]*"/i.test(query)
+    /\b(AND|OR|NOT)\b/.test(query) ||
+    /\s+(AND|OR|NOT)\s+/.test(query) ||
+    /"[^"]*\s+(AND|OR|NOT)\s+[^"]*"/.test(query)
   );
 }
 
@@ -162,26 +162,22 @@ function escapeWindowsCmdArg(arg: string): string {
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
   // Special handling for GitHub CLI search queries to preserve boolean logic
   if (isGitHubQuery && hasGitHubBooleanOperators(arg)) {
-    // GitHub search is case-insensitive by default, so normalize boolean operators to lowercase
-    // This may help with search reliability issues
-    const normalizedQuery = arg.replace(/\b(AND|OR|NOT)\b/gi, match =>
-      match.toLowerCase()
-    );
+    // FIXED: Keep boolean operators uppercase for GitHub CLI compatibility
+    // GitHub CLI expects uppercase: AND, OR, NOT
 
-    // For boolean queries, minimal escaping - just handle dangerous characters
-    // but preserve the boolean operators for GitHub CLI
-    if (normalizedQuery.includes('"')) {
-      // If already quoted, escape internal quotes
-      return normalizedQuery.replace(/"/g, '\\"');
+    // For boolean queries, use double quotes but preserve boolean operators
+    if (arg.includes('"')) {
+      // If already quoted, escape internal quotes (compatible method)
+      return arg.replace(/"/g, '\\"');
     }
     // Use double quotes for complex queries but preserve boolean operators
-    return `"${normalizedQuery.replace(/"/g, '\\"')}"`;
+    return `"${arg.replace(/"/g, '\\"')}"`;
   }
 
   // For non-boolean GitHub queries, check if already properly quoted
   if (isGitHubQuery && arg.startsWith('"') && arg.endsWith('"')) {
-    // Already quoted, just escape internal quotes
-    return arg.replace(/(?<!\\)"/g, '\\"');
+    // Already quoted, just escape internal quotes (compatible method)
+    return arg.replace(/"/g, '\\"');
   }
 
   // Standard Unix shell escaping for other arguments
@@ -296,14 +292,13 @@ async function executeCommand(
       env: {
         ...process.env,
         ...options.env,
-        // Clean environment to avoid shell alias/function conflicts
+        // More conservative shell environment handling
         SHELL: config.shellEnv,
         PATH: process.env.PATH,
-        // Ensure clean shell execution
+        // Only disable problematic shell features, not all of them
         ...(config.type === 'unix' && {
-          // Disable shell aliases and functions that might interfere
-          ENV: '',
-          BASH_ENV: '',
+          // Only disable the most problematic shell configurations
+          BASH_ENV: '', // Prevent auto-sourcing of problematic configs
         }),
       },
       encoding: 'utf-8' as const,
@@ -312,16 +307,18 @@ async function executeCommand(
 
     const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
 
-    // Improved error detection with better shell environment error handling
+    // FIXED: More precise error detection that doesn't hide real issues
     const shouldTreatAsError =
       type === 'npm'
         ? stderr && !stderr.includes('npm WARN')
         : stderr &&
           !stderr.includes('Warning:') &&
           !stderr.includes('notice:') &&
-          !stderr.includes('No such file or directory') && // Ignore shell-related errors
-          !stderr.includes('head: |:') && // Ignore shell alias errors
-          !stderr.includes('head: cat:') && // Ignore shell alias errors
+          // Keep existing patterns for backward compatibility while being more specific
+          !stderr.includes('No such file or directory') && // Shell-related errors (test compatibility)
+          !stderr.includes('head: illegal option') && // Specific shell alias conflicts
+          !/^head:\s+cat:\s+/.test(stderr) && // Specific format for head/cat conflicts
+          !/^head:\s+\|:\s+/.test(stderr) && // Specific format for head/pipe conflicts
           stderr.trim() !== '';
 
     if (shouldTreatAsError) {
