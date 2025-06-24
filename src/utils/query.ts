@@ -23,8 +23,21 @@ export function needsQuoting(str: string): boolean {
 }
 
 /**
+ * Checks if a query contains GitHub boolean operators (OR, AND, NOT)
+ */
+export function hasBooleanOperators(str: string): boolean {
+  return /\b(OR|AND|NOT)\b/.test(str);
+}
+
+/**
  * Safely quotes a string for GitHub CLI if needed
+ * Special handling for queries with boolean operators
  */
 export function safeQuote(str: string): string {
+  // Don't quote queries with boolean operators to preserve GitHub CLI parsing
+  if (hasBooleanOperators(str)) {
+    return str;
+  }
+
   return needsQuoting(str) ? `"${str}"` : str;
 }

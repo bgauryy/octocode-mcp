@@ -17,7 +17,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories using GitHub's legacy code search engine. Boolean logic has limitations: simple OR queries work well, complex NOT operations may fail. For best results, use specific filters (language, owner, filename) rather than complex boolean queries.`;
+const DESCRIPTION = `Search code across GitHub repositories using GitHub's legacy code search engine. Multi-word queries default to OR logic for better discoverability (e.g., "react fiber scheduler" becomes "react OR fiber OR scheduler"). Use quotes for exact phrases, explicit AND/OR/NOT for precise boolean logic. For best results, use specific filters (language, owner, filename) rather than complex boolean queries.`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -29,7 +29,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search query (required). Simple terms and basic OR logic work best. Complex boolean (NOT, nested operations) may fail due to legacy search engine. Use filters for precision: language:python, owner:microsoft, filename:package.json'
+            'Search query (required). Multi-word queries default to OR logic for better discoverability (e.g., "react fiber scheduler" becomes "react OR fiber OR scheduler"). Use quotes for exact phrases ("exact phrase"), explicit AND/OR/NOT for precise boolean logic. Use filters for precision: language:python, owner:microsoft, filename:package.json'
           ),
 
         // REPOSITORY FILTERS (GitHub CLI flags)
@@ -163,6 +163,8 @@ function transformToOptimizedFormat(
   cliCommand: string
 ): OptimizedCodeSearchResult {
   const hasComplexBoolean = hasComplexBooleanLogic(params.query);
+  const transformedQuery = parseSearchQuery(params.query);
+  const wasTransformed = transformedQuery !== params.query;
 
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
@@ -190,8 +192,8 @@ function transformToOptimizedFormat(
     };
   }
 
-  // Add metadata only if needed
-  if (hasComplexBoolean || items.length === 0) {
+  // Add metadata for debugging and transparency
+  if (hasComplexBoolean || items.length === 0 || wasTransformed) {
     result.metadata = {
       has_filters: !!(
         params.language ||
@@ -206,7 +208,13 @@ function transformToOptimizedFormat(
         : 'file',
     };
 
-    if (items.length === 0 && hasComplexBoolean) {
+    // Show transformation for transparency
+    if (wasTransformed) {
+      result.metadata.transformed_query = transformedQuery;
+    }
+
+    // Show CLI command for debugging when needed
+    if (items.length === 0 && (hasComplexBoolean || wasTransformed)) {
       result.metadata.cli_command = cliCommand;
     }
   }
@@ -229,7 +237,7 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 }
 
 /**
- * Enhanced query parser that handles exact strings, boolean operators, and filters
+ * Enhanced query parser that handles exact strings, boolean operators, and smart OR logic
  */
 function parseSearchQuery(query: string) {
   // Step 1: Handle quoted strings more intelligently
@@ -247,24 +255,33 @@ function parseSearchQuery(query: string) {
     processedQuery = processedQuery.replace(match, placeholder);
   });
 
-  // Step 3: Check complexity BEFORE adding auto-OR logic
-  const originalHasComplexLogic = hasComplexBooleanLogic(processedQuery);
+  // Step 3: Check if explicit boolean operators are present
+  const hasExplicitBoolean = /\b(AND|OR|NOT)\b/i.test(processedQuery);
 
-  // Step 4: Smart boolean logic - REMOVED auto-OR logic to preserve exact phrase matching
-  // This was causing issues where "error handling" became "error OR handling"
-  // GitHub search is smart enough to handle multi-word queries properly
+  // Step 4: Smart OR logic for multi-word queries
   let searchQuery = processedQuery;
 
-  // Step 5: Handle filters - ALL filters should use CLI flags for better reliability
-  // Adding filters to query string causes parsing issues and conflicts
-  const githubFilters: string[] = [];
+  if (!hasExplicitBoolean && !quotedMatches.length) {
+    // Split on whitespace and create OR query for multiple terms
+    const terms = processedQuery
+      .trim()
+      .split(/\s+/)
+      .filter(term => term.length > 0);
 
-  // Only add specific filters to query string if absolutely necessary
-  // For most cases, CLI flags provide better validation and performance
-  if (originalHasComplexLogic) {
-    // For complex boolean queries, we still prefer CLI flags over query string filters
-    // This avoids parsing issues and provides better error messages
+    if (terms.length > 1) {
+      // Only apply OR logic if we have multiple meaningful terms
+      // Avoid OR for very short terms that might be noise
+      const meaningfulTerms = terms.filter(term => term.length >= 2);
+
+      if (meaningfulTerms.length > 1) {
+        // Join with OR and parenthesize for better precedence
+        searchQuery = `(${meaningfulTerms.join(' OR ')})`;
+      }
+    }
   }
+
+  // Step 5: Handle filters - ALL filters should use CLI flags for better reliability
+  const githubFilters: string[] = [];
 
   // Step 6: Combine query with GitHub filters (currently empty for better CLI compatibility)
   if (githubFilters.length > 0) {
@@ -284,8 +301,16 @@ function parseSearchQuery(query: string) {
  * Check if query contains complex boolean logic that might conflict with CLI flags
  */
 function hasComplexBooleanLogic(query: string): boolean {
-  const booleanOperators = /\b(AND|OR|NOT)\b/i;
-  return booleanOperators.test(query);
+  // Check for explicit boolean operators (AND, OR, NOT)
+  const hasExplicitBoolean = /\b(AND|OR|NOT)\b/i.test(query);
+
+  // Check for nested parentheses or complex patterns
+  const hasNestedLogic = /\([^)]*\b(AND|OR|NOT)\b[^)]*\)/i.test(query);
+
+  // Check for negation patterns
+  const hasNegation = /\bNOT\b/i.test(query);
+
+  return hasExplicitBoolean || hasNestedLogic || hasNegation;
 }
 
 /**
@@ -296,6 +321,8 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
 
   // Parse and add the main search query
   const searchQuery = parseSearchQuery(params.query);
+
+  // Always quote the search query to handle spaces and special characters properly
   args.push(searchQuery);
 
   // Always use CLI flags for all parameters for better reliability and validation
@@ -444,7 +471,7 @@ function validateSearchParameters(
 ): string | null {
   // Query validation
   if (!params.query.trim()) {
-    return 'Empty query - provide search terms like "useState", "react OR vue", or use filters (language, owner, filename)';
+    return 'Empty query - provide search terms like "useState", "react fiber scheduler", or use filters (language, owner, filename)';
   }
 
   if (params.query.length > 1000) {

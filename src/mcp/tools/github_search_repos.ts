@@ -5,11 +5,10 @@ import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { safeQuote } from '../../utils/query';
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search GitHub repositories with powerful filtering. For best results, use specific filters (topic, language, stars) rather than complex boolean queries. Simple OR logic works well, but prefer filter combinations for precise discovery.`;
+const DESCRIPTION = `Search GitHub repositories with powerful filtering. For best results, use specific filters (topic, language, stars) rather than complex boolean queries. Multi-word OR queries often fail - use topic arrays or separate searches instead. Example: instead of query:"machine learning OR deep learning", use topic:["machine-learning", "deep-learning"].`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -70,7 +69,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with GitHub syntax. Simple terms work best. Can include owner/repo patterns like "microsoft/vscode" or GitHub URLs. For complex searches, prefer using dedicated filter parameters (topic, language, stars) instead of boolean operators for better results.'
+            'Search query with GitHub syntax. Works best: single terms ("react"), simple OR ("tensorflow OR pytorch"), hyphenated ("machine-learning"). Avoid: multi-word OR ("machine learning OR deep learning"), generic terms ("api OR rest"). Use topic arrays instead of OR for multiple topics.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -78,13 +77,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization. Use for targeted org search. Can be array for multiple owners.'
+            'Repository owner/organization. Very effective as array ["microsoft", "google", "facebook"]. Use for targeted org research and comparison.'
           ),
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Highly effective for discovery.'
+            'Programming language filter. Highly effective for discovery. Use with stars filter for best results.'
           ),
         stars: z
           .union([
@@ -98,13 +97,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Stars filter. Number (100) or range (">100", "<50", "10..100", ">=5"). Use >100 for quality projects.'
+            'Stars filter. Most effective: ranges ("1000..5000"), thresholds (">1000"). Combine with language for precise results. Use >100 for quality projects.'
           ),
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Topics filter. Single topic or array for semantic discovery. Note: Topics not available in JSON output but filtering works.'
+            'Topics filter. Highly effective as array ["react", "typescript"]. Preferred over OR queries for multiple topics. Use with language+stars for best discovery.'
           ),
         forks: z.number().optional().describe('Filter on number of forks.'),
 
@@ -173,7 +172,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Filter on number of issues with the "good first issue" label. Great for contributors.'
+            'Filter on number of issues with the "good first issue" label. Perfect for new contributors. Use with stars:"1000..10000" for quality projects.'
           ),
         helpWantedIssues: z
           .union([
@@ -187,7 +186,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Filter on number of issues with the "help wanted" label. Find projects needing help.'
+            'Filter on number of issues with the "help wanted" label. Find active projects needing help. Combine with language filter.'
           ),
         followers: z
           .number()
@@ -470,8 +469,8 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
   // Only add query if it exists and handle it properly
   if (query) {
-    // Use comprehensive quoting logic for better shell safety
-    args.push(safeQuote(query));
+    // Pass query without pre-quoting - let exec.ts handle proper escaping for GitHub CLI
+    args.push(query);
   }
 
   // Add JSON output with specific fields for structured data parsing

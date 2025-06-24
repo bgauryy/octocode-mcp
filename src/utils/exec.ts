@@ -95,6 +95,18 @@ function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
 }
 
 /**
+ * Checks if a query contains GitHub search boolean operators
+ */
+function hasGitHubBooleanOperators(query: string): boolean {
+  // More comprehensive check for GitHub search operators
+  return (
+    /\b(AND|OR|NOT)\b/i.test(query) ||
+    /\s+(AND|OR|NOT)\s+/i.test(query) ||
+    /"[^"]*\s+(AND|OR|NOT)\s+[^"]*"/i.test(query)
+  );
+}
+
+/**
  * Escape shell arguments with improved GitHub CLI boolean query handling
  */
 function escapeShellArg(
@@ -149,9 +161,21 @@ function escapeWindowsCmdArg(arg: string): string {
  */
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
   // Special handling for GitHub CLI search queries to preserve boolean logic
-  if (isGitHubQuery && /\b(AND|OR|NOT)\b/.test(arg)) {
-    // Use double quotes for GitHub CLI boolean queries to preserve operators
+  if (isGitHubQuery && hasGitHubBooleanOperators(arg)) {
+    // For boolean queries, minimal escaping - just handle dangerous characters
+    // but preserve the boolean operators for GitHub CLI
+    if (arg.includes('"')) {
+      // If already quoted, escape internal quotes
+      return arg.replace(/"/g, '\\"');
+    }
+    // Use double quotes for complex queries but preserve boolean operators
     return `"${arg.replace(/"/g, '\\"')}"`;
+  }
+
+  // For non-boolean GitHub queries, check if already properly quoted
+  if (isGitHubQuery && arg.startsWith('"') && arg.endsWith('"')) {
+    // Already quoted, just escape internal quotes
+    return arg.replace(/(?<!\\)"/g, '\\"');
   }
 
   // Standard Unix shell escaping for other arguments
@@ -223,7 +247,9 @@ export async function executeGitHubCommand(
   // First argument is typically the search query for GitHub CLI search commands
   const escapedArgs = args.map((arg, index) => {
     const isFirstArg = index === 0;
-    const isSearchQuery = command === 'search' && isFirstArg;
+    // Detect if this is a search query (first non-subcommand argument)
+    const isSearchQuery =
+      command === 'search' && isFirstArg && !arg.startsWith('--');
     return escapeShellArg(arg, shellConfig.type, isSearchQuery);
   });
 

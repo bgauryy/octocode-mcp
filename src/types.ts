@@ -411,6 +411,7 @@ export interface OptimizedCodeSearchResult {
     cli_command?: string;
     has_filters: boolean;
     search_scope: string;
+    transformed_query?: string; // Shows the actual query sent to GitHub after OR transformation
   };
 }
 
