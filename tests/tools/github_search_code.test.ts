@@ -72,18 +72,19 @@ describe('GitHub Search Code Tool', () => {
               fragment: 'function test() { return true; }',
               matches: [
                 {
-                  indices: [9, 13]
-                }
-              ]
-            }
+                  indices: [9, 13],
+                },
+              ],
+            },
           ],
-          sha: 'abc123'
-        }
+          sha: 'abc123',
+        },
       ];
 
       const mockGitHubResponse = {
         result: JSON.stringify(mockCodeResults),
-        command: 'gh search code test --limit=30 --json=repository,path,textMatches,sha,url',
+        command:
+          'gh search code test --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
@@ -100,7 +101,12 @@ describe('GitHub Search Code Tool', () => {
       expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        ['code', 'test', '--limit=30', '--json=repository,path,textMatches,sha,url'],
+        [
+          'code',
+          'test',
+          '--limit=30',
+          '--json=repository,path,textMatches,sha,url',
+        ],
         { cache: false }
       );
 
@@ -115,7 +121,8 @@ describe('GitHub Search Code Tool', () => {
 
       const mockGitHubResponse = {
         result: JSON.stringify([]), // Empty array for no results
-        command: 'gh search code nonexistent --limit=30 --json=repository,path,textMatches,sha,url',
+        command:
+          'gh search code nonexistent --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
@@ -154,18 +161,19 @@ describe('GitHub Search Code Tool', () => {
               fragment: 'const [state, setState] = useState(false);',
               matches: [
                 {
-                  indices: [25, 33]
-                }
-              ]
-            }
+                  indices: [25, 33],
+                },
+              ],
+            },
           ],
-          sha: 'def456'
-        }
+          sha: 'def456',
+        },
       ];
 
       const mockGitHubResponse = {
         result: JSON.stringify(mockCodeResults),
-        command: 'gh search code useState --language=typescript --limit=30 --json=repository,path,textMatches,sha,url',
+        command:
+          'gh search code useState --language=typescript --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
@@ -184,7 +192,9 @@ describe('GitHub Search Code Tool', () => {
       expect(data.total_count).toBe(1);
       expect(data.metadata.search_efficiency).toBeDefined();
       expect(data.metadata.search_efficiency.score).toBeGreaterThan(7); // Should be high with language filter
-      expect(data.metadata.search_efficiency.factors).toContain('Language filter (+3)');
+      expect(data.metadata.search_efficiency.factors).toContain(
+        'Language filter (+3)'
+      );
     });
 
     it('should provide performance tips for inefficient searches', async () => {
@@ -203,18 +213,19 @@ describe('GitHub Search Code Tool', () => {
               fragment: 'some test code',
               matches: [
                 {
-                  indices: [5, 9]
-                }
-              ]
-            }
+                  indices: [5, 9],
+                },
+              ],
+            },
           ],
-          sha: 'ghi789'
-        }
+          sha: 'ghi789',
+        },
       ];
 
       const mockGitHubResponse = {
         result: JSON.stringify(mockCodeResults),
-        command: 'gh search code "some complex query" --limit=30 --json=repository,path,textMatches,sha,url',
+        command:
+          'gh search code "some complex query" --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
@@ -231,7 +242,9 @@ describe('GitHub Search Code Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.metadata.search_efficiency.score).toBeLessThan(7);
       expect(data.metadata.performance_tips).toBeDefined();
-      expect(data.metadata.performance_tips).toContain('🚀 Add language filter - single biggest performance boost');
+      expect(data.metadata.performance_tips).toContain(
+        '🚀 Add language filter - single biggest performance boost'
+      );
     });
 
     it('should handle search errors with helpful suggestions', async () => {
@@ -259,7 +272,9 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Empty query');
-      expect(result.content[0].text).toContain('Try: "useState", "authentication"');
+      expect(result.content[0].text).toContain(
+        'Try: "useState", "authentication"'
+      );
     });
 
     it('should handle boolean operator validation', async () => {
@@ -270,7 +285,9 @@ describe('GitHub Search Code Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Boolean operators must be uppercase');
+      expect(result.content[0].text).toContain(
+        'Boolean operators must be uppercase'
+      );
       expect(result.content[0].text).toContain('OR');
     });
 
