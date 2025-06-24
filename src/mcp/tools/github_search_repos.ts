@@ -6,9 +6,30 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
+/**
+ * GitHub Repository Search Tool
+ *
+ * MOST EFFECTIVE PATTERNS (based on testing):
+ *
+ * 1. Quality Discovery:
+ *    { topic: ["react", "typescript"], stars: "1000..5000", limit: 10 }
+ *
+ * 2. Organization Research:
+ *    { owner: ["microsoft", "google"], language: "python", limit: 10 }
+ *
+ * 3. Beginner Projects:
+ *    { goodFirstIssues: ">=5", stars: "100..5000", limit: 10 }
+ *
+ * 4. Recent Quality:
+ *    { stars: ">1000", created: ">2023-01-01", limit: 10 }
+ *
+ * AVOID: OR queries + language filter, 5+ filters, multi-word OR
+ * TIP: Use limit parameter instead of adding more filters
+ */
+
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search GitHub repositories with powerful filtering. For best results, use specific filters (topic, language, stars) rather than complex boolean queries. Multi-word OR queries often fail - use topic arrays or separate searches instead. Example: instead of query:"machine learning OR deep learning", use topic:["machine-learning", "deep-learning"].`;
+const DESCRIPTION = `Search GitHub repositories with powerful filtering. BEST PATTERNS: topic arrays ["react", "typescript"], owner arrays ["microsoft", "google"], stars ranges "1000..5000". AVOID: OR queries with language filter, 5+ filters simultaneously. Use limit parameter instead of over-filtering.`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -69,7 +90,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with GitHub syntax. Works best: single terms ("react"), simple OR ("tensorflow OR pytorch"), hyphenated ("machine-learning"). Avoid: multi-word OR ("machine learning OR deep learning"), generic terms ("api OR rest"). Use topic arrays instead of OR for multiple topics.'
+            'Search query. BEST: single terms ("react"), simple OR without filters ("tensorflow OR pytorch"). AVOID: multi-word OR, OR + language filter. Use topic arrays for multiple topics.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -77,13 +98,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization. Very effective as array ["microsoft", "google", "facebook"]. Use for targeted org research and comparison.'
+            'Repository owner/organization. HIGHLY EFFECTIVE as array ["microsoft", "google"]. Best for targeted research.'
           ),
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Highly effective for discovery. Use with stars filter for best results.'
+            'Programming language filter. CAUTION: Restrictive with other filters. Use alone or with stars/owner only.'
           ),
         stars: z
           .union([
@@ -97,22 +118,22 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Stars filter. Most effective: ranges ("1000..5000"), thresholds (">1000"). Combine with language for precise results. Use >100 for quality projects.'
+            'Stars filter. MOST EFFECTIVE: ranges "1000..5000", thresholds ">1000". Excellent for quality filtering.'
           ),
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Topics filter. Highly effective as array ["react", "typescript"]. Preferred over OR queries for multiple topics. Use with language+stars for best discovery.'
+            'Topics filter. BEST PATTERN: arrays ["react", "typescript"]. Preferred over OR queries. Combines well with stars.'
           ),
-        forks: z.number().optional().describe('Filter on number of forks.'),
+        forks: z.number().optional().describe('Number of forks filter.'),
 
         // UPDATED: Match CLI parameter name exactly
         numberOfTopics: z
           .number()
           .optional()
           .describe(
-            'Filter on number of topics (indicates well-documented projects).'
+            'Filter by number of topics (indicates documentation quality).'
           ),
 
         // QUALITY & STATE FILTERS
@@ -120,44 +141,38 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Filter based on license type (mit, apache-2.0, bsd-3-clause). Can be array.'
+            'License filter. Works well as array ["mit", "apache-2.0"].'
           ),
         archived: z
           .boolean()
           .optional()
-          .describe(
-            'Filter based on the repository archived state (true/false).'
-          ),
+          .describe('Filter archived repositories (true/false).'),
         includeForks: z
           .enum(['false', 'true', 'only'])
           .optional()
           .describe(
-            'Include forks in fetched repositories: false (exclude), true (include), only (forks only).'
+            'Include forks: false (exclude), true (include), only (forks only).'
           ),
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
-          .describe(
-            'Filter based on visibility: public, private, or internal.'
-          ),
+          .describe('Repository visibility filter.'),
 
         // DATE & SIZE FILTERS
         created: z
           .string()
           .optional()
           .describe(
-            'Filter based on created at date. Use format: ">2020-01-01", "<2023-12-31".'
+            'Created date filter. Format: ">2020-01-01", "<2023-12-31".'
           ),
         updated: z
           .string()
           .optional()
-          .describe('Filter on last updated at date. Use for active projects.'),
+          .describe('Updated date filter. Good for finding active projects.'),
         size: z
           .string()
           .optional()
-          .describe(
-            'Filter on a size range, in kilobytes. Use format: ">1000", "<500".'
-          ),
+          .describe('Repository size filter in KB. Format: ">1000", "<500".'),
 
         // COMMUNITY FILTERS - Match CLI parameter names exactly
         goodFirstIssues: z
@@ -172,7 +187,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Filter on number of issues with the "good first issue" label. Perfect for new contributors. Use with stars:"1000..10000" for quality projects.'
+            'Good first issues count. EXCELLENT for beginners. Combine with stars "100..5000" for quality projects.'
           ),
         helpWantedIssues: z
           .union([
@@ -186,20 +201,15 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Filter on number of issues with the "help wanted" label. Find active projects needing help. Combine with language filter.'
+            'Help wanted issues count. Good for finding projects needing contributors.'
           ),
-        followers: z
-          .number()
-          .optional()
-          .describe('Filter based on number of followers.'),
+        followers: z.number().optional().describe('Followers count filter.'),
 
         // SEARCH SCOPE
         match: z
           .enum(['name', 'description', 'readme'])
           .optional()
-          .describe(
-            'Restrict search to specific field of repository: name, description, or readme.'
-          ),
+          .describe('Search scope: name, description, or readme content.'),
 
         // SORTING & LIMITS - Match CLI defaults exactly
         sort: z
@@ -213,15 +223,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .optional()
           .default('best-match')
           .describe(
-            'Sort fetched repositories: forks, help-wanted-issues, stars, updated, best-match.'
+            'Sort by: stars, updated, forks, help-wanted-issues, best-match.'
           ),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe(
-            'Order of repositories returned, ignored unless "sort" flag is specified: asc or desc.'
-          ),
+          .describe('Sort order: asc or desc.'),
         limit: z
           .number()
           .int()
@@ -229,7 +237,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe('Maximum number of repositories to fetch (default 30).'),
+          .describe(
+            'Results limit (1-100). PREFER increasing limit over adding filters.'
+          ),
       },
       annotations: {
         title: 'GitHub Repository Search',

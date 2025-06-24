@@ -162,14 +162,20 @@ function escapeWindowsCmdArg(arg: string): string {
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
   // Special handling for GitHub CLI search queries to preserve boolean logic
   if (isGitHubQuery && hasGitHubBooleanOperators(arg)) {
+    // GitHub search is case-insensitive by default, so normalize boolean operators to lowercase
+    // This may help with search reliability issues
+    const normalizedQuery = arg.replace(/\b(AND|OR|NOT)\b/gi, match =>
+      match.toLowerCase()
+    );
+
     // For boolean queries, minimal escaping - just handle dangerous characters
     // but preserve the boolean operators for GitHub CLI
-    if (arg.includes('"')) {
+    if (normalizedQuery.includes('"')) {
       // If already quoted, escape internal quotes
-      return arg.replace(/"/g, '\\"');
+      return normalizedQuery.replace(/"/g, '\\"');
     }
     // Use double quotes for complex queries but preserve boolean operators
-    return `"${arg.replace(/"/g, '\\"')}"`;
+    return `"${normalizedQuery.replace(/"/g, '\\"')}"`;
   }
 
   // For non-boolean GitHub queries, check if already properly quoted
