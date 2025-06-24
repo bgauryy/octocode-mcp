@@ -1,21 +1,25 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { GitHubCommitsSearchParams } from '../../types';
+import {
+  GitHubCommitSearchParams,
+  GitHubCommitSearchItem,
+  OptimizedCommitSearchResult,
+} from '../../types';
 import {
   createResult,
-  createSuccessResult,
-  createErrorResult,
-  needsQuoting,
+  simplifyRepoUrl,
+  toDDMMYYYY,
+  getCommitTitle,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { executeGitHubCommand, GhCommand } from '../../utils/exec';
+import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_commits';
 
-const DESCRIPTION = `Search commit history with powerful boolean logic and exact phrase matching. Track code evolution, bug fixes, and development workflows with surgical precision.`;
+const DESCRIPTION = `Search commit history effectively with GitHub's commit search. Use simple, specific terms for best results. Complex boolean queries may return limited results - try individual keywords instead.`;
 
-export function registerSearchGitHubCommitsTool(server: McpServer) {
+export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
     TOOL_NAME,
     {
@@ -28,7 +32,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
             'Search query with boolean logic. Boolean: "fix AND bug", exact phrases: "initial commit", advanced syntax: "author:john OR committer:jane".'
           ),
 
-        // Basic filters
+        // Repository filters
         owner: z
           .string()
           .optional()
@@ -44,55 +48,49 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
 
         // Author filters
         author: z.string().optional().describe('Filter by commit author'),
+        authorName: z.string().optional().describe('Filter by author name'),
+        authorEmail: z.string().optional().describe('Filter by author email'),
+
+        // Committer filters
+        committer: z.string().optional().describe('Filter by committer'),
+        committerName: z
+          .string()
+          .optional()
+          .describe('Filter by committer name'),
+        committerEmail: z
+          .string()
+          .optional()
+          .describe('Filter by committer email'),
+
+        // Date filters
         authorDate: z
           .string()
           .optional()
           .describe(
             'Filter by authored date (format: >2020-01-01, <2023-12-31)'
           ),
-        authorEmail: z.string().optional().describe('Filter by author email'),
-        authorName: z.string().optional().describe('Filter by author name'),
-
-        // Committer filters
-        committer: z.string().optional().describe('Filter by committer'),
         committerDate: z
           .string()
           .optional()
           .describe(
             'Filter by committed date (format: >2020-01-01, <2023-12-31)'
           ),
-        committerEmail: z
-          .string()
-          .optional()
-          .describe('Filter by committer email'),
-        committerName: z
-          .string()
-          .optional()
-          .describe('Filter by committer name'),
 
         // Hash filters
         hash: z.string().optional().describe('Filter by commit hash'),
         parent: z.string().optional().describe('Filter by parent hash'),
         tree: z.string().optional().describe('Filter by tree hash'),
 
-        // Boolean filters
+        // State filters
         merge: z.boolean().optional().describe('Filter merge commits'),
+
+        // Visibility
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
           .describe('Filter by repository visibility'),
 
-        // Sorting and limits
-        sort: z
-          .enum(['author-date', 'committer-date', 'best-match'])
-          .optional()
-          .default('best-match')
-          .describe('Sort criteria (default: best-match)'),
-        order: z
-          .enum(['asc', 'desc'])
-          .optional()
-          .default('desc')
-          .describe('Order (default: desc)'),
+        // Pagination and sorting
         limit: z
           .number()
           .int()
@@ -101,242 +99,331 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           .optional()
           .default(25)
           .describe('Maximum results (default: 25, max: 50)'),
+        sort: z
+          .enum(['author-date', 'committer-date'])
+          .optional()
+          .describe('Sort criteria (default: relevance)'),
+        order: z
+          .enum(['asc', 'desc'])
+          .optional()
+          .default('desc')
+          .describe('Order (default: desc)'),
       },
       annotations: {
-        title: 'GitHub Commits Search',
+        title: 'GitHub Commit Search',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
       },
     },
-    async (args: GitHubCommitsSearchParams): Promise<CallToolResult> => {
+    async (args: GitHubCommitSearchParams): Promise<CallToolResult> => {
       try {
-        // Query is optional - can search with just filters
-        if (
-          !args.query?.trim() &&
-          !args.owner &&
-          !args.author &&
-          !args.committer &&
-          !args.repo
-        ) {
-          return createResult(
-            'Either query or at least one filter is required',
-            true
-          );
+        const result = await searchGitHubCommits(args);
+
+        if (result.isError) {
+          return result;
         }
 
-        const result = await searchGitHubCommits(args);
-        return result;
+        const execResult = JSON.parse(result.content[0].text as string);
+        const commits: GitHubCommitSearchItem[] = JSON.parse(execResult.result);
+
+        // GitHub CLI returns a direct array
+        const items = Array.isArray(commits) ? commits : [];
+
+        // Enhanced handling for no results - provide fallback suggestions
+        if (items.length === 0) {
+          return createResult({
+            data: {
+              commits: [],
+              total_count: 0,
+              cli_command: execResult.command,
+              suggestions: {
+                message:
+                  'No commits found. GitHub commit search is limited compared to code/issue search.',
+                fallback_strategies: [
+                  'Try simpler, shorter queries (single keywords work better)',
+                  "Use broader terms like 'fix' instead of 'fix useState bug'",
+                  'Search by author: add author filter for specific contributors',
+                  'Use date ranges: add authorDate or committerDate filters',
+                  'Try github_search_code tool for finding code patterns instead',
+                ],
+                alternative_queries: generateCommitSearchAlternatives(
+                  args.query
+                ),
+              },
+            },
+          });
+        }
+
+        // Transform to optimized format
+        const optimizedResult = transformCommitsToOptimizedFormat(items, args);
+
+        return createResult({ data: optimizedResult });
       } catch (error) {
-        return createResult(
-          'Commit search failed - check query syntax, filters, or repository access',
-          true
-        );
+        const errorMessage = (error as Error).message || '';
+
+        if (errorMessage.includes('authentication')) {
+          return createResult({
+            error: 'GitHub authentication required - run api_status_check tool',
+          });
+        }
+
+        if (errorMessage.includes('rate limit')) {
+          return createResult({
+            error: 'GitHub rate limit exceeded - try more specific filters',
+          });
+        }
+
+        return createResult({
+          error: 'Commit search failed',
+          suggestions: [
+            'Check authentication with api_status_check',
+            'Use more specific date ranges or author filters',
+            'Try simpler boolean queries',
+          ],
+        });
       }
     }
   );
 }
 
+/**
+ * Transform GitHub CLI response to optimized format
+ */
+function transformCommitsToOptimizedFormat(
+  items: GitHubCommitSearchItem[],
+  _params: GitHubCommitSearchParams
+): OptimizedCommitSearchResult {
+  // Extract repository info if single repo search
+  const singleRepo = extractSingleRepository(items);
+
+  // Get unique authors for metadata
+  const uniqueAuthors = new Set(
+    items.map(
+      item => item.commit?.author?.name || item.author?.login || 'Unknown'
+    )
+  ).size;
+
+  const optimizedCommits = items
+    .map(item => ({
+      sha: item.sha,
+      message: getCommitTitle(item.commit?.message || ''),
+      author: item.commit?.author?.name || item.author?.login || 'Unknown',
+      date: toDDMMYYYY(item.commit?.author?.date || ''),
+      repository: singleRepo
+        ? undefined
+        : simplifyRepoUrl(item.repository?.url || ''),
+      url: singleRepo
+        ? item.sha
+        : `${simplifyRepoUrl(item.repository?.url || '')}@${item.sha}`,
+    }))
+    .map(commit => {
+      // Remove undefined fields
+      const cleanCommit: Record<string, unknown> = {};
+      Object.entries(commit).forEach(([key, value]) => {
+        if (value !== undefined) {
+          cleanCommit[key] = value;
+        }
+      });
+      return cleanCommit;
+    });
+
+  const result: OptimizedCommitSearchResult = {
+    commits: optimizedCommits as Array<{
+      sha: string;
+      message: string;
+      author: string;
+      date: string;
+      repository?: string;
+      url: string;
+    }>,
+    total_count: items.length,
+  };
+
+  // Add repository info if single repo
+  if (singleRepo) {
+    result.repository = {
+      name: singleRepo.fullName,
+      description: singleRepo.description,
+    };
+  }
+
+  // Add metadata for insights
+  if (items.length > 1) {
+    result.metadata = {
+      timeframe: getTimeframe(items),
+      unique_authors: uniqueAuthors,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Extract single repository if all results are from same repo
+ */
+function extractSingleRepository(items: GitHubCommitSearchItem[]) {
+  if (items.length === 0) return null;
+
+  const firstRepo = items[0].repository;
+  const allSameRepo = items.every(
+    item => item.repository.fullName === firstRepo.fullName
+  );
+
+  return allSameRepo ? firstRepo : null;
+}
+
+/**
+ * Calculate timeframe of commits
+ */
+function getTimeframe(items: GitHubCommitSearchItem[]): string {
+  if (items.length === 0) return '';
+
+  const dates = items.map(item => new Date(item.commit?.author?.date || ''));
+  const oldest = new Date(Math.min(...dates.map(d => d.getTime())));
+  const newest = new Date(Math.max(...dates.map(d => d.getTime())));
+
+  const diffMs = newest.getTime() - oldest.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'same day';
+  if (diffDays < 7) return `${diffDays} days`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months`;
+  return `${Math.floor(diffDays / 365)} years`;
+}
+
+/**
+ * Generate alternative commit search queries when original query fails
+ */
+function generateCommitSearchAlternatives(originalQuery?: string): Array<{
+  query: string;
+  reason: string;
+}> {
+  if (!originalQuery) {
+    return [
+      { query: 'fix', reason: 'Search for general fixes' },
+      { query: 'bug', reason: 'Search for bug-related commits' },
+      { query: 'refactor', reason: 'Search for refactoring commits' },
+    ];
+  }
+
+  const alternatives: Array<{ query: string; reason: string }> = [];
+  const query = originalQuery.toLowerCase();
+
+  // Extract key terms and create simpler alternatives
+  if (query.includes('fix') && query.includes('bug')) {
+    alternatives.push(
+      { query: 'fix', reason: 'Broader search for all fixes' },
+      { query: 'bug', reason: 'Search for bug-related commits' }
+    );
+  } else if (query.includes(' ')) {
+    // Multi-word query - suggest individual terms
+    const words = query.split(' ').filter(w => w.length > 2);
+    words.slice(0, 2).forEach(word => {
+      alternatives.push({
+        query: word,
+        reason: `Single keyword search for '${word}'`,
+      });
+    });
+  }
+
+  // Always suggest some common commit patterns
+  alternatives.push(
+    { query: 'feat', reason: 'Search for feature commits' },
+    { query: 'docs', reason: 'Search for documentation updates' }
+  );
+
+  return alternatives.slice(0, 4); // Limit to 4 suggestions
+}
+
 export async function searchGitHubCommits(
-  params: GitHubCommitsSearchParams
+  params: GitHubCommitSearchParams
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-commits', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const { command, args } = buildGitHubCommitsSearchCommand(params);
-      const result = await executeGitHubCommand(command, args, {
+      const args = buildGitHubCommitCliArgs(params);
+      const result = await executeGitHubCommand('search', args, {
         cache: false,
       });
 
-      if (result.isError) {
-        return result;
-      }
-
-      // Extract the actual content from the exec result
-      const execResult = JSON.parse(result.content[0].text as string);
-      const rawContent = execResult.result;
-
-      // Parse JSON results and provide structured analysis
-      let commits = [];
-      const analysis = {
-        totalFound: 0,
-        recentCommits: 0,
-        topAuthors: [] as Array<{ name: string; commits: number }>,
-        repositories: new Set<string>(),
-      };
-
-      // Parse JSON response from GitHub CLI
-      commits = JSON.parse(rawContent);
-
-      if (Array.isArray(commits) && commits.length > 0) {
-        analysis.totalFound = commits.length;
-
-        // Simple analysis
-        const now = new Date();
-        const thirtyDaysAgo = new Date(
-          now.getTime() - 30 * 24 * 60 * 60 * 1000
-        );
-        const authorCounts = {} as Record<string, number>;
-
-        commits.forEach(commit => {
-          // Count recent commits
-          const commitDate =
-            commit.commit?.author?.date || commit.commit?.committer?.date;
-          if (commitDate && new Date(commitDate) > thirtyDaysAgo) {
-            analysis.recentCommits++;
-          }
-
-          // Count authors
-          const authorName =
-            commit.commit?.author?.name || commit.author?.login || 'Unknown';
-          authorCounts[authorName] = (authorCounts[authorName] || 0) + 1;
-
-          // Track repositories
-          if (commit.repository?.fullName) {
-            analysis.repositories.add(commit.repository.fullName);
-          }
-        });
-
-        // Get top authors
-        analysis.topAuthors = Object.entries(authorCounts)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 5)
-          .map(([name, count]) => ({ name, commits: count }));
-
-        // Format commits for output
-        const formattedCommits = commits.map(commit => ({
-          sha: commit.sha,
-          message: commit.commit?.message || '',
-          author: {
-            name: commit.commit?.author?.name,
-            email: commit.commit?.author?.email,
-            date: commit.commit?.author?.date,
-            login: commit.author?.login,
-          },
-          committer: {
-            name: commit.commit?.committer?.name,
-            email: commit.commit?.committer?.email,
-            date: commit.commit?.committer?.date,
-            login: commit.committer?.login,
-          },
-          repository: commit.repository
-            ? {
-                name: commit.repository.name,
-                fullName: commit.repository.fullName,
-                url: commit.repository.url,
-                description: commit.repository.description,
-              }
-            : null,
-          url: commit.url,
-          parents: commit.parents?.map((p: { sha: string }) => p.sha) || [],
-        }));
-
-        return createSuccessResult({
-          query: params.query,
-          total: analysis.totalFound,
-          commits: formattedCommits,
-          summary: {
-            recentCommits: analysis.recentCommits,
-            topAuthors: analysis.topAuthors,
-            repositories: Array.from(analysis.repositories),
-          },
-        });
-      }
-
-      return createSuccessResult({
-        query: params.query,
-        total: 0,
-        commits: [],
-      });
+      return result;
     } catch (error) {
-      return createErrorResult(
-        'GitHub commit search failed - verify repository exists or try different filters',
-        error
-      );
+      const errorMessage = (error as Error).message || '';
+
+      if (errorMessage.includes('authentication')) {
+        return createResult({
+          error: 'GitHub authentication required',
+        });
+      }
+
+      if (errorMessage.includes('rate limit')) {
+        return createResult({
+          error: 'GitHub rate limit exceeded',
+        });
+      }
+
+      return createResult({
+        error: 'Commit search execution failed',
+      });
     }
   });
 }
 
-function buildGitHubCommitsSearchCommand(params: GitHubCommitsSearchParams): {
-  command: GhCommand;
-  args: string[];
-} {
-  // Build query following GitHub CLI patterns
-  const query = params.query?.trim() || '';
-
-  // Handle complex queries (with qualifiers, operators, or --) differently
-  const hasComplexSyntax =
-    query.includes('--') ||
-    query.includes(':') ||
-    query.includes('OR') ||
-    query.includes('AND') ||
-    query.includes('(') ||
-    query.includes(')') ||
-    query.startsWith('-');
-
+function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
   const args = ['commits'];
 
-  // Only add query if it exists
-  if (query) {
-    if (hasComplexSyntax) {
-      // For complex queries with special syntax, handle carefully
-      const queryParts = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-      queryParts.forEach(part => {
-        // If part contains shell special characters, quote it
-        if (/[><=&|$`(){}[\];\\]/.test(part) && !part.includes('"')) {
-          args.push(`"${part}"`);
-        } else {
-          args.push(part);
-        }
-      });
-    } else {
-      // For simple queries, use quoting logic
-      const queryString = needsQuoting(query) ? `"${query}"` : query;
-      args.push(queryString);
-    }
+  // Add query if provided - simplified approach for better results
+  if (params.query) {
+    // Simple, direct query handling - GitHub commit search works better with straightforward queries
+    args.push(params.query.trim());
   }
 
-  // Add JSON output with commit fields
-  args.push('--json', 'author,commit,committer,id,parents,repository,sha,url');
-
-  // Add all filters
-  if (params.author) args.push(`--author=${params.author}`);
-  if (params.authorDate) args.push(`--author-date="${params.authorDate}"`);
-  if (params.authorEmail) args.push(`--author-email=${params.authorEmail}`);
-  if (params.authorName) args.push(`--author-name="${params.authorName}"`);
-  if (params.committer) args.push(`--committer=${params.committer}`);
-  if (params.committerDate)
-    args.push(`--committer-date="${params.committerDate}"`);
-  if (params.committerEmail)
-    args.push(`--committer-email=${params.committerEmail}`);
-  if (params.committerName)
-    args.push(`--committer-name="${params.committerName}"`);
-  if (params.hash) args.push(`--hash=${params.hash}`);
-  if (params.parent) args.push(`--parent=${params.parent}`);
-  if (params.tree) args.push(`--tree=${params.tree}`);
-  if (params.merge) args.push('--merge');
-  if (params.visibility) args.push(`--visibility=${params.visibility}`);
-
-  // Handle repo and owner
-  if (params.repo && params.owner) {
+  // Repository filters
+  if (params.owner && params.repo) {
     args.push(`--repo=${params.owner}/${params.repo}`);
-  } else if (params.repo) {
-    args.push(`--repo=${params.repo}`);
   } else if (params.owner) {
     args.push(`--owner=${params.owner}`);
   }
 
-  // Sorting
-  const sortBy = params.sort || 'best-match';
-  if (sortBy !== 'best-match') {
-    args.push(`--sort=${sortBy}`);
-  }
-  if (params.order) args.push(`--order=${params.order}`);
+  // Author filters
+  if (params.author) args.push(`--author=${params.author}`);
+  if (params.authorName) args.push(`--author-name=${params.authorName}`);
+  if (params.authorEmail) args.push(`--author-email=${params.authorEmail}`);
 
-  // Limit
+  // Committer filters
+  if (params.committer) args.push(`--committer=${params.committer}`);
+  if (params.committerName)
+    args.push(`--committer-name=${params.committerName}`);
+  if (params.committerEmail)
+    args.push(`--committer-email=${params.committerEmail}`);
+
+  // Date filters
+  if (params.authorDate) args.push(`--author-date=${params.authorDate}`);
+  if (params.committerDate)
+    args.push(`--committer-date=${params.committerDate}`);
+
+  // Hash filters
+  if (params.hash) args.push(`--hash=${params.hash}`);
+  if (params.parent) args.push(`--parent=${params.parent}`);
+  if (params.tree) args.push(`--tree=${params.tree}`);
+
+  // State filters
+  if (params.merge !== undefined) args.push(`--merge=${params.merge}`);
+
+  // Visibility
+  if (params.visibility) args.push(`--visibility=${params.visibility}`);
+
+  // Sorting and pagination
+  if (params.sort) args.push(`--sort=${params.sort}`);
+  if (params.order) args.push(`--order=${params.order}`);
   if (params.limit) args.push(`--limit=${params.limit}`);
 
-  return { command: 'search', args };
+  // JSON output
+  args.push('--json=sha,commit,author,committer,repository,url,parents');
+
+  return args;
 }

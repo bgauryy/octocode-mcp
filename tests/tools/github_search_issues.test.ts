@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import {
+  createMockMcpServer,
+  MockMcpServer,
+} from '../fixtures/mcp-fixtures.js';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
@@ -21,13 +24,14 @@ vi.mock('../../src/utils/cache.js', () => ({
 import { registerSearchGitHubIssuesTool } from '../../src/mcp/tools/github_search_issues.js';
 
 describe('GitHub Search Issues Tool', () => {
-  let mockServer: McpServer;
+  let mockServer: MockMcpServer;
 
   beforeEach(() => {
-    // Create a mock server with a tool method
-    mockServer = {
-      tool: vi.fn(),
-    } as any;
+    // Create mock server using the fixture
+    mockServer = createMockMcpServer();
+
+    // Register the tool for all tests
+    registerSearchGitHubIssuesTool(mockServer.server);
 
     // Clear all mocks
     vi.clearAllMocks();
@@ -42,72 +46,23 @@ describe('GitHub Search Issues Tool', () => {
   });
 
   afterEach(() => {
+    mockServer.cleanup();
     vi.resetAllMocks();
   });
 
   describe('Tool Registration', () => {
     it('should register the GitHub search issues tool with correct parameters', () => {
-      registerSearchGitHubIssuesTool(mockServer);
+      registerSearchGitHubIssuesTool(mockServer.server);
 
-      expect(mockServer.tool).toHaveBeenCalledWith(
+      expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'github_search_issues',
-        expect.any(String),
-        expect.objectContaining({
-          query: expect.any(Object),
-          owner: expect.any(Object),
-          repo: expect.any(Object),
-          app: expect.any(Object),
-          archived: expect.any(Object),
-          assignee: expect.any(Object),
-          author: expect.any(Object),
-          closed: expect.any(Object),
-          commenter: expect.any(Object),
-          comments: expect.any(Object),
-          created: expect.any(Object),
-          includePrs: expect.any(Object),
-          interactions: expect.any(Object),
-          involves: expect.any(Object),
-          labels: expect.any(Object),
-          language: expect.any(Object),
-          locked: expect.any(Object),
-          match: expect.any(Object),
-          mentions: expect.any(Object),
-          milestone: expect.any(Object),
-          noAssignee: expect.any(Object),
-          noLabel: expect.any(Object),
-          noMilestone: expect.any(Object),
-          noProject: expect.any(Object),
-          project: expect.any(Object),
-          reactions: expect.any(Object),
-          state: expect.any(Object),
-          teamMentions: expect.any(Object),
-          updated: expect.any(Object),
-          visibility: expect.any(Object),
-          sort: expect.any(Object),
-          order: expect.any(Object),
-          limit: expect.any(Object),
-        }),
-        expect.objectContaining({
-          title: 'github_search_issues',
-          description: expect.any(String),
-          readOnlyHint: true,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: true,
-        }),
+        expect.any(Object),
         expect.any(Function)
       );
     });
   });
 
   describe('Successful Issue Searches', () => {
-    let toolHandler: Function;
-
-    beforeEach(() => {
-      registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
-    });
-
     it('should perform basic issue search', async () => {
       const mockApiResponse = {
         total_count: 1,
@@ -142,14 +97,13 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'bug rendering',
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.searchType).toBe('issues');
-      expect(data.query).toBe('bug rendering');
+      expect(data.total_count).toBe(1);
       expect(data.results).toHaveLength(1);
       expect(data.results[0]).toEqual({
         number: 123,
@@ -158,14 +112,12 @@ describe('GitHub Search Issues Tool', () => {
         author: 'developer1',
         repository: 'facebook/react',
         labels: ['bug', 'priority-high'],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-02T00:00:00Z',
+        created_at: '01/01/2023',
+        updated_at: '02/01/2023',
         url: 'https://github.com/facebook/react/issues/123',
         comments: 5,
         reactions: 3,
       });
-      expect(data.metadata.total_count).toBe(1);
-      expect(data.metadata.incomplete_results).toBe(false);
     });
 
     it('should handle repository-specific search', async () => {
@@ -188,7 +140,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'memory leak',
         owner: 'facebook',
         repo: 'react',
@@ -226,7 +178,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'performance',
         owner: 'microsoft',
       });
@@ -262,7 +214,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'typescript error',
         author: 'developer1',
         assignee: 'maintainer1',
@@ -310,7 +262,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'help wanted',
         noAssignee: true,
         noLabel: true,
@@ -351,7 +303,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'feature request',
         milestone: 'v2.0',
         mentions: 'developer1',
@@ -401,7 +353,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'test issue',
       });
 
@@ -414,8 +366,8 @@ describe('GitHub Search Issues Tool', () => {
         author: '',
         repository: 'unknown',
         labels: [],
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-02T00:00:00Z',
+        created_at: '01/01/2023',
+        updated_at: '02/01/2023',
         url: 'https://github.com/example/repo/issues/456',
         comments: 0,
         reactions: 0,
@@ -442,7 +394,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'stale issues',
         created: '<2022-01-01',
         updated: '>2023-01-01',
@@ -465,13 +417,6 @@ describe('GitHub Search Issues Tool', () => {
   });
 
   describe('Empty Results', () => {
-    let toolHandler: Function;
-
-    beforeEach(() => {
-      registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
-    });
-
     it('should handle empty search results', async () => {
       const mockApiResponse = {
         total_count: 0,
@@ -492,32 +437,25 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'nonexistent-issue-pattern',
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.results).toEqual([]);
-      expect(data.metadata.total_count).toBe(0);
+      expect(data.total_count).toBe(0);
     });
   });
 
   describe('Error Handling', () => {
-    let toolHandler: Function;
-
-    beforeEach(() => {
-      registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
-    });
-
     it('should handle GitHub CLI execution errors', async () => {
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: true,
         content: [{ text: 'GitHub CLI error: Authentication required' }],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'test issue',
       });
 
@@ -535,28 +473,24 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'test',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'GitHub issues search failed'
-      );
+      expect(result.content[0].text).toContain('GitHub issue search failed');
     });
 
     it('should handle network timeout errors', async () => {
       const timeoutError = new Error('Network timeout');
       mockExecuteGitHubCommand.mockRejectedValue(timeoutError);
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'test',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'GitHub issues search failed'
-      );
+      expect(result.content[0].text).toContain('GitHub issue search failed');
     });
 
     it('should handle API rate limit errors', async () => {
@@ -565,7 +499,7 @@ describe('GitHub Search Issues Tool', () => {
         content: [{ text: 'API rate limit exceeded' }],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: 'popular issue',
       });
 
@@ -575,15 +509,8 @@ describe('GitHub Search Issues Tool', () => {
   });
 
   describe('Input Validation', () => {
-    let toolHandler: Function;
-
-    beforeEach(() => {
-      registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
-    });
-
     it('should reject empty query', async () => {
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: '',
       });
 
@@ -594,7 +521,7 @@ describe('GitHub Search Issues Tool', () => {
     });
 
     it('should reject whitespace-only query', async () => {
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: '   ',
       });
 
@@ -607,7 +534,7 @@ describe('GitHub Search Issues Tool', () => {
     it('should reject overly long query', async () => {
       const longQuery = 'a'.repeat(300); // 300 characters
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: longQuery,
       });
 
@@ -637,7 +564,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await toolHandler({
+      const result = await mockServer.callTool('github_search_issues', {
         query: validQuery,
       });
 
@@ -662,7 +589,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'error: "undefined is not a function" & crash',
       });
 
@@ -696,7 +623,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       // Test with limit over 100 (should be capped at 100)
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'test',
         limit: 150,
       });
@@ -710,13 +637,6 @@ describe('GitHub Search Issues Tool', () => {
   });
 
   describe('Caching', () => {
-    let toolHandler: Function;
-
-    beforeEach(() => {
-      registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
-    });
-
     it('should use cache for issue searches', async () => {
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
@@ -735,7 +655,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'test issue',
         state: 'open',
       });
@@ -769,13 +689,13 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       // First search
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'bug',
         state: 'open',
       });
 
       // Second search with different parameters
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'bug',
         state: 'closed',
       });
@@ -793,13 +713,6 @@ describe('GitHub Search Issues Tool', () => {
   });
 
   describe('URL Encoding', () => {
-    let toolHandler: Function;
-
-    beforeEach(() => {
-      registerSearchGitHubIssuesTool(mockServer);
-      toolHandler = (mockServer.tool as any).mock.calls[0][4];
-    });
-
     it('should properly encode complex queries for API calls', async () => {
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
@@ -818,7 +731,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await toolHandler({
+      await mockServer.callTool('github_search_issues', {
         query: 'memory leak in React hooks',
         labels: 'bug & performance',
         milestone: 'v2.0 release',

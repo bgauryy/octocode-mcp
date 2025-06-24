@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import z from 'zod';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
+import { createResult } from '../../utils/responses';
 
 export const TOOL_NAME = 'api_status_check';
 const DESCRIPTION = `Get GitHub organizations list and check CLI authentication status. Use when searching private repos or when CLI tools fail.`;
@@ -11,13 +11,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
     TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: {
-        includeDetails: z
-          .boolean()
-          .optional()
-          .default(true)
-          .describe('Include detailed technical information in results'),
-      },
+      inputSchema: {},
       annotations: {
         title: 'Check API Connections and Github Organizations',
         readOnlyHint: true,
@@ -26,7 +20,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    async (args: { includeDetails?: boolean }): Promise<CallToolResult> => {
+    async (): Promise<CallToolResult> => {
       try {
         let githubConnected = false;
         let organizations: string[] = [];
@@ -146,62 +140,28 @@ export function registerApiStatusCheckTool(server: McpServer) {
           npmConnected = false;
         }
 
-        const content = [];
-
-        // Add high-priority status summary
-        const statusPrefix =
-          githubConnected && npmConnected
-            ? 'CONNECTED'
-            : githubConnected || npmConnected
-              ? 'PARTIAL'
-              : 'DISCONNECTED';
-
-        content.push({
-          type: 'text' as const,
-          text: `API Status: ${statusPrefix}\nGitHub CLI: ${githubConnected ? 'Connected' : 'Not connected'}\nNPM CLI: ${npmConnected ? 'Connected' : 'Not connected'}`,
-        });
-
-        // Add GitHub organizations if available
-        if (githubConnected && organizations.length > 0) {
-          content.push({
-            type: 'text' as const,
-            text: `Available Organizations (${organizations.length}):\n${organizations.map(org => `- ${org}`).join('\n')}`,
-          });
-        }
-
-        // Add actionable suggestions for failures
-        if (!githubConnected) {
-          content.push({
-            type: 'text' as const,
-            text: 'GitHub Setup Required\nRun `gh auth login` to authenticate with GitHub CLI.\nThis enables repository searches and organization access.',
-          });
-        }
-
-        if (!npmConnected) {
-          content.push({
-            type: 'text' as const,
-            text: 'NPM Authentication Recommended\nRun `npm login` to access private packages and increase rate limits.\nPublic packages will still work without authentication.',
-          });
-        }
-
-        // Add technical details if requested
-        if (args.includeDetails) {
-          content.push({
-            type: 'text' as const,
-            text: `Technical Details\nNPM Registry: ${registry || 'Not configured'}\nOrganizations Found: ${organizations.length}`,
-          });
-        }
-
-        return { content };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `API Status Check Failed\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
+        // Build structured response object
+        const loginStatus = {
+          login: {
+            github: {
+              connected: githubConnected,
+              user_organizations: organizations,
             },
-          ],
+            npm: {
+              connected: npmConnected,
+              registry: registry || 'https://registry.npmjs.org/',
+            },
+            hints: [
+              'use user organizations: to search on private repositories in case the user asked about private repo - check by query nd structure',
+            ],
+          },
         };
+
+        return createResult({ data: loginStatus });
+      } catch (error) {
+        return createResult({
+          error: `API Status Check Failed\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
+        });
       }
     }
   );

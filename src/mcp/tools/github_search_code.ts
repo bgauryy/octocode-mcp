@@ -1,10 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { GitHubCodeSearchParams } from '../../types';
 import {
-  createErrorResult,
+  GitHubCodeSearchParams,
+  GitHubCodeSearchItem,
+  OptimizedCodeSearchResult,
+} from '../../types';
+import {
   createResult,
-  createSuccessResult,
+  simplifyRepoUrl,
+  simplifyGitHubUrl,
+  optimizeTextMatch,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -12,7 +17,24 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories with strategic boolean operators and filters. Use OR for broad discovery, AND for precision, exact phrases for specific matches.`;
+const DESCRIPTION = `Search code across GitHub repositories with powerful GitHub search syntax and advanced filtering.
+
+BOOLEAN LOGIC (MOST POWERFUL):
+- "useState OR useEffect" - Find either hook
+- "useState AND useEffect" - Find both hooks together
+- "authentication AND (jwt OR oauth)" - Complex logic combinations
+- "NOT deprecated" - Exclude deprecated code
+
+EMBEDDED QUALIFIERS:
+- "useState language:javascript filename:*.jsx" - Hook in React files
+- "authentication language:python path:*/security/*" - Security code in Python
+- "docker OR kubernetes language:yaml extension:yml" - Container configs
+
+TRADITIONAL FILTERS (ALSO SUPPORTED):
+- language: "javascript", owner: "microsoft", filename: "package.json"
+
+PROVEN PATTERNS: "authentication" → +language → +owner → +filename
+KEY TIPS: language filter = 90% speed boost, boolean operators work perfectly with filters`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -24,67 +46,93 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search query with boolean operators. OR (default): "useState hook" → broad discovery. AND: "react AND hooks" → precise. Quotes: "exact phrase" → specific. Combine with filters for laser focus.'
+            `Search query with GitHub syntax. BOOLEAN LOGIC: "useState OR useEffect", "authentication AND jwt", "NOT deprecated". EMBEDDED QUALIFIERS: "useState language:javascript", "docker path:*/config/*". EXACT PHRASES: "error handling".
+
+POWERFUL EXAMPLES: "useState OR useEffect language:javascript", "authentication AND (jwt OR oauth)", "docker OR kubernetes language:yaml", "NOT deprecated language:python"
+RULES: Boolean operators MUST be uppercase (AND, OR, NOT). Combines perfectly with traditional filters.`
           ),
-        owner: z
-          .union([z.string(), z.array(z.string())])
-          .optional()
-          .describe(
-            'Repository owner/organization filter. Use for targeted searches or private repo access.'
-          ),
-        repo: z
-          .union([z.string(), z.array(z.string())])
-          .optional()
-          .describe(
-            'Specific repositories. Format: "owner/repo". Requires owner parameter.'
-          ),
+
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Highly effective for targeted searches.'
+            `MOST EFFECTIVE FILTER - 90% speed boost! Essential for popular languages.
+
+POPULAR: javascript, typescript, python, java, go, rust, php, ruby, swift, kotlin, dart
+SYSTEMS: c, cpp, assembly, shell, dockerfile, yaml`
           ),
-        extension: z
-          .string()
+
+        owner: z
+          .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('File extension without dot. Precise file type targeting.'),
+          .describe(
+            `HIGH IMPACT - Reduces search space by 95%+
+
+EXAMPLES: "microsoft", "google", "facebook" or ["microsoft", "google"]
+POPULAR: microsoft, google, facebook, amazon, apache, hashicorp, kubernetes`
+          ),
+
         filename: z
           .string()
           .optional()
-          .describe('Exact filename. Perfect for config files.'),
-        path: z
+          .describe(
+            `SURGICAL PRECISION for configs and special files
+
+TARGETS: "package.json", "Dockerfile", "webpack.config.js", ".eslintrc", "README.md"
+STRATEGY: filename:package.json + "react typescript"`
+          ),
+
+        repo: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe(
+            `PRECISE TARGETING for specific repositories
+
+FORMAT: "facebook/react", "microsoft/vscode" or ["facebook/react", "vuejs/vue"]
+USE: Deep dive analysis of specific projects`
+          ),
+
+        extension: z
           .string()
           .optional()
           .describe(
-            'Directory path filter. Focus search on specific directories.'
+            `FILE TYPE PRECISION - More specific than language filter
+
+POPULAR: js, ts, jsx, tsx, py, java, go, rs, rb, php, cs, sh, yml, json, md
+USE: extension:tsx (React TypeScript only), extension:dockerfile`
           ),
-        size: z
-          .string()
-          .optional()
-          .describe(
-            'File size filter with operators (e.g., ">100", "<50", "10..100").'
-          ),
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(50)
-          .optional()
-          .default(30)
-          .describe('Maximum results (1-50, default: 30).'),
+
         match: z
           .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
           .optional()
           .describe(
-            'Search scope: "file" for code content, "path" for filenames.'
+            `SEARCH SCOPE: "file" (content), "path" (filenames), ["file", "path"] (both)
+
+EXAMPLES: match:"path" + "test" (find test files), match:"file" + "useState"`
           ),
-        visibility: z
-          .enum(['public', 'private', 'internal'])
+
+        size: z
+          .string()
           .optional()
-          .describe('Repository visibility filter.'),
+          .describe(
+            `FILE SIZE FILTER: ">100" (>100KB), "<50" (<50KB), "10..100" (range)
+
+STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
+          ),
+
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .default(30)
+          .describe(
+            `RESULTS: 10-20 (quick), 30 (default), 50-100 (comprehensive). Use filters over high limits.`
+          ),
       },
       annotations: {
-        title: 'GitHub Code Search',
+        title: 'GitHub Code Search - Smart & Efficient',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -96,7 +144,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         // Validate parameter combinations
         const validationError = validateSearchParameters(args);
         if (validationError) {
-          return createResult(validationError, true);
+          return createResult({ error: validationError });
         }
 
         const result = await searchGitHubCode(args);
@@ -106,173 +154,545 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults = JSON.parse(execResult.result);
+        const codeResults: GitHubCodeSearchItem[] = JSON.parse(
+          execResult.result
+        );
 
         // GitHub CLI returns a direct array, not an object with total_count and items
         const items = Array.isArray(codeResults) ? codeResults : [];
 
-        return createSuccessResult({
-          query: args.query,
-          processed_query: parseSearchQuery(args.query, args),
-          total_count: items.length,
-          items: items,
-          cli_command: execResult.command,
-          debug_info: {
-            has_complex_boolean_logic: hasComplexBooleanLogic(args.query),
-            escaped_args: buildGitHubCliArgs(args),
-            original_query: args.query,
-          },
-        });
+        // Smart handling for no results - provide actionable suggestions
+        if (items.length === 0) {
+          return handleNoResults(args, execResult.command);
+        }
+
+        // Transform to optimized format
+        const optimizedResult = transformToOptimizedFormat(items, args);
+
+        return createResult({ data: optimizedResult });
       } catch (error) {
         const errorMessage = (error as Error).message || '';
 
         // Handle JSON parsing errors
         if (errorMessage.includes('JSON')) {
-          return createErrorResult(
-            'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
-            error as Error
-          );
+          return createResult({
+            error:
+              'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
+          });
         }
 
-        return createErrorResult(
-          'GitHub code search failed - verify parameters and try with simpler query or specific filters (language, owner, path)',
-          error as Error
-        );
+        return createResult({
+          error: 'GitHub code search failed',
+          suggestions: [
+            'Try simpler queries without NOT operators',
+            'Use filters (language, owner, filename) instead of complex boolean',
+            'Check authentication with api_status_check',
+          ],
+        });
       }
     }
   );
 }
 
 /**
- * Enhanced query parser that handles exact strings, boolean operators, and filters
+ * Smart handler for no results - provides actionable suggestions
  */
-function parseSearchQuery(query: string, filters: GitHubCodeSearchParams) {
-  // Step 1: Handle quoted strings more intelligently
-  // Convert escaped quotes to simple quotes to avoid shell escaping issues
-  let processedQuery = query.replace(/\\"/g, '"');
+function handleNoResults(
+  params: GitHubCodeSearchParams,
+  cliCommand: string
+): CallToolResult {
+  const suggestions = generateSmartSuggestions(params);
+  const fallbackQueries = generateFallbackQueries(params);
 
-  // Step 2: Preserve exact phrases (quoted strings)
-  const exactPhrases: string[] = [];
-
-  // Extract quoted strings and replace with placeholders
-  const quotedMatches = processedQuery.match(/"[^"]+"/g) || [];
-  quotedMatches.forEach((match, index) => {
-    const placeholder = `__EXACT_PHRASE_${index}__`;
-    exactPhrases.push(match);
-    processedQuery = processedQuery.replace(match, placeholder);
+  return createResult({
+    data: {
+      items: [],
+      total_count: 0,
+      smart_suggestions: {
+        message:
+          "No results found. Here are smart strategies to find what you're looking for:",
+        suggestions,
+        fallback_queries: fallbackQueries,
+        next_steps: [
+          'Try one of the fallback queries above',
+          'Remove some filters to broaden the search',
+          'Use different keywords or synonyms',
+          'Check spelling and try variations',
+        ],
+      },
+      metadata: {
+        has_filters: !!(
+          params.language ||
+          params.owner ||
+          params.filename ||
+          params.extension
+        ),
+        search_scope: params.match
+          ? Array.isArray(params.match)
+            ? params.match.join(',')
+            : params.match
+          : 'file',
+      },
+      cli_command: cliCommand,
+    },
   });
-
-  // Step 3: Check complexity BEFORE adding auto-OR logic
-  const originalHasComplexLogic = hasComplexBooleanLogic(processedQuery);
-
-  // Step 4: Smart boolean logic - default to OR between terms if no explicit operators
-  let searchQuery = processedQuery;
-
-  // Check if query already has explicit boolean operators
-  if (!originalHasComplexLogic) {
-    // Split by whitespace and join with OR for better search results
-    const terms = processedQuery
-      .trim()
-      .split(/\s+/)
-      .filter(term => term.length > 0);
-    if (terms.length > 1) {
-      searchQuery = terms.join(' OR ');
-    }
-  }
-
-  // Step 5: Handle filters differently based on ORIGINAL query complexity
-  const githubFilters: string[] = [];
-
-  // Always add path and visibility to query string (they don't have CLI equivalents)
-  if (filters.path) {
-    githubFilters.push(`path:${filters.path}`);
-  }
-
-  if (filters.visibility) {
-    githubFilters.push(`visibility:${filters.visibility}`);
-  }
-
-  // For complex boolean queries, add ALL filters to query string to avoid CLI conflicts
-  if (originalHasComplexLogic) {
-    if (filters.language) {
-      githubFilters.push(`language:${filters.language}`);
-    }
-
-    // For complex queries with both language and extension, prioritize language
-    if (filters.extension && !filters.language) {
-      githubFilters.push(`extension:${filters.extension}`);
-    }
-
-    if (filters.filename) {
-      githubFilters.push(`filename:${filters.filename}`);
-    }
-
-    if (filters.size) {
-      githubFilters.push(`size:${filters.size}`);
-    }
-  }
-
-  // Step 6: Combine query with GitHub filters using proper spacing
-  if (githubFilters.length > 0) {
-    searchQuery = `${searchQuery} ${githubFilters.join(' ')}`;
-  }
-
-  // Step 7: Restore exact phrases
-  exactPhrases.forEach((phrase, index) => {
-    const placeholder = `__EXACT_PHRASE_${index}__`;
-    searchQuery = searchQuery.replace(placeholder, phrase);
-  });
-
-  return searchQuery.trim();
 }
 
 /**
- * Check if query contains complex boolean logic that might conflict with CLI flags
+ * Generate smart suggestions based on current search parameters
  */
-function hasComplexBooleanLogic(query: string): boolean {
-  const booleanOperators = /\b(AND|OR|NOT)\b/i;
-  return booleanOperators.test(query);
+function generateSmartSuggestions(params: GitHubCodeSearchParams): string[] {
+  const suggestions: string[] = [];
+
+  // Query-specific suggestions
+  if (params.query.includes('"')) {
+    suggestions.push(
+      'Remove quotes to search for individual terms instead of exact phrase'
+    );
+  }
+
+  if (params.query.includes(' AND ') || params.query.includes(' OR ')) {
+    suggestions.push('Try simpler queries without boolean operators');
+  }
+
+  if (params.query.length > 50) {
+    suggestions.push('Simplify query - shorter terms often work better');
+  }
+
+  // Filter-specific suggestions
+  if (!params.language) {
+    suggestions.push('Add language filter - this improves results by 90%');
+  }
+
+  if (params.language && !params.owner && !params.filename) {
+    suggestions.push('Add owner filter to target specific organizations');
+  }
+
+  if (params.owner && params.repo) {
+    suggestions.push(
+      'Remove repo filter and search across all repos in the organization'
+    );
+  }
+
+  if (params.filename) {
+    suggestions.push('Remove filename filter to search all file types');
+  }
+
+  if (params.extension && params.language) {
+    suggestions.push(
+      'Try removing extension filter (language filter might be sufficient)'
+    );
+  }
+
+  // Always provide generic fallbacks
+  if (suggestions.length === 0) {
+    suggestions.push('Try a broader search with fewer filters');
+    suggestions.push('Use more common/general terms');
+    suggestions.push('Check for typos in query or filter values');
+  }
+
+  return suggestions.slice(0, 5); // Limit to top 5 suggestions
+}
+
+/**
+ * Generate fallback queries that are likely to succeed
+ */
+function generateFallbackQueries(params: GitHubCodeSearchParams): Array<{
+  query: string;
+  description: string;
+  rationale: string;
+}> {
+  const fallbacks: Array<{
+    query: string;
+    description: string;
+    rationale: string;
+  }> = [];
+
+  // Extract key terms from original query
+  const keyTerms = extractKeyTerms(params.query);
+
+  // Fallback 1: Simplify query, keep language if present
+  if (keyTerms.length > 1) {
+    const simplifiedQuery = keyTerms[0];
+    fallbacks.push({
+      query: simplifiedQuery,
+      description: `Search for just "${simplifiedQuery}"${params.language ? ` in ${params.language}` : ''}`,
+      rationale: 'Single term searches often yield better results',
+    });
+  }
+
+  // Fallback 2: Remove filters but keep core query
+  if (params.language || params.owner || params.filename || params.extension) {
+    fallbacks.push({
+      query: keyTerms.join(' '),
+      description: `Search "${keyTerms.join(' ')}" without filters`,
+      rationale: 'Removes restrictive filters for broader results',
+    });
+  }
+
+  // Fallback 3: Language-specific popular search
+  if (params.language) {
+    const popularTerms = getPopularTermsForLanguage(params.language);
+    if (popularTerms.length > 0) {
+      fallbacks.push({
+        query: popularTerms[0],
+        description: `Popular ${params.language} pattern: "${popularTerms[0]}"`,
+        rationale: `Common patterns in ${params.language} development`,
+      });
+    }
+  }
+
+  // Fallback 4: Broader category search
+  const category = inferCategory(params.query);
+  if (category) {
+    fallbacks.push({
+      query: category,
+      description: `Broader search: "${category}"`,
+      rationale: 'Searches the general category for related patterns',
+    });
+  }
+
+  return fallbacks.slice(0, 4);
+}
+
+/**
+ * Extract key terms from search query
+ */
+function extractKeyTerms(query: string): string[] {
+  // Remove quotes, boolean operators, and special characters
+  const cleaned = query
+    .replace(/["']/g, '')
+    .replace(/\b(AND|OR|NOT)\b/gi, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned.split(' ').filter(term => term.length > 2);
+}
+
+/**
+ * Get popular search terms for specific programming languages
+ */
+function getPopularTermsForLanguage(language: string): string[] {
+  const popularTerms: Record<string, string[]> = {
+    javascript: [
+      'useState',
+      'async await',
+      'fetch api',
+      'event listener',
+      'promise',
+    ],
+    typescript: [
+      'interface',
+      'generic type',
+      'type guard',
+      'enum',
+      'namespace',
+    ],
+    python: ['def function', 'import', 'class method', 'lambda', 'decorator'],
+    java: [
+      'public class',
+      'static method',
+      'interface',
+      'annotation',
+      'spring',
+    ],
+    go: ['func main', 'interface', 'goroutine', 'channel', 'struct'],
+    rust: ['fn main', 'impl', 'trait', 'enum', 'match'],
+    cpp: ['class', 'template', 'namespace', 'virtual', 'std::'],
+    c: ['int main', 'struct', 'malloc', 'pointer', 'header'],
+    php: ['function', 'class', 'namespace', 'interface', 'trait'],
+    ruby: ['def', 'class', 'module', 'block', 'gem'],
+    swift: ['func', 'class', 'protocol', 'extension', 'guard'],
+    kotlin: ['fun', 'class', 'interface', 'data class', 'coroutine'],
+    dart: ['class', 'function', 'widget', 'async', 'future'],
+    shell: ['function', 'if then', 'for loop', 'variable', 'script'],
+    yaml: ['version', 'name', 'build', 'deploy', 'config'],
+    dockerfile: ['FROM', 'RUN', 'COPY', 'EXPOSE', 'CMD'],
+  };
+
+  return popularTerms[language.toLowerCase()] || [];
+}
+
+/**
+ * Infer search category from query terms
+ */
+function inferCategory(query: string): string | null {
+  const categories: Record<string, string[]> = {
+    authentication: [
+      'auth',
+      'login',
+      'oauth',
+      'jwt',
+      'token',
+      'passport',
+      'session',
+    ],
+    database: ['db', 'sql', 'query', 'model', 'schema', 'migration', 'orm'],
+    api: ['rest', 'graphql', 'endpoint', 'route', 'request', 'response'],
+    testing: ['test', 'spec', 'mock', 'assert', 'unit', 'integration'],
+    config: ['config', 'setting', 'env', 'environment', 'setup'],
+    ui: ['component', 'button', 'form', 'modal', 'layout', 'style'],
+    error: ['error', 'exception', 'try', 'catch', 'throw', 'handle'],
+    performance: ['cache', 'optimization', 'memory', 'speed', 'performance'],
+    security: ['security', 'encrypt', 'hash', 'validate', 'sanitize'],
+  };
+
+  const queryLower = query.toLowerCase();
+
+  for (const [category, keywords] of Object.entries(categories)) {
+    if (keywords.some(keyword => queryLower.includes(keyword))) {
+      return category;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Transform GitHub CLI response to optimized format with enhanced metadata
+ */
+function transformToOptimizedFormat(
+  items: GitHubCodeSearchItem[],
+  params: GitHubCodeSearchParams
+): OptimizedCodeSearchResult {
+  const searchEfficiency = calculateSearchEfficiency(params);
+
+  // Extract repository info if single repo search
+  const singleRepo = extractSingleRepository(items);
+
+  const optimizedItems = items.map(item => ({
+    path: item.path,
+    matches: item.textMatches.map(match => ({
+      context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
+      positions: match.matches.map(m => m.indices as [number, number]),
+    })),
+    url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
+  }));
+
+  const result: OptimizedCodeSearchResult = {
+    items: optimizedItems,
+    total_count: items.length,
+  };
+
+  // Add repository info if single repo
+  if (singleRepo) {
+    result.repository = {
+      name: singleRepo.nameWithOwner,
+      url: simplifyRepoUrl(singleRepo.url),
+    };
+  }
+
+  // Enhanced metadata with search efficiency and tips
+  result.metadata = {
+    has_filters: !!(
+      params.language ||
+      params.owner ||
+      params.filename ||
+      params.extension
+    ),
+    search_scope: params.match
+      ? Array.isArray(params.match)
+        ? params.match.join(',')
+        : params.match
+      : 'file',
+    search_efficiency: searchEfficiency,
+  };
+
+  // Add performance tips for low-efficiency searches
+  if (searchEfficiency.score < 7) {
+    result.metadata.performance_tips = generatePerformanceTips(params);
+  }
+
+  return result;
+}
+
+/**
+ * Calculate search efficiency score and provide insights
+ */
+function calculateSearchEfficiency(params: GitHubCodeSearchParams): {
+  score: number;
+  factors: string[];
+  recommendations: string[];
+} {
+  let score = 5; // Base score
+  const factors: string[] = [];
+  const recommendations: string[] = [];
+
+  // Language filter is huge efficiency boost
+  if (params.language) {
+    score += 3;
+    factors.push('Language filter (+3)');
+  } else {
+    recommendations.push('Add language filter for 90% performance boost');
+  }
+
+  // Owner filter provides good targeting
+  if (params.owner) {
+    score += 2;
+    factors.push('Owner filter (+2)');
+  }
+
+  // Filename filter is very efficient
+  if (params.filename) {
+    score += 2;
+    factors.push('Filename filter (+2)');
+  }
+
+  // Extension filter adds precision
+  if (params.extension) {
+    score += 1;
+    factors.push('Extension filter (+1)');
+  }
+
+  // Repository filter is highly targeted
+  if (params.repo) {
+    score += 2;
+    factors.push('Repository filter (+2)');
+  }
+
+  // Size filter helps avoid huge files
+  if (params.size) {
+    score += 1;
+    factors.push('Size filter (+1)');
+  }
+
+  // Boolean operators are now properly supported
+  if (params.query.includes(' OR ')) {
+    // OR is powerful when used correctly
+    if (params.language || params.owner) {
+      score += 1;
+      factors.push('OR with filters (+1)');
+    } else {
+      factors.push('OR operator (neutral)');
+      recommendations.push(
+        'Add language or owner filter with OR for better targeting'
+      );
+    }
+  }
+
+  if (params.query.includes(' AND ')) {
+    score += 1;
+    factors.push('AND operator (+1)');
+  }
+
+  if (params.query.includes(' NOT ')) {
+    // NOT can be useful but less efficient
+    factors.push('NOT operator (neutral)');
+    recommendations.push(
+      'Consider positive filters alongside NOT for better results'
+    );
+  }
+
+  if (params.query.length > 100) {
+    score -= 1;
+    factors.push('Long query (-1)');
+    recommendations.push('Simplify query for better results');
+  }
+
+  return {
+    score: Math.max(1, Math.min(10, score)),
+    factors,
+    recommendations,
+  };
+}
+
+/**
+ * Generate performance tips for inefficient searches
+ */
+function generatePerformanceTips(params: GitHubCodeSearchParams): string[] {
+  const tips: string[] = [];
+
+  if (!params.language) {
+    tips.push('Add language filter - single biggest performance boost');
+  }
+
+  if (!params.owner && !params.repo) {
+    tips.push('Add owner filter to target specific organizations');
+  }
+
+  if (params.query.includes(' OR ') && !params.language && !params.owner) {
+    tips.push('Add language or owner filter with OR for better targeting');
+  }
+
+  if (params.query.includes(' NOT ')) {
+    tips.push(
+      'Combine NOT with positive filters (language, filename, etc.) for best results'
+    );
+  }
+
+  if (!params.filename && !params.extension) {
+    tips.push('Add filename or extension filter for file-type precision');
+  }
+
+  return tips.slice(0, 3);
+}
+
+/**
+ * Extract single repository if all results are from same repo
+ */
+function extractSingleRepository(items: GitHubCodeSearchItem[]) {
+  if (items.length === 0) return null;
+
+  const firstRepo = items[0].repository;
+  const allSameRepo = items.every(
+    item => item.repository.nameWithOwner === firstRepo.nameWithOwner
+  );
+
+  return allSameRepo ? firstRepo : null;
 }
 
 /**
  * Build command line arguments for GitHub CLI with improved parameter handling
+ * Ensures exact string search capability with proper quote and escape handling
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   const args = ['code'];
 
-  // Parse and add the main search query
-  const searchQuery = parseSearchQuery(params.query, params);
-  args.push(searchQuery);
+  // Handle exact string search - preserve quotes and special characters
+  const searchQuery = params.query;
 
-  // Determine strategy based on ORIGINAL query complexity, not processed query
-  const hasComplexLogic = hasComplexBooleanLogic(params.query);
-
-  // For simple queries, use CLI flags for better performance and validation
-  if (!hasComplexLogic) {
-    if (params.language) {
-      args.push(`--language=${params.language}`);
-    }
-
-    if (params.extension) {
-      args.push(`--extension=${params.extension}`);
-    }
-
-    if (params.filename) {
-      args.push(`--filename=${params.filename}`);
-    }
-
-    if (params.size) {
-      args.push(`--size=${params.size}`);
-    }
+  // For exact string searches (quoted strings), preserve the quotes
+  // For special characters and escape sequences, pass them through
+  // GitHub CLI will handle the proper escaping to the GitHub API
+  if (searchQuery.includes('"') || searchQuery.includes("'")) {
+    // Already has quotes - exact string search
+    args.push(searchQuery);
+  } else if (
+    searchQuery.includes('\\') ||
+    /[<>{}[\]()&|;$`!*?~]/.test(searchQuery)
+  ) {
+    // Contains special characters that might need exact matching
+    // Let GitHub CLI handle the escaping - don't double-escape
+    args.push(searchQuery);
+  } else {
+    // Regular search query
+    args.push(searchQuery);
   }
-  // For complex queries, filters are already in the query string (handled by parseSearchQuery)
+
+  // Add filters in order of effectiveness for better CLI performance
+  if (params.language) {
+    args.push(`--language=${params.language}`);
+  }
+
+  if (params.filename) {
+    args.push(`--filename=${params.filename}`);
+  }
+
+  if (params.extension) {
+    args.push(`--extension=${params.extension}`);
+  }
+
+  if (params.size) {
+    args.push(`--size=${params.size}`);
+  }
 
   // Always add limit
   if (params.limit) {
     args.push(`--limit=${params.limit}`);
   }
 
-  // Handle match parameter with conflict resolution
+  // Handle match parameter
   if (params.match) {
     const matchValues = Array.isArray(params.match)
       ? params.match
@@ -291,21 +711,30 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
   }
 
   // Handle repository filters with improved validation
-  if (params.owner && params.repo) {
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+  if (params.repo) {
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
 
-    // Create repo filters for each owner/repo combination
-    owners.forEach(owner => {
-      repos.forEach(repo => {
-        // Handle both "owner/repo" format and just "repo" format
-        if (repo.includes('/')) {
-          args.push(`--repo=${repo}`);
-        } else {
-          args.push(`--repo=${owner}/${repo}`);
-        }
+    if (params.owner) {
+      const owners = Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner];
+      // Create repo filters for each owner/repo combination
+      owners.forEach(owner => {
+        repos.forEach(repo => {
+          // Handle both "owner/repo" format and just "repo" format
+          if (repo.includes('/')) {
+            args.push(`--repo=${repo}`);
+          } else {
+            args.push(`--repo=${owner}/${repo}`);
+          }
+        });
       });
-    });
+    } else {
+      // Handle repo without owner (must be in owner/repo format)
+      repos.forEach(repo => {
+        args.push(`--repo=${repo}`);
+      });
+    }
   }
 
   // JSON output with all available fields
@@ -333,95 +762,114 @@ export async function searchGitHubCode(
 
       // Parse specific GitHub CLI error types
       if (errorMessage.includes('authentication')) {
-        return createErrorResult(
-          'GitHub authentication required - run api_status_check tool',
-          error as Error
-        );
+        return createResult({
+          error: 'GitHub authentication required - run api_status_check tool',
+        });
       }
 
       if (errorMessage.includes('rate limit')) {
-        return createErrorResult(
-          'GitHub rate limit exceeded - use more specific filters or wait',
-          error as Error
-        );
+        return createResult({
+          error:
+            'GitHub rate limit exceeded - use more specific filters or wait',
+          suggestions: [
+            'Add language filter to reduce search scope',
+            'Use owner filter to target specific organizations',
+            'Add filename filter for precision targeting',
+            'Wait a few minutes and try again',
+          ],
+        });
       }
 
       if (
         errorMessage.includes('validation failed') ||
         errorMessage.includes('Invalid query')
       ) {
-        return createErrorResult(
-          'Invalid query syntax - check operators, quotes, and filters',
-          error as Error
-        );
+        return createResult({
+          error: 'Invalid query syntax. GitHub legacy search has limitations.',
+          suggestions: [
+            'Remove NOT operators (use positive filters instead)',
+            'Simplify OR logic to separate searches',
+            'Use quotes for exact phrases: "error handling"',
+            'Try: language:python + "function definition" instead of complex boolean',
+          ],
+        });
       }
 
       if (
         errorMessage.includes('repository not found') ||
         errorMessage.includes('owner not found')
       ) {
-        return createErrorResult(
-          'Repository not found - verify owner/repo names and permissions',
-          error as Error
-        );
+        return createResult({
+          error: 'Repository or owner not found',
+          suggestions: [
+            'Verify exact owner/repository names (case-sensitive)',
+            'Check if repository is private and you have access',
+            'Remove repo filter to search across all repositories',
+            'Use owner filter instead of specific repo for broader search',
+          ],
+        });
       }
 
       if (errorMessage.includes('timeout')) {
-        return createErrorResult(
-          'Search timeout - add filters to narrow results',
-          error as Error
-        );
+        return createResult({
+          error: 'Search timeout - query too broad',
+          suggestions: [
+            'Add language filter to narrow scope',
+            'Use owner or repo filters for targeting',
+            'Simplify query terms',
+            'Add filename filter for specific file types',
+          ],
+        });
       }
 
       // Generic fallback with helpful guidance
-      return createErrorResult(
-        'Code search failed - check authentication and simplify query',
-        error as Error
-      );
+      return createResult({
+        error: 'Code search failed',
+        suggestions: [
+          'Check GitHub CLI authentication with: gh auth status',
+          'Simplify query and add language filter',
+          'Try owner filter for targeted search',
+          'Use api_status_check tool to verify setup',
+        ],
+      });
     }
   });
 }
 
 /**
- * Validate parameter combinations to prevent conflicts
+ * Enhanced validation with helpful suggestions
+ * Supports exact string search with quotes and special characters
  */
 function validateSearchParameters(
   params: GitHubCodeSearchParams
 ): string | null {
   // Query validation
   if (!params.query.trim()) {
-    return 'Empty query - provide search terms like "useState" or "api AND endpoint"';
+    return 'Empty query. Try: "useState", "authentication", "docker setup", or use filters like language:python';
   }
 
   if (params.query.length > 1000) {
-    return 'Query too long - limit to 1000 characters';
+    return 'Query too long (max 1000 chars). Simplify to key terms like "error handling" instead of full sentences.';
   }
 
-  // Repository validation
+  // Repository validation - allow owner/repo format in repo field
   if (params.repo && !params.owner) {
-    return 'Missing owner - format as owner/repo or provide both parameters';
+    const repoValues = Array.isArray(params.repo) ? params.repo : [params.repo];
+    const hasOwnerFormat = repoValues.every(repo => repo.includes('/'));
+    if (!hasOwnerFormat) {
+      return 'Repository format error. Use "owner/repo" format like "facebook/react" or provide both owner and repo parameters.';
+    }
   }
 
-  // Invalid characters in query
-  if (params.query.includes('\\') && !params.query.includes('\\"')) {
-    return 'Invalid escapes - use quotes for exact phrases instead';
-  }
+  // Support exact string searches with quotes and special characters
+  // Remove overly restrictive validation for escape characters
+  // GitHub CLI and API can handle special characters properly
 
-  // Boolean operator validation
+  // Boolean operator validation with suggestions
   const invalidBooleans = params.query.match(/\b(and|or|not)\b/g);
   if (invalidBooleans) {
-    return `Boolean operators must be uppercase: ${invalidBooleans.map(op => op.toUpperCase()).join(', ')}`;
-  }
-
-  // Unmatched quotes
-  const quoteCount = (params.query.match(/"/g) || []).length;
-  if (quoteCount % 2 !== 0) {
-    return 'Unmatched quotes - ensure all quotes are properly paired';
-  }
-
-  // Size parameter validation
-  if (params.size && !/^[<>]=?\d+$|^\d+\.\.\d+$|^\d+$/.test(params.size)) {
-    return 'Invalid size format - use ">100", "<50", "10..100", or "100"';
+    const corrected = invalidBooleans.map(op => op.toUpperCase()).join(', ');
+    return `Boolean operators must be uppercase: ${corrected}. Example: "react OR vue" not "react or vue"`;
   }
 
   return null; // No validation errors

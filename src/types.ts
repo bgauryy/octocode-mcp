@@ -46,7 +46,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   org?: string;
 }
 
-export interface GitHubCommitsSearchParams
+export interface GitHubCommitSearchParams
   extends Omit<BaseSearchParams, 'query'>,
     OrderSort {
   query?: string; // Make query optional
@@ -104,20 +104,20 @@ export interface GitHubReposSearchParams
   // PRIMARY FILTERS (work alone)
   language?: string;
   forks?: number;
-  stars?: string;
-  topic?: string[];
+  stars?: string | number; // Support both string ranges and numbers
+  topic?: string | string[]; // Support both single and array
   numberOfTopics?: number;
 
   // SECONDARY FILTERS (require query or primary filter)
   archived?: boolean;
   created?: string;
   includeForks?: 'false' | 'true' | 'only';
-  license?: string[];
+  license?: string | string[]; // Support both single and array
   match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
-  goodFirstIssues?: string; // Format: ">=10", ">5", etc.
-  helpWantedIssues?: string; // Format: ">=5", ">10", etc.
+  goodFirstIssues?: string | number; // Support both string ranges and numbers
+  helpWantedIssues?: string | number; // Support both string ranges and numbers
   followers?: number;
   size?: string; // Format: ">100", "<50", "10..100"
 
@@ -221,11 +221,10 @@ export interface GitHubIssueItem {
 }
 
 export interface GitHubIssuesSearchResult {
-  searchType: 'issues';
-  query: string;
   results: GitHubIssueItem[];
+  total_count: number;
+  cli_command?: string;
   metadata: {
-    total_count: number;
     incomplete_results: boolean;
   };
 }
@@ -250,11 +249,10 @@ export interface GitHubPullRequestItem {
 }
 
 export interface GitHubPullRequestsSearchResult {
-  searchType: 'prs';
-  query: string;
   results: GitHubPullRequestItem[];
+  total_count: number;
+  cli_command?: string;
   metadata: {
-    total_count: number;
     incomplete_results: boolean;
   };
 }
@@ -316,4 +314,216 @@ export interface NpmPackage {
   links?: {
     repository?: string;
   };
+}
+
+// GitHub API response types
+export interface GitHubApiFileItem {
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+  type: 'file' | 'dir';
+  url: string;
+  html_url: string;
+  git_url: string;
+  download_url: string | null;
+  _links: {
+    self: string;
+    git: string;
+    html: string;
+  };
+}
+
+// Simplified repository contents result - token efficient
+export interface SimplifiedRepositoryContents {
+  repository: string;
+  branch: string;
+  path: string;
+  githubBasePath: string;
+  files: {
+    count: number;
+    files: Array<{
+      name: string;
+      size: number;
+      url: string; // Relative path for fetching
+    }>;
+  };
+  folders: {
+    count: number;
+    folders: Array<{
+      name: string;
+      url: string; // Relative path for browsing
+    }>;
+  };
+  cli_command?: string;
+  metadata?: {
+    branchFallback?: {
+      requested: string;
+      used: string;
+    };
+    truncated?: boolean;
+  };
+}
+
+// Optimized GitHub Search Code Types
+export interface GitHubCodeSearchMatch {
+  text: string;
+  indices: [number, number];
+}
+
+export interface GitHubCodeTextMatch {
+  fragment: string;
+  matches: GitHubCodeSearchMatch[];
+}
+
+export interface GitHubCodeSearchItem {
+  path: string;
+  repository: {
+    id: string;
+    nameWithOwner: string;
+    url: string;
+    isFork: boolean;
+    isPrivate: boolean;
+  };
+  sha: string;
+  textMatches: GitHubCodeTextMatch[];
+  url: string;
+}
+
+// Optimized response structure for code search
+export interface OptimizedCodeSearchResult {
+  items: Array<{
+    path: string;
+    matches: Array<{
+      context: string; // Simplified from fragment
+      positions: Array<[number, number]>; // Just indices
+    }>;
+    url: string; // Relative path only
+  }>;
+  total_count: number;
+  cli_command?: string;
+  repository?: {
+    name: string; // owner/repo format
+    url: string; // Shortened
+  };
+  smart_suggestions?: {
+    message: string;
+    suggestions: string[];
+    fallback_queries: Array<{
+      query: string;
+      description: string;
+      rationale: string;
+    }>;
+    next_steps: string[];
+  };
+  metadata?: {
+    has_filters: boolean;
+    search_scope: string;
+    transformed_query?: string; // Shows the actual query sent to GitHub after OR transformation
+    search_efficiency?: {
+      score: number;
+      factors: string[];
+      recommendations: string[];
+    };
+    performance_tips?: string[];
+  };
+}
+
+// GitHub Search Commits Types
+export interface GitHubCommitAuthor {
+  name: string;
+  email: string;
+  date: string;
+  login?: string;
+}
+
+export interface GitHubCommitRepository {
+  name: string;
+  fullName: string;
+  url: string;
+  description?: string;
+}
+
+export interface GitHubCommitSearchItem {
+  sha: string;
+  commit?: {
+    message: string;
+    author: {
+      name: string;
+      email: string;
+      date: string;
+    };
+    committer: {
+      name: string;
+      email: string;
+      date: string;
+    };
+  };
+  author?: {
+    login: string;
+    id: string;
+    type: string;
+    url: string;
+  };
+  committer?: {
+    login: string;
+    id: string;
+    type: string;
+    url: string;
+  };
+  repository: {
+    name: string;
+    fullName: string;
+    url: string;
+    description?: string;
+  };
+  url: string;
+  parents?: Array<{
+    sha: string;
+    url: string;
+  }>;
+}
+
+// Optimized commit search response
+export interface OptimizedCommitSearchResult {
+  commits: Array<{
+    sha: string; // Full SHA hash
+    message: string; // First line only
+    author: string; // Just name
+    date: string; // Relative time
+    repository?: string; // owner/repo (only for multi-repo)
+    url: string; // SHA or repo@SHA
+  }>;
+  total_count: number;
+  cli_command?: string;
+  repository?: {
+    name: string;
+    description?: string;
+  };
+  metadata?: {
+    timeframe: string;
+    unique_authors: number;
+  };
+}
+
+// NPM Package Types - Optimized
+export interface OptimizedNpmPackageResult {
+  name: string;
+  version: string;
+  description: string;
+  license: string;
+  repository: string;
+  size: string;
+  created: string;
+  updated: string;
+  versions: Array<{
+    version: string;
+    date: string;
+  }>;
+  stats: {
+    total_versions: number;
+    weekly_downloads?: number;
+  };
+  exports?: { main: string; types?: string; [key: string]: any };
+  cli_command?: string;
 }

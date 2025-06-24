@@ -1,14 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
+import { OptimizedNpmPackageResult } from '../../types';
 import {
-  createErrorResult,
   createResult,
-  createSuccessResult,
+  toDDMMYYYY,
+  humanizeBytes,
+  simplifyRepoUrl,
 } from '../../utils/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
-import { NpmViewPackageParams, NpmViewPackageResult } from '../../types';
 
 const TOOL_NAME = 'npm_view_package';
 
@@ -22,118 +23,186 @@ export function registerNpmViewPackageTool(server: McpServer) {
       inputSchema: {
         packageName: z
           .string()
-          .min(1, 'Package name is required')
+          .min(1)
           .describe(
             'NPM package name to analyze. Returns complete package context including exports (critical for GitHub file discovery), repository URL, dependencies, and version history.'
           ),
       },
       annotations: {
-        title: 'NPM Package Metadata Analysis',
+        title: 'NPM Package Metadata',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
       },
     },
-    async (args: NpmViewPackageParams): Promise<CallToolResult> => {
+    async (args: { packageName: string }): Promise<CallToolResult> => {
       try {
-        if (!args.packageName || args.packageName.trim() === '') {
-          return createResult(
-            'Package name required - provide valid NPM package name',
-            true
-          );
+        const result = await viewNpmPackage(args.packageName);
+
+        if (result.isError) {
+          return result;
         }
 
-        // Basic package name validation
-        if (!/^[a-z0-9@._/-]+$/.test(args.packageName)) {
-          return createResult(
-            'Invalid package name format - use standard NPM naming',
-            true
-          );
-        }
+        const execResult = JSON.parse(result.content[0].text as string);
+        const packageData = JSON.parse(execResult.result);
 
-        const result = await npmViewPackage(args.packageName);
-        return result;
+        // Transform to optimized format
+        const optimizedResult = transformToOptimizedFormat(packageData);
+
+        return createResult({ data: optimizedResult });
       } catch (error) {
-        return createResult(
-          'Failed to get package metadata - package may not exist',
-          true
-        );
+        const errorMessage = (error as Error).message || '';
+
+        if (errorMessage.includes('not found')) {
+          return createResult({
+            error: 'Package not found - verify package name spelling',
+            cli_command: `npm view ${args.packageName} --json`,
+          });
+        }
+
+        if (errorMessage.includes('network')) {
+          return createResult({
+            error: 'Network error - check internet connection',
+            cli_command: `npm view ${args.packageName} --json`,
+          });
+        }
+
+        return createResult({
+          error: 'NPM package lookup failed',
+          cli_command: `npm view ${args.packageName} --json`,
+          suggestions: [
+            'Verify package name is correct',
+            'Check if package exists on npmjs.com',
+            'Try again in a moment',
+          ],
+        });
       }
     }
   );
 }
 
-// Helper function to process versions
-function processVersions(time: Record<string, string>) {
-  const semanticVersionRegex = /^\d+\.\d+\.\d+$/;
+/**
+ * Transform NPM CLI response to optimized format
+ */
+function transformToOptimizedFormat(
+  packageData: any
+): OptimizedNpmPackageResult {
+  // Extract repository URL and simplify
+  const repoUrl =
+    packageData.repository?.url || packageData.repositoryGitUrl || '';
+  const repository = repoUrl ? simplifyRepoUrl(repoUrl) : '';
 
-  const versions = Object.entries(time || {})
-    .filter(([key]) => key !== 'created' && key !== 'modified')
-    .filter(([version]) => semanticVersionRegex.test(version))
-    .sort(([, a], [, b]) => new Date(b).getTime() - new Date(a).getTime());
+  // Simplify exports to essential entry points only
+  const exports = packageData.exports
+    ? simplifyExports(packageData.exports)
+    : undefined;
 
-  return {
-    recent: versions
-      .slice(0, 10)
-      .map(([version, releaseDate]) => ({ version, releaseDate })),
+  // Get version timestamps from time object and limit to last 5
+  const timeData = packageData.time || {};
+  const versionList = packageData.versions || [];
+  const recentVersions = versionList.slice(-5).map((version: string) => ({
+    version,
+    date: timeData[version] ? toDDMMYYYY(timeData[version]) : 'Unknown',
+  }));
+
+  const result: OptimizedNpmPackageResult = {
+    name: packageData.name,
+    version: packageData.version,
+    description: packageData.description || '',
+    license: packageData.license || 'Unknown',
+    repository,
+    size: humanizeBytes(packageData.dist?.unpackedSize || 0),
+    created: timeData.created ? toDDMMYYYY(timeData.created) : 'Unknown',
+    updated: timeData.modified ? toDDMMYYYY(timeData.modified) : 'Unknown',
+    versions: recentVersions,
     stats: {
-      total: Object.keys(time || {}).length - 2, // exclude 'created' and 'modified'
-      official: versions.length,
+      total_versions: versionList.length,
+      weekly_downloads: packageData.weeklyDownloads,
     },
   };
+
+  // Add exports only if they exist and are useful
+  if (exports && Object.keys(exports).length > 0) {
+    result.exports = exports;
+  }
+
+  return result;
 }
 
-export async function npmViewPackage(
+/**
+ * Simplify exports object to essential entry points
+ */
+function simplifyExports(exports: any): {
+  main: string;
+  types?: string;
+  [key: string]: any;
+} {
+  if (typeof exports === 'string') {
+    return { main: exports };
+  }
+
+  if (typeof exports === 'object') {
+    const simplified: any = {};
+
+    // Extract main entry point
+    if (exports['.']) {
+      const mainExport = exports['.'];
+      if (typeof mainExport === 'string') {
+        simplified.main = mainExport;
+      } else if (mainExport.default) {
+        simplified.main = mainExport.default;
+      } else if (mainExport.import) {
+        simplified.main = mainExport.import;
+      }
+    }
+
+    // Extract types if available
+    if (exports['./types'] || exports['.']?.types) {
+      simplified.types = exports['./types'] || exports['.'].types;
+    }
+
+    // Add a few other important exports (max 3 total)
+    let count = 0;
+    for (const [key, value] of Object.entries(exports)) {
+      if (count >= 3 || key === '.' || key === './types') continue;
+      if (key.includes('package.json') || key.includes('node_modules'))
+        continue;
+
+      simplified[key] =
+        typeof value === 'object' ? (value as any).default || value : value;
+      count++;
+    }
+
+    return simplified;
+  }
+
+  return { main: 'index.js' };
+}
+
+export async function viewNpmPackage(
   packageName: string
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('npm-view-package', { packageName });
+  const cacheKey = generateCacheKey('npm-view', { packageName });
 
   return withCache(cacheKey, async () => {
     try {
       const result = await executeNpmCommand('view', [packageName, '--json'], {
-        cache: true,
+        cache: false,
       });
+      return result;
+    } catch (error) {
+      const errorMessage = (error as Error).message || '';
 
-      if (result.isError) {
-        return result;
+      if (errorMessage.includes('404')) {
+        return createResult({
+          error: 'Package not found on NPM registry',
+        });
       }
 
-      // Parse the result from the executed command
-      const commandOutput = JSON.parse(result.content[0].text as string);
-      const npmData = JSON.parse(commandOutput.result);
-
-      // Process versions
-      const versionData = processVersions(npmData.time);
-
-      // Extract registry URL from tarball
-      const registryUrl =
-        npmData.dist?.tarball?.match(/^(https?:\/\/[^/]+)/)?.[1] || '';
-
-      // Build result
-      const viewResult: NpmViewPackageResult = {
-        name: npmData.name,
-        latest: npmData['dist-tags']?.latest || '',
-        license: npmData.license || '',
-        timeCreated: npmData.time?.created || '',
-        timeModified: npmData.time?.modified || '',
-        repositoryGitUrl: npmData.repository?.url || '',
-        registryUrl,
-        description: npmData.description || '',
-        size: npmData.dist?.unpackedSize || 0,
-        dependencies: npmData.dependencies || {},
-        devDependencies: npmData.devDependencies || {},
-        exports: npmData.exports || {},
-        versions: versionData.recent,
-        versionStats: versionData.stats,
-      };
-
-      return createSuccessResult(viewResult);
-    } catch (error) {
-      return createErrorResult(
-        'Failed to get package metadata - package may not exist',
-        error
-      );
+      return createResult({
+        error: 'NPM command execution failed',
+      });
     }
   });
 }

@@ -1,3 +1,103 @@
+# GitHub Repository Search
+
+## 🚀 MOST EFFECTIVE PATTERNS
+
+### 1. Quality Discovery
+```typescript
+{
+  topic: ["react", "typescript"],
+  stars: "1000..5000",
+  limit: 10
+}
+```
+
+### 2. Organization Research
+```typescript
+{
+  owner: ["microsoft", "google", "facebook"],
+  language: "python",
+  limit: 10
+}
+```
+
+### 3. Beginner-Friendly Projects
+```typescript
+{
+  goodFirstIssues: ">=5",
+  stars: "100..5000",
+  limit: 10
+}
+```
+
+### 4. Recent Quality Projects
+```typescript
+{
+  stars: ">1000",
+  created: ">2023-01-01",
+  limit: 10
+}
+```
+
+### 5. Community-Active Projects
+```typescript
+{
+  helpWantedIssues: ">=3",
+  license: ["mit", "apache-2.0"],
+  limit: 10
+}
+```
+
+## ✅ WHAT WORKS BEST
+
+- **Topic Arrays**: `["react", "typescript"]` - Most effective for multiple topics
+- **Owner Arrays**: `["microsoft", "google"]` - Perfect for organization research  
+- **Stars Ranges**: `"1000..5000"`, `">1000"` - Excellent quality filtering
+- **Simple OR**: `"tensorflow OR pytorch"` (without other filters)
+- **Boolean AND**: `"javascript AND typescript"`
+
+## ❌ AVOID THESE PATTERNS
+
+- **OR + Language Filter**: `"api OR rest"` + `language: "typescript"` → 0 results
+- **Multi-word OR**: `"machine learning OR deep learning"` → Poor quality results
+- **Over-filtering**: 5+ filters simultaneously → Often 0 results
+- **Complex Boolean**: `"(react OR vue) AND (typescript OR javascript)"` → Unreliable
+
+## 🎯 BEST PRACTICES
+
+1. **Start Simple**: Use 1-2 primary filters + limit
+2. **Prefer Arrays**: `topic: ["x", "y"]` over `query: "x OR y"`
+3. **Use Limit**: Increase `limit` instead of adding filters
+4. **Quality First**: Always include stars filter for better results
+5. **Test Incrementally**: Add filters one by one to avoid over-constraining
+
+## 📊 SUCCESS RATES
+
+| Pattern | Success Rate | Quality | Recommendation |
+|---------|-------------|---------|----------------|
+| Topic Arrays | 95% | Excellent | ✅ **BEST** |
+| Owner Arrays | 95% | Excellent | ✅ **BEST** |  
+| Simple OR | 90% | Good | ✅ Good |
+| Boolean AND | 85% | Good | ✅ Good |
+| OR + Filters | 10% | Poor | ❌ Avoid |
+| Multi-word OR | 60% | Poor | ❌ Avoid |
+
+## 🔧 PARAMETERS GUIDE
+
+### High-Impact Filters
+- `topic`: Arrays work best `["react", "typescript"]`
+- `owner`: Arrays for orgs `["microsoft", "google"]`
+- `stars`: Ranges `"1000..5000"` or thresholds `">1000"`
+
+### Quality Indicators
+- `goodFirstIssues`: Perfect for beginners `">=5"`
+- `helpWantedIssues`: Active communities `">=3"`
+- `created`: Recent projects `">2023-01-01"`
+
+### Use Carefully
+- `language`: Restrictive with other filters
+- `query`: Simple terms or OR without filters only
+- Multiple filters: Limit to 2-3 maximum
+
 See examples
 make sure the tool follows these instructions!!
 

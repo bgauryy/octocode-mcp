@@ -5,7 +5,7 @@ import {
   GitHubIssuesSearchResult,
   GitHubIssueItem,
 } from '../../types';
-import { createSuccessResult, createErrorResult } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../../utils/responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
@@ -140,17 +140,17 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     },
     async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
-        return createErrorResult(
-          'Search query is required and cannot be empty - provide keywords to search for issues',
-          new Error('Invalid query')
-        );
+        return createResult({
+          error:
+            'Search query is required and cannot be empty - provide keywords to search for issues',
+        });
       }
 
       if (args.query.length > 256) {
-        return createErrorResult(
-          'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
-          new Error('Query too long')
-        );
+        return createResult({
+          error:
+            'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
+        });
       }
 
       try {
@@ -158,24 +158,22 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : '';
         if (errorMessage.includes('authentication')) {
-          return createErrorResult(
-            'GitHub authentication required - run api_status_check tool',
-            error as Error
-          );
+          return createResult({
+            error: 'GitHub authentication required - run api_status_check tool',
+          });
         }
 
         if (errorMessage.includes('rate limit')) {
-          return createErrorResult(
-            'GitHub rate limit exceeded - wait or use specific filters',
-            error as Error
-          );
+          return createResult({
+            error: 'GitHub rate limit exceeded - wait or use specific filters',
+          });
         }
 
         // Generic fallback
-        return createErrorResult(
-          'GitHub issue search failed - check authentication or simplify query',
-          error as Error
-        );
+        return createResult({
+          error:
+            'GitHub issue search failed - check authentication or simplify query',
+        });
       }
     }
   );
@@ -219,8 +217,8 @@ async function searchGitHubIssues(
         repository:
           issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
         labels: issue.labels?.map(l => l.name) || [],
-        created_at: issue.created_at,
-        updated_at: issue.updated_at,
+        created_at: toDDMMYYYY(issue.created_at),
+        updated_at: toDDMMYYYY(issue.updated_at),
         url: issue.html_url,
         comments: issue.comments,
         reactions: issue.reactions?.total_count || 0,
@@ -228,16 +226,14 @@ async function searchGitHubIssues(
     );
 
     const searchResult: GitHubIssuesSearchResult = {
-      searchType: 'issues',
-      query: params.query || '',
       results: cleanIssues,
+      total_count: apiResponse.total_count || cleanIssues.length,
       metadata: {
-        total_count: apiResponse.total_count || 0,
         incomplete_results: apiResponse.incomplete_results || false,
       },
     };
 
-    return createSuccessResult(searchResult);
+    return createResult({ data: searchResult });
   });
 }
 
@@ -245,16 +241,43 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   command: GhCommand;
   args: string[];
 } {
-  const queryParts: string[] = [params.query?.trim() || ''];
+  const queryParts: string[] = [];
 
-  // Repository/organization qualifiers
+  // Start with the base query, but filter out qualifiers that will be added separately
+  const baseQuery = params.query?.trim() || '';
+
+  // Extract and remove qualifiers from the main query to avoid conflicts
+  const qualifierPatterns = [
+    /\bis:(open|closed)\b/gi,
+    /\blabel:("[^"]*"|[^\s]+)/gi,
+    /\bcreated:([^\s]+)/gi,
+    /\bupdated:([^\s]+)/gi,
+    /\bauthor:([^\s]+)/gi,
+    /\bassignee:([^\s]+)/gi,
+    /\bstate:(open|closed)/gi,
+    /\brepo:([^\s]+)/gi,
+    /\borg:([^\s]+)/gi,
+  ];
+
+  // Remove extracted qualifiers from base query
+  let cleanQuery = baseQuery;
+  qualifierPatterns.forEach(pattern => {
+    cleanQuery = cleanQuery.replace(pattern, '').trim();
+  });
+
+  // Add the cleaned query if it has content
+  if (cleanQuery) {
+    queryParts.push(cleanQuery);
+  }
+
+  // Repository/organization qualifiers - prioritize function params over query
   if (params.owner && params.repo) {
     queryParts.push(`repo:${params.owner}/${params.repo}`);
   } else if (params.owner) {
     queryParts.push(`org:${params.owner}`);
   }
 
-  // Build search qualifiers from params
+  // Build search qualifiers from function parameters (these take precedence)
   const qualifiers: Record<string, string | undefined> = {
     author: params.author,
     assignee: params.assignee,
@@ -272,8 +295,10 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
     if (value) queryParts.push(`${key}:${value}`);
   });
 
-  // Special qualifiers
-  if (params.labels) queryParts.push(`label:"${params.labels}"`);
+  // Special qualifiers - handle labels carefully
+  if (params.labels) {
+    queryParts.push(`label:"${params.labels}"`);
+  }
   if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
   if (params.noAssignee) queryParts.push('no:assignee');
   if (params.noLabel) queryParts.push('no:label');
@@ -282,6 +307,29 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
     queryParts.push(`archived:${params.archived}`);
   if (params.locked) queryParts.push('is:locked');
   if (params.visibility) queryParts.push(`is:${params.visibility}`);
+
+  // Extract qualifiers from original query and add them if not already set by params
+  if (baseQuery.includes('is:') && !params.state) {
+    const isMatch = baseQuery.match(/\bis:(open|closed)\b/i);
+    if (isMatch && !queryParts.some(part => part.startsWith('state:'))) {
+      queryParts.push(`state:${isMatch[1].toLowerCase()}`);
+    }
+  }
+
+  if (baseQuery.includes('label:') && !params.labels) {
+    const labelMatch = baseQuery.match(/\blabel:("[^"]*"|[^\s]+)/i);
+    if (labelMatch) {
+      const labelValue = labelMatch[1].replace(/"/g, '');
+      queryParts.push(`label:"${labelValue}"`);
+    }
+  }
+
+  if (baseQuery.includes('created:') && !params.created) {
+    const createdMatch = baseQuery.match(/\bcreated:([^\s]+)/i);
+    if (createdMatch) {
+      queryParts.push(`created:${createdMatch[1]}`);
+    }
+  }
 
   const query = queryParts.filter(Boolean).join(' ');
   const limit = Math.min(params.limit || 25, 100);
