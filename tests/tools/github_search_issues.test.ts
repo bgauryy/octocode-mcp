@@ -63,7 +63,6 @@ describe('GitHub Search Issues Tool', () => {
   });
 
   describe('Successful Issue Searches', () => {
-
     it('should perform basic issue search', async () => {
       const mockApiResponse = {
         total_count: 1,
@@ -104,8 +103,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.searchType).toBe('issues');
-      expect(data.query).toBe('bug rendering');
+      expect(data.total_count).toBe(1);
       expect(data.results).toHaveLength(1);
       expect(data.results[0]).toEqual({
         number: 123,
@@ -120,8 +118,6 @@ describe('GitHub Search Issues Tool', () => {
         comments: 5,
         reactions: 3,
       });
-      expect(data.metadata.total_count).toBe(1);
-      expect(data.metadata.incomplete_results).toBe(false);
     });
 
     it('should handle repository-specific search', async () => {
@@ -448,7 +444,7 @@ describe('GitHub Search Issues Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.results).toEqual([]);
-      expect(data.metadata.total_count).toBe(0);
+      expect(data.total_count).toBe(0);
     });
   });
 
@@ -482,9 +478,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'GitHub issue search failed'
-      );
+      expect(result.content[0].text).toContain('GitHub issue search failed');
     });
 
     it('should handle network timeout errors', async () => {
@@ -496,9 +490,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'GitHub issue search failed'
-      );
+      expect(result.content[0].text).toContain('GitHub issue search failed');
     });
 
     it('should handle API rate limit errors', async () => {

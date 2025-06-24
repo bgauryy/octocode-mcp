@@ -103,7 +103,6 @@ export async function viewRepositoryStructure(
       let items: GitHubApiFileItem[] = [];
       let usedBranch = branch;
       let lastError: Error | null = null;
-
       for (const tryBranch of branchesToTry) {
         try {
           const apiPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${tryBranch}`;

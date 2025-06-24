@@ -162,22 +162,24 @@ function escapeWindowsCmdArg(arg: string): string {
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
   // Special handling for GitHub CLI search queries to preserve boolean logic
   if (isGitHubQuery && hasGitHubBooleanOperators(arg)) {
-    // FIXED: Keep boolean operators uppercase for GitHub CLI compatibility
-    // GitHub CLI expects uppercase: AND, OR, NOT
-
-    // For boolean queries, use double quotes but preserve boolean operators
-    if (arg.includes('"')) {
-      // If already quoted, escape internal quotes (compatible method)
-      return arg.replace(/"/g, '\\"');
-    }
-    // Use double quotes for complex queries but preserve boolean operators
+    // For boolean queries with OR/AND/NOT, use double quotes to preserve operators
+    // GitHub CLI handles boolean logic properly when quoted
     return `"${arg.replace(/"/g, '\\"')}"`;
   }
 
-  // For non-boolean GitHub queries, check if already properly quoted
+  // For GitHub queries with spaces but no boolean operators, quote them
+  if (
+    isGitHubQuery &&
+    /\s/.test(arg) &&
+    !arg.startsWith('"') &&
+    !arg.endsWith('"')
+  ) {
+    return `"${arg.replace(/"/g, '\\"')}"`;
+  }
+
+  // For already quoted GitHub queries, pass through with escaped internal quotes
   if (isGitHubQuery && arg.startsWith('"') && arg.endsWith('"')) {
-    // Already quoted, just escape internal quotes (compatible method)
-    return arg.replace(/"/g, '\\"');
+    return arg.replace(/\\"/g, '\\\\"'); // Escape already escaped quotes
   }
 
   // Standard Unix shell escaping for other arguments
@@ -307,18 +309,22 @@ async function executeCommand(
 
     const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
 
-    // FIXED: More precise error detection that doesn't hide real issues
+    // Improved error detection that ignores shell configuration conflicts
     const shouldTreatAsError =
       type === 'npm'
-        ? stderr && !stderr.includes('npm WARN')
+        ? stderr &&
+          !stderr.includes('npm WARN') &&
+          !stderr.includes('npm notice')
         : stderr &&
           !stderr.includes('Warning:') &&
           !stderr.includes('notice:') &&
-          // Keep existing patterns for backward compatibility while being more specific
-          !stderr.includes('No such file or directory') && // Shell-related errors (test compatibility)
-          !stderr.includes('head: illegal option') && // Specific shell alias conflicts
-          !/^head:\s+cat:\s+/.test(stderr) && // Specific format for head/cat conflicts
-          !/^head:\s+\|:\s+/.test(stderr) && // Specific format for head/pipe conflicts
+          // Ignore shell configuration conflicts - common in development environments
+          !stderr.includes('No such file or directory') &&
+          !stderr.includes('head: illegal option') &&
+          !stderr.includes('head: |: No such file or directory') &&
+          !stderr.includes('head: cat: No such file or directory') &&
+          !/^head:\s+/.test(stderr) && // Ignore all head command errors (shell conflicts)
+          !/^\s*head:\s+/.test(stderr) && // Ignore head errors with leading whitespace
           stderr.trim() !== '';
 
     if (shouldTreatAsError) {

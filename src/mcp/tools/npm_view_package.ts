@@ -57,17 +57,20 @@ export function registerNpmViewPackageTool(server: McpServer) {
         if (errorMessage.includes('not found')) {
           return createResult({
             error: 'Package not found - verify package name spelling',
+            cli_command: `npm view ${args.packageName} --json`,
           });
         }
 
         if (errorMessage.includes('network')) {
           return createResult({
             error: 'Network error - check internet connection',
+            cli_command: `npm view ${args.packageName} --json`,
           });
         }
 
         return createResult({
           error: 'NPM package lookup failed',
+          cli_command: `npm view ${args.packageName} --json`,
           suggestions: [
             'Verify package name is correct',
             'Check if package exists on npmjs.com',

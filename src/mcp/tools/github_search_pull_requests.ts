@@ -192,11 +192,9 @@ async function searchGitHubPullRequests(
     );
 
     const searchResult: GitHubPullRequestsSearchResult = {
-      searchType: 'prs',
-      query: params.query || '',
       results: cleanPRs,
+      total_count: apiResponse.total_count || cleanPRs.length,
       metadata: {
-        total_count: apiResponse.total_count || 0,
         incomplete_results: apiResponse.incomplete_results || false,
       },
     };

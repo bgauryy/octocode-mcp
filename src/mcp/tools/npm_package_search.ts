@@ -72,20 +72,21 @@ export function registerNpmSearchTool(server: McpServer) {
         if (deduplicatedPackages.length > 0) {
           return createResult({
             data: {
-              query: Array.isArray(args.queries)
-                ? args.queries.join(', ')
-                : args.queries,
-              total: deduplicatedPackages.length,
+              total_count: deduplicatedPackages.length,
               results: deduplicatedPackages,
             },
           });
         }
 
-        return createResult({ error: 'No packages found' });
+        return createResult({
+          error: 'No packages found',
+          cli_command: `npm search ${Array.isArray(args.queries) ? args.queries.join(' ') : args.queries}`,
+        });
       } catch (error) {
         return createResult({
           error:
             'Package search failed - check terms or try different keywords',
+          cli_command: `npm search ${Array.isArray(args.queries) ? args.queries.join(' ') : args.queries}`,
         });
       }
     }

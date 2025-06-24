@@ -221,11 +221,10 @@ export interface GitHubIssueItem {
 }
 
 export interface GitHubIssuesSearchResult {
-  searchType: 'issues';
-  query: string;
   results: GitHubIssueItem[];
+  total_count: number;
+  cli_command?: string;
   metadata: {
-    total_count: number;
     incomplete_results: boolean;
   };
 }
@@ -250,11 +249,10 @@ export interface GitHubPullRequestItem {
 }
 
 export interface GitHubPullRequestsSearchResult {
-  searchType: 'prs';
-  query: string;
   results: GitHubPullRequestItem[];
+  total_count: number;
+  cli_command?: string;
   metadata: {
-    total_count: number;
     incomplete_results: boolean;
   };
 }
@@ -357,6 +355,7 @@ export interface SimplifiedRepositoryContents {
       url: string; // Relative path for browsing
     }>;
   };
+  cli_command?: string;
   metadata?: {
     branchFallback?: {
       requested: string;
@@ -393,8 +392,6 @@ export interface GitHubCodeSearchItem {
 
 // Optimized response structure for code search
 export interface OptimizedCodeSearchResult {
-  query: string;
-  total_count: number;
   items: Array<{
     path: string;
     matches: Array<{
@@ -403,6 +400,8 @@ export interface OptimizedCodeSearchResult {
     }>;
     url: string; // Relative path only
   }>;
+  total_count: number;
+  cli_command?: string;
   repository?: {
     name: string; // owner/repo format
     url: string; // Shortened
@@ -418,7 +417,6 @@ export interface OptimizedCodeSearchResult {
     next_steps: string[];
   };
   metadata?: {
-    cli_command?: string;
     has_filters: boolean;
     search_scope: string;
     transformed_query?: string; // Shows the actual query sent to GitHub after OR transformation
@@ -488,8 +486,6 @@ export interface GitHubCommitSearchItem {
 
 // Optimized commit search response
 export interface OptimizedCommitSearchResult {
-  query: string;
-  total_count: number;
   commits: Array<{
     sha: string; // Full SHA hash
     message: string; // First line only
@@ -498,6 +494,8 @@ export interface OptimizedCommitSearchResult {
     repository?: string; // owner/repo (only for multi-repo)
     url: string; // SHA or repo@SHA
   }>;
+  total_count: number;
+  cli_command?: string;
   repository?: {
     name: string;
     description?: string;
@@ -527,4 +525,5 @@ export interface OptimizedNpmPackageResult {
     weekly_downloads?: number;
   };
   exports?: { main: string; types?: string; [key: string]: any };
+  cli_command?: string;
 }

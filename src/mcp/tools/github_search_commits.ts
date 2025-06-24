@@ -17,7 +17,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 const TOOL_NAME = 'github_search_commits';
 
-const DESCRIPTION = `Search commit history with powerful boolean logic and exact phrase matching. Track code evolution, bug fixes, and development workflows with surgical precision.`;
+const DESCRIPTION = `Search commit history effectively with GitHub's commit search. Use simple, specific terms for best results. Complex boolean queries may return limited results - try individual keywords instead.`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -131,6 +131,31 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         // GitHub CLI returns a direct array
         const items = Array.isArray(commits) ? commits : [];
 
+        // Enhanced handling for no results - provide fallback suggestions
+        if (items.length === 0) {
+          return createResult({
+            data: {
+              commits: [],
+              total_count: 0,
+              cli_command: execResult.command,
+              suggestions: {
+                message:
+                  'No commits found. GitHub commit search is limited compared to code/issue search.',
+                fallback_strategies: [
+                  'Try simpler, shorter queries (single keywords work better)',
+                  "Use broader terms like 'fix' instead of 'fix useState bug'",
+                  'Search by author: add author filter for specific contributors',
+                  'Use date ranges: add authorDate or committerDate filters',
+                  'Try github_search_code tool for finding code patterns instead',
+                ],
+                alternative_queries: generateCommitSearchAlternatives(
+                  args.query
+                ),
+              },
+            },
+          });
+        }
+
         // Transform to optimized format
         const optimizedResult = transformCommitsToOptimizedFormat(items, args);
 
@@ -168,7 +193,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
  */
 function transformCommitsToOptimizedFormat(
   items: GitHubCommitSearchItem[],
-  params: GitHubCommitSearchParams
+  _params: GitHubCommitSearchParams
 ): OptimizedCommitSearchResult {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
@@ -205,9 +230,15 @@ function transformCommitsToOptimizedFormat(
     });
 
   const result: OptimizedCommitSearchResult = {
-    query: params.query || 'all commits',
+    commits: optimizedCommits as Array<{
+      sha: string;
+      message: string;
+      author: string;
+      date: string;
+      repository?: string;
+      url: string;
+    }>,
     total_count: items.length,
-    commits: optimizedCommits as any,
   };
 
   // Add repository info if single repo
@@ -263,6 +294,50 @@ function getTimeframe(items: GitHubCommitSearchItem[]): string {
   return `${Math.floor(diffDays / 365)} years`;
 }
 
+/**
+ * Generate alternative commit search queries when original query fails
+ */
+function generateCommitSearchAlternatives(originalQuery?: string): Array<{
+  query: string;
+  reason: string;
+}> {
+  if (!originalQuery) {
+    return [
+      { query: 'fix', reason: 'Search for general fixes' },
+      { query: 'bug', reason: 'Search for bug-related commits' },
+      { query: 'refactor', reason: 'Search for refactoring commits' },
+    ];
+  }
+
+  const alternatives: Array<{ query: string; reason: string }> = [];
+  const query = originalQuery.toLowerCase();
+
+  // Extract key terms and create simpler alternatives
+  if (query.includes('fix') && query.includes('bug')) {
+    alternatives.push(
+      { query: 'fix', reason: 'Broader search for all fixes' },
+      { query: 'bug', reason: 'Search for bug-related commits' }
+    );
+  } else if (query.includes(' ')) {
+    // Multi-word query - suggest individual terms
+    const words = query.split(' ').filter(w => w.length > 2);
+    words.slice(0, 2).forEach(word => {
+      alternatives.push({
+        query: word,
+        reason: `Single keyword search for '${word}'`,
+      });
+    });
+  }
+
+  // Always suggest some common commit patterns
+  alternatives.push(
+    { query: 'feat', reason: 'Search for feature commits' },
+    { query: 'docs', reason: 'Search for documentation updates' }
+  );
+
+  return alternatives.slice(0, 4); // Limit to 4 suggestions
+}
+
 export async function searchGitHubCommits(
   params: GitHubCommitSearchParams
 ): Promise<CallToolResult> {
@@ -301,9 +376,10 @@ export async function searchGitHubCommits(
 function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
   const args = ['commits'];
 
-  // Add query if provided
+  // Add query if provided - simplified approach for better results
   if (params.query) {
-    args.push(params.query);
+    // Simple, direct query handling - GitHub commit search works better with straightforward queries
+    args.push(params.query.trim());
   }
 
   // Repository filters

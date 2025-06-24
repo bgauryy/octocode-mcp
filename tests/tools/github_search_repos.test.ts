@@ -91,8 +91,7 @@ describe('GitHub Search Repositories Tool', () => {
         [
           'repos',
           'test',
-          '--json',
-          'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
+          '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
         ],
         { cache: false }
       );

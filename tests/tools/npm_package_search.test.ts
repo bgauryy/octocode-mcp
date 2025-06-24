@@ -81,9 +81,15 @@ describe('NPM Package Search Tool', () => {
     it('should handle no packages found', async () => {
       registerNpmSearchTool(mockServer.server);
 
+      const mockNpmResponse = {
+        result: '[]', // Empty results
+        command: 'npm search nonexistent-package-xyz --searchlimit=20 --json',
+        type: 'npm',
+      };
+
       mockExecuteNpmCommand.mockResolvedValue({
-        isError: true,
-        content: [{ text: 'No packages found' }],
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
       });
 
       const result = await mockServer.callTool('npm_package_search', {
@@ -91,7 +97,9 @@ describe('NPM Package Search Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('No packages found');
+      const errorData = JSON.parse(result.content[0].text as string);
+      expect(errorData.error).toBe('No packages found');
+      expect(errorData.cli_command).toBe('npm search nonexistent-package-xyz');
     });
   });
-}); 
+});

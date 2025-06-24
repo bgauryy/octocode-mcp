@@ -4,19 +4,37 @@ export function createResult(options: {
   data?: unknown;
   error?: unknown | string;
   suggestions?: string[];
+  cli_command?: string;
 }): CallToolResult {
-  const { data, error, suggestions } = options;
+  const { data, error, suggestions, cli_command } = options;
 
   if (error) {
     const errorMessage =
       typeof error === 'string'
         ? error
         : (error as Error).message || 'Unknown error';
-    const text = `${errorMessage}${suggestions ? ` | Try: ${suggestions.join(', ')}` : ''}`;
+
+    // Build error response with optional CLI command
+    const errorResponse: any = { error: errorMessage };
+    if (suggestions) {
+      errorResponse.suggestions = suggestions;
+    }
+    if (cli_command) {
+      errorResponse.cli_command = cli_command;
+    }
 
     return {
-      content: [{ type: 'text', text }],
+      content: [{ type: 'text', text: JSON.stringify(errorResponse, null, 2) }],
       isError: true,
+    };
+  }
+
+  // For successful responses, include cli_command if provided (for debugging)
+  if (cli_command && data && typeof data === 'object') {
+    const dataWithCli = { ...data, cli_command };
+    return {
+      content: [{ type: 'text', text: JSON.stringify(dataWithCli, null, 2) }],
+      isError: false,
     };
   }
 

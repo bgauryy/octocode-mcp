@@ -153,11 +153,7 @@ STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
         }
 
         // Transform to optimized format
-        const optimizedResult = transformToOptimizedFormat(
-          items,
-          args,
-          execResult.command
-        );
+        const optimizedResult = transformToOptimizedFormat(items, args);
 
         return createResult({ data: optimizedResult });
       } catch (error) {
@@ -196,9 +192,8 @@ function handleNoResults(
 
   return createResult({
     data: {
-      query: params.query,
-      total_count: 0,
       items: [],
+      total_count: 0,
       smart_suggestions: {
         message:
           "No results found. Here are smart strategies to find what you're looking for:",
@@ -223,8 +218,8 @@ function handleNoResults(
             ? params.match.join(',')
             : params.match
           : 'file',
-        cli_command: cliCommand,
       },
+      cli_command: cliCommand,
     },
   });
 }
@@ -445,10 +440,8 @@ function inferCategory(query: string): string | null {
  */
 function transformToOptimizedFormat(
   items: GitHubCodeSearchItem[],
-  params: GitHubCodeSearchParams,
-  cliCommand: string
+  params: GitHubCodeSearchParams
 ): OptimizedCodeSearchResult {
-  const hasComplexBoolean = hasComplexBooleanLogic(params.query);
   const searchEfficiency = calculateSearchEfficiency(params);
 
   // Extract repository info if single repo search
@@ -464,9 +457,8 @@ function transformToOptimizedFormat(
   }));
 
   const result: OptimizedCodeSearchResult = {
-    query: params.query,
-    total_count: items.length,
     items: optimizedItems,
+    total_count: items.length,
   };
 
   // Add repository info if single repo
@@ -496,11 +488,6 @@ function transformToOptimizedFormat(
   // Add performance tips for low-efficiency searches
   if (searchEfficiency.score < 7) {
     result.metadata.performance_tips = generatePerformanceTips(params);
-  }
-
-  // Show CLI command for debugging complex searches
-  if (hasComplexBoolean || items.length > 80) {
-    result.metadata.cli_command = cliCommand;
   }
 
   return result;
@@ -625,22 +612,6 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
   );
 
   return allSameRepo ? firstRepo : null;
-}
-
-/**
- * Check if query contains complex boolean logic that might conflict with CLI flags
- */
-function hasComplexBooleanLogic(query: string): boolean {
-  // Check for explicit boolean operators (AND, OR, NOT)
-  const hasExplicitBoolean = /\b(AND|OR|NOT)\b/i.test(query);
-
-  // Check for nested parentheses or complex patterns
-  const hasNestedLogic = /\([^)]*\b(AND|OR|NOT)\b[^)]*\)/i.test(query);
-
-  // Check for negation patterns
-  const hasNegation = /\bNOT\b/i.test(query);
-
-  return hasExplicitBoolean || hasNestedLogic || hasNegation;
 }
 
 /**

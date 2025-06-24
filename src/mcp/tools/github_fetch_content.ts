@@ -118,10 +118,12 @@ async function fetchGitHubFileContent(
         if (errorMsg.includes('404')) {
           return createResult({
             error: 'File not found - verify path with github_get_contents',
+            cli_command: `gh api "/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}"`,
           });
         } else if (errorMsg.includes('403')) {
           return createResult({
             error: 'Access denied - repository may be private',
+            cli_command: `gh api "/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}"`,
           });
         } else if (
           errorMsg.includes('maxBuffer') ||
@@ -130,10 +132,12 @@ async function fetchGitHubFileContent(
           return createResult({
             error:
               'File too large (>300KB) - use github_search_code for patterns instead',
+            cli_command: `gh api "/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}"`,
           });
         } else {
           return createResult({
             error: 'Fetch failed - check repository and file path',
+            cli_command: `gh api "/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}"`,
           });
         }
       }

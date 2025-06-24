@@ -267,14 +267,14 @@ describe('GitHub Search Code Tool', () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
       const result = await mockServer.callTool('github_search_code', {
-        query: '', // Empty query
+        query: '',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Empty query');
-      expect(result.content[0].text).toContain(
-        'Try: "useState", "authentication"'
-      );
+      const errorData = JSON.parse(result.content[0].text as string);
+      expect(errorData.error).toContain('Empty query');
+      expect(errorData.error).toContain('useState');
+      expect(errorData.error).toContain('authentication');
     });
 
     it('should handle boolean operator validation', async () => {

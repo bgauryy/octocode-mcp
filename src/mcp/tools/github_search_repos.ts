@@ -29,7 +29,11 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search GitHub repositories with powerful filtering. BEST PATTERNS: topic arrays ["react", "typescript"], owner arrays ["microsoft", "google"], stars ranges "1000..5000". AVOID: OR queries with language filter, 5+ filters simultaneously. Use limit parameter instead of over-filtering.`;
+const DESCRIPTION = `Search GitHub repositories with advanced filtering. PROVEN PATTERNS: topic arrays ["react", "typescript"], owner arrays ["microsoft", "google"], stars ranges "1000..5000". 
+
+WORKS: OR queries alone, multiple owners/topics, good-first-issues filter
+LIMITATIONS: OR queries + filters are restrictive, complex combinations may yield 0 results
+TIP: Use limit parameter instead of adding more filters for broader results.`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -90,7 +94,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query. BEST: single terms ("react"), simple OR without filters ("tensorflow OR pytorch"). AVOID: multi-word OR, OR + language filter. Use topic arrays for multiple topics.'
+            'Search query. PROVEN: single terms ("react"), simple OR queries ("tensorflow OR pytorch"). AVOID: OR + additional filters (very restrictive). TIP: Use topic arrays for multiple topics instead.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -98,7 +102,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization. HIGHLY EFFECTIVE as array ["microsoft", "google"]. Best for targeted research.'
+            'Repository owner/organization. HIGHLY EFFECTIVE as array ["microsoft", "google"]. FIXED: Now supports multiple owners with comma separation. Best for targeted research.'
           ),
         language: z
           .string()
@@ -124,7 +128,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Topics filter. BEST PATTERN: arrays ["react", "typescript"]. Preferred over OR queries. Combines well with stars.'
+            'Topics filter. BEST PATTERN: arrays ["react", "typescript"]. FIXED: Now supports comma-separated topics. Preferred over OR queries. Combines well with stars.'
           ),
         forks: z.number().optional().describe('Number of forks filter.'),
 
@@ -187,7 +191,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Good first issues count. EXCELLENT for beginners. Combine with stars "100..5000" for quality projects.'
+            'Good first issues count. WORKING: Filter for beginner-friendly projects. EXCELLENT when combined with stars "100..5000" for quality beginner projects.'
           ),
         helpWantedIssues: z
           .union([
@@ -445,8 +449,7 @@ export async function searchGitHubRepos(
 
       return createResult({
         data: {
-          query: params.query,
-          total: analysis.totalFound,
+          total_count: analysis.totalFound,
           ...(analysis.totalFound > 0
             ? {
                 repositories: analysis.topStarred,
@@ -458,6 +461,7 @@ export async function searchGitHubRepos(
               }
             : {
                 repositories: [],
+                cli_command: execResult.command, // Only on no results
               }),
         },
       });
@@ -486,19 +490,19 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   // Add JSON output with specific fields for structured data parsing
   // Note: 'topics' field is not available in GitHub CLI search repos JSON output
   args.push(
-    '--json',
-    'name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
+    '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
   );
 
   // CORE FILTERS - Handle arrays properly
   if (params.owner) {
+    // GitHub CLI supports multiple owners with comma separation: --owner=owner1,owner2
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => args.push(`--owner=${owner}`));
+    args.push(`--owner=${owners.join(',')}`);
   }
   if (params.language) args.push(`--language=${params.language}`);
   if (params.forks !== undefined) args.push(`--forks=${params.forks}`);
 
-  // Handle topic as string or array
+  // Handle topic as string or array - GitHub CLI expects comma-separated topics
   if (params.topic) {
     const topics = Array.isArray(params.topic) ? params.topic : [params.topic];
     args.push(`--topic=${topics.join(',')}`);
