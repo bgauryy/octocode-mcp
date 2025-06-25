@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createResult, parseJsonResponse } from '../../src/utils/responses';
+import { createResult } from '../../src/utils/responses';
 import { needsQuoting } from '../../src/utils/query.js';
 
 describe('Response Utilities', () => {
@@ -55,36 +55,6 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toBe(JSON.stringify(data, null, 2));
-    });
-  });
-
-  describe('parseJsonResponse', () => {
-    it('should parse valid JSON', () => {
-      const jsonData = { message: 'test' };
-      const jsonString = JSON.stringify(jsonData);
-
-      const result = parseJsonResponse(jsonString);
-
-      expect(result.parsed).toBe(true);
-      expect(result.data).toEqual(jsonData);
-    });
-
-    it('should handle invalid JSON with fallback', () => {
-      const invalidJson = 'not json';
-
-      const result = parseJsonResponse(invalidJson);
-
-      expect(result.parsed).toBe(false);
-      expect(result.data).toBe(invalidJson);
-    });
-
-    it('should use original text as fallback when no fallback provided', () => {
-      const invalidJson = 'still not json';
-
-      const result = parseJsonResponse(invalidJson);
-
-      expect(result.parsed).toBe(false);
-      expect(result.data).toBe(invalidJson);
     });
   });
 

@@ -44,19 +44,6 @@ export function createResult(options: {
   };
 }
 
-// Helper function for JSON parsing with error handling
-export function parseJsonResponse<T>(jsonString: string): {
-  data: T;
-  parsed: boolean;
-} {
-  try {
-    const parsed = JSON.parse(jsonString);
-    return { data: parsed, parsed: true };
-  } catch {
-    return { data: jsonString as unknown as T, parsed: false };
-  }
-}
-
 /**
  * Utility functions for optimizing API responses
  */
