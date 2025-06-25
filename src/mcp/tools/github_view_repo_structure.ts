@@ -3,7 +3,6 @@ import z from 'zod';
 import {
   GitHubRepositoryStructureParams,
   GitHubApiFileItem,
-  SimplifiedRepositoryContents,
 } from '../../types';
 import { createResult } from '../../utils/responses';
 import { executeGitHubCommand } from '../../utils/exec';
@@ -179,36 +178,22 @@ export async function viewRepositoryStructure(
           url: item.path, // Use path for browsing
         }));
 
-      // Simplified result structure - token efficient
-      const result: SimplifiedRepositoryContents = {
-        repository: `${owner}/${repo}`,
-        branch: usedBranch,
-        path: cleanPath || '/',
-        githubBasePath: `https://api.github.com/repos/${owner}/${repo}/contents/`,
-        files: {
-          count: files.length,
-          files: files,
-        },
-        folders: {
-          count: folders.length,
-          folders: folders,
-        },
-        ...((usedBranch !== branch || limitedItems.length === 100) && {
-          metadata: {
-            ...(usedBranch !== branch && {
-              branchFallback: {
-                requested: branch,
-                used: usedBranch,
-              },
-            }),
-            ...(limitedItems.length === 100 && {
-              truncated: true,
-            }),
+      return createResult({
+        data: {
+          repository: `${owner}/${repo}`,
+          branch: usedBranch,
+          path: cleanPath || '/',
+          githubBasePath: `https://api.github.com/repos/${owner}/${repo}/contents/`,
+          files: {
+            count: files.length,
+            files: files,
           },
-        }),
-      };
-
-      return createResult({ data: result });
+          folders: {
+            count: folders.length,
+            folders: folders,
+          },
+        },
+      });
     } catch (error) {
       return createResult({
         error: `Repository access failed - verify repository and authentication: ${error}`,

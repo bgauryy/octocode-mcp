@@ -80,13 +80,11 @@ export function registerNpmSearchTool(server: McpServer) {
 
         return createResult({
           error: 'No packages found',
-          cli_command: `npm search ${Array.isArray(args.queries) ? args.queries.join(' ') : args.queries}`,
         });
       } catch (error) {
         return createResult({
           error:
             'Package search failed - check terms or try different keywords',
-          cli_command: `npm search ${Array.isArray(args.queries) ? args.queries.join(' ') : args.queries}`,
         });
       }
     }

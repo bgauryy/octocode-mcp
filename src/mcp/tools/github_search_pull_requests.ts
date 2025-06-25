@@ -146,6 +146,13 @@ async function searchGitHubPullRequests(
     const apiResponse = execResult.result;
     const pullRequests = apiResponse.items || [];
 
+    if (pullRequests.length === 0) {
+      return createResult({
+        error:
+          'No pull requests found. Try simplifying your query or using different filters.',
+      });
+    }
+
     const cleanPRs: GitHubPullRequestItem[] = pullRequests.map(
       (pr: {
         number: number;
@@ -194,9 +201,6 @@ async function searchGitHubPullRequests(
     const searchResult: GitHubPullRequestsSearchResult = {
       results: cleanPRs,
       total_count: apiResponse.total_count || cleanPRs.length,
-      metadata: {
-        incomplete_results: apiResponse.incomplete_results || false,
-      },
     };
 
     return createResult({ data: searchResult });

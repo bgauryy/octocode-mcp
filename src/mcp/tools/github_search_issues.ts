@@ -227,10 +227,6 @@ async function searchGitHubIssues(
 
     const searchResult: GitHubIssuesSearchResult = {
       results: cleanIssues,
-      total_count: apiResponse.total_count || cleanIssues.length,
-      metadata: {
-        incomplete_results: apiResponse.incomplete_results || false,
-      },
     };
 
     return createResult({ data: searchResult });

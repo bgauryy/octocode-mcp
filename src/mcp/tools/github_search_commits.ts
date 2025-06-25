@@ -131,28 +131,11 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         // GitHub CLI returns a direct array
         const items = Array.isArray(commits) ? commits : [];
 
-        // Enhanced handling for no results - provide fallback suggestions
+        // Smart handling for no results - provide actionable suggestions
         if (items.length === 0) {
           return createResult({
-            data: {
-              commits: [],
-              total_count: 0,
-              cli_command: execResult.command,
-              suggestions: {
-                message:
-                  'No commits found. GitHub commit search is limited compared to code/issue search.',
-                fallback_strategies: [
-                  'Try simpler, shorter queries (single keywords work better)',
-                  "Use broader terms like 'fix' instead of 'fix useState bug'",
-                  'Search by author: add author filter for specific contributors',
-                  'Use date ranges: add authorDate or committerDate filters',
-                  'Try github_search_code tool for finding code patterns instead',
-                ],
-                alternative_queries: generateCommitSearchAlternatives(
-                  args.query
-                ),
-              },
-            },
+            error:
+              'No commits found. Try simplifying your query or using different filters.',
           });
         }
 
@@ -177,11 +160,6 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 
         return createResult({
           error: 'Commit search failed',
-          suggestions: [
-            'Check authentication with api_status_check',
-            'Use more specific date ranges or author filters',
-            'Try simpler boolean queries',
-          ],
         });
       }
     }
@@ -197,13 +175,6 @@ function transformCommitsToOptimizedFormat(
 ): OptimizedCommitSearchResult {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
-
-  // Get unique authors for metadata
-  const uniqueAuthors = new Set(
-    items.map(
-      item => item.commit?.author?.name || item.author?.login || 'Unknown'
-    )
-  ).size;
 
   const optimizedCommits = items
     .map(item => ({
@@ -249,14 +220,6 @@ function transformCommitsToOptimizedFormat(
     };
   }
 
-  // Add metadata for insights
-  if (items.length > 1) {
-    result.metadata = {
-      timeframe: getTimeframe(items),
-      unique_authors: uniqueAuthors,
-    };
-  }
-
   return result;
 }
 
@@ -272,70 +235,6 @@ function extractSingleRepository(items: GitHubCommitSearchItem[]) {
   );
 
   return allSameRepo ? firstRepo : null;
-}
-
-/**
- * Calculate timeframe of commits
- */
-function getTimeframe(items: GitHubCommitSearchItem[]): string {
-  if (items.length === 0) return '';
-
-  const dates = items.map(item => new Date(item.commit?.author?.date || ''));
-  const oldest = new Date(Math.min(...dates.map(d => d.getTime())));
-  const newest = new Date(Math.max(...dates.map(d => d.getTime())));
-
-  const diffMs = newest.getTime() - oldest.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return 'same day';
-  if (diffDays < 7) return `${diffDays} days`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks`;
-  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months`;
-  return `${Math.floor(diffDays / 365)} years`;
-}
-
-/**
- * Generate alternative commit search queries when original query fails
- */
-function generateCommitSearchAlternatives(originalQuery?: string): Array<{
-  query: string;
-  reason: string;
-}> {
-  if (!originalQuery) {
-    return [
-      { query: 'fix', reason: 'Search for general fixes' },
-      { query: 'bug', reason: 'Search for bug-related commits' },
-      { query: 'refactor', reason: 'Search for refactoring commits' },
-    ];
-  }
-
-  const alternatives: Array<{ query: string; reason: string }> = [];
-  const query = originalQuery.toLowerCase();
-
-  // Extract key terms and create simpler alternatives
-  if (query.includes('fix') && query.includes('bug')) {
-    alternatives.push(
-      { query: 'fix', reason: 'Broader search for all fixes' },
-      { query: 'bug', reason: 'Search for bug-related commits' }
-    );
-  } else if (query.includes(' ')) {
-    // Multi-word query - suggest individual terms
-    const words = query.split(' ').filter(w => w.length > 2);
-    words.slice(0, 2).forEach(word => {
-      alternatives.push({
-        query: word,
-        reason: `Single keyword search for '${word}'`,
-      });
-    });
-  }
-
-  // Always suggest some common commit patterns
-  alternatives.push(
-    { query: 'feat', reason: 'Search for feature commits' },
-    { query: 'docs', reason: 'Search for documentation updates' }
-  );
-
-  return alternatives.slice(0, 4); // Limit to 4 suggestions
 }
 
 export async function searchGitHubCommits(
