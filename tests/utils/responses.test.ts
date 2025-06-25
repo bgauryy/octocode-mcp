@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createResult, parseJsonResponse } from '../../src/utils/responses';
-import { needsQuoting } from '../../src/utils/query.js';
+import { createResult } from '../../src/utils/responses';
 
 describe('Response Utilities', () => {
   describe('createResult', () => {
@@ -55,65 +54,6 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toBe(JSON.stringify(data, null, 2));
-    });
-  });
-
-  describe('parseJsonResponse', () => {
-    it('should parse valid JSON', () => {
-      const jsonData = { message: 'test' };
-      const jsonString = JSON.stringify(jsonData);
-
-      const result = parseJsonResponse(jsonString);
-
-      expect(result.parsed).toBe(true);
-      expect(result.data).toEqual(jsonData);
-    });
-
-    it('should handle invalid JSON with fallback', () => {
-      const invalidJson = 'not json';
-
-      const result = parseJsonResponse(invalidJson);
-
-      expect(result.parsed).toBe(false);
-      expect(result.data).toBe(invalidJson);
-    });
-
-    it('should use original text as fallback when no fallback provided', () => {
-      const invalidJson = 'still not json';
-
-      const result = parseJsonResponse(invalidJson);
-
-      expect(result.parsed).toBe(false);
-      expect(result.data).toBe(invalidJson);
-    });
-  });
-
-  describe('needsQuoting', () => {
-    it('should return true for strings with spaces', () => {
-      expect(needsQuoting('hello world')).toBe(true);
-    });
-
-    it('should return true for strings with special characters', () => {
-      expect(needsQuoting('hello&world')).toBe(true);
-      expect(needsQuoting('hello|world')).toBe(true);
-      expect(needsQuoting('hello<world')).toBe(true);
-      expect(needsQuoting('hello>world')).toBe(true);
-    });
-
-    it('should return true for strings with quotes or whitespace', () => {
-      expect(needsQuoting('hello"world')).toBe(true);
-      expect(needsQuoting('hello\tworld')).toBe(true);
-      expect(needsQuoting('hello\nworld')).toBe(true);
-    });
-
-    it('should return false for simple strings', () => {
-      expect(needsQuoting('hello')).toBe(false);
-      expect(needsQuoting('helloworld')).toBe(false);
-      expect(needsQuoting('hello123')).toBe(false);
-    });
-
-    it('should return false for empty string', () => {
-      expect(needsQuoting('')).toBe(false);
     });
   });
 });

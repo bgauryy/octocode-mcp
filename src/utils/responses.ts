@@ -44,48 +44,6 @@ export function createResult(options: {
   };
 }
 
-// Helper function for JSON parsing with error handling
-export function parseJsonResponse<T>(jsonString: string): {
-  data: T;
-  parsed: boolean;
-} {
-  try {
-    const parsed = JSON.parse(jsonString);
-    return { data: parsed, parsed: true };
-  } catch {
-    return { data: jsonString as unknown as T, parsed: false };
-  }
-}
-
-/**
- * Utility functions for optimizing API responses
- */
-
-/**
- * Convert absolute timestamp to relative time
- */
-export function toRelativeTime(timestamp: string): string {
-  const now = new Date();
-  const date = new Date(timestamp);
-  const diffMs = now.getTime() - date.getTime();
-
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-  const diffWeeks = Math.floor(diffDays / 7);
-  const diffMonths = Math.floor(diffDays / 30);
-  const diffYears = Math.floor(diffDays / 365);
-
-  if (diffYears > 0) return `${diffYears}y ago`;
-  if (diffMonths > 0) return `${diffMonths}mo ago`;
-  if (diffWeeks > 0) return `${diffWeeks}w ago`;
-  if (diffDays > 0) return `${diffDays}d ago`;
-  if (diffHours > 0) return `${diffHours}h ago`;
-  if (diffMinutes > 0) return `${diffMinutes}m ago`;
-  return 'now';
-}
-
 /**
  * Convert ISO timestamp to DDMMYYYY format
  */
