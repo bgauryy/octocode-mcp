@@ -3,3 +3,4 @@ build
 dist
 .yarn/install-state.gz
 _docs
+_scripts

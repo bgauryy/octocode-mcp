@@ -32,19 +32,12 @@ export function registerApiStatusCheckTool(server: McpServer) {
           const authResult = await executeGitHubCommand('auth', ['status']);
 
           if (!authResult.isError) {
-            let authData;
-            try {
-              authData = JSON.parse(authResult.content[0].text as string);
-            } catch (parseError) {
-              // JSON parsing error - this is unexpected, propagate it
-              throw new Error(
-                `GitHub auth response JSON parsing failed: ${(parseError as Error).message}`
-              );
-            }
-
+            const execResult = JSON.parse(authResult.content[0].text as string);
             const isAuthenticated =
-              authData.result?.includes('Logged in') ||
-              authData.result?.includes('github.com');
+              typeof execResult.result === 'string'
+                ? execResult.result.includes('Logged in') ||
+                  execResult.result.includes('github.com')
+                : false;
 
             if (isAuthenticated) {
               githubConnected = true;
@@ -57,16 +50,13 @@ export function registerApiStatusCheckTool(server: McpServer) {
                   { cache: false }
                 );
                 if (!orgsResult.isError) {
-                  let execResult;
-                  try {
-                    execResult = JSON.parse(
-                      orgsResult.content[0].text as string
-                    );
-                  } catch (parseError) {
-                    // JSON parsing error for organizations - treat as no orgs available
-                    execResult = { result: '' };
-                  }
-                  const output = execResult.result;
+                  const execResult = JSON.parse(
+                    orgsResult.content[0].text as string
+                  );
+                  const output =
+                    typeof execResult.result === 'string'
+                      ? execResult.result
+                      : '';
 
                   // Parse organizations into clean array
                   organizations = output
@@ -112,16 +102,13 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 { timeout: 3000 }
               );
               if (!registryResult.isError) {
-                let registryData;
-                try {
-                  registryData = JSON.parse(
-                    registryResult.content[0].text as string
-                  );
-                } catch (parseError) {
-                  // JSON parsing error for registry - use default
-                  registryData = { result: 'https://registry.npmjs.org/' };
-                }
-                registry = registryData.result.trim();
+                const execResult = JSON.parse(
+                  registryResult.content[0].text as string
+                );
+                registry =
+                  typeof execResult.result === 'string'
+                    ? execResult.result.trim()
+                    : 'https://registry.npmjs.org/';
               }
             } catch {
               registry = 'https://registry.npmjs.org/'; // default fallback

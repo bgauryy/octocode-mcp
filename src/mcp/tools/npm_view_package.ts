@@ -45,7 +45,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const packageData = JSON.parse(execResult.result);
+        const packageData = execResult.result;
 
         // Transform to optimized format
         const optimizedResult = transformToOptimizedFormat(packageData);

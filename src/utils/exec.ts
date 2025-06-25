@@ -333,9 +333,16 @@ async function executeCommand(
       return createErrorResult(errorType, new Error(stderr));
     }
 
+    // Try to parse stdout as JSON, fallback to string if not possible
+    let parsedResult: unknown = stdout;
+    try {
+      parsedResult = JSON.parse(stdout);
+    } catch {
+      // Not JSON, keep as string
+    }
     return createSuccessResult({
       command: fullCommand,
-      result: stdout,
+      result: parsedResult,
       timestamp: new Date().toISOString(),
       type,
       platform: platform(),

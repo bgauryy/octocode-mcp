@@ -112,7 +112,7 @@ export async function viewRepositoryStructure(
 
           if (!result.isError) {
             const execResult = JSON.parse(result.content[0].text as string);
-            const apiItems = JSON.parse(execResult.result);
+            const apiItems = execResult.result;
 
             items = Array.isArray(apiItems) ? apiItems : [apiItems];
             usedBranch = tryBranch;
@@ -239,9 +239,8 @@ async function getSmartBranchFallback(
     );
 
     if (!repoInfoResult.isError) {
-      const repoData = JSON.parse(
-        JSON.parse(repoInfoResult.content[0].text as string).result
-      );
+      const execResult = JSON.parse(repoInfoResult.content[0].text as string);
+      const repoData = execResult.result;
       const defaultBranch = repoData.default_branch;
 
       if (defaultBranch && !branches.includes(defaultBranch)) {

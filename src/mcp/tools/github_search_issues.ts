@@ -193,7 +193,7 @@ async function searchGitHubIssues(
     }
 
     const execResult = JSON.parse(result.content[0].text as string);
-    const apiResponse = JSON.parse(execResult.result);
+    const apiResponse = execResult.result;
     const issues = apiResponse.items || [];
 
     const cleanIssues: GitHubIssueItem[] = issues.map(

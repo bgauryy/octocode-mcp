@@ -154,9 +154,7 @@ STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults: GitHubCodeSearchItem[] = JSON.parse(
-          execResult.result
-        );
+        const codeResults: GitHubCodeSearchItem[] = execResult.result;
 
         // GitHub CLI returns a direct array, not an object with total_count and items
         const items = Array.isArray(codeResults) ? codeResults : [];
@@ -721,7 +719,7 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams) {
       // Create repo filters for each owner/repo combination
       owners.forEach(owner => {
         repos.forEach(repo => {
-          // Handle both "owner/repo" format and just "repo" format
+          // Only prepend owner if repo is not already in owner/repo format
           if (repo.includes('/')) {
             args.push(`--repo=${repo}`);
           } else {

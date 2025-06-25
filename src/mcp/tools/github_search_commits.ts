@@ -126,7 +126,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const commits: GitHubCommitSearchItem[] = JSON.parse(execResult.result);
+        const commits: GitHubCommitSearchItem[] = execResult.result;
 
         // GitHub CLI returns a direct array
         const items = Array.isArray(commits) ? commits : [];

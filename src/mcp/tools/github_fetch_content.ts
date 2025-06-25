@@ -173,7 +173,7 @@ async function processFileContent(
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
-  const fileData = JSON.parse(execResult.result);
+  const fileData = execResult.result;
   // Check if it's a directory
   if (Array.isArray(fileData)) {
     return createResult({

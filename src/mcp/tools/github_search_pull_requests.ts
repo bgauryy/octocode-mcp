@@ -143,7 +143,7 @@ async function searchGitHubPullRequests(
     }
 
     const execResult = JSON.parse(result.content[0].text as string);
-    const apiResponse = JSON.parse(execResult.result);
+    const apiResponse = execResult.result;
     const pullRequests = apiResponse.items || [];
 
     const cleanPRs: GitHubPullRequestItem[] = pullRequests.map(

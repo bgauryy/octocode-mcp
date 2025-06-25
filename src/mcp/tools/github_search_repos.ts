@@ -370,10 +370,7 @@ export async function searchGitHubRepos(
 
       // Extract the actual content from the exec result
       const execResult = JSON.parse(result.content[0].text as string);
-      const rawContent = execResult.result;
-
-      // Parse JSON results and provide structured analysis
-      let repositories = [];
+      const repositories = execResult.result;
       const analysis = {
         totalFound: 0,
         languages: new Set<string>(),
@@ -399,9 +396,6 @@ export async function searchGitHubRepos(
           owner: string;
         }>,
       };
-
-      // Parse JSON response from GitHub CLI
-      repositories = JSON.parse(rawContent);
 
       if (Array.isArray(repositories) && repositories.length > 0) {
         analysis.totalFound = repositories.length;

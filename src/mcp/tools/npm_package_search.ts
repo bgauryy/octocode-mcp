@@ -131,10 +131,7 @@ function normalizePackage(pkg: {
 function parseNpmSearchOutput(output: string): NpmPackage[] {
   try {
     const wrapper = JSON.parse(output);
-    const commandResult =
-      typeof wrapper.result === 'string'
-        ? JSON.parse(wrapper.result)
-        : wrapper.result;
+    const commandResult = wrapper.result;
 
     let packages: Array<{
       name?: string;
