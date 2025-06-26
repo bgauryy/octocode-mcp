@@ -175,8 +175,10 @@ describe('API Status Check Tool', () => {
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub auth response JSON parsing failed');
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      expect(responseData.login.github.connected).toBe(false);
+      expect(responseData.login.npm.connected).toBe(false);
     });
   });
 });

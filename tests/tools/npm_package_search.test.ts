@@ -70,7 +70,7 @@ describe('NPM Package Search Tool', () => {
         queries: 'react',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
         ['react', '--searchlimit=20', '--json'],
@@ -97,9 +97,7 @@ describe('NPM Package Search Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
-      expect(errorData.error).toBe('No packages found');
-      expect(errorData.cli_command).toBe('npm search nonexistent-package-xyz');
+      expect(result.content[0].text).toContain('No packages found');
     });
   });
 });

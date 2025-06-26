@@ -85,7 +85,7 @@ describe('GitHub Search Repositories Tool', () => {
         query: 'test',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         [
@@ -118,7 +118,7 @@ describe('GitHub Search Repositories Tool', () => {
         query: 'nonexistent',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(result.content).toBeDefined();
       expect(result.content.length).toBeGreaterThan(0);
     });

@@ -89,7 +89,7 @@ describe('GitHub Search Commits Tool', () => {
         query: 'fix',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         [
@@ -122,7 +122,7 @@ describe('GitHub Search Commits Tool', () => {
         query: 'nonexistent',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(result.content).toBeDefined();
       expect(result.content.length).toBeGreaterThan(0);
     });

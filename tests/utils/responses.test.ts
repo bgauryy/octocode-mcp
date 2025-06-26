@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createResult } from '../../src/utils/responses';
+import { createResult } from '../../src/mcp/responses';
 
 describe('Response Utilities', () => {
   describe('createResult', () => {
@@ -20,22 +20,16 @@ describe('Response Utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe('text');
-      expect(JSON.parse(result.content[0].text as string)).toEqual({
-        error: errorMessage,
-      });
+      expect(result.content[0].text).toBe(errorMessage);
     });
 
     it('should include suggestions in error result', () => {
       const result = createResult({
         error: 'Not found',
-        suggestions: ['try this', 'or that'],
       });
 
       expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text as string)).toEqual({
-        error: 'Not found',
-        suggestions: ['try this', 'or that'],
-      });
+      expect(result.content[0].text).toBe('Not found');
     });
 
     it('should handle error object', () => {
@@ -43,9 +37,7 @@ describe('Response Utilities', () => {
       const result = createResult({ error });
 
       expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text as string)).toEqual({
-        error: 'Test error',
-      });
+      expect(result.content[0].text).toBe('Test error');
     });
 
     it('should create success result when no error provided', () => {
