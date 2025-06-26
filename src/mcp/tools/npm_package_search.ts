@@ -11,7 +11,7 @@ import {
 
 const TOOL_NAME = 'npm_package_search';
 
-const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. Use space-separated keywords like "react hooks" or "cli typescript". No boolean operators supported.`;
+const DESCRIPTION = `Smart NPM package discovery with fuzzy matching. Search by functionality: "react hooks", "typescript cli", "testing framework".`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
@@ -25,7 +25,7 @@ export function registerNpmSearchTool(server: McpServer) {
         queries: z
           .union([z.string(), z.array(z.string())])
           .describe(
-            'Package names or keywords to search for. Use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
+            'Search terms for packages. Use functionality keywords: "react hooks", "cli tool", "testing"'
           ),
         searchlimit: z
           .number()
@@ -34,7 +34,7 @@ export function registerNpmSearchTool(server: McpServer) {
           .max(50)
           .optional()
           .default(20)
-          .describe('Max results per query (default: 20, max: 50)'),
+          .describe('Results limit per query (1-50). Default: 20'),
       },
       annotations: {
         title: 'NPM Package Search',

@@ -34,30 +34,24 @@ import {
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search GitHub repositories with powerful filtering.
+const DESCRIPTION = `Smart GitHub repository discovery and analysis.
 
-QUALIFIERS:
-stars: - Repository stars (>1000, 100..5000)
-language: - Primary language
-topic: - Repository topics
-created: - Creation date (>2020-01-01)
-updated: - Last update (<2023-12-31)
-archived: - Include archived repos
-fork: - Include/exclude forks
-license: - Filter by license
+EFFECTIVE PATTERNS:
+- Quality: topic:react stars:1000..5000
+- Organization: owner:microsoft language:python
+- Recent: stars:>1000 created:>2023-01-01
 
-SORTING OPTIONS:
-- stars (popularity)
-- updated (activity)
-- forks (adoption)
-- help-wanted-issues (contribution)
-- best-match (relevance)
+KEY FILTERS:
+- stars: Repository popularity (>1000, 100..5000)
+- language: Primary programming language
+- topic: Repository topics/tags
+- owner: Specific organization/user
+- created/updated: Date filters
 
-TECHNICAL DETAILS:
-- Rate limits apply
-- Fork visibility rules
-- Size restrictions
-- Default branch only`;
+SMART SORTING:
+- stars: Most popular first
+- updated: Most active first
+- best-match: Most relevant (default)`;
 
 /**
  * Extract owner/repo information from various query formats

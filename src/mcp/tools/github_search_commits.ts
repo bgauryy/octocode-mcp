@@ -23,7 +23,23 @@ import {
 
 const TOOL_NAME = 'github_search_commits';
 
-const DESCRIPTION = `Search commit history effectively with GitHub's commit search. Use simple, specific terms for best results. Complex boolean queries may return limited results - try individual keywords instead.`;
+const DESCRIPTION = `Smart commit history search across GitHub repositories.
+
+USAGE STRATEGY:
+- Start simple: "fix bug" or "refactor"
+- Use quotes for exact messages: "initial commit"
+- Add filters progressively: author:john created:>2024-01-01
+
+KEY FILTERS:
+- author/committer: Find commits by person
+- created/merged: Date-based filtering
+- repo/owner: Target specific repositories
+- hash: Search by commit SHA
+
+SMART DEFAULTS:
+- Returns 25 most relevant commits
+- Searches commit messages by default
+- Optimizes for code history analysis`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -35,7 +51,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with boolean logic. Boolean: "fix AND bug", exact phrases: "initial commit", advanced syntax: "author:john OR committer:jane".'
+            'Search terms. Start simple: "bug fix", "refactor". Use quotes for exact phrases.'
           ),
 
         // Repository filters
@@ -43,58 +59,62 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Repository owner/organization. Leave empty for global search.'
+            'Repository owner/org. For private repos, use api_status_check first.'
           ),
         repo: z
           .string()
           .optional()
-          .describe(
-            'Repository name. Do exploratory search without repo filter first'
-          ),
+          .describe('Repository name. Use for targeted searches.'),
 
         // Author filters
-        author: z.string().optional().describe('Filter by commit author'),
-        authorName: z.string().optional().describe('Filter by author name'),
-        authorEmail: z.string().optional().describe('Filter by author email'),
+        author: z
+          .string()
+          .optional()
+          .describe('GitHub username of commit author'),
+        authorName: z
+          .string()
+          .optional()
+          .describe('Full name of commit author'),
+        authorEmail: z.string().optional().describe('Email of commit author'),
 
         // Committer filters
-        committer: z.string().optional().describe('Filter by committer'),
-        committerName: z
+        committer: z
           .string()
           .optional()
-          .describe('Filter by committer name'),
-        committerEmail: z
-          .string()
-          .optional()
-          .describe('Filter by committer email'),
+          .describe('GitHub username of committer'),
+        committerName: z.string().optional().describe('Full name of committer'),
+        committerEmail: z.string().optional().describe('Email of committer'),
 
         // Date filters
         authorDate: z
           .string()
           .optional()
           .describe(
-            'Filter by authored date (format: >2020-01-01, <2023-12-31)'
+            'When authored. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
           ),
         committerDate: z
           .string()
           .optional()
           .describe(
-            'Filter by committed date (format: >2020-01-01, <2023-12-31)'
+            'When committed. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
           ),
 
         // Hash filters
-        hash: z.string().optional().describe('Filter by commit hash'),
-        parent: z.string().optional().describe('Filter by parent hash'),
-        tree: z.string().optional().describe('Filter by tree hash'),
+        hash: z.string().optional().describe('Commit SHA (full or partial)'),
+        parent: z.string().optional().describe('Parent commit SHA'),
+        tree: z.string().optional().describe('Tree SHA'),
 
         // State filters
-        merge: z.boolean().optional().describe('Filter merge commits'),
+        merge: z
+          .boolean()
+          .optional()
+          .describe('Only merge commits (true) or exclude them (false)'),
 
         // Visibility
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
-          .describe('Filter by repository visibility'),
+          .describe('Repository visibility filter'),
 
         // Pagination and sorting
         limit: z
@@ -104,19 +124,19 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .max(50)
           .optional()
           .default(25)
-          .describe('Maximum results (default: 25, max: 50)'),
+          .describe('Results limit (1-50). Default: 25'),
         sort: z
           .enum(['author-date', 'committer-date'])
           .optional()
-          .describe('Sort criteria (default: relevance)'),
+          .describe('Sort by date. Default: best match'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Order (default: desc)'),
+          .describe('Sort order. Default: desc'),
       },
       annotations: {
-        title: 'GitHub Commit Search',
+        title: 'GitHub Commit Search - Smart History Analysis',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,

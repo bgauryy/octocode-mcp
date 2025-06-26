@@ -480,7 +480,7 @@ export interface OptimizedNpmPackageResult {
     total_versions: number;
     weekly_downloads?: number;
   };
-  exports?: { main: string; types?: string; [key: string]: any };
+  exports?: { main: string; types?: string; [key: string]: unknown };
 }
 
 export type CallToolResult = {

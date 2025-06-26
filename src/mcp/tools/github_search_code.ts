@@ -25,28 +25,24 @@ import {
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories with powerful filtering.
+const DESCRIPTION = `Smart code search across GitHub repositories.
 
-QUERY SYNTAX:
-- Space-separated terms for AND
-- "exact phrase" for precise match
-- Combine with qualifiers:
-  path:**/api/*
-  language:typescript
-  org:company-name
+USAGE STRATEGY:
+- Start simple: "useState" or "authentication"
+- Add filters only when needed: language:typescript
+- Use quotes for exact phrases: "error handling"
 
-QUALIFIERS:
-path: - Target specific paths
-language: - Filter by language
-extension: - Filter by file type
-filename: - Target specific files
-size: - Filter by file size
+FILTERS (use sparingly):
+- language: Programming language
+- owner: Specific repository owner
+- filename: Target specific files
+- extension: File type filter
+- path: Directory/path targeting
 
-TECHNICAL LIMITS:
-- Files under 384KB
-- Default branch only
-- Rate limits apply
-- Max 4,000 private repos`;
+SMART DEFAULTS:
+- Searches file content by default
+- Returns 30 most relevant results
+- Optimizes for code analysis workflows`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -58,48 +54,46 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Main search query. Start with simple terms, use quotes for exact phrases. Add qualifiers (path:, language:, org:) only if needed to refine results.'
+            'Search terms. Start simple: "React hooks", "error handling". Use quotes for exact phrases.'
           ),
 
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Use only when results need refinement.'
+            'Language filter (javascript, python, etc). Use only when needed.'
           ),
 
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization. For private repos, use organizations from api_status_check (user_organizations). Use for scoping searches to specific owners.'
+            'Repository owner/org. For private repos, use api_status_check first.'
           ),
 
         filename: z
           .string()
           .optional()
-          .describe(
-            'Target specific files. Use only when looking for particular file types.'
-          ),
+          .describe('Specific filename to search. Use for targeted searches.'),
 
         extension: z
           .string()
           .optional()
           .describe(
-            'File extension filter. Alternative to language for specific file types.'
+            'File extension (.js, .py, etc). Alternative to language filter.'
           ),
 
         match: z
           .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
           .optional()
           .describe(
-            'Search scope: file content or file paths. Default: file content.'
+            'Search scope: "file" for content, "path" for filenames. Default: file content.'
           ),
 
         size: z
           .string()
           .optional()
-          .describe('File size filter in KB. Format: >N, <N, or N..M'),
+          .describe('File size in KB. Format: >10, <100, or 10..50'),
 
         limit: z
           .number()
@@ -108,7 +102,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe('Maximum number of results to return (1-100). Default: 30'),
+          .describe('Results limit (1-100). Default: 30'),
       },
       annotations: {
         title: 'GitHub Code Search - Smart & Efficient',

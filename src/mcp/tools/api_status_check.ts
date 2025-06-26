@@ -5,7 +5,7 @@ import { createResult } from '../responses';
 import { ERROR_MESSAGES } from '../errorMessages';
 
 export const TOOL_NAME = 'api_status_check';
-const DESCRIPTION = `Get GitHub organizations list and check CLI authentication status. Use when searching private repos or when CLI tools fail.`;
+const DESCRIPTION = `Check GitHub/NPM CLI authentication and get user organizations. Essential for private repo access and troubleshooting failed searches.`;
 
 // Helper function to parse execution results
 function parseExecResult(result: CallToolResult): any | null {

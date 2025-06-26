@@ -11,7 +11,22 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_get_contents';
 
-const DESCRIPTION = `Browse repository structure and verify file existence. Smart branch detection with fallbacks. Use before fetching files to understand organization.`;
+const DESCRIPTION = `Explore repository structure and discover files.
+
+USAGE STRATEGY:
+- Start at repository root (leave path empty)
+- Navigate through directories progressively
+- Use before github_get_file_content to verify paths
+
+KEY FEATURES:
+- Auto-detects default branch
+- Lists files and folders separately
+- Shows file sizes for planning
+- Limits to 100 items for efficiency
+
+SMART DEFAULTS:
+- Falls back to main/master if branch not found
+- Sorts directories first, then alphabetically`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -27,21 +42,21 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
             /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/,
             'Invalid GitHub username/org format'
           )
-          .describe(`Repository owner/organization.`),
+          .describe(`Repository owner/org name`),
 
         repo: z
           .string()
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid repository name format')
-          .describe('Repository name. Case-sensitive.'),
+          .describe('Repository name (case-sensitive)'),
 
         branch: z
           .string()
           .min(1)
           .max(255)
           .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
-          .describe('Target branch name. Auto-detects default if not found.'),
+          .describe('Branch name. Falls back to default branch if not found'),
 
         path: z
           .string()
@@ -52,7 +67,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .describe('Directory path within repository. Leave empty for root.'),
       },
       annotations: {
-        title: 'GitHub Repository Contents',
+        title: 'GitHub Repository Explorer',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -67,7 +82,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
         return createResult({
-          error: `Repository exploration failed: ${errorMessage} - verify access and permissions`,
+          error: `Failed to explore repository. ${errorMessage}. Verify repository exists and is accessible`,
         });
       }
     }
@@ -76,14 +91,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
 
 /**
  * Views the structure of a GitHub repository at a specific path.
- *
- * Features:
- * - Smart branch detection: fetches repository default branch automatically
- * - Intelligent fallback: tries requested -> default -> common branches
- * - Input validation: prevents path traversal and validates GitHub naming
- * - Clear error context: provides descriptive error messages
- * - Efficient caching: avoids redundant API calls
- * - Rich metadata: includes all GitHub API fields (sha, urls, links, etc.)
+ * Optimized for code analysis workflows with smart defaults and clear errors.
  */
 export async function viewRepositoryStructure(
   params: GitHubRepositoryStructureParams
@@ -133,20 +141,20 @@ export async function viewRepositoryStructure(
         if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
           if (path) {
             return createResult({
-              error: `Path "${path}" not found - verify path or use code search`,
+              error: `Path "${path}" not found. Verify the path or use github_search_code to find files`,
             });
           } else {
             return createResult({
-              error: `Repository not found: ${owner}/${repo} - verify names`,
+              error: `Repository not found: ${owner}/${repo}. Check spelling and case sensitivity`,
             });
           }
         } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
           return createResult({
-            error: `Access denied to ${owner}/${repo} - check permissions`,
+            error: `Access denied to ${owner}/${repo}. Repository may be private - use api_status_check`,
           });
         } else {
           return createResult({
-            error: `Access failed: ${owner}/${repo} - check connection`,
+            error: `Failed to access ${owner}/${repo}. Check network connection`,
           });
         }
       }
@@ -196,15 +204,14 @@ export async function viewRepositoryStructure(
       });
     } catch (error) {
       return createResult({
-        error: `Repository access failed - verify repository and authentication: ${error}`,
+        error: `Failed to access repository. ${error}. Verify repository name and authentication`,
       });
     }
   });
 }
 
 /**
- * Intelligently determines the best branches to try for a repository.
- * Attempts to fetch the default branch first, then falls back to common branches.
+ * Smart branch detection with automatic fallback to common branch names.
  */
 async function getSmartBranchFallback(
   owner: string,
