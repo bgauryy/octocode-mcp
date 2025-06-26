@@ -5,6 +5,19 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.6] - 2024-12-20 - Prompts & Tool Descriptions Update
+
+### 🎨 ENHANCED: Prompts & Tool Descriptions
+
+#### Updated
+- **System Prompts**: Refined and improved system prompts for enhanced clarity and conciseness.
+- **Tool Descriptions**: Optimized tool descriptions to provide better guidance for smart code analysis and usage.
+- **Parameter Descriptions**: Enhanced parameter descriptions for improved clarity and validation.
+
+#### Enhanced
+- **Smart Error Fallbacks**: Improved error fallbacks with more relevant usage guidance.
+- **Tool Definition Consistency**: Ensured consistency and removed duplicates in tool definitions.
+
 ## [2.3.5 - 2024-12-20 - Major Token Efficiency & Response Optimization
 
 ### 🚀 MAJOR ACHIEVEMENT: Comprehensive Token Reduction & Response Optimization
