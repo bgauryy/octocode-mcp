@@ -4,37 +4,49 @@ import {
   GitHubCodeSearchParams,
   GitHubCodeSearchItem,
   OptimizedCodeSearchResult,
-} from '../../types';
+} from '../../types'; // Ensure these types are correctly defined
 import {
   createResult,
   simplifyRepoUrl,
   simplifyGitHubUrl,
   optimizeTextMatch,
-} from '../../utils/responses';
+} from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
+import {
+  ERROR_MESSAGES,
+  SUGGESTIONS,
+  createAuthenticationError,
+  createRateLimitError,
+  createNoResultsError,
+  getErrorWithSuggestion,
+} from '../errorMessages';
 
 const TOOL_NAME = 'github_search_code';
 
-const DESCRIPTION = `Search code across GitHub repositories with powerful GitHub search syntax and advanced filtering.
+const DESCRIPTION = `Search code across GitHub repositories with powerful filtering.
 
-BOOLEAN LOGIC (MOST POWERFUL):
-- "useState OR useEffect" - Find either hook
-- "useState AND useEffect" - Find both hooks together
-- "authentication AND (jwt OR oauth)" - Complex logic combinations
-- "NOT deprecated" - Exclude deprecated code
+QUERY SYNTAX:
+- Space-separated terms for AND
+- "exact phrase" for precise match
+- Combine with qualifiers:
+  path:**/api/*
+  language:typescript
+  org:company-name
 
-EMBEDDED QUALIFIERS:
-- "useState language:javascript filename:*.jsx" - Hook in React files
-- "authentication language:python path:*/security/*" - Security code in Python
-- "docker OR kubernetes language:yaml extension:yml" - Container configs
+QUALIFIERS:
+path: - Target specific paths
+language: - Filter by language
+extension: - Filter by file type
+filename: - Target specific files
+size: - Filter by file size
 
-TRADITIONAL FILTERS (ALSO SUPPORTED):
-- language: "javascript", owner: "microsoft", filename: "package.json"
-
-PROVEN PATTERNS: "authentication" → +language → +owner → +filename
-KEY TIPS: language filter = 90% speed boost, boolean operators work perfectly with filters`;
+TECHNICAL LIMITS:
+- Files under 384KB
+- Default branch only
+- Rate limits apply
+- Max 4,000 private repos`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -46,79 +58,48 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            `Search query with GitHub syntax. BOOLEAN LOGIC: "useState OR useEffect", "authentication AND jwt", "NOT deprecated". EMBEDDED QUALIFIERS: "useState language:javascript", "docker path:*/config/*". EXACT PHRASES: "error handling".
-
-POWERFUL EXAMPLES: "useState OR useEffect language:javascript", "authentication AND (jwt OR oauth)", "docker OR kubernetes language:yaml", "NOT deprecated language:python"
-RULES: Boolean operators MUST be uppercase (AND, OR, NOT). Combines perfectly with traditional filters.`
+            'Main search query. Start with simple terms, use quotes for exact phrases. Add qualifiers (path:, language:, org:) only if needed to refine results.'
           ),
 
         language: z
           .string()
           .optional()
           .describe(
-            `MOST EFFECTIVE FILTER - 90% speed boost! Essential for popular languages.
-
-POPULAR: javascript, typescript, python, java, go, rust, php, ruby, swift, kotlin, dart
-SYSTEMS: c, cpp, assembly, shell, dockerfile, yaml`
+            'Programming language filter. Use only when results need refinement.'
           ),
 
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            `HIGH IMPACT - Reduces search space by 95%+
-
-EXAMPLES: "microsoft", "google", "facebook" or ["microsoft", "google"]
-POPULAR: microsoft, google, facebook, amazon, apache, hashicorp, kubernetes`
+            'Repository owner/organization. For private repos, use organizations from api_status_check (user_organizations). Use for scoping searches to specific owners.'
           ),
 
         filename: z
           .string()
           .optional()
           .describe(
-            `SURGICAL PRECISION for configs and special files
-
-TARGETS: "package.json", "Dockerfile", "webpack.config.js", ".eslintrc", "README.md"
-STRATEGY: filename:package.json + "react typescript"`
-          ),
-
-        repo: z
-          .union([z.string(), z.array(z.string())])
-          .optional()
-          .describe(
-            `PRECISE TARGETING for specific repositories
-
-FORMAT: "facebook/react", "microsoft/vscode" or ["facebook/react", "vuejs/vue"]
-USE: Deep dive analysis of specific projects`
+            'Target specific files. Use only when looking for particular file types.'
           ),
 
         extension: z
           .string()
           .optional()
           .describe(
-            `FILE TYPE PRECISION - More specific than language filter
-
-POPULAR: js, ts, jsx, tsx, py, java, go, rs, rb, php, cs, sh, yml, json, md
-USE: extension:tsx (React TypeScript only), extension:dockerfile`
+            'File extension filter. Alternative to language for specific file types.'
           ),
 
         match: z
           .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
           .optional()
           .describe(
-            `SEARCH SCOPE: "file" (content), "path" (filenames), ["file", "path"] (both)
-
-EXAMPLES: match:"path" + "test" (find test files), match:"file" + "useState"`
+            'Search scope: file content or file paths. Default: file content.'
           ),
 
         size: z
           .string()
           .optional()
-          .describe(
-            `FILE SIZE FILTER: ">100" (>100KB), "<50" (<50KB), "10..100" (range)
-
-STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
-          ),
+          .describe('File size filter in KB. Format: >N, <N, or N..M'),
 
         limit: z
           .number()
@@ -127,9 +108,7 @@ STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
           .max(100)
           .optional()
           .default(30)
-          .describe(
-            `RESULTS: 10-20 (quick), 30 (default), 50-100 (comprehensive). Use filters over high limits.`
-          ),
+          .describe('Maximum number of results to return (1-100). Default: 30'),
       },
       annotations: {
         title: 'GitHub Code Search - Smart & Efficient',
@@ -162,8 +141,10 @@ STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
         // Smart handling for no results - provide actionable suggestions
         if (items.length === 0) {
           return createResult({
-            error:
-              'No results found. Try simplifying your query or using different filters.',
+            error: getErrorWithSuggestion({
+              baseError: createNoResultsError('code'),
+              suggestion: SUGGESTIONS.CODE_SEARCH_NO_RESULTS,
+            }),
           });
         }
 
@@ -183,22 +164,28 @@ STRATEGY: "<200" (avoid huge files), ">20" (substantial code), "<10" (configs)`
  * Handles various search errors and returns a formatted CallToolResult.
  */
 function handleSearchError(errorMessage: string): CallToolResult {
+  // Common GitHub search errors with helpful suggestions
   if (errorMessage.includes('JSON')) {
     return createResult({
-      error:
-        'GitHub CLI returned invalid response - check if GitHub CLI is up to date with "gh version" and try again',
+      error: ERROR_MESSAGES.CLI_INVALID_RESPONSE,
     });
   }
 
   if (errorMessage.includes('authentication')) {
     return createResult({
-      error: 'GitHub authentication required - run api_status_check tool',
+      error: createAuthenticationError(),
     });
   }
 
   if (errorMessage.includes('rate limit')) {
     return createResult({
-      error: 'GitHub rate limit exceeded - use more specific filters or wait',
+      error: createRateLimitError(true),
+    });
+  }
+
+  if (errorMessage.includes('timed out')) {
+    return createResult({
+      error: ERROR_MESSAGES.SEARCH_TIMEOUT,
     });
   }
 
@@ -207,7 +194,7 @@ function handleSearchError(errorMessage: string): CallToolResult {
     errorMessage.includes('Invalid query')
   ) {
     return createResult({
-      error: 'Invalid query syntax. GitHub legacy search has limitations.',
+      error: ERROR_MESSAGES.INVALID_QUERY_SYNTAX,
     });
   }
 
@@ -216,19 +203,13 @@ function handleSearchError(errorMessage: string): CallToolResult {
     errorMessage.includes('owner not found')
   ) {
     return createResult({
-      error: 'Repository or owner not found',
+      error: ERROR_MESSAGES.REPO_OR_OWNER_NOT_FOUND,
     });
   }
 
-  if (errorMessage.includes('timeout')) {
-    return createResult({
-      error: 'Search timeout - query too broad',
-    });
-  }
-
-  // Generic fallback with helpful guidance
+  // Generic fallback with guidance
   return createResult({
-    error: 'Code search failed',
+    error: `Code search failed: ${errorMessage}\n${SUGGESTIONS.SIMPLIFY_QUERY}`,
   });
 }
 
@@ -283,68 +264,75 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 /**
  * Build command line arguments for GitHub CLI with improved parameter handling.
  * Ensures exact string search capability with proper quote and escape handling.
+ *
+ * This function is refactored to correctly distinguish between search qualifiers
+ * (like `language` and `extension`), which will be passed as separate arguments
+ * to `gh search`, and command-line flags (like `--size` and `--limit`).
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
-  const args = ['code'];
+  const args: string[] = ['code'];
 
-  // Add search query
-  args.push(params.query);
+  // Extract qualifiers from the query
+  const queryParts = params.query.trim().split(/\s+/);
+  const searchTerms: string[] = [];
+  const qualifiers: string[] = [];
 
-  // Helper function to add a CLI argument if the parameter exists
-  const addCliArg = (
-    paramKey: keyof GitHubCodeSearchParams,
-    cliFlag: string,
-    formatter?: (value: any) => string | string[]
-  ) => {
-    const value = params[paramKey];
-    if (value !== undefined) {
-      const formattedValue = formatter ? formatter(value) : value.toString();
-      if (Array.isArray(formattedValue)) {
-        formattedValue.forEach(item => args.push(`--${cliFlag}=${item}`));
-      } else {
-        args.push(`--${cliFlag}=${formattedValue}`);
-      }
+  queryParts.forEach(part => {
+    if (part.includes(':')) {
+      qualifiers.push(part);
+    } else {
+      searchTerms.push(part);
     }
-  };
+  });
 
-  // Add filters in order of effectiveness for better CLI performance
-  addCliArg('language', 'language');
-  addCliArg('filename', 'filename');
-  addCliArg('extension', 'extension');
-  addCliArg('size', 'size');
-  addCliArg('limit', 'limit');
-
-  // Handle match parameter (can be a string or an array, we only use the first for the CLI flag)
-  addCliArg('match', 'match', value =>
-    Array.isArray(value) ? value[0] : value
-  );
-
-  // Handle owner parameter - can be string or array. Only add if repo is not present.
-  if (!params.repo) {
-    addCliArg('owner', 'owner');
+  // Add search terms if any
+  if (searchTerms.length > 0) {
+    args.push(searchTerms.join(' '));
   }
 
-  // Handle repository filters
-  if (params.repo) {
-    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
-    const owners = Array.isArray(params.owner)
-      ? params.owner
-      : params.owner
-        ? [params.owner]
-        : [];
+  // Add extracted qualifiers
+  qualifiers.forEach(qualifier => {
+    args.push(qualifier);
+  });
 
-    repos.forEach(repo => {
-      // If an owner is specified and the repo isn't already in owner/repo format, prepend the owner.
-      // If multiple owners are specified, this will create multiple --repo flags.
-      if (owners.length > 0 && !repo.includes('/')) {
-        owners.forEach(owner => args.push(`--repo=${owner}/${repo}`));
-      } else {
-        args.push(`--repo=${repo}`);
-      }
-    });
+  // Add explicit parameters as qualifiers
+  if (params.language && !params.query.includes('language:')) {
+    args.push(`language:${params.language}`);
   }
 
-  // JSON output with all available fields
+  if (
+    params.owner &&
+    !params.query.includes('org:') &&
+    !params.query.includes('user:')
+  ) {
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(owner => args.push(`org:${owner}`));
+  }
+
+  if (params.filename && !params.query.includes('filename:')) {
+    args.push(`filename:${params.filename}`);
+  }
+
+  if (params.extension && !params.query.includes('extension:')) {
+    args.push(`extension:${params.extension}`);
+  }
+
+  if (params.size && !params.query.includes('size:')) {
+    args.push(`size:${params.size}`);
+  }
+
+  // Handle match parameter
+  if (params.match) {
+    const matches = Array.isArray(params.match) ? params.match : [params.match];
+    args.push(`in:${matches.join(',')}`);
+  }
+
+  // Add limit
+  if (params.limit) {
+    args.push(`--limit=${params.limit}`);
+  }
+
+  // Add JSON output format
   args.push('--json=repository,path,textMatches,sha,url');
 
   return args;
@@ -379,11 +367,11 @@ function validateSearchParameters(
 ): string | null {
   // Query validation
   if (!params.query.trim()) {
-    return 'Empty query. Try: "useState", "authentication", "docker setup", or use filters like language:python';
+    return ERROR_MESSAGES.EMPTY_QUERY;
   }
 
   if (params.query.length > 1000) {
-    return 'Query too long (max 1000 chars). Simplify to key terms like "error handling" instead of full sentences.';
+    return ERROR_MESSAGES.QUERY_TOO_LONG_1000;
   }
 
   // Repository validation - allow owner/repo format in repo field
@@ -391,16 +379,31 @@ function validateSearchParameters(
     const repoValues = Array.isArray(params.repo) ? params.repo : [params.repo];
     const hasOwnerFormat = repoValues.every(repo => repo.includes('/'));
     if (!hasOwnerFormat) {
-      return 'Repository format error. When no owner is provided, repository must be in "owner/repo" format (e.g., "facebook/react").';
+      return ERROR_MESSAGES.REPO_FORMAT_ERROR;
     }
   }
 
-  // Boolean operator validation with suggestions
-  const invalidBooleans = params.query.match(/\b(and|or|not)\b/g);
-  if (invalidBooleans) {
-    const corrected = invalidBooleans.map(op => op.toUpperCase()).join(', ');
-    return `Boolean operators must be uppercase: ${corrected}. Example: "react OR vue" not "react or vue"`;
+  // Add validation for file size limit
+  if (params.size) {
+    if (!/^([<>]\d+|\d+\.\.\d+)$/.test(params.size)) {
+      return ERROR_MESSAGES.INVALID_SIZE_FORMAT;
+    }
   }
+
+  // Validate search scope
+  if (params.match) {
+    const validScopes = ['file', 'path'];
+    const scopes = Array.isArray(params.match) ? params.match : [params.match];
+    if (!scopes.every(scope => validScopes.includes(scope))) {
+      return ERROR_MESSAGES.INVALID_SEARCH_SCOPE;
+    }
+  }
+
+  // Note about repository limitations (This is a note, not a hard error)
+  // This return statement was returning null before, so it shouldn't be an issue
+  // if (params.repo || params.owner) {
+  //   return null; // Return warning about repository limitations
+  // }
 
   return null; // No validation errors
 }

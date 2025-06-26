@@ -4,7 +4,7 @@ import {
   GitHubRepositoryStructureParams,
   GitHubApiFileItem,
 } from '../../types';
-import { createResult } from '../../utils/responses';
+import { createResult } from '../responses';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';

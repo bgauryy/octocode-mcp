@@ -5,10 +5,17 @@ import {
   GitHubIssuesSearchResult,
   GitHubIssueItem,
 } from '../../types';
-import { createResult, toDDMMYYYY } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
+import {
+  ERROR_MESSAGES,
+  SUGGESTIONS,
+  createAuthenticationError,
+  createRateLimitError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 const TOOL_NAME = 'github_search_issues';
 
@@ -141,15 +148,13 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
     async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
         return createResult({
-          error:
-            'Search query is required and cannot be empty - provide keywords to search for issues',
+          error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
         });
       }
 
       if (args.query.length > 256) {
         return createResult({
-          error:
-            'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
+          error: ERROR_MESSAGES.QUERY_TOO_LONG,
         });
       }
 
@@ -159,20 +164,19 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         const errorMessage = error instanceof Error ? error.message : '';
         if (errorMessage.includes('authentication')) {
           return createResult({
-            error: 'GitHub authentication required - run api_status_check tool',
+            error: createAuthenticationError(),
           });
         }
 
         if (errorMessage.includes('rate limit')) {
           return createResult({
-            error: 'GitHub rate limit exceeded - wait or use specific filters',
+            error: createRateLimitError(false),
           });
         }
 
         // Generic fallback
         return createResult({
-          error:
-            'GitHub issue search failed - check authentication or simplify query',
+          error: createSearchFailedError('issues'),
         });
       }
     }

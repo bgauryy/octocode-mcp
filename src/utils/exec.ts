@@ -95,29 +95,34 @@ function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
 }
 
 /**
- * Checks if a query contains GitHub search boolean operators
- */
-function hasGitHubBooleanOperators(query: string): boolean {
-  // Check for GitHub boolean operators (must be uppercase)
-  return (
-    /\b(AND|OR|NOT)\b/.test(query) ||
-    /\s+(AND|OR|NOT)\s+/.test(query) ||
-    /"[^"]*\s+(AND|OR|NOT)\s+[^"]*"/.test(query)
-  );
-}
-
-/**
- * Escape shell arguments with improved GitHub CLI boolean query handling
+ * Escape shell arguments with improved GitHub CLI query handling
  */
 function escapeShellArg(
   arg: string,
   shellType?: 'cmd' | 'powershell' | 'unix',
-  isGitHubQuery?: boolean
+  isGitHubQuery?: boolean // Flag to indicate if this is the main GitHub search query argument
 ): string {
   // Auto-detect shell type if not provided
   if (!shellType) {
     const isWindows = platform() === 'win32';
     shellType = isWindows ? 'cmd' : 'unix';
+  }
+
+  // Special handling for GitHub search queries
+  if (isGitHubQuery) {
+    // If the argument already contains quotes, preserve them
+    if (arg.includes('"')) {
+      // For Unix-like shells, wrap the entire argument in single quotes
+      if (shellType === 'unix') {
+        return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+      }
+      // For Windows CMD
+      if (shellType === 'cmd') {
+        return `"${arg.replace(/"/g, '""')}"`;
+      }
+      // For PowerShell
+      return `'${arg.replace(/'/g, "''")}'`;
+    }
   }
 
   switch (shellType) {
@@ -160,30 +165,18 @@ function escapeWindowsCmdArg(arg: string): string {
  * Escape arguments for Unix shells with special handling for GitHub CLI queries
  */
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
-  // Special handling for GitHub CLI search queries to preserve boolean logic
-  if (isGitHubQuery && hasGitHubBooleanOperators(arg)) {
-    // For boolean queries with OR/AND/NOT, use double quotes to preserve operators
-    // GitHub CLI handles boolean logic properly when quoted
-    return `"${arg.replace(/"/g, '\\"')}"`;
-  }
-
-  // For GitHub queries with spaces but no boolean operators, quote them
-  if (
-    isGitHubQuery &&
-    /\s/.test(arg) &&
-    !arg.startsWith('"') &&
-    !arg.endsWith('"')
-  ) {
-    return `"${arg.replace(/"/g, '\\"')}"`;
-  }
-
-  // For already quoted GitHub queries, pass through with escaped internal quotes
-  if (isGitHubQuery && arg.startsWith('"') && arg.endsWith('"')) {
-    return arg.replace(/\\"/g, '\\\\"'); // Escape already escaped quotes
+  // If it's a GitHub search query with special characters or spaces
+  if (isGitHubQuery && (arg.includes(' ') || /[:"']/g.test(arg))) {
+    // Preserve existing quotes if present
+    if (arg.includes('"')) {
+      return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+    }
+    // Add double quotes for terms that need them
+    return `"${arg}"`;
   }
 
   // Standard Unix shell escaping for other arguments
-  if (/[^\w\-._/:=@]/.test(arg)) {
+  if (/[^a-zA-Z0-9\-_./=@:]/.test(arg)) {
     return `'${arg.replace(/'/g, "'\"'\"'")}'`;
   }
   return arg;
@@ -248,13 +241,24 @@ export async function executeGitHubCommand(
   const shellConfig = getShellConfig(options.windowsShell);
 
   // Build command with validated prefix and properly escaped arguments
-  // First argument is typically the search query for GitHub CLI search commands
+  // For GitHub search commands, qualifiers like "language:typescript" should not be escaped
+  // Only the main query term (if it contains spaces) needs escaping
   const escapedArgs = args.map((arg, index) => {
-    const isFirstArg = index === 0;
-    // Detect if this is a search query (first non-subcommand argument)
-    const isSearchQuery =
-      command === 'search' && isFirstArg && !arg.startsWith('--');
-    return escapeShellArg(arg, shellConfig.type, isSearchQuery);
+    const isMainQueryArgument = command === 'search' && index === 1;
+    const isGitHubQualifier =
+      command === 'search' &&
+      index > 1 &&
+      (arg.includes(':') || arg.startsWith('(')) &&
+      !arg.startsWith('--');
+
+    // Don't escape GitHub search qualifiers - they need to be passed as-is
+    // This includes qualifiers like "language:typescript", "user:microsoft", "org:microsoft"
+    // and complex expressions like "(user:microsoft OR org:microsoft)"
+    if (isGitHubQualifier) {
+      return arg;
+    }
+
+    return escapeShellArg(arg, shellConfig.type, isMainQueryArgument);
   });
 
   const fullCommand = `gh ${command} ${escapedArgs.join(' ')}`;

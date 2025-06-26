@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
-import { createResult } from '../../utils/responses';
+import { createResult } from '../responses';
+import { ERROR_MESSAGES } from '../errorMessages';
 
 export const TOOL_NAME = 'api_status_check';
 const DESCRIPTION = `Get GitHub organizations list and check CLI authentication status. Use when searching private repos or when CLI tools fail.`;
@@ -147,7 +148,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
         });
       } catch (error) {
         return createResult({
-          error: `API Status Check Failed\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
+          error: `${ERROR_MESSAGES.API_STATUS_CHECK_FAILED}\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
         });
       }
     }

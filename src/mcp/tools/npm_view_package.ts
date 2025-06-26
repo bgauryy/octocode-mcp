@@ -6,7 +6,7 @@ import {
   toDDMMYYYY,
   humanizeBytes,
   simplifyRepoUrl,
-} from '../../utils/responses';
+} from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';

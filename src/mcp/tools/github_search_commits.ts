@@ -10,10 +10,16 @@ import {
   simplifyRepoUrl,
   toDDMMYYYY,
   getCommitTitle,
-} from '../../utils/responses';
+} from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
+import {
+  createAuthenticationError,
+  createRateLimitError,
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 const TOOL_NAME = 'github_search_commits';
 
@@ -134,8 +140,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         // Smart handling for no results - provide actionable suggestions
         if (items.length === 0) {
           return createResult({
-            error:
-              'No commits found. Try simplifying your query or using different filters.',
+            error: createNoResultsError('commits'),
           });
         }
 
@@ -148,18 +153,18 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 
         if (errorMessage.includes('authentication')) {
           return createResult({
-            error: 'GitHub authentication required - run api_status_check tool',
+            error: createAuthenticationError(),
           });
         }
 
         if (errorMessage.includes('rate limit')) {
           return createResult({
-            error: 'GitHub rate limit exceeded - try more specific filters',
+            error: createRateLimitError(false),
           });
         }
 
         return createResult({
-          error: 'Commit search failed',
+          error: createSearchFailedError('commits'),
         });
       }
     }
@@ -255,18 +260,18 @@ export async function searchGitHubCommits(
 
       if (errorMessage.includes('authentication')) {
         return createResult({
-          error: 'GitHub authentication required',
+          error: createAuthenticationError(),
         });
       }
 
       if (errorMessage.includes('rate limit')) {
         return createResult({
-          error: 'GitHub rate limit exceeded',
+          error: createRateLimitError(false),
         });
       }
 
       return createResult({
-        error: 'Commit search execution failed',
+        error: createSearchFailedError('commits'),
       });
     }
   });

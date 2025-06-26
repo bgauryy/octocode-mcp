@@ -1,9 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult } from '../../utils/responses';
+import { createResult } from '../responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import {
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 const TOOL_NAME = 'npm_package_search';
 
@@ -79,12 +83,11 @@ export function registerNpmSearchTool(server: McpServer) {
         }
 
         return createResult({
-          error: 'No packages found',
+          error: createNoResultsError('packages'),
         });
       } catch (error) {
         return createResult({
-          error:
-            'Package search failed - check terms or try different keywords',
+          error: createSearchFailedError('packages'),
         });
       }
     }

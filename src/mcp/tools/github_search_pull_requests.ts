@@ -5,10 +5,16 @@ import {
   GitHubPullRequestsSearchResult,
   GitHubPullRequestItem,
 } from '../../types';
-import { createResult, toDDMMYYYY } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
+import {
+  ERROR_MESSAGES,
+  SUGGESTIONS,
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
@@ -105,15 +111,13 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
         return createResult({
-          error:
-            'Search query is required and cannot be empty - provide keywords to search for pull requests',
+          error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
         });
       }
 
       if (args.query.length > 256) {
         return createResult({
-          error:
-            'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
+          error: ERROR_MESSAGES.QUERY_TOO_LONG,
         });
       }
 
@@ -121,8 +125,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         return await searchGitHubPullRequests(args);
       } catch (error) {
         return createResult({
-          error:
-            'GitHub pull requests search failed - verify repository access and query syntax',
+          error: createSearchFailedError('pull_requests'),
         });
       }
     }
@@ -148,8 +151,7 @@ async function searchGitHubPullRequests(
 
     if (pullRequests.length === 0) {
       return createResult({
-        error:
-          'No pull requests found. Try simplifying your query or using different filters.',
+        error: createNoResultsError('pull_requests'),
       });
     }
 

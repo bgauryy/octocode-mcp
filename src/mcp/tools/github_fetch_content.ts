@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult } from '../../utils/responses';
+import { createResult } from '../responses';
 import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';

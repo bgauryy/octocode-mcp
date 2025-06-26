@@ -1,10 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult, toDDMMYYYY } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../responses';
 import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import {
+  SUGGESTIONS,
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 /**
  * GitHub Repository Search Tool
@@ -29,24 +34,30 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const TOOL_NAME = 'github_search_repositories';
 
-const DESCRIPTION = `Search GitHub repositories with powerful GitHub search syntax and advanced filtering.
+const DESCRIPTION = `Search GitHub repositories with powerful filtering.
 
-EMBEDDED QUALIFIERS (MOST POWERFUL):
-- "vue OR react stars:>1000 language:javascript" - OR logic with constraints
-- "typescript AND framework stars:100..5000" - AND logic with star range  
-- "repo:facebook/react OR repo:vuejs/vue" - Multiple specific repositories
-- "org:microsoft OR org:google language:typescript" - Multiple organizations
-- "topic:react topic:typescript stars:>500" - Multiple topics with quality filter
+QUALIFIERS:
+stars: - Repository stars (>1000, 100..5000)
+language: - Primary language
+topic: - Repository topics
+created: - Creation date (>2020-01-01)
+updated: - Last update (<2023-12-31)
+archived: - Include archived repos
+fork: - Include/exclude forks
+license: - Filter by license
 
-TRADITIONAL FILTERS (ALSO SUPPORTED):
-- owner: ["microsoft", "google"] - Multiple owners as array
-- topic: ["react", "typescript"] - Multiple topics as array
-- stars: "1000..5000" - Range or threshold filtering
+SORTING OPTIONS:
+- stars (popularity)
+- updated (activity)
+- forks (adoption)
+- help-wanted-issues (contribution)
+- best-match (relevance)
 
-BEST PRACTICES:
-- Use embedded qualifiers for complex queries with OR/AND logic
-- Use traditional filters for simple, clean parameter-based searches
-- Combine both approaches: "vue OR react" + language:"javascript" + stars:">1000"`;
+TECHNICAL DETAILS:
+- Rate limits apply
+- Fork visibility rules
+- Size restrictions
+- Default branch only`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -96,7 +107,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with GitHub search syntax. POWERFUL EXAMPLES: "vue OR react stars:>1000", "typescript AND framework stars:100..5000", "repo:facebook/react OR repo:vuejs/vue", "org:microsoft language:typescript", "topic:react topic:typescript stars:>500". SUPPORTS: OR/AND logic, embedded qualifiers (stars:, language:, org:, repo:, topic:, etc.), exact repository targeting. COMBINES with traditional filters for maximum flexibility.'
+            'Search query with GitHub syntax. Use simple terms and qualifiers (stars:, language:, org:) as needed.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -104,34 +115,25 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization. HIGHLY EFFECTIVE as array ["microsoft", "google"]. FIXED: Now supports multiple owners with comma separation. Best for targeted research.'
+            'Repository owner or organization. For private repos, use organizations from api_status_check (user_organizations). Can be a single value or array.'
           ),
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. CAUTION: Restrictive with other filters. Use alone or with stars/owner only.'
+            'Programming language filter. Use when results need refinement.'
           ),
         stars: z
           .union([
             z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid stars format. Use: number, ">100", ">=50", "<200", "<=100", or "10..100"'
-              ),
+            z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
           ])
           .optional()
-          .describe(
-            'Stars filter. MOST EFFECTIVE: ranges "1000..5000", thresholds ">1000". Excellent for quality filtering.'
-          ),
+          .describe('Stars filter. Supports ranges and thresholds.'),
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe(
-            'Topics filter. BEST PATTERN: arrays ["react", "typescript"]. FIXED: Now supports comma-separated topics. Preferred over OR queries. Combines well with stars.'
-          ),
+          .describe('Topics filter. Can be a single value or array.'),
         forks: z.number().optional().describe('Number of forks filter.'),
 
         // UPDATED: Match CLI parameter name exactly
@@ -228,14 +230,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .default('best-match')
-          .describe(
-            'Sort by: stars, updated, forks, help-wanted-issues, best-match.'
-          ),
+          .describe('Sort criteria for results.'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Sort order: asc or desc.'),
+          .describe('Sort order direction.'),
         limit: z
           .number()
           .int()
@@ -243,9 +243,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe(
-            'Results limit (1-100). PREFER increasing limit over adding filters.'
-          ),
+          .describe('Maximum results to return (1-100). Default: 30'),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -290,8 +288,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         if (!hasPrimaryFilter) {
           return createResult({
-            error:
-              'Requires query or primary filter (owner, language, stars, topic, forks). You can also use owner/repo format like "microsoft/vscode" in the query.',
+            error: SUGGESTIONS.REPO_SEARCH_PRIMARY_FILTER,
           });
         }
 
@@ -333,8 +330,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult({
-          error:
-            'Repository search failed - verify connection or simplify query',
+          error: createSearchFailedError('repositories'),
         });
       }
     }
@@ -362,8 +358,7 @@ export async function searchGitHubRepos(
 
       if (!Array.isArray(repositories) || repositories.length === 0) {
         return createResult({
-          error:
-            'No repositories found. Try simplifying your query or using different filters.',
+          error: createNoResultsError('repositories'),
         });
       }
 
@@ -465,7 +460,7 @@ export async function searchGitHubRepos(
       });
     } catch (error) {
       return createResult({
-        error: 'Repository search failed - verify connection or simplify query',
+        error: createSearchFailedError('repositories'),
       });
     }
   });
