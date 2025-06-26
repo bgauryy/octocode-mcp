@@ -28,16 +28,20 @@ const TOOL_NAME = 'github_search_code';
 const DESCRIPTION = `Smart code search across GitHub repositories.
 
 USAGE STRATEGY:
-- Start simple: "useState" or "authentication"
-- Add filters only when needed: language:typescript
+- Start simple
+- understand owner and repo and use it in the query from search
+- Add filters when needed
 - Use quotes for exact phrases: "error handling"
+- Init queries should be with one word
+- Use AND searches (several queries) - dont' use too many queries to get most results (use 1-3 queries at max)
+- Be exploretory when you have enough results and data 
 
 FILTERS (use sparingly):
-- language: Programming language
 - owner: Specific repository owner
 - filename: Target specific files
 - extension: File type filter
 - path: Directory/path targeting
+- language: Programming language
 
 SMART DEFAULTS:
 - Searches file content by default
