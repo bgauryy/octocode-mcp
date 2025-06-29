@@ -17,29 +17,13 @@ import {
   createSearchFailedError,
 } from '../errorMessages';
 
-const TOOL_NAME = 'github_search_issues';
+export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Smart issue search for bug discovery and feature analysis.
-
-USAGE STRATEGY:
-- Start simple: "memory leak" or "authentication"
-- Use quotes for exact phrases: "cannot login"
-- Add filters progressively: is:open label:bug
-
-KEY FILTERS:
-- state: open/closed issues
-- label: Bug reports, features, etc.
-- author/assignee: Track by user
-- created/updated: Time-based search
-
-SMART DEFAULTS:
-- Returns 25 most relevant issues
-- Searches title and body by default
-- Optimizes for bug pattern discovery`;
+const DESCRIPTION = `Search GitHub issues for bug discovery and feature analysis. Supports filtering by state, labels, assignee, dates, and more. Parameters: query (required), owner (optional), repo (optional), app (optional), archived (optional), assignee (optional), author (optional), closed (optional), commenter (optional), comments (optional), created (optional), includePrs (optional), interactions (optional), involves (optional), labels (optional), language (optional), locked (optional), match (optional), mentions (optional), milestone (optional), noAssignee (optional), noLabel (optional), noMilestone (optional), noProject (optional), project (optional), reactions (optional), state (optional), teamMentions (optional), updated (optional), visibility (optional), sort (optional), order (optional), limit (optional).`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_ISSUES_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {

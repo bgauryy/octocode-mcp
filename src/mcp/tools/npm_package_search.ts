@@ -8,17 +8,18 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
+import { logger } from '../../utils/Logger.js';
 
-const TOOL_NAME = 'npm_package_search';
+export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
-const DESCRIPTION = `Smart NPM package discovery with fuzzy matching. Search by functionality: "react hooks", "typescript cli", "testing framework".`;
+const DESCRIPTION = `Search NPM packages with fuzzy matching. Supports multiple search terms and aggregates results. Use functional keywords like "react hooks", "auth", or "testing". Parameters: queries (required, string or array), searchLimit (optional).`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export function registerNpmSearchTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    NPM_PACKAGE_SEARCH_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -27,7 +28,7 @@ export function registerNpmSearchTool(server: McpServer) {
           .describe(
             'Search terms for packages. Use functionality keywords: "react hooks", "cli tool", "testing"'
           ),
-        searchlimit: z
+        searchLimit: z
           .number()
           .int()
           .min(1)
@@ -46,13 +47,13 @@ export function registerNpmSearchTool(server: McpServer) {
     },
     async (args: {
       queries: string | string[];
-      searchlimit?: number;
+      searchLimit?: number;
     }): Promise<CallToolResult> => {
       try {
         const queries = Array.isArray(args.queries)
           ? args.queries
           : [args.queries];
-        const searchLimit = args.searchlimit || 20;
+        const searchLimit = args.searchLimit || 20;
         const allPackages: NpmPackage[] = [];
 
         // Search for each query term
@@ -165,7 +166,8 @@ function parseNpmSearchOutput(output: string): NpmPackage[] {
     }
 
     return packages.map(normalizePackage);
-  } catch {
+  } catch (error) {
+    logger.warn('Failed to parse NPM search results:', error);
     return [];
   }
 }

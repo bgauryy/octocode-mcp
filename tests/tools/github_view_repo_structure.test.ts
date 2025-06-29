@@ -168,7 +168,7 @@ describe('GitHub View Repository Structure Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Access failed');
+      expect(result.content[0].text).toContain('Failed to access');
     });
   });
 });

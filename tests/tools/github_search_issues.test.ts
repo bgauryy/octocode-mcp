@@ -451,7 +451,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub issue search failed');
+      expect(result.content[0].text).toContain('Issue search failed');
     });
 
     it('should handle network timeout errors', async () => {
@@ -463,7 +463,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub issue search failed');
+      expect(result.content[0].text).toContain('Issue search failed');
     });
 
     it('should handle API rate limit errors', async () => {
@@ -489,7 +489,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search query is required and cannot be empty'
+        'Query required - provide search keywords'
       );
     });
 
@@ -500,7 +500,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search query is required and cannot be empty'
+        'Query required - provide search keywords'
       );
     });
 
@@ -513,7 +513,7 @@ describe('GitHub Search Issues Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Search query is too long. Please limit to 256 characters or less'
+        'Query too long (max 256 chars)'
       );
     });
 

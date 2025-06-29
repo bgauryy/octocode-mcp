@@ -106,7 +106,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('NPM package lookup failed');
+      expect(result.content[0].text).toContain('Failed to fetch package information');
     });
   });
 }); 

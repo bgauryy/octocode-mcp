@@ -1,4 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { logger } from '../utils/Logger';
 
 export function createResult(options: {
   data?: unknown;
@@ -20,10 +21,23 @@ export function createResult(options: {
     };
   }
 
-  return {
-    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
-    isError: false,
-  };
+  try {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+      isError: false,
+    };
+  } catch (jsonError) {
+    logger.error('JSON serialization failed:', jsonError);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `JSON serialization failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`,
+        },
+      ],
+      isError: true,
+    };
+  }
 }
 
 /**

@@ -21,29 +21,13 @@ import {
   createSearchFailedError,
 } from '../errorMessages';
 
-const TOOL_NAME = 'github_search_commits';
+export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Smart commit history search across GitHub repositories.
-
-USAGE STRATEGY:
-- Start simple: "fix bug" or "refactor"
-- Use quotes for exact messages: "initial commit"
-- Add filters progressively: author:john created:>2024-01-01
-
-KEY FILTERS:
-- author/committer: Find commits by person
-- created/merged: Date-based filtering
-- repo/owner: Target specific repositories
-- hash: Search by commit SHA
-
-SMART DEFAULTS:
-- Returns 25 most relevant commits
-- Searches commit messages by default
-- Optimizes for code history analysis`;
+const DESCRIPTION = `Search commit history across GitHub repositories. Supports filtering by repository, author, date ranges, and commit attributes. Parameters: query (optional), owner (optional), repo (optional), author (optional), authorName (optional), authorEmail (optional), committer (optional), committerName (optional), committerEmail (optional), authorDate (optional), committerDate (optional), hash (optional), parent (optional), tree (optional), merge (optional), visibility (optional), limit (optional), sort (optional), order (optional).`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_COMMITS_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -204,9 +188,9 @@ function transformCommitsToOptimizedFormat(
   const optimizedCommits = items
     .map(item => ({
       sha: item.sha,
-      message: getCommitTitle(item.commit?.message || ''),
-      author: item.commit?.author?.name || item.author?.login || 'Unknown',
-      date: toDDMMYYYY(item.commit?.author?.date || ''),
+      message: getCommitTitle(item.commit?.message ?? ''),
+      author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
+      date: toDDMMYYYY(item.commit?.author?.date ?? ''),
       repository: singleRepo
         ? undefined
         : simplifyRepoUrl(item.repository?.url || ''),

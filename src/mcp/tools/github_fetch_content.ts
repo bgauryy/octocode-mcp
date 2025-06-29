@@ -5,29 +5,15 @@ import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
+import { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME } from './github_view_repo_structure';
 
-const TOOL_NAME = 'github_get_file_content';
+export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetch file content from GitHub repositories.
-
-USAGE STRATEGY:
-- Use github_get_contents first to explore repository structure
-- Provide exact file paths from repository root
-- Supports automatic branch fallback (main/master)
-
-KEY FEATURES:
-- Smart branch detection and fallback
-- Handles files up to 300KB
-- Auto-detects binary files
-- Clear error messages for troubleshooting
-
-LIMITATIONS:
-- Files larger than 300KB: use github_search_code instead
-- Binary files: cannot display as text`;
+const DESCRIPTION = `Fetch file content from GitHub repositories. Use ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} first to explore repository structure and find exact file paths. Supports automatic branch fallback (main/master) and handles files up to 300KB. Parameters: owner (required), repo (required), branch (required), filePath (required).`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_GET_FILE_CONTENT_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -131,12 +117,12 @@ async function fetchGitHubFileContent(
         if (errorMsg.includes('404')) {
           return createResult({
             error:
-              'File not found. Use github_get_contents to explore repository structure',
+              'File not found. Use github_view_repo_structure to explore repository structure',
           });
         } else if (errorMsg.includes('403')) {
           return createResult({
             error:
-              'Access denied. Repository may be private - use api_status_check to verify',
+              'Access denied. Repository may be private - use apiStatusCheck to verify',
           });
         } else if (
           errorMsg.includes('maxBuffer') ||
@@ -144,7 +130,7 @@ async function fetchGitHubFileContent(
         ) {
           return createResult({
             error:
-              'File too large (>300KB). Use github_search_code to search for patterns within the file',
+              'File too large (>300KB). Use githubSearchCode to search for patterns within the file',
           });
         } else {
           return createResult({
@@ -189,11 +175,11 @@ async function processFileContent(
   if (Array.isArray(fileData)) {
     return createResult({
       error:
-        'Path is a directory. Use github_get_contents to list directory contents',
+        'Path is a directory. Use github_view_repo_structure to list directory contents',
     });
   }
 
-  const fileSize = fileData.size || 0;
+  const fileSize = typeof fileData.size === 'number' ? fileData.size : 0;
   const MAX_FILE_SIZE = 300 * 1024; // 300KB limit for better performance and reliability
 
   // Check file size with helpful message
@@ -202,12 +188,18 @@ async function processFileContent(
     const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
     return createResult({
-      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use github_search_code to search within the file`,
+      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file`,
     });
   }
 
-  // Get and decode content
-  const base64Content = fileData.content?.replace(/\s/g, ''); // Remove all whitespace
+  // Get and decode content with validation
+  if (!fileData.content) {
+    return createResult({
+      error: 'File is empty - no content to display',
+    });
+  }
+
+  const base64Content = fileData.content.replace(/\s/g, ''); // Remove all whitespace
 
   if (!base64Content) {
     return createResult({

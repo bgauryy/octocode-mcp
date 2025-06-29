@@ -73,23 +73,33 @@ export const ERROR_MESSAGES = {
 
 export const SUGGESTIONS = {
   // Code search suggestions
-  CODE_SEARCH_NO_RESULTS:
-    'Check user organizations with api_status for specific owner',
+  CODE_SEARCH_NO_RESULTS: `No results found. Try this progression:
+1. Remove ALL filters and search with just one keyword
+2. Break into several queries with minimal query and filters
+3. Use api_status_check to verify access to private repos`,
 
   // Repository search suggestions
   REPO_SEARCH_PRIMARY_FILTER:
-    'Requires query or filter (owner, language, stars, topic, forks) or "owner/repo" format',
+    'Start with simple query (1-2 words), then add filters based on results',
 
   // General search suggestions
-  SIMPLIFY_QUERY:
-    'Simplify query, add filters (language, owner), or check GitHub status',
+  SIMPLIFY_QUERY: `Try this search progression:
+1. Single keyword with NO filters
+2. Add ONE filter at a time
+3. Try synonyms and related terms
+4. Search broader categories`,
 
   // Issue/PR search suggestions
-  PROVIDE_KEYWORDS: 'provide keywords to search issues',
-  PROVIDE_PR_KEYWORDS: 'provide keywords to search pull requests',
+  PROVIDE_KEYWORDS: 'Start with simple keywords, then refine based on results',
+  PROVIDE_PR_KEYWORDS:
+    'Begin with basic terms, analyze results, then add filters',
 
   // Package search suggestions
-  DIFFERENT_KEYWORDS: 'try different keywords',
+  DIFFERENT_KEYWORDS: `Try multiple approaches:
+1. Single functional terms: "auth", "react"
+2. Break compound words: "authlib" → "auth"
+3. Search by use case: "user login" vs "authentication"
+4. Try category terms: "framework", "tool", "library"`,
 } as const;
 
 export const VALIDATION_MESSAGES = {

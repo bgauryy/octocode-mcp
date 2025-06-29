@@ -23,34 +23,13 @@ import {
   getErrorWithSuggestion,
 } from '../errorMessages';
 
-const TOOL_NAME = 'github_search_code';
+export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Smart code search across GitHub repositories.
-
-USAGE STRATEGY:
-- Start simple
-- understand owner and repo and use it in the query from search
-- Add filters when needed
-- Use quotes for exact phrases: "error handling"
-- Init queries should be with one word
-- Use AND searches (several queries) - dont' use too many queries to get most results (use 1-3 queries at max)
-- Be exploretory when you have enough results and data 
-
-FILTERS (use sparingly):
-- owner: Specific repository owner
-- filename: Target specific files
-- extension: File type filter
-- path: Directory/path targeting
-- language: Programming language
-
-SMART DEFAULTS:
-- Searches file content by default
-- Returns 30 most relevant results
-- Optimizes for code analysis workflows`;
+const DESCRIPTION = `Search code across GitHub repositories. Start with simple 1-2 word queries, then refine with filters like language, owner, or filename. Supports exact phrase matching with quotes. Parameters: query (required), language (optional), owner (optional), filename (optional), extension (optional), match (optional), size (optional), limit (optional).`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_CODE_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -58,7 +37,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search terms. Start simple: "React hooks", "error handling". Use quotes for exact phrases.'
+            'Search terms. START SIMPLE: Use 1-2 words first (e.g., "useState", "auth"). Add more terms only after seeing initial results.'
           ),
 
         language: z
@@ -72,7 +51,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/org. For private repos, use api_status_check first.'
+            'Repository owner/org. For private repos, use apiStatusCheck first.'
           ),
 
         filename: z
@@ -138,10 +117,18 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 
         // Smart handling for no results - provide actionable suggestions
         if (items.length === 0) {
+          // Provide progressive search guidance based on current parameters
+          let specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
+
+          // If filters were used, suggest removing them first
+          if (args.language || args.owner || args.filename || args.extension) {
+            specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
+          }
+
           return createResult({
             error: getErrorWithSuggestion({
               baseError: createNoResultsError('code'),
-              suggestion: SUGGESTIONS.CODE_SEARCH_NO_RESULTS,
+              suggestion: specificSuggestion,
             }),
           });
         }
@@ -222,10 +209,16 @@ function transformToOptimizedFormat(
 
   const optimizedItems = items.map(item => ({
     path: item.path,
-    matches: item.textMatches.map(match => ({
-      context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
-      positions: match.matches.map(m => m.indices as [number, number]),
-    })),
+    matches:
+      item.textMatches?.map(match => ({
+        context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
+        positions:
+          match.matches?.map(m =>
+            Array.isArray(m.indices) && m.indices.length >= 2
+              ? ([m.indices[0], m.indices[1]] as [number, number])
+              : ([0, 0] as [number, number])
+          ) || [],
+      })) || [],
     url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
   }));
 

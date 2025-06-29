@@ -18,29 +18,13 @@ import {
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
-const TOOL_NAME = 'github_search_pull_requests';
+export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `Smart PR search for implementation discovery and code review analysis.
-
-USAGE STRATEGY:
-- Start simple: "refactor" or "performance"
-- Use quotes for exact titles: "fix memory leak"
-- Add filters progressively: is:merged review:approved
-
-KEY FILTERS:
-- state: open/closed PRs
-- review: approved/changes_requested
-- author/assignee: Track by user
-- base/head: Branch targeting
-
-SMART DEFAULTS:
-- Returns 25 most relevant PRs
-- Searches title and body by default
-- Optimizes for implementation discovery`;
+const DESCRIPTION = `Search pull requests for implementation discovery and code review analysis. Supports filtering by state, review status, branches, and more. Parameters: query (required), owner (optional), repo (optional), author (optional), assignee (optional), mentions (optional), commenter (optional), involves (optional), reviewedBy (optional), reviewRequested (optional), state (optional), head (optional), base (optional), language (optional), created (optional), updated (optional), mergedAt (optional), closed (optional), draft (optional), checks (optional), merged (optional), review (optional), limit (optional), sort (optional), order (optional).`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {

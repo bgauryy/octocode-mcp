@@ -32,26 +32,9 @@ import {
  * TIP: Use limit parameter instead of adding more filters
  */
 
-const TOOL_NAME = 'github_search_repositories';
+export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Smart GitHub repository discovery and analysis.
-
-EFFECTIVE PATTERNS:
-- Quality: topic:react stars:1000..5000
-- Organization: owner:microsoft language:python
-- Recent: stars:>1000 created:>2023-01-01
-
-KEY FILTERS:
-- stars: Repository popularity (>1000, 100..5000)
-- language: Primary programming language
-- topic: Repository topics/tags
-- owner: Specific organization/user
-- created/updated: Date filters
-
-SMART SORTING:
-- stars: Most popular first
-- updated: Most active first
-- best-match: Most relevant (default)`;
+const DESCRIPTION = `Discover GitHub repositories with smart filtering. Supports language, stars, topics, ownership, dates, and community metrics. Parameters: query (optional), owner (optional), language (optional), stars (optional), topic (optional), forks (optional), numberOfTopics (optional), license (optional), archived (optional), includeForks (optional), visibility (optional), created (optional), updated (optional), size (optional), goodFirstIssues (optional), helpWantedIssues (optional), followers (optional), match (optional), sort (optional), order (optional), limit (optional).`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -93,7 +76,7 @@ function extractOwnerRepoFromQuery(query: string): {
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -101,7 +84,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with GitHub syntax. Use simple terms and qualifiers (stars:, language:, org:) as needed.'
+            'Search query. START SIMPLE: Use 1-2 words with NO filters first (e.g., "react", "auth"). Add qualifiers only after initial search.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -396,14 +379,14 @@ export async function searchGitHubRepos(
         }
 
         // Calculate average stars (use correct field name)
-        if (repo.stargazersCount) {
+        if (typeof repo.stargazersCount === 'number') {
           totalStars += repo.stargazersCount;
         }
 
         // Count recently updated repositories (use correct field name)
         if (repo.updatedAt) {
           const updatedDate = new Date(repo.updatedAt);
-          if (updatedDate > thirtyDaysAgo) {
+          if (!isNaN(updatedDate.getTime()) && updatedDate > thirtyDaysAgo) {
             analysis.recentlyUpdated++;
           }
         }

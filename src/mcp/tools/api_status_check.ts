@@ -4,16 +4,19 @@ import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { createResult } from '../responses';
 import { ERROR_MESSAGES } from '../errorMessages';
 
-export const TOOL_NAME = 'api_status_check';
-const DESCRIPTION = `Check GitHub/NPM CLI authentication and get user organizations. Essential for private repo access and troubleshooting failed searches.`;
+export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
+const DESCRIPTION = `Check GitHub and NPM authentication status. Returns connected status and GitHub organizations for accessing private repositories. No parameters required.`;
 
-// Helper function to parse execution results
-function parseExecResult(result: CallToolResult): any | null {
+// Helper function to parse execution results with proper typing
+function parseExecResult(result: CallToolResult): { result?: string } | null {
   if (!result.isError && result.content?.[0]?.text) {
     try {
-      return JSON.parse(result.content[0].text as string);
+      const textContent = result.content[0].text;
+      if (typeof textContent === 'string') {
+        const parsed = JSON.parse(textContent);
+        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+      }
     } catch (e) {
-      // Log or handle parsing error if necessary, but don't propagate
       return null;
     }
   }
@@ -22,7 +25,7 @@ function parseExecResult(result: CallToolResult): any | null {
 
 export function registerApiStatusCheckTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    API_STATUS_CHECK_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {},
@@ -70,10 +73,12 @@ export function registerApiStatusCheckTool(server: McpServer) {
                     : '';
 
                 // Parse organizations into clean array
-                organizations = output
-                  .split('\n')
-                  .map((org: string) => org.trim())
-                  .filter((org: string) => org.length > 0);
+                if (typeof output === 'string') {
+                  organizations = output
+                    .split('\n')
+                    .map((org: string) => org.trim())
+                    .filter((org: string) => org.length > 0);
+                }
               } catch (orgError) {
                 // Organizations fetch failed, but GitHub is still connected
                 // Don't propagate organization fetch failures - they are expected
@@ -141,7 +146,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 registry: registry || 'https://registry.npmjs.org/',
               },
               hints: [
-                'use user organizations: to search on private repositories in case the user asked about private repo - check by query nd structure',
+                'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
               ],
             },
           },

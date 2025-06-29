@@ -9,28 +9,13 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
-const TOOL_NAME = 'github_get_contents';
+export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `Explore repository structure and discover files.
-
-USAGE STRATEGY:
-- Start at repository root (leave path empty)
-- Navigate through directories progressively
-- Use before github_get_file_content to verify paths
-
-KEY FEATURES:
-- Auto-detects default branch
-- Lists files and folders separately
-- Shows file sizes for planning
-- Limits to 100 items for efficiency
-
-SMART DEFAULTS:
-- Falls back to main/master if branch not found
-- Sorts directories first, then alphabetically`;
+const DESCRIPTION = `Explore repository structure and navigate directories. Auto-detects branches and provides file/folder listings with size information. Parameters: owner (required), repo (required), branch (required), path (optional).`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -110,7 +95,12 @@ export async function viewRepositoryStructure(
       let items: GitHubApiFileItem[] = [];
       let usedBranch = branch;
       let lastError: Error | null = null;
+      let attemptCount = 0;
+      const maxAttempts = 3; // Prevent infinite loops
+
       for (const tryBranch of branchesToTry) {
+        if (attemptCount >= maxAttempts) break;
+        attemptCount++;
         try {
           const apiPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${tryBranch}`;
           const result = await executeGitHubCommand('api', [apiPath], {

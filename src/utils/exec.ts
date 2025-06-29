@@ -44,10 +44,9 @@ function createSuccessResult(data: unknown): CallToolResult {
 }
 
 function createErrorResult(message: string, error: unknown): CallToolResult {
+  const errorMessage = error instanceof Error ? error.message : String(error);
   return {
-    content: [
-      { type: 'text', text: `${message}: ${(error as Error).message}` },
-    ],
+    content: [{ type: 'text', text: `${message}: ${errorMessage}` }],
     isError: true,
   };
 }

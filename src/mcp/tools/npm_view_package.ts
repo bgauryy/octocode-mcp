@@ -11,30 +11,13 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
 
-const TOOL_NAME = 'npm_view_package';
+export const NPM_VIEW_PACKAGE_TOOL_NAME = 'npmViewPackage';
 
-const DESCRIPTION = `Analyze NPM package metadata and find source code.
-
-USAGE STRATEGY:
-- Get repository URL to access source code on GitHub
-- Discover package exports and entry points
-- Review version history and update frequency
-- Check package size and dependencies
-
-KEY INFORMATION:
-- Repository URL (critical for GitHub navigation)
-- Package exports (helps find implementation files)
-- Version history (last 5 versions)
-- Size and download stats
-
-OPTIMIZED OUTPUT:
-- Simplified exports for clarity
-- Human-readable dates and sizes
-- Direct GitHub repository links`;
+const DESCRIPTION = `View detailed NPM package information including repository URL, exports, version history, dependencies, and download stats. Returns optimized metadata for code navigation. Parameters: packageName (required).`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    NPM_VIEW_PACKAGE_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -111,7 +94,9 @@ function transformToOptimizedFormat(
 
   // Get version timestamps from time object and limit to last 5
   const timeData = packageData.time || {};
-  const versionList = packageData.versions || [];
+  const versionList = Array.isArray(packageData.versions)
+    ? packageData.versions
+    : [];
   const recentVersions = versionList.slice(-5).map((version: string) => ({
     version,
     date: timeData[version] ? toDDMMYYYY(timeData[version]) : 'Unknown',
@@ -168,9 +153,12 @@ function simplifyExports(exports: any): {
       }
     }
 
-    // Extract types if available
-    if (exports['./types'] || exports['.']?.types) {
-      simplified.types = exports['./types'] || exports['.'].types;
+    // Extract types if available with safe property access
+    if (
+      exports['./types'] ||
+      (exports['.'] && typeof exports['.'] === 'object' && exports['.'].types)
+    ) {
+      simplified.types = exports['./types'] || (exports['.'] as any).types;
     }
 
     // Add a few other important exports (max 3 total)
