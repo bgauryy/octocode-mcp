@@ -36,7 +36,7 @@ describe('NPM View Package Tool', () => {
       registerNpmViewPackageTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'npm_view_package',
+        'npmViewPackage',
         expect.any(Object),
         expect.any(Function)
       );
@@ -70,7 +70,7 @@ describe('NPM View Package Tool', () => {
         content: [{ text: JSON.stringify(mockNpmResponse) }],
       });
 
-      const result = await mockServer.callTool('npm_view_package', {
+      const result = await mockServer.callTool('npmViewPackage', {
         packageName: 'react',
       });
 
@@ -90,7 +90,7 @@ describe('NPM View Package Tool', () => {
         content: [{ text: 'Package not found' }],
       });
 
-      const result = await mockServer.callTool('npm_view_package', {
+      const result = await mockServer.callTool('npmViewPackage', {
         packageName: 'nonexistent-package',
       });
 
@@ -101,7 +101,7 @@ describe('NPM View Package Tool', () => {
     it('should handle empty package name', async () => {
       registerNpmViewPackageTool(mockServer.server);
 
-      const result = await mockServer.callTool('npm_view_package', {
+      const result = await mockServer.callTool('npmViewPackage', {
         packageName: '',
       });
 

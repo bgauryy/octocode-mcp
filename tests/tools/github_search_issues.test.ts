@@ -55,7 +55,7 @@ describe('GitHub Search Issues Tool', () => {
       registerSearchGitHubIssuesTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_search_issues',
+        'githubSearchIssues',
         expect.any(Object),
         expect.any(Function)
       );
@@ -97,7 +97,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'bug rendering',
       });
 
@@ -126,7 +126,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'memory leak',
         owner: 'facebook',
         repo: 'react',
@@ -164,7 +164,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'performance',
         owner: 'microsoft',
       });
@@ -200,7 +200,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'typescript error',
         author: 'developer1',
         assignee: 'maintainer1',
@@ -248,7 +248,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'help wanted',
         noAssignee: true,
         noLabel: true,
@@ -289,7 +289,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'feature request',
         milestone: 'v2.0',
         mentions: 'developer1',
@@ -339,7 +339,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'test issue',
       });
 
@@ -368,7 +368,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'stale issues',
         created: '<2022-01-01',
         updated: '>2023-01-01',
@@ -411,7 +411,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'nonexistent-issue-pattern',
       });
 
@@ -428,7 +428,7 @@ describe('GitHub Search Issues Tool', () => {
         content: [{ text: 'GitHub CLI error: Authentication required' }],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'test issue',
       });
 
@@ -446,7 +446,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'test',
       });
 
@@ -458,7 +458,7 @@ describe('GitHub Search Issues Tool', () => {
       const timeoutError = new Error('Network timeout');
       mockExecuteGitHubCommand.mockRejectedValue(timeoutError);
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'test',
       });
 
@@ -472,7 +472,7 @@ describe('GitHub Search Issues Tool', () => {
         content: [{ text: 'API rate limit exceeded' }],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'popular issue',
       });
 
@@ -483,7 +483,7 @@ describe('GitHub Search Issues Tool', () => {
 
   describe('Input Validation', () => {
     it('should reject empty query', async () => {
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: '',
       });
 
@@ -494,7 +494,7 @@ describe('GitHub Search Issues Tool', () => {
     });
 
     it('should reject whitespace-only query', async () => {
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: '   ',
       });
 
@@ -507,7 +507,7 @@ describe('GitHub Search Issues Tool', () => {
     it('should reject overly long query', async () => {
       const longQuery = 'a'.repeat(300); // 300 characters
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: longQuery,
       });
 
@@ -537,7 +537,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool('github_search_issues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: validQuery,
       });
 
@@ -562,7 +562,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'error: "undefined is not a function" & crash',
       });
 
@@ -596,7 +596,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       // Test with limit over 100 (should be capped at 100)
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'test',
         limit: 150,
       });
@@ -628,7 +628,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'test issue',
         state: 'open',
       });
@@ -662,13 +662,13 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       // First search
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'bug',
         state: 'open',
       });
 
       // Second search with different parameters
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'bug',
         state: 'closed',
       });
@@ -704,7 +704,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('github_search_issues', {
+      await mockServer.callTool('githubSearchIssues', {
         query: 'memory leak in React hooks',
         labels: 'bug & performance',
         milestone: 'v2.0 release',

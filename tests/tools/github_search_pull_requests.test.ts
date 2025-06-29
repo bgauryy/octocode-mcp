@@ -47,7 +47,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_search_pull_requests',
+        'githubSearchPullRequests',
         expect.any(Object),
         expect.any(Function)
       );
@@ -84,7 +84,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_pull_requests', {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'fix',
       });
 
@@ -113,7 +113,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_pull_requests', {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'nonexistent',
       });
 
@@ -130,7 +130,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: 'Search failed' }],
       });
 
-      const result = await mockServer.callTool('github_search_pull_requests', {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'test',
       });
 

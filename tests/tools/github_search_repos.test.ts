@@ -47,7 +47,7 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_search_repositories',
+        'githubSearchRepositories',
         expect.any(Object),
         expect.any(Function)
       );
@@ -81,7 +81,7 @@ describe('GitHub Search Repositories Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_repositories', {
+      const result = await mockServer.callTool('githubSearchRepositories', {
         query: 'test',
       });
 
@@ -114,7 +114,7 @@ describe('GitHub Search Repositories Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_repositories', {
+      const result = await mockServer.callTool('githubSearchRepositories', {
         query: 'nonexistent',
       });
 
@@ -131,7 +131,7 @@ describe('GitHub Search Repositories Tool', () => {
         content: [{ text: 'Search failed' }],
       });
 
-      const result = await mockServer.callTool('github_search_repositories', {
+      const result = await mockServer.callTool('githubSearchRepositories', {
         query: 'test',
       });
 

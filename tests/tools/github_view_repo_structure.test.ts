@@ -47,7 +47,7 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_get_contents',
+        'githubViewRepoStructure',
         expect.any(Object),
         expect.any(Function)
       );
@@ -94,7 +94,7 @@ describe('GitHub View Repository Structure Tool', () => {
           content: [{ text: JSON.stringify(mockGitHubResponse) }],
         });
 
-      const result = await mockServer.callTool('github_get_contents', {
+      const result = await mockServer.callTool('githubViewRepoStructure', {
         owner: 'owner',
         repo: 'repo',
         branch: 'main',
@@ -139,7 +139,7 @@ describe('GitHub View Repository Structure Tool', () => {
           content: [{ text: JSON.stringify(mockGitHubResponse) }],
         });
 
-      const result = await mockServer.callTool('github_get_contents', {
+      const result = await mockServer.callTool('githubViewRepoStructure', {
         owner: 'owner',
         repo: 'repo',
         branch: 'main',
@@ -160,7 +160,7 @@ describe('GitHub View Repository Structure Tool', () => {
       // Mock a failed API call
       mockExecuteGitHubCommand.mockRejectedValue(new Error('Network error'));
 
-      const result = await mockServer.callTool('github_get_contents', {
+      const result = await mockServer.callTool('githubViewRepoStructure', {
         owner: 'nonexistent',
         repo: 'repo',
         branch: 'main',

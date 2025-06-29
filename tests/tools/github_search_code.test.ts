@@ -47,7 +47,7 @@ describe('GitHub Search Code Tool', () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_search_code',
+        'githubSearchCode',
         expect.any(Object),
         expect.any(Function)
       );
@@ -93,7 +93,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
         limit: 30,
       });
@@ -128,7 +128,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'nonexistent',
       });
 
@@ -173,7 +173,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'useState',
         language: 'typescript',
       });
@@ -219,7 +219,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'some complex query without filters',
       });
 
@@ -235,7 +235,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: 'Search failed' }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
       });
 
@@ -246,7 +246,7 @@ describe('GitHub Search Code Tool', () => {
     it('should validate query parameters with helpful error messages', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: '',
       });
 
@@ -259,7 +259,7 @@ describe('GitHub Search Code Tool', () => {
     it('should handle boolean operator validation', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'react or vue', // Lowercase boolean operators
       });
 
@@ -270,7 +270,7 @@ describe('GitHub Search Code Tool', () => {
     it('should handle repository format validation', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
         repo: 'invalid-repo-format', // Missing owner
       });
