@@ -25,7 +25,7 @@ import {
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Search code across GitHub repositories. Start with simple 1-2 word queries, then refine with filters like language, owner, or filename. Supports exact phrase matching with quotes. Parameters: query (required), language (optional), owner (optional), filename (optional), extension (optional), match (optional), size (optional), limit (optional).`;
+const DESCRIPTION = `Search code across GitHub repositories. Start with simple 1-2 word queries, then refine with filters like language, owner, or filename. Supports exact phrase matching with quotes. Parameters: query (required), language (optional), owner (optional - GitHub username/org, NOT owner/repo), filename (optional), extension (optional), match (optional), size (optional), limit (optional).`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -51,7 +51,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/org. For private repos, use apiStatusCheck first.'
+            'Repository owner/org (for organization-specific searches). Format: username or org-name only, NOT owner/repo. Use this to search within a specific organization.'
           ),
 
         filename: z
@@ -365,12 +365,19 @@ function validateSearchParameters(
     return ERROR_MESSAGES.QUERY_TOO_LONG_1000;
   }
 
-  // Repository validation - allow owner/repo format in repo field
-  if (params.repo && !params.owner) {
-    const repoValues = Array.isArray(params.repo) ? params.repo : [params.repo];
-    const hasOwnerFormat = repoValues.every(repo => repo.includes('/'));
-    if (!hasOwnerFormat) {
-      return ERROR_MESSAGES.REPO_FORMAT_ERROR;
+  // Repository validation - ensure owner is provided correctly
+  if (
+    params.owner &&
+    typeof params.owner === 'string' &&
+    params.owner.includes('/')
+  ) {
+    return 'Owner parameter should contain only the username/org name, not owner/repo format. For repository-specific searches, use org: or user: qualifiers in the query.';
+  }
+
+  if (Array.isArray(params.owner)) {
+    const hasSlashFormat = params.owner.some(owner => owner.includes('/'));
+    if (hasSlashFormat) {
+      return 'Owner parameter should contain only usernames/org names, not owner/repo format. For repository-specific searches, use repo: qualifier in the query.';
     }
   }
 

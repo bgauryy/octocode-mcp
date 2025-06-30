@@ -34,7 +34,7 @@ import {
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Discover GitHub repositories with smart filtering. Supports language, stars, topics, ownership, dates, and community metrics. Parameters: query (optional), owner (optional), language (optional), stars (optional), topic (optional), forks (optional), numberOfTopics (optional), license (optional), archived (optional), includeForks (optional), visibility (optional), created (optional), updated (optional), size (optional), goodFirstIssues (optional), helpWantedIssues (optional), followers (optional), match (optional), sort (optional), order (optional), limit (optional).`;
+const DESCRIPTION = `Discover GitHub repositories with smart filtering. Supports language, stars, topics, ownership, dates, and community metrics. Parameters: query (optional), owner (optional - GitHub username/org, NOT owner/repo), language (optional), stars (optional), topic (optional), forks (optional), numberOfTopics (optional), license (optional), archived (optional), includeForks (optional), visibility (optional), created (optional), updated (optional), size (optional), goodFirstIssues (optional), helpWantedIssues (optional), followers (optional), match (optional), sort (optional), order (optional), limit (optional).`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -92,7 +92,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner or organization. For private repos, use organizations from api_status_check (user_organizations). Can be a single value or array.'
+            'Repository owner or organization name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). For private repos, use organizations from api_status_check (user_organizations). Can be a single value or array.'
           ),
         language: z
           .string()

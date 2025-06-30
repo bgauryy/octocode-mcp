@@ -11,7 +11,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `Explore repository structure and navigate directories. Auto-detects branches and provides file/folder listings with size information. Parameters: owner (required), repo (required), branch (required), path (optional).`;
+const DESCRIPTION = `Explore repository structure and navigate directories. Auto-detects branches and provides file/folder listings with size information. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), path (optional).`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -27,7 +27,9 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
             /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/,
             'Invalid GitHub username/org format'
           )
-          .describe(`Repository owner/org name`),
+          .describe(
+            `Repository owner/org name (e.g., 'microsoft', 'google', NOT 'microsoft/vscode')`
+          ),
 
         repo: z
           .string()

@@ -19,7 +19,7 @@ import {
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Search GitHub issues for bug discovery and feature analysis. Supports filtering by state, labels, assignee, dates, and more. Parameters: query (required), owner (optional), repo (optional), app (optional), archived (optional), assignee (optional), author (optional), closed (optional), commenter (optional), comments (optional), created (optional), includePrs (optional), interactions (optional), involves (optional), labels (optional), language (optional), locked (optional), match (optional), mentions (optional), milestone (optional), noAssignee (optional), noLabel (optional), noMilestone (optional), noProject (optional), project (optional), reactions (optional), state (optional), teamMentions (optional), updated (optional), visibility (optional), sort (optional), order (optional), limit (optional).`;
+const DESCRIPTION = `Search GitHub issues for bug discovery and feature analysis. Supports filtering by state, labels, assignee, dates, and more. Parameters: query (required), owner (optional - GitHub username/org, NOT owner/repo), repo (optional - repository name, use with owner for specific repo), app (optional), archived (optional), assignee (optional), author (optional), closed (optional), commenter (optional), comments (optional), created (optional), includePrs (optional), interactions (optional), involves (optional), labels (optional), language (optional), locked (optional), match (optional), mentions (optional), milestone (optional), noAssignee (optional), noLabel (optional), noMilestone (optional), noProject (optional), project (optional), reactions (optional), state (optional), teamMentions (optional), updated (optional), visibility (optional), sort (optional), order (optional), limit (optional).`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
@@ -38,12 +38,14 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           .min(1)
           .optional()
           .describe(
-            'Repository owner/org. For private repos, use api_status_check first.'
+            'Repository owner/org name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). Use with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
           .optional()
-          .describe('Repository name. Use for targeted searches.'),
+          .describe(
+            'Repository name only (e.g., "vscode", "react", NOT "owner/repo"). Must be used together with owner parameter.'
+          ),
         app: z
           .string()
           .optional()

@@ -23,7 +23,7 @@ import {
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Search commit history across GitHub repositories. Supports filtering by repository, author, date ranges, and commit attributes. Parameters: query (optional), owner (optional), repo (optional), author (optional), authorName (optional), authorEmail (optional), committer (optional), committerName (optional), committerEmail (optional), authorDate (optional), committerDate (optional), hash (optional), parent (optional), tree (optional), merge (optional), visibility (optional), limit (optional), sort (optional), order (optional).`;
+const DESCRIPTION = `Search commit history across GitHub repositories. Supports filtering by repository, author, date ranges, and commit attributes. Parameters: query (optional), owner (optional - GitHub username/org, NOT owner/repo), repo (optional - repository name, use with owner for specific repo), author (optional), authorName (optional), authorEmail (optional), committer (optional), committerName (optional), committerEmail (optional), authorDate (optional), committerDate (optional), hash (optional), parent (optional), tree (optional), merge (optional), visibility (optional), limit (optional), sort (optional), order (optional).`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -43,12 +43,14 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Repository owner/org. For private repos, use api_status_check first.'
+            'Repository owner/org name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). Use with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
           .optional()
-          .describe('Repository name. Use for targeted searches.'),
+          .describe(
+            'Repository name only (e.g., "vscode", "react", NOT "owner/repo"). Must be used together with owner parameter.'
+          ),
 
         // Author filters
         author: z

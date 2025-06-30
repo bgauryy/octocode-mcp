@@ -9,7 +9,7 @@ import { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME } from './github_view_repo_structu
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetch file content from GitHub repositories. Use ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} first to explore repository structure and find exact file paths. Supports automatic branch fallback (main/master) and handles files up to 300KB. Parameters: owner (required), repo (required), branch (required), filePath (required).`;
+const DESCRIPTION = `Fetch file content from GitHub repositories. Use ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} first to explore repository structure and find exact file paths. Supports automatic branch fallback (main/master) and handles files up to 300KB. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), filePath (required).`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -22,13 +22,17 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
-          .describe(`Repository owner/org name`),
+          .describe(
+            `Repository owner/org name (e.g., 'microsoft', 'google', NOT 'microsoft/vscode')`
+          ),
         repo: z
           .string()
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9._-]+$/)
-          .describe(`Repository name (case-sensitive)`),
+          .describe(
+            `Repository name only (e.g., 'vscode', 'react', NOT 'microsoft/vscode')`
+          ),
         branch: z
           .string()
           .min(1)
