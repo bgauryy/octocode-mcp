@@ -1,12 +1,11 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { logger } from '../utils/Logger';
 
 export function createResult(options: {
   data?: unknown;
   error?: unknown | string;
-  suggestions?: string[];
-  cli_command?: string;
 }): CallToolResult {
-  const { data, error, suggestions, cli_command } = options;
+  const { data, error } = options;
 
   if (error) {
     const errorMessage =
@@ -14,34 +13,31 @@ export function createResult(options: {
         ? error
         : (error as Error).message || 'Unknown error';
 
-    // Build error response with optional CLI command
-    const errorResponse: any = { error: errorMessage };
-    if (suggestions) {
-      errorResponse.suggestions = suggestions;
-    }
-    if (cli_command) {
-      errorResponse.cli_command = cli_command;
-    }
+    const errorResponse = errorMessage;
 
     return {
-      content: [{ type: 'text', text: JSON.stringify(errorResponse, null, 2) }],
+      content: [{ type: 'text', text: errorResponse }],
       isError: true,
     };
   }
 
-  // For successful responses, include cli_command if provided (for debugging)
-  if (cli_command && data && typeof data === 'object') {
-    const dataWithCli = { ...data, cli_command };
+  try {
     return {
-      content: [{ type: 'text', text: JSON.stringify(dataWithCli, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
       isError: false,
     };
+  } catch (jsonError) {
+    logger.error('JSON serialization failed:', jsonError);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `JSON serialization failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`,
+        },
+      ],
+      isError: true,
+    };
   }
-
-  return {
-    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
-    isError: false,
-  };
 }
 
 /**

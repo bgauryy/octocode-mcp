@@ -5,20 +5,26 @@ import {
   GitHubPullRequestsSearchResult,
   GitHubPullRequestItem,
 } from '../../types';
-import { createResult, toDDMMYYYY } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
+import {
+  ERROR_MESSAGES,
+  SUGGESTIONS,
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
-const TOOL_NAME = 'github_search_pull_requests';
+export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `Find pull requests and implementations with detailed metadata. Discover feature implementations, code review patterns, and development workflows.`;
+const DESCRIPTION = `Search pull requests for implementation discovery and code review analysis. Supports filtering by state, review status, branches, and more. Parameters: query (required), owner (optional - GitHub username/org, NOT owner/repo), repo (optional - repository name, use with owner for specific repo), author (optional), assignee (optional), mentions (optional), commenter (optional), involves (optional), reviewedBy (optional), reviewRequested (optional), state (optional), head (optional), base (optional), language (optional), created (optional), updated (optional), mergedAt (optional), closed (optional), draft (optional), checks (optional), merged (optional), review (optional), limit (optional), sort (optional), order (optional).`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -26,44 +32,69 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .string()
           .min(1, 'Search query is required and cannot be empty')
           .describe(
-            'Search query with GitHub syntax. Boolean: "fix AND bug", exact phrases: "initial commit", qualifiers: "is:merged review:approved".'
+            'Search terms. Start simple: "refactor", "optimization". Use quotes for exact phrases.'
           ),
-        owner: z.string().optional().describe('Repository owner/organization'),
-        repo: z.string().optional().describe('Repository name'),
-        author: z.string().optional().describe('Filter by pull request author'),
-        assignee: z.string().optional().describe('Filter by assignee'),
-        mentions: z.string().optional().describe('Filter by user mentions'),
-        commenter: z.string().optional().describe('Filter by comments by user'),
-        involves: z.string().optional().describe('Filter by user involvement'),
-        reviewedBy: z
+        owner: z
           .string()
           .optional()
-          .describe('Filter by user who reviewed'),
+          .describe(
+            'Repository owner/org name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). Use with repo parameter for repository-specific searches.'
+          ),
+        repo: z
+          .string()
+          .optional()
+          .describe(
+            'Repository name only (e.g., "vscode", "react", NOT "owner/repo"). Must be used together with owner parameter.'
+          ),
+        author: z.string().optional().describe('GitHub username of PR author'),
+        assignee: z.string().optional().describe('GitHub username of assignee'),
+        mentions: z.string().optional().describe('PRs mentioning this user'),
+        commenter: z.string().optional().describe('User who commented on PR'),
+        involves: z.string().optional().describe('User involved in any way'),
+        reviewedBy: z.string().optional().describe('User who reviewed the PR'),
         reviewRequested: z
           .string()
           .optional()
-          .describe('Filter by user or team requested to review'),
+          .describe('User/team requested for review'),
         state: z
           .enum(['open', 'closed'])
           .optional()
-          .describe('Filter by state'),
-        head: z.string().optional().describe('Filter by head branch name'),
-        base: z.string().optional().describe('Filter by base branch name'),
-        language: z.string().optional().describe('Filter by coding language'),
-        created: z.string().optional().describe('Filter by created date'),
-        updated: z.string().optional().describe('Filter by last updated date'),
-        mergedAt: z.string().optional().describe('Filter by merged date'),
-        closed: z.string().optional().describe('Filter by closed date'),
-        draft: z.boolean().optional().describe('Filter by draft state'),
+          .describe('PR state. Default: all'),
+        head: z.string().optional().describe('Source branch name'),
+        base: z
+          .string()
+          .optional()
+          .describe('Target branch name (main, develop, etc.)'),
+        language: z.string().optional().describe('Repository language'),
+        created: z
+          .string()
+          .optional()
+          .describe('When created. Format: >2020-01-01'),
+        updated: z
+          .string()
+          .optional()
+          .describe('When updated. Format: >2020-01-01'),
+        mergedAt: z
+          .string()
+          .optional()
+          .describe('When merged. Format: >2020-01-01'),
+        closed: z
+          .string()
+          .optional()
+          .describe('When closed. Format: >2020-01-01'),
+        draft: z.boolean().optional().describe('Draft PR status'),
         checks: z
           .enum(['pending', 'success', 'failure'])
           .optional()
-          .describe('Filter based on status of the checks'),
-        merged: z.boolean().optional().describe('Filter based on merged state'),
+          .describe('CI/CD check status'),
+        merged: z
+          .boolean()
+          .optional()
+          .describe('Only merged PRs (true) or unmerged (false)'),
         review: z
           .enum(['none', 'required', 'approved', 'changes_requested'])
           .optional()
-          .describe('Filter based on review status'),
+          .describe('Review status filter'),
         limit: z
           .number()
           .int()
@@ -71,7 +102,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .max(50)
           .optional()
           .default(25)
-          .describe('Maximum results (default: 25, max: 50)'),
+          .describe('Results limit (1-50). Default: 25'),
         sort: z
           .enum([
             'comments',
@@ -87,15 +118,15 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
             'updated',
           ])
           .optional()
-          .describe('Sort criteria'),
+          .describe('Sort by activity or reactions. Default: best match'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Order (default: desc)'),
+          .describe('Sort order. Default: desc'),
       },
       annotations: {
-        title: 'GitHub Pull Requests Search',
+        title: 'GitHub PR Search - Implementation Discovery',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -105,15 +136,13 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
         return createResult({
-          error:
-            'Search query is required and cannot be empty - provide keywords to search for pull requests',
+          error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
         });
       }
 
       if (args.query.length > 256) {
         return createResult({
-          error:
-            'Search query is too long. Please limit to 256 characters or less - simplify your search terms',
+          error: ERROR_MESSAGES.QUERY_TOO_LONG,
         });
       }
 
@@ -121,8 +150,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         return await searchGitHubPullRequests(args);
       } catch (error) {
         return createResult({
-          error:
-            'GitHub pull requests search failed - verify repository access and query syntax',
+          error: createSearchFailedError('pull_requests'),
         });
       }
     }
@@ -143,8 +171,14 @@ async function searchGitHubPullRequests(
     }
 
     const execResult = JSON.parse(result.content[0].text as string);
-    const apiResponse = JSON.parse(execResult.result);
+    const apiResponse = execResult.result;
     const pullRequests = apiResponse.items || [];
+
+    if (pullRequests.length === 0) {
+      return createResult({
+        error: createNoResultsError('pull_requests'),
+      });
+    }
 
     const cleanPRs: GitHubPullRequestItem[] = pullRequests.map(
       (pr: {
@@ -194,9 +228,6 @@ async function searchGitHubPullRequests(
     const searchResult: GitHubPullRequestsSearchResult = {
       results: cleanPRs,
       total_count: apiResponse.total_count || cleanPRs.length,
-      metadata: {
-        incomplete_results: apiResponse.incomplete_results || false,
-      },
     };
 
     return createResult({ data: searchResult });

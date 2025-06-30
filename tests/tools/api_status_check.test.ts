@@ -38,7 +38,7 @@ describe('API Status Check Tool', () => {
       registerApiStatusCheckTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'api_status_check',
+        'apiStatusCheck',
         expect.any(Object),
         expect.any(Function)
       );
@@ -83,7 +83,7 @@ describe('API Status Check Tool', () => {
         return Promise.resolve({ isError: true, content: [] });
       });
 
-      const result = await mockServer.callTool('api_status_check', {});
+      const result = await mockServer.callTool('apiStatusCheck', {});
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
@@ -124,7 +124,7 @@ describe('API Status Check Tool', () => {
         return Promise.resolve({ isError: true, content: [] });
       });
 
-      const result = await mockServer.callTool('api_status_check', {});
+      const result = await mockServer.callTool('apiStatusCheck', {});
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
@@ -150,7 +150,7 @@ describe('API Status Check Tool', () => {
         content: [{ text: 'Not authenticated' }],
       });
 
-      const result = await mockServer.callTool('api_status_check', {});
+      const result = await mockServer.callTool('apiStatusCheck', {});
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
@@ -171,12 +171,14 @@ describe('API Status Check Tool', () => {
         content: [{ text: 'invalid json' }],
       });
 
-      const result = await mockServer.callTool('api_status_check', {});
+      const result = await mockServer.callTool('apiStatusCheck', {});
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub auth response JSON parsing failed');
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      expect(responseData.login.github.connected).toBe(false);
+      expect(responseData.login.npm.connected).toBe(false);
     });
   });
 });

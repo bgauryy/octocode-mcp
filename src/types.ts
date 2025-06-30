@@ -222,11 +222,6 @@ export interface GitHubIssueItem {
 
 export interface GitHubIssuesSearchResult {
   results: GitHubIssueItem[];
-  total_count: number;
-  cli_command?: string;
-  metadata: {
-    incomplete_results: boolean;
-  };
 }
 
 export interface GitHubPullRequestItem {
@@ -251,10 +246,6 @@ export interface GitHubPullRequestItem {
 export interface GitHubPullRequestsSearchResult {
   results: GitHubPullRequestItem[];
   total_count: number;
-  cli_command?: string;
-  metadata: {
-    incomplete_results: boolean;
-  };
 }
 
 export interface FileMetadata {
@@ -355,14 +346,6 @@ export interface SimplifiedRepositoryContents {
       url: string; // Relative path for browsing
     }>;
   };
-  cli_command?: string;
-  metadata?: {
-    branchFallback?: {
-      requested: string;
-      used: string;
-    };
-    truncated?: boolean;
-  };
 }
 
 // Optimized GitHub Search Code Types
@@ -401,31 +384,9 @@ export interface OptimizedCodeSearchResult {
     url: string; // Relative path only
   }>;
   total_count: number;
-  cli_command?: string;
   repository?: {
     name: string; // owner/repo format
     url: string; // Shortened
-  };
-  smart_suggestions?: {
-    message: string;
-    suggestions: string[];
-    fallback_queries: Array<{
-      query: string;
-      description: string;
-      rationale: string;
-    }>;
-    next_steps: string[];
-  };
-  metadata?: {
-    has_filters: boolean;
-    search_scope: string;
-    transformed_query?: string; // Shows the actual query sent to GitHub after OR transformation
-    search_efficiency?: {
-      score: number;
-      factors: string[];
-      recommendations: string[];
-    };
-    performance_tips?: string[];
   };
 }
 
@@ -495,14 +456,9 @@ export interface OptimizedCommitSearchResult {
     url: string; // SHA or repo@SHA
   }>;
   total_count: number;
-  cli_command?: string;
   repository?: {
     name: string;
     description?: string;
-  };
-  metadata?: {
-    timeframe: string;
-    unique_authors: number;
   };
 }
 
@@ -524,6 +480,13 @@ export interface OptimizedNpmPackageResult {
     total_versions: number;
     weekly_downloads?: number;
   };
-  exports?: { main: string; types?: string; [key: string]: any };
-  cli_command?: string;
+  exports?: { main: string; types?: string; [key: string]: unknown };
 }
+
+export type CallToolResult = {
+  content: Array<{
+    type: 'text';
+    text: string;
+  }>;
+  isError: boolean;
+};

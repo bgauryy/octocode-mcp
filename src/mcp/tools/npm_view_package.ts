@@ -6,18 +6,18 @@ import {
   toDDMMYYYY,
   humanizeBytes,
   simplifyRepoUrl,
-} from '../../utils/responses';
+} from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeNpmCommand } from '../../utils/exec';
 
-const TOOL_NAME = 'npm_view_package';
+export const NPM_VIEW_PACKAGE_TOOL_NAME = 'npmViewPackage';
 
-const DESCRIPTION = `Get comprehensive NPM package metadata efficiently. Returns repository URL, exports, dependencies, and version history. Essential for finding package source code and understanding project structure.`;
+const DESCRIPTION = `View detailed NPM package information including repository URL, exports, version history, dependencies, and download stats. Returns optimized metadata for code navigation. Parameters: packageName (required).`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    NPM_VIEW_PACKAGE_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -25,11 +25,11 @@ export function registerNpmViewPackageTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'NPM package name to analyze. Returns complete package context including exports (critical for GitHub file discovery), repository URL, dependencies, and version history.'
+            'NPM package name (e.g., "react", "express", "@types/node")'
           ),
       },
       annotations: {
-        title: 'NPM Package Metadata',
+        title: 'NPM Package Analyzer',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -45,7 +45,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const packageData = JSON.parse(execResult.result);
+        const packageData = execResult.result;
 
         // Transform to optimized format
         const optimizedResult = transformToOptimizedFormat(packageData);
@@ -56,26 +56,20 @@ export function registerNpmViewPackageTool(server: McpServer) {
 
         if (errorMessage.includes('not found')) {
           return createResult({
-            error: 'Package not found - verify package name spelling',
-            cli_command: `npm view ${args.packageName} --json`,
+            error:
+              'Package not found. Check spelling and use exact package name from npm',
           });
         }
 
         if (errorMessage.includes('network')) {
           return createResult({
-            error: 'Network error - check internet connection',
-            cli_command: `npm view ${args.packageName} --json`,
+            error: 'Network error. Check internet connection and try again',
           });
         }
 
         return createResult({
-          error: 'NPM package lookup failed',
-          cli_command: `npm view ${args.packageName} --json`,
-          suggestions: [
-            'Verify package name is correct',
-            'Check if package exists on npmjs.com',
-            'Try again in a moment',
-          ],
+          error:
+            'Failed to fetch package information. Try again or check npm status',
         });
       }
     }
@@ -83,7 +77,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
 }
 
 /**
- * Transform NPM CLI response to optimized format
+ * Transform NPM CLI response to optimized format for code analysis
  */
 function transformToOptimizedFormat(
   packageData: any
@@ -100,7 +94,9 @@ function transformToOptimizedFormat(
 
   // Get version timestamps from time object and limit to last 5
   const timeData = packageData.time || {};
-  const versionList = packageData.versions || [];
+  const versionList = Array.isArray(packageData.versions)
+    ? packageData.versions
+    : [];
   const recentVersions = versionList.slice(-5).map((version: string) => ({
     version,
     date: timeData[version] ? toDDMMYYYY(timeData[version]) : 'Unknown',
@@ -131,7 +127,7 @@ function transformToOptimizedFormat(
 }
 
 /**
- * Simplify exports object to essential entry points
+ * Simplify exports to show only essential entry points for code navigation
  */
 function simplifyExports(exports: any): {
   main: string;
@@ -157,9 +153,12 @@ function simplifyExports(exports: any): {
       }
     }
 
-    // Extract types if available
-    if (exports['./types'] || exports['.']?.types) {
-      simplified.types = exports['./types'] || exports['.'].types;
+    // Extract types if available with safe property access
+    if (
+      exports['./types'] ||
+      (exports['.'] && typeof exports['.'] === 'object' && exports['.'].types)
+    ) {
+      simplified.types = exports['./types'] || (exports['.'] as any).types;
     }
 
     // Add a few other important exports (max 3 total)
@@ -196,12 +195,13 @@ export async function viewNpmPackage(
 
       if (errorMessage.includes('404')) {
         return createResult({
-          error: 'Package not found on NPM registry',
+          error:
+            'Package not found on NPM registry. Verify the exact package name',
         });
       }
 
       return createResult({
-        error: 'NPM command execution failed',
+        error: 'Failed to execute NPM command. Check npm installation',
       });
     }
   });

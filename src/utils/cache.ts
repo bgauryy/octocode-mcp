@@ -7,6 +7,8 @@ const VERSION = 'v1';
 const cache = new NodeCache({
   stdTTL: 86400, // 24 hour cache
   checkperiod: 3600, // Check for expired keys every 1 hour
+  maxKeys: 1000, // Limit cache to 1000 entries to prevent unbounded growth
+  deleteOnExpire: true, // Automatically delete expired keys
 });
 
 export function generateCacheKey(prefix: string, params: unknown): string {
@@ -36,4 +38,12 @@ export async function withCache(
   }
 
   return result;
+}
+
+export function clearAllCache(): void {
+  cache.flushAll();
+}
+
+export function getCacheStats() {
+  return cache.getStats();
 }

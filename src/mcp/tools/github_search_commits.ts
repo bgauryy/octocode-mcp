@@ -10,18 +10,24 @@ import {
   simplifyRepoUrl,
   toDDMMYYYY,
   getCommitTitle,
-} from '../../utils/responses';
+} from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
+import {
+  createAuthenticationError,
+  createRateLimitError,
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
-const TOOL_NAME = 'github_search_commits';
+export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Search commit history effectively with GitHub's commit search. Use simple, specific terms for best results. Complex boolean queries may return limited results - try individual keywords instead.`;
+const DESCRIPTION = `Search commit history across GitHub repositories. Supports filtering by repository, author, date ranges, and commit attributes. Parameters: query (optional), owner (optional - GitHub username/org, NOT owner/repo), repo (optional - repository name, use with owner for specific repo), author (optional), authorName (optional), authorEmail (optional), committer (optional), committerName (optional), committerEmail (optional), authorDate (optional), committerDate (optional), hash (optional), parent (optional), tree (optional), merge (optional), visibility (optional), limit (optional), sort (optional), order (optional).`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_COMMITS_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -29,7 +35,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with boolean logic. Boolean: "fix AND bug", exact phrases: "initial commit", advanced syntax: "author:john OR committer:jane".'
+            'Search terms. Start simple: "bug fix", "refactor". Use quotes for exact phrases.'
           ),
 
         // Repository filters
@@ -37,58 +43,64 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Repository owner/organization. Leave empty for global search.'
+            'Repository owner/org name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). Use with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
           .optional()
           .describe(
-            'Repository name. Do exploratory search without repo filter first'
+            'Repository name only (e.g., "vscode", "react", NOT "owner/repo"). Must be used together with owner parameter.'
           ),
 
         // Author filters
-        author: z.string().optional().describe('Filter by commit author'),
-        authorName: z.string().optional().describe('Filter by author name'),
-        authorEmail: z.string().optional().describe('Filter by author email'),
+        author: z
+          .string()
+          .optional()
+          .describe('GitHub username of commit author'),
+        authorName: z
+          .string()
+          .optional()
+          .describe('Full name of commit author'),
+        authorEmail: z.string().optional().describe('Email of commit author'),
 
         // Committer filters
-        committer: z.string().optional().describe('Filter by committer'),
-        committerName: z
+        committer: z
           .string()
           .optional()
-          .describe('Filter by committer name'),
-        committerEmail: z
-          .string()
-          .optional()
-          .describe('Filter by committer email'),
+          .describe('GitHub username of committer'),
+        committerName: z.string().optional().describe('Full name of committer'),
+        committerEmail: z.string().optional().describe('Email of committer'),
 
         // Date filters
         authorDate: z
           .string()
           .optional()
           .describe(
-            'Filter by authored date (format: >2020-01-01, <2023-12-31)'
+            'When authored. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
           ),
         committerDate: z
           .string()
           .optional()
           .describe(
-            'Filter by committed date (format: >2020-01-01, <2023-12-31)'
+            'When committed. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
           ),
 
         // Hash filters
-        hash: z.string().optional().describe('Filter by commit hash'),
-        parent: z.string().optional().describe('Filter by parent hash'),
-        tree: z.string().optional().describe('Filter by tree hash'),
+        hash: z.string().optional().describe('Commit SHA (full or partial)'),
+        parent: z.string().optional().describe('Parent commit SHA'),
+        tree: z.string().optional().describe('Tree SHA'),
 
         // State filters
-        merge: z.boolean().optional().describe('Filter merge commits'),
+        merge: z
+          .boolean()
+          .optional()
+          .describe('Only merge commits (true) or exclude them (false)'),
 
         // Visibility
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
-          .describe('Filter by repository visibility'),
+          .describe('Repository visibility filter'),
 
         // Pagination and sorting
         limit: z
@@ -98,19 +110,19 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .max(50)
           .optional()
           .default(25)
-          .describe('Maximum results (default: 25, max: 50)'),
+          .describe('Results limit (1-50). Default: 25'),
         sort: z
           .enum(['author-date', 'committer-date'])
           .optional()
-          .describe('Sort criteria (default: relevance)'),
+          .describe('Sort by date. Default: best match'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Order (default: desc)'),
+          .describe('Sort order. Default: desc'),
       },
       annotations: {
-        title: 'GitHub Commit Search',
+        title: 'GitHub Commit Search - Smart History Analysis',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -126,33 +138,15 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         }
 
         const execResult = JSON.parse(result.content[0].text as string);
-        const commits: GitHubCommitSearchItem[] = JSON.parse(execResult.result);
+        const commits: GitHubCommitSearchItem[] = execResult.result;
 
         // GitHub CLI returns a direct array
         const items = Array.isArray(commits) ? commits : [];
 
-        // Enhanced handling for no results - provide fallback suggestions
+        // Smart handling for no results - provide actionable suggestions
         if (items.length === 0) {
           return createResult({
-            data: {
-              commits: [],
-              total_count: 0,
-              cli_command: execResult.command,
-              suggestions: {
-                message:
-                  'No commits found. GitHub commit search is limited compared to code/issue search.',
-                fallback_strategies: [
-                  'Try simpler, shorter queries (single keywords work better)',
-                  "Use broader terms like 'fix' instead of 'fix useState bug'",
-                  'Search by author: add author filter for specific contributors',
-                  'Use date ranges: add authorDate or committerDate filters',
-                  'Try github_search_code tool for finding code patterns instead',
-                ],
-                alternative_queries: generateCommitSearchAlternatives(
-                  args.query
-                ),
-              },
-            },
+            error: createNoResultsError('commits'),
           });
         }
 
@@ -165,23 +159,18 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 
         if (errorMessage.includes('authentication')) {
           return createResult({
-            error: 'GitHub authentication required - run api_status_check tool',
+            error: createAuthenticationError(),
           });
         }
 
         if (errorMessage.includes('rate limit')) {
           return createResult({
-            error: 'GitHub rate limit exceeded - try more specific filters',
+            error: createRateLimitError(false),
           });
         }
 
         return createResult({
-          error: 'Commit search failed',
-          suggestions: [
-            'Check authentication with api_status_check',
-            'Use more specific date ranges or author filters',
-            'Try simpler boolean queries',
-          ],
+          error: createSearchFailedError('commits'),
         });
       }
     }
@@ -198,19 +187,12 @@ function transformCommitsToOptimizedFormat(
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
-  // Get unique authors for metadata
-  const uniqueAuthors = new Set(
-    items.map(
-      item => item.commit?.author?.name || item.author?.login || 'Unknown'
-    )
-  ).size;
-
   const optimizedCommits = items
     .map(item => ({
       sha: item.sha,
-      message: getCommitTitle(item.commit?.message || ''),
-      author: item.commit?.author?.name || item.author?.login || 'Unknown',
-      date: toDDMMYYYY(item.commit?.author?.date || ''),
+      message: getCommitTitle(item.commit?.message ?? ''),
+      author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
+      date: toDDMMYYYY(item.commit?.author?.date ?? ''),
       repository: singleRepo
         ? undefined
         : simplifyRepoUrl(item.repository?.url || ''),
@@ -249,14 +231,6 @@ function transformCommitsToOptimizedFormat(
     };
   }
 
-  // Add metadata for insights
-  if (items.length > 1) {
-    result.metadata = {
-      timeframe: getTimeframe(items),
-      unique_authors: uniqueAuthors,
-    };
-  }
-
   return result;
 }
 
@@ -272,70 +246,6 @@ function extractSingleRepository(items: GitHubCommitSearchItem[]) {
   );
 
   return allSameRepo ? firstRepo : null;
-}
-
-/**
- * Calculate timeframe of commits
- */
-function getTimeframe(items: GitHubCommitSearchItem[]): string {
-  if (items.length === 0) return '';
-
-  const dates = items.map(item => new Date(item.commit?.author?.date || ''));
-  const oldest = new Date(Math.min(...dates.map(d => d.getTime())));
-  const newest = new Date(Math.max(...dates.map(d => d.getTime())));
-
-  const diffMs = newest.getTime() - oldest.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return 'same day';
-  if (diffDays < 7) return `${diffDays} days`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks`;
-  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months`;
-  return `${Math.floor(diffDays / 365)} years`;
-}
-
-/**
- * Generate alternative commit search queries when original query fails
- */
-function generateCommitSearchAlternatives(originalQuery?: string): Array<{
-  query: string;
-  reason: string;
-}> {
-  if (!originalQuery) {
-    return [
-      { query: 'fix', reason: 'Search for general fixes' },
-      { query: 'bug', reason: 'Search for bug-related commits' },
-      { query: 'refactor', reason: 'Search for refactoring commits' },
-    ];
-  }
-
-  const alternatives: Array<{ query: string; reason: string }> = [];
-  const query = originalQuery.toLowerCase();
-
-  // Extract key terms and create simpler alternatives
-  if (query.includes('fix') && query.includes('bug')) {
-    alternatives.push(
-      { query: 'fix', reason: 'Broader search for all fixes' },
-      { query: 'bug', reason: 'Search for bug-related commits' }
-    );
-  } else if (query.includes(' ')) {
-    // Multi-word query - suggest individual terms
-    const words = query.split(' ').filter(w => w.length > 2);
-    words.slice(0, 2).forEach(word => {
-      alternatives.push({
-        query: word,
-        reason: `Single keyword search for '${word}'`,
-      });
-    });
-  }
-
-  // Always suggest some common commit patterns
-  alternatives.push(
-    { query: 'feat', reason: 'Search for feature commits' },
-    { query: 'docs', reason: 'Search for documentation updates' }
-  );
-
-  return alternatives.slice(0, 4); // Limit to 4 suggestions
 }
 
 export async function searchGitHubCommits(
@@ -356,18 +266,18 @@ export async function searchGitHubCommits(
 
       if (errorMessage.includes('authentication')) {
         return createResult({
-          error: 'GitHub authentication required',
+          error: createAuthenticationError(),
         });
       }
 
       if (errorMessage.includes('rate limit')) {
         return createResult({
-          error: 'GitHub rate limit exceeded',
+          error: createRateLimitError(false),
         });
       }
 
       return createResult({
-        error: 'Commit search execution failed',
+        error: createSearchFailedError('commits'),
       });
     }
   });

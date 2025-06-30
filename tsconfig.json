@@ -1,18 +1,20 @@
 {
-    "compilerOptions": {
-      "target": "ES2022",
-      "module": "ESNext",
-      "moduleResolution": "node",
-      "rootDir": "./src",
-      "outDir": "./build",
-      "strict": true,
-      "esModuleInterop": true,
-      "skipLibCheck": true,
-      "forceConsistentCasingInFileNames": true,
-      "declaration": true,
-      "declarationMap": true,
-      "noImplicitAny": true,
-    },
-    "include": ["src/**/*"],
-    "exclude": ["node_modules"]
-  }
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "rootDir": "./src",
+    "outDir": "./build",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}

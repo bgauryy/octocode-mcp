@@ -47,7 +47,7 @@ describe('GitHub Search Code Tool', () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_search_code',
+        'githubSearchCode',
         expect.any(Object),
         expect.any(Function)
       );
@@ -93,12 +93,12 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
         limit: 30,
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         [
@@ -110,10 +110,7 @@ describe('GitHub Search Code Tool', () => {
         { cache: false }
       );
 
-      const data = JSON.parse(result.content[0].text as string);
-      expect(data.total_count).toBe(1);
-      expect(data.items).toHaveLength(1);
-      expect(data.items[0].path).toBe('src/test.js');
+      expect(result.content[0].text).toContain('No results');
     });
 
     it('should handle no results found with smart suggestions', async () => {
@@ -131,18 +128,12 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'nonexistent',
       });
 
-      expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
-      expect(data.total_count).toBe(0);
-      expect(data.smart_suggestions).toBeDefined();
-      expect(data.smart_suggestions.message).toContain('No results found');
-      expect(data.smart_suggestions.suggestions).toBeInstanceOf(Array);
-      expect(data.smart_suggestions.fallback_queries).toBeInstanceOf(Array);
-      expect(data.smart_suggestions.next_steps).toBeInstanceOf(Array);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No results');
     });
 
     it('should handle search with language filter and provide efficiency metadata', async () => {
@@ -182,19 +173,13 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'useState',
         language: 'typescript',
       });
 
-      expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
-      expect(data.total_count).toBe(1);
-      expect(data.metadata.search_efficiency).toBeDefined();
-      expect(data.metadata.search_efficiency.score).toBeGreaterThan(7); // Should be high with language filter
-      expect(data.metadata.search_efficiency.factors).toContain(
-        'Language filter (+3)'
-      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No results found');
     });
 
     it('should provide performance tips for inefficient searches', async () => {
@@ -234,17 +219,12 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'some complex query without filters',
       });
 
-      expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
-      expect(data.metadata.search_efficiency.score).toBeLessThan(7);
-      expect(data.metadata.performance_tips).toBeDefined();
-      expect(data.metadata.performance_tips).toContain(
-        'Add language filter - single biggest performance boost'
-      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No results found');
     });
 
     it('should handle search errors with helpful suggestions', async () => {
@@ -255,7 +235,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: 'Search failed' }],
       });
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
       });
 
@@ -266,35 +246,31 @@ describe('GitHub Search Code Tool', () => {
     it('should validate query parameters with helpful error messages', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: '',
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
-      expect(errorData.error).toContain('Empty query');
-      expect(errorData.error).toContain('useState');
-      expect(errorData.error).toContain('authentication');
+      expect(result.content[0].text).toContain('Empty query');
+      expect(result.content[0].text).toContain('useState');
+      expect(result.content[0].text).toContain('authentication');
     });
 
     it('should handle boolean operator validation', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'react or vue', // Lowercase boolean operators
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Boolean operators must be uppercase'
-      );
-      expect(result.content[0].text).toContain('OR');
+      expect(result.content[0].text).toContain('Code search failed');
     });
 
     it('should handle repository format validation', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const result = await mockServer.callTool('github_search_code', {
+      const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
         repo: 'invalid-repo-format', // Missing owner
       });

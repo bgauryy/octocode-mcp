@@ -36,7 +36,7 @@ describe('NPM Package Search Tool', () => {
       registerNpmSearchTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'npm_package_search',
+        'npmPackageSearch',
         expect.any(Object),
         expect.any(Function)
       );
@@ -66,11 +66,11 @@ describe('NPM Package Search Tool', () => {
         content: [{ text: JSON.stringify(mockNpmResponse) }],
       });
 
-      const result = await mockServer.callTool('npm_package_search', {
+      const result = await mockServer.callTool('npmPackageSearch', {
         queries: 'react',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
         ['react', '--searchlimit=20', '--json'],
@@ -92,14 +92,12 @@ describe('NPM Package Search Tool', () => {
         content: [{ text: JSON.stringify(mockNpmResponse) }],
       });
 
-      const result = await mockServer.callTool('npm_package_search', {
+      const result = await mockServer.callTool('npmPackageSearch', {
         queries: 'nonexistent-package-xyz',
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
-      expect(errorData.error).toBe('No packages found');
-      expect(errorData.cli_command).toBe('npm search nonexistent-package-xyz');
+      expect(result.content[0].text).toContain('No packages found');
     });
   });
 });

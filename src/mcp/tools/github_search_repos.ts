@@ -1,10 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult, toDDMMYYYY } from '../../utils/responses';
+import { createResult, toDDMMYYYY } from '../responses';
 import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import {
+  SUGGESTIONS,
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
 
 /**
  * GitHub Repository Search Tool
@@ -12,41 +17,24 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
  * MOST EFFECTIVE PATTERNS (based on testing):
  *
  * 1. Quality Discovery:
- *    { topic: ["react", "typescript"], stars: "1000..5000", limit: 10 }
+ * { topic: ["react", "typescript"], stars: "1000..5000", limit: 10 }
  *
  * 2. Organization Research:
- *    { owner: ["microsoft", "google"], language: "python", limit: 10 }
+ * { owner: ["microsoft", "google"], language: "python", limit: 10 }
  *
  * 3. Beginner Projects:
- *    { goodFirstIssues: ">=5", stars: "100..5000", limit: 10 }
+ * { goodFirstIssues: ">=5", stars: "100..5000", limit: 10 }
  *
  * 4. Recent Quality:
- *    { stars: ">1000", created: ">2023-01-01", limit: 10 }
+ * { stars: ">1000", created: ">2023-01-01", limit: 10 }
  *
  * AVOID: OR queries + language filter, 5+ filters, multi-word OR
  * TIP: Use limit parameter instead of adding more filters
  */
 
-const TOOL_NAME = 'github_search_repositories';
+export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Search GitHub repositories with powerful GitHub search syntax and advanced filtering.
-
-EMBEDDED QUALIFIERS (MOST POWERFUL):
-- "vue OR react stars:>1000 language:javascript" - OR logic with constraints
-- "typescript AND framework stars:100..5000" - AND logic with star range  
-- "repo:facebook/react OR repo:vuejs/vue" - Multiple specific repositories
-- "org:microsoft OR org:google language:typescript" - Multiple organizations
-- "topic:react topic:typescript stars:>500" - Multiple topics with quality filter
-
-TRADITIONAL FILTERS (ALSO SUPPORTED):
-- owner: ["microsoft", "google"] - Multiple owners as array
-- topic: ["react", "typescript"] - Multiple topics as array
-- stars: "1000..5000" - Range or threshold filtering
-
-BEST PRACTICES:
-- Use embedded qualifiers for complex queries with OR/AND logic
-- Use traditional filters for simple, clean parameter-based searches
-- Combine both approaches: "vue OR react" + language:"javascript" + stars:">1000"`;
+const DESCRIPTION = `Discover GitHub repositories with smart filtering. Supports language, stars, topics, ownership, dates, and community metrics. Parameters: query (optional), owner (optional - GitHub username/org, NOT owner/repo), language (optional), stars (optional), topic (optional), forks (optional), numberOfTopics (optional), license (optional), archived (optional), includeForks (optional), visibility (optional), created (optional), updated (optional), size (optional), goodFirstIssues (optional), helpWantedIssues (optional), followers (optional), match (optional), sort (optional), order (optional), limit (optional).`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -60,46 +48,35 @@ function extractOwnerRepoFromQuery(query: string): {
   let extractedOwner: string | undefined;
   let extractedRepo: string | undefined;
 
-  // Pattern 1: GitHub URLs (https://github.com/owner/repo)
-  const githubUrlMatch = query.match(/github\.com\/([^\\s]+)\/([^\\s]+)/i);
-  if (githubUrlMatch) {
-    extractedOwner = githubUrlMatch[1];
-    extractedRepo = githubUrlMatch[2];
-    cleanedQuery = query
-      .replace(/https?:\/\/github\.com\/[^\\s]+\/[^\\s]+/gi, '')
-      .trim();
-  }
+  const patterns = [
+    // Pattern 1: GitHub URLs (https://github.com/owner/repo)
+    /github\.com\/([^\\s]+)\/([^\\s]+)/i,
+    // Pattern 2: owner/repo format in query
+    /\b([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])\b/,
+    // Pattern 3: NPM package-like references (@scope/package)
+    /@([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])/,
+  ];
 
-  // Pattern 2: owner/repo format in query
-  const ownerRepoMatch = query.match(
-    /\b([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])\b/
-  );
-  if (ownerRepoMatch && !extractedOwner) {
-    extractedOwner = ownerRepoMatch[1];
-    extractedRepo = ownerRepoMatch[2];
-    cleanedQuery = query.replace(ownerRepoMatch[0], '').trim();
-  }
-
-  // Pattern 3: NPM package-like references (@scope/package)
-  const scopedPackageMatch = query.match(
-    /@([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])/
-  );
-  if (scopedPackageMatch && !extractedOwner) {
-    extractedOwner = scopedPackageMatch[1];
-    extractedRepo = scopedPackageMatch[2];
-    cleanedQuery = query.replace(scopedPackageMatch[0], '').trim();
+  for (const pattern of patterns) {
+    const match = cleanedQuery.match(pattern);
+    if (match) {
+      extractedOwner = match[1];
+      extractedRepo = match[2];
+      cleanedQuery = cleanedQuery.replace(match[0], '').trim();
+      break; // Stop after the first successful match
+    }
   }
 
   return {
     extractedOwner,
     extractedRepo,
-    cleanedQuery: cleanedQuery || query,
+    cleanedQuery: cleanedQuery || query, // Ensure original query is returned if cleaned is empty
   };
 }
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -107,7 +84,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with GitHub search syntax. POWERFUL EXAMPLES: "vue OR react stars:>1000", "typescript AND framework stars:100..5000", "repo:facebook/react OR repo:vuejs/vue", "org:microsoft language:typescript", "topic:react topic:typescript stars:>500". SUPPORTS: OR/AND logic, embedded qualifiers (stars:, language:, org:, repo:, topic:, etc.), exact repository targeting. COMBINES with traditional filters for maximum flexibility.'
+            'Search query. START SIMPLE: Use 1-2 words with NO filters first (e.g., "react", "auth"). Add qualifiers only after initial search.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -115,34 +92,25 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization. HIGHLY EFFECTIVE as array ["microsoft", "google"]. FIXED: Now supports multiple owners with comma separation. Best for targeted research.'
+            'Repository owner or organization name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). For private repos, use organizations from api_status_check (user_organizations). Can be a single value or array.'
           ),
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. CAUTION: Restrictive with other filters. Use alone or with stars/owner only.'
+            'Programming language filter. Use when results need refinement.'
           ),
         stars: z
           .union([
             z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid stars format. Use: number, ">100", ">=50", "<200", "<=100", or "10..100"'
-              ),
+            z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
           ])
           .optional()
-          .describe(
-            'Stars filter. MOST EFFECTIVE: ranges "1000..5000", thresholds ">1000". Excellent for quality filtering.'
-          ),
+          .describe('Stars filter. Supports ranges and thresholds.'),
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe(
-            'Topics filter. BEST PATTERN: arrays ["react", "typescript"]. FIXED: Now supports comma-separated topics. Preferred over OR queries. Combines well with stars.'
-          ),
+          .describe('Topics filter. Can be a single value or array.'),
         forks: z.number().optional().describe('Number of forks filter.'),
 
         // UPDATED: Match CLI parameter name exactly
@@ -239,14 +207,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .default('best-match')
-          .describe(
-            'Sort by: stars, updated, forks, help-wanted-issues, best-match.'
-          ),
+          .describe('Sort criteria for results.'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Sort order: asc or desc.'),
+          .describe('Sort order direction.'),
         limit: z
           .number()
           .int()
@@ -254,9 +220,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe(
-            'Results limit (1-100). PREFER increasing limit over adding filters.'
-          ),
+          .describe('Maximum results to return (1-100). Default: 30'),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -301,8 +265,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         if (!hasPrimaryFilter) {
           return createResult({
-            error:
-              'Requires query or primary filter (owner, language, stars, topic, forks). You can also use owner/repo format like "microsoft/vscode" in the query.',
+            error: SUGGESTIONS.REPO_SEARCH_PRIMARY_FILTER,
           });
         }
 
@@ -344,8 +307,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         return result;
       } catch (error) {
         return createResult({
-          error:
-            'Repository search failed - verify connection or simplify query',
+          error: createSearchFailedError('repositories'),
         });
       }
     }
@@ -368,12 +330,15 @@ export async function searchGitHubRepos(
         return result;
       }
 
-      // Extract the actual content from the exec result
       const execResult = JSON.parse(result.content[0].text as string);
-      const rawContent = execResult.result;
+      const repositories = execResult.result;
 
-      // Parse JSON results and provide structured analysis
-      let repositories = [];
+      if (!Array.isArray(repositories) || repositories.length === 0) {
+        return createResult({
+          error: createNoResultsError('repositories'),
+        });
+      }
+
       const analysis = {
         totalFound: 0,
         languages: new Set<string>(),
@@ -400,65 +365,58 @@ export async function searchGitHubRepos(
         }>,
       };
 
-      // Parse JSON response from GitHub CLI
-      repositories = JSON.parse(rawContent);
+      analysis.totalFound = repositories.length;
 
-      if (Array.isArray(repositories) && repositories.length > 0) {
-        analysis.totalFound = repositories.length;
+      // Analyze repository data
+      let totalStars = 0;
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-        // Analyze repository data
-        let totalStars = 0;
-        const now = new Date();
-        const thirtyDaysAgo = new Date(
-          now.getTime() - 30 * 24 * 60 * 60 * 1000
-        );
+      repositories.forEach(repo => {
+        // Collect languages
+        if (repo.language) {
+          analysis.languages.add(repo.language);
+        }
 
-        repositories.forEach(repo => {
-          // Collect languages
-          if (repo.language) {
-            analysis.languages.add(repo.language);
+        // Calculate average stars (use correct field name)
+        if (typeof repo.stargazersCount === 'number') {
+          totalStars += repo.stargazersCount;
+        }
+
+        // Count recently updated repositories (use correct field name)
+        if (repo.updatedAt) {
+          const updatedDate = new Date(repo.updatedAt);
+          if (!isNaN(updatedDate.getTime()) && updatedDate > thirtyDaysAgo) {
+            analysis.recentlyUpdated++;
           }
+        }
+      });
 
-          // Calculate average stars (use correct field name)
-          if (repo.stargazersCount) {
-            totalStars += repo.stargazersCount;
-          }
+      analysis.avgStars =
+        repositories.length > 0
+          ? Math.round(totalStars / repositories.length)
+          : 0;
 
-          // Count recently updated repositories (use correct field name)
-          if (repo.updatedAt) {
-            const updatedDate = new Date(repo.updatedAt);
-            if (updatedDate > thirtyDaysAgo) {
-              analysis.recentlyUpdated++;
-            }
-          }
-        });
-
-        analysis.avgStars =
-          repositories.length > 0
-            ? Math.round(totalStars / repositories.length)
-            : 0;
-
-        // Get all repositories with comprehensive data
-        analysis.topStarred = repositories.map(repo => ({
-          name: repo.fullName || repo.name,
-          stars: repo.stargazersCount || 0,
-          description: repo.description || 'No description',
-          language: repo.language || 'Unknown',
-          url: repo.url,
-          forks: repo.forksCount || 0,
-          isPrivate: repo.isPrivate || false,
-          isArchived: repo.isArchived || false,
-          isFork: repo.isFork || false,
-          topics: [], // GitHub CLI search repos doesn't provide topics in JSON output
-          license: repo.license?.name || null,
-          hasIssues: repo.hasIssues || false,
-          openIssuesCount: repo.openIssuesCount || 0,
-          createdAt: toDDMMYYYY(repo.createdAt),
-          updatedAt: toDDMMYYYY(repo.updatedAt),
-          visibility: repo.visibility || 'public',
-          owner: repo.owner?.login || repo.owner,
-        }));
-      }
+      // Get all repositories with comprehensive data
+      analysis.topStarred = repositories.map(repo => ({
+        name: repo.fullName || repo.name,
+        stars: repo.stargazersCount || 0,
+        description: repo.description || 'No description',
+        language: repo.language || 'Unknown',
+        url: repo.url,
+        forks: repo.forksCount || 0,
+        isPrivate: repo.isPrivate || false,
+        isArchived: repo.isArchived || false,
+        isFork: repo.isFork || false,
+        topics: [], // GitHub CLI search repos doesn't provide topics in JSON output
+        license: repo.license?.name || null,
+        hasIssues: repo.hasIssues || false,
+        openIssuesCount: repo.openIssuesCount || 0,
+        createdAt: toDDMMYYYY(repo.createdAt),
+        updatedAt: toDDMMYYYY(repo.updatedAt),
+        visibility: repo.visibility || 'public',
+        owner: repo.owner?.login || repo.owner,
+      }));
 
       return createResult({
         data: {
@@ -474,13 +432,12 @@ export async function searchGitHubRepos(
               }
             : {
                 repositories: [],
-                cli_command: execResult.command, // Only on no results
               }),
         },
       });
     } catch (error) {
       return createResult({
-        error: 'Repository search failed - verify connection or simplify query',
+        error: createSearchFailedError('repositories'),
       });
     }
   });
@@ -490,113 +447,81 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   command: GhCommand;
   args: string[];
 } {
-  // Build query following GitHub CLI patterns
   const query = params.query?.trim() || '';
   const args = ['repos'];
 
-  // Detect embedded qualifiers in query to avoid conflicts and optimize
   const hasEmbeddedQualifiers =
     query &&
     /\b(stars|language|org|repo|topic|user|created|updated|size|license|archived|fork|good-first-issues|help-wanted-issues):/i.test(
       query
     );
 
-  // Handle exact string search - preserve quotes and special characters
   if (query) {
-    // For exact repository name searches (quoted strings), preserve the quotes
-    // For special characters, pass them through - GitHub CLI handles escaping
-    // Support searches like "microsoft/vscode", "@types/node", etc.
     args.push(query);
   }
 
-  // Add JSON output with specific fields for structured data parsing
-  // Note: 'topics' field is not available in GitHub CLI search repos JSON output
   args.push(
     '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
   );
 
-  // SMART FILTER HANDLING - Avoid conflicts with embedded qualifiers
-  // Only add CLI flags if not already specified in query to prevent conflicts
+  type ParamName = keyof GitHubReposSearchParams;
 
-  // CORE FILTERS - Handle arrays properly
-  if (params.owner && !hasEmbeddedQualifiers) {
-    // GitHub CLI supports multiple owners with comma separation: --owner=owner1,owner2
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    args.push(`--owner=${owners.join(',')}`);
-  }
-  if (params.language && !hasEmbeddedQualifiers)
-    args.push(`--language=${params.language}`);
-  if (params.forks !== undefined && !hasEmbeddedQualifiers)
-    args.push(`--forks=${params.forks}`);
-
-  // Handle topic as string or array - GitHub CLI expects comma-separated topics
-  if (params.topic && !hasEmbeddedQualifiers) {
-    const topics = Array.isArray(params.topic) ? params.topic : [params.topic];
-    args.push(`--topic=${topics.join(',')}`);
-  }
-  if (params.numberOfTopics !== undefined)
-    args.push(`--number-topics=${params.numberOfTopics}`);
-
-  // Handle stars as number or string - avoid conflicts with embedded qualifiers
-  if (params.stars !== undefined && !hasEmbeddedQualifiers) {
-    const starsValue =
-      typeof params.stars === 'number'
-        ? params.stars.toString()
-        : params.stars.trim();
-
-    // Validate numeric patterns for string values
-    if (
-      typeof params.stars === 'number' ||
-      /^(\d+|>\d+|<\d+|\d+\.\.\d+|>=\d+|<=\d+)$/.test(starsValue)
-    ) {
-      args.push(`--stars=${starsValue}`);
+  const addArg = (
+    paramName: ParamName,
+    cliFlag: string,
+    condition: boolean = true,
+    formatter?: (value: any) => string
+  ) => {
+    const value = params[paramName];
+    if (value !== undefined && condition) {
+      if (Array.isArray(value)) {
+        args.push(`--${cliFlag}=${value.join(',')}`);
+      } else if (formatter) {
+        args.push(`--${cliFlag}=${formatter(value)}`);
+      } else {
+        args.push(`--${cliFlag}=${value.toString()}`);
+      }
     }
-  }
+  };
+
+  // CORE FILTERS
+  addArg('owner', 'owner', !hasEmbeddedQualifiers);
+  addArg('language', 'language', !hasEmbeddedQualifiers);
+  addArg('forks', 'forks', !hasEmbeddedQualifiers);
+  addArg('topic', 'topic', !hasEmbeddedQualifiers);
+  addArg('numberOfTopics', 'number-topics');
+
+  addArg('stars', 'stars', !hasEmbeddedQualifiers, value =>
+    typeof value === 'number' ? value.toString() : value.trim()
+  );
 
   // QUALITY & STATE FILTERS
-  if (params.archived !== undefined) args.push(`--archived=${params.archived}`);
-  if (params.includeForks) args.push(`--include-forks=${params.includeForks}`);
-  if (params.visibility) args.push(`--visibility=${params.visibility}`);
-
-  // Handle license as string or array
-  if (params.license) {
-    const licenses = Array.isArray(params.license)
-      ? params.license
-      : [params.license];
-    args.push(`--license=${licenses.join(',')}`);
-  }
+  addArg('archived', 'archived');
+  addArg('includeForks', 'include-forks');
+  addArg('visibility', 'visibility');
+  addArg('license', 'license');
 
   // DATE & SIZE FILTERS
-  if (params.created) args.push(`--created=${params.created}`);
-  if (params.updated) args.push(`--updated=${params.updated}`);
-  if (params.size) args.push(`--size=${params.size}`);
+  addArg('created', 'created');
+  addArg('updated', 'updated');
+  addArg('size', 'size');
 
-  // COMMUNITY FILTERS - handle both number and string
-  if (params.goodFirstIssues) {
-    const value =
-      typeof params.goodFirstIssues === 'number'
-        ? params.goodFirstIssues.toString()
-        : params.goodFirstIssues;
-    args.push(`--good-first-issues=${value}`);
-  }
-  if (params.helpWantedIssues) {
-    const value =
-      typeof params.helpWantedIssues === 'number'
-        ? params.helpWantedIssues.toString()
-        : params.helpWantedIssues;
-    args.push(`--help-wanted-issues=${value}`);
-  }
-  if (params.followers !== undefined)
-    args.push(`--followers=${params.followers}`);
+  // COMMUNITY FILTERS
+  addArg('goodFirstIssues', 'good-first-issues', true, value =>
+    typeof value === 'number' ? value.toString() : value
+  );
+  addArg('helpWantedIssues', 'help-wanted-issues', true, value =>
+    typeof value === 'number' ? value.toString() : value
+  );
+  addArg('followers', 'followers');
 
   // SEARCH SCOPE
-  if (params.match) args.push(`--match=${params.match}`);
+  addArg('match', 'match');
 
   // SORTING AND LIMITS
-  if (params.limit) args.push(`--limit=${params.limit}`);
-  if (params.order) args.push(`--order=${params.order}`);
+  addArg('limit', 'limit');
+  addArg('order', 'order');
 
-  // Use best-match as default, only specify sort if different from default
   const sortBy = params.sort || 'best-match';
   if (sortBy !== 'best-match') {
     args.push(`--sort=${sortBy}`);

@@ -5,51 +5,64 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.3.5 - 2024-12-20 - Major Token Efficiency & Response Optimization
+## [2.3.6] - 2024-12-20 - Prompts & Tool Descriptions Update
+
+### 🎨 ENHANCED: Prompts & Tool Descriptions
+
+#### Updated
+- **System Prompts**: Refined and improved system prompts for enhanced clarity and conciseness.
+- **Tool Descriptions**: Optimized tool descriptions to provide better guidance for smart code analysis and usage.
+- **Parameter Descriptions**: Enhanced parameter descriptions for improved clarity and validation.
+
+#### Enhanced
+- **Smart Error Fallbacks**: Improved error fallbacks with more relevant usage guidance.
+- **Tool Definition Consistency**: Ensured consistency and removed duplicates in tool definitions.
+
+## [2.3.5] - 2024-12-20 - Major Token Efficiency & Response Optimization
 
 ### 🚀 MAJOR ACHIEVEMENT: Comprehensive Token Reduction & Response Optimization
 
-#### 🎯 **TOKEN EFFICIENCY IMPROVEMENTS**
-- **GitHub Search Code Tool**: **80% token reduction** - Streamlined responses with repository grouping and optimized text matches
-- **GitHub Search Commits Tool**: **50% token reduction** - Simplified commit data with essential information only
-- **NPM View Package Tool**: **60% token reduction** - Optimized package metadata with limited versions and simplified exports
-- **GitHub Search Repositories**: **40% token reduction** - Consolidated repository information with smart field selection
-- **GitHub Search Issues/PRs**: **35% token reduction** - Focused issue data with optimized metadata
-- **Overall Performance**: **50-80% reduction** in API response tokens across major search tools
+#### 🎯 TOKEN EFFICIENCY IMPROVEMENTS
+- **GitHub Search Code Tool**: **80% token reduction** - Streamlined responses with repository grouping and optimized text matches.
+- **GitHub Search Commits Tool**: **50% token reduction** - Simplified commit data with essential information only.
+- **NPM View Package Tool**: **60% token reduction** - Optimized package metadata with limited versions and simplified exports.
+- **GitHub Search Repositories**: **40% token reduction** - Consolidated repository information with smart field selection.
+- **GitHub Search Issues/PRs**: **35% token reduction** - Focused issue data with optimized metadata.
+- **Overall Performance**: **50-80% reduction** in API response tokens across major search tools.
 
-#### 📅 **STANDARDIZED DATE FORMAT (DDMMYYYY)**
-- **Universal Implementation**: All tools now use consistent DDMMYYYY format instead of ISO timestamps
-- **GitHub Tools**: Repository creation (24052013), issue dates (23062025), commit dates (05062025)
-- **NPM Tools**: Package creation dates (29122010), version release dates (31032025)
-- **Commits Fix**: Removed relative time ("4d ago") in favor of DDMMYYYY format
-- **Consistency**: Eliminated mixed date formats across different tools
+#### 📅 STANDARDIZED DATE FORMAT (DDMMYYYY)
+- **Universal Implementation**: All tools now use consistent DDMMYYYY format instead of ISO timestamps.
+- **GitHub Tools**: Repository creation (24052013), issue dates (23062025), commit dates (05062025).
+- **NPM Tools**: Package creation dates (29122010), version release dates (31032025).
+- **Commits Fix**: Removed relative time ("4d ago") in favor of DDMMYYYY format.
+- **Consistency**: Eliminated mixed date formats across different tools.
 
-#### 🔧 **RESPONSE STRUCTURE OPTIMIZATIONS**
-- **Repository Grouping**: Single repository info when all results from same repo (eliminates 70% duplication)
-- **Smart Field Selection**: Essential fields only - removed verbose metadata and redundant information
-- **Optimized Text Matches**: Simplified code search fragments with position-based matching
-- **Humanized File Sizes**: "167 KB" instead of raw byte counts for better readability
-- **Simplified URLs**: "owner/repo" format instead of full GitHub URLs
-- **Limited Version History**: Last 5 versions only for NPM packages instead of complete history
+#### 🔧 RESPONSE STRUCTURE OPTIMIZATIONS
+- **Repository Grouping**: Single repository info when all results from same repo (eliminates 70% duplication).
+- **Smart Field Selection**: Essential fields only - removed verbose metadata and redundant information.
+- **Optimized Text Matches**: Simplified code search fragments with position-based matching.
+- **Humanized File Sizes**: "167 KB" instead of raw byte counts for better readability.
+- **Simplified URLs**: "owner/repo" format instead of full GitHub URLs.
+- **Limited Version History**: Last 5 versions only for NPM packages instead of complete history.
 
-#### 🎨 **PROFESSIONAL UI/UX ENHANCEMENTS**
-- **Clean Interface**: Professional, enterprise-ready descriptions without visual distractions
-- **Consistent Tone**: Standardized professional language across all tool interfaces
-- **Schema Optimization**: Clean, emoji-free schema descriptors with clear, actionable guidance
+#### 🎨 PROFESSIONAL UI/UX ENHANCEMENTS
+- **Clean Interface**: Professional, enterprise-ready descriptions without visual distractions.
+- **Consistent Tone**: Standardized professional language across all tool interfaces.
+- **Schema Optimization**: Clean, emoji-free schema descriptors with clear, actionable guidance.
 
-#### 🔍 **EXACT STRING SEARCH ENHANCEMENTS**
-- **Advanced Pattern Matching**: Enhanced support for complex regex patterns like `/test/g` and escape sequences like `\test\`
-- **Special Character Handling**: Improved processing of special characters, quotes, and escape sequences
-- **Quote Preservation**: Proper handling of quoted strings for exact match searches
-- **GitHub CLI Integration**: Optimized argument passing to preserve user search intent
-- **Validation Improvements**: Removed overly restrictive validation while maintaining security
+#### 🔍 EXACT STRING SEARCH ENHANCEMENTS
+- **Advanced Pattern Matching**: Enhanced support for complex regex patterns like `/test/g` and escape sequences like `\test\`.
+- **Special Character Handling**: Improved processing of special characters, quotes, and escape sequences.
+- **Quote Preservation**: Proper handling of quoted strings for exact match searches.
+- **GitHub CLI Integration**: Optimized argument passing to preserve user search intent.
+- **Validation Improvements**: Removed overly restrictive validation while maintaining security.
 
-#### 🧠 **BOOLEAN SEARCH INTELLIGENCE**
-- **Enhanced Validation**: Improved boolean operator validation with helpful error messages
-- **Case Sensitivity**: Proper enforcement of uppercase boolean operators (OR, AND, NOT)
-- **Complex Query Support**: Better handling of embedded qualifiers and multi-filter combinations
-- **Smart Suggestions**: Intelligent fallback queries when complex searches fail
-- **Performance Optimization**: Efficiency scoring with boolean operator recognition
+#### 🧠 BOOLEAN SEARCH INTELLIGENCE
+- **Enhanced Validation**: Improved boolean operator validation with helpful error messages.
+- **Case Sensitivity**: Proper enforcement of uppercase boolean operators (OR, AND, NOT).
+- **Complex Query Support**: Better handling of embedded qualifiers and multi-filter combinations.
+- **Smart Suggestions**: Intelligent fallback queries when complex searches fail.
+- **Performance Optimization**: Efficiency scoring with boolean operator recognition.
 
 #### 🛠️ **TECHNICAL IMPROVEMENTS**
 - **Enhanced Error Handling**: Better null/undefined checks in date parsing and URL processing

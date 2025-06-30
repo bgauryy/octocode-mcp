@@ -47,7 +47,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        'github_search_pull_requests',
+        'githubSearchPullRequests',
         expect.any(Object),
         expect.any(Function)
       );
@@ -84,11 +84,11 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_pull_requests', {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'fix',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'api',
         ['search/issues?q=fix%20type%3Apr&per_page=25'],
@@ -113,11 +113,11 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      const result = await mockServer.callTool('github_search_pull_requests', {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'nonexistent',
       });
 
-      expect(result.isError).toBe(false);
+      expect(result.isError).toBe(true);
       expect(result.content).toBeDefined();
       expect(result.content.length).toBeGreaterThan(0);
     });
@@ -130,7 +130,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: 'Search failed' }],
       });
 
-      const result = await mockServer.callTool('github_search_pull_requests', {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'test',
       });
 

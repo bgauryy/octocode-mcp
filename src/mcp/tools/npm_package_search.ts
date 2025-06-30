@@ -1,36 +1,41 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult } from '../../utils/responses';
+import { createResult } from '../responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import {
+  createNoResultsError,
+  createSearchFailedError,
+} from '../errorMessages';
+import { logger } from '../../utils/Logger.js';
 
-const TOOL_NAME = 'npm_package_search';
+export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
-const DESCRIPTION = `Search npm packages by keywords using fuzzy matching. Use space-separated keywords like "react hooks" or "cli typescript". No boolean operators supported.`;
+const DESCRIPTION = `Search NPM packages with fuzzy matching. Supports multiple search terms and aggregates results. Use functional keywords like "react hooks", "auth", or "testing". Parameters: queries (required, string or array), searchLimit (optional).`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export function registerNpmSearchTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    NPM_PACKAGE_SEARCH_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
         queries: z
           .union([z.string(), z.array(z.string())])
           .describe(
-            'Package names or keywords to search for. Use simple space-separated keywords like "react hooks" or "typescript cli" for fuzzy matching.'
+            'Search terms for packages. Use functionality keywords: "react hooks", "cli tool", "testing"'
           ),
-        searchlimit: z
+        searchLimit: z
           .number()
           .int()
           .min(1)
           .max(50)
           .optional()
           .default(20)
-          .describe('Max results per query (default: 20, max: 50)'),
+          .describe('Results limit per query (1-50). Default: 20'),
       },
       annotations: {
         title: 'NPM Package Search',
@@ -42,13 +47,13 @@ export function registerNpmSearchTool(server: McpServer) {
     },
     async (args: {
       queries: string | string[];
-      searchlimit?: number;
+      searchLimit?: number;
     }): Promise<CallToolResult> => {
       try {
         const queries = Array.isArray(args.queries)
           ? args.queries
           : [args.queries];
-        const searchLimit = args.searchlimit || 20;
+        const searchLimit = args.searchLimit || 20;
         const allPackages: NpmPackage[] = [];
 
         // Search for each query term
@@ -79,14 +84,11 @@ export function registerNpmSearchTool(server: McpServer) {
         }
 
         return createResult({
-          error: 'No packages found',
-          cli_command: `npm search ${Array.isArray(args.queries) ? args.queries.join(' ') : args.queries}`,
+          error: createNoResultsError('packages'),
         });
       } catch (error) {
         return createResult({
-          error:
-            'Package search failed - check terms or try different keywords',
-          cli_command: `npm search ${Array.isArray(args.queries) ? args.queries.join(' ') : args.queries}`,
+          error: createSearchFailedError('packages'),
         });
       }
     }
@@ -131,10 +133,7 @@ function normalizePackage(pkg: {
 function parseNpmSearchOutput(output: string): NpmPackage[] {
   try {
     const wrapper = JSON.parse(output);
-    const commandResult =
-      typeof wrapper.result === 'string'
-        ? JSON.parse(wrapper.result)
-        : wrapper.result;
+    const commandResult = wrapper.result;
 
     let packages: Array<{
       name?: string;
@@ -167,7 +166,8 @@ function parseNpmSearchOutput(output: string): NpmPackage[] {
     }
 
     return packages.map(normalizePackage);
-  } catch {
+  } catch (error) {
+    logger.warn('Failed to parse NPM search results:', error);
     return [];
   }
 }

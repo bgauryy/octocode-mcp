@@ -1,14 +1,31 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
-import { createResult } from '../../utils/responses';
+import { createResult } from '../responses';
+import { ERROR_MESSAGES } from '../errorMessages';
 
-export const TOOL_NAME = 'api_status_check';
-const DESCRIPTION = `Get GitHub organizations list and check CLI authentication status. Use when searching private repos or when CLI tools fail.`;
+export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
+const DESCRIPTION = `Check GitHub and NPM authentication status. Returns connected status and GitHub organizations for accessing private repositories. No parameters required.`;
+
+// Helper function to parse execution results with proper typing
+function parseExecResult(result: CallToolResult): { result?: string } | null {
+  if (!result.isError && result.content?.[0]?.text) {
+    try {
+      const textContent = result.content[0].text;
+      if (typeof textContent === 'string') {
+        const parsed = JSON.parse(textContent);
+        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
 
 export function registerApiStatusCheckTool(server: McpServer) {
   server.registerTool(
-    TOOL_NAME,
+    API_STATUS_CHECK_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {},
@@ -32,19 +49,12 @@ export function registerApiStatusCheckTool(server: McpServer) {
           const authResult = await executeGitHubCommand('auth', ['status']);
 
           if (!authResult.isError) {
-            let authData;
-            try {
-              authData = JSON.parse(authResult.content[0].text as string);
-            } catch (parseError) {
-              // JSON parsing error - this is unexpected, propagate it
-              throw new Error(
-                `GitHub auth response JSON parsing failed: ${(parseError as Error).message}`
-              );
-            }
-
+            const execResult = parseExecResult(authResult);
             const isAuthenticated =
-              authData.result?.includes('Logged in') ||
-              authData.result?.includes('github.com');
+              typeof execResult?.result === 'string'
+                ? execResult.result.includes('Logged in') ||
+                  execResult.result.includes('github.com')
+                : false;
 
             if (isAuthenticated) {
               githubConnected = true;
@@ -56,19 +66,14 @@ export function registerApiStatusCheckTool(server: McpServer) {
                   ['list', '--limit=50'],
                   { cache: false }
                 );
-                if (!orgsResult.isError) {
-                  let execResult;
-                  try {
-                    execResult = JSON.parse(
-                      orgsResult.content[0].text as string
-                    );
-                  } catch (parseError) {
-                    // JSON parsing error for organizations - treat as no orgs available
-                    execResult = { result: '' };
-                  }
-                  const output = execResult.result;
+                const orgsExecResult = parseExecResult(orgsResult);
+                const output =
+                  typeof orgsExecResult?.result === 'string'
+                    ? orgsExecResult.result
+                    : '';
 
-                  // Parse organizations into clean array
+                // Parse organizations into clean array
+                if (typeof output === 'string') {
                   organizations = output
                     .split('\n')
                     .map((org: string) => org.trim())
@@ -105,27 +110,16 @@ export function registerApiStatusCheckTool(server: McpServer) {
           if (!npmResult.isError) {
             npmConnected = true;
             // Get registry info
-            try {
-              const registryResult = await executeNpmCommand(
-                'config',
-                ['get', 'registry'],
-                { timeout: 3000 }
-              );
-              if (!registryResult.isError) {
-                let registryData;
-                try {
-                  registryData = JSON.parse(
-                    registryResult.content[0].text as string
-                  );
-                } catch (parseError) {
-                  // JSON parsing error for registry - use default
-                  registryData = { result: 'https://registry.npmjs.org/' };
-                }
-                registry = registryData.result.trim();
-              }
-            } catch {
-              registry = 'https://registry.npmjs.org/'; // default fallback
-            }
+            const registryResult = await executeNpmCommand(
+              'config',
+              ['get', 'registry'],
+              { timeout: 3000 }
+            );
+            const registryExecResult = parseExecResult(registryResult);
+            registry =
+              typeof registryExecResult?.result === 'string'
+                ? registryExecResult.result.trim()
+                : 'https://registry.npmjs.org/'; // default fallback
           }
         } catch (error) {
           // Check if this is an unexpected error
@@ -140,27 +134,26 @@ export function registerApiStatusCheckTool(server: McpServer) {
           npmConnected = false;
         }
 
-        // Build structured response object
-        const loginStatus = {
-          login: {
-            github: {
-              connected: githubConnected,
-              user_organizations: organizations,
+        return createResult({
+          data: {
+            login: {
+              github: {
+                connected: githubConnected,
+                user_organizations: organizations,
+              },
+              npm: {
+                connected: npmConnected,
+                registry: registry || 'https://registry.npmjs.org/',
+              },
+              hints: [
+                'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
+              ],
             },
-            npm: {
-              connected: npmConnected,
-              registry: registry || 'https://registry.npmjs.org/',
-            },
-            hints: [
-              'use user organizations: to search on private repositories in case the user asked about private repo - check by query nd structure',
-            ],
           },
-        };
-
-        return createResult({ data: loginStatus });
+        });
       } catch (error) {
         return createResult({
-          error: `API Status Check Failed\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
+          error: `${ERROR_MESSAGES.API_STATUS_CHECK_FAILED}\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
         });
       }
     }
