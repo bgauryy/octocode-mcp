@@ -57,28 +57,34 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe('GitHub username of commit author'),
-        authorName: z
+        'author-name': z
           .string()
           .optional()
           .describe('Full name of commit author'),
-        authorEmail: z.string().optional().describe('Email of commit author'),
+        'author-email': z
+          .string()
+          .optional()
+          .describe('Email of commit author'),
 
         // Committer filters
         committer: z
           .string()
           .optional()
           .describe('GitHub username of committer'),
-        committerName: z.string().optional().describe('Full name of committer'),
-        committerEmail: z.string().optional().describe('Email of committer'),
+        'committer-name': z
+          .string()
+          .optional()
+          .describe('Full name of committer'),
+        'committer-email': z.string().optional().describe('Email of committer'),
 
         // Date filters
-        authorDate: z
+        'author-date': z
           .string()
           .optional()
           .describe(
             'When authored. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
           ),
-        committerDate: z
+        'committer-date': z
           .string()
           .optional()
           .describe(
@@ -301,20 +307,23 @@ function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
 
   // Author filters
   if (params.author) args.push(`--author=${params.author}`);
-  if (params.authorName) args.push(`--author-name=${params.authorName}`);
-  if (params.authorEmail) args.push(`--author-email=${params.authorEmail}`);
+  if (params['author-name'])
+    args.push(`--author-name=${params['author-name']}`);
+  if (params['author-email'])
+    args.push(`--author-email=${params['author-email']}`);
 
   // Committer filters
   if (params.committer) args.push(`--committer=${params.committer}`);
-  if (params.committerName)
-    args.push(`--committer-name=${params.committerName}`);
-  if (params.committerEmail)
-    args.push(`--committer-email=${params.committerEmail}`);
+  if (params['committer-name'])
+    args.push(`--committer-name=${params['committer-name']}`);
+  if (params['committer-email'])
+    args.push(`--committer-email=${params['committer-email']}`);
 
   // Date filters
-  if (params.authorDate) args.push(`--author-date=${params.authorDate}`);
-  if (params.committerDate)
-    args.push(`--committer-date=${params.committerDate}`);
+  if (params['author-date'])
+    args.push(`--author-date=${params['author-date']}`);
+  if (params['committer-date'])
+    args.push(`--committer-date=${params['committer-date']}`);
 
   // Hash filters
   if (params.hash) args.push(`--hash=${params.hash}`);
@@ -322,7 +331,7 @@ function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
   if (params.tree) args.push(`--tree=${params.tree}`);
 
   // State filters
-  if (params.merge !== undefined) args.push(`--merge=${params.merge}`);
+  if (params.merge !== undefined) args.push(`--merge`);
 
   // Visibility
   if (params.visibility) args.push(`--visibility=${params.visibility}`);

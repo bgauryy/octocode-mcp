@@ -61,33 +61,67 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           .describe('GitHub username of issue creator'),
         closed: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
+            'Invalid date format. Use: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "<=2023-12-31", "2020-01-01..2023-12-31", or exact date "2023-01-01"'
+          )
           .optional()
-          .describe('When closed. Format: >2020-01-01'),
+          .describe(
+            'When closed. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "2020-01-01..2023-12-31" (range)'
+          ),
         commenter: z
           .string()
           .optional()
           .describe('User who commented on issue'),
         comments: z
-          .number()
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">10", ">=5", "<20", "<=15", "5..20", or exact number "10"'
+              ),
+          ])
           .optional()
-          .describe('Comment count. Format: >10, <5, 5..10'),
+          .describe(
+            'Comment count filter. Format: ">10" (many comments), ">=5" (at least 5), "<5" (few comments), "5..10" (range), "10" (exact)'
+          ),
         created: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
+            'Invalid date format. Use: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "<=2023-12-31", "2020-01-01..2023-12-31", or exact date "2023-01-01"'
+          )
           .optional()
-          .describe('When created. Format: >2020-01-01'),
-        includePrs: z
+          .describe(
+            'When created. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "2020-01-01..2023-12-31" (range)'
+          ),
+        'include-prs': z
           .boolean()
           .optional()
           .describe('Include pull requests. Default: false'),
         interactions: z
-          .number()
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">100", ">=50", "<200", "<=150", "50..200", or exact number "100"'
+              ),
+          ])
           .optional()
-          .describe('Total interactions (reactions + comments)'),
+          .describe(
+            'Total interactions (reactions + comments) filter. Format: ">100" (highly engaged), ">=50" (moderately engaged), "<20" (low engagement), "50..200" (range)'
+          ),
         involves: z.string().optional().describe('User involved in any way'),
-        labels: z
-          .string()
+        label: z
+          .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Label names (bug, feature, etc.)'),
+          .describe(
+            'Label names (bug, feature, etc.). Can be single string or array.'
+          ),
         language: z.string().optional().describe('Repository language'),
         locked: z.boolean().optional().describe('Conversation locked status'),
         match: z
@@ -96,27 +130,49 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           .describe('Search scope. Default: title and body'),
         mentions: z.string().optional().describe('Issues mentioning this user'),
         milestone: z.string().optional().describe('Milestone name'),
-        noAssignee: z.boolean().optional().describe('Issues without assignee'),
-        noLabel: z.boolean().optional().describe('Issues without labels'),
-        noMilestone: z
+        'no-assignee': z
+          .boolean()
+          .optional()
+          .describe('Issues without assignee'),
+        'no-label': z.boolean().optional().describe('Issues without labels'),
+        'no-milestone': z
           .boolean()
           .optional()
           .describe('Issues without milestone'),
-        noProject: z.boolean().optional().describe('Issues not in projects'),
+        'no-project': z.boolean().optional().describe('Issues not in projects'),
         project: z.string().optional().describe('Project board number'),
         reactions: z
-          .number()
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">10", ">=5", "<50", "<=25", "5..50", or exact number "10"'
+              ),
+          ])
           .optional()
-          .describe('Reaction count. Format: >10'),
+          .describe(
+            'Reaction count filter. Format: ">10" (popular), ">=5" (some reactions), "<50" (moderate), "5..50" (range), "10" (exact)'
+          ),
         state: z
           .enum(['open', 'closed'])
           .optional()
           .describe('Issue state. Default: all'),
-        teamMentions: z.string().optional().describe('Team mentioned in issue'),
-        updated: z
+        'team-mentions': z
           .string()
           .optional()
-          .describe('When updated. Format: >2020-01-01'),
+          .describe('Team mentioned in issue (@org/team-name)'),
+        updated: z
+          .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
+            'Invalid date format. Use: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "<=2023-12-31", "2020-01-01..2023-12-31", or exact date "2023-01-01"'
+          )
+          .optional()
+          .describe(
+            'When updated. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "2020-01-01..2023-12-31" (range)'
+          ),
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
@@ -311,17 +367,28 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   });
 
   // Special qualifiers - handle labels carefully
-  if (params.labels) {
-    queryParts.push(`label:"${params.labels}"`);
+  if (params.label) {
+    const labels = Array.isArray(params.label) ? params.label : [params.label];
+    labels.forEach(label => queryParts.push(`label:"${label}"`));
   }
   if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
-  if (params.noAssignee) queryParts.push('no:assignee');
-  if (params.noLabel) queryParts.push('no:label');
-  if (params.noMilestone) queryParts.push('no:milestone');
+  if (params['no-assignee']) queryParts.push('no:assignee');
+  if (params['no-label']) queryParts.push('no:label');
+  if (params['no-milestone']) queryParts.push('no:milestone');
+  if (params['no-project']) queryParts.push('no:project');
   if (params.archived !== undefined)
     queryParts.push(`archived:${params.archived}`);
   if (params.locked) queryParts.push('is:locked');
   if (params.visibility) queryParts.push(`is:${params.visibility}`);
+  if (params['include-prs']) queryParts.push('is:pr');
+  if (params['team-mentions'])
+    queryParts.push(`team:${params['team-mentions']}`);
+  if (params.project) queryParts.push(`project:${params.project}`);
+  if (params.app) queryParts.push(`app:${params.app}`);
+  if (params.comments) queryParts.push(`comments:${params.comments}`);
+  if (params.interactions)
+    queryParts.push(`interactions:${params.interactions}`);
+  if (params.reactions) queryParts.push(`reactions:${params.reactions}`);
 
   // Extract qualifiers from original query and add them if not already set by params
   if (baseQuery.includes('is:') && !params.state) {
@@ -331,7 +398,7 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
     }
   }
 
-  if (baseQuery.includes('label:') && !params.labels) {
+  if (baseQuery.includes('label:') && !params.label) {
     const labelMatch = baseQuery.match(/\blabel:("[^"]*"|[^\s]+)/i);
     if (labelMatch) {
       const labelValue = labelMatch[1].replace(/"/g, '');

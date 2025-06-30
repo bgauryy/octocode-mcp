@@ -78,7 +78,7 @@ async function fetchGitHubFileContent(
 
     try {
       // Try to fetch file content directly
-      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
+      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}`;
 
       const result = await executeGitHubCommand('api', [apiPath], {
         cache: false,
@@ -87,6 +87,28 @@ async function fetchGitHubFileContent(
       if (result.isError) {
         const errorMsg = result.content[0].text as string;
 
+        // Check repository existence only after content fetch fails
+        const repoCheckResult = await executeGitHubCommand(
+          'api',
+          [`/repos/${owner}/${repo}`],
+          {
+            cache: false,
+          }
+        );
+
+        if (repoCheckResult.isError) {
+          const repoErrorMsg = repoCheckResult.content[0].text as string;
+          if (repoErrorMsg.includes('404')) {
+            return createResult({
+              error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
+            });
+          } else if (repoErrorMsg.includes('403')) {
+            return createResult({
+              error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
+            });
+          }
+        }
+
         // Try fallback branches if original branch fails
         if (
           errorMsg.includes('404') &&
@@ -94,8 +116,12 @@ async function fetchGitHubFileContent(
           branch !== 'master'
         ) {
           const fallbackBranches = ['main', 'master'];
+          const triedBranches = [branch];
 
           for (const fallbackBranch of fallbackBranches) {
+            if (triedBranches.includes(fallbackBranch)) continue;
+            triedBranches.push(fallbackBranch);
+
             const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
             const fallbackResult = await executeGitHubCommand(
               'api',
@@ -115,30 +141,39 @@ async function fetchGitHubFileContent(
               );
             }
           }
+
+          return createResult({
+            error: `File not found in any common branches (tried: ${triedBranches.join(', ')}). File might have been moved or deleted. Use github_search_code to find current location.`,
+          });
         }
 
-        // Handle common errors
+        // Handle common errors with more context
         if (errorMsg.includes('404')) {
+          const searchSuggestion = await suggestCodeSearchFallback(
+            owner,
+            filePath
+          );
           return createResult({
-            error:
-              'File not found. Use github_view_repo_structure to explore repository structure',
+            error: `File "${filePath}" not found in branch "${branch}". Use github_view_repo_structure to verify path.${searchSuggestion}`,
           });
         } else if (errorMsg.includes('403')) {
           return createResult({
-            error:
-              'Access denied. Repository may be private - use apiStatusCheck to verify',
+            error: `Access denied to "${filePath}" in "${owner}/${repo}". Repository or file might be private/archived. Use api_status_check to verify permissions, or github_search_code with query="path:${filePath}" owner="${owner}" to find in accessible repositories.`,
           });
         } else if (
           errorMsg.includes('maxBuffer') ||
           errorMsg.includes('stdout maxBuffer length exceeded')
         ) {
           return createResult({
-            error:
-              'File too large (>300KB). Use githubSearchCode to search for patterns within the file',
+            error: `File "${filePath}" is too large (>300KB). Use github_search_code with query="path:${filePath}" to search within the file or download directly from GitHub.`,
           });
         } else {
+          const searchSuggestion = await suggestCodeSearchFallback(
+            owner,
+            filePath
+          );
           return createResult({
-            error: 'Failed to fetch file. Verify repository name and file path',
+            error: `Failed to fetch "${filePath}". Error: ${errorMsg}. Verify repository name, branch, and file path.${searchSuggestion}`,
           });
         }
       }
@@ -147,19 +182,17 @@ async function fetchGitHubFileContent(
     } catch (error) {
       const errorMessage = (error as Error).message;
 
-      // Handle maxBuffer errors that escape the main try-catch
       if (
         errorMessage.includes('maxBuffer') ||
         errorMessage.includes('stdout maxBuffer length exceeded')
       ) {
         return createResult({
-          error:
-            'File too large (>300KB). Use github_search_code to search for patterns within the file',
+          error: `File "${filePath}" is too large (>300KB). Use github_search_code to search within the file or download directly from GitHub.`,
         });
       }
 
       return createResult({
-        error: 'Unexpected error. Check network connection and try again',
+        error: `Unexpected error fetching "${filePath}": ${errorMessage}. Check network connection and try again.`,
       });
     }
   });
@@ -240,4 +273,32 @@ async function processFileContent(
       content: decodedContent,
     },
   });
+}
+
+// Helper function to suggest code search strategy
+async function suggestCodeSearchFallback(
+  owner: string,
+  filePath: string
+): Promise<string> {
+  try {
+    // Extract filename and try to find in same organization
+    const fileName = filePath.split('/').pop() || filePath;
+    const searchResult = await executeGitHubCommand(
+      'api',
+      [`/search/code?q=${encodeURIComponent(fileName)}+in:path+org:${owner}`],
+      { cache: false }
+    );
+
+    if (!searchResult.isError) {
+      const results = JSON.parse(searchResult.content[0].text as string);
+      if (results.total_count > 0) {
+        const firstMatch = results.items[0];
+        return ` File might be in ${firstMatch.repository.full_name}. Try these searches:\n1. github_search_code with query="${fileName}" owner="${owner}"\n2. github_search_code with query="path:${filePath}" owner="${owner}"`;
+      }
+    }
+  } catch {
+    // Fallback to generic message if search fails
+  }
+
+  return ` Try these searches:\n1. github_search_code with query="${filePath.split('/').pop()}" owner="${owner}"\n2. github_search_code with query="path:${filePath}"`;
 }
