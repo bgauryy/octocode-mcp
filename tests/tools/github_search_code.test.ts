@@ -272,12 +272,12 @@ describe('GitHub Search Code Tool', () => {
 
       const result = await mockServer.callTool('githubSearchCode', {
         query: 'test',
-        repo: 'invalid-repo-format', // Missing owner
+        owner: 'invalid/repo/format', // Invalid format with slashes
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Repository format error');
-      expect(result.content[0].text).toContain('facebook/react');
+      expect(result.content[0].text).toContain('Owner parameter should contain only the username/org name');
+      expect(result.content[0].text).toContain('not owner/repo format');
     });
   });
 });
