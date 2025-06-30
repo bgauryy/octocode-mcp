@@ -1,5 +1,4 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { logger } from '../utils/Logger';
 
 export function createResult(options: {
   data?: unknown;
@@ -27,7 +26,6 @@ export function createResult(options: {
       isError: false,
     };
   } catch (jsonError) {
-    logger.error('JSON serialization failed:', jsonError);
     return {
       content: [
         {
