@@ -5,6 +5,29 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.7] - 2025-06-30 - Search Optimization & Code Cleanup
+
+### 🎯 ENHANCED: Search Intelligence & System Optimization
+
+#### Enhanced
+- **Search Flow Optimization**: Improved search logic and query processing for better accuracy and performance
+- **System Efficiency**: Removed redundant logging to reduce noise and improve performance
+- **Test Reliability**: Fixed test suite issues to ensure consistent CI/CD pipeline execution
+- **Code Quality**: Enhanced overall code flow and system architecture
+
+#### Fixed
+- **Test Suite**: Resolved test failures to maintain 100% passing test coverage
+- **Search Logic**: Improved search algorithms for more accurate and relevant results
+- **System Performance**: Optimized internal processes by removing unnecessary logging overhead
+
+#### Technical Improvements
+- **Cleaner Codebase**: Removed verbose logging that was cluttering system output
+- **Enhanced Search Intelligence**: Improved search processing and result ranking
+- **Better Error Handling**: Enhanced error recovery and user feedback mechanisms
+- **Streamlined Architecture**: Simplified system flow for better maintainability
+
+---
+
 ## [2.3.6] - 2024-12-20 - Prompts & Tool Descriptions Update
 
 ### 🎨 ENHANCED: Prompts & Tool Descriptions
