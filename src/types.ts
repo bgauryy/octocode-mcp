@@ -52,12 +52,12 @@ export interface GitHubCommitSearchParams
   query?: string; // Make query optional
   author?: string;
   committer?: string;
-  authorDate?: string;
-  committerDate?: string;
-  authorEmail?: string;
-  authorName?: string;
-  committerEmail?: string;
-  committerName?: string;
+  'author-date'?: string;
+  'committer-date'?: string;
+  'author-email'?: string;
+  'author-name'?: string;
+  'committer-email'?: string;
+  'committer-name'?: string;
   merge?: boolean;
   hash?: string;
   parent?: string;
@@ -76,10 +76,26 @@ export interface GitHubPullRequestsSearchParams
   base?: string;
   language?: string;
   merged?: string | boolean;
-  mergedAt?: string;
+  'merged-at'?: string;
   draft?: boolean;
-  reviewedBy?: string;
-  reviewRequested?: string;
+  'reviewed-by'?: string;
+  'review-requested'?: string;
+  app?: string;
+  archived?: boolean;
+  comments?: string | number;
+  interactions?: string | number;
+  'team-mentions'?: string;
+  reactions?: string | number;
+  locked?: boolean;
+  'no-assignee'?: boolean;
+  'no-label'?: boolean;
+  'no-milestone'?: boolean;
+  'no-project'?: boolean;
+  label?: string | string[];
+  milestone?: string;
+  project?: string;
+  visibility?: 'public' | 'private' | 'internal';
+  match?: 'title' | 'body' | 'comments';
   checks?: 'pending' | 'success' | 'failure';
   review?: 'none' | 'required' | 'approved' | 'changes_requested';
   sort?:
@@ -103,22 +119,22 @@ export interface GitHubReposSearchParams
 
   // PRIMARY FILTERS (work alone)
   language?: string;
-  forks?: number;
+  forks?: string | number; // Support both string ranges and numbers
   stars?: string | number; // Support both string ranges and numbers
   topic?: string | string[]; // Support both single and array
-  numberOfTopics?: number;
+  'number-topics'?: string | number; // Support both string ranges and numbers
 
   // SECONDARY FILTERS (require query or primary filter)
   archived?: boolean;
   created?: string;
-  includeForks?: 'false' | 'true' | 'only';
+  'include-forks'?: 'false' | 'true' | 'only';
   license?: string | string[]; // Support both single and array
   match?: 'name' | 'description' | 'readme';
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
-  goodFirstIssues?: string | number; // Support both string ranges and numbers
-  helpWantedIssues?: string | number; // Support both string ranges and numbers
-  followers?: number;
+  'good-first-issues'?: string | number; // Support both string ranges and numbers
+  'help-wanted-issues'?: string | number; // Support both string ranges and numbers
+  followers?: string | number; // Support both string ranges and numbers
   size?: string; // Format: ">100", "<50", "10..100"
 
   // SORTING AND LIMITS
@@ -167,24 +183,23 @@ export interface GitHubIssuesSearchParams {
   assignee?: string;
   mentions?: string;
   commenter?: string;
-  comments?: number;
+  comments?: string | number;
   involves?: string;
-  includePrs?: boolean;
-  interactions?: number;
+  'include-prs'?: boolean;
+  interactions?: string | number;
   state?: 'open' | 'closed';
-  label?: string;
-  labels?: string;
+  label?: string | string[];
   milestone?: string;
   project?: string;
   language?: string;
   locked?: boolean;
   match?: 'title' | 'body' | 'comments';
-  noAssignee?: boolean;
-  noLabel?: boolean;
-  noMilestone?: boolean;
-  noProject?: boolean;
-  reactions?: number;
-  teamMentions?: string;
+  'no-assignee'?: boolean;
+  'no-label'?: boolean;
+  'no-milestone'?: boolean;
+  'no-project'?: boolean;
+  reactions?: string | number;
+  'team-mentions'?: string;
   visibility?: 'public' | 'private' | 'internal';
   created?: string;
   updated?: string;

@@ -8,7 +8,6 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
-import { logger } from '../../utils/Logger.js';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
@@ -167,7 +166,6 @@ function parseNpmSearchOutput(output: string): NpmPackage[] {
 
     return packages.map(normalizePackage);
   } catch (error) {
-    logger.warn('Failed to parse NPM search results:', error);
     return [];
   }
 }

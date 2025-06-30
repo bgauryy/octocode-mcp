@@ -25,7 +25,18 @@ import {
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Search code across GitHub repositories. Start with simple 1-2 word queries, then refine with filters like language, owner, or filename. Supports exact phrase matching with quotes. Parameters: query (required), language (optional), owner (optional - GitHub username/org, NOT owner/repo), filename (optional), extension (optional), match (optional), size (optional), limit (optional).`;
+const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API.
+
+Search Syntax (all terms must be present with AND logic):
+- Multiple words: react lifecycle → finds files with BOTH "react" AND "lifecycle" (separate words)
+- Exact phrases: "error handling" → finds exact phrase "error handling" (quoted phrase)
+- Mixed: "async function" timeout → finds exact phrase "async function" AND word "timeout"
+- Complex: useState useEffect "custom hook" → finds "useState" AND "useEffect" AND exact phrase "custom hook"
+- Advanced: authentication authorization "jwt token" → finds "authentication" AND "authorization" AND exact phrase "jwt token"
+- Framework: "React.Component" "componentDidMount" → finds both exact phrases in same file
+
+Key difference: Quotes create exact phrases, no quotes = individual words (all must be present).
+Start with 1-2 terms, add more to narrow results. Use filters for precision.`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -37,46 +48,61 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search terms. START SIMPLE: Use 1-2 words first (e.g., "useState", "auth"). Add more terms only after seeing initial results.'
+            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: react lifecycle (both words), "error handling" (exact phrase), async await "try catch" (words + phrase), "function definition" variable scope (phrase + words)'
           ),
 
         language: z
           .string()
           .optional()
           .describe(
-            'Language filter (javascript, python, etc). Use only when needed.'
+            'Programming language filter (javascript, python, typescript, go, etc). Narrows search to specific language files. Use for language-specific searches.'
           ),
 
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/org (for organization-specific searches). Format: username or org-name only, NOT owner/repo. Use this to search within a specific organization.'
+            'Repository owner or organization name(s) to search within. Format: "microsoft" or ["facebook", "google"]. Drastically narrows search scope. Do NOT use owner/repo format.'
+          ),
+
+        repo: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe(
+            'Filter on specific repository(ies). Format: "owner/repo" or ["microsoft/vscode", "facebook/react"]. Use for repository-specific searches.'
           ),
 
         filename: z
           .string()
           .optional()
-          .describe('Specific filename to search. Use for targeted searches.'),
+          .describe(
+            'Target specific filename or pattern. Examples: "package.json", "*.test.js", "Dockerfile". Use for file-specific searches.'
+          ),
 
         extension: z
           .string()
           .optional()
           .describe(
-            'File extension (.js, .py, etc). Alternative to language filter.'
+            'File extension filter (js, py, ts, go, etc). Alternative to language parameter. Examples: "js", "py", "tsx".'
           ),
 
         match: z
           .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
           .optional()
           .describe(
-            'Search scope: "file" for content, "path" for filenames. Default: file content.'
+            'Search scope: "file" for file content (default), "path" for filenames/paths, or ["file", "path"] for both. Controls where to search for terms.'
           ),
 
         size: z
           .string()
+          .regex(
+            /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+            'Invalid size format. Use: ">10", ">=5", "<100", "<=50", "10..100", or exact number "50"'
+          )
           .optional()
-          .describe('File size in KB. Format: >10, <100, or 10..50'),
+          .describe(
+            'File size filter in KB. Format: ">10" (larger than), ">=5" (at least), "<100" (smaller than), "<=50" (at most), "10..50" (range), "25" (exact). Examples from docs: ">10", "10..50", "<100"'
+          ),
 
         limit: z
           .number()
@@ -85,7 +111,9 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe('Results limit (1-100). Default: 30'),
+          .describe(
+            'Maximum number of results to return (1-100). Default: 30. Higher values may increase response time.'
+          ),
       },
       annotations: {
         title: 'GitHub Code Search - Smart & Efficient',
@@ -254,35 +282,21 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 
 /**
  * Build command line arguments for GitHub CLI with improved parameter handling.
- * Ensures exact string search capability with proper quote and escape handling.
- *
- * This function is refactored to correctly distinguish between search qualifiers
- * (like `language` and `extension`), which will be passed as separate arguments
- * to `gh search`, and command-line flags (like `--size` and `--limit`).
+ * Preserves quoted phrases and supports both AND search and exact phrase matching.
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
   const args: string[] = ['code'];
 
-  // Extract qualifiers from the query
-  const queryParts = params.query.trim().split(/\s+/);
-  const searchTerms: string[] = [];
-  const qualifiers: string[] = [];
+  // Parse query to preserve quoted phrases and extract qualifiers
+  const { searchQuery, extractedQualifiers } = parseSearchQuery(params.query);
 
-  queryParts.forEach(part => {
-    if (part.includes(':')) {
-      qualifiers.push(part);
-    } else {
-      searchTerms.push(part);
-    }
-  });
-
-  // Add search terms if any
-  if (searchTerms.length > 0) {
-    args.push(searchTerms.join(' '));
+  // Add the main search query if present
+  if (searchQuery) {
+    args.push(searchQuery);
   }
 
-  // Add extracted qualifiers
-  qualifiers.forEach(qualifier => {
+  // Add extracted qualifiers from the query
+  extractedQualifiers.forEach(qualifier => {
     args.push(qualifier);
   });
 
@@ -298,6 +312,11 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
   ) {
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     owners.forEach(owner => args.push(`org:${owner}`));
+  }
+
+  if (params.repo && !params.query.includes('repo:')) {
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    repos.forEach(repo => args.push(`repo:${repo}`));
   }
 
   if (params.filename && !params.query.includes('filename:')) {
@@ -404,4 +423,46 @@ function validateSearchParameters(
   // }
 
   return null; // No validation errors
+}
+
+/**
+ * Parse search query to preserve quoted phrases and extract qualifiers.
+ * Handles:
+ * - Quoted phrases: "error handling" -> kept as single unit
+ * - Multiple terms: react lifecycle -> both terms for AND search
+ * - Mixed: "error handling" debug -> phrase + term
+ * - Qualifiers: language:javascript -> extracted separately
+ */
+function parseSearchQuery(query: string): {
+  searchQuery: string;
+  extractedQualifiers: string[];
+} {
+  const qualifiers: string[] = [];
+  const searchTerms: string[] = [];
+
+  // Regular expression to match quoted strings or individual words/qualifiers
+  const tokenRegex = /"([^"]+)"|([^\s]+)/g;
+  let match;
+
+  while ((match = tokenRegex.exec(query)) !== null) {
+    const token = match[1] || match[2]; // match[1] is quoted content, match[2] is unquoted
+
+    // Check if it's a qualifier (contains : but not inside quotes)
+    if (!match[1] && token.includes(':') && /^[a-zA-Z]+:/.test(token)) {
+      qualifiers.push(token);
+    } else {
+      // It's a search term (either quoted or unquoted)
+      if (match[1]) {
+        // Preserve quotes for exact phrase search
+        searchTerms.push(`"${token}"`);
+      } else {
+        searchTerms.push(token);
+      }
+    }
+  }
+
+  return {
+    searchQuery: searchTerms.join(' '),
+    extractedQualifiers: qualifiers,
+  };
 }

@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
-import { logger } from './utils/Logger.js';
 import { clearAllCache } from './utils/cache.js';
 import {
   API_STATUS_CHECK_TOOL_NAME,
@@ -83,17 +82,12 @@ function registerAllTools(server: McpServer) {
     { name: NPM_VIEW_PACKAGE_TOOL_NAME, fn: registerNpmViewPackageTool },
   ];
 
-  logger.info(`Registering ${toolRegistrations.length} tools...`);
-
   let successCount = 0;
   for (const tool of toolRegistrations) {
     try {
-      logger.debug(`Registering tool: ${tool.name}`);
       tool.fn(server);
       successCount++;
-      logger.info(`✓ Successfully registered: ${tool.name}`);
     } catch (error) {
-      logger.error(`✗ Failed to register ${tool.name}:`, error);
       // Continue with other tools instead of failing completely
     }
   }
@@ -101,15 +95,10 @@ function registerAllTools(server: McpServer) {
   if (successCount === 0) {
     throw new Error('No tools were successfully registered');
   }
-
-  logger.info(
-    `All tools registration completed - ${successCount}/${toolRegistrations.length} successful`
-  );
 }
 
 async function startServer() {
   try {
-    logger.info('Creating MCP server...');
     const server = new McpServer(SERVER_CONFIG);
 
     registerAllTools(server);
@@ -118,15 +107,12 @@ async function startServer() {
 
     await server.connect(transport);
 
-    logger.info('=== Server Connected Successfully ===');
-
     // Ensure all buffered output is sent
     process.stdout.uncork();
     process.stderr.uncork();
 
-    const gracefulShutdown = async (signal: string) => {
+    const gracefulShutdown = async () => {
       try {
-        logger.info(`Received ${signal}, shutting down gracefully...`);
         clearAllCache();
 
         // Give server time to close properly
@@ -139,40 +125,35 @@ async function startServer() {
 
         process.exit(0);
       } catch (error) {
-        logger.error('Error during shutdown:', error);
         process.exit(1);
       }
     };
 
     // Handle process signals
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
 
     // Handle stdin close (important for MCP)
     process.stdin.on('close', async () => {
-      await gracefulShutdown('STDIN_CLOSE');
+      await gracefulShutdown();
     });
 
     // Handle uncaught errors
-    process.on('uncaughtException', error => {
-      logger.error('Uncaught exception:', error);
-      gracefulShutdown('UNCAUGHT_EXCEPTION');
+    process.on('uncaughtException', () => {
+      gracefulShutdown();
     });
 
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error('Unhandled rejection at:', promise, 'reason:', reason);
-      gracefulShutdown('UNHANDLED_REJECTION');
+    process.on('unhandledRejection', () => {
+      gracefulShutdown();
     });
 
     // Keep process alive
     process.stdin.resume();
   } catch (error) {
-    logger.error('Error details:', error);
     process.exit(1);
   }
 }
 
-startServer().catch(error => {
-  logger.error('Error:', error);
+startServer().catch(() => {
   process.exit(1);
 });

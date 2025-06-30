@@ -51,8 +51,11 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         mentions: z.string().optional().describe('PRs mentioning this user'),
         commenter: z.string().optional().describe('User who commented on PR'),
         involves: z.string().optional().describe('User involved in any way'),
-        reviewedBy: z.string().optional().describe('User who reviewed the PR'),
-        reviewRequested: z
+        'reviewed-by': z
+          .string()
+          .optional()
+          .describe('User who reviewed the PR'),
+        'review-requested': z
           .string()
           .optional()
           .describe('User/team requested for review'),
@@ -74,7 +77,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .string()
           .optional()
           .describe('When updated. Format: >2020-01-01'),
-        mergedAt: z
+        'merged-at': z
           .string()
           .optional()
           .describe('When merged. Format: >2020-01-01'),
@@ -95,6 +98,49 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .enum(['none', 'required', 'approved', 'changes_requested'])
           .optional()
           .describe('Review status filter'),
+        app: z.string().optional().describe('GitHub App that created the PR'),
+        archived: z
+          .boolean()
+          .optional()
+          .describe('Include archived repositories'),
+        comments: z
+          .number()
+          .optional()
+          .describe('Comment count filter. Format: >10, <5, 5..10'),
+        interactions: z
+          .number()
+          .optional()
+          .describe('Total interactions (reactions + comments)'),
+        'team-mentions': z
+          .string()
+          .optional()
+          .describe('Team mentioned in PR (@org/team-name)'),
+        reactions: z
+          .number()
+          .optional()
+          .describe('Reaction count filter. Format: >10'),
+        locked: z.boolean().optional().describe('Conversation locked status'),
+        'no-assignee': z.boolean().optional().describe('PRs without assignee'),
+        'no-label': z.boolean().optional().describe('PRs without labels'),
+        'no-milestone': z
+          .boolean()
+          .optional()
+          .describe('PRs without milestone'),
+        'no-project': z.boolean().optional().describe('PRs not in projects'),
+        label: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe('Label names. Can be single string or array.'),
+        milestone: z.string().optional().describe('Milestone title'),
+        project: z.string().optional().describe('Project board owner/number'),
+        visibility: z
+          .enum(['public', 'private', 'internal'])
+          .optional()
+          .describe('Repository visibility'),
+        match: z
+          .enum(['title', 'body', 'comments'])
+          .optional()
+          .describe('Search scope. Default: title and body'),
         limit: z
           .number()
           .int()
@@ -265,17 +311,41 @@ function buildGitHubPullRequestsAPICommand(
   });
 
   // Special qualifiers
-  if (params.reviewedBy) queryParts.push(`reviewed-by:${params.reviewedBy}`);
-  if (params.reviewRequested)
-    queryParts.push(`review-requested:${params.reviewRequested}`);
+  if (params['reviewed-by'])
+    queryParts.push(`reviewed-by:${params['reviewed-by']}`);
+  if (params['review-requested'])
+    queryParts.push(`review-requested:${params['review-requested']}`);
   if (params.head) queryParts.push(`head:${params.head}`);
   if (params.base) queryParts.push(`base:${params.base}`);
-  if (params.mergedAt) queryParts.push(`merged:${params.mergedAt}`);
+  if (params['merged-at']) queryParts.push(`merged:${params['merged-at']}`);
   if (params.draft !== undefined) queryParts.push(`draft:${params.draft}`);
   if (params.checks) queryParts.push(`status:${params.checks}`);
   if (params.merged !== undefined)
     queryParts.push(`is:${params.merged ? 'merged' : 'unmerged'}`);
   if (params.review) queryParts.push(`review:${params.review}`);
+
+  // Additional parameters
+  if (params.app) queryParts.push(`app:${params.app}`);
+  if (params.archived !== undefined)
+    queryParts.push(`archived:${params.archived}`);
+  if (params.comments) queryParts.push(`comments:${params.comments}`);
+  if (params.interactions)
+    queryParts.push(`interactions:${params.interactions}`);
+  if (params.reactions) queryParts.push(`reactions:${params.reactions}`);
+  if (params.locked) queryParts.push('is:locked');
+  if (params.visibility) queryParts.push(`is:${params.visibility}`);
+  if (params['team-mentions'])
+    queryParts.push(`team:${params['team-mentions']}`);
+  if (params['no-assignee']) queryParts.push('no:assignee');
+  if (params['no-label']) queryParts.push('no:label');
+  if (params['no-milestone']) queryParts.push('no:milestone');
+  if (params['no-project']) queryParts.push('no:project');
+  if (params.label) {
+    const labels = Array.isArray(params.label) ? params.label : [params.label];
+    labels.forEach(label => queryParts.push(`label:"${label}"`));
+  }
+  if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
+  if (params.project) queryParts.push(`project:${params.project}`);
 
   // Add type qualifier to search only pull requests
   queryParts.push('type:pr');

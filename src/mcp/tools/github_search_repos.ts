@@ -34,7 +34,22 @@ import {
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Discover GitHub repositories with smart filtering. Supports language, stars, topics, ownership, dates, and community metrics. Parameters: query (optional), owner (optional - GitHub username/org, NOT owner/repo), language (optional), stars (optional), topic (optional), forks (optional), numberOfTopics (optional), license (optional), archived (optional), includeForks (optional), visibility (optional), created (optional), updated (optional), size (optional), goodFirstIssues (optional), helpWantedIssues (optional), followers (optional), match (optional), sort (optional), order (optional), limit (optional).`;
+const DESCRIPTION = `Search GitHub repositories using GitHub's repository search API with comprehensive filtering.
+
+Search Logic (AND operation for multiple terms):
+- Multiple words: "react typescript" → repositories containing BOTH "react" AND "typescript"
+- Exact phrases: "web framework" → repositories with exact phrase "web framework"
+- Mixed: "machine learning" python → exact phrase "machine learning" AND word "python"
+- Filter combinations: language:javascript stars:>1000 → JavaScript repos with 1000+ stars
+
+Supported Filters: language, stars (ranges), topics, owner/org, license, dates (created/updated), 
+size, forks, community metrics (good-first-issues, help-wanted), archived status, visibility.
+
+Examples:
+- Popular projects: stars:">1000" language:typescript
+- Beginner-friendly: good-first-issues:">5" stars:"100..5000"
+- Recent quality: created:">2023-01-01" stars:">500"
+- Organization repos: owner:microsoft language:python`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -84,7 +99,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query. START SIMPLE: Use 1-2 words with NO filters first (e.g., "react", "auth"). Add qualifiers only after initial search.'
+            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: react typescript (both words), "web framework" (exact phrase), "machine learning" python (phrase + word).'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -92,33 +107,63 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner or organization name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). For private repos, use organizations from api_status_check (user_organizations). Can be a single value or array.'
+            'Repository owner or organization name(s). Format: "microsoft" or ["facebook", "google"]. Do NOT use owner/repo format. Dramatically narrows search scope to specific organizations.'
           ),
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Use when results need refinement.'
+            'Programming language filter (javascript, python, typescript, go, etc). Filters repositories by primary language. Essential for language-specific searches.'
           ),
         stars: z
           .union([
             z.number().int().min(0),
-            z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">1000", ">=500", "<100", "<=50", "10..100", or exact number "50"'
+              ),
           ])
           .optional()
-          .describe('Stars filter. Supports ranges and thresholds.'),
+          .describe(
+            'Star count filter. Format: ">1000" (more than), ">=500" (more than or equal), "<100" (less than), "<=50" (less than or equal), "100..1000" (range), "500" (exact). Examples from docs: ">1000", "100..5000", "<100"'
+          ),
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Topics filter. Can be a single value or array.'),
-        forks: z.number().optional().describe('Number of forks filter.'),
-
-        // UPDATED: Match CLI parameter name exactly
-        numberOfTopics: z
-          .number()
+          .describe(
+            'Repository topics filter. Examples: "machine-learning", ["react", "typescript"]. Topics use kebab-case format (machine-learning, web-development).'
+          ),
+        forks: z
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">100", ">=50", "<10", "<=5", "10..100", or exact number "5"'
+              ),
+          ])
           .optional()
           .describe(
-            'Filter by number of topics (indicates documentation quality).'
+            'Fork count filter. Format: ">100" (more than), ">=50" (more than or equal), "<10" (less than), "<=5" (less than or equal), "10..100" (range), "5" (exact). Examples from docs: ">100", "10..100", "<10"'
+          ),
+
+        // Match CLI parameter name exactly
+        'number-topics': z
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">5", ">=3", "<10", "<=2", "3..10", or exact number "5"'
+              ),
+          ])
+          .optional()
+          .describe(
+            'Number of topics filter. Format: ">5" (many topics), ">=3" (at least 3), "<10" (few topics), "1..3" (range), "5" (exact). Well-documented projects typically have 3-10 topics.'
           ),
 
         // QUALITY & STATE FILTERS
@@ -126,41 +171,61 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'License filter. Works well as array ["mit", "apache-2.0"].'
+            'License filter. Examples: "mit", "apache-2.0", ["mit", "apache-2.0"]. Common licenses: mit, apache-2.0, gpl-3.0, bsd-3-clause.'
           ),
         archived: z
           .boolean()
           .optional()
-          .describe('Filter archived repositories (true/false).'),
-        includeForks: z
+          .describe(
+            'Archive status filter. false (active repos only), true (archived repos only). Use false to find actively maintained projects.'
+          ),
+        'include-forks': z
           .enum(['false', 'true', 'only'])
           .optional()
           .describe(
-            'Include forks: false (exclude), true (include), only (forks only).'
+            'Fork inclusion. "false" (exclude forks), "true" (include forks), "only" (forks only). Use "false" for original projects.'
           ),
         visibility: z
           .enum(['public', 'private', 'internal'])
           .optional()
-          .describe('Repository visibility filter.'),
+          .describe(
+            'Repository visibility. "public" (open source), "private" (private repos you have access to), "internal" (organization internal).'
+          ),
 
         // DATE & SIZE FILTERS
         created: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
+            'Invalid date format. Use: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "<=2023-12-31", "2020-01-01..2023-12-31", or exact date "2023-01-01"'
+          )
           .optional()
           .describe(
-            'Created date filter. Format: ">2020-01-01", "<2023-12-31".'
+            'Repository creation date filter. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "<=2023-12-31" (on or before), "2020-01-01..2023-12-31" (range), "2023-01-01" (exact). Examples from docs: ">2020-01-01", "2023-01-01..2023-12-31"'
           ),
         updated: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
+            'Invalid date format. Use: ">2024-01-01", ">=2024-01-01", "<2022-01-01", "<=2022-01-01", "2023-01-01..2024-12-31", or exact date "2024-01-01"'
+          )
           .optional()
-          .describe('Updated date filter. Good for finding active projects.'),
+          .describe(
+            'Last updated date filter. Format: ">2024-01-01" (recently updated), ">=2024-01-01" (on or after), "<2022-01-01" (not recently updated), "2023-01-01..2024-12-31" (range). Essential for finding actively maintained projects. Examples from docs: ">2024-01-01", "2022-01-01..2023-12-31"'
+          ),
         size: z
           .string()
+          .regex(
+            /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+            'Invalid size format. Use: ">1000", ">=500", "<100", "<=50", "100..1000", or exact number "500"'
+          )
           .optional()
-          .describe('Repository size filter in KB. Format: ">1000", "<500".'),
+          .describe(
+            'Repository size filter in KB. Format: ">1000" (large projects), ">=500" (medium-large), "<100" (small projects), "<=50" (tiny), "100..1000" (medium range), "500" (exact). Examples from docs: ">1000", "100..1000", "<100"'
+          ),
 
         // COMMUNITY FILTERS - Match CLI parameter names exactly
-        goodFirstIssues: z
+        'good-first-issues': z
           .union([
             z.number().int().min(0),
             z
@@ -172,9 +237,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Good first issues count. WORKING: Filter for beginner-friendly projects. EXCELLENT when combined with stars "100..5000" for quality beginner projects.'
+            'Good first issues count. Format: ">5" (many beginner issues), "1..10" (some beginner issues). Perfect for finding beginner-friendly open source projects.'
           ),
-        helpWantedIssues: z
+        'help-wanted-issues': z
           .union([
             z.number().int().min(0),
             z
@@ -186,15 +251,30 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Help wanted issues count. Good for finding projects needing contributors.'
+            'Help wanted issues count. Format: ">10" (many help wanted), "1..5" (some help wanted). Great for finding projects actively seeking contributors.'
           ),
-        followers: z.number().optional().describe('Followers count filter.'),
+        followers: z
+          .union([
+            z.number().int().min(0),
+            z
+              .string()
+              .regex(
+                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
+                'Invalid format. Use: ">1000", ">=500", "<100", "<=50", "100..1000", or exact number "500"'
+              ),
+          ])
+          .optional()
+          .describe(
+            'Repository owner followers count. Format: ">1000" (popular developers), ">=500" (established developers), "<100" (smaller developers), "100..1000" (range). Indicates developer/org reputation.'
+          ),
 
         // SEARCH SCOPE
         match: z
           .enum(['name', 'description', 'readme'])
           .optional()
-          .describe('Search scope: name, description, or readme content.'),
+          .describe(
+            'Search scope. "name" (repository names only), "description" (descriptions only), "readme" (README content). Default searches all fields.'
+          ),
 
         // SORTING & LIMITS - Match CLI defaults exactly
         sort: z
@@ -207,12 +287,16 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .default('best-match')
-          .describe('Sort criteria for results.'),
+          .describe(
+            'Sort criteria. "stars" (popularity), "updated" (recent activity), "forks" (community engagement), "help-wanted-issues" (contribution opportunities), "best-match" (relevance).'
+          ),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Sort order direction.'),
+          .describe(
+            'Sort order direction. "desc" (descending, highest first), "asc" (ascending, lowest first). Default is descending for most useful results.'
+          ),
         limit: z
           .number()
           .int()
@@ -220,7 +304,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe('Maximum results to return (1-100). Default: 30'),
+          .describe(
+            'Maximum number of repositories to return (1-100). Default: 30. Higher values may increase response time.'
+          ),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -230,7 +316,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args): Promise<CallToolResult> => {
+    async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
       try {
         // Extract owner/repo from query if present
         const queryInfo = args.query
@@ -248,7 +334,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         }
 
         // Update parameters with extracted information
-        const enhancedArgs = {
+        const enhancedArgs: GitHubReposSearchParams = {
           ...args,
           query: queryInfo.cleanedQuery || args.query,
           owner: finalOwner,
@@ -281,7 +367,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
             !enhancedArgs.visibility
           ) {
             // Try searching with private visibility for organization repos
-            const privateSearchArgs = {
+            const privateSearchArgs: GitHubReposSearchParams = {
               ...enhancedArgs,
               visibility: 'private' as const,
             };
@@ -487,9 +573,13 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   // CORE FILTERS
   addArg('owner', 'owner', !hasEmbeddedQualifiers);
   addArg('language', 'language', !hasEmbeddedQualifiers);
-  addArg('forks', 'forks', !hasEmbeddedQualifiers);
+  addArg('forks', 'forks', !hasEmbeddedQualifiers, value =>
+    typeof value === 'number' ? value.toString() : value.trim()
+  );
   addArg('topic', 'topic', !hasEmbeddedQualifiers);
-  addArg('numberOfTopics', 'number-topics');
+  addArg('number-topics', 'number-topics', true, value =>
+    typeof value === 'number' ? value.toString() : value.trim()
+  );
 
   addArg('stars', 'stars', !hasEmbeddedQualifiers, value =>
     typeof value === 'number' ? value.toString() : value.trim()
@@ -497,7 +587,7 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
   // QUALITY & STATE FILTERS
   addArg('archived', 'archived');
-  addArg('includeForks', 'include-forks');
+  addArg('include-forks', 'include-forks');
   addArg('visibility', 'visibility');
   addArg('license', 'license');
 
@@ -507,13 +597,15 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   addArg('size', 'size');
 
   // COMMUNITY FILTERS
-  addArg('goodFirstIssues', 'good-first-issues', true, value =>
+  addArg('good-first-issues', 'good-first-issues', true, value =>
     typeof value === 'number' ? value.toString() : value
   );
-  addArg('helpWantedIssues', 'help-wanted-issues', true, value =>
+  addArg('help-wanted-issues', 'help-wanted-issues', true, value =>
     typeof value === 'number' ? value.toString() : value
   );
-  addArg('followers', 'followers');
+  addArg('followers', 'followers', true, value =>
+    typeof value === 'number' ? value.toString() : value.trim()
+  );
 
   // SEARCH SCOPE
   addArg('match', 'match');

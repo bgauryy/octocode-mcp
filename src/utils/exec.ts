@@ -107,9 +107,9 @@ function escapeShellArg(
     shellType = isWindows ? 'cmd' : 'unix';
   }
 
-  // Special handling for GitHub search queries
+  // Special handling for GitHub search queries to preserve AND logic
   if (isGitHubQuery) {
-    // If the argument already contains quotes, preserve them
+    // If the argument already contains quotes, preserve them for exact phrases
     if (arg.includes('"')) {
       // For Unix-like shells, wrap the entire argument in single quotes
       if (shellType === 'unix') {
@@ -121,6 +121,14 @@ function escapeShellArg(
       }
       // For PowerShell
       return `'${arg.replace(/'/g, "''")}'`;
+    }
+
+    // For space-separated terms (AND search), minimize escaping
+    if (arg.includes(' ') && shellType === 'unix') {
+      // Only escape if contains dangerous shell characters
+      if (!/[;&|<>$`\\]/.test(arg)) {
+        return `"${arg}"`;
+      }
     }
   }
 
@@ -162,16 +170,31 @@ function escapeWindowsCmdArg(arg: string): string {
 
 /**
  * Escape arguments for Unix shells with special handling for GitHub CLI queries
+ * Preserves AND search logic by not over-escaping space-separated terms
  */
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
-  // If it's a GitHub search query with special characters or spaces
-  if (isGitHubQuery && (arg.includes(' ') || /[:"']/g.test(arg))) {
-    // Preserve existing quotes if present
+  // For GitHub search queries, we need to preserve AND logic
+  if (isGitHubQuery) {
+    // If the query contains quotes, preserve them for exact phrase matching
     if (arg.includes('"')) {
+      // Use single quotes to wrap the entire query while preserving internal quotes
       return `'${arg.replace(/'/g, "'\"'\"'")}'`;
     }
-    // Add double quotes for terms that need them
-    return `"${arg}"`;
+
+    // For space-separated terms (AND search), only escape if absolutely necessary
+    // GitHub CLI expects space-separated terms for AND logic
+    if (arg.includes(' ') && !/[;&|<>$`\\]/.test(arg)) {
+      // Only wrap in quotes if it contains shell metacharacters beyond spaces
+      return `"${arg}"`;
+    }
+
+    // For single terms or terms with special chars, escape normally
+    if (/[;&|<>$`\\]/.test(arg)) {
+      return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+    }
+
+    // Simple terms don't need escaping
+    return arg;
   }
 
   // Standard Unix shell escaping for other arguments

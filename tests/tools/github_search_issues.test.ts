@@ -205,7 +205,7 @@ describe('GitHub Search Issues Tool', () => {
         author: 'developer1',
         assignee: 'maintainer1',
         state: 'open',
-        labels: 'bug',
+        label: 'bug',
         language: 'typescript',
         created: '>2023-01-01',
         sort: 'created',
@@ -250,9 +250,9 @@ describe('GitHub Search Issues Tool', () => {
 
       await mockServer.callTool('githubSearchIssues', {
         query: 'help wanted',
-        noAssignee: true,
-        noLabel: true,
-        noMilestone: true,
+        'no-assignee': true,
+        'no-label': true,
+        'no-milestone': true,
         archived: false,
         locked: true,
         visibility: 'public',
@@ -706,7 +706,7 @@ describe('GitHub Search Issues Tool', () => {
 
       await mockServer.callTool('githubSearchIssues', {
         query: 'memory leak in React hooks',
-        labels: 'bug & performance',
+        label: 'bug & performance',
         milestone: 'v2.0 release',
       });
 
