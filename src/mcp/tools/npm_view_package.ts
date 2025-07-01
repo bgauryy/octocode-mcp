@@ -13,7 +13,7 @@ import { executeNpmCommand } from '../../utils/exec';
 
 export const NPM_VIEW_PACKAGE_TOOL_NAME = 'npmViewPackage';
 
-const DESCRIPTION = `View detailed NPM package information including repository URL, exports, version history, dependencies, and download stats. Returns optimized metadata for code navigation. Parameters: packageName (required).`;
+const DESCRIPTION = `Get detailed NPM package information including version, description, repository URL, size, and download statistics. Essential for understanding package details before installation. Returns optimized metadata for package evaluation and code navigation.`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(
@@ -25,7 +25,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'NPM package name (e.g., "react", "express", "@types/node")'
+            'NPM package name (e.g., "react", "express", "@types/node"). Include @ prefix for scoped packages.'
           ),
       },
       annotations: {

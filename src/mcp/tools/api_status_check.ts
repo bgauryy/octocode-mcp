@@ -5,7 +5,7 @@ import { createResult } from '../responses';
 import { ERROR_MESSAGES } from '../errorMessages';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `Check GitHub and NPM authentication status. Returns connected status and GitHub organizations for accessing private repositories. No parameters required.`;
+const DESCRIPTION = `Check GitHub and NPM authentication status and available organizations. Verifies API connections and returns user organizations for accessing private repositories. Essential for troubleshooting access issues. No parameters required.`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {

@@ -397,6 +397,10 @@ export interface OptimizedCodeSearchResult {
       positions: Array<[number, number]>; // Just indices
     }>;
     url: string; // Relative path only
+    repository: {
+      nameWithOwner: string; // owner/repo format
+      url: string; // GitHub repository URL
+    };
   }>;
   total_count: number;
   repository?: {

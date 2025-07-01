@@ -19,7 +19,7 @@ import {
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Search GitHub issues for bug discovery and feature analysis. Supports filtering by state, labels, assignee, dates, and more. Parameters: query (required), owner (optional - GitHub username/org, NOT owner/repo), repo (optional - repository name, use with owner for specific repo), app (optional), archived (optional), assignee (optional), author (optional), closed (optional), commenter (optional), comments (optional), created (optional), includePrs (optional), interactions (optional), involves (optional), labels (optional), language (optional), locked (optional), match (optional), mentions (optional), milestone (optional), noAssignee (optional), noLabel (optional), noMilestone (optional), noProject (optional), project (optional), reactions (optional), state (optional), teamMentions (optional), updated (optional), visibility (optional), sort (optional), order (optional), limit (optional).`;
+const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue number, title, state, labels, and metadata for effective issue tracking and analysis.`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
@@ -38,13 +38,13 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           .min(1)
           .optional()
           .describe(
-            'Repository owner/org name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). Use with repo parameter for repository-specific searches.'
+            'Repository owner/organization name only (e.g., "facebook", "microsoft"). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
           .optional()
           .describe(
-            'Repository name only (e.g., "vscode", "react", NOT "owner/repo"). Must be used together with owner parameter.'
+            'Repository name only (e.g., "react", "vscode"). Do NOT include owner prefix. Must be used together with owner parameter.'
           ),
         app: z
           .string()
@@ -119,9 +119,7 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         label: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe(
-            'Label names (bug, feature, etc.). Can be single string or array.'
-          ),
+          .describe('Label names. Can be single string or array.'),
         language: z.string().optional().describe('Repository language'),
         locked: z.boolean().optional().describe('Conversation locked status'),
         match: z

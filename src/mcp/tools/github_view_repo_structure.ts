@@ -11,7 +11,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `Explore repository structure and navigate directories. Auto-detects branches and provides file/folder listings with size information. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), path (optional).`;
+const DESCRIPTION = `Browse GitHub repository file structure and navigate directories. Essential for exploring project layout, finding documentation, configuration files, and source code. Returns file/folder listings with size information. Automatically handles branch detection. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), path (optional - directory path).`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -28,7 +28,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
             'Invalid GitHub username/org format'
           )
           .describe(
-            `Repository owner/org name (e.g., 'microsoft', 'google', NOT 'microsoft/vscode')`
+            'Repository owner/organization name (e.g., "facebook", "microsoft"). Do NOT include repository name.'
           ),
 
         repo: z
@@ -36,14 +36,16 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid repository name format')
-          .describe('Repository name (case-sensitive)'),
+          .describe(`Repository name under a organization. `),
 
         branch: z
           .string()
           .min(1)
           .max(255)
           .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
-          .describe('Branch name. Falls back to default branch if not found'),
+          .describe(
+            'Branch name (e.g., "main", "master", "develop"). Tool will automatically try default branch if specified branch is not found.'
+          ),
 
         path: z
           .string()
@@ -51,7 +53,9 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .default('')
           .refine(path => !path.includes('..'), 'Path traversal not allowed')
           .refine(path => path.length <= 500, 'Path too long')
-          .describe('Directory path within repository. Leave empty for root.'),
+          .describe(
+            'Directory path within repository (e.g., "src", "docs", "src/components"). Leave empty for root directory. Do NOT start with slash.'
+          ),
       },
       annotations: {
         title: 'GitHub Repository Explorer',

@@ -11,7 +11,7 @@ import {
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
-const DESCRIPTION = `Search NPM packages with fuzzy matching. Supports multiple search terms and aggregates results. Use functional keywords like "react hooks", "auth", or "testing". Parameters: queries (required, string or array), searchLimit (optional).`;
+const DESCRIPTION = `Search NPM packages by name or functionality keywords. Supports multiple search terms for comprehensive package discovery. Returns package name, version, description, keywords, and repository information. Best for finding JavaScript/TypeScript libraries and tools.`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
@@ -25,7 +25,7 @@ export function registerNpmSearchTool(server: McpServer) {
         queries: z
           .union([z.string(), z.array(z.string())])
           .describe(
-            'Search terms for packages. Use functionality keywords: "react hooks", "cli tool", "testing"'
+            'Search terms for NPM packages (e.g., "react hooks", ["typescript", "eslint"], "data visualization"). Use functionality keywords rather than exact package names for best results.'
           ),
         searchLimit: z
           .number()

@@ -356,6 +356,16 @@ async function executeCommand(
     if (shouldTreatAsError) {
       const errorType =
         type === 'npm' ? 'NPM command error' : 'GitHub CLI command error';
+
+      // Enhanced error messaging for common GitHub issues
+      if (type === 'github' && stderr.includes('404')) {
+        const isRepoNotFound = stderr.includes('Not Found');
+        const enhancedMessage = isRepoNotFound
+          ? `${stderr}\n\nThis is often due to incorrect repository name. Use github_search_code to find the correct repository.`
+          : stderr;
+        return createErrorResult(errorType, new Error(enhancedMessage));
+      }
+
       return createErrorResult(errorType, new Error(stderr));
     }
 
