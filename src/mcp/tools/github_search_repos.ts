@@ -46,7 +46,11 @@ import {
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Search GitHub repositories by name, description, topics, language, or organization. Find projects based on stars, forks, activity, and community metrics. Returns repository details including name, description, stars, language, and owner information for project discovery.`;
+const DESCRIPTION = `Search GitHub repositories by name, description, topics, language, or organization. Find projects based on stars, forks, activity, and community metrics. Returns repository details including name, description, stars, language, and owner information for project discovery.
+
+Search Syntax - ALL terms must be present (AND logic):
+Multiple search terms require ALL to be found in the repository (name, description, or README).
+Use quotes for exact phrase matching. Additional filters supported via parameters.`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -261,12 +265,15 @@ export function registerSearchGitHubReposTool(server: McpServer) {
             'Repository owner followers count. Format: ">1000" (popular developers), ">=500" (established developers), "<100" (smaller developers), "100..1000" (range).'
           ),
 
-        // SEARCH SCOPE
+        // SEARCH SCOPE - Match CLI exactly
         match: z
-          .enum(['name', 'description', 'readme'])
+          .union([
+            z.enum(['name', 'description', 'readme']),
+            z.array(z.enum(['name', 'description', 'readme'])),
+          ])
           .optional()
           .describe(
-            'Search scope. "name" (repository names only), "description" (descriptions only), "readme" (README content).'
+            'Search scope. "name" (repository names only), "description" (descriptions only), "readme" (README content). Can be single value or array.'
           ),
 
         // SORTING & LIMITS - Match CLI defaults exactly
@@ -303,7 +310,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
+    async (args): Promise<CallToolResult> => {
       try {
         // Extract owner/repo from query if present
         const queryInfo = args.query
