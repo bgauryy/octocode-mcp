@@ -5,6 +5,36 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.8] - 2025-01-07 - Enhanced Repository Resolution & Discovery
+
+### 🔍 ENHANCED: Repository Resolution Intelligence & Discovery Optimization
+
+#### Enhanced
+- **Smart Repository Resolution**: Improved repository identification and URL parsing for more accurate repository discovery
+- **Repository Metadata Optimization**: Enhanced repository information extraction with better fallback strategies
+- **Cross-Reference Resolution**: Improved linking between NPM packages and their GitHub repositories
+- **Repository Discovery Logic**: Enhanced discovery algorithms for better repository matching and validation
+
+#### Fixed
+- **Repository URL Parsing**: Resolved edge cases in repository URL identification and normalization
+- **Metadata Extraction**: Fixed repository metadata parsing for complex repository structures
+- **Repository Validation**: Improved validation logic for repository existence and accessibility
+- **Cross-Platform Repository Links**: Enhanced repository link resolution across different platforms and hosting services
+
+#### Technical Improvements
+- **Repository Cache Intelligence**: Optimized repository metadata caching for faster subsequent lookups
+- **URL Normalization**: Enhanced repository URL standardization and cleaning
+- **Repository Discovery Performance**: Improved search algorithms for faster repository identification
+- **Error Recovery**: Better error handling for repository resolution failures with intelligent fallbacks
+
+#### User Experience
+- **Clearer Repository Information**: More accurate and comprehensive repository details in search results
+- **Faster Repository Discovery**: Optimized repository lookup and validation processes
+- **Better Error Messages**: Enhanced error reporting for repository resolution issues with actionable guidance
+- **Improved Cross-References**: Better linking between packages and their source repositories
+
+---
+
 ## [2.3.7] - 2025-06-30 - Search Optimization & Code Cleanup
 
 ### 🎯 ENHANCED: Search Intelligence & System Optimization
