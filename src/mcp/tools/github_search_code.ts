@@ -27,16 +27,22 @@ export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
 const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API.
 
-Search Syntax (all terms must be present with AND logic):
-- Multiple words: react lifecycle → finds files with BOTH "react" AND "lifecycle" (separate words)
-- Exact phrases: "error handling" → finds exact phrase "error handling" (quoted phrase)
-- Mixed: "async function" timeout → finds exact phrase "async function" AND word "timeout"
-- Complex: useState useEffect "custom hook" → finds "useState" AND "useEffect" AND exact phrase "custom hook"
-- Advanced: authentication authorization "jwt token" → finds "authentication" AND "authorization" AND exact phrase "jwt token"
-- Framework: "React.Component" "componentDidMount" → finds both exact phrases in same file
+Never use filters and flags on exploretory searches and on initial searches.
+Use filters and flags on subsequent searches when you know what to search for or if the user asks for it explicitly.
+Using too many flags might make miss relevant results. Use filters and flags to narrow down the results when getting too many.
 
-Key difference: Quotes create exact phrases, no quotes = individual words (all must be present).
-Start with 1-2 terms, add more to narrow results. Use filters for precision.`;
+Search Syntax - ALL terms must be present (AND logic):
+The search finds files that contain ALL specified terms. Each space-separated term is required to be present in the same file.
+- Multiple terms: All individual words must exist in the file
+- Quoted phrases: Exact phrase matching for multi-word expressions  
+- Mixed terms: Combination of individual words AND exact phrases, all must be present
+- Additional filters: Language, owner, repository, filename, extension, size and other flags supported
+
+Key behavior: All search terms are combined with AND logic - every term must be found in the file.
+Quotes create exact phrase matching, unquoted terms are individual word requirements.
+Start with 1-2 terms, add more to narrow results. Use filters and flags for precision.
+
+`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -48,42 +54,42 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: react lifecycle (both words), "error handling" (exact phrase), async await "try catch" (words + phrase), "function definition" variable scope (phrase + words)'
+            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases.'
           ),
 
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter (javascript, python, typescript, go, etc). Narrows search to specific language files. Use for language-specific searches.'
+            'Programming language filter. Narrows search to specific language files. Use for language-specific searches.'
           ),
 
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner or organization name(s) to search within. Format: "microsoft" or ["facebook", "google"]. Drastically narrows search scope. Do NOT use owner/repo format.'
+            'Repository owner/organization name(s) to search within (e.g., "facebook", ["google", "microsoft"]). Use this to search within specific organizations. Do NOT use owner/repo format - just the organization/username.'
           ),
 
         repo: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Filter on specific repository(ies). Format: "owner/repo" or ["microsoft/vscode", "facebook/react"]. Use for repository-specific searches.'
+            'Filter on specific repository(ies). Must use full "owner/repo" format (e.g., "facebook/react", ["vuejs/vue", "angular/angular"]). Use this for searching within specific repositories.'
           ),
 
         filename: z
           .string()
           .optional()
           .describe(
-            'Target specific filename or pattern. Examples: "package.json", "*.test.js", "Dockerfile". Use for file-specific searches.'
+            'Target specific filename or pattern. Use for file-specific searches.'
           ),
 
         extension: z
           .string()
           .optional()
           .describe(
-            'File extension filter (js, py, ts, go, etc). Alternative to language parameter. Examples: "js", "py", "tsx".'
+            'File extension filter. Alternative to language parameter.'
           ),
 
         match: z
@@ -101,7 +107,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           )
           .optional()
           .describe(
-            'File size filter in KB. Format: ">10" (larger than), ">=5" (at least), "<100" (smaller than), "<=50" (at most), "10..50" (range), "25" (exact). Examples from docs: ">10", "10..50", "<100"'
+            'File size filter in KB. Format: ">N" (larger than), "<N" (smaller than), "N..M" (range), "N" (exact).'
           ),
 
         limit: z
@@ -248,6 +254,10 @@ function transformToOptimizedFormat(
           ) || [],
       })) || [],
     url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
+    repository: {
+      nameWithOwner: item.repository.nameWithOwner,
+      url: item.repository.url,
+    },
   }));
 
   const result: OptimizedCodeSearchResult = {

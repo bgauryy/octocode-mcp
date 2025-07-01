@@ -5,11 +5,10 @@ import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
-import { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME } from './github_view_repo_structure';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetch file content from GitHub repositories. Use ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} first to explore repository structure and find exact file paths. Supports automatic branch fallback (main/master) and handles files up to 300KB. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), filePath (required).`;
+const DESCRIPTION = `Fetch file content from GitHub repositories. Automatically handles branch fallback (main/master) and files up to 300KB. Returns decoded file content with metadata. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), filePath (required).`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -23,7 +22,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .max(100)
           .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/)
           .describe(
-            `Repository owner/org name (e.g., 'microsoft', 'google', NOT 'microsoft/vscode')`
+            `Repository owner/organization name (e.g., 'facebook', 'microsoft'). Do NOT include repository name here.`
           ),
         repo: z
           .string()
@@ -31,19 +30,21 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .max(100)
           .regex(/^[a-zA-Z0-9._-]+$/)
           .describe(
-            `Repository name only (e.g., 'vscode', 'react', NOT 'microsoft/vscode')`
+            `Repository name only (e.g., 'react', 'vscode'). Do NOT include owner/org prefix.`
           ),
         branch: z
           .string()
           .min(1)
           .max(255)
           .regex(/^[^\s]+$/)
-          .describe(`Branch name. Falls back to main/master if not found`),
+          .describe(
+            `Branch name (e.g., 'main', 'master'). Tool will automatically try 'main' and 'master' if specified branch is not found.`
+          ),
         filePath: z
           .string()
           .min(1)
           .describe(
-            `Exact file path from repo root (e.g., src/index.js, README.md)`
+            `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.`
           ),
       },
       annotations: {
@@ -100,7 +101,7 @@ async function fetchGitHubFileContent(
           const repoErrorMsg = repoCheckResult.content[0].text as string;
           if (repoErrorMsg.includes('404')) {
             return createResult({
-              error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
+              error: `Repository "${owner}/${repo}" not found. This is often due to incorrect repository name. Steps to resolve:\n1. Use github_search_code with query="${filePath.split('/').pop()}" owner="${owner}" to find the correct repository\n2. Verify the exact repository name\n3. Check if the repository might have been renamed or moved`,
             });
           } else if (repoErrorMsg.includes('403')) {
             return createResult({

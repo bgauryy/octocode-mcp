@@ -129,7 +129,11 @@ export interface GitHubReposSearchParams
   created?: string;
   'include-forks'?: 'false' | 'true' | 'only';
   license?: string | string[]; // Support both single and array
-  match?: 'name' | 'description' | 'readme';
+  match?:
+    | 'name'
+    | 'description'
+    | 'readme'
+    | ('name' | 'description' | 'readme')[];
   updated?: string;
   visibility?: 'public' | 'private' | 'internal';
   'good-first-issues'?: string | number; // Support both string ranges and numbers
@@ -397,6 +401,10 @@ export interface OptimizedCodeSearchResult {
       positions: Array<[number, number]>; // Just indices
     }>;
     url: string; // Relative path only
+    repository: {
+      nameWithOwner: string; // owner/repo format
+      url: string; // GitHub repository URL
+    };
   }>;
   total_count: number;
   repository?: {

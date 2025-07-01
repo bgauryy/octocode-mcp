@@ -20,7 +20,7 @@ import {
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `Search pull requests for implementation discovery and code review analysis. Supports filtering by state, review status, branches, and more. Parameters: query (required), owner (optional - GitHub username/org, NOT owner/repo), repo (optional - repository name, use with owner for specific repo), author (optional), assignee (optional), mentions (optional), commenter (optional), involves (optional), reviewedBy (optional), reviewRequested (optional), state (optional), head (optional), base (optional), language (optional), created (optional), updated (optional), mergedAt (optional), closed (optional), draft (optional), checks (optional), merged (optional), review (optional), limit (optional), sort (optional), order (optional).`;
+const DESCRIPTION = `Search GitHub pull requests for code changes, feature implementations, and bug fixes. Find PRs by keywords, state, author, review status, or repository. Returns PR number, title, state, branches, and review information for code review analysis.`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
@@ -38,13 +38,13 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Repository owner/org name only (e.g., "microsoft", "google", NOT "microsoft/vscode"). Use with repo parameter for repository-specific searches.'
+            'Repository owner/organization name only (e.g., "facebook", "microsoft"). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
           .optional()
           .describe(
-            'Repository name only (e.g., "vscode", "react", NOT "owner/repo"). Must be used together with owner parameter.'
+            'Repository name only (e.g., "react", "vscode"). Do NOT include owner prefix. Must be used together with owner parameter.'
           ),
         author: z.string().optional().describe('GitHub username of PR author'),
         assignee: z.string().optional().describe('GitHub username of assignee'),
@@ -64,10 +64,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .optional()
           .describe('PR state. Default: all'),
         head: z.string().optional().describe('Source branch name'),
-        base: z
-          .string()
-          .optional()
-          .describe('Target branch name (main, develop, etc.)'),
+        base: z.string().optional().describe('Target branch name'),
         language: z.string().optional().describe('Repository language'),
         created: z
           .string()

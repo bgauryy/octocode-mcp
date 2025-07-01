@@ -273,10 +273,15 @@ export async function executeGitHubCommand(
       (arg.includes(':') || arg.startsWith('(')) &&
       !arg.startsWith('--');
 
-    // Don't escape GitHub search qualifiers - they need to be passed as-is
-    // This includes qualifiers like "language:typescript", "user:microsoft", "org:microsoft"
-    // and complex expressions like "(user:microsoft OR org:microsoft)"
+    // GitHub search qualifiers need special handling
+    // Most qualifiers can be passed as-is, but those with shell metacharacters need escaping
     if (isGitHubQualifier) {
+      // Check if the qualifier contains shell metacharacters that need escaping
+      if (/[<>&|;`$\\]/.test(arg)) {
+        // Escape qualifiers that contain shell metacharacters like size:<1000, size:>500
+        return escapeShellArg(arg, shellConfig.type, false);
+      }
+      // Safe qualifiers like "language:typescript", "user:microsoft" can be passed as-is
       return arg;
     }
 
@@ -356,6 +361,16 @@ async function executeCommand(
     if (shouldTreatAsError) {
       const errorType =
         type === 'npm' ? 'NPM command error' : 'GitHub CLI command error';
+
+      // Enhanced error messaging for common GitHub issues
+      if (type === 'github' && stderr.includes('404')) {
+        const isRepoNotFound = stderr.includes('Not Found');
+        const enhancedMessage = isRepoNotFound
+          ? `${stderr}\n\nThis is often due to incorrect repository name. Use github_search_code to find the correct repository.`
+          : stderr;
+        return createErrorResult(errorType, new Error(enhancedMessage));
+      }
+
       return createErrorResult(errorType, new Error(stderr));
     }
 
