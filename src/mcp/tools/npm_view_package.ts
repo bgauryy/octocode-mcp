@@ -13,7 +13,25 @@ import { executeNpmCommand } from '../../utils/exec';
 
 export const NPM_VIEW_PACKAGE_TOOL_NAME = 'npmViewPackage';
 
-const DESCRIPTION = `Get detailed NPM package information including version, description, repository URL, size, and download statistics. Essential for understanding package details before installation. Returns optimized metadata for package evaluation and code navigation.`;
+const DESCRIPTION = `Analyze NPM packages for repository discovery and dependency insights. BRIDGE to GitHub ecosystem.
+
+PACKAGE ANALYSIS CAPABILITIES:
+- Repository URL discovery for GitHub exploration
+- Version history and release patterns
+- Export analysis for implementation understanding
+- Dependency metadata for ecosystem mapping
+
+GITHUB INTEGRATION:
+- Provides repository links for GitHub repository tools
+- Connects package metadata to source code analysis
+- Enables package-to-implementation research workflows
+- Essential for dependency and alternative evaluation
+
+USE CASES:
+- Repository discovery from package names
+- Version analysis and security assessment
+- Export structure for integration planning
+- Dependency research and ecosystem exploration`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(
@@ -54,22 +72,110 @@ export function registerNpmViewPackageTool(server: McpServer) {
       } catch (error) {
         const errorMessage = (error as Error).message || '';
 
-        if (errorMessage.includes('not found')) {
+        // Package not found with smart discovery
+        if (
+          errorMessage.includes('not found') ||
+          errorMessage.includes('404')
+        ) {
+          const packageName = args.packageName;
+          const suggestions = [];
+
+          // Check for common naming patterns
+          if (packageName.includes('_')) {
+            suggestions.push(
+              `• Try with dashes: "${packageName.replace(/_/g, '-')}"`
+            );
+          }
+          if (packageName.includes('-')) {
+            suggestions.push(
+              `• Try without dashes: "${packageName.replace(/-/g, '')}"`
+            );
+          }
+          if (!packageName.startsWith('@') && packageName.includes('/')) {
+            suggestions.push(`• Try scoped package: "@${packageName}"`);
+          }
+          if (packageName.startsWith('@')) {
+            suggestions.push(
+              `• Try without scope: "${packageName.split('/')[1]}"`
+            );
+          }
+
+          // Add discovery alternatives
+          suggestions.push('• Use npm_package_search for discovery');
+          suggestions.push(
+            '• Use github_search_repos to find source repository'
+          );
+          suggestions.push('• Check exact spelling on npmjs.com');
+
           return createResult({
-            error:
-              'Package not found. Check spelling and use exact package name from npm',
+            error: `Package "${packageName}" not found on NPM registry.
+
+Try these alternatives:
+${suggestions.join('\n')}
+
+Discovery workflow:
+1. Use npm_package_search with functional terms
+2. Use github_search_repos for related projects
+3. Verify exact package name on npmjs.com`,
           });
         }
 
-        if (errorMessage.includes('network')) {
+        // Network issues with fallback strategies
+        if (
+          errorMessage.includes('network') ||
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('ENOTFOUND')
+        ) {
           return createResult({
-            error: 'Network error. Check internet connection and try again',
+            error: `NPM registry connection failed. Alternative strategies:
+• Check internet connection and npm registry status
+• Use github_search_repos to find package repository
+• Try npm_package_search for broader discovery
+• Visit https://npmjs.com/${args.packageName} directly
+• Retry in a few moments`,
           });
         }
 
+        // NPM CLI issues
+        if (
+          errorMessage.includes('command not found') ||
+          errorMessage.includes('npm')
+        ) {
+          return createResult({
+            error: `NPM CLI issue. Quick fixes:
+• Verify NPM installation: npm --version
+• Update NPM: npm install -g npm@latest  
+• Use github_search_repos to find package repository
+• Check PATH environment variable
+• Try web interface: https://npmjs.com/${args.packageName}`,
+          });
+        }
+
+        // Permission/registry issues
+        if (
+          errorMessage.includes('permission') ||
+          errorMessage.includes('403') ||
+          errorMessage.includes('401')
+        ) {
+          return createResult({
+            error: `NPM registry access issue. Try these solutions:
+• Check npm configuration: npm config get registry
+• Use public registry: npm config set registry https://registry.npmjs.org/
+• Try github_search_repos for package source code
+• Visit package page: https://npmjs.com/${args.packageName}`,
+          });
+        }
+
+        // Generic error with comprehensive fallbacks
         return createResult({
-          error:
-            'Failed to fetch package information. Try again or check npm status',
+          error: `Failed to fetch package "${args.packageName}": ${errorMessage}
+
+Fallback strategies:
+• Use npm_package_search for similar packages
+• Use github_search_repos with package name as query
+• Check package on web: https://npmjs.com/${args.packageName}
+• Verify npm status: https://status.npmjs.org
+• Try alternative package managers (yarn info, pnpm view)`,
         });
       }
     }

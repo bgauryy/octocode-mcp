@@ -5,7 +5,23 @@ import { createResult } from '../responses';
 import { ERROR_MESSAGES } from '../errorMessages';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `Check GitHub and NPM authentication status and available organizations. Verifies API connections and returns user organizations for accessing private repositories. Essential for troubleshooting access issues. No parameters required.`;
+const DESCRIPTION = `Verify API connections and discover available organizations. FIRST STEP for private repository research.
+
+AUTHENTICATION VERIFICATION:
+- Check GitHub and NPM CLI authentication status
+- Troubleshoot access issues before extensive searches
+- Verify API connectivity and permissions
+
+ORGANIZATION DISCOVERY:
+- List available GitHub organizations for scoped searches  
+- Identify accessible private repositories
+- Guide repository search strategy based on permissions
+
+WORKFLOW OPTIMIZATION:
+- Run first when dealing with private/organizational repositories
+- Prevents access errors in subsequent tool usage
+- Informs search scope and strategy decisions
+- Essential for comprehensive organizational research`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {

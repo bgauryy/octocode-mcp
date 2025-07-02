@@ -17,8 +17,6 @@ import { executeGitHubCommand } from '../../utils/exec';
 import {
   ERROR_MESSAGES,
   SUGGESTIONS,
-  createAuthenticationError,
-  createRateLimitError,
   createNoResultsError,
   getErrorWithSuggestion,
 } from '../errorMessages';
@@ -27,22 +25,22 @@ export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
 const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API.
 
-Never use filters and flags on exploretory searches and on initial searches.
-Use filters and flags on subsequent searches when you know what to search for or if the user asks for it explicitly.
-Using too many flags might make miss relevant results. Use filters and flags to narrow down the results when getting too many.
+MULTI-SEARCH STRATEGY (BEST RESULTS):
+- Use SEPARATE searches for different terms instead of complex single queries
+- Example: Search "term1" separately, then "term2" separately vs "term1 term2" together
+- Separate searches find more results and avoid GitHub's restrictive AND logic
 
-Search Syntax - ALL terms must be present (AND logic):
-The search finds files that contain ALL specified terms. Each space-separated term is required to be present in the same file.
-- Multiple terms: All individual words must exist in the file
-- Quoted phrases: Exact phrase matching for multi-word expressions  
-- Mixed terms: Combination of individual words AND exact phrases, all must be present
-- Additional filters: Language, owner, repository, filename, extension, size and other flags supported
+Never use filters on exploratory searches. Use filters to narrow down results when getting too many.
 
-Key behavior: All search terms are combined with AND logic - every term must be found in the file.
-Quotes create exact phrase matching, unquoted terms are individual word requirements.
-Start with 1-2 terms, add more to narrow results. Use filters and flags for precision.
+Search Logic:
+- Single search finds files containing ALL specified terms (restrictive)
+- Multiple separate searches provide broader coverage
+- Start with single-term searches, combine findings from multiple searches
 
-`;
+Quote Usage:
+- Single terms: NO quotes (term1, term2)
+- Multi-word phrases: WITH quotes ("exact phrase matching")
+- NEVER use escaped quotes - searches for literal quote characters`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -180,55 +178,89 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 }
 
 /**
- * Handles various search errors and returns a formatted CallToolResult.
+ * Handles various search errors and returns a formatted CallToolResult with smart fallbacks.
  */
 function handleSearchError(errorMessage: string): CallToolResult {
-  // Common GitHub search errors with helpful suggestions
-  if (errorMessage.includes('JSON')) {
+  // Rate limit with smart timing guidance
+  if (errorMessage.includes('rate limit') || errorMessage.includes('403')) {
     return createResult({
-      error: ERROR_MESSAGES.CLI_INVALID_RESPONSE,
+      error: `GitHub API rate limit reached. Try again in 5-10 minutes, or use these strategies:
+• Search fewer terms per query
+• Use owner/repo filters to narrow scope
+• Try npm package search for package-related queries
+• Use separate searches instead of complex queries`,
     });
   }
 
-  if (errorMessage.includes('authentication')) {
+  // Authentication with clear next steps
+  if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
     return createResult({
-      error: createAuthenticationError(),
+      error: `GitHub authentication required. Fix with:
+1. Run: gh auth login
+2. Verify access: gh auth status
+3. For private repos: use api_status_check to verify org access`,
     });
   }
 
-  if (errorMessage.includes('rate limit')) {
+  // Network/timeout with fallback suggestions
+  if (errorMessage.includes('timed out') || errorMessage.includes('network')) {
     return createResult({
-      error: createRateLimitError(true),
+      error: `Network timeout. Try these alternatives:
+• Reduce search scope with owner or language filters
+• Use github_search_repos to find repositories first
+• Try npm package search for package discovery
+• Check network connection and retry`,
     });
   }
 
-  if (errorMessage.includes('timed out')) {
-    return createResult({
-      error: ERROR_MESSAGES.SEARCH_TIMEOUT,
-    });
-  }
-
+  // Invalid query with specific fixes
   if (
     errorMessage.includes('validation failed') ||
     errorMessage.includes('Invalid query')
   ) {
     return createResult({
-      error: ERROR_MESSAGES.INVALID_QUERY_SYNTAX,
+      error: `Invalid search query. Common fixes:
+• Remove special characters: ()[]{}*?^$|.\\
+• Use quotes only for exact phrases: "error handling"
+• Avoid escaped quotes: use term instead of "term"
+• Try broader terms: "react" instead of "React.Component"`,
     });
   }
 
+  // Repository not found with discovery suggestions
   if (
     errorMessage.includes('repository not found') ||
     errorMessage.includes('owner not found')
   ) {
     return createResult({
-      error: ERROR_MESSAGES.REPO_OR_OWNER_NOT_FOUND,
+      error: `Repository/owner not found. Discovery strategies:
+• Use github_search_repos to find correct names
+• Check for typos in owner/repo names
+• Try without owner filter for broader search
+• Use npm package search if looking for packages`,
     });
   }
 
-  // Generic fallback with guidance
+  // JSON parsing with system guidance
+  if (errorMessage.includes('JSON')) {
+    return createResult({
+      error: `GitHub CLI response parsing failed. System issue - try:
+• Update GitHub CLI: gh extension upgrade
+• Retry in a few moments
+• Use github_search_repos as alternative
+• Check gh auth status for authentication`,
+    });
+  }
+
+  // Generic fallback with progressive strategy
   return createResult({
-    error: `Code search failed: ${errorMessage}\n${SUGGESTIONS.SIMPLIFY_QUERY}`,
+    error: `Code search failed: ${errorMessage}
+
+Progressive recovery strategy:
+1. Try broader search terms
+2. Use github_search_repos to find repositories
+3. Use npm package search for package-related queries
+4. Check github CLI status: gh auth status`,
   });
 }
 
@@ -394,6 +426,23 @@ function validateSearchParameters(
     return ERROR_MESSAGES.QUERY_TOO_LONG_1000;
   }
 
+  // Detect potential quote escaping issues
+  if (
+    params.query.startsWith('"') &&
+    params.query.endsWith('"') &&
+    params.query.length > 2
+  ) {
+    const innerQuery = params.query.slice(1, -1);
+    if (!innerQuery.includes(' ') && innerQuery.length < 50) {
+      return `Query appears to have unnecessary quotes. For single terms, use without quotes. Quotes are only needed for exact phrase matching of multi-word expressions.`;
+    }
+  }
+
+  // Detect escaped quotes in query
+  if (params.query.includes('\\"') || params.query.includes("\\'")) {
+    return `Query contains escaped quotes. For code search, remove the escaping. Only use quotes for exact phrase matching of multi-word expressions.`;
+  }
+
   // Repository validation - ensure owner is provided correctly
   if (
     params.owner &&
@@ -426,12 +475,6 @@ function validateSearchParameters(
     }
   }
 
-  // Note about repository limitations (This is a note, not a hard error)
-  // This return statement was returning null before, so it shouldn't be an issue
-  // if (params.repo || params.owner) {
-  //   return null; // Return warning about repository limitations
-  // }
-
   return null; // No validation errors
 }
 
@@ -442,6 +485,7 @@ function validateSearchParameters(
  * - Multiple terms: react lifecycle -> both terms for AND search
  * - Mixed: "error handling" debug -> phrase + term
  * - Qualifiers: language:javascript -> extracted separately
+ * - Quote escaping issues: automatically fixes common mistakes
  */
 function parseSearchQuery(query: string): {
   searchQuery: string;
@@ -450,11 +494,28 @@ function parseSearchQuery(query: string): {
   const qualifiers: string[] = [];
   const searchTerms: string[] = [];
 
+  // Clean up common quote escaping issues
+  let cleanedQuery = query;
+
+  // Fix escaped quotes that shouldn't be escaped
+  if (cleanedQuery.includes('\\"') && !cleanedQuery.includes(' ')) {
+    cleanedQuery = cleanedQuery.replace(/\\"/g, '');
+  }
+
+  // Fix single-word queries wrapped in quotes unnecessarily
+  if (
+    cleanedQuery.startsWith('"') &&
+    cleanedQuery.endsWith('"') &&
+    !cleanedQuery.slice(1, -1).includes(' ')
+  ) {
+    cleanedQuery = cleanedQuery.slice(1, -1);
+  }
+
   // Regular expression to match quoted strings or individual words/qualifiers
   const tokenRegex = /"([^"]+)"|([^\s]+)/g;
   let match;
 
-  while ((match = tokenRegex.exec(query)) !== null) {
+  while ((match = tokenRegex.exec(cleanedQuery)) !== null) {
     const token = match[1] || match[2]; // match[1] is quoted content, match[2] is unquoted
 
     // Check if it's a qualifier (contains : but not inside quotes)

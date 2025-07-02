@@ -8,7 +8,23 @@ import { executeGitHubCommand } from '../../utils/exec';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetch file content from GitHub repositories. Automatically handles branch fallback (main/master) and files up to 300KB. Returns decoded file content with metadata. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), filePath (required).`;
+const DESCRIPTION = `Access GitHub file content for implementation analysis. USE AFTER repository structure validation.
+
+IMPLEMENTATION ANALYSIS:
+- Examine configuration files, documentation, key source code
+- Understand actual implementations and patterns
+- Extract technical details and architecture decisions
+
+VALIDATION REQUIREMENTS:
+- ALWAYS verify repository structure first with githubViewRepoStructure
+- Confirm file paths exist before accessing
+- Navigate from known structure to specific files
+
+CONTENT CAPABILITIES:
+- Handles text files up to 300KB efficiently
+- Automatic branch fallback (main/master)
+- Provides decoded content with metadata
+- Optimized for code analysis workflows`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -155,18 +171,44 @@ async function fetchGitHubFileContent(
             filePath
           );
           return createResult({
-            error: `File "${filePath}" not found in branch "${branch}". Use github_view_repo_structure to verify path.${searchSuggestion}`,
+            error: `File "${filePath}" not found in branch "${branch}".
+
+Quick fixes:
+• Use github_view_repo_structure to verify path exists
+• Check for typos in file path
+• Try different branch (main/master/develop)${searchSuggestion}
+
+Alternative strategies:
+• Use github_search_code with query="filename:${filePath.split('/').pop()}" owner="${owner}"
+• Use github_search_code with query="path:${filePath}" to find similar paths`,
           });
         } else if (errorMsg.includes('403')) {
           return createResult({
-            error: `Access denied to "${filePath}" in "${owner}/${repo}". Repository or file might be private/archived. Use api_status_check to verify permissions, or github_search_code with query="path:${filePath}" owner="${owner}" to find in accessible repositories.`,
+            error: `Access denied to "${filePath}" in "${owner}/${repo}".
+
+Possible causes & solutions:
+• Private repository: use api_status_check to verify permissions
+• File in private directory: check repository access level
+• Rate limiting: wait 5-10 minutes and retry
+• Authentication: run gh auth login
+
+Alternative approaches:
+• Use github_search_code with query="path:${filePath}" owner="${owner}"
+• Use github_view_repo_structure to explore accessible paths
+• Check repository on GitHub.com for public access`,
           });
         } else if (
           errorMsg.includes('maxBuffer') ||
           errorMsg.includes('stdout maxBuffer length exceeded')
         ) {
           return createResult({
-            error: `File "${filePath}" is too large (>300KB). Use github_search_code with query="path:${filePath}" to search within the file or download directly from GitHub.`,
+            error: `File "${filePath}" is too large (>300KB).
+
+Alternative strategies:
+• Use github_search_code to search within the file
+• Download directly from: https://github.com/${owner}/${repo}/blob/${branch}/${filePath}
+• Use github_view_repo_structure to find smaller related files
+• Look for configuration or summary files instead`,
           });
         } else {
           const searchSuggestion = await suggestCodeSearchFallback(
@@ -174,7 +216,18 @@ async function fetchGitHubFileContent(
             filePath
           );
           return createResult({
-            error: `Failed to fetch "${filePath}". Error: ${errorMsg}. Verify repository name, branch, and file path.${searchSuggestion}`,
+            error: `Failed to fetch "${filePath}": ${errorMsg}
+
+Troubleshooting steps:
+1. Verify repository exists: github_view_repo_structure
+2. Check network connection and GitHub status
+3. Verify authentication: gh auth status
+4. Try different branch names${searchSuggestion}
+
+Recovery strategies:
+• Use github_search_code for content discovery
+• Try github_search_repos to find similar repositories
+• Check file on GitHub.com: https://github.com/${owner}/${repo}/blob/${branch}/${filePath}`,
           });
         }
       }
