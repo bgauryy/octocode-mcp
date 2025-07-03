@@ -70,13 +70,13 @@ describe('GitHub Search Issues Tool', () => {
         items: [
           {
             number: 123,
-            title: 'Bug in component rendering',
+            title: 'Bug in rendering component',
             state: 'open',
             user: { login: 'developer1' },
             repository_url: 'https://api.github.com/repos/facebook/react',
-            labels: [{ name: 'bug' }, { name: 'priority-high' }],
-            created_at: '2023-01-01T00:00:00Z',
-            updated_at: '2023-01-02T00:00:00Z',
+            labels: [{ name: 'bug' }, { name: 'component' }],
+            created_at: '2023-01-15T10:30:00Z',
+            updated_at: '2023-01-16T14:20:00Z',
             html_url: 'https://github.com/facebook/react/issues/123',
             comments: 5,
             reactions: { total_count: 3 },
@@ -89,7 +89,7 @@ describe('GitHub Search Issues Tool', () => {
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockApiResponse),
+              result: mockApiResponse, // Direct object, not JSON string
               command: 'gh api search/issues',
               type: 'github',
             }),
@@ -126,11 +126,14 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('githubSearchIssues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'memory leak',
         owner: 'facebook',
         repo: 'react',
       });
+
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'api',
@@ -164,10 +167,13 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('githubSearchIssues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'performance',
         owner: 'microsoft',
       });
+
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'api',
@@ -200,7 +206,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('githubSearchIssues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'typescript error',
         author: 'developer1',
         assignee: 'maintainer1',
@@ -212,6 +218,9 @@ describe('GitHub Search Issues Tool', () => {
         order: 'desc',
         limit: 10,
       });
+
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
 
       const expectedQuery = encodeURIComponent(
         'typescript error author:developer1 assignee:maintainer1 language:typescript state:open created:>2023-01-01 label:"bug"'
@@ -248,7 +257,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('githubSearchIssues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'help wanted',
         'no-assignee': true,
         'no-label': true,
@@ -257,6 +266,9 @@ describe('GitHub Search Issues Tool', () => {
         locked: true,
         visibility: 'public',
       });
+
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
 
       const expectedQuery = encodeURIComponent(
         'help wanted no:assignee no:label no:milestone archived:false is:locked is:public'
@@ -289,16 +301,18 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('githubSearchIssues', {
-        query: 'feature request',
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'documentation',
         milestone: 'v2.0',
-        mentions: 'developer1',
-        commenter: 'reviewer1',
-        involves: 'contributor1',
+        mentions: 'maintainer',
+        'team-mentions': 'core-team',
       });
 
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
+
       const expectedQuery = encodeURIComponent(
-        'feature request mentions:developer1 commenter:reviewer1 involves:contributor1 milestone:"v2.0"'
+        'documentation mentions:maintainer milestone:"v2.0" team:core-team'
       );
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -315,12 +329,13 @@ describe('GitHub Search Issues Tool', () => {
         items: [
           {
             number: 456,
-            title: 'Issue without optional fields',
+            title: 'Issue with minimal data',
             state: 'closed',
-            // Missing user, repository_url, labels, reactions
-            created_at: '2023-01-01T00:00:00Z',
-            updated_at: '2023-01-02T00:00:00Z',
-            html_url: 'https://github.com/example/repo/issues/456',
+            // Missing user, labels, reactions
+            repository_url: 'https://api.github.com/repos/test/repo',
+            created_at: '2023-02-01T00:00:00Z',
+            updated_at: '2023-02-02T00:00:00Z',
+            html_url: 'https://github.com/test/repo/issues/456',
             comments: 0,
           },
         ],
@@ -331,7 +346,7 @@ describe('GitHub Search Issues Tool', () => {
         content: [
           {
             text: JSON.stringify({
-              result: JSON.stringify(mockApiResponse),
+              result: mockApiResponse, // Direct object, not JSON string
               command: 'gh api search/issues',
               type: 'github',
             }),
@@ -340,7 +355,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchIssues', {
-        query: 'test issue',
+        query: 'minimal data',
       });
 
       expect(result.isError).toBe(false);
@@ -368,7 +383,7 @@ describe('GitHub Search Issues Tool', () => {
         ],
       });
 
-      await mockServer.callTool('githubSearchIssues', {
+      const result = await mockServer.callTool('githubSearchIssues', {
         query: 'stale issues',
         created: '<2022-01-01',
         updated: '>2023-01-01',
@@ -377,6 +392,9 @@ describe('GitHub Search Issues Tool', () => {
         reactions: 10,
         interactions: 15,
       });
+
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
 
       const expectedQuery = encodeURIComponent(
         'stale issues created:<2022-01-01 updated:>2023-01-01 closed:2023-01-15'
@@ -412,12 +430,11 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchIssues', {
-        query: 'nonexistent-issue-pattern',
+        query: 'nonexistent issue query',
       });
 
-      expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toEqual([]);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No issues found');
     });
   });
 
@@ -541,7 +558,8 @@ describe('GitHub Search Issues Tool', () => {
         query: validQuery,
       });
 
-      expect(result.isError).toBe(false);
+      // Empty results should return an error
+      expect(result.isError).toBe(true);
     });
 
     it('should handle special characters in query', async () => {

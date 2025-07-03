@@ -97,7 +97,9 @@ describe('NPM Package Search Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No packages found');
+      expect(result.content[0].text).toContain(
+        'Package not found on NPM registry'
+      );
     });
   });
 });

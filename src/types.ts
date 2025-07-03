@@ -32,7 +32,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   filename?: string;
   extension?: string;
   path?: string;
-  match?: 'file' | 'path' | ('file' | 'path')[]; // Support array
+  match?: 'file' | 'path';
   size?: string;
   limit?: number;
   visibility?: 'public' | 'private' | 'internal';

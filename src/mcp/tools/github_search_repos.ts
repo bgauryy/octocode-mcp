@@ -690,13 +690,16 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   addArg('match', 'match');
 
   // SORTING AND LIMITS
-  addArg('limit', 'limit');
-  addArg('order', 'order');
-
   const sortBy = params.sort || 'best-match';
   if (sortBy !== 'best-match') {
     args.push(`--sort=${sortBy}`);
   }
+
+  addArg('order', 'order');
+
+  // Always add limit with default of 30
+  const limit = params.limit || 30;
+  args.push(`--limit=${limit}`);
 
   return { command: 'search', args };
 }

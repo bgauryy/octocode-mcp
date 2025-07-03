@@ -15,32 +15,43 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import {
-  ERROR_MESSAGES,
-  SUGGESTIONS,
   createNoResultsError,
   getErrorWithSuggestion,
+  SUGGESTIONS,
 } from '../errorMessages';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API.
+const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API via GitHub CLI.
 
-MULTI-SEARCH STRATEGY (BEST RESULTS):
-- Use SEPARATE searches for different terms instead of complex single queries
-- Example: Search "term1" separately, then "term2" separately vs "term1 term2" together
-- Separate searches find more results and avoid GitHub's restrictive AND logic
+SEARCH STRATEGY FOR BEST RESULTS:
 
-Never use filters on exploratory searches. Use filters to narrow down results when getting too many.
+TERM OPTIMIZATION (IMPORTANT):
+- BEST: Single terms for maximum coverage and relevance
+- GOOD: 2 terms when you need both to be present  
+- RESTRICTIVE: 3+ terms - very specific but may miss relevant results
+- Example: "useState" (best coverage) vs "react hook useState" (specific but restrictive)
+
+MULTI-SEARCH STRATEGY:
+- Use SEPARATE searches for different aspects instead of complex single queries
+- Example: Search "authentication" separately, then "login" separately
+- Separate searches provide broader coverage than restrictive AND logic
 
 Search Logic:
-- Single search finds files containing ALL specified terms (restrictive)
-- Multiple separate searches provide broader coverage
-- Start with single-term searches, combine findings from multiple searches
+- Multiple terms = ALL must be present (AND logic) - very restrictive
+- Single terms = maximum results and coverage
+- Quoted phrases = exact phrase matching
+- Mixed queries: "exact phrase" additional_term (phrase + term)
 
 Quote Usage:
-- Single terms: NO quotes (term1, term2)
-- Multi-word phrases: WITH quotes ("exact phrase matching")
-- NEVER use escaped quotes - searches for literal quote characters`;
+- Single terms: NO quotes (useState, authentication)
+- Multi-word phrases: WITH quotes ("error handling", "user authentication")
+- Mixed queries: "exact phrase" single_term another_term
+
+Filter Usage:
+- All filters use GitHub CLI flags (--language, --owner, --repo, etc.)
+- Combine filters to narrow scope: language + owner, repo + filename
+- Never use filters on exploratory searches - use to refine when too many results`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -52,49 +63,49 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .string()
           .min(1)
           .describe(
-            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases.'
+            'Search query with AND logic between terms. OPTIMIZATION: Single terms give best coverage, 2 terms when both needed, 3+ terms very restrictive. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: "useState" (best coverage), "error handling" (exact phrase), "react hook useState" (specific but restrictive).'
           ),
 
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Narrows search to specific language files. Use for language-specific searches.'
+            'Programming language filter. Uses --language CLI flag. Narrows search to specific language files. Use for language-specific searches.'
           ),
 
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization name(s) to search within (e.g., "facebook", ["google", "microsoft"]). Use this to search within specific organizations. Do NOT use owner/repo format - just the organization/username.'
+            'Repository owner/organization name(s) to search within (e.g., "facebook", ["google", "microsoft"]). Uses --owner CLI flag for organization-wide search. Can be combined with repo parameter for specific repository search. Do NOT use owner/repo format - just the organization/username.'
           ),
 
         repo: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Filter on specific repository(ies). Must use full "owner/repo" format (e.g., "facebook/react", ["vuejs/vue", "angular/angular"]). Use this for searching within specific repositories.'
+            'Filter on specific repository(ies). Uses --repo CLI flag. Two usage patterns: (1) Use with owner parameter - provide just repo name (e.g., owner="facebook", repo="react" → --repo=facebook/react), or (2) Use alone - provide full "owner/repo" format (e.g., "facebook/react" → --repo=facebook/react).'
           ),
 
         filename: z
           .string()
           .optional()
           .describe(
-            'Target specific filename or pattern. Use for file-specific searches.'
+            'Target specific filename or pattern. Uses --filename CLI flag. Use for file-specific searches.'
           ),
 
         extension: z
           .string()
           .optional()
           .describe(
-            'File extension filter. Alternative to language parameter.'
+            'File extension filter. Uses --extension CLI flag. Alternative to language parameter.'
           ),
 
         match: z
-          .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
+          .enum(['file', 'path'])
           .optional()
           .describe(
-            'Search scope: "file" for file content (default), "path" for filenames/paths, or ["file", "path"] for both. Controls where to search for terms.'
+            'Search scope: "file" for file content (default), "path" for filenames/paths. Uses --match CLI flag. Single value only - multiple scopes not supported by GitHub CLI.'
           ),
 
         size: z
@@ -105,7 +116,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           )
           .optional()
           .describe(
-            'File size filter in KB. Format: ">N" (larger than), "<N" (smaller than), "N..M" (range), "N" (exact).'
+            'File size filter in KB. Uses --size CLI flag. Format: ">N" (larger than), "<N" (smaller than), "N..M" (range), "N" (exact).'
           ),
 
         limit: z
@@ -129,12 +140,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     },
     async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
       try {
-        // Validate parameter combinations
-        const validationError = validateSearchParameters(args);
-        if (validationError) {
-          return createResult({ error: validationError });
-        }
-
         const result = await searchGitHubCode(args);
 
         if (result.isError) {
@@ -323,8 +328,8 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 }
 
 /**
- * Build command line arguments for GitHub CLI with improved parameter handling.
- * Preserves quoted phrases and supports both AND search and exact phrase matching.
+ * Build command line arguments for GitHub CLI following the exact CLI format.
+ * Uses proper flags (--flag=value) instead of qualifiers where appropriate.
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
   const args: string[] = ['code'];
@@ -337,49 +342,59 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
     args.push(searchQuery);
   }
 
-  // Add extracted qualifiers from the query
+  // Add extracted qualifiers from the query (these should remain as qualifiers)
   extractedQualifiers.forEach(qualifier => {
     args.push(qualifier);
   });
 
-  // Add explicit parameters as qualifiers
+  // Add explicit parameters as CLI flags (following GitHub CLI format)
   if (params.language && !params.query.includes('language:')) {
-    args.push(`language:${params.language}`);
+    args.push(`--language=${params.language}`);
   }
 
-  if (
+  // Handle owner and repo parameters properly
+  if (params.repo && !params.query.includes('repo:')) {
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    repos.forEach(repo => {
+      // If both owner and repo are provided, combine them for --repo flag
+      if (params.owner && !repo.includes('/')) {
+        const owners = Array.isArray(params.owner)
+          ? params.owner
+          : [params.owner];
+        owners.forEach(owner => args.push(`--repo=${owner}/${repo}`));
+      } else {
+        // Repo is already in owner/repo format or no owner provided
+        args.push(`--repo=${repo}`);
+      }
+    });
+  } else if (
     params.owner &&
     !params.query.includes('org:') &&
     !params.query.includes('user:')
   ) {
+    // Only owner provided, no repo - use --owner flag for organization-wide search
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => args.push(`org:${owner}`));
-  }
-
-  if (params.repo && !params.query.includes('repo:')) {
-    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
-    repos.forEach(repo => args.push(`repo:${repo}`));
+    owners.forEach(owner => args.push(`--owner=${owner}`));
   }
 
   if (params.filename && !params.query.includes('filename:')) {
-    args.push(`filename:${params.filename}`);
+    args.push(`--filename=${params.filename}`);
   }
 
   if (params.extension && !params.query.includes('extension:')) {
-    args.push(`extension:${params.extension}`);
+    args.push(`--extension=${params.extension}`);
   }
 
   if (params.size && !params.query.includes('size:')) {
-    args.push(`size:${params.size}`);
+    args.push(`--size=${params.size}`);
   }
 
-  // Handle match parameter
+  // Handle match parameter - use --match flag
   if (params.match) {
-    const matches = Array.isArray(params.match) ? params.match : [params.match];
-    args.push(`in:${matches.join(',')}`);
+    args.push(`--match=${params.match}`);
   }
 
-  // Add limit
+  // Add limit flag
   if (params.limit) {
     args.push(`--limit=${params.limit}`);
   }
@@ -406,76 +421,9 @@ export async function searchGitHubCode(
       return result;
     } catch (error) {
       const errorMessage = (error as Error).message || '';
-      return handleSearchError(errorMessage); // Delegating error handling
+      return handleSearchError(errorMessage);
     }
   });
-}
-
-/**
- * Enhanced validation with helpful suggestions
- */
-function validateSearchParameters(
-  params: GitHubCodeSearchParams
-): string | null {
-  // Query validation
-  if (!params.query.trim()) {
-    return ERROR_MESSAGES.EMPTY_QUERY;
-  }
-
-  if (params.query.length > 1000) {
-    return ERROR_MESSAGES.QUERY_TOO_LONG_1000;
-  }
-
-  // Detect potential quote escaping issues
-  if (
-    params.query.startsWith('"') &&
-    params.query.endsWith('"') &&
-    params.query.length > 2
-  ) {
-    const innerQuery = params.query.slice(1, -1);
-    if (!innerQuery.includes(' ') && innerQuery.length < 50) {
-      return `Query appears to have unnecessary quotes. For single terms, use without quotes. Quotes are only needed for exact phrase matching of multi-word expressions.`;
-    }
-  }
-
-  // Detect escaped quotes in query
-  if (params.query.includes('\\"') || params.query.includes("\\'")) {
-    return `Query contains escaped quotes. For code search, remove the escaping. Only use quotes for exact phrase matching of multi-word expressions.`;
-  }
-
-  // Repository validation - ensure owner is provided correctly
-  if (
-    params.owner &&
-    typeof params.owner === 'string' &&
-    params.owner.includes('/')
-  ) {
-    return 'Owner parameter should contain only the username/org name, not owner/repo format. For repository-specific searches, use org: or user: qualifiers in the query.';
-  }
-
-  if (Array.isArray(params.owner)) {
-    const hasSlashFormat = params.owner.some(owner => owner.includes('/'));
-    if (hasSlashFormat) {
-      return 'Owner parameter should contain only usernames/org names, not owner/repo format. For repository-specific searches, use repo: qualifier in the query.';
-    }
-  }
-
-  // Add validation for file size limit
-  if (params.size) {
-    if (!/^([<>]\d+|\d+\.\.\d+)$/.test(params.size)) {
-      return ERROR_MESSAGES.INVALID_SIZE_FORMAT;
-    }
-  }
-
-  // Validate search scope
-  if (params.match) {
-    const validScopes = ['file', 'path'];
-    const scopes = Array.isArray(params.match) ? params.match : [params.match];
-    if (!scopes.every(scope => validScopes.includes(scope))) {
-      return ERROR_MESSAGES.INVALID_SEARCH_SCOPE;
-    }
-  }
-
-  return null; // No validation errors
 }
 
 /**

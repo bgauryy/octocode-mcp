@@ -88,15 +88,10 @@ export function registerNpmSearchTool(server: McpServer) {
               );
               allPackages.push(...packages);
             } else if (result.isError) {
-              // Log individual query failures but continue with others
-              console.warn(
-                `NPM search failed for query "${query}":`,
-                result.content?.[0]?.text
-              );
+              // Individual query failures are handled silently, continue with others
             }
           } catch (queryError) {
             // Continue with other queries even if one fails
-            console.warn(`NPM search error for query "${query}":`, queryError);
           }
         }
 
