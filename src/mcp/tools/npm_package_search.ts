@@ -4,6 +4,13 @@ import { createResult } from '../responses';
 import { executeNpmCommand } from '../../utils/exec';
 import { NpmPackage } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ERROR_MESSAGES,
+  getErrorWithSuggestion,
+  createNpmPackageNotFoundError,
+} from '../errorMessages';
+import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
+import { createToolSuggestion } from './utils/validation';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
@@ -96,10 +103,24 @@ export function registerNpmSearchTool(server: McpServer) {
         const deduplicatedPackages = deduplicatePackages(allPackages);
 
         if (deduplicatedPackages.length > 0) {
+          const { nextSteps } = getToolSuggestions(
+            TOOL_NAMES.NPM_PACKAGE_SEARCH,
+            { hasResults: true }
+          );
+
+          const hints = [];
+          if (nextSteps.length > 0) {
+            hints.push('Next steps:');
+            nextSteps.forEach(({ tool, reason }) => {
+              hints.push(`• Use ${tool} ${reason}`);
+            });
+          }
+
           return createResult({
             data: {
               total_count: deduplicatedPackages.length,
               results: deduplicatedPackages,
+              hints: hints.length > 0 ? hints : undefined,
             },
           });
         }
@@ -143,16 +164,20 @@ export function registerNpmSearchTool(server: McpServer) {
           '• Check npm registry status: https://status.npmjs.org'
         );
 
+        const { fallback } = getToolSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH, {
+          errorType: 'no_results',
+        });
+
+        const toolSuggestions = createToolSuggestion(
+          TOOL_NAMES.NPM_PACKAGE_SEARCH,
+          fallback
+        );
+
         return createResult({
-          error: `No packages found for queries: ${queries.join(', ')}
-
-Try these alternatives:
-${fallbackSuggestions.join('\n')}
-
-Discovery strategies:
-• Functional search: "validation", "testing", "charts"
-• Ecosystem search: "react", "typescript", "node"
-• Use github_search_repos for related projects`,
+          error: getErrorWithSuggestion({
+            baseError: createNpmPackageNotFoundError(queries.join(', ')),
+            suggestion: [fallbackSuggestions.join('\n'), toolSuggestions],
+          }),
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -163,12 +188,21 @@ Discovery strategies:
           errorMsg.includes('timeout') ||
           errorMsg.includes('ENOTFOUND')
         ) {
+          const { fallback } = getToolSuggestions(
+            TOOL_NAMES.NPM_PACKAGE_SEARCH,
+            { hasError: true }
+          );
+
           return createResult({
-            error: `NPM registry connection failed. Try these alternatives:
-• Check internet connection and npm registry status
-• Use github_search_repos for package discovery
-• Try fewer search terms to reduce load
-• Retry in a few moments`,
+            error: getErrorWithSuggestion({
+              baseError: ERROR_MESSAGES.NPM_CONNECTION_FAILED,
+              suggestion: [
+                '• Check internet connection and npm registry status',
+                '• Try fewer search terms to reduce load',
+                '• Retry in a few moments',
+                createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+              ],
+            }),
           });
         }
 
@@ -177,12 +211,21 @@ Discovery strategies:
           errorMsg.includes('command not found') ||
           errorMsg.includes('npm')
         ) {
+          const { fallback } = getToolSuggestions(
+            TOOL_NAMES.NPM_PACKAGE_SEARCH,
+            { hasError: true }
+          );
+
           return createResult({
-            error: `NPM CLI issue detected. Quick fixes:
-• Verify NPM installation: npm --version
-• Update NPM: npm install -g npm@latest
-• Use github_search_repos as alternative for discovery
-• Check PATH environment variable`,
+            error: getErrorWithSuggestion({
+              baseError: ERROR_MESSAGES.NPM_CLI_ERROR,
+              suggestion: [
+                '• Verify NPM installation: npm --version',
+                '• Update NPM: npm install -g npm@latest',
+                '• Check PATH environment variable',
+                createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+              ],
+            }),
           });
         }
 
@@ -192,23 +235,40 @@ Discovery strategies:
           errorMsg.includes('403') ||
           errorMsg.includes('401')
         ) {
+          const { fallback } = getToolSuggestions(
+            TOOL_NAMES.NPM_PACKAGE_SEARCH,
+            { errorType: 'access_denied' }
+          );
+
           return createResult({
-            error: `NPM permission issue. Try these solutions:
-• Check npm login status: npm whoami
-• Use public registry search without auth
-• Try github_search_repos for public package discovery
-• Verify npm registry configuration`,
+            error: getErrorWithSuggestion({
+              baseError: ERROR_MESSAGES.NPM_PERMISSION_ERROR,
+              suggestion: [
+                '• Check npm login status: npm whoami',
+                '• Use public registry search without auth',
+                '• Verify npm registry configuration',
+                createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+              ],
+            }),
           });
         }
 
-        return createResult({
-          error: `Package search failed: ${errorMsg}
+        const { fallback } = getToolSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH, {
+          hasError: true,
+        });
 
-Fallback strategies:
-• Use github_search_repos with topic filters
-• Try npm view for specific known packages
-• Check npm status and retry
-• Use broader search terms`,
+        return createResult({
+          error: getErrorWithSuggestion({
+            baseError: ERROR_MESSAGES.PACKAGE_SEARCH_FAILED,
+            suggestion: [
+              `Error details: ${errorMsg}`,
+              '',
+              'Fallback strategies:',
+              '• Check npm status and retry',
+              '• Use broader search terms',
+              createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+            ],
+          }),
         });
       }
     }

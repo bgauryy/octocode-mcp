@@ -153,30 +153,6 @@ export interface GithubFetchRequestParams {
   filePath: string;
 }
 
-export type NpmViewPackageParams = {
-  packageName: string;
-};
-
-export interface NpmViewPackageResult {
-  name: string;
-  latest: string;
-  license: string;
-  timeCreated: string;
-  timeModified: string;
-  repositoryGitUrl: string;
-  registryUrl: string;
-  description: string;
-  size: number;
-  dependencies: Record<string, string>;
-  devDependencies: Record<string, string>;
-  exports: string | Record<string, unknown>;
-  versions: Array<{ version: string; releaseDate: string }>;
-  versionStats: {
-    total: number;
-    official: number;
-  };
-}
-
 export interface GitHubIssuesSearchParams {
   query: string;
   owner?: string;

@@ -2,7 +2,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { createResult } from '../responses';
-import { ERROR_MESSAGES } from '../errorMessages';
+import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
+import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
+import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
 const DESCRIPTION = `Verify API connections and discover available organizations. FIRST STEP for private repository research.
@@ -150,6 +152,22 @@ export function registerApiStatusCheckTool(server: McpServer) {
           npmConnected = false;
         }
 
+        const { nextSteps } = getToolSuggestions(TOOL_NAMES.API_STATUS_CHECK, {
+          hasResults: true,
+        });
+
+        const hints = [
+          'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
+        ];
+
+        // Add tool suggestions as hints
+        if (nextSteps.length > 0) {
+          hints.push('Next steps:');
+          nextSteps.forEach(({ tool, reason }) => {
+            hints.push(`- ${tool}: ${reason}`);
+          });
+        }
+
         return createResult({
           data: {
             login: {
@@ -161,15 +179,30 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 connected: npmConnected,
                 registry: registry || 'https://registry.npmjs.org/',
               },
-              hints: [
-                'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
-              ],
+              hints,
             },
           },
         });
       } catch (error) {
+        const { nextSteps } = getToolSuggestions(TOOL_NAMES.API_STATUS_CHECK, {
+          hasError: true,
+        });
+
+        const toolSuggestions = createToolSuggestion(
+          TOOL_NAMES.API_STATUS_CHECK,
+          nextSteps
+        );
+
         return createResult({
-          error: `${ERROR_MESSAGES.API_STATUS_CHECK_FAILED}\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
+          error: getErrorWithSuggestion({
+            baseError: [
+              ERROR_MESSAGES.API_STATUS_CHECK_FAILED,
+              `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              '',
+              'This usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.',
+            ],
+            suggestion: toolSuggestions,
+          }),
         });
       }
     }

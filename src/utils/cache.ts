@@ -43,7 +43,3 @@ export async function withCache(
 export function clearAllCache(): void {
   cache.flushAll();
 }
-
-export function getCacheStats() {
-  return cache.getStats();
-}
