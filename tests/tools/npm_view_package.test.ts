@@ -58,7 +58,9 @@ describe('NPM View Package Tool', () => {
             created: '2011-10-26T17:46:21.942Z',
             modified: '2022-06-14T17:00:00.000Z',
           },
-          dist: { tarball: 'https://registry.npmjs.org/react/-/react-18.2.0.tgz' },
+          dist: {
+            tarball: 'https://registry.npmjs.org/react/-/react-18.2.0.tgz',
+          },
           exports: {},
         }),
         command: 'npm view react --json',
@@ -106,7 +108,7 @@ describe('NPM View Package Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Failed to fetch package information');
+      expect(result.content[0].text).toContain('Failed to fetch package ""');
     });
   });
 }); 

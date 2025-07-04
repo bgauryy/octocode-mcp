@@ -6,7 +6,6 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import {
-  SUGGESTIONS,
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
@@ -46,11 +45,22 @@ import {
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Search GitHub repositories by name, description, topics, language, or organization. Find projects based on stars, forks, activity, and community metrics. Returns repository details including name, description, stars, language, and owner information for project discovery.
+const DESCRIPTION = `Search GitHub repositories for project discovery and ecosystem analysis. TOPICS are the most powerful discovery feature.
 
-Search Syntax - ALL terms must be present (AND logic):
-Multiple search terms require ALL to be found in the repository (name, description, or README).
-Use quotes for exact phrase matching. Additional filters supported via parameters.`;
+TOPIC-DRIVEN DISCOVERY:
+- Topics reveal ecosystem relationships and quality indicators  
+- Combine topics for targeted discovery: ["framework", "use-case", "language"]
+- Topics beat keyword searches for unknown project exploration
+
+PROGRESSIVE SEARCH STRATEGY:
+- Start with topic combinations for broad discovery
+- Add quality filters (stars, activity) for refinement
+- Use multiple separate searches vs complex single queries
+
+RESEARCH INTEGRATION:
+- Repository discovery → structure analysis → implementation patterns
+- Quality assessment via community metrics and activity
+- Bridge to code search and file analysis tools`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -345,41 +355,116 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         if (!hasPrimaryFilter) {
           return createResult({
-            error: SUGGESTIONS.REPO_SEARCH_PRIMARY_FILTER,
+            error: `Repository search requires at least one filter. Try these patterns:
+• Topic discovery: { topic: ["react", "typescript"] }
+• Quality search: { stars: ">1000", language: "javascript" }
+• Organization: { owner: "microsoft", language: "python" }
+• Recent projects: { created: ">2023-01-01", stars: ">100" }`,
           });
         }
 
         // First attempt: Search with current parameters
         const result = await searchGitHubRepos(enhancedArgs);
 
-        // Fallback for private repositories: If no results and owner is specified, try with private visibility
-        if (!result.isError) {
-          const resultData = JSON.parse(result.content[0].text as string);
-          if (
-            resultData.total === 0 &&
-            enhancedArgs.owner &&
-            !enhancedArgs.visibility
-          ) {
-            // Try searching with private visibility for organization repos
-            const privateSearchArgs: GitHubReposSearchParams = {
-              ...enhancedArgs,
-              visibility: 'private' as const,
-            };
+        if (result.isError) {
+          const errorMsg = (result.content?.[0]?.text as string) || '';
 
-            const privateResult = await searchGitHubRepos(privateSearchArgs);
-            if (!privateResult.isError) {
-              const privateData = JSON.parse(
-                privateResult.content[0].text as string
-              );
-              if (privateData.total > 0) {
-                // Return private results with note
-                return createResult({
-                  data: {
-                    ...privateData,
-                    note: 'Found results in private repositories within the specified organization.',
-                  },
-                });
-              }
+          // Smart fallbacks based on error type
+          if (errorMsg.includes('rate limit')) {
+            return createResult({
+              error: `GitHub API rate limit. Smart alternatives:
+• Try npm package search for package discovery
+• Use broader filters (remove stars/forks constraints)
+• Search fewer organizations at once
+• Wait 5-10 minutes and retry`,
+            });
+          }
+
+          if (errorMsg.includes('authentication')) {
+            return createResult({
+              error: `Authentication required. Quick fix:
+1. Run: gh auth login
+2. For private repos: use api_status_check to verify access
+3. Public repos should work without auth - check query`,
+            });
+          }
+
+          return result; // Return original error for other cases
+        }
+
+        // Check if we got results
+        const resultData = JSON.parse(result.content[0].text as string);
+        const hasResults = resultData.total_count > 0;
+
+        // Smart fallback strategies for no results
+        if (!hasResults) {
+          const fallbackSuggestions = [];
+
+          if (enhancedArgs.query) {
+            fallbackSuggestions.push(
+              '• Try broader search terms or remove query filter'
+            );
+          }
+
+          if (enhancedArgs.language) {
+            fallbackSuggestions.push(
+              '• Remove language filter for broader discovery'
+            );
+          }
+
+          if (enhancedArgs.stars || enhancedArgs.forks) {
+            fallbackSuggestions.push(
+              '• Lower quality thresholds (stars/forks)'
+            );
+          }
+
+          if (!enhancedArgs.topic) {
+            fallbackSuggestions.push(
+              '• Try topic-based search: { topic: ["web", "api"] }'
+            );
+          }
+
+          if (enhancedArgs.owner) {
+            fallbackSuggestions.push(
+              '• Search without owner filter for global discovery'
+            );
+            fallbackSuggestions.push(
+              '• Use npm package search if looking for packages'
+            );
+          }
+
+          return createResult({
+            error: `No repositories found. Try these alternatives:
+${fallbackSuggestions.join('\n')}
+
+Discovery patterns:
+• Topic exploration: { topic: ["react"] }
+• Quality discovery: { stars: ">100", language: "python" }
+• Recent activity: { updated: ">2024-01-01" }`,
+          });
+        }
+
+        // Fallback for private repositories: If no results and owner is specified, try with private visibility
+        if (enhancedArgs.owner && !enhancedArgs.visibility) {
+          // Try searching with private visibility for organization repos
+          const privateSearchArgs: GitHubReposSearchParams = {
+            ...enhancedArgs,
+            visibility: 'private' as const,
+          };
+
+          const privateResult = await searchGitHubRepos(privateSearchArgs);
+          if (!privateResult.isError) {
+            const privateData = JSON.parse(
+              privateResult.content[0].text as string
+            );
+            if (privateData.total_count > 0) {
+              // Return private results with note
+              return createResult({
+                data: {
+                  ...privateData,
+                  note: 'Found results in private repositories within the specified organization.',
+                },
+              });
             }
           }
         }
@@ -605,13 +690,16 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   addArg('match', 'match');
 
   // SORTING AND LIMITS
-  addArg('limit', 'limit');
-  addArg('order', 'order');
-
   const sortBy = params.sort || 'best-match';
   if (sortBy !== 'best-match') {
     args.push(`--sort=${sortBy}`);
   }
+
+  addArg('order', 'order');
+
+  // Always add limit with default of 30
+  const limit = params.limit || 30;
+  args.push(`--limit=${limit}`);
 
   return { command: 'search', args };
 }

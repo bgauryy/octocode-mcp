@@ -2,10 +2,28 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { createResult } from '../responses';
-import { ERROR_MESSAGES } from '../errorMessages';
+import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
+import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
+import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `Check GitHub and NPM authentication status and available organizations. Verifies API connections and returns user organizations for accessing private repositories. Essential for troubleshooting access issues. No parameters required.`;
+const DESCRIPTION = `Verify API connections and discover available organizations. FIRST STEP for private repository research.
+
+AUTHENTICATION VERIFICATION:
+- Check GitHub and NPM CLI authentication status
+- Troubleshoot access issues before extensive searches
+- Verify API connectivity and permissions
+
+ORGANIZATION DISCOVERY:
+- List available GitHub organizations for scoped searches  
+- Identify accessible private repositories
+- Guide repository search strategy based on permissions
+
+WORKFLOW OPTIMIZATION:
+- Run first when dealing with private/organizational repositories
+- Prevents access errors in subsequent tool usage
+- Informs search scope and strategy decisions
+- Essential for comprehensive organizational research`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {
@@ -134,6 +152,22 @@ export function registerApiStatusCheckTool(server: McpServer) {
           npmConnected = false;
         }
 
+        const { nextSteps } = getToolSuggestions(TOOL_NAMES.API_STATUS_CHECK, {
+          hasResults: true,
+        });
+
+        const hints = [
+          'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
+        ];
+
+        // Add tool suggestions as hints
+        if (nextSteps.length > 0) {
+          hints.push('Next steps:');
+          nextSteps.forEach(({ tool, reason }) => {
+            hints.push(`- ${tool}: ${reason}`);
+          });
+        }
+
         return createResult({
           data: {
             login: {
@@ -145,15 +179,30 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 connected: npmConnected,
                 registry: registry || 'https://registry.npmjs.org/',
               },
-              hints: [
-                'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
-              ],
+              hints,
             },
           },
         });
       } catch (error) {
+        const { nextSteps } = getToolSuggestions(TOOL_NAMES.API_STATUS_CHECK, {
+          hasError: true,
+        });
+
+        const toolSuggestions = createToolSuggestion(
+          TOOL_NAMES.API_STATUS_CHECK,
+          nextSteps
+        );
+
         return createResult({
-          error: `${ERROR_MESSAGES.API_STATUS_CHECK_FAILED}\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nThis usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.`,
+          error: getErrorWithSuggestion({
+            baseError: [
+              ERROR_MESSAGES.API_STATUS_CHECK_FAILED,
+              `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              '',
+              'This usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.',
+            ],
+            suggestion: toolSuggestions,
+          }),
         });
       }
     }

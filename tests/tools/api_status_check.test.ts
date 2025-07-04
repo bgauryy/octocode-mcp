@@ -54,7 +54,13 @@ describe('API Status Check Tool', () => {
         if (command === 'auth' && args[0] === 'status') {
           return Promise.resolve({
             isError: false,
-            content: [{ text: JSON.stringify({ result: 'Logged in to github.com account testuser' }) }],
+            content: [
+              {
+                text: JSON.stringify({
+                  result: 'Logged in to github.com account testuser',
+                }),
+              },
+            ],
           });
         }
         if (command === 'org' && args[0] === 'list') {
@@ -74,10 +80,18 @@ describe('API Status Check Tool', () => {
             content: [{ text: JSON.stringify({ result: 'testuser' }) }],
           });
         }
-        if (command === 'config' && args[0] === 'get' && args[1] === 'registry') {
+        if (
+          command === 'config' &&
+          args[0] === 'get' &&
+          args[1] === 'registry'
+        ) {
           return Promise.resolve({
             isError: false,
-            content: [{ text: JSON.stringify({ result: 'https://registry.npmjs.org/' }) }],
+            content: [
+              {
+                text: JSON.stringify({ result: 'https://registry.npmjs.org/' }),
+              },
+            ],
           });
         }
         return Promise.resolve({ isError: true, content: [] });
@@ -88,14 +102,20 @@ describe('API Status Check Tool', () => {
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
       expect(result.content.length).toBeGreaterThan(0);
-      
+
       const responseData = JSON.parse(result.content[0].text as string);
       expect(responseData.login).toBeDefined();
       expect(responseData.login.github.connected).toBe(true);
-      expect(responseData.login.github.user_organizations).toEqual(['org1', 'org2', 'org3']);
+      expect(responseData.login.github.user_organizations).toEqual([
+        'org1',
+        'org2',
+        'org3',
+      ]);
       expect(responseData.login.npm.connected).toBe(true);
-      expect(responseData.login.npm.registry).toBe('https://registry.npmjs.org/');
-      expect(responseData.login.hints).toHaveLength(1);
+      expect(responseData.login.npm.registry).toBe(
+        'https://registry.npmjs.org/'
+      );
+      expect(responseData.login.hints).toHaveLength(4);
     });
 
     it('should return structured login status with GitHub disconnected and NPM connected', async () => {
@@ -115,10 +135,18 @@ describe('API Status Check Tool', () => {
             content: [{ text: JSON.stringify({ result: 'testuser' }) }],
           });
         }
-        if (command === 'config' && args[0] === 'get' && args[1] === 'registry') {
+        if (
+          command === 'config' &&
+          args[0] === 'get' &&
+          args[1] === 'registry'
+        ) {
           return Promise.resolve({
             isError: false,
-            content: [{ text: JSON.stringify({ result: 'https://registry.npmjs.org/' }) }],
+            content: [
+              {
+                text: JSON.stringify({ result: 'https://registry.npmjs.org/' }),
+              },
+            ],
           });
         }
         return Promise.resolve({ isError: true, content: [] });
@@ -128,12 +156,14 @@ describe('API Status Check Tool', () => {
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
-      
+
       const responseData = JSON.parse(result.content[0].text as string);
       expect(responseData.login.github.connected).toBe(false);
       expect(responseData.login.github.user_organizations).toEqual([]);
       expect(responseData.login.npm.connected).toBe(true);
-      expect(responseData.login.npm.registry).toBe('https://registry.npmjs.org/');
+      expect(responseData.login.npm.registry).toBe(
+        'https://registry.npmjs.org/'
+      );
     });
 
     it('should return structured login status with both services disconnected', async () => {
@@ -154,12 +184,14 @@ describe('API Status Check Tool', () => {
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
-      
+
       const responseData = JSON.parse(result.content[0].text as string);
       expect(responseData.login.github.connected).toBe(false);
       expect(responseData.login.github.user_organizations).toEqual([]);
       expect(responseData.login.npm.connected).toBe(false);
-      expect(responseData.login.npm.registry).toBe('https://registry.npmjs.org/');
+      expect(responseData.login.npm.registry).toBe(
+        'https://registry.npmjs.org/'
+      );
     });
 
     it('should handle JSON parsing errors gracefully', async () => {

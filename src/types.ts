@@ -32,7 +32,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   filename?: string;
   extension?: string;
   path?: string;
-  match?: 'file' | 'path' | ('file' | 'path')[]; // Support array
+  match?: 'file' | 'path';
   size?: string;
   limit?: number;
   visibility?: 'public' | 'private' | 'internal';
@@ -151,30 +151,6 @@ export interface GithubFetchRequestParams {
   repo: string;
   branch: string;
   filePath: string;
-}
-
-export type NpmViewPackageParams = {
-  packageName: string;
-};
-
-export interface NpmViewPackageResult {
-  name: string;
-  latest: string;
-  license: string;
-  timeCreated: string;
-  timeModified: string;
-  repositoryGitUrl: string;
-  registryUrl: string;
-  description: string;
-  size: number;
-  dependencies: Record<string, string>;
-  devDependencies: Record<string, string>;
-  exports: string | Record<string, unknown>;
-  versions: Array<{ version: string; releaseDate: string }>;
-  versionStats: {
-    total: number;
-    official: number;
-  };
 }
 
 export interface GitHubIssuesSearchParams {

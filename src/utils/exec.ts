@@ -173,11 +173,13 @@ function escapeWindowsCmdArg(arg: string): string {
  * Preserves AND search logic by not over-escaping space-separated terms
  */
 function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
-  // For GitHub search queries, we need to preserve AND logic
+  // For GitHub search queries, we need to preserve AND logic and quoted phrases
   if (isGitHubQuery) {
-    // If the query contains quotes, preserve them for exact phrase matching
+    // If the query contains quotes, we need to preserve them for GitHub CLI
+    // but escape the entire argument for the shell
     if (arg.includes('"')) {
       // Use single quotes to wrap the entire query while preserving internal quotes
+      // This allows GitHub CLI to see: "quoted phrase" other terms
       return `'${arg.replace(/'/g, "'\"'\"'")}'`;
     }
 
@@ -263,15 +265,23 @@ export async function executeGitHubCommand(
   const shellConfig = getShellConfig(options.windowsShell);
 
   // Build command with validated prefix and properly escaped arguments
-  // For GitHub search commands, qualifiers like "language:typescript" should not be escaped
-  // Only the main query term (if it contains spaces) needs escaping
+  // For GitHub search commands, we need to distinguish between:
+  // 1. Main query (index 1) - needs special escaping for AND logic
+  // 2. CLI flags (--flag=value) - standard escaping
+  // 3. Search qualifiers (key:value) - minimal escaping
   const escapedArgs = args.map((arg, index) => {
     const isMainQueryArgument = command === 'search' && index === 1;
+    const isCliFlag = arg.startsWith('--');
     const isGitHubQualifier =
       command === 'search' &&
       index > 1 &&
-      (arg.includes(':') || arg.startsWith('(')) &&
-      !arg.startsWith('--');
+      !isCliFlag &&
+      (arg.includes(':') || arg.startsWith('('));
+
+    // CLI flags like --language=javascript, --repo=owner/repo need standard escaping
+    if (isCliFlag) {
+      return escapeShellArg(arg, shellConfig.type, false);
+    }
 
     // GitHub search qualifiers need special handling
     // Most qualifiers can be passed as-is, but those with shell metacharacters need escaping

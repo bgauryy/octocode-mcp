@@ -69,6 +69,35 @@ export const ERROR_MESSAGES = {
 
   // API Status check errors
   API_STATUS_CHECK_FAILED: 'API Status Check Failed',
+
+  // File Content Errors
+  FILE_NOT_FOUND: 'File not found in repository',
+  FILE_TOO_LARGE: 'File too large to fetch',
+  FILE_ACCESS_DENIED: 'Access denied to file',
+  FILE_IS_DIRECTORY:
+    'Path is a directory. Use github_view_repo_structure to list directory contents',
+  FILE_IS_BINARY:
+    'Binary file detected. Cannot display as text - download directly from GitHub',
+  FILE_IS_EMPTY: 'File is empty - no content to display',
+  FILE_DECODE_FAILED:
+    'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+
+  // Repository Structure Errors
+  REPOSITORY_NOT_FOUND: 'Repository not found',
+  REPOSITORY_ACCESS_DENIED: 'Repository access denied',
+  REPOSITORY_PATH_NOT_FOUND: 'Path not found in repository',
+  REPOSITORY_STRUCTURE_INACCESSIBLE: 'Repository structure not accessible',
+
+  // NPM Errors
+  NPM_PACKAGE_NOT_FOUND: 'Package not found on NPM registry',
+  NPM_CONNECTION_FAILED: 'NPM registry connection failed',
+  NPM_CLI_ERROR: 'NPM CLI issue detected',
+  NPM_PERMISSION_ERROR: 'NPM permission issue',
+  NPM_REGISTRY_ERROR: 'NPM registry error',
+
+  // Connection/Network Errors
+  API_CONNECTION_FAILED: 'Failed to connect to API',
+  PATH_NOT_FOUND: 'Path not found in repository',
 } as const;
 
 export const SUGGESTIONS = {
@@ -100,6 +129,36 @@ export const SUGGESTIONS = {
 2. Break compound words: "authlib" → "auth"
 3. Search by use case: "user login" vs "authentication"
 4. Try category terms: "framework", "tool", "library"`,
+
+  // File Content Suggestions
+  FILE_NOT_FOUND_RECOVERY: `Quick fixes:
+• Use github_view_repo_structure to verify path exists
+• Check for typos in file path
+• Try different branch (main/master/develop)`,
+
+  FILE_TOO_LARGE_RECOVERY: `Alternative strategies:
+• Use github_search_code to search within the file
+• Download directly from GitHub
+• Use github_view_repo_structure to find smaller related files
+• Look for configuration or summary files instead`,
+
+  // Repository Suggestions
+  REPOSITORY_NOT_FOUND_RECOVERY: `This is often due to incorrect repository name. Steps to resolve:
+1. Use github_search_repositories to find the correct repository
+2. Verify the exact repository name
+3. Check if the repository might have been renamed or moved`,
+
+  // NPM Suggestions
+  NPM_DISCOVERY_STRATEGIES: `Discovery strategies:
+• Functional search: "validation", "testing", "charts"
+• Ecosystem search: "react", "typescript", "node"
+• Use github_search_repositories for related projects`,
+
+  NPM_PACKAGE_NAME_ALTERNATIVES: `Try these alternatives:
+• Try with dashes instead of underscores
+• Try without dashes
+• Try scoped package format
+• Use npm_package_search for discovery`,
 } as const;
 
 export const VALIDATION_MESSAGES = {
@@ -194,4 +253,28 @@ export function createSearchFailedError(
     default:
       return ERROR_MESSAGES.SEARCH_FAILED;
   }
+}
+
+export function createNpmPackageNotFoundError(packageName: string): string {
+  const suggestions = [];
+
+  if (packageName.includes('_')) {
+    suggestions.push(`• Try with dashes: "${packageName.replace(/_/g, '-')}"`);
+  }
+  if (packageName.includes('-')) {
+    suggestions.push(
+      `• Try without dashes: "${packageName.replace(/-/g, '')}"`
+    );
+  }
+  if (!packageName.includes('/') && packageName.length > 2) {
+    suggestions.push(
+      `• Try scoped format: "@${packageName.slice(0, 3)}/${packageName}"`
+    );
+  }
+
+  return `${ERROR_MESSAGES.NPM_PACKAGE_NOT_FOUND}: "${packageName}"
+
+${suggestions.length > 0 ? suggestions.join('\n') + '\n\n' : ''}${SUGGESTIONS.NPM_PACKAGE_NAME_ALTERNATIVES}
+
+${SUGGESTIONS.NPM_DISCOVERY_STRATEGIES}`;
 }

@@ -11,7 +11,23 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `Browse GitHub repository file structure and navigate directories. Essential for exploring project layout, finding documentation, configuration files, and source code. Returns file/folder listings with size information. Automatically handles branch detection. Parameters: owner (required - GitHub username/org), repo (required - repository name), branch (required), path (optional - directory path).`;
+const DESCRIPTION = `Explore GitHub repository structure and validate repository access. ESSENTIAL for understanding project organization.
+
+REPOSITORY VALIDATION:
+- Verify repository existence and accessibility
+- Navigate from root to understand project layout  
+- Identify key directories and file patterns
+
+PROJECT UNDERSTANDING:
+- Discover configuration files, documentation, source structure
+- Validate paths before accessing specific files
+- Understand architecture and organization patterns
+
+WORKFLOW INTEGRATION:
+- First step after repository discovery
+- Guides subsequent file access and code search
+- Prevents "file not found" errors through validation
+- Essential for comprehensive repository analysis`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
