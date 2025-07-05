@@ -62,7 +62,7 @@ describe('exec utilities', () => {
         })
       );
 
-      const content = JSON.parse(result.content[0].text);
+      const content = JSON.parse(result.content[0].text as string);
       expect(content.result).toEqual({
         name: 'test-package',
         version: '1.0.0',
@@ -98,13 +98,13 @@ describe('exec utilities', () => {
       const result = await executeNpmCommand('view', ['test-package']);
 
       expect(result.isError).toBe(false);
-      const content = JSON.parse(result.content[0].text);
+      const content = JSON.parse(result.content[0].text as string);
       expect(content.warning).toContain('npm WARN');
     });
 
     it('should use cache when cache option is true', async () => {
       const mockResult = {
-        content: [{ type: 'text', text: 'cached' }],
+        content: [{ type: 'text' as const, text: 'cached' }],
         isError: false,
       };
       mockWithCache.mockResolvedValue(mockResult);
@@ -281,7 +281,7 @@ describe('exec utilities', () => {
       const result = await executeGitHubCommand('search', ['repos', 'test']);
 
       expect(result.isError).toBe(false);
-      const content = JSON.parse(result.content[0].text);
+      const content = JSON.parse(result.content[0].text as string);
       expect(content.warning).toContain('head: illegal option');
     });
 

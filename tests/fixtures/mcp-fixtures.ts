@@ -21,18 +21,11 @@ export function createMockMcpServer(): MockMcpServer {
   const toolHandlers = new Map<string, Function>();
 
   const mockServer = {
-    tool: vi.fn(
-      (
-        name: string,
-        description: any,
-        schema: any,
-        metadata: any,
-        handler: Function
-      ) => {
-        toolHandlers.set(name, handler);
-      }
-    ),
+    tool: vi.fn((name: string, handler: Function) => {
+      toolHandlers.set(name, handler);
+    }),
     // Add the registerTool method that the actual tools are calling
+    // @ts-expect-error - mockWithCache is not typed
     registerTool: vi.fn((name: string, options: any, handler: Function) => {
       toolHandlers.set(name, handler);
     }),

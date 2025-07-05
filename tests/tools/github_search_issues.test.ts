@@ -38,6 +38,7 @@ describe('GitHub Search Issues Tool', () => {
 
     // Default implementation for withCache - just execute the function
     mockWithCache.mockImplementation(
+      // @ts-expect-error - mockWithCache is not typed
       async (key: string, fn: () => Promise<CallToolResult>) => fn()
     );
 

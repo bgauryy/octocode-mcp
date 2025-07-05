@@ -38,6 +38,7 @@ describe('GitHub Fetch Content Tool', () => {
     vi.clearAllMocks();
 
     // Default cache behavior
+    // @ts-expect-error - mockWithCache is not typed
     mockWithCache.mockImplementation(async (key, fn) => await fn());
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
   });
