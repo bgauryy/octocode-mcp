@@ -151,7 +151,7 @@ export interface GithubFetchRequestParams {
   repo: string;
   branch: string;
   filePath: string;
-  minified?: boolean;
+  minified: boolean;
 }
 
 export interface GitHubIssuesSearchParams {
@@ -284,14 +284,6 @@ export interface GitHubRepositoryContentsResult {
     message: string;
   };
 }
-
-export type GitHubFileContentParams = {
-  owner: string;
-  repo: string;
-  branch: string;
-  filePath: string;
-  minified?: boolean;
-};
 
 export interface GitHubFileContentResponse {
   filePath: string;

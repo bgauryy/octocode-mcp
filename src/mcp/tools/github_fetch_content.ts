@@ -3,7 +3,6 @@ import z from 'zod';
 import { createResult } from '../responses';
 import {
   GithubFetchRequestParams,
-  GitHubFileContentParams,
   GitHubFileContentResponse,
 } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -29,9 +28,9 @@ CONTENT CAPABILITIES:
 - Handles text files up to 300KB efficiently
 - Automatic branch fallback (main/master)
 - Provides decoded content with metadata
-- Optional minification for JS/TS/JSX files (40-50% token reduction)
-- MINIFIED: Better for research, LLM analysis, pattern matching, bulk processing
-- ORIGINAL: Better for context, comments, documentation, debugging
+- Optional minification for JS/TS/JSX files (40-50% token reduction) - ENABLED BY DEFAULT
+- MINIFIED (DEFAULT): Better for research, LLM analysis, pattern matching, bulk processing
+- ORIGINAL (minified=false): Better for context, comments, documentation, debugging
 - Supports .js, .ts, .jsx, .tsx, .mjs, .cjs files
 - Optimized for code analysis workflows`;
 
@@ -73,9 +72,9 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           ),
         minified: z
           .boolean()
-          .optional()
+          .default(true)
           .describe(
-            `If true, minify JavaScript/TypeScript/JSX content - BETTER for research, LLM analysis, and token efficiency (typically 40-50% reduction). Use minified=true for code exploration, pattern analysis, and bulk processing. Use minified=false when you need full context, comments, and documentation. Perfect for: pattern analysis and code exploration, large-scale codebase research, token-efficient LLM processing, faster file analysis. Supports .js, .ts, .jsx, .tsx, .mjs, .cjs files. Default: false`
+            `minify the content for better research and LLM analysis (40-50% token reduction). If false, return original content with full context, comments, and documentation. MINIFIED=TRUE (DEFAULT): Perfect for code exploration, pattern analysis, large-scale research, and token-efficient processing. MINIFIED=FALSE: Use when you need full context, comments, debugging info, or detailed documentation`
           ),
       },
       annotations: {
@@ -86,7 +85,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubFileContentParams): Promise<CallToolResult> => {
+    async (args): Promise<CallToolResult> => {
       try {
         const result = await fetchGitHubFileContent(args);
         return result;
@@ -270,7 +269,7 @@ async function processFileContent(
   repo: string,
   branch: string,
   filePath: string,
-  minified?: boolean
+  minified: boolean
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
