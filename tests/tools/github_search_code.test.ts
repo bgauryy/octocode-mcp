@@ -33,6 +33,7 @@ describe('GitHub Search Code Tool', () => {
     vi.clearAllMocks();
 
     // Default cache behavior
+    // @ts-expect-error - mockWithCache is not typed
     mockWithCache.mockImplementation(async (key, fn) => await fn());
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
   });
@@ -118,7 +119,7 @@ describe('GitHub Search Code Tool', () => {
     it('should use org: qualifier when only owner is provided', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults = [];
+      const mockCodeResults: any[] = [];
 
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
@@ -157,7 +158,7 @@ describe('GitHub Search Code Tool', () => {
     it('should use repo: qualifier when repo is provided in owner/repo format', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults = [];
+      const mockCodeResults: any[] = [];
 
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
@@ -329,7 +330,7 @@ describe('GitHub Search Code Tool', () => {
     it('should allow valid term counts (1-3 terms)', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults = [];
+      const mockCodeResults: any[] = [];
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:
@@ -371,7 +372,7 @@ describe('GitHub Search Code Tool', () => {
     it('should handle boolean operator validation', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults = [];
+      const mockCodeResults: any[] = [];
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:
@@ -395,7 +396,7 @@ describe('GitHub Search Code Tool', () => {
     it('should handle owner and repo parameters correctly', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults = [];
+      const mockCodeResults: any[] = [];
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:

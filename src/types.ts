@@ -151,6 +151,10 @@ export interface GithubFetchRequestParams {
   repo: string;
   branch: string;
   filePath: string;
+  startLine?: number;
+  endLine?: number;
+  contextLines?: number;
+  minified: boolean;
 }
 
 export interface GitHubIssuesSearchParams {
@@ -284,12 +288,20 @@ export interface GitHubRepositoryContentsResult {
   };
 }
 
-export type GitHubFileContentParams = {
+export interface GitHubFileContentResponse {
+  filePath: string;
   owner: string;
   repo: string;
   branch: string;
-  filePath: string;
-};
+  content: string;
+  startLine?: number;
+  endLine?: number;
+  totalLines?: number;
+  isPartial?: boolean;
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationType?: 'javascript' | 'generic' | 'failed' | 'none';
+}
 
 export interface NpmPackage {
   name: string;

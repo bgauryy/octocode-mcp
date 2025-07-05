@@ -27,12 +27,8 @@ describe('MCP Test Fixtures', () => {
 
     it('should register and call tools correctly', async () => {
       // Register a test tool
-      mockServer.server.tool(
-        'test_tool',
-        'A test tool',
-        {},
-        {},
-        async (args: any) => createMockResult({ received: args })
+      mockServer.server.tool('test_tool', async (args: any) =>
+        createMockResult({ received: args })
       );
 
       // Call the tool
@@ -51,15 +47,9 @@ describe('MCP Test Fixtures', () => {
 
     it('should handle tool errors correctly', async () => {
       // Register a tool that throws an error
-      mockServer.server.tool(
-        'error_tool',
-        'A tool that errors',
-        {},
-        {},
-        async () => {
-          throw new Error('Tool execution failed');
-        }
-      );
+      mockServer.server.tool('error_tool', async () => {
+        throw new Error('Tool execution failed');
+      });
 
       await expect(mockServer.callTool('error_tool')).rejects.toThrow(
         'Tool execution failed'
