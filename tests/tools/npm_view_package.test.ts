@@ -111,4 +111,4 @@ describe('NPM View Package Tool', () => {
       expect(result.content[0].text).toContain('Failed to fetch package ""');
     });
   });
-}); 
+});

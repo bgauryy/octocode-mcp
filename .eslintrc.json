@@ -29,5 +29,23 @@
     "build/**/*",
     "node_modules/**/*",
     "*.js"
+  ],
+  "overrides": [
+    {
+      "files": ["tests/**/*.ts"],
+      "env": {
+        "node": true
+      },
+      "globals": {
+        "vi": "readonly",
+        "describe": "readonly",
+        "it": "readonly",
+        "expect": "readonly",
+        "beforeEach": "readonly",
+        "afterEach": "readonly",
+        "beforeAll": "readonly",
+        "afterAll": "readonly"
+      }
+    }
   ]
 } 
