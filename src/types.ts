@@ -151,6 +151,9 @@ export interface GithubFetchRequestParams {
   repo: string;
   branch: string;
   filePath: string;
+  startLine?: number;
+  endLine?: number;
+  contextLines?: number;
   minified: boolean;
 }
 
@@ -291,6 +294,10 @@ export interface GitHubFileContentResponse {
   repo: string;
   branch: string;
   content: string;
+  startLine?: number;
+  endLine?: number;
+  totalLines?: number;
+  isPartial?: boolean;
   minified?: boolean;
   minificationFailed?: boolean;
   minificationType?: 'javascript' | 'generic' | 'failed' | 'none';

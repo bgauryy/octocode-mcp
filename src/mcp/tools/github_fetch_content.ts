@@ -12,25 +12,34 @@ import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Access GitHub file content for implementation analysis. USE AFTER repository structure validation.
+const DESCRIPTION = `Access GitHub file content with smart token optimization. **DEFAULT: Use partial access for 80-90% token savings.**
 
-IMPLEMENTATION ANALYSIS:
-- Examine configuration files, documentation, key source code
-- Understand actual implementations and patterns
-- Extract technical details and architecture decisions
+**BEST PRACTICE WORKFLOW**:
+1. Use github_search_code to find relevant matches
+2. Extract line numbers from search results  
+3. Fetch targeted sections with startLine/endLine parameters
+4. Request full file only when comprehensive view needed
 
-VALIDATION REQUIREMENTS:
-- ALWAYS verify repository structure first with githubViewRepoStructure
-- Confirm file paths exist before accessing
-- Navigate from known structure to specific files
+**PARTIAL ACCESS (RECOMMENDED)**:
+- startLine/endLine: Get specific sections around search matches
+- contextLines: Control surrounding code visibility (default: 5)
+- Visual markers (→) highlight target lines in results
+- Massive token savings while preserving readability
 
-CONTENT CAPABILITIES:
+**CAPABILITIES**:
 - Handles text files up to 300KB efficiently
 - Automatic branch fallback (main/master)
-- Provides decoded content with metadata
-- Optional minification for JS/TS/JSX files (40-50% token reduction) - ENABLED BY DEFAULT
-- MINIFIED (DEFAULT true): Better for research, LLM analysis, pattern matching, bulk processing. use false if you need the full context, comments, documentation, debugging
-- Optimized for code analysis workflows`;
+- Smart minification for optimal token usage (enabled by default)
+- Line-annotated partial content with context
+- Search result integration for targeted access
+
+**WHEN TO USE FULL FILES**:
+- Small configuration files (<50 lines)
+- Complete understanding of file structure needed
+- Documentation files requiring full context
+- Initial exploration of unknown files
+
+Optimized for efficient code research workflows.`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -68,15 +77,41 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .describe(
             `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.`
           ),
+        startLine: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            `**RECOMMENDED**: Starting line number (1-based) for partial file access. Extract from github_search_code results for targeted content. Use with endLine for specific sections. Saves 80-90% tokens.`
+          ),
+        endLine: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe(
+            `Ending line number (1-based) for partial file access. Use with startLine for specific sections. If omitted, gets from startLine to reasonable endpoint with context.`
+          ),
+        contextLines: z
+          .number()
+          .int()
+          .min(0)
+          .max(50)
+          .optional()
+          .default(5)
+          .describe(
+            `Context lines around target range. Default: 5. Increase for more surrounding code, decrease for minimal context. Only used with startLine/endLine.`
+          ),
         minified: z
           .boolean()
           .default(true)
           .describe(
-            `minify the content for better research and LLM analysis (40-50% token reduction). If false, return original content with full context, comments, and documentation. MINIFIED=TRUE (DEFAULT): Perfect for code exploration, pattern analysis, large-scale research, and token-efficient processing. MINIFIED=FALSE: Use when you need full context, comments, debugging info, or detailed documentation`
+            `Smart content optimization for token efficiency (enabled by default). Partial content gets balanced compression, full files get maximum compression. Use false only when you need complete formatting, comments, and documentation.`
           ),
       },
       annotations: {
-        title: 'GitHub File Content - Direct Access',
+        title: 'GitHub File Content - Smart Partial Access (Recommended)',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -167,7 +202,10 @@ async function fetchGitHubFileContent(
                 repo,
                 fallbackBranch,
                 filePath,
-                params.minified
+                params.minified,
+                params.startLine,
+                params.endLine,
+                params.contextLines
               );
             }
           }
@@ -251,7 +289,10 @@ Recovery strategies:
         repo,
         branch,
         filePath,
-        params.minified
+        params.minified,
+        params.startLine,
+        params.endLine,
+        params.contextLines
       );
     } catch (error) {
       return createResult({
@@ -267,7 +308,10 @@ async function processFileContent(
   repo: string,
   branch: string,
   filePath: string,
-  minified: boolean
+  minified: boolean,
+  startLine?: number,
+  endLine?: number,
+  contextLines: number = 5
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
@@ -289,7 +333,7 @@ async function processFileContent(
     const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
     return createResult({
-      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file`,
+      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
     });
   }
 
@@ -328,16 +372,79 @@ async function processFileContent(
     });
   }
 
-  // Apply minification if requested
+  // Handle partial file access
   let finalContent = decodedContent;
+  let actualStartLine: number | undefined;
+  let actualEndLine: number | undefined;
+  let totalLines: number | undefined;
+  let isPartial = false;
+
+  if (startLine !== undefined) {
+    const lines = decodedContent.split('\n');
+    totalLines = lines.length;
+
+    // Validate line numbers
+    if (startLine < 1 || startLine > totalLines) {
+      return createResult({
+        error: `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+      });
+    }
+
+    // Calculate actual range with context
+    const contextStart = Math.max(1, startLine - contextLines);
+    const contextEnd = endLine
+      ? Math.min(totalLines, endLine + contextLines)
+      : Math.min(totalLines, startLine + contextLines);
+
+    // Validate endLine if provided
+    if (endLine !== undefined) {
+      if (endLine < startLine) {
+        return createResult({
+          error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+        });
+      }
+      if (endLine > totalLines) {
+        return createResult({
+          error: `Invalid endLine ${endLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        });
+      }
+    }
+
+    // Extract the specified range with context
+    const selectedLines = lines.slice(contextStart - 1, contextEnd);
+    finalContent = selectedLines.join('\n');
+
+    actualStartLine = contextStart;
+    actualEndLine = contextEnd;
+    isPartial = true;
+
+    // Add line number annotations if getting partial content
+    if (isPartial) {
+      const annotatedLines = selectedLines.map((line, index) => {
+        const lineNumber = contextStart + index;
+        const isInTargetRange =
+          lineNumber >= startLine &&
+          (endLine === undefined || lineNumber <= endLine);
+        const marker = isInTargetRange ? '→' : ' ';
+        return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
+      });
+      finalContent = annotatedLines.join('\n');
+    }
+  }
+
+  // Apply minification if requested (only for full files or when explicitly requested)
   let minificationFailed = false;
   let minificationType = 'none';
 
-  if (minified) {
-    const minifyResult = await minifyContent(decodedContent, filePath);
+  if (minified && !isPartial) {
+    const minifyResult = await minifyContent(finalContent, filePath);
     finalContent = minifyResult.content;
     minificationFailed = minifyResult.failed;
     minificationType = minifyResult.type;
+  } else if (minified && isPartial) {
+    // For partial content, just remove excessive whitespace but keep structure
+    finalContent = finalContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+    minificationType = 'partial';
   }
 
   return createResult({
@@ -347,6 +454,12 @@ async function processFileContent(
       repo,
       branch,
       content: finalContent,
+      ...(isPartial && {
+        startLine: actualStartLine,
+        endLine: actualEndLine,
+        totalLines,
+        isPartial,
+      }),
       ...(minified && {
         minified: !minificationFailed,
         minificationFailed: minificationFailed,

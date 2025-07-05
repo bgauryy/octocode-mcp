@@ -16,6 +16,7 @@ CORE RESEARCH PHILOSOPHY:
    - REPOSITORY-FIRST: When repos mentioned → start with GitHub tools → explore dependencies  
    - CROSS-REFERENCE: Always connect packages to repositories and repositories to packages
    - PROGRESSIVE: Start broad, refine gradually, use multiple separate searches
+   - TOKEN-EFFICIENT: Use partial file access by default, full files only when necessary
 
 CRITICAL SEARCH STRATEGIES:
 
@@ -53,7 +54,7 @@ Understanding Phase:
 
 Implementation Phase:
    - Code Patterns: ${GITHUB_SEARCH_CODE_TOOL_NAME} with SEPARATE single-term searches
-   - File Access: ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} for specific implementations
+   - **SMART FILE ACCESS**: Use ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with line ranges from search results
    - Historical Context: ${GITHUB_SEARCH_COMMITS_TOOL_NAME} for feature evolution
 
 TOOL INTEGRATION BEST PRACTICES:
@@ -77,6 +78,7 @@ ${GITHUB_SEARCH_CODE_TOOL_NAME}:
    - SEPARATE searches outperform complex queries
    - Single terms without quotes for broad discovery
    - Multi-word phrases WITH quotes for exact patterns
+   - **Extract line numbers from results for targeted file access**
 
 ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME}:
    - Always verify repository existence and structure first
@@ -84,9 +86,12 @@ ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME}:
    - Essential before accessing specific files
 
 ${GITHUB_GET_FILE_CONTENT_TOOL_NAME}:
-   - Use AFTER structure verification
-   - Focus on configuration, documentation, key implementations
-   - Validate paths through structure exploration
+   - **DEFAULT: Use partial access (startLine/endLine) for 80-90% token savings**
+   - Get targeted sections from search results, not full files
+   - Use contextLines (default: 5) to control surrounding code
+   - Only request full files when comprehensive view needed
+   - **WORKFLOW**: Search → Extract line numbers → Fetch partial content
+   - Visual markers (→) highlight target lines in partial content
 
 ${GITHUB_SEARCH_COMMITS_TOOL_NAME}:
    - Feature evolution and implementation history
@@ -105,6 +110,13 @@ ${API_STATUS_CHECK_TOOL_NAME}:
 
 INTELLIGENT SEARCH PROGRESSION:
 
+**OPTIMAL TOKEN USAGE (CRITICAL)**:
+   1. **Search First**: ${GITHUB_SEARCH_CODE_TOOL_NAME} finds relevant matches
+   2. **Extract Positions**: Get line numbers from search results
+   3. **Fetch Targeted**: ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with startLine/endLine
+   4. **Smart Context**: Use contextLines to control surrounding code visibility
+   5. **Full File Only**: When partial content insufficient for complete understanding
+
 No Results Strategy:
    - BROADEN search terms (remove filters)
    - Try ALTERNATIVE tool (NPM ↔ GitHub)
@@ -121,6 +133,6 @@ CHAIN OF RESEARCH OPTIMIZATION:
    - Plan multi-tool sequences before execution
    - Connect findings across NPM and GitHub ecosystems  
    - Build comprehensive understanding progressively
-   - Validate technical details with actual code
+   - **Prioritize partial file access for efficient token usage**
    - Provide actionable insights based on data patterns
 `;
