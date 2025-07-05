@@ -94,6 +94,8 @@ export function getFileType(filePath: string): string {
       return 'html';
     case 'css':
       return 'css';
+    case 'less':
+      return 'less';
     case 'json':
       return 'json';
     case 'xml':
@@ -161,8 +163,10 @@ export function minifyGenericContent(
         break;
 
       case 'css':
-        // Remove CSS comments /* ... */
+      case 'less':
+        // Remove CSS/LESS comments /* ... */ and // ...
         minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
         // Remove excessive whitespace
         minified = minified.replace(/\s+/g, ' ');
         // Remove spaces around CSS syntax
