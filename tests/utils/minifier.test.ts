@@ -583,20 +583,23 @@ function Header({ title }: Props) {
               drop_console: false,
               drop_debugger: false,
               pure_funcs: [],
-              sequences: false,
-              conditionals: false,
-              comparisons: false,
-              evaluate: false,
-              booleans: false,
+              sequences: true, // Updated: now allows safe optimizations
+              conditionals: true, // Updated: now allows safe optimizations
+              comparisons: true, // Updated: now allows safe optimizations
+              evaluate: true, // Updated: now allows safe optimizations
+              booleans: true, // Updated: now allows safe optimizations
               loops: false,
               unused: false,
               hoist_funs: false,
               hoist_vars: false,
+              dead_code: true, // Updated: removes unreachable code
+              side_effects: false, // Updated: conservative about side effects
             }),
             mangle: false,
             format: expect.objectContaining({
               comments: false,
               beautify: false,
+              semicolons: true, // Updated: ensures semicolons for safety
             }),
             sourceMap: false,
             parse: expect.objectContaining({

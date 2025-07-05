@@ -21,18 +21,68 @@ export function isTypeScriptFile(filePath: string): boolean {
 
 // Helper function to check if file contains Flow type annotations
 export function isFlowFile(content: string): boolean {
-  // Check for Flow pragma or type annotations
-  return (
+  // First check for explicit Flow pragmas (most reliable)
+  if (
     content.includes('@flow') ||
     content.includes('// @flow') ||
     content.includes('/* @flow */') ||
-    // Look for Flow-specific syntax patterns
-    /import\s+type\s+/.test(content) ||
-    /export\s+type\s+/.test(content) ||
-    /:\s*\?\w/.test(content) || // Optional types like ?string
     /\$FlowFixMe/.test(content) ||
     /\$FlowIssue/.test(content)
-  );
+  ) {
+    return true;
+  }
+
+  // Only check syntax patterns if we have multiple Flow indicators
+  const flowIndicators = [
+    /import\s+type\s+\w/.test(content), // import type Foo
+    /export\s+type\s+\w/.test(content), // export type Foo
+    /:\s*\?\w+/.test(content), // optional types like ?string (more specific)
+    /:\s*\w+\s*\|/.test(content), // union types like string | number
+    /\w+\s*:\s*\w+\s*=>/.test(content), // function types like (x: string) => void
+  ].filter(Boolean).length;
+
+  // Require at least 2 Flow syntax patterns to reduce false positives
+  return flowIndicators >= 2;
+}
+
+// Helper function to validate minified content
+export function validateMinifiedContent(
+  content: string,
+  filePath: string
+): boolean {
+  const fileType = getFileType(filePath);
+
+  try {
+    switch (fileType) {
+      case 'json':
+        JSON.parse(content);
+        return true;
+      case 'yaml':
+        // Basic YAML structure validation
+        return (
+          !content.includes('\t') &&
+          content
+            .split('\n')
+            .every(
+              line =>
+                line.trim() === '' ||
+                !line.startsWith(' ') ||
+                line.match(/^\s+[^\s]/)
+            )
+        );
+      case 'xml': {
+        // Basic XML validation - check for balanced tags
+        const openTags = (content.match(/<[^/>]+>/g) || []).length;
+        const closeTags = (content.match(/<\/[^>]+>/g) || []).length;
+        const selfClosing = (content.match(/<[^>]+\/>/g) || []).length;
+        return openTags === closeTags + selfClosing;
+      }
+      default:
+        return true; // Assume valid for other types
+    }
+  } catch {
+    return false;
+  }
 }
 
 // Helper function to detect file type for fallback minification
@@ -97,6 +147,7 @@ export function minifyGenericContent(
   try {
     const fileType = getFileType(filePath);
     let minified = content;
+    let usedFallback = false; // Track if we used fallback processing
 
     // Remove comments based on file type
     switch (fileType) {
@@ -126,6 +177,7 @@ export function minifyGenericContent(
         } catch {
           // If JSON parsing fails, just remove basic whitespace
           minified = minified.replace(/\s+/g, ' ');
+          usedFallback = true; // Mark that we used fallback processing
         }
         break;
 
@@ -139,12 +191,12 @@ export function minifyGenericContent(
         break;
 
       case 'yaml':
-        // Remove YAML comments # ...
+        // Remove YAML comments # ... (but not inline after content)
         minified = minified.replace(/^\s*#.*$/gm, '');
-        // Remove empty lines
-        minified = minified.replace(/^\s*\n/gm, '');
-        // Reduce multiple spaces to single space (but preserve indentation structure)
-        minified = minified.replace(/^(\s*)[ \t]+/gm, '$1');
+        // Remove empty lines but preserve structure
+        minified = minified.replace(/\n\s*\n\s*\n/g, '\n\n');
+        // Reduce excessive spaces but preserve meaningful indentation
+        minified = minified.replace(/^(\s*)[ \t]{2,}/gm, '$1 ');
         break;
 
       case 'toml':
@@ -224,10 +276,13 @@ export function minifyGenericContent(
         break;
 
       case 'markdown':
-        // For markdown, only remove excessive whitespace but preserve structure
-        minified = minified.replace(/[ \t]+/g, ' ');
-        // Remove more than 2 consecutive newlines
+        // For markdown, be very conservative to preserve formatting
+        // Remove trailing spaces on lines (except intentional line breaks)
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Remove more than 2 consecutive newlines (preserve double newlines for paragraphs)
         minified = minified.replace(/\n{3,}/g, '\n\n');
+        // Only compress excessive inline whitespace (not at line start)
+        minified = minified.replace(/([^\n])[ \t]{3,}/g, '$1 ');
         break;
 
       default:
@@ -239,6 +294,14 @@ export function minifyGenericContent(
 
     // Final cleanup - remove leading/trailing whitespace
     minified = minified.trim();
+
+    // Validate the minified content for critical file types (but skip if we used fallback)
+    if (!usedFallback && !validateMinifiedContent(minified, filePath)) {
+      return {
+        content: content, // Return original if validation fails
+        failed: true,
+      };
+    }
 
     return {
       content: minified,
@@ -310,20 +373,23 @@ export async function minifyJavaScriptContent(
         drop_debugger: false, // Keep debugger statements
         pure_funcs: [], // Don't remove any function calls
         global_defs: {}, // No global definitions
-        sequences: false, // Don't combine statements with comma operator
-        conditionals: false, // Don't optimize if-else statements
-        comparisons: false, // Don't optimize comparisons
-        evaluate: false, // Don't evaluate constant expressions
-        booleans: false, // Don't optimize boolean expressions
-        loops: false, // Don't optimize loops
-        unused: false, // Don't remove unused variables
+        sequences: true, // Allow combining statements with comma operator (safe)
+        conditionals: true, // Allow basic if-else optimizations (safe)
+        comparisons: true, // Allow comparison optimizations (safe)
+        evaluate: true, // Allow constant expression evaluation (safe)
+        booleans: true, // Allow boolean expression optimization (safe)
+        loops: false, // Don't optimize loops (can change behavior)
+        unused: false, // Don't remove unused variables (keep for debugging)
         hoist_funs: false, // Don't hoist function declarations
         hoist_vars: false, // Don't hoist variable declarations
+        dead_code: true, // Remove unreachable code (safe)
+        side_effects: false, // Don't assume functions are side-effect free
       },
       mangle: false, // Don't mangle any names - keep everything readable
       format: {
         comments: false, // Remove comments to save tokens
         beautify: false, // Minify whitespace only
+        semicolons: true, // Always include semicolons for safety
       },
       sourceMap: false, // No source maps needed
       parse: {

@@ -17,27 +17,30 @@ const DESCRIPTION = `Access GitHub file content with smart token optimization. *
 **BEST PRACTICE WORKFLOW**:
 1. Use github_search_code to find relevant matches
 2. Extract line numbers from search results  
-3. Fetch targeted sections with startLine/endLine parameters
+3. Fetch targeted sections with startLine/endLine parameters (RECOMMENDED)
 4. Request full file only when comprehensive view needed
 
-**PARTIAL ACCESS (RECOMMENDED)**:
+**PARTIAL ACCESS (STRONGLY RECOMMENDED)**:
 - startLine/endLine: Get specific sections around search matches
 - contextLines: Control surrounding code visibility (default: 5)
 - Visual markers (→) highlight target lines in results
 - Massive token savings while preserving readability
+- Line numbers match exactly with search results
 
 **CAPABILITIES**:
 - Handles text files up to 300KB efficiently
 - Automatic branch fallback (main/master)
-- Smart minification for optimal token usage (enabled by default)
+- Smart minification applied to final output for optimal token usage
 - Line-annotated partial content with context
 - Search result integration for targeted access
 
-**WHEN TO USE FULL FILES**:
+**WHEN TO USE FULL FILES** (Not Recommended):
 - Small configuration files (<50 lines)
 - Complete understanding of file structure needed
 - Documentation files requiring full context
 - Initial exploration of unknown files
+
+**ALWAYS prefer startLine/endLine over full file access for better performance and token efficiency.**
 
 Optimized for efficient code research workflows.`;
 
@@ -83,7 +86,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .min(1)
           .optional()
           .describe(
-            `**RECOMMENDED**: Starting line number (1-based) for partial file access. Extract from github_search_code results for targeted content. Use with endLine for specific sections. Saves 80-90% tokens.`
+            `**STRONGLY RECOMMENDED**: Starting line number (1-based) for partial file access. Extract from github_search_code results for targeted content. Use with endLine for specific sections. Saves 80-90% tokens and ensures line numbers match search results exactly.`
           ),
         endLine: z
           .number()
@@ -111,7 +114,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           ),
       },
       annotations: {
-        title: 'GitHub File Content - Smart Partial Access (Recommended)',
+        title: 'GitHub File Content - Partial Access (Default/Recommended)',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -376,13 +379,14 @@ async function processFileContent(
   let finalContent = decodedContent;
   let actualStartLine: number | undefined;
   let actualEndLine: number | undefined;
-  let totalLines: number | undefined;
   let isPartial = false;
+  let hasLineAnnotations = false;
+
+  // Always calculate total lines for metadata
+  const lines = decodedContent.split('\n');
+  const totalLines = lines.length;
 
   if (startLine !== undefined) {
-    const lines = decodedContent.split('\n');
-    totalLines = lines.length;
-
     // Validate line numbers
     if (startLine < 1 || startLine > totalLines) {
       return createResult({
@@ -410,41 +414,59 @@ async function processFileContent(
       }
     }
 
-    // Extract the specified range with context
+    // Extract the specified range with context from ORIGINAL content
     const selectedLines = lines.slice(contextStart - 1, contextEnd);
-    finalContent = selectedLines.join('\n');
 
     actualStartLine = contextStart;
     actualEndLine = contextEnd;
     isPartial = true;
 
-    // Add line number annotations if getting partial content
-    if (isPartial) {
-      const annotatedLines = selectedLines.map((line, index) => {
-        const lineNumber = contextStart + index;
-        const isInTargetRange =
-          lineNumber >= startLine &&
-          (endLine === undefined || lineNumber <= endLine);
-        const marker = isInTargetRange ? '→' : ' ';
-        return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
-      });
-      finalContent = annotatedLines.join('\n');
-    }
+    // Add line number annotations for partial content
+    const annotatedLines = selectedLines.map((line, index) => {
+      const lineNumber = contextStart + index;
+      const isInTargetRange =
+        lineNumber >= startLine &&
+        (endLine === undefined || lineNumber <= endLine);
+      const marker = isInTargetRange ? '→' : ' ';
+      return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
+    });
+
+    finalContent = annotatedLines.join('\n');
+    hasLineAnnotations = true;
   }
 
-  // Apply minification if requested (only for full files or when explicitly requested)
+  // Apply minification to final content (both partial and full files)
   let minificationFailed = false;
   let minificationType = 'none';
 
-  if (minified && !isPartial) {
-    const minifyResult = await minifyContent(finalContent, filePath);
-    finalContent = minifyResult.content;
-    minificationFailed = minifyResult.failed;
-    minificationType = minifyResult.type;
-  } else if (minified && isPartial) {
-    // For partial content, just remove excessive whitespace but keep structure
-    finalContent = finalContent.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
-    minificationType = 'partial';
+  if (minified) {
+    if (hasLineAnnotations) {
+      // For partial content with line annotations, extract code content first
+      const annotatedLines = finalContent.split('\n');
+      const codeLines = annotatedLines.map(line => {
+        // Remove line number annotations but preserve the original line content
+        const match = line.match(/^[→ ]\s*\d+:\s*(.*)$/);
+        return match ? match[1] : line;
+      });
+
+      const codeContent = codeLines.join('\n');
+      const minifyResult = await minifyContent(codeContent, filePath);
+
+      if (!minifyResult.failed) {
+        // Apply minification first, then add simple line annotations
+        // Since minified content may be much shorter, use a simplified annotation approach
+        finalContent = `Lines ${actualStartLine}-${actualEndLine} (minified):\n${minifyResult.content}`;
+        minificationType = minifyResult.type;
+      } else {
+        minificationFailed = true;
+      }
+    } else {
+      // Full file minification
+      const minifyResult = await minifyContent(finalContent, filePath);
+      finalContent = minifyResult.content;
+      minificationFailed = minifyResult.failed;
+      minificationType = minifyResult.type;
+    }
   }
 
   return createResult({
@@ -454,12 +476,19 @@ async function processFileContent(
       repo,
       branch,
       content: finalContent,
+      // Always return total lines for LLM context
+      totalLines,
+      // Original request parameters for LLM context
+      requestedStartLine: startLine,
+      requestedEndLine: endLine,
+      requestedContextLines: contextLines,
+      // Actual content boundaries (only for partial content)
       ...(isPartial && {
         startLine: actualStartLine,
         endLine: actualEndLine,
-        totalLines,
         isPartial,
       }),
+      // Minification metadata
       ...(minified && {
         minified: !minificationFailed,
         minificationFailed: minificationFailed,

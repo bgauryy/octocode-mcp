@@ -26,7 +26,8 @@ export function createMockMcpServer(): MockMcpServer {
       toolHandlers.set(name, handler);
     }),
     // Mock for the actual tools' server.registerTool() method - handler is the 3rd parameter
-    registerTool: vi.fn((name: string, options: any, handler: Function) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    registerTool: vi.fn((name: string, _options: any, handler: Function) => {
       toolHandlers.set(name, handler);
     }),
     // Add other server methods as needed

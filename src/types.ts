@@ -294,10 +294,15 @@ export interface GitHubFileContentResponse {
   repo: string;
   branch: string;
   content: string;
+  // Actual content boundaries (with context applied)
   startLine?: number;
   endLine?: number;
-  totalLines?: number;
+  totalLines: number; // Always returned - total lines in the file
   isPartial?: boolean;
+  // Original request parameters for LLM context
+  requestedStartLine?: number;
+  requestedEndLine?: number;
+  requestedContextLines?: number;
   minified?: boolean;
   minificationFailed?: boolean;
   minificationType?: 'javascript' | 'generic' | 'failed' | 'none';
