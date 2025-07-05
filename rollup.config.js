@@ -21,22 +21,25 @@ export default {
     'buffer',
     'child_process',
     'crypto',
-    // Mark dependencies as external (they should be installed separately)
     '@modelcontextprotocol/sdk/server/mcp.js',
     '@modelcontextprotocol/sdk/server/stdio.js',
     'zod',
-    'commander',
-    'lodash',
     'node-cache',
     'node-fetch'
+    // NOTE: terser and @babel/core are NOT in external - they will be bundled
   ],
   plugins: [
     resolve({
       preferBuiltins: true,
       exportConditions: ['node'],
-      extensions: ['.ts', '.js', '.json']
+      extensions: ['.ts', '.js', '.json'],
+      // Include these packages in the bundle
+      include: ['terser', '@babel/core']
     }),
-    commonjs(),
+    commonjs({
+      // Handle CommonJS modules for terser and babel
+      include: ['node_modules/**']
+    }),
     json(),
     typescript({
       tsconfig: './tsconfig.json',

@@ -1,10 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { createResult } from '../responses';
-import { GithubFetchRequestParams, GitHubFileContentParams } from '../../types';
+import {
+  GithubFetchRequestParams,
+  GitHubFileContentParams,
+  GitHubFileContentResponse,
+} from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
+import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
@@ -24,6 +29,10 @@ CONTENT CAPABILITIES:
 - Handles text files up to 300KB efficiently
 - Automatic branch fallback (main/master)
 - Provides decoded content with metadata
+- Optional minification for JS/TS/JSX files (40-50% token reduction)
+- MINIFIED: Better for research, LLM analysis, pattern matching, bulk processing
+- ORIGINAL: Better for context, comments, documentation, debugging
+- Supports .js, .ts, .jsx, .tsx, .mjs, .cjs files
 - Optimized for code analysis workflows`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
@@ -61,6 +70,12 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .min(1)
           .describe(
             `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.`
+          ),
+        minified: z
+          .boolean()
+          .optional()
+          .describe(
+            `If true, minify JavaScript/TypeScript/JSX content - BETTER for research, LLM analysis, and token efficiency (typically 40-50% reduction). Use minified=true for code exploration, pattern analysis, and bulk processing. Use minified=false when you need full context, comments, and documentation. Perfect for: pattern analysis and code exploration, large-scale codebase research, token-efficient LLM processing, faster file analysis. Supports .js, .ts, .jsx, .tsx, .mjs, .cjs files. Default: false`
           ),
       },
       annotations: {
@@ -154,7 +169,8 @@ async function fetchGitHubFileContent(
                 owner,
                 repo,
                 fallbackBranch,
-                filePath
+                filePath,
+                params.minified
               );
             }
           }
@@ -232,21 +248,17 @@ Recovery strategies:
         }
       }
 
-      return await processFileContent(result, owner, repo, branch, filePath);
+      return await processFileContent(
+        result,
+        owner,
+        repo,
+        branch,
+        filePath,
+        params.minified
+      );
     } catch (error) {
-      const errorMessage = (error as Error).message;
-
-      if (
-        errorMessage.includes('maxBuffer') ||
-        errorMessage.includes('stdout maxBuffer length exceeded')
-      ) {
-        return createResult({
-          error: `File "${filePath}" is too large (>300KB). Use github_search_code to search within the file or download directly from GitHub.`,
-        });
-      }
-
       return createResult({
-        error: `Unexpected error fetching "${filePath}": ${errorMessage}. Check network connection and try again.`,
+        error: `Error fetching file content: ${error}`,
       });
     }
   });
@@ -257,7 +269,8 @@ async function processFileContent(
   owner: string,
   repo: string,
   branch: string,
-  filePath: string
+  filePath: string,
+  minified?: boolean
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
@@ -318,14 +331,31 @@ async function processFileContent(
     });
   }
 
+  // Apply minification if requested
+  let finalContent = decodedContent;
+  let minificationFailed = false;
+  let minificationType = 'none';
+
+  if (minified) {
+    const minifyResult = await minifyContent(decodedContent, filePath);
+    finalContent = minifyResult.content;
+    minificationFailed = minifyResult.failed;
+    minificationType = minifyResult.type;
+  }
+
   return createResult({
     data: {
       filePath,
       owner,
       repo,
       branch,
-      content: decodedContent,
-    },
+      content: finalContent,
+      ...(minified && {
+        minified: !minificationFailed,
+        minificationFailed: minificationFailed,
+        minificationType: minificationType,
+      }),
+    } as GitHubFileContentResponse,
   });
 }
 

@@ -151,6 +151,7 @@ export interface GithubFetchRequestParams {
   repo: string;
   branch: string;
   filePath: string;
+  minified?: boolean;
 }
 
 export interface GitHubIssuesSearchParams {
@@ -289,7 +290,19 @@ export type GitHubFileContentParams = {
   repo: string;
   branch: string;
   filePath: string;
+  minified?: boolean;
 };
+
+export interface GitHubFileContentResponse {
+  filePath: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  content: string;
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationType?: 'javascript' | 'generic' | 'failed' | 'none';
+}
 
 export interface NpmPackage {
   name: string;
