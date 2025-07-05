@@ -29,9 +29,7 @@ CONTENT CAPABILITIES:
 - Automatic branch fallback (main/master)
 - Provides decoded content with metadata
 - Optional minification for JS/TS/JSX files (40-50% token reduction) - ENABLED BY DEFAULT
-- MINIFIED (DEFAULT): Better for research, LLM analysis, pattern matching, bulk processing
-- ORIGINAL (minified=false): Better for context, comments, documentation, debugging
-- Supports .js, .ts, .jsx, .tsx, .mjs, .cjs files
+- MINIFIED (DEFAULT true): Better for research, LLM analysis, pattern matching, bulk processing. use false if you need the full context, comments, documentation, debugging
 - Optimized for code analysis workflows`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
