@@ -88,6 +88,17 @@ export function validateMinifiedContent(
 // Helper function to detect file type for fallback minification
 export function getFileType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase();
+  const filename = filePath.split('/').pop()?.toLowerCase();
+
+  // Special filename handling
+  if (
+    filename === 'dockerfile' ||
+    filename === 'makefile' ||
+    filename === 'jenkinsfile'
+  ) {
+    return filename;
+  }
+
   switch (ext) {
     case 'html':
     case 'htm':
@@ -96,6 +107,13 @@ export function getFileType(filePath: string): string {
       return 'css';
     case 'less':
       return 'less';
+    case 'scss':
+      return 'scss';
+    case 'sass':
+      return 'sass';
+    case 'styl':
+    case 'stylus':
+      return 'stylus';
     case 'json':
       return 'json';
     case 'xml':
@@ -114,6 +132,10 @@ export function getFileType(filePath: string): string {
     case 'conf':
     case 'config':
       return 'config';
+    case 'env':
+      return 'env';
+    case 'properties':
+      return 'properties';
     case 'sql':
       return 'sql';
     case 'sh':
@@ -127,15 +149,75 @@ export function getFileType(filePath: string): string {
       return 'go';
     case 'java':
       return 'java';
+    case 'kt':
+    case 'kts':
+      return 'kotlin';
+    case 'scala':
+      return 'scala';
+    case 'swift':
+      return 'swift';
+    case 'dart':
+      return 'dart';
     case 'c':
     case 'cpp':
     case 'cc':
     case 'cxx':
+    case 'h':
+    case 'hpp':
       return 'c';
     case 'cs':
       return 'csharp';
     case 'php':
       return 'php';
+    case 'pl':
+    case 'pm':
+      return 'perl';
+    case 'lua':
+      return 'lua';
+    case 'r':
+      return 'r';
+    case 'rs':
+      return 'rust';
+    // Template languages
+    case 'hbs':
+    case 'handlebars':
+      return 'handlebars';
+    case 'ejs':
+      return 'ejs';
+    case 'pug':
+    case 'jade':
+      return 'pug';
+    case 'mustache':
+      return 'mustache';
+    case 'twig':
+      return 'twig';
+    case 'j2':
+    case 'jinja':
+    case 'jinja2':
+      return 'jinja';
+    case 'erb':
+      return 'erb';
+    // Modern frontend
+    case 'vue':
+      return 'vue';
+    case 'svelte':
+      return 'svelte';
+    // Data formats
+    case 'graphql':
+    case 'gql':
+      return 'graphql';
+    case 'proto':
+      return 'protobuf';
+    case 'csv':
+      return 'csv';
+    // Infrastructure
+    case 'tf':
+    case 'tfvars':
+      return 'terraform';
+    case 'pp':
+      return 'puppet';
+    case 'gd':
+      return 'gdscript';
     default:
       return 'text';
   }
@@ -164,7 +246,10 @@ export function minifyGenericContent(
 
       case 'css':
       case 'less':
-        // Remove CSS/LESS comments /* ... */ and // ...
+      case 'scss':
+      case 'sass':
+      case 'stylus':
+        // Remove CSS/LESS/SCSS/Sass/Stylus comments /* ... */ and // ...
         minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
         minified = minified.replace(/^\s*\/\/.*$/gm, '');
         // Remove excessive whitespace
@@ -212,6 +297,8 @@ export function minifyGenericContent(
 
       case 'config':
       case 'ini':
+      case 'env':
+      case 'properties':
         // Remove comments starting with # or ;
         minified = minified.replace(/^\s*[#;].*$/gm, '');
         // Remove empty lines
@@ -228,6 +315,8 @@ export function minifyGenericContent(
         break;
 
       case 'shell':
+      case 'dockerfile':
+      case 'makefile':
         // Remove shell comments # ...
         minified = minified.replace(/^\s*#.*$/gm, '');
         // Remove empty lines
@@ -235,31 +324,25 @@ export function minifyGenericContent(
         break;
 
       case 'python':
-        // Remove Python comments # ... (but not in strings)
-        minified = minified.replace(/^\s*#.*$/gm, '');
-        // Remove empty lines
-        minified = minified.replace(/^\s*\n/gm, '');
-        break;
-
       case 'ruby':
-        // Remove Ruby comments # ...
+      case 'perl':
+      case 'r':
+      case 'gdscript':
+        // Remove comments # ... (but not in strings)
         minified = minified.replace(/^\s*#.*$/gm, '');
         // Remove empty lines
         minified = minified.replace(/^\s*\n/gm, '');
         break;
 
       case 'go':
-        // Remove Go comments // ...
-        minified = minified.replace(/^\s*\/\/.*$/gm, '');
-        // Remove Go comments /* ... */
-        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
-        // Remove excessive whitespace
-        minified = minified.replace(/\s+/g, ' ');
-        break;
-
       case 'java':
+      case 'kotlin':
+      case 'scala':
+      case 'swift':
+      case 'dart':
       case 'c':
       case 'csharp':
+      case 'rust':
         // Remove C-style comments // ...
         minified = minified.replace(/^\s*\/\/.*$/gm, '');
         // Remove C-style comments /* ... */
@@ -276,6 +359,121 @@ export function minifyGenericContent(
         // Remove PHP comments /* ... */
         minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
         // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'lua':
+        // Remove Lua comments -- ...
+        minified = minified.replace(/^\s*--.*$/gm, '');
+        // Remove Lua block comments --[[ ... ]]
+        minified = minified.replace(/--\[\[[\s\S]*?\]\]/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      // Template languages
+      case 'handlebars':
+      case 'mustache':
+        // Remove Handlebars/Mustache comments {{! ... }} and {{!-- ... --}}
+        minified = minified.replace(/\{\{!--[\s\S]*?--\}\}/g, '');
+        minified = minified.replace(/\{\{![\s\S]*?\}\}/g, '');
+        // Remove excessive whitespace but preserve template structure
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'ejs':
+        // Remove EJS comments <%# ... %>
+        minified = minified.replace(/<%#[\s\S]*?%>/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'pug':
+        // Remove Pug comments // ...
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove Pug block comments //- ...
+        minified = minified.replace(/^\s*\/\/-.*$/gm, '');
+        // Be very conservative with indentation (Pug is whitespace-sensitive)
+        minified = minified.replace(/[ \t]+$/gm, '');
+        break;
+
+      case 'twig':
+        // Remove Twig comments {# ... #}
+        minified = minified.replace(/\{#[\s\S]*?#\}/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'jinja':
+        // Remove Jinja comments {# ... #}
+        minified = minified.replace(/\{#[\s\S]*?#\}/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'erb':
+        // Remove ERB comments <%# ... %>
+        minified = minified.replace(/<%#[\s\S]*?%>/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      // Modern frontend
+      case 'vue':
+        // Vue SFC - be conservative, just remove HTML comments and basic whitespace
+        minified = minified.replace(/<!--[\s\S]*?-->/g, '');
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'svelte':
+        // Svelte - similar to Vue, be conservative
+        minified = minified.replace(/<!--[\s\S]*?-->/g, '');
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      // Data formats
+      case 'graphql':
+        // Remove GraphQL comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'protobuf':
+        // Remove Protocol Buffer comments // ...
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'csv':
+        // For CSV, just remove empty lines and trailing spaces
+        minified = minified.replace(/[ \t]+$/gm, '');
+        minified = minified.replace(/^\s*\n/gm, '');
+        break;
+
+      // Infrastructure
+      case 'terraform':
+        // Remove Terraform comments # ... and // ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove Terraform block comments /* ... */
+        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'puppet':
+        // Remove Puppet comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove empty lines
+        minified = minified.replace(/^\s*\n/gm, '');
+        break;
+
+      case 'jenkinsfile':
+        // Jenkinsfile is Groovy-based, use Java-style comments
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
         minified = minified.replace(/\s+/g, ' ');
         break;
 
