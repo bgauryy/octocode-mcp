@@ -19,6 +19,22 @@ export function isTypeScriptFile(filePath: string): boolean {
   return ['ts', 'tsx'].includes(ext || '');
 }
 
+// Helper function to check if file contains Flow type annotations
+export function isFlowFile(content: string): boolean {
+  // Check for Flow pragma or type annotations
+  return (
+    content.includes('@flow') ||
+    content.includes('// @flow') ||
+    content.includes('/* @flow */') ||
+    // Look for Flow-specific syntax patterns
+    /import\s+type\s+/.test(content) ||
+    /export\s+type\s+/.test(content) ||
+    /:\s*\?\w/.test(content) || // Optional types like ?string
+    /\$FlowFixMe/.test(content) ||
+    /\$FlowIssue/.test(content)
+  );
+}
+
 // Helper function to detect file type for fallback minification
 export function getFileType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase();
@@ -244,15 +260,22 @@ export async function minifyJavaScriptContent(
   try {
     let processedContent = content;
 
-    // Use Babel to transpile TypeScript and/or JSX to plain JavaScript
-    if (isTypeScriptFile(filePath) || isJSXFile(filePath)) {
+    // Check if we need Babel transformation
+    const needsTypeScript = isTypeScriptFile(filePath);
+    const needsJSX = isJSXFile(filePath);
+    const needsFlow = !needsTypeScript && isFlowFile(content); // Only check Flow for JS files
+
+    if (needsTypeScript || needsJSX || needsFlow) {
       const babelPresets = [];
 
-      if (isTypeScriptFile(filePath)) {
+      if (needsTypeScript) {
         babelPresets.push('@babel/preset-typescript');
       }
-      if (isJSXFile(filePath)) {
+      if (needsJSX) {
         babelPresets.push('@babel/preset-react');
+      }
+      if (needsFlow) {
+        babelPresets.push('@babel/preset-flow');
       }
 
       try {
@@ -269,13 +292,13 @@ export async function minifyJavaScriptContent(
           processedContent = transformResult.code;
         } else {
           return {
-            content: `DEBUG: No code returned. FilePath: ${filePath}, isTS: ${isTypeScriptFile(filePath)}, isJSX: ${isJSXFile(filePath)}, presets: ${JSON.stringify(babelPresets)}`,
+            content: `DEBUG: No code returned. FilePath: ${filePath}, isTS: ${needsTypeScript}, isJSX: ${needsJSX}, isFlow: ${needsFlow}, presets: ${JSON.stringify(babelPresets)}`,
             failed: true,
           };
         }
       } catch (transformError: any) {
         return {
-          content: `DEBUG: Transform error for ${filePath}. isTS: ${isTypeScriptFile(filePath)}, isJSX: ${isJSXFile(filePath)}, presets: ${JSON.stringify(babelPresets)}, error: ${transformError.message}`,
+          content: `DEBUG: Transform error for ${filePath}. isTS: ${needsTypeScript}, isJSX: ${needsJSX}, isFlow: ${needsFlow}, presets: ${JSON.stringify(babelPresets)}, error: ${transformError.message}`,
           failed: true,
         };
       }
@@ -317,7 +340,7 @@ export async function minifyJavaScriptContent(
     };
   } catch (error: any) {
     return {
-      content: `DEBUG: Outer catch block. FilePath: ${filePath}, Error: ${error.message}`,
+      content: `DEBUG: JavaScript minification failed for ${filePath}. Error: ${error.message}. Stack: ${error.stack}`,
       failed: true,
     };
   }
