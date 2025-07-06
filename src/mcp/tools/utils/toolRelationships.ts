@@ -211,7 +211,8 @@ export const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
     nextSteps: [
       {
         tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        reason: 'to view files changed in commits',
+        reason:
+          'to view files from specific commits using returned commit SHAs as branch parameter',
       },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
@@ -251,13 +252,13 @@ export const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
       },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'to find related commits',
+        reason: 'to find specific commit SHAs from PR for file viewing',
       },
     ],
     nextSteps: [
       {
         tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        reason: 'to view PR changes',
+        reason: 'to view PR files using head/base branch names or commit SHAs',
       },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_CODE,

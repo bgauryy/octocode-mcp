@@ -240,6 +240,8 @@ export interface GitHubPullRequestItem {
   draft: boolean;
   head?: string;
   base?: string;
+  head_sha?: string; // Commit SHA for the head branch
+  base_sha?: string; // Commit SHA for the base branch
 }
 
 export interface GitHubPullRequestsSearchResult {

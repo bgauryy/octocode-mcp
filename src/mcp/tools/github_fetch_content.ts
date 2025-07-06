@@ -16,11 +16,15 @@ const DESCRIPTION = `Fetches the content of a file from a GitHub repository.
 
 **TOKEN OPTIMIZATION WORKFLOW**: From github search results -> extract lines -> Fetch targeted sections
 
+**COMMIT/BRANCH ACCESS**:
+- branch parameter accepts: branch names, tag names, OR commit SHAs
+- Perfect for viewing files from specific commits or PR states
+- Use commit SHAs from github_search_commits results directly
+
 **PARTIAL ACCESS** (startLine/endLine):
 - Target search result lines exactly
 - contextLines: Surrounding code (default: 5)
 - Full file can also be fetched for full context, but it's not recommended in most cases.
-- minified: true by default. Use false only when you need complete formatting, comments, and documentation (or to actually see real implementaions)
 
 **CAPABILITIES**:
 - Smart minification for optimal tokens
@@ -56,7 +60,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .max(255)
           .regex(/^[^\s]+$/)
           .describe(
-            `Branch name (e.g., 'main', 'master'). Tool will automatically try 'main' and 'master' if specified branch is not found.`
+            `Branch name, tag name, OR commit SHA. Use commit SHAs from github_search_commits to view files from specific commits. Tool will automatically try 'main' and 'master' if specified branch is not found.`
           ),
         filePath: z
           .string()
@@ -129,7 +133,7 @@ async function fetchGitHubFileContent(
 
     try {
       // Try to fetch file content directly
-      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}`;
+      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
 
       const result = await executeGitHubCommand('api', [apiPath], {
         cache: false,

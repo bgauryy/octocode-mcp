@@ -16,7 +16,7 @@ const ALLOWED_NPM_COMMANDS = [
 ] as const;
 
 // Allowed command prefixes - this prevents shell injection by restricting to safe commands
-const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org'] as const;
+const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org', 'pr'] as const;
 
 export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
 export type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
