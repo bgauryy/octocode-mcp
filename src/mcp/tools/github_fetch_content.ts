@@ -12,37 +12,20 @@ import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Access GitHub file content with smart token optimization. **DEFAULT: Use partial access for 80-90% token savings.**
+const DESCRIPTION = `Fetches the content of a file from a GitHub repository.
 
-**BEST PRACTICE WORKFLOW**:
-1. Use github_search_code to find relevant matches
-2. Extract line numbers from search results  
-3. Fetch targeted sections with startLine/endLine parameters (RECOMMENDED)
-4. Request full file only when comprehensive view needed
+**TOKEN OPTIMIZATION WORKFLOW**: From github search results -> extract lines -> Fetch targeted sections
 
-**PARTIAL ACCESS (STRONGLY RECOMMENDED)**:
-- startLine/endLine: Get specific sections around search matches
-- contextLines: Control surrounding code visibility (default: 5)
-- Visual markers (→) highlight target lines in results
-- Massive token savings while preserving readability
-- Line numbers match exactly with search results
+**PARTIAL ACCESS** (startLine/endLine):
+- Target search result lines exactly
+- contextLines: Surrounding code (default: 5)
+- Full file can also be fetched for full context, but it's not recommended in most cases.
 
 **CAPABILITIES**:
-- Handles text files up to 300KB efficiently
-- Automatic branch fallback (main/master)
-- Smart minification applied to final output for optimal token usage
-- Line-annotated partial content with context
-- Search result integration for targeted access
+- Smart minification for optimal tokens
+- Indentation-aware processing for 15+ languages
 
-**WHEN TO USE FULL FILES** (Not Recommended):
-- Small configuration files (<50 lines)
-- Complete understanding of file structure needed
-- Documentation files requiring full context
-- Initial exploration of unknown files
-
-**ALWAYS prefer startLine/endLine over full file access for better performance and token efficiency.**
-
-Optimized for efficient code research workflows.`;
+Great for research and code discovery with token efficiency`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(

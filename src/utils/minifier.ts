@@ -99,6 +99,14 @@ export function getFileType(filePath: string): string {
     return filename;
   }
 
+  // Special indentation-sensitive files
+  if (filename === 'build' || filename === 'build.bazel') {
+    return 'starlark';
+  }
+  if (filename === 'cmakelists.txt') {
+    return 'cmake';
+  }
+
   switch (ext) {
     case 'html':
     case 'htm':
@@ -218,9 +226,67 @@ export function getFileType(filePath: string): string {
       return 'puppet';
     case 'gd':
       return 'gdscript';
+    // Indentation-sensitive languages
+    case 'coffee':
+      return 'coffeescript';
+    case 'haml':
+      return 'haml';
+    case 'slim':
+      return 'slim';
+    case 'nim':
+      return 'nim';
+    case 'fs':
+    case 'fsx':
+      return 'fsharp';
+    case 'hs':
+    case 'lhs':
+      return 'haskell';
+    case 'rst':
+      return 'restructuredtext';
+    case 'ls':
+      return 'livescript';
+    case 'elm':
+      return 'elm';
+    case 'star':
+    case 'bzl':
+      return 'starlark';
+    case 'cmake':
+      return 'cmake';
     default:
       return 'text';
   }
+}
+
+// Helper function to check if a language is indentation-sensitive
+export function isIndentationSensitive(filePath: string): boolean {
+  const fileType = getFileType(filePath);
+  const filename = filePath.split('/').pop()?.toLowerCase();
+
+  return (
+    [
+      'python',
+      'yaml',
+      'pug',
+      'sass', // Indented Sass syntax
+      'makefile',
+      'markdown', // For nested lists, code blocks
+      // Additional indentation-sensitive languages
+      'coffeescript',
+      'haml',
+      'slim',
+      'nim',
+      'fsharp',
+      'haskell',
+      'restructuredtext',
+      'livescript',
+      'elm',
+      'starlark',
+      'cmake',
+    ].includes(fileType) ||
+    filename === 'makefile' ||
+    filename === 'build' ||
+    filename === 'cmakelists.txt'
+  );
 }
 
 // Fallback minification function for non-JavaScript files
@@ -247,15 +313,25 @@ export function minifyGenericContent(
       case 'css':
       case 'less':
       case 'scss':
-      case 'sass':
       case 'stylus':
-        // Remove CSS/LESS/SCSS/Sass/Stylus comments /* ... */ and // ...
+        // Remove CSS/LESS/SCSS/Stylus comments /* ... */ and // ...
         minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
         minified = minified.replace(/^\s*\/\/.*$/gm, '');
         // Remove excessive whitespace
         minified = minified.replace(/\s+/g, ' ');
         // Remove spaces around CSS syntax
         minified = minified.replace(/\s*([{}:;,])\s*/g, '$1');
+        break;
+
+      case 'sass':
+        // Sass (indented syntax) is indentation-sensitive!
+        // Remove comments // ... and /* ... */
+        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
         break;
 
       case 'json':
@@ -280,12 +356,15 @@ export function minifyGenericContent(
         break;
 
       case 'yaml':
+        // YAML is indentation-sensitive! Be very careful
         // Remove YAML comments # ... (but not inline after content)
         minified = minified.replace(/^\s*#.*$/gm, '');
-        // Remove empty lines but preserve structure
-        minified = minified.replace(/\n\s*\n\s*\n/g, '\n\n');
-        // Reduce excessive spaces but preserve meaningful indentation
-        minified = minified.replace(/^(\s*)[ \t]{2,}/gm, '$1 ');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse excessive empty lines (3+ -> 2) to preserve structure
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        // Be very conservative with space reduction - only remove obvious excess
+        minified = minified.replace(/^(\s*)[ ]{4,}/gm, '$1  '); // 4+ spaces -> 2 spaces
         break;
 
       case 'toml':
@@ -316,18 +395,37 @@ export function minifyGenericContent(
 
       case 'shell':
       case 'dockerfile':
-      case 'makefile':
         // Remove shell comments # ...
         minified = minified.replace(/^\s*#.*$/gm, '');
         // Remove empty lines
         minified = minified.replace(/^\s*\n/gm, '');
         break;
 
+      case 'makefile':
+        // Makefiles are indentation-sensitive and require TABS for recipes!
+        // Remove comments # ... but preserve tab structure
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve tabs and line structure
+        minified = minified.replace(/[ ]+$/gm, ''); // Only remove spaces, keep tabs
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
       case 'python':
+        // Python is indentation-sensitive! Be very conservative
+        // Only remove comment-only lines, preserve empty lines for indentation context
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve line structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines (3+ -> 2)
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
       case 'ruby':
       case 'perl':
       case 'r':
       case 'gdscript':
+        // These languages use braces/end keywords, safe to remove empty lines
         // Remove comments # ... (but not in strings)
         minified = minified.replace(/^\s*#.*$/gm, '');
         // Remove empty lines
@@ -485,6 +583,119 @@ export function minifyGenericContent(
         minified = minified.replace(/\n{3,}/g, '\n\n');
         // Only compress excessive inline whitespace (not at line start)
         minified = minified.replace(/([^\n])[ \t]{3,}/g, '$1 ');
+        break;
+
+      // Indentation-sensitive programming languages
+      case 'coffeescript':
+      case 'livescript':
+        // CoffeeScript/LiveScript - Python-like indentation sensitivity
+        // Remove CoffeeScript comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'nim':
+        // Nim - Python-like indentation sensitivity
+        // Remove Nim comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'fsharp':
+        // F# - Indentation-sensitive functional language
+        // Remove F# comments // ...
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove F# block comments (* ... *)
+        minified = minified.replace(/\(\*[\s\S]*?\*\)/g, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'haskell':
+        // Haskell - Partially indentation-sensitive
+        // Remove Haskell comments -- ...
+        minified = minified.replace(/^\s*--.*$/gm, '');
+        // Remove Haskell block comments {- ... -}
+        minified = minified.replace(/\{-[\s\S]*?-\}/g, '');
+        // Remove trailing whitespace but preserve some indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'elm':
+        // Elm - Functional language with some indentation sensitivity
+        // Remove Elm comments -- ...
+        minified = minified.replace(/^\s*--.*$/gm, '');
+        // Remove Elm block comments {- ... -}
+        minified = minified.replace(/\{-[\s\S]*?-\}/g, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      // Indentation-sensitive template languages
+      case 'haml':
+        // Haml - Ruby template engine, very indentation-sensitive
+        // Remove Haml comments -# ...
+        minified = minified.replace(/^\s*-#.*$/gm, '');
+        // Remove Haml silent comments / ...
+        minified = minified.replace(/^\s*\/.*$/gm, '');
+        // Remove trailing whitespace but preserve critical indentation
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'slim':
+        // Slim - Ruby template engine, very indentation-sensitive
+        // Remove Slim comments / ...
+        minified = minified.replace(/^\s*\/.*$/gm, '');
+        // Remove trailing whitespace but preserve critical indentation
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      // Documentation formats
+      case 'restructuredtext':
+        // reStructuredText - Indentation-sensitive documentation
+        // Remove comments .. (but be very careful as .. has other meanings)
+        minified = minified.replace(/^\s*\.\.\s+[^:]*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines (preserve double newlines)
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      // Build systems with Python-like syntax
+      case 'starlark':
+        // Starlark/Bazel - Python-like indentation sensitivity
+        // Remove Starlark comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'cmake':
+        // CMake - Structure-sensitive (not strictly indentation but formatting matters)
+        // Remove CMake comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
         break;
 
       default:
