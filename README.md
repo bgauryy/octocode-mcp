@@ -97,9 +97,9 @@ npm login
 
 **Smart Discovery Flow:**
 1. **🔍 Query Analysis** → AI determines the best search strategy based on your question
-2. **⚡ Multi-Tool Orchestration** → Combines GitHub + NPM searches intelligently
+2. **⚡ Multi-Tool Orchestration** → Intelligently combines 10 specialized tools across GitHub + NPM
 3. **🔄 Smart Fallbacks** → Automatically retries with different approaches if initial search fails
-4. **🔗 Cross-Reference Discovery** → Links packages to repositories, finds related implementations
+4. **🔗 Cross-Reference Discovery** → Links packages to repositories, finds related implementations with commit SHA integration
 5. **🎯 Context Synthesis** → Provides comprehensive understanding across multiple sources
 
 ## Example Flows
@@ -147,6 +147,52 @@ npm login
 - **Community Insights** - Discovers patterns from real-world usage and discussions
 - **Quality Signals** - Uses NPM publication and GitHub activity as quality indicators
 
+### 🔗 Commit SHA Integration
+- **Time Travel Code Viewing** - View files from specific commits and pull requests using commit SHAs
+- **PR Code Analysis** - Automatically fetch commit SHAs from pull requests for precise code comparison
+- **Historical Implementation** - Compare how code evolved across different commits and versions
+- **Cross-Reference Discovery** - Link commits, pull requests, and current implementations seamlessly
+
+### ⚡ LLM Content Optimization
+- **Intelligent Content Selection** - Automatically identifies and extracts only relevant code sections for research
+- **Smart Minification** - Advanced content compression that preserves meaning while reducing tokens by 80-90%
+- **Partial File Access** - Fetches targeted line ranges from search results, avoiding full file downloads
+- **Context-Aware Processing** - Indentation-aware minification for 15+ programming languages
+- **Binary Detection & Filtering** - Automatically skips non-text files and suggests alternatives
+- **Token Efficiency** - Optimizes content for maximum LLM comprehension with minimal token usage
+- **Line Number Preservation** - Maintains precise line references for code navigation and debugging
+
+**Optimization Workflow:**
+1. **🎯 Smart Targeting** → Extract specific line ranges from search results
+2. **🧹 Content Filtering** → Remove comments, whitespace, and non-essential elements
+3. **🗜️ Intelligent Compression** → Language-aware minification preserving code structure
+4. **📍 Context Preservation** → Keep essential context and line number references
+5. **⚡ Token Optimization** → Deliver maximum code insight with minimal LLM token consumption
+
+## Available Tools 🛠️
+
+Octocode provides **10 specialized tools** that work together intelligently:
+
+**🔍 Discovery Tools:**
+- **Repository Search** - Find repositories by topic, language, stars, and organization
+- **Package Search** - Discover NPM packages by functionality and keywords
+
+**📊 Analysis Tools:**
+- **Code Search** - Smart search across GitHub repositories with heuristic pattern recognition
+- **Package Analysis** - Detailed NPM package analysis with repository linking
+- **Repository Structure** - Explore directory structures and file organization
+
+**📈 Activity Tools:**
+- **Commit Search** - Find commits by message, author, and date with SHA integration
+- **Pull Request Search** - Discover PRs with automatic commit SHA extraction
+- **Issue Search** - Find bug reports, feature requests, and discussions
+
+**📁 Content Tools:**
+- **File Content Fetching** - Read files from any commit, branch, or PR using commit SHAs
+- **API Status Check** - Verify authentication and discover organization access
+
+**Smart Integration:** All tools work together through intelligent workflows - from package discovery → repository analysis → commit history → file content, with automatic fallbacks and cross-referencing.
+
 ## Privacy & Security 🛡️
 
 - **🏠 100% Local** - Runs entirely on your machine
@@ -159,8 +205,8 @@ npm login
 **Robust protection against prompt injections and malicious command execution:**
 
 - **⚪ Allowlisted Commands Only** - Only pre-approved, safe NPM and GitHub CLI commands are executable
-  - NPM: `view`, `search`, `ping`, `config`, `whoami` 
-  - GitHub CLI: `search`, `api`, `auth`, `org`
+  - NPM: `view`, `search`, `config`, `whoami` 
+  - GitHub CLI: `search`, `api`, `auth`, `org`, `pr`
 - **🛡️ Argument Sanitization** - All command arguments are properly escaped to prevent shell injection attacks
 - **✅ Pre-execution Validation** - Every command is validated against allowed lists before execution
 - **🔧 Controlled Environment** - Commands run in a secure, cross-platform shell environment with controlled variables
