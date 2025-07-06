@@ -20,7 +20,13 @@ import {
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `Search GitHub pull requests for code changes, feature implementations, and bug fixes. Find PRs by keywords, state, author, review status, or repository. Returns PR number, title, state, branches, and review information for code review analysis.`;
+const DESCRIPTION = `Search GitHub pull requests for code changes, feature implementations, and bug fixes. Find PRs by keywords, state, author, review status, or repository. Returns PR number, title, state, branches, and review information for code review analysis.
+
+INTEGRATION WORKFLOW:
+- Use PR head/base branch names with github_fetch_content to view PR code
+- Repository-specific searches return commit SHAs (head_sha, base_sha) for direct use with github fetch content (branch=SHA)
+- Combine with github_search_commits to find specific commit SHAs from PR
+- Perfect for reviewing implementations and understanding changes`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
@@ -214,8 +220,12 @@ async function searchGitHubPullRequests(
     }
 
     const execResult = JSON.parse(result.content[0].text as string);
-    const apiResponse = execResult.result;
-    const pullRequests = apiResponse.items || [];
+
+    // Handle both search API and gh pr list formats
+    const isListFormat = Array.isArray(execResult.result);
+    const pullRequests = isListFormat
+      ? execResult.result
+      : execResult.result?.items || [];
 
     if (pullRequests.length === 0) {
       return createResult({
@@ -223,54 +233,64 @@ async function searchGitHubPullRequests(
       });
     }
 
-    const cleanPRs: GitHubPullRequestItem[] = pullRequests.map(
-      (pr: {
-        number: number;
-        title: string;
-        state: 'open' | 'closed';
-        user?: { login: string };
-        repository_url?: string;
-        labels?: Array<{ name: string }>;
-        created_at: string;
-        updated_at: string;
-        html_url: string;
-        comments: number;
-        reactions?: { total_count: number };
-        draft: boolean;
-        merged_at?: string;
-        closed_at?: string;
-        head?: { ref: string };
-        base?: { ref: string };
-      }) => {
+    const cleanPRs: GitHubPullRequestItem[] = pullRequests.map((pr: any) => {
+      // Handle gh pr list format
+      if (isListFormat) {
         const result: GitHubPullRequestItem = {
           number: pr.number,
           title: pr.title,
-          state: pr.state,
-          author: pr.user?.login || '',
-          repository:
-            pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-          labels: pr.labels?.map(l => l.name) || [],
-          created_at: toDDMMYYYY(pr.created_at),
-          updated_at: toDDMMYYYY(pr.updated_at),
-          url: pr.html_url,
-          comments: pr.comments,
-          reactions: pr.reactions?.total_count || 0,
-          draft: pr.draft,
+          state: pr.state?.toLowerCase() || 'unknown',
+          author: pr.author?.login || '',
+          repository: `${params.owner}/${params.repo}`,
+          labels: pr.labels?.map((l: any) => l.name) || [],
+          created_at: toDDMMYYYY(pr.createdAt),
+          updated_at: toDDMMYYYY(pr.updatedAt),
+          url: pr.url,
+          comments: pr.comments || 0,
+          reactions: 0, // Not available in list format
+          draft: pr.isDraft || false,
         };
 
-        // Only include optional fields if they have values
-        if (pr.merged_at) result.merged_at = pr.merged_at;
-        if (pr.closed_at) result.closed_at = toDDMMYYYY(pr.closed_at);
-        if (pr.head?.ref) result.head = pr.head.ref;
-        if (pr.base?.ref) result.base = pr.base.ref;
+        // Add commit SHAs - this is the key enhancement!
+        if (pr.headRefName) result.head = pr.headRefName;
+        if (pr.headRefOid) result.head_sha = pr.headRefOid;
+        if (pr.baseRefName) result.base = pr.baseRefName;
+        if (pr.baseRefOid) result.base_sha = pr.baseRefOid;
 
         return result;
       }
-    );
+
+      // Handle search API format
+      const result: GitHubPullRequestItem = {
+        number: pr.number,
+        title: pr.title,
+        state: pr.state,
+        author: pr.user?.login || '',
+        repository:
+          pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
+        labels: pr.labels?.map((l: any) => l.name) || [],
+        created_at: toDDMMYYYY(pr.created_at),
+        updated_at: toDDMMYYYY(pr.updated_at),
+        url: pr.html_url,
+        comments: pr.comments,
+        reactions: pr.reactions?.total_count || 0,
+        draft: pr.draft,
+      };
+
+      // Only include optional fields if they have values
+      if (pr.merged_at) result.merged_at = pr.merged_at;
+      if (pr.closed_at) result.closed_at = toDDMMYYYY(pr.closed_at);
+      if (pr.head?.ref) result.head = pr.head.ref;
+      if (pr.base?.ref) result.base = pr.base.ref;
+
+      return result;
+    });
 
     const searchResult: GitHubPullRequestsSearchResult = {
       results: cleanPRs,
-      total_count: apiResponse.total_count || cleanPRs.length,
+      total_count: isListFormat
+        ? cleanPRs.length
+        : execResult.result?.total_count || cleanPRs.length,
     };
 
     return createResult({ data: searchResult });
@@ -280,12 +300,15 @@ async function searchGitHubPullRequests(
 function buildGitHubPullRequestsAPICommand(
   params: GitHubPullRequestsSearchParams
 ): { command: GhCommand; args: string[] } {
+  // For repository-specific searches, use gh pr list to get commit SHAs
+  if (params.owner && params.repo) {
+    return buildGitHubPullRequestsListCommand(params);
+  }
+
   const queryParts: string[] = [params.query?.trim() || ''];
 
   // Repository/organization qualifiers
-  if (params.owner && params.repo) {
-    queryParts.push(`repo:${params.owner}/${params.repo}`);
-  } else if (params.owner) {
+  if (params.owner) {
     queryParts.push(`org:${params.owner}`);
   }
 
@@ -355,4 +378,43 @@ function buildGitHubPullRequestsAPICommand(
   if (params.order) apiPath += `&order=${params.order}`;
 
   return { command: 'api', args: [apiPath] };
+}
+
+function buildGitHubPullRequestsListCommand(
+  params: GitHubPullRequestsSearchParams
+): { command: GhCommand; args: string[] } {
+  const args: string[] = [
+    'list',
+    '--repo',
+    `${params.owner}/${params.repo}`,
+    '--json',
+    'number,title,headRefName,headRefOid,baseRefName,baseRefOid,state,author,labels,createdAt,updatedAt,url,comments,isDraft',
+    '--limit',
+    String(Math.min(params.limit || 25, 100)),
+  ];
+
+  // Add filters
+  if (params.state) {
+    args.push('--state', params.state);
+  }
+  if (params.author) {
+    args.push('--author', params.author);
+  }
+  if (params.assignee) {
+    args.push('--assignee', params.assignee);
+  }
+  if (params.head) {
+    args.push('--head', params.head);
+  }
+  if (params.base) {
+    args.push('--base', params.base);
+  }
+  if (params.label) {
+    const labels = Array.isArray(params.label) ? params.label : [params.label];
+    labels.forEach(label => {
+      args.push('--label', label);
+    });
+  }
+
+  return { command: 'pr', args };
 }

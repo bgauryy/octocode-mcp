@@ -11,23 +11,23 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access. ESSENTIAL for understanding project organization.
-
-REPOSITORY VALIDATION:
-- Verify repository existence and accessibility
-- Navigate from root to understand project layout  
-- Identify key directories and file patterns
+const DESCRIPTION = `Explore GitHub repository structure and validate repository access.
 
 PROJECT UNDERSTANDING:
-- Discover configuration files, documentation, source structure
-- Validate paths before accessing specific files
-- Understand architecture and organization patterns
+- Try to understand more by the structure of the project and the files in the project
+- Identify key directories and file patterns
+- fetch important files for better understanding
 
-WORKFLOW INTEGRATION:
-- First step after repository discovery
-- Guides subsequent file access and code search
-- Prevents "file not found" errors through validation
-- Essential for comprehensive repository analysis`;
+IMPORTANT:
+- verify default branch (use main or master if can't find default branch)
+- verify path before calling the tool to avoid errors
+- Start with root path to understand actual repository structure and then navigate to specific directories based on research needs
+- Check repository's default branch as it varies between repositories
+- Verify path exists - don't assume repository structure
+- Verify repository existence and accessibility
+- Validate paths before accessing specific files. Use github search code to find correct paths if unsure
+
+`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -60,7 +60,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .max(255)
           .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
           .describe(
-            'Branch name (e.g., "main", "master", "develop"). Tool will automatically try default branch if specified branch is not found.'
+            'Branch name. Default branch varies between repositories. Tool will automatically try default branch if specified branch is not found, but it is more efficient to verify the correct branch first.'
           ),
 
         path: z
@@ -70,7 +70,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .refine(path => !path.includes('..'), 'Path traversal not allowed')
           .refine(path => path.length <= 500, 'Path too long')
           .describe(
-            'Directory path within repository (e.g., "src", "docs", "src/components"). Leave empty for root directory. Do NOT start with slash.'
+            'Directory path within repository. Start with empty path to see actual repository structure first. Do not assume repository structure or nested paths exist. Do not start with slash. Verify path exists before using specific directories.'
           ),
       },
       annotations: {

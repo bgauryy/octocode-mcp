@@ -10,57 +10,19 @@ import {
   createSearchFailedError,
 } from '../errorMessages';
 
-/**
- * GitHub Repository Search Tool
- *
- * MOST EFFECTIVE PATTERNS (based on testing):
- *
- * 1. Quality Discovery:
- * { topic: ["react", "typescript"], stars: "1000..5000", limit: 10 }
- *
- * 2. Organization Research:
- * { owner: ["microsoft", "google"], language: "python", limit: 10 }
- *
- * 3. Beginner Projects:
- * { goodFirstIssues: ">=5", stars: "100..5000", limit: 10 }
- *
- * 4. Recent Quality:
- * { stars: ">1000", created: ">2023-01-01", limit: 10 }
- *
- * RESEARCH & EXPLORATION PATTERNS:
- *
- * 1. Topic-based Discovery (HIGHLY RECOMMENDED for unknown projects):
- * { topic: ["machine-learning", "nlp", "pytorch"], limit: 20 }
- * { topic: ["kubernetes", "monitoring"], stars: ">100", limit: 15 }
- *
- * 2. Exploratory Research Flow:
- * - Start with topics to discover repositories
- * - Then use githubViewRepoStructure to understand project layout
- * - Read README.md, docs/, and configuration files
- * - Finally use githubSearchCode for specific implementations
- *
- * AVOID: OR queries + language filter, 5+ filters, multi-word OR
- * TIP: Use limit parameter instead of adding more filters
- */
-
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Search GitHub repositories for project discovery and ecosystem analysis. TOPICS are the most powerful discovery feature.
+const DESCRIPTION = `Search GitHub repositories using gh search repos CLI.
 
-TOPIC-DRIVEN DISCOVERY:
-- Topics reveal ecosystem relationships and quality indicators  
-- Combine topics for targeted discovery: ["framework", "use-case", "language"]
-- Topics beat keyword searches for unknown project exploration
+BEST PRACTICES:
+- Use topics for unknown domains to explore repositories by TOPIC
+- Use owner to explore repositories by ORGANIZATION
+- Search by name and sort by best match / starts to search specific repositories 
+- Use language to explore repositories by LANGUAGE
+- Use quality filters (stars, forks) for refinement
+- Use limit to control the number of repositories to return
 
-PROGRESSIVE SEARCH STRATEGY:
-- Start with topic combinations for broad discovery
-- Add quality filters (stars, activity) for refinement
-- Use multiple separate searches vs complex single queries
-
-RESEARCH INTEGRATION:
-- Repository discovery → structure analysis → implementation patterns
-- Quality assessment via community metrics and activity
-- Bridge to code search and file analysis tools`;
+Seperate queries for different topics and repositories search and use minimal filters to get the most relevant results`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -110,7 +72,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases.'
+            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: "cli shell", "vim plugin". For negation, use embedded qualifiers like "topic:react -topic:vue". Advanced: supports GitHub search qualifiers (stars:>100, language:python, etc.)'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -144,7 +106,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository topics filter. Excellent for discovering projects and understanding repository ecosystems. Topics use kebab-case format.'
+            '🎯 BEST FOR EXPLORATION: Repository topics filter. Use for discovering projects in unknown domains. Format: single topic "react" or array ["unix", "terminal"]. Topics use kebab-case format.'
           ),
         forks: z
           .union([
@@ -181,7 +143,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         license: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('License filter.'),
+          .describe(
+            'License filter. Examples: "mit", "apache-2.0", ["mit", "bsd-3-clause"]'
+          ),
         archived: z
           .boolean()
           .optional()
@@ -356,10 +320,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         if (!hasPrimaryFilter) {
           return createResult({
             error: `Repository search requires at least one filter. Try these patterns:
-• Topic discovery: { topic: ["react", "typescript"] }
-• Quality search: { stars: ">1000", language: "javascript" }
-• Organization: { owner: "microsoft", language: "python" }
-• Recent projects: { created: ">2023-01-01", stars: ">100" }`,
+• Topic exploration: { topic: ["react", "typescript"] }
+• Organization search: { owner: "microsoft", visibility: "public" }
+• Language + quality: { language: "go", "good-first-issues": ">=10" }
+• Simple query: { query: "cli shell" }`,
           });
         }
 
@@ -420,7 +384,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
           if (!enhancedArgs.topic) {
             fallbackSuggestions.push(
-              '• Try topic-based search: { topic: ["web", "api"] }'
+              '• 🎯 Try topic exploration: { topic: ["web", "api"] }'
             );
           }
 
@@ -437,10 +401,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
             error: `No repositories found. Try these alternatives:
 ${fallbackSuggestions.join('\n')}
 
-Discovery patterns:
-• Topic exploration: { topic: ["react"] }
-• Quality discovery: { stars: ">100", language: "python" }
-• Recent activity: { updated: ">2024-01-01" }`,
+Quick discovery patterns:
+• 🎯 Topic exploration: { topic: ["react"] }
+• Organization search: { owner: "microsoft" }
+• Quality filter: { stars: ">100", language: "python" }`,
           });
         }
 

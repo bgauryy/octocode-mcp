@@ -21,29 +21,107 @@ export function isTypeScriptFile(filePath: string): boolean {
 
 // Helper function to check if file contains Flow type annotations
 export function isFlowFile(content: string): boolean {
-  // Check for Flow pragma or type annotations
-  return (
+  // First check for explicit Flow pragmas (most reliable)
+  if (
     content.includes('@flow') ||
     content.includes('// @flow') ||
     content.includes('/* @flow */') ||
-    // Look for Flow-specific syntax patterns
-    /import\s+type\s+/.test(content) ||
-    /export\s+type\s+/.test(content) ||
-    /:\s*\?\w/.test(content) || // Optional types like ?string
     /\$FlowFixMe/.test(content) ||
     /\$FlowIssue/.test(content)
-  );
+  ) {
+    return true;
+  }
+
+  // Only check syntax patterns if we have multiple Flow indicators
+  const flowIndicators = [
+    /import\s+type\s+\w/.test(content), // import type Foo
+    /export\s+type\s+\w/.test(content), // export type Foo
+    /:\s*\?\w+/.test(content), // optional types like ?string (more specific)
+    /:\s*\w+\s*\|/.test(content), // union types like string | number
+    /\w+\s*:\s*\w+\s*=>/.test(content), // function types like (x: string) => void
+  ].filter(Boolean).length;
+
+  // Require at least 2 Flow syntax patterns to reduce false positives
+  return flowIndicators >= 2;
+}
+
+// Helper function to validate minified content
+export function validateMinifiedContent(
+  content: string,
+  filePath: string
+): boolean {
+  const fileType = getFileType(filePath);
+
+  try {
+    switch (fileType) {
+      case 'json':
+        JSON.parse(content);
+        return true;
+      case 'yaml':
+        // Basic YAML structure validation
+        return (
+          !content.includes('\t') &&
+          content
+            .split('\n')
+            .every(
+              line =>
+                line.trim() === '' ||
+                !line.startsWith(' ') ||
+                line.match(/^\s+[^\s]/)
+            )
+        );
+      case 'xml': {
+        // Basic XML validation - check for balanced tags
+        const openTags = (content.match(/<[^/>]+>/g) || []).length;
+        const closeTags = (content.match(/<\/[^>]+>/g) || []).length;
+        const selfClosing = (content.match(/<[^>]+\/>/g) || []).length;
+        return openTags === closeTags + selfClosing;
+      }
+      default:
+        return true; // Assume valid for other types
+    }
+  } catch {
+    return false;
+  }
 }
 
 // Helper function to detect file type for fallback minification
 export function getFileType(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase();
+  const filename = filePath.split('/').pop()?.toLowerCase();
+
+  // Special filename handling
+  if (
+    filename === 'dockerfile' ||
+    filename === 'makefile' ||
+    filename === 'jenkinsfile'
+  ) {
+    return filename;
+  }
+
+  // Special indentation-sensitive files
+  if (filename === 'build' || filename === 'build.bazel') {
+    return 'starlark';
+  }
+  if (filename === 'cmakelists.txt') {
+    return 'cmake';
+  }
+
   switch (ext) {
     case 'html':
     case 'htm':
       return 'html';
     case 'css':
       return 'css';
+    case 'less':
+      return 'less';
+    case 'scss':
+      return 'scss';
+    case 'sass':
+      return 'sass';
+    case 'styl':
+    case 'stylus':
+      return 'stylus';
     case 'json':
       return 'json';
     case 'xml':
@@ -62,6 +140,10 @@ export function getFileType(filePath: string): string {
     case 'conf':
     case 'config':
       return 'config';
+    case 'env':
+      return 'env';
+    case 'properties':
+      return 'properties';
     case 'sql':
       return 'sql';
     case 'sh':
@@ -75,18 +157,136 @@ export function getFileType(filePath: string): string {
       return 'go';
     case 'java':
       return 'java';
+    case 'kt':
+    case 'kts':
+      return 'kotlin';
+    case 'scala':
+      return 'scala';
+    case 'swift':
+      return 'swift';
+    case 'dart':
+      return 'dart';
     case 'c':
     case 'cpp':
     case 'cc':
     case 'cxx':
+    case 'h':
+    case 'hpp':
       return 'c';
     case 'cs':
       return 'csharp';
     case 'php':
       return 'php';
+    case 'pl':
+    case 'pm':
+      return 'perl';
+    case 'lua':
+      return 'lua';
+    case 'r':
+      return 'r';
+    case 'rs':
+      return 'rust';
+    // Template languages
+    case 'hbs':
+    case 'handlebars':
+      return 'handlebars';
+    case 'ejs':
+      return 'ejs';
+    case 'pug':
+    case 'jade':
+      return 'pug';
+    case 'mustache':
+      return 'mustache';
+    case 'twig':
+      return 'twig';
+    case 'j2':
+    case 'jinja':
+    case 'jinja2':
+      return 'jinja';
+    case 'erb':
+      return 'erb';
+    // Modern frontend
+    case 'vue':
+      return 'vue';
+    case 'svelte':
+      return 'svelte';
+    // Data formats
+    case 'graphql':
+    case 'gql':
+      return 'graphql';
+    case 'proto':
+      return 'protobuf';
+    case 'csv':
+      return 'csv';
+    // Infrastructure
+    case 'tf':
+    case 'tfvars':
+      return 'terraform';
+    case 'pp':
+      return 'puppet';
+    case 'gd':
+      return 'gdscript';
+    // Indentation-sensitive languages
+    case 'coffee':
+      return 'coffeescript';
+    case 'haml':
+      return 'haml';
+    case 'slim':
+      return 'slim';
+    case 'nim':
+      return 'nim';
+    case 'fs':
+    case 'fsx':
+      return 'fsharp';
+    case 'hs':
+    case 'lhs':
+      return 'haskell';
+    case 'rst':
+      return 'restructuredtext';
+    case 'ls':
+      return 'livescript';
+    case 'elm':
+      return 'elm';
+    case 'star':
+    case 'bzl':
+      return 'starlark';
+    case 'cmake':
+      return 'cmake';
     default:
       return 'text';
   }
+}
+
+// Helper function to check if a language is indentation-sensitive
+export function isIndentationSensitive(filePath: string): boolean {
+  const fileType = getFileType(filePath);
+  const filename = filePath.split('/').pop()?.toLowerCase();
+
+  return (
+    [
+      'python',
+      'yaml',
+      'pug',
+      'sass', // Indented Sass syntax
+      'makefile',
+      'markdown', // For nested lists, code blocks
+      // Additional indentation-sensitive languages
+      'coffeescript',
+      'haml',
+      'slim',
+      'nim',
+      'fsharp',
+      'haskell',
+      'restructuredtext',
+      'livescript',
+      'elm',
+      'starlark',
+      'cmake',
+    ].includes(fileType) ||
+    filename === 'makefile' ||
+    filename === 'build' ||
+    filename === 'cmakelists.txt'
+  );
 }
 
 // Fallback minification function for non-JavaScript files
@@ -97,6 +297,7 @@ export function minifyGenericContent(
   try {
     const fileType = getFileType(filePath);
     let minified = content;
+    let usedFallback = false; // Track if we used fallback processing
 
     // Remove comments based on file type
     switch (fileType) {
@@ -110,12 +311,27 @@ export function minifyGenericContent(
         break;
 
       case 'css':
-        // Remove CSS comments /* ... */
+      case 'less':
+      case 'scss':
+      case 'stylus':
+        // Remove CSS/LESS/SCSS/Stylus comments /* ... */ and // ...
         minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
         // Remove excessive whitespace
         minified = minified.replace(/\s+/g, ' ');
         // Remove spaces around CSS syntax
         minified = minified.replace(/\s*([{}:;,])\s*/g, '$1');
+        break;
+
+      case 'sass':
+        // Sass (indented syntax) is indentation-sensitive!
+        // Remove comments // ... and /* ... */
+        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
         break;
 
       case 'json':
@@ -126,6 +342,7 @@ export function minifyGenericContent(
         } catch {
           // If JSON parsing fails, just remove basic whitespace
           minified = minified.replace(/\s+/g, ' ');
+          usedFallback = true; // Mark that we used fallback processing
         }
         break;
 
@@ -139,12 +356,15 @@ export function minifyGenericContent(
         break;
 
       case 'yaml':
-        // Remove YAML comments # ...
+        // YAML is indentation-sensitive! Be very careful
+        // Remove YAML comments # ... (but not inline after content)
         minified = minified.replace(/^\s*#.*$/gm, '');
-        // Remove empty lines
-        minified = minified.replace(/^\s*\n/gm, '');
-        // Reduce multiple spaces to single space (but preserve indentation structure)
-        minified = minified.replace(/^(\s*)[ \t]+/gm, '$1');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse excessive empty lines (3+ -> 2) to preserve structure
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        // Be very conservative with space reduction - only remove obvious excess
+        minified = minified.replace(/^(\s*)[ ]{4,}/gm, '$1  '); // 4+ spaces -> 2 spaces
         break;
 
       case 'toml':
@@ -156,6 +376,8 @@ export function minifyGenericContent(
 
       case 'config':
       case 'ini':
+      case 'env':
+      case 'properties':
         // Remove comments starting with # or ;
         minified = minified.replace(/^\s*[#;].*$/gm, '');
         // Remove empty lines
@@ -172,38 +394,53 @@ export function minifyGenericContent(
         break;
 
       case 'shell':
+      case 'dockerfile':
         // Remove shell comments # ...
         minified = minified.replace(/^\s*#.*$/gm, '');
         // Remove empty lines
         minified = minified.replace(/^\s*\n/gm, '');
         break;
 
-      case 'python':
-        // Remove Python comments # ... (but not in strings)
+      case 'makefile':
+        // Makefiles are indentation-sensitive and require TABS for recipes!
+        // Remove comments # ... but preserve tab structure
         minified = minified.replace(/^\s*#.*$/gm, '');
-        // Remove empty lines
-        minified = minified.replace(/^\s*\n/gm, '');
+        // Remove trailing whitespace but preserve tabs and line structure
+        minified = minified.replace(/[ ]+$/gm, ''); // Only remove spaces, keep tabs
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'python':
+        // Python is indentation-sensitive! Be very conservative
+        // Only remove comment-only lines, preserve empty lines for indentation context
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve line structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines (3+ -> 2)
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
         break;
 
       case 'ruby':
-        // Remove Ruby comments # ...
+      case 'perl':
+      case 'r':
+      case 'gdscript':
+        // These languages use braces/end keywords, safe to remove empty lines
+        // Remove comments # ... (but not in strings)
         minified = minified.replace(/^\s*#.*$/gm, '');
         // Remove empty lines
         minified = minified.replace(/^\s*\n/gm, '');
         break;
 
       case 'go':
-        // Remove Go comments // ...
-        minified = minified.replace(/^\s*\/\/.*$/gm, '');
-        // Remove Go comments /* ... */
-        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
-        // Remove excessive whitespace
-        minified = minified.replace(/\s+/g, ' ');
-        break;
-
       case 'java':
+      case 'kotlin':
+      case 'scala':
+      case 'swift':
+      case 'dart':
       case 'c':
       case 'csharp':
+      case 'rust':
         // Remove C-style comments // ...
         minified = minified.replace(/^\s*\/\/.*$/gm, '');
         // Remove C-style comments /* ... */
@@ -223,11 +460,242 @@ export function minifyGenericContent(
         minified = minified.replace(/\s+/g, ' ');
         break;
 
+      case 'lua':
+        // Remove Lua comments -- ...
+        minified = minified.replace(/^\s*--.*$/gm, '');
+        // Remove Lua block comments --[[ ... ]]
+        minified = minified.replace(/--\[\[[\s\S]*?\]\]/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      // Template languages
+      case 'handlebars':
+      case 'mustache':
+        // Remove Handlebars/Mustache comments {{! ... }} and {{!-- ... --}}
+        minified = minified.replace(/\{\{!--[\s\S]*?--\}\}/g, '');
+        minified = minified.replace(/\{\{![\s\S]*?\}\}/g, '');
+        // Remove excessive whitespace but preserve template structure
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'ejs':
+        // Remove EJS comments <%# ... %>
+        minified = minified.replace(/<%#[\s\S]*?%>/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'pug':
+        // Remove Pug comments // ...
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove Pug block comments //- ...
+        minified = minified.replace(/^\s*\/\/-.*$/gm, '');
+        // Be very conservative with indentation (Pug is whitespace-sensitive)
+        minified = minified.replace(/[ \t]+$/gm, '');
+        break;
+
+      case 'twig':
+        // Remove Twig comments {# ... #}
+        minified = minified.replace(/\{#[\s\S]*?#\}/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'jinja':
+        // Remove Jinja comments {# ... #}
+        minified = minified.replace(/\{#[\s\S]*?#\}/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'erb':
+        // Remove ERB comments <%# ... %>
+        minified = minified.replace(/<%#[\s\S]*?%>/g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      // Modern frontend
+      case 'vue':
+        // Vue SFC - be conservative, just remove HTML comments and basic whitespace
+        minified = minified.replace(/<!--[\s\S]*?-->/g, '');
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'svelte':
+        // Svelte - similar to Vue, be conservative
+        minified = minified.replace(/<!--[\s\S]*?-->/g, '');
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      // Data formats
+      case 'graphql':
+        // Remove GraphQL comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'protobuf':
+        // Remove Protocol Buffer comments // ...
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'csv':
+        // For CSV, just remove empty lines and trailing spaces
+        minified = minified.replace(/[ \t]+$/gm, '');
+        minified = minified.replace(/^\s*\n/gm, '');
+        break;
+
+      // Infrastructure
+      case 'terraform':
+        // Remove Terraform comments # ... and // ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove Terraform block comments /* ... */
+        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        // Remove excessive whitespace
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
+      case 'puppet':
+        // Remove Puppet comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove empty lines
+        minified = minified.replace(/^\s*\n/gm, '');
+        break;
+
+      case 'jenkinsfile':
+        // Jenkinsfile is Groovy-based, use Java-style comments
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        minified = minified.replace(/\/\*[\s\S]*?\*\//g, '');
+        minified = minified.replace(/\s+/g, ' ');
+        break;
+
       case 'markdown':
-        // For markdown, only remove excessive whitespace but preserve structure
-        minified = minified.replace(/[ \t]+/g, ' ');
-        // Remove more than 2 consecutive newlines
+        // For markdown, be very conservative to preserve formatting
+        // Remove trailing spaces on lines (except intentional line breaks)
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Remove more than 2 consecutive newlines (preserve double newlines for paragraphs)
         minified = minified.replace(/\n{3,}/g, '\n\n');
+        // Only compress excessive inline whitespace (not at line start)
+        minified = minified.replace(/([^\n])[ \t]{3,}/g, '$1 ');
+        break;
+
+      // Indentation-sensitive programming languages
+      case 'coffeescript':
+      case 'livescript':
+        // CoffeeScript/LiveScript - Python-like indentation sensitivity
+        // Remove CoffeeScript comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'nim':
+        // Nim - Python-like indentation sensitivity
+        // Remove Nim comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'fsharp':
+        // F# - Indentation-sensitive functional language
+        // Remove F# comments // ...
+        minified = minified.replace(/^\s*\/\/.*$/gm, '');
+        // Remove F# block comments (* ... *)
+        minified = minified.replace(/\(\*[\s\S]*?\*\)/g, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'haskell':
+        // Haskell - Partially indentation-sensitive
+        // Remove Haskell comments -- ...
+        minified = minified.replace(/^\s*--.*$/gm, '');
+        // Remove Haskell block comments {- ... -}
+        minified = minified.replace(/\{-[\s\S]*?-\}/g, '');
+        // Remove trailing whitespace but preserve some indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'elm':
+        // Elm - Functional language with some indentation sensitivity
+        // Remove Elm comments -- ...
+        minified = minified.replace(/^\s*--.*$/gm, '');
+        // Remove Elm block comments {- ... -}
+        minified = minified.replace(/\{-[\s\S]*?-\}/g, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      // Indentation-sensitive template languages
+      case 'haml':
+        // Haml - Ruby template engine, very indentation-sensitive
+        // Remove Haml comments -# ...
+        minified = minified.replace(/^\s*-#.*$/gm, '');
+        // Remove Haml silent comments / ...
+        minified = minified.replace(/^\s*\/.*$/gm, '');
+        // Remove trailing whitespace but preserve critical indentation
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'slim':
+        // Slim - Ruby template engine, very indentation-sensitive
+        // Remove Slim comments / ...
+        minified = minified.replace(/^\s*\/.*$/gm, '');
+        // Remove trailing whitespace but preserve critical indentation
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      // Documentation formats
+      case 'restructuredtext':
+        // reStructuredText - Indentation-sensitive documentation
+        // Remove comments .. (but be very careful as .. has other meanings)
+        minified = minified.replace(/^\s*\.\.\s+[^:]*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines (preserve double newlines)
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      // Build systems with Python-like syntax
+      case 'starlark':
+        // Starlark/Bazel - Python-like indentation sensitivity
+        // Remove Starlark comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve indentation structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
+        break;
+
+      case 'cmake':
+        // CMake - Structure-sensitive (not strictly indentation but formatting matters)
+        // Remove CMake comments # ...
+        minified = minified.replace(/^\s*#.*$/gm, '');
+        // Remove trailing whitespace but preserve structure
+        minified = minified.replace(/[ \t]+$/gm, '');
+        // Only collapse multiple consecutive empty lines
+        minified = minified.replace(/\n\s*\n\s*\n+/g, '\n\n');
         break;
 
       default:
@@ -239,6 +707,14 @@ export function minifyGenericContent(
 
     // Final cleanup - remove leading/trailing whitespace
     minified = minified.trim();
+
+    // Validate the minified content for critical file types (but skip if we used fallback)
+    if (!usedFallback && !validateMinifiedContent(minified, filePath)) {
+      return {
+        content: content, // Return original if validation fails
+        failed: true,
+      };
+    }
 
     return {
       content: minified,
@@ -310,20 +786,23 @@ export async function minifyJavaScriptContent(
         drop_debugger: false, // Keep debugger statements
         pure_funcs: [], // Don't remove any function calls
         global_defs: {}, // No global definitions
-        sequences: false, // Don't combine statements with comma operator
-        conditionals: false, // Don't optimize if-else statements
-        comparisons: false, // Don't optimize comparisons
-        evaluate: false, // Don't evaluate constant expressions
-        booleans: false, // Don't optimize boolean expressions
-        loops: false, // Don't optimize loops
-        unused: false, // Don't remove unused variables
+        sequences: true, // Allow combining statements with comma operator (safe)
+        conditionals: true, // Allow basic if-else optimizations (safe)
+        comparisons: true, // Allow comparison optimizations (safe)
+        evaluate: true, // Allow constant expression evaluation (safe)
+        booleans: true, // Allow boolean expression optimization (safe)
+        loops: false, // Don't optimize loops (can change behavior)
+        unused: false, // Don't remove unused variables (keep for debugging)
         hoist_funs: false, // Don't hoist function declarations
         hoist_vars: false, // Don't hoist variable declarations
+        dead_code: true, // Remove unreachable code (safe)
+        side_effects: false, // Don't assume functions are side-effect free
       },
       mangle: false, // Don't mangle any names - keep everything readable
       format: {
         comments: false, // Remove comments to save tokens
         beautify: false, // Minify whitespace only
+        semicolons: true, // Always include semicolons for safety
       },
       sourceMap: false, // No source maps needed
       parse: {

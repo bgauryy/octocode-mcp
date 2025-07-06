@@ -23,7 +23,12 @@ import {
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Search commit history across GitHub repositories. Find commits by message, author, date, or repository. Supports advanced filtering for comprehensive commit analysis. Returns commit SHA, message, author, and date information.`;
+const DESCRIPTION = `Search commit history across GitHub repositories. Find commits by message, author, date, or repository. Supports advanced filtering for comprehensive commit analysis. Returns commit SHA, message, author, and date information.
+
+INTEGRATION WORKFLOW:
+- Returned commit SHAs can be used directly with github fetch content (branch=SHA)
+- Use SHA as 'branch' parameter to view files from specific commits
+- Perfect for examining code changes and historical versions`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
