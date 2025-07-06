@@ -20,6 +20,7 @@ const DESCRIPTION = `Fetches the content of a file from a GitHub repository.
 - Target search result lines exactly
 - contextLines: Surrounding code (default: 5)
 - Full file can also be fetched for full context, but it's not recommended in most cases.
+- minified: true by default. Use false only when you need complete formatting, comments, and documentation (or to actually see real implementaions)
 
 **CAPABILITIES**:
 - Smart minification for optimal tokens
