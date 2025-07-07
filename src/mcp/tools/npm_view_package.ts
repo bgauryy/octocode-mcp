@@ -13,25 +13,20 @@ import { executeNpmCommand } from '../../utils/exec';
 
 export const NPM_VIEW_PACKAGE_TOOL_NAME = 'npmViewPackage';
 
-const DESCRIPTION = `Analyze NPM packages for repository discovery and dependency insights. BRIDGE to GitHub ecosystem.
+const DESCRIPTION = `View NPM package information using 'npm view' command. Supports field-specific queries and GitHub repository discovery.
 
-PACKAGE ANALYSIS CAPABILITIES:
-- Repository URL discovery for GitHub exploration
-- Version history and release patterns
-- Export analysis for implementation understanding
-- Dependency metadata for ecosystem mapping
+CAPABILITIES:
+- Full package info: npm view <package> --json (optimized format)
+- Single field: npm view <package> <field> (e.g., version, description, license)
+- Multiple fields: filtered JSON response for specific fields
+- Repository URLs for GitHub integration and source code analysis
+- Version history, dependencies, and package metadata
 
-GITHUB INTEGRATION:
-- Provides repository links for GitHub repository tools
-- Connects package metadata to source code analysis
-- Enables package-to-implementation research workflows
-- Essential for dependency and alternative evaluation
-
-USE CASES:
-- Repository discovery from package names
-- Version analysis and security assessment
-- Export structure for integration planning
-- Dependency research and ecosystem exploration`;
+USAGE EXAMPLES:
+- Get version: field="version" 
+- Get repository: field="repository" or match="repository"
+- Get multiple: match=["version", "description", "license"]
+- Get all info: no parameters (returns optimized package data)`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(
@@ -45,6 +40,57 @@ export function registerNpmViewPackageTool(server: McpServer) {
           .describe(
             'NPM package name (e.g., "react", "express", "@types/node"). Include @ prefix for scoped packages.'
           ),
+        field: z
+          .string()
+          .optional()
+          .describe(
+            'Optional field to get specific information (e.g., "version", "description", "license"). If not provided, returns full package info.'
+          ),
+        match: z
+          .union([
+            z.enum([
+              'version',
+              'description',
+              'license',
+              'author',
+              'homepage',
+              'repository',
+              'dependencies',
+              'devDependencies',
+              'keywords',
+              'main',
+              'scripts',
+              'engines',
+              'files',
+              'publishConfig',
+              'dist-tags',
+              'time',
+            ]),
+            z.array(
+              z.enum([
+                'version',
+                'description',
+                'license',
+                'author',
+                'homepage',
+                'repository',
+                'dependencies',
+                'devDependencies',
+                'keywords',
+                'main',
+                'scripts',
+                'engines',
+                'files',
+                'publishConfig',
+                'dist-tags',
+                'time',
+              ])
+            ),
+          ])
+          .optional()
+          .describe(
+            'Specific field(s) to retrieve. Can be single field or array of fields. Examples: "version", ["version", "description"], ["dependencies", "devDependencies"]. When used, returns only the specified fields. use repository to get the repository url in github'
+          ),
       },
       annotations: {
         title: 'NPM Package Analyzer',
@@ -54,20 +100,66 @@ export function registerNpmViewPackageTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: { packageName: string }): Promise<CallToolResult> => {
+    async (args: {
+      packageName: string;
+      field?: string;
+      match?: string | string[];
+    }): Promise<CallToolResult> => {
       try {
-        const result = await viewNpmPackage(args.packageName);
+        const result = await viewNpmPackage(
+          args.packageName,
+          args.field,
+          args.match
+        );
 
         if (result.isError) {
           return result;
         }
 
+        // If field is specified, npm returns plain text, not JSON
+        if (args.field) {
+          const plainTextResult = result.content[0].text as string;
+          // Parse the plain text result from npm command
+          const execResult = JSON.parse(plainTextResult);
+          const fieldValue = execResult.result;
+
+          return createResult({
+            data: {
+              field: args.field,
+              value: fieldValue,
+              package: args.packageName,
+            },
+          });
+        }
+
+        // If match is specified, filter the JSON response to only include matched fields
+        if (args.match) {
+          const execResult = JSON.parse(result.content[0].text as string);
+          const packageData = execResult.result;
+          const matchFields = Array.isArray(args.match)
+            ? args.match
+            : [args.match];
+
+          const filteredData: any = {};
+          matchFields.forEach(field => {
+            if (packageData[field] !== undefined) {
+              filteredData[field] = packageData[field];
+            }
+          });
+
+          return createResult({
+            data: {
+              package: args.packageName,
+              fields: matchFields,
+              values: filteredData,
+            },
+          });
+        }
+
+        // Otherwise return full optimized format (JSON response)
         const execResult = JSON.parse(result.content[0].text as string);
         const packageData = execResult.result;
-
-        // Transform to optimized format
         const optimizedResult = transformToOptimizedFormat(packageData);
-
         return createResult({ data: optimizedResult });
       } catch (error) {
         const errorMessage = (error as Error).message || '';
@@ -78,6 +170,11 @@ export function registerNpmViewPackageTool(server: McpServer) {
           errorMessage.includes('404')
         ) {
           const packageName = args.packageName;
+          const fieldInfo = args.field ? ` (field: ${args.field})` : '';
+          const matchInfo = args.match
+            ? ` (match: ${Array.isArray(args.match) ? args.match.join(', ') : args.match})`
+            : '';
+          const paramInfo = fieldInfo || matchInfo;
           const suggestions = [];
 
           // Check for common naming patterns
@@ -100,6 +197,28 @@ export function registerNpmViewPackageTool(server: McpServer) {
             );
           }
 
+          // Add field/match-specific suggestions
+          if (args.field) {
+            suggestions.push(
+              `• Try without field parameter to get full package info`
+            );
+            suggestions.push(
+              `• Common fields: version, description, license, dependencies`
+            );
+          }
+
+          if (args.match) {
+            suggestions.push(
+              `• Try without match parameter to get full package info`
+            );
+            suggestions.push(
+              `• Try single field instead of multiple: field: "version"`
+            );
+            suggestions.push(
+              `• Common fields: version, description, license, dependencies`
+            );
+          }
+
           // Add discovery alternatives
           suggestions.push('• Use npm_package_search for discovery');
           suggestions.push(
@@ -108,7 +227,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
           suggestions.push('• Check exact spelling on npmjs.com');
 
           return createResult({
-            error: `Package "${packageName}" not found on NPM registry.
+            error: `Package "${packageName}"${paramInfo} not found on NPM registry.
 
 Try these alternatives:
 ${suggestions.join('\n')}
@@ -286,13 +405,19 @@ function simplifyExports(exports: any): {
 }
 
 export async function viewNpmPackage(
-  packageName: string
+  packageName: string,
+  field?: string,
+  match?: string | string[]
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('npm-view', { packageName });
+  const cacheKey = generateCacheKey('npm-view', { packageName, field, match });
 
   return withCache(cacheKey, async () => {
     try {
-      const result = await executeNpmCommand('view', [packageName, '--json'], {
+      // Build arguments based on parameters
+      // Priority: field > match > full JSON
+      const args = field ? [packageName, field] : [packageName, '--json']; // For match or full info, we need JSON
+
+      const result = await executeNpmCommand('view', args, {
         cache: false,
       });
       return result;

@@ -14,22 +14,25 @@ import { createToolSuggestion } from './utils/validation';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
-const DESCRIPTION = `Search NPM packages by functionality keywords. PRIMARY ENTRY POINT for package-related queries.
+const DESCRIPTION = `Search NPM packages using 'npm search' command. Discover packages by functionality keywords and explore alternatives.
 
-PACKAGE-FIRST STRATEGY:
-- Start here when users mention: libraries, dependencies, installations, alternatives
-- Use broad functional terms for discovery (not exact package names)
-- Bridge to GitHub tools via repository URLs from results
+CAPABILITIES:
+- Package discovery: npm search <term> --json --searchlimit=<n>
+- Multiple search terms: searches each term separately and combines results
+- Functional keyword search: "testing", "validation", "http client" 
+- Repository URL extraction for GitHub integration
+- Deduplication and result optimization
 
-SEARCH APPROACH:
-- Single functional terms work best for discovery
-- Multiple searches for different aspects/use-cases
-- Reveals ecosystem alternatives and quality indicators
+SEARCH STRATEGY:
+- Use broad functional terms for best discovery
+- Single keywords work better than complex phrases
+- Multiple searches reveal ecosystem alternatives
+- Results include package names, versions, descriptions, and repository links
 
-INTEGRATION WORKFLOW:
-- Package Discovery → Repository Analysis → Implementation Patterns
-- npmPackageSearch → npmViewPackage → GitHub repository tools
-- Compare alternatives by searching different functional terms`;
+USAGE EXAMPLES:
+- Single search: queries="testing" 
+- Multiple searches: queries=["react", "hooks", "typescript"]
+- Limit results: searchLimit=10`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
