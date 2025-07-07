@@ -3,7 +3,7 @@
 **The Perfect AI Code Assistant - Advanced Search & Discovery Across GitHub & NPM**
 
 <div>
-  <img src="./assets/logo.png">
+  <img src="./assets/logo.png" width="400px">
   
   [![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
@@ -13,44 +13,25 @@
 
 ## What is Octocode? 🐙
 
-**The perfect code assistant that can help understand anything.** Octocode was built to understand connections between repositories and NPM packages under any privilege level you have. With **AI-powered advanced search**, heuristic discovery, and smart fallbacks, it makes GitHub's vast repository of knowledge truly searchable and analyzable.
+**The perfect code assistant that can help understand anything.** Octocode provides AI-powered advanced search with heuristic discovery and smart fallbacks to understand connections between repositories and NPM packages across any privilege level you have.
 
-Instead of manually browsing repositories, you can ask questions like:
-
+Instead of manually browsing repositories, ask questions like:
 - *"How did React implement concurrent rendering?"*
 - *"Show me authentication patterns in Next.js applications"*
 - *"Find examples of how to use this specific API"*
 - *"What's the architecture of this library?"*
 - *"How do I use this MCP tool effectively?"*
 
-## Recommended Use Cases
-
-**Use Octocode when you need to:**
-
-- **🔍 Understand implementations** - See how features work across different repositories
-- **📚 Find real code examples** - Discover patterns and best practices from production code  
-- **🏗️ Analyze architecture** - Explore how systems are designed and structured
-- **🔬 Research approaches** - Compare different implementation strategies
-- **💡 Learn from code** - Deep-dive into technical details and understand "how does this work?"
-
 ## Unique Value Proposition
 
 **The most advanced AI-powered code assistant for understanding connections across the entire GitHub & NPM ecosystem.** While other GitHub MCPs focus on project management or basic operations, Octocode provides unparalleled depth for code discovery and technical research.
 
-**🚀 Out-of-the-Box Advanced Search (Powered by AI):**
-- **🧠 Heuristic Search** - Intelligent pattern recognition that finds relevant code even with vague queries
-- **🔄 Smart Fallbacks** - Automatic retry with alternative search strategies when initial searches fail
-- **🎯 Smart Discovery** - AI-guided exploration that uncovers hidden connections and patterns
-- **🔗 Connection Intelligence** - Understands relationships between repositories, packages, and dependencies
-- **📊 Multi-dimensional Analysis** - Combines code, commits, issues, discussions, and package data
-
 **Key Differentiators:**
-- **🧠 Advanced AI Search** - Heuristic algorithms that understand code context and connections
-- **🔐 Secure & Simple** - No personal access tokens needed, uses [GitHub CLI](https://cli.github.com/) authentication
-- **🔗 Connected Discovery** - Maps NPM packages to repositories, traces dependencies, finds related code
-- **🌐 Cross-Ecosystem Understanding** - Works across any privilege level you have (public, private, organization)
-
-It's the tool you reach for when you need to understand *"how does this work?"* rather than *"how do I manage this project?"*
+- **🧠 AI-Powered Search** - Heuristic algorithms with smart fallbacks that understand code context and find relevant code even with vague queries
+- **🔐 Zero-Config Security** - Uses GitHub CLI authentication - no personal access tokens needed
+- **🔗 Connection Intelligence** - Maps NPM packages to repositories, traces dependencies, finds related implementations
+- **🌐 Universal Access** - Works seamlessly with public, private, and organization repositories
+- **⚡ LLM Optimized** - Advanced content minification and partial fetching reduces token usage by 80-90%
 
 ## Quick Start 🚀
 
@@ -74,13 +55,11 @@ gh auth login
 npm login
 ```
 
-**🔐 GitHub Authentication via CLI:**
-- ✅ **No personal access tokens needed** - Uses [GitHub CLI](https://cli.github.com/) behind the scenes
-- ✅ **Secure OAuth flow** - Browser-based authentication, no tokens to store
+**🔐 Authentication Benefits:**
+- ✅ **No personal access tokens** - Uses GitHub CLI OAuth flow
 - ✅ **Enterprise ready** - Works with SSO, 2FA, and organization access
-- ✅ **Private repository access** - Automatically detects your organizations and accesses private repos
-- ✅ **Zero configuration** - Uses your existing `gh` CLI permissions
-
+- ✅ **Automatic organization detection** - Instantly accesses your private repositories
+- ✅ **Zero configuration** - Uses existing `gh` CLI permissions
 
 ### 3. Add to MCP Configuration
 ```json
@@ -92,157 +71,95 @@ npm login
 }
 ```
 
-**That's it!** No personal access tokens, no config files, no complex setup. Octocode leverages [GitHub CLI](https://cli.github.com/) authentication behind the scenes and **automatically works with your organization's private repositories**.
+**That's it!** Octocode automatically works with your organization's private repositories.
 
-## How Octocode Works 🔄
+## How It Works 🔄
 
 **Smart Discovery Flow:**
-1. **🔍 Query Analysis** → AI determines the best search strategy based on your question
-2. **⚡ Multi-Tool Orchestration** → Intelligently combines 10 specialized tools across GitHub + NPM
-3. **🔄 Smart Fallbacks** → Automatically retries with different approaches if initial search fails
-4. **🔗 Cross-Reference Discovery** → Links packages to repositories, finds related implementations with commit SHA integration
-5. **🎯 Context Synthesis** → Provides comprehensive understanding across multiple sources
+1. **🔍 Query Analysis** → AI determines the best search strategy
+2. **⚡ Multi-Tool Orchestration** → Intelligently combines 10 specialized tools
+3. **🔄 Smart Fallbacks** → Automatically retries with different approaches
+4. **🔗 Cross-Reference Discovery** → Links packages to repositories with commit SHA integration
+5. **🎯 Context Synthesis** → Provides comprehensive understanding
 
 ## Example Flows
 
 ### Example 1: LangGraph Node.js Implementation Tutorial
 **Query:** "Show implementations of langgraph in node js. Make a tutorial for how to implement a simple agent using OpenAI API."
 
-[![LangGraph Node.js Tutorial](assets/langchainTutorial.gif)](https://youtu.be/E5HUlRckpvg?si=XXLle59C92esDscS)
+<a href="https://youtu.be/E5HUlRckpvg?si=XXLle59C92esDscS"><img src="assets/langchainTutorial.gif" alt="LangGraph Node.js Tutorial" width="50%"></a>
 
 ### Example 2: Zustand React State Management
 **Query:** "Show me how to add zustand to react application. Show examples and best practices"
 
-[![Zustand React State Management](assets/reactZustand.gif)](https://youtu.be/EgYbsuWmqsI?si=CN_KwCPgwprImynU)
+<a href="https://youtu.be/EgYbsuWmqsI?si=CN_KwCPgwprImynU"><img src="assets/reactZustand.gif" alt="Zustand React State Management" width="50%"></a>
 
 ### Example 3: React vs Vue.js Rendering Comparison
 **Query:** "How did React implement their concurrent rendering flows? How is it different from Vue.js rendering mechanism? Which is better?"
 
-[![React vs Vue.js Rendering Comparison](assets/reactVSVueJS.gif)](https://youtu.be/-_pbCbLXKDc?si=KiPeGCzmwWtb6G3r)
+<a href="https://youtu.be/-_pbCbLXKDc?si=KiPeGCzmwWtb6G3r"><img src="assets/reactVSVueJS.gif" alt="React vs Vue.js Rendering Comparison" width="50%"></a>
 
 ## Core Features 🛠️
 
-### 🧠 AI-Powered Advanced Search
-- **Heuristic Pattern Recognition** - Finds relevant code even with vague or incomplete queries
-- **Smart Fallback Strategies** - Automatically tries alternative approaches when searches fail with actionable suggestions
-- **Boolean Search Intelligence** - Automatic query optimization with smart boolean operators (3-5x performance improvement)
-- **Context-Aware Discovery** - Understands code relationships and suggests related implementations
-- **Multi-Strategy Search** - Combines semantic, syntactic, and dependency-based search methods
-- **Graceful Error Recovery** - Comprehensive error handling with intelligent retry mechanisms
-
-### 🔗 Connection Intelligence
-- **Repository-Package Mapping** - Automatically links NPM packages to their GitHub repositories
-- **Dependency Tracing** - Follows dependency chains across the entire ecosystem
-- **Cross-Reference Analysis** - Finds how different projects implement similar patterns
-- **Ecosystem Understanding** - Maps relationships between libraries, frameworks, and tools
-
-### 🌐 Universal Access & Discovery
-- **Cross-Privilege Search** - Works with any access level you have (public, private, organization)
-- **Organization-Aware** - Automatically detects and uses your GitHub organization memberships
-- **Smart Repository Discovery** - Finds relevant repositories even when you don't know they exist
-- **Progressive Refinement** - AI-guided search that gets more precise with each iteration
-
-### 📊 Multi-Dimensional Analysis
-- **Code + Context** - Combines source code with commits, issues, discussions, and documentation
-- **Historical Understanding** - Tracks how implementations evolved over time
-- **Community Insights** - Discovers patterns from real-world usage and discussions
-- **Quality Signals** - Uses NPM publication and GitHub activity as quality indicators
+### 🧠 AI-Powered Intelligence
+- **Advanced Search** - Heuristic pattern recognition with automatic fallback strategies
+- **Connection Mapping** - Automatically links NPM packages to GitHub repositories
+- **Cross-Reference Analysis** - Discovers how different projects implement similar patterns
+- **Progressive Refinement** - AI-guided search that improves with each iteration
+- **Context-Aware Discovery** - Understands relationships between code, commits, issues, and discussions
 
 ### 🔗 Commit SHA Integration
-- **Time Travel Code Viewing** - View files from specific commits and pull requests using commit SHAs
-- **PR Code Analysis** - Automatically fetch commit SHAs from pull requests for precise code comparison
-- **Historical Implementation** - Compare how code evolved across different commits and versions
-- **Cross-Reference Discovery** - Link commits, pull requests, and current implementations seamlessly
+- **Time Travel Code Viewing** - View files from specific commits and pull requests
+- **PR Code Analysis** - Automatically fetch commit SHAs for precise code comparison
+- **Historical Implementation** - Compare code evolution across versions
 
-### ⚡ LLM Content Optimization
-- **Intelligent Content Selection** - Automatically identifies and extracts only relevant code sections for research
-- **Smart Minification** - Advanced content compression that preserves meaning while reducing tokens by 80-90%
-- **Partial File Access** - Fetches targeted line ranges from search results, avoiding full file downloads
-- **Context-Aware Processing** - Indentation-aware minification for 15+ programming languages
-- **Binary Detection & Filtering** - Automatically skips non-text files and suggests alternatives
-- **Token Efficiency** - Optimizes content for maximum LLM comprehension with minimal token usage
-- **Line Number Preservation** - Maintains precise line references for code navigation and debugging
+### ⚡ Performance Optimization
+- **Smart Content Selection** - Extracts only relevant code sections
+- **Advanced Minification** - Language-aware compression preserving meaning
+- **Partial File Access** - Fetches targeted line ranges
+- **Token Efficiency** - 80-90% reduction in LLM token usage
 
-**Optimization Workflow:**
-1. **🎯 Smart Targeting** → Extract specific line ranges from search results
-2. **🧹 Content Filtering** → Remove comments, whitespace, and non-essential elements
-3. **🗜️ Intelligent Compression** → Language-aware minification preserving code structure
-4. **📍 Context Preservation** → Keep essential context and line number references
-5. **⚡ Token Optimization** → Deliver maximum code insight with minimal LLM token consumption
+## Available Tools
 
-## Available Tools 🛠️
+**10 specialized tools** working together intelligently:
 
-Octocode provides **10 specialized tools** that work together intelligently:
+**Discovery:** Repository Search, Package Search  
+**Analysis:** Code Search, Package Analysis, Repository Structure  
+**Activity:** Commit Search, Pull Request Search, Issue Search  
+**Content:** File Content Fetching, API Status Check  
 
-**🔍 Discovery Tools:**
-- **Repository Search** - Find repositories by topic, language, stars, and organization
-- **Package Search** - Discover NPM packages by functionality and keywords
+All tools feature automatic cross-referencing and intelligent fallbacks.
 
-**📊 Analysis Tools:**
-- **Code Search** - Smart search across GitHub repositories with heuristic pattern recognition
-- **Package Analysis** - Detailed NPM package analysis with repository linking
-- **Repository Structure** - Explore directory structures and file organization
+## Security & Privacy 🛡️
 
-**📈 Activity Tools:**
-- **Commit Search** - Find commits by message, author, and date with SHA integration
-- **Pull Request Search** - Discover PRs with automatic commit SHA extraction
-- **Issue Search** - Find bug reports, feature requests, and discussions
-
-**📁 Content Tools:**
-- **File Content Fetching** - Read files from any commit, branch, or PR using commit SHAs
-- **API Status Check** - Verify authentication and discover organization access
-
-**Smart Integration:** All tools work together through intelligent workflows - from package discovery → repository analysis → commit history → file content, with automatic fallbacks and cross-referencing.
-
-## Privacy & Security 🛡️
-
+### Local-First Architecture
 - **🏠 100% Local** - Runs entirely on your machine
-- **🚫 Zero Data Collection** - No telemetry, logging, or data transmission
-- **🔑 No Token Management** - Uses [GitHub CLI](https://cli.github.com/) authentication, no personal access tokens needed
-- **🛡️ Privacy by Design** - All API calls use your existing `gh` CLI permissions directly
+- **🚫 Zero Data Collection** - No telemetry or data transmission
+- **🔑 No Token Management** - Uses GitHub CLI authentication
 
-### Command Execution Security 🔒
-
-**Robust protection against prompt injections and malicious command execution:**
-
-- **⚪ Allowlisted Commands Only** - Only pre-approved, safe NPM and GitHub CLI commands are executable
-  - NPM: `view`, `search`, `config`, `whoami` 
-  - GitHub CLI: `search`, `api`, `auth`, `org`, `pr`
-- **🛡️ Argument Sanitization** - All command arguments are properly escaped to prevent shell injection attacks
-- **✅ Pre-execution Validation** - Every command is validated against allowed lists before execution
-- **🔧 Controlled Environment** - Commands run in a secure, cross-platform shell environment with controlled variables
-  - **Cross-platform shells**: Uses `/bin/sh` on Unix/macOS, `cmd.exe` or `powershell.exe` on Windows - minimal, standard shells
-  - **PowerShell support**: Modern Windows environments can optionally use PowerShell with enhanced security
-  - **Why minimal shells are safe**: Avoids user's potentially customized shells with aliases, functions, plugins, or advanced features
-  - **Controlled variables**: Only essential environment variables (`PATH`, `SHELL`) are passed, preventing environment-based attacks
-  - **Platform-specific escaping**: Uses appropriate argument escaping for each platform (single quotes on Unix, double quotes for CMD, single quotes for PowerShell)
-- **🚫 No Arbitrary Execution** - System cannot execute arbitrary shell commands or scripts
-- **⏱️ Timeout Protection** - All commands have execution timeouts to prevent resource exhaustion
+### Command Execution Security
+- **⚪ Allowlisted Commands Only** - Pre-approved safe commands
+- **🛡️ Argument Sanitization** - Prevents shell injection attacks
+- **✅ Pre-execution Validation** - Every command is validated
+- **🔧 Controlled Environment** - Cross-platform secure shell execution
+- **⏱️ Timeout Protection** - Prevents resource exhaustion
 
 ## Best Practices 💡
 
-**AI-Powered Search Tips:**
-- **Let AI guide you** - Start with natural language questions, the heuristic search will find relevant code
-- **Trust the smart fallbacks** - If initial search doesn't work, AI automatically tries alternative strategies
-- **Explore connections** - Ask about relationships between packages, libraries, and implementations
-- **Use any privilege level** - Works seamlessly across public repos, private repos, and organization repositories
-- **Keep research along the MCP** - Build upon previous searches and maintain context across multiple queries for deeper exploration
-
 **Effective Questions:**
-- **Vague is OK** - "How does authentication work?" → AI finds relevant patterns across repositories
-- **Ask for connections** - "What libraries use this pattern?" → Discovers related implementations
-- **Cross-ecosystem queries** - "NPM packages that implement X" → Links packages to their repositories
-- **Evolution questions** - "How has this approach changed?" → Traces implementation history
+- Start with natural language - "How does authentication work?"
+- Ask for connections - "What libraries use this pattern?"
+- Cross-ecosystem queries - "NPM packages that implement X"
+- Evolution questions - "How has this approach changed?"
 
-**Advanced Search Features:**
-- **Automatic fallbacks** - No need to retry failed searches, AI handles it automatically
-- **Smart discovery** - Finds repositories and packages you didn't know existed
-- **Connection mapping** - Understands relationships between different codebases
-- **Context preservation** - Maintains search context across multiple queries
+**Pro Tips:**
+- Let AI guide discovery - vague queries work great
+- Trust smart fallbacks - automatic retry with alternatives
+- Build on previous searches - maintain context for deeper exploration
+- Works everywhere - public, private, and organization repositories
 
 ## Troubleshooting 🔧
 
-**Authentication Issues:**
 ```bash
 # Check GitHub CLI status
 gh auth status
@@ -252,43 +169,24 @@ gh auth logout && gh auth login
 
 # Check NPM access
 npm whoami
+
+# Clear NPX cache if needed
+rm -rf ~/.npm/_npx
 ```
 
 **Common Solutions:**
 - No results? Try broader search terms
-- Private repos not found? Check organization membership with `gh auth status`
-- NPX issues? Clear cache: `rm -rf ~/.npm/_npx`
-
-**🏢 Organization & Private Repository Access:**
-- **Automatic detection** - Octocode automatically discovers your GitHub organizations
-- **No additional setup** - If you have access to private repos through your organization, they work immediately
-- **Verify access** - Run `gh auth status` to see your organization memberships
-
-**💻 Windows PowerShell Support:**
-- **Modern shell support** - Optionally use PowerShell instead of cmd.exe on Windows
-- **Enhanced security** - PowerShell provides better argument escaping and modern features
-- **Automatic detection** - The system automatically detects Windows and applies appropriate shell configurations
-- **Zero configuration** - Works seamlessly with existing setups, no additional configuration needed
-
-**Why GitHub CLI Authentication?**
-- ✅ **No token creation** - GitHub CLI handles OAuth flow automatically
-- ✅ **Enterprise compatible** - Works with SSO, SAML, and 2FA out of the box
-- ✅ **Organization auto-detection** - Automatically discovers your GitHub organizations and private repo access
-- ✅ **Works out of the box** - If you work for an organization, private repositories are immediately accessible
-- ❌ **vs Personal Access Tokens** - No manual creation, rotation, or security risks
+- Private repos not found? Check `gh auth status` for organization membership
+- Windows users? PowerShell is automatically supported
 
 ## Background 💭
 
-This project started as a personal tool while working at Wix, born from the challenge of navigating large codebases and keeping up with rapidly evolving technology landscapes. What began as a side project to solve daily development challenges evolved into **the perfect code assistant that can help understand anything**.
+This project started as a personal tool while working at Wix, born from the challenge of navigating large codebases and keeping up with rapidly evolving technology landscapes. What began as a side project evolved into **the perfect code assistant that can help understand anything**.
 
-The goal was simple: **make code exploration as intelligent as having a senior developer guide you through any codebase.** Built specifically to understand connections between many repositories and NPM packages under any privilege the user has, with AI-powered heuristic search, smart fallbacks, and intelligent discovery.
-
+The goal: **make code exploration as intelligent as having a senior developer guide you through any codebase.**
 
 ## License 📄
 
 MIT License - See [LICENSE](./LICENSE.md) for details.
 
 ---
-
-
-
