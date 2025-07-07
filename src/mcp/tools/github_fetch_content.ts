@@ -164,17 +164,65 @@ async function fetchGitHubFileContent(
           }
         }
 
-        // Try fallback branches if original branch fails
-        if (
-          errorMsg.includes('404') &&
-          branch !== 'main' &&
-          branch !== 'master'
-        ) {
-          const fallbackBranches = ['main', 'master'];
+        // Enhanced fallback strategy for 404 errors
+        if (errorMsg.includes('404')) {
+          // Get the actual default branch from the repo info we already fetched
+          let defaultBranch = 'main';
+          let repoDefaultBranchFound = false;
+
+          if (!repoCheckResult.isError) {
+            try {
+              const repoData = JSON.parse(
+                repoCheckResult.content[0].text as string
+              );
+              defaultBranch = repoData.default_branch || 'main';
+              repoDefaultBranchFound = true;
+            } catch (e) {
+              // Keep default as 'main' if parsing fails
+            }
+          }
+
+          // If we found the actual default branch, try it first
+          if (repoDefaultBranchFound && defaultBranch !== branch) {
+            const defaultBranchPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${defaultBranch}`;
+            const defaultBranchResult = await executeGitHubCommand(
+              'api',
+              [defaultBranchPath],
+              {
+                cache: false,
+              }
+            );
+
+            if (!defaultBranchResult.isError) {
+              return await processFileContent(
+                defaultBranchResult,
+                owner,
+                repo,
+                defaultBranch,
+                filePath,
+                params.minified,
+                params.startLine,
+                params.endLine,
+                params.contextLines
+              );
+            }
+          }
+
+          // Comprehensive fallback list (excluding default branch since we tried it)
+          const fallbackBranches = [
+            'main',
+            'master',
+            'develop',
+            'dev',
+            'trunk',
+          ].filter(b => b !== defaultBranch && b !== branch);
+
           const triedBranches = [branch];
+          if (repoDefaultBranchFound && defaultBranch !== branch) {
+            triedBranches.push(`${defaultBranch} (default)`);
+          }
 
           for (const fallbackBranch of fallbackBranches) {
-            if (triedBranches.includes(fallbackBranch)) continue;
             triedBranches.push(fallbackBranch);
 
             const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
@@ -201,8 +249,20 @@ async function fetchGitHubFileContent(
             }
           }
 
+          const defaultBranchInfo = repoDefaultBranchFound
+            ? `\nRepository default branch: "${defaultBranch}"`
+            : `\nCould not determine default branch - repository info unavailable`;
+
           return createResult({
-            error: `File not found in any common branches (tried: ${triedBranches.join(', ')}). File might have been moved or deleted. Use github_search_code to find current location.`,
+            error: `File not found in any common branches (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
+
+Quick solution: Use the correct branch name:
+{"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "filePath": "${filePath}"}
+
+Alternative solutions:
+• Check repository structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "main", "path": ""}
+• Search for file: github_search_code with query="filename:${filePath.split('/').pop()}" owner="${owner}"
+• Find file path: github_search_code with query="path:${filePath}"`,
           });
         }
 

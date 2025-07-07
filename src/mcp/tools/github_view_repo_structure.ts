@@ -112,138 +112,137 @@ export async function viewRepositoryStructure(
       // Clean up path
       const cleanPath = path.startsWith('/') ? path.substring(1) : path;
 
-      // Try the requested branch first, then fallback to main/master
-      const branchesToTry = await getSmartBranchFallback(owner, repo, branch);
-      let items: GitHubApiFileItem[] = [];
-      let usedBranch = branch;
-      let lastError: Error | null = null;
-      let attemptCount = 0;
-      const maxAttempts = branchesToTry.length;
-      const triedBranches: string[] = [];
+      // Try the requested branch first
+      const apiPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`;
 
-      for (const tryBranch of branchesToTry) {
-        if (attemptCount >= maxAttempts) break;
-        attemptCount++;
-        triedBranches.push(tryBranch);
+      const result = await executeGitHubCommand('api', [apiPath], {
+        cache: false,
+      });
+
+      if (!result.isError) {
+        const execResult = JSON.parse(result.content[0].text as string);
+        const apiItems = execResult.result;
+        const items = Array.isArray(apiItems) ? apiItems : [apiItems];
+
+        return formatRepositoryStructure(owner, repo, branch, cleanPath, items);
+      }
+
+      // If initial request failed, start enhanced fallback mechanism
+      const errorMsg = result.content[0].text as string;
+
+      // Check repository existence first
+      const repoCheckResult = await executeGitHubCommand(
+        'api',
+        [`/repos/${owner}/${repo}`],
+        {
+          cache: false,
+        }
+      );
+
+      if (repoCheckResult.isError) {
+        return handleRepositoryNotFound(
+          owner,
+          repo,
+          repoCheckResult.content[0].text as string
+        );
+      }
+
+      // Enhanced fallback strategy for branch/path errors
+      if (errorMsg.includes('404')) {
+        // Get the actual default branch from the repo info we already fetched
+        let defaultBranch = 'main';
+        let repoDefaultBranchFound = false;
 
         try {
-          const apiPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${tryBranch}`;
-          const result = await executeGitHubCommand('api', [apiPath], {
-            cache: false,
-          });
-
-          if (!result.isError) {
-            const execResult = JSON.parse(result.content[0].text as string);
-            const apiItems = execResult.result;
-
-            items = Array.isArray(apiItems) ? apiItems : [apiItems];
-            usedBranch = tryBranch;
-            break;
-          } else {
-            lastError = new Error(result.content[0].text as string);
-          }
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          continue;
-        }
-      }
-
-      if (items.length === 0) {
-        // Check repository existence only after content fetch fails
-        const repoCheckResult = await executeGitHubCommand(
-          'api',
-          [`/repos/${owner}/${repo}`],
-          {
-            cache: false,
-          }
-        );
-
-        if (repoCheckResult.isError) {
-          const repoErrorMsg = repoCheckResult.content[0].text as string;
-          if (repoErrorMsg.includes('404')) {
-            return createResult({
-              error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
-            });
-          } else if (repoErrorMsg.includes('403')) {
-            return createResult({
-              error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
-            });
-          }
+          const repoData = JSON.parse(
+            repoCheckResult.content[0].text as string
+          );
+          defaultBranch = repoData.default_branch || 'main';
+          repoDefaultBranchFound = true;
+        } catch (e) {
+          // Keep default as 'main' if parsing fails
         }
 
-        const errorMsg = lastError?.message || 'Unknown error';
+        // If we found the actual default branch, try it first
+        if (repoDefaultBranchFound && defaultBranch !== branch) {
+          const defaultBranchPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${defaultBranch}`;
+          const defaultBranchResult = await executeGitHubCommand(
+            'api',
+            [defaultBranchPath],
+            {
+              cache: false,
+            }
+          );
 
-        if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
-          if (path) {
-            const searchSuggestion = await suggestPathSearchFallback(
-              owner,
-              path
+          if (!defaultBranchResult.isError) {
+            const execResult = JSON.parse(
+              defaultBranchResult.content[0].text as string
             );
-            return createResult({
-              error: `Path "${path}" not found in any branch (tried: ${triedBranches.join(', ')}).${searchSuggestion}`,
-            });
-          } else {
-            return createResult({
-              error: `Repository "${owner}/${repo}" structure not accessible. Repository might be empty, private, or you might not have sufficient permissions. Use github_search_code with owner="${owner}" to find accessible repositories.`,
-            });
+            const apiItems = execResult.result;
+            const items = Array.isArray(apiItems) ? apiItems : [apiItems];
+
+            return formatRepositoryStructure(
+              owner,
+              repo,
+              defaultBranch,
+              cleanPath,
+              items
+            );
           }
-        } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-          return createResult({
-            error: `Access denied to "${owner}/${repo}". Repository exists but might be private/archived. Use api_status_check to verify permissions, or github_search_code with owner="${owner}" to find accessible repositories.`,
-          });
-        } else {
-          const searchSuggestion = path
-            ? await suggestPathSearchFallback(owner, path)
-            : '';
-          return createResult({
-            error: `Failed to access "${owner}/${repo}": ${errorMsg}. Check network connection and repository permissions.${searchSuggestion}`,
-          });
         }
+
+        // Try additional common branches
+        const commonBranches = ['main', 'master', 'develop'];
+        const triedBranches = [branch];
+
+        if (repoDefaultBranchFound) {
+          triedBranches.push(defaultBranch);
+        }
+
+        for (const tryBranch of commonBranches) {
+          if (triedBranches.includes(tryBranch)) continue;
+
+          const tryBranchPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${tryBranch}`;
+          const tryBranchResult = await executeGitHubCommand(
+            'api',
+            [tryBranchPath],
+            {
+              cache: false,
+            }
+          );
+
+          triedBranches.push(tryBranch);
+
+          if (!tryBranchResult.isError) {
+            const execResult = JSON.parse(
+              tryBranchResult.content[0].text as string
+            );
+            const apiItems = execResult.result;
+            const items = Array.isArray(apiItems) ? apiItems : [apiItems];
+
+            return formatRepositoryStructure(
+              owner,
+              repo,
+              tryBranch,
+              cleanPath,
+              items
+            );
+          }
+        }
+
+        // All branches failed - return helpful error
+        return handlePathNotFound(
+          owner,
+          repo,
+          cleanPath,
+          triedBranches,
+          defaultBranch,
+          repoDefaultBranchFound
+        );
       }
 
-      // Limit total items to 100 for efficiency
-      const limitedItems = items.slice(0, 100);
-
-      // Sort: directories first, then alphabetically
-      limitedItems.sort((a, b) => {
-        if (a.type !== b.type) {
-          return a.type === 'dir' ? -1 : 1;
-        }
-        return a.name.localeCompare(b.name);
-      });
-
-      // Create simplified, token-efficient structure
-      const files = limitedItems
-        .filter(item => item.type === 'file')
-        .map(item => ({
-          name: item.name,
-          size: item.size,
-          url: item.path, // Use path for fetching
-        }));
-
-      const folders = limitedItems
-        .filter(item => item.type === 'dir')
-        .map(item => ({
-          name: item.name,
-          url: item.path, // Use path for browsing
-        }));
-
-      return createResult({
-        data: {
-          repository: `${owner}/${repo}`,
-          branch: usedBranch,
-          path: cleanPath || '/',
-          githubBasePath: `https://api.github.com/repos/${owner}/${repo}/contents/`,
-          files: {
-            count: files.length,
-            files: files,
-          },
-          folders: {
-            count: folders.length,
-            folders: folders,
-          },
-        },
-      });
+      // Handle other errors (403, etc.)
+      return handleOtherErrors(owner, repo, errorMsg);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -255,80 +254,138 @@ export async function viewRepositoryStructure(
 }
 
 /**
- * Smart branch detection with automatic fallback to common branch names.
- * Now includes more comprehensive branch detection and better error handling.
+ * Format the repository structure response
  */
-async function getSmartBranchFallback(
+function formatRepositoryStructure(
   owner: string,
   repo: string,
-  requestedBranch: string
-): Promise<string[]> {
-  const branches = new Set([requestedBranch]);
+  branch: string,
+  path: string,
+  items: GitHubApiFileItem[]
+): CallToolResult {
+  // Limit total items to 100 for efficiency
+  const limitedItems = items.slice(0, 100);
 
-  try {
-    // Try to get repository info to find default branch
-    const repoInfoResult = await executeGitHubCommand(
-      'api',
-      [`/repos/${owner}/${repo}`],
-      {
-        cache: false,
-      }
-    );
-
-    if (!repoInfoResult.isError) {
-      const execResult = JSON.parse(repoInfoResult.content[0].text as string);
-      const repoData = execResult.result;
-      const defaultBranch = repoData.default_branch;
-
-      if (defaultBranch) {
-        branches.add(defaultBranch);
-      }
+  // Sort: directories first, then alphabetically
+  limitedItems.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === 'dir' ? -1 : 1;
     }
-  } catch {
-    // If we can't get repo info, proceed with standard fallbacks
-  }
-
-  // Add only main/master as fallback branches
-  const commonBranches = ['main', 'master'];
-  commonBranches.forEach(branch => branches.add(branch));
-
-  // Convert Set back to array, with requested branch first
-  const branchesArray = Array.from(branches);
-  branchesArray.sort((a, b) => {
-    if (a === requestedBranch) return -1;
-    if (b === requestedBranch) return 1;
-    return 0;
+    return a.name.localeCompare(b.name);
   });
 
-  return branchesArray;
+  // Create simplified, token-efficient structure
+  const files = limitedItems
+    .filter(item => item.type === 'file')
+    .map(item => ({
+      name: item.name,
+      size: item.size,
+      url: item.path, // Use path for fetching
+    }));
+
+  const folders = limitedItems
+    .filter(item => item.type === 'dir')
+    .map(item => ({
+      name: item.name,
+      url: item.path, // Use path for browsing
+    }));
+
+  return createResult({
+    data: {
+      repository: `${owner}/${repo}`,
+      branch: branch,
+      path: path || '/',
+      githubBasePath: `https://api.github.com/repos/${owner}/${repo}/contents/`,
+      files: {
+        count: files.length,
+        files: files,
+      },
+      folders: {
+        count: folders.length,
+        folders: folders,
+      },
+    },
+  });
 }
 
-// Helper function to suggest path search strategy
-async function suggestPathSearchFallback(
+/**
+ * Handle repository not found errors
+ */
+function handleRepositoryNotFound(
   owner: string,
-  path: string
-): Promise<string> {
-  try {
-    // Extract last path segment and try to find in same organization
-    const pathSegment = path.split('/').pop() || path;
-    const searchResult = await executeGitHubCommand(
-      'api',
-      [
-        `/search/code?q=${encodeURIComponent(pathSegment)}+in:path+org:${owner}`,
-      ],
-      { cache: false }
-    );
-
-    if (!searchResult.isError) {
-      const results = JSON.parse(searchResult.content[0].text as string);
-      if (results.total_count > 0) {
-        const firstMatch = results.items[0];
-        return ` Directory might be in ${firstMatch.repository.full_name}. Try these searches:\n1. github_search_code with query="${pathSegment}" owner="${owner}"\n2. github_search_code with query="path:${path}" owner="${owner}"`;
-      }
-    }
-  } catch {
-    // Fallback to generic message if search fails
+  repo: string,
+  errorMsg: string
+): CallToolResult {
+  if (errorMsg.includes('404')) {
+    return createResult({
+      error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
+    });
+  } else if (errorMsg.includes('403')) {
+    return createResult({
+      error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
+    });
   }
+  return createResult({
+    error: `Failed to access repository "${owner}/${repo}": ${errorMsg}. Verify repository exists and is accessible.`,
+  });
+}
 
-  return ` Try these searches:\n1. github_search_code with query="${path.split('/').pop()}" owner="${owner}"\n2. github_search_code with query="path:${path}"`;
+/**
+ * Handle path not found errors with helpful suggestions
+ */
+function handlePathNotFound(
+  owner: string,
+  repo: string,
+  path: string,
+  triedBranches: string[],
+  defaultBranch: string,
+  repoDefaultBranchFound: boolean
+): CallToolResult {
+  const defaultBranchInfo = repoDefaultBranchFound
+    ? `\nRepository default branch: "${defaultBranch}"`
+    : `\nCould not determine default branch - repository info unavailable`;
+
+  if (path) {
+    return createResult({
+      error: `Path "${path}" not found in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
+
+Quick solution: Use the correct branch name:
+{"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}
+
+Alternative solutions:
+• Search for path: github_search_code with query="path:${path}" owner="${owner}"
+• Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
+• Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+    });
+  } else {
+    return createResult({
+      error: `Repository "${owner}/${repo}" structure not accessible in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
+
+Repository might be empty, private, or you might not have sufficient permissions.
+
+Alternative solutions:
+• Verify permissions: api_status_check
+• Search accessible repos: github_search_code with owner="${owner}"
+• Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+    });
+  }
+}
+
+/**
+ * Handle other types of errors (403, rate limits, etc.)
+ */
+function handleOtherErrors(
+  owner: string,
+  repo: string,
+  errorMsg: string
+): CallToolResult {
+  if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
+    return createResult({
+      error: `Access denied to "${owner}/${repo}". Repository exists but might be private/archived. Use api_status_check to verify permissions, or github_search_code with owner="${owner}" to find accessible repositories.`,
+    });
+  } else {
+    return createResult({
+      error: `Failed to access "${owner}/${repo}": ${errorMsg}. Check network connection and repository permissions.`,
+    });
+  }
 }
