@@ -60,7 +60,7 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server);
 
       const mockGitHubResponse = {
-        result: JSON.stringify([
+        result: [
           {
             name: 'src',
             path: 'src',
@@ -78,22 +78,16 @@ describe('GitHub View Repository Structure Tool', () => {
             download_url:
               'https://raw.githubusercontent.com/owner/repo/main/README.md',
           },
-        ]),
+        ],
         command: 'gh api repos/owner/repo/contents',
         type: 'github',
       };
 
-      // Mock the first call to get repo info (for branch fallback)
-      mockExecuteGitHubCommand
-        .mockResolvedValueOnce({
-          isError: true,
-          content: [{ text: 'Repository info not needed for this test' }],
-        })
-        // Mock the second call to get contents
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [{ text: JSON.stringify(mockGitHubResponse) }],
-        });
+      // Mock successful content retrieval on first try
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+      });
 
       const result = await mockServer.callTool('githubViewRepoStructure', {
         owner: 'owner',
@@ -113,7 +107,7 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server);
 
       const mockGitHubResponse = {
-        result: JSON.stringify([
+        result: [
           {
             name: 'index.js',
             path: 'src/index.js',
@@ -123,22 +117,16 @@ describe('GitHub View Repository Structure Tool', () => {
             download_url:
               'https://raw.githubusercontent.com/owner/repo/main/src/index.js',
           },
-        ]),
+        ],
         command: 'gh api repos/owner/repo/contents/src',
         type: 'github',
       };
 
-      // Mock the first call to get repo info (for branch fallback)
-      mockExecuteGitHubCommand
-        .mockResolvedValueOnce({
-          isError: true,
-          content: [{ text: 'Repository info not needed for this test' }],
-        })
-        // Mock the second call to get contents
-        .mockResolvedValueOnce({
-          isError: false,
-          content: [{ text: JSON.stringify(mockGitHubResponse) }],
-        });
+      // Mock successful content retrieval on first try
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+      });
 
       const result = await mockServer.callTool('githubViewRepoStructure', {
         owner: 'owner',
