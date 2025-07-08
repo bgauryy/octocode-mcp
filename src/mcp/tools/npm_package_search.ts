@@ -16,23 +16,19 @@ export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
 const DESCRIPTION = `Search NPM packages using 'npm search' command. Discover packages by functionality keywords and explore alternatives.
 
-CAPABILITIES:
-- Package discovery: npm search <term> --json --searchlimit=<n>
-- Multiple search terms: searches each term separately and combines results
-- Functional keyword search: "testing", "validation", "http client" 
-- Repository URL extraction for GitHub integration
-- Deduplication and result optimization
+**WHEN TO USE**: Use when users ask questions about npm packages or need to discover packages - provides package discovery and ecosystem insights.
 
-SEARCH STRATEGY:
+**KEY INSIGHTS**:
+- Another code search mechanism for npm packages (along github repository search)
+- Repo discovery by npm packages search
+- Package descriptions, keywords, and version information
+- Can be used undesrsant npm depndencies better
+
+**SEARCH STRATEGY**:
 - Use broad functional terms for best discovery
 - Single keywords work better than complex phrases
 - Multiple searches reveal ecosystem alternatives
-- Results include package names, versions, descriptions, and repository links
-
-USAGE EXAMPLES:
-- Single search: queries="testing" 
-- Multiple searches: queries=["react", "hooks", "typescript"]
-- Limit results: searchLimit=10`;
+- Combine with npm_view_package for detailed analysis of discovered packages`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
