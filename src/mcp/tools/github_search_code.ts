@@ -26,32 +26,23 @@ const DESCRIPTION = `Search code across GitHub repositories using GitHub's code 
 
 SEARCH STRATEGY FOR BEST RESULTS:
 
-TERM OPTIMIZATION (IMPORTANT):
-- BEST: Single terms for maximum coverage and relevance
-- GOOD: 2 terms when you need both to be present  
-- RESTRICTIVE: 3+ terms - very specific but may miss relevant results
-- Example: "useState" (best coverage) vs "react hook useState" (specific but restrictive)
+EXACT vs TERMS (Choose ONE):
+- exactQuery: Use for exact phrase matching
+- queryTerms: Use minimal words for broader coverage
+
+TERM OPTIMIZATION:
+- BEST: Single terms for maximum coverage
+- GOOD: 2-3 minimal terms 
+- AVOID: Long phrases in queryTerms
 
 MULTI-SEARCH STRATEGY:
-- Use SEPARATE searches for different aspects instead of complex single queries
-- Example: Search "authentication" separately, then "login" separately
-- Separate searches provide broader coverage than restrictive AND logic
-
-Search Logic:
-- Multiple terms = ALL must be present (AND logic) - very restrictive
-- Single terms = maximum results and coverage
-- Quoted phrases = exact phrase matching
-- Mixed queries: "exact phrase" additional_term (phrase + term)
-
-Quote Usage:
-- Single terms: NO quotes (useState, authentication)
-- Multi-word phrases: WITH quotes ("error handling", "user authentication")
-- Mixed queries: "exact phrase" single_term another_term
+- Use separate searches for different aspects
+- Separate searches provide broader coverage than complex queries
 
 Filter Usage:
-- All filters use GitHub CLI flags (--language, --owner, --repo, etc.)
-- Combine filters to narrow scope: language + owner, repo + filename
-- Never use filters on exploratory searches - use to refine when too many results`;
+- Use filters to narrow scope: language, owner, repo, filename
+- Combine filters strategically: language + owner for organization-wide searches
+- Never use filters on exploratory searches - use to refine results`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -59,64 +50,65 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        query: z
+        exactQuery: z
           .string()
-          .min(1)
+          .optional()
+          .describe('Exact phrase/word to search for'),
+
+        queryTerms: z
+          .array(z.string())
+          .optional()
           .describe(
-            'Search query with AND logic between terms. OPTIMIZATION: Single terms give best coverage, 2 terms when both needed, 3+ terms very restrictive. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: "useState" (best coverage), "error handling" (exact phrase), "react hook useState" (specific but restrictive).'
+            'Array of search terms (AND logic in files). Use minimal words for broader coverage'
           ),
 
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Uses --language CLI flag. Narrows search to specific language files. Use for language-specific searches.'
+            'Programming language filter. Narrows search to specific language files.'
           ),
 
         owner: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization name(s) to search within (e.g., "facebook", ["google", "microsoft"]). Uses --owner CLI flag for organization-wide search. Can be combined with repo parameter for specific repository search. Do NOT use owner/repo format - just the organization/username.'
+            'Repository owner/organization name(s). Organization-wide search.'
           ),
 
         repo: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe(
-            'Filter on specific repository(ies). Uses --repo CLI flag. Two usage patterns: (1) Use with owner parameter - provide just repo name (e.g., owner="facebook", repo="react" → --repo=facebook/react), or (2) Use alone - provide full "owner/repo" format (e.g., "facebook/react" → --repo=facebook/react).'
-          ),
+          .describe('Repository filter. Use with owner or full format.'),
 
         filename: z
           .string()
           .optional()
-          .describe(
-            'Target specific filename or pattern. Uses --filename CLI flag. Use for file-specific searches.'
-          ),
+          .describe('Target specific filename or pattern.'),
 
         extension: z
           .string()
           .optional()
           .describe(
-            'File extension filter. Uses --extension CLI flag. Alternative to language parameter.'
+            'File extension filter. Alternative to language parameter.'
           ),
 
         match: z
           .enum(['file', 'path'])
           .optional()
           .describe(
-            'Search scope: "file" for file content (default), "path" for filenames/paths. Uses --match CLI flag. Single value only - multiple scopes not supported by GitHub CLI.'
+            'Search scope: file for file content (default), path for filenames/paths.'
           ),
 
         size: z
           .string()
           .regex(
             /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-            'Invalid size format. Use: ">10", ">=5", "<100", "<=50", "10..100", or exact number "50"'
+            'Invalid size format. Use: ">N", ">=N", "<N", "<=N", "N..M", or exact number'
           )
           .optional()
           .describe(
-            'File size filter in KB. Uses --size CLI flag. Format: ">N" (larger than), "<N" (smaller than), "N..M" (range), "N" (exact).'
+            'File size filter in KB. Format: ">N" (larger), "<N" (smaller), "N..M" (range).'
           ),
 
         limit: z
@@ -126,9 +118,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe(
-            'Maximum number of results to return (1-100). Default: 30. Higher values may increase response time.'
-          ),
+          .describe('Maximum number of results to return (1-100).'),
       },
       annotations: {
         title: 'GitHub Code Search - Smart & Efficient',
@@ -139,6 +129,23 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       },
     },
     async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
+      // Validate that exactly one search parameter is provided (not both)
+      const hasExactQuery = !!args.exactQuery;
+      const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
+
+      if (!hasExactQuery && !hasQueryTerms) {
+        return createResult({
+          error: 'One search parameter required: exactQuery OR queryTerms',
+        });
+      }
+
+      if (hasExactQuery && hasQueryTerms) {
+        return createResult({
+          error:
+            'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
+        });
+      }
+
       try {
         const result = await searchGitHubCode(args);
 
@@ -329,31 +336,33 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 
 /**
  * Build command line arguments for GitHub CLI following the exact CLI format.
- * Uses proper flags (--flag=value) instead of qualifiers where appropriate.
+ * Uses proper flags (--flag=value) for filters and direct query terms.
  */
 function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
   const args: string[] = ['code'];
 
-  // Parse query to preserve quoted phrases and extract qualifiers
-  const { searchQuery, extractedQualifiers } = parseSearchQuery(params.query);
-
-  // Add the main search query if present
-  if (searchQuery) {
-    args.push(searchQuery);
+  // Build search query (either exactQuery OR queryTerms, never both)
+  if (params.exactQuery) {
+    // Add exact query with quotes for literal matching
+    args.push(`"${params.exactQuery}"`);
+  } else if (params.queryTerms && params.queryTerms.length > 0) {
+    // Add query terms as separate arguments (for AND logic)
+    // Auto-quote terms with special characters for literal matching
+    const processedTerms = params.queryTerms.map(term => {
+      // Check if term contains special search characters that need quoting
+      const hasSpecialChars = /[()[\]{}*?^$|.\\+]/.test(term);
+      return hasSpecialChars ? `"${term}"` : term;
+    });
+    args.push(...processedTerms);
   }
 
-  // Add extracted qualifiers from the query (these should remain as qualifiers)
-  extractedQualifiers.forEach(qualifier => {
-    args.push(qualifier);
-  });
-
   // Add explicit parameters as CLI flags (following GitHub CLI format)
-  if (params.language && !params.query.includes('language:')) {
+  if (params.language) {
     args.push(`--language=${params.language}`);
   }
 
   // Handle owner and repo parameters properly
-  if (params.repo && !params.query.includes('repo:')) {
+  if (params.repo) {
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
     repos.forEach(repo => {
       // If both owner and repo are provided, combine them for --repo flag
@@ -367,25 +376,21 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
         args.push(`--repo=${repo}`);
       }
     });
-  } else if (
-    params.owner &&
-    !params.query.includes('org:') &&
-    !params.query.includes('user:')
-  ) {
+  } else if (params.owner) {
     // Only owner provided, no repo - use --owner flag for organization-wide search
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     owners.forEach(owner => args.push(`--owner=${owner}`));
   }
 
-  if (params.filename && !params.query.includes('filename:')) {
+  if (params.filename) {
     args.push(`--filename=${params.filename}`);
   }
 
-  if (params.extension && !params.query.includes('extension:')) {
+  if (params.extension) {
     args.push(`--extension=${params.extension}`);
   }
 
-  if (params.size && !params.query.includes('size:')) {
+  if (params.size) {
     args.push(`--size=${params.size}`);
   }
 
@@ -394,10 +399,9 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
     args.push(`--match=${params.match}`);
   }
 
-  // Add limit flag
-  if (params.limit) {
-    args.push(`--limit=${params.limit}`);
-  }
+  // Add limit flag (use default 30 if not specified)
+  const limit = params.limit || 30;
+  args.push(`--limit=${limit}`);
 
   // Add JSON output format
   args.push('--json=repository,path,textMatches,sha,url');
@@ -424,64 +428,4 @@ export async function searchGitHubCode(
       return handleSearchError(errorMessage);
     }
   });
-}
-
-/**
- * Parse search query to preserve quoted phrases and extract qualifiers.
- * Handles:
- * - Quoted phrases: "error handling" -> kept as single unit
- * - Multiple terms: react lifecycle -> both terms for AND search
- * - Mixed: "error handling" debug -> phrase + term
- * - Qualifiers: language:javascript -> extracted separately
- * - Quote escaping issues: automatically fixes common mistakes
- */
-function parseSearchQuery(query: string): {
-  searchQuery: string;
-  extractedQualifiers: string[];
-} {
-  const qualifiers: string[] = [];
-  const searchTerms: string[] = [];
-
-  // Clean up common quote escaping issues
-  let cleanedQuery = query;
-
-  // Fix escaped quotes that shouldn't be escaped
-  if (cleanedQuery.includes('\\"') && !cleanedQuery.includes(' ')) {
-    cleanedQuery = cleanedQuery.replace(/\\"/g, '');
-  }
-
-  // Fix single-word queries wrapped in quotes unnecessarily
-  if (
-    cleanedQuery.startsWith('"') &&
-    cleanedQuery.endsWith('"') &&
-    !cleanedQuery.slice(1, -1).includes(' ')
-  ) {
-    cleanedQuery = cleanedQuery.slice(1, -1);
-  }
-
-  // Regular expression to match quoted strings or individual words/qualifiers
-  const tokenRegex = /"([^"]+)"|([^\s]+)/g;
-  let match;
-
-  while ((match = tokenRegex.exec(cleanedQuery)) !== null) {
-    const token = match[1] || match[2]; // match[1] is quoted content, match[2] is unquoted
-
-    // Check if it's a qualifier (contains : but not inside quotes)
-    if (!match[1] && token.includes(':') && /^[a-zA-Z]+:/.test(token)) {
-      qualifiers.push(token);
-    } else {
-      // It's a search term (either quoted or unquoted)
-      if (match[1]) {
-        // Preserve quotes for exact phrase search
-        searchTerms.push(`"${token}"`);
-      } else {
-        searchTerms.push(token);
-      }
-    }
-  }
-
-  return {
-    searchQuery: searchTerms.join(' '),
-    extractedQualifiers: qualifiers,
-  };
 }

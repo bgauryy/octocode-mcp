@@ -7,23 +7,10 @@ import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `Verify API connections and discover available organizations. FIRST STEP for private repository research.
+const DESCRIPTION = `initial tool to verify user connections
 
-AUTHENTICATION VERIFICATION:
-- Check GitHub and NPM CLI authentication status
-- Troubleshoot access issues before extensive searches
-- Verify API connectivity and permissions
-
-ORGANIZATION DISCOVERY:
-- List available GitHub organizations for scoped searches  
-- Identify accessible private repositories
-- Guide repository search strategy based on permissions
-
-WORKFLOW OPTIMIZATION:
-- Run first when dealing with private/organizational repositories
-- Prevents access errors in subsequent tool usage
-- Informs search scope and strategy decisions
-- Essential for comprehensive organizational research`;
+- Github: check gh login status and list available organizations.
+- Npm: check npm login status and list npm registry.`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {

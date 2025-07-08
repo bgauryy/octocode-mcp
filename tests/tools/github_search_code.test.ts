@@ -1,52 +1,37 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { registerGitHubSearchCodeTool } from '../../src/mcp/tools/github_search_code.js';
+import { executeGitHubCommand } from '../../src/utils/exec.js';
 import {
   createMockMcpServer,
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 
-// Use vi.hoisted to ensure mocks are available during module initialization
-const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
-const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
-const mockWithCache = vi.hoisted(() => vi.fn());
-
-// Mock dependencies
+// Mock the exec module
 vi.mock('../../src/utils/exec.js', () => ({
-  executeGitHubCommand: mockExecuteGitHubCommand,
+  executeGitHubCommand: vi.fn(),
 }));
 
+// Mock the cache module
 vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
+  generateCacheKey: vi.fn(() => 'test-cache-key'),
+  withCache: vi.fn((_key, fn) => fn()),
 }));
 
-// Import after mocking
-import { registerGitHubSearchCodeTool } from '../../src/mcp/tools/github_search_code.js';
+const mockExecuteGitHubCommand = vi.mocked(executeGitHubCommand);
 
 describe('GitHub Search Code Tool', () => {
   let mockServer: MockMcpServer;
 
   beforeEach(() => {
-    // Create mock server using the fixture
     mockServer = createMockMcpServer();
-
-    // Clear all mocks
     vi.clearAllMocks();
-
-    // Default cache behavior
-    // @ts-expect-error - mockWithCache is not typed
-    mockWithCache.mockImplementation(async (key, fn) => await fn());
-    mockGenerateCacheKey.mockReturnValue('test-cache-key');
-  });
-
-  afterEach(() => {
-    mockServer.cleanup();
-    vi.resetAllMocks();
   });
 
   describe('Tool Registration', () => {
     it('should register the GitHub search code tool', () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
+      // Verify the tool was registered
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'githubSearchCode',
         expect.any(Object),
@@ -61,18 +46,19 @@ describe('GitHub Search Code Tool', () => {
 
       const mockCodeResults = [
         {
-          path: 'src/ReactDOMClient.js',
+          path: 'src/useState.js',
           repository: {
             nameWithOwner: 'facebook/react',
             url: 'https://github.com/facebook/react',
           },
-          url: 'https://github.com/facebook/react/blob/main/src/ReactDOMClient.js',
+          url: 'https://github.com/facebook/react/blob/main/src/useState.js',
           textMatches: [
             {
-              fragment: 'defaultValue="test"',
+              fragment:
+                'function useState(initialValue) { return [initialValue, function(){}]; }',
               matches: [
                 {
-                  indices: [0, 12],
+                  indices: [9, 17],
                 },
               ],
             },
@@ -84,18 +70,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:
-          'gh search code defaultValue repo:facebook/react --limit=20 --json=repository,path,textMatches,sha,url',
+          'gh search code defaultValue --repo=facebook/react --limit=20 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       // Actually call the tool
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'defaultValue',
+        exactQuery: 'defaultValue',
         owner: 'facebook',
         repo: 'react',
         limit: 20,
@@ -107,7 +93,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'defaultValue',
+          '"defaultValue"',
           '--repo=facebook/react',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
@@ -124,18 +110,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:
-          'gh search code useState org:facebook --limit=20 --json=repository,path,textMatches,sha,url',
+          'gh search code useState --owner=facebook --limit=20 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       // Actually call the tool
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'useState',
+        queryTerms: ['useState'],
         owner: 'facebook',
         limit: 20,
       });
@@ -163,18 +149,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:
-          'gh search code Component repo:facebook/react --limit=20 --json=repository,path,textMatches,sha,url',
+          'gh search code Component --repo=facebook/react --limit=20 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       // Actually call the tool
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'Component',
+        exactQuery: 'Component',
         repo: 'facebook/react',
         limit: 20,
       });
@@ -185,7 +171,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'Component',
+          '"Component"',
           '--repo=facebook/react',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
@@ -231,11 +217,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'test',
+        exactQuery: 'test',
         limit: 30,
       });
 
@@ -244,7 +230,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'test',
+          '"test"',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -268,11 +254,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'nonexistent',
+        exactQuery: 'nonexistent',
       });
 
       expect(result.isError).toBe(true);
@@ -292,33 +278,34 @@ describe('GitHub Search Code Tool', () => {
           url: 'https://github.com/facebook/react/blob/main/src/component.tsx',
           textMatches: [
             {
-              fragment: 'const [state, setState] = useState(false);',
+              fragment: 'const Component = () => { return <div>test</div>; }',
               matches: [
                 {
-                  indices: [25, 33],
+                  indices: [6, 15],
                 },
               ],
             },
           ],
-          sha: 'def456',
+          sha: 'xyz789',
         },
       ];
 
       const mockGitHubResponse = {
         result: mockCodeResults, // Direct array, not JSON string
         command:
-          'gh search code useState --language=typescript --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code Component --language=typescript --limit=20 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'useState',
+        exactQuery: 'Component',
         language: 'typescript',
+        limit: 20,
       });
 
       expect(result.isError).toBe(false);
@@ -330,22 +317,20 @@ describe('GitHub Search Code Tool', () => {
     it('should allow valid term counts (1-3 terms)', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults: any[] = [];
       const mockGitHubResponse = {
-        result: mockCodeResults, // Direct array, not JSON string
+        result: [], // Empty array
         command:
-          'gh search code react hook useState --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code react hooks typescript --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
-      // Test with exactly 3 terms (should be allowed)
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'react hook useState',
+        queryTerms: ['react', 'hooks', 'typescript'],
       });
 
       expect(result.isError).toBe(true); // True because no results found, not validation error
@@ -356,37 +341,35 @@ describe('GitHub Search Code Tool', () => {
     it('should handle search errors with helpful suggestions', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: true,
-        content: [{ text: 'Search failed' }],
-      });
+      mockExecuteGitHubCommand.mockRejectedValue(
+        new Error('API rate limit exceeded')
+      );
 
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'test',
+        exactQuery: 'test',
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Search failed');
+      expect(result.content[0].text).toContain('rate limit');
     });
 
     it('should handle boolean operator validation', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults: any[] = [];
       const mockGitHubResponse = {
-        result: mockCodeResults, // Direct array, not JSON string
+        result: [], // Empty array
         command:
-          'gh search code "react or vue" --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code react AND hooks --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'react or vue', // Boolean operators are now allowed
+        queryTerms: ['react', 'AND', 'hooks'],
       });
 
       expect(result.isError).toBe(true); // True because no results found, not validation error
@@ -396,9 +379,8 @@ describe('GitHub Search Code Tool', () => {
     it('should handle owner and repo parameters correctly', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockCodeResults: any[] = [];
       const mockGitHubResponse = {
-        result: mockCodeResults, // Direct array, not JSON string
+        result: [], // Empty array
         command:
           'gh search code test --repo=facebook/react --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
@@ -406,14 +388,13 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
-        query: 'test',
+        exactQuery: 'test',
         owner: 'facebook',
         repo: 'react',
-        limit: 30, // Add explicit limit to match expected command
       });
 
       expect(result.isError).toBe(true); // True because no results found, not validation error
@@ -424,12 +405,25 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'test',
+          '"test"',
           '--repo=facebook/react',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
         { cache: false }
+      );
+    });
+
+    it('should require at least one search parameter', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubSearchCode', {
+        language: 'typescript',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'One search parameter required: exactQuery OR queryTerms'
       );
     });
   });
@@ -450,11 +444,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'useState',
+        queryTerms: ['useState'],
         limit: 30,
       });
 
@@ -476,17 +470,17 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code "react hook" --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code react hook --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'react hook',
+        queryTerms: ['react', 'hook'],
         limit: 30,
       });
 
@@ -494,7 +488,8 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'react hook',
+          'react',
+          'hook',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -514,11 +509,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: '"error handling"',
+        exactQuery: 'error handling',
         limit: 30,
       });
 
@@ -546,11 +541,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'deque',
+        exactQuery: 'deque',
         language: 'python',
         limit: 30,
       });
@@ -559,7 +554,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'deque',
+          '"deque"',
           '--language=python',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -580,11 +575,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'cli',
+        exactQuery: 'cli',
         owner: 'microsoft',
         limit: 30,
       });
@@ -593,7 +588,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'cli',
+          '"cli"',
           '--owner=microsoft',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -614,11 +609,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'panic',
+        exactQuery: 'panic',
         repo: 'cli/cli',
         limit: 30,
       });
@@ -627,7 +622,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'panic',
+          '"panic"',
           '--repo=cli/cli',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -648,11 +643,11 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'lint',
+        exactQuery: 'lint',
         filename: 'package.json',
         limit: 30,
       });
@@ -661,7 +656,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'lint',
+          '"lint"',
           '--filename=package.json',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -676,18 +671,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code Component --extension=tsx --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code function --extension=js --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'Component',
-        extension: 'tsx',
+        exactQuery: 'function',
+        extension: 'js',
         limit: 30,
       });
 
@@ -695,8 +690,8 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'Component',
-          '--extension=tsx',
+          '"function"',
+          '--extension=js',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -710,18 +705,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code function --size=<10 --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code class --size=>1000 --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'function',
-        size: '<10',
+        exactQuery: 'class',
+        size: '>1000',
         limit: 30,
       });
 
@@ -729,8 +724,8 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'function',
-          '--size=<10',
+          '"class"',
+          '--size=>1000',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -744,18 +739,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code component --match=file --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code test --match=path --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'component',
-        match: 'file',
+        exactQuery: 'test',
+        match: 'path',
         limit: 30,
       });
 
@@ -763,8 +758,8 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'component',
-          '--match=file',
+          '"test"',
+          '--match=path',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -778,32 +773,32 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code useState --language=typescript --owner=facebook --extension=tsx --limit=10 --json=repository,path,textMatches,sha,url',
+          'gh search code useState --language=typescript --owner=facebook --filename=*.tsx --limit=20 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'useState',
+        exactQuery: 'useState',
         language: 'typescript',
         owner: 'facebook',
-        extension: 'tsx',
-        limit: 10,
+        filename: '*.tsx',
+        limit: 20,
       });
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         [
           'code',
-          'useState',
+          '"useState"',
           '--language=typescript',
           '--owner=facebook',
-          '--extension=tsx',
-          '--limit=10',
+          '--filename=*.tsx',
+          '--limit=20',
           '--json=repository,path,textMatches,sha,url',
         ],
         { cache: false }
@@ -816,17 +811,17 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code Component --repo=facebook/react --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code component --repo=facebook/react --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'Component',
+        exactQuery: 'component',
         owner: 'facebook',
         repo: 'react',
         limit: 30,
@@ -836,7 +831,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'Component',
+          '"component"',
           '--repo=facebook/react',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -851,61 +846,49 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code "react component state hook" --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code react functional component --language=typescript --limit=20 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'react component state hook',
-        limit: 30,
+        queryTerms: ['react', 'functional', 'component'],
+        language: 'typescript',
+        limit: 20,
       });
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         [
           'code',
-          'react component state hook',
-          '--limit=30',
+          'react',
+          'functional',
+          'component',
+          '--language=typescript',
+          '--limit=20',
           '--json=repository,path,textMatches,sha,url',
         ],
         { cache: false }
       );
     });
 
-    it('should build correct CLI for mixed quoted phrase and terms', async () => {
+    it('should reject using both exactQuery and queryTerms together', async () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
-      const mockGitHubResponse = {
-        result: [], // Direct array, not JSON string
-        command:
-          'gh search code "error handling" debug --limit=30 --json=repository,path,textMatches,sha,url',
-        type: 'github',
-      };
-
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+      const result = await mockServer.callTool('githubSearchCode', {
+        exactQuery: 'error handling',
+        queryTerms: ['async'],
+        language: 'javascript',
+        limit: 15,
       });
 
-      await mockServer.callTool('githubSearchCode', {
-        query: '"error handling" debug',
-        limit: 30,
-      });
-
-      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'search',
-        [
-          'code',
-          '"error handling" debug',
-          '--limit=30',
-          '--json=repository,path,textMatches,sha,url',
-        ],
-        { cache: false }
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'Use either exactQuery OR queryTerms, not both'
       );
     });
 
@@ -921,17 +904,22 @@ describe('GitHub Search Code Tool', () => {
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'useState',
+        exactQuery: 'useState',
       });
 
-      // Should not include --limit flag when using default
+      // Should include --limit=30 (default)
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
-        ['code', 'useState', '--json=repository,path,textMatches,sha,url'],
+        [
+          'code',
+          '"useState"',
+          '--limit=30',
+          '--json=repository,path,textMatches,sha,url',
+        ],
         { cache: false }
       );
     });
@@ -942,18 +930,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code api --owner=microsoft --owner=google --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code api --owner=facebook --owner=google --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'api',
-        owner: ['microsoft', 'google'],
+        exactQuery: 'api',
+        owner: ['facebook', 'google'],
         limit: 30,
       });
 
@@ -961,8 +949,8 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'api',
-          '--owner=microsoft',
+          '"api"',
+          '--owner=facebook',
           '--owner=google',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -977,18 +965,18 @@ describe('GitHub Search Code Tool', () => {
       const mockGitHubResponse = {
         result: [], // Direct array, not JSON string
         command:
-          'gh search code test --repo=facebook/react --repo=microsoft/vscode --limit=30 --json=repository,path,textMatches,sha,url',
+          'gh search code hook --repo=facebook/react --repo=vuejs/vue --limit=30 --json=repository,path,textMatches,sha,url',
         type: 'github',
       };
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
-        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
       });
 
       await mockServer.callTool('githubSearchCode', {
-        query: 'test',
-        repo: ['facebook/react', 'microsoft/vscode'],
+        exactQuery: 'hook',
+        repo: ['facebook/react', 'vuejs/vue'],
         limit: 30,
       });
 
@@ -996,9 +984,9 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'test',
+          '"hook"',
           '--repo=facebook/react',
-          '--repo=microsoft/vscode',
+          '--repo=vuejs/vue',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],

@@ -15,14 +15,13 @@ export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 const DESCRIPTION = `Search GitHub repositories using gh search repos CLI.
 
 BEST PRACTICES:
-- Use topics for unknown domains to explore repositories by TOPIC
-- Use owner to explore repositories by ORGANIZATION
-- Search by name and sort by best match / starts to search specific repositories 
-- Use language to explore repositories by LANGUAGE
+- Use topic for discovering repositories by technology/purpose
+- Use query for searching by repository name
+- Use owner to explore specific organizations
+- Use language to filter by programming language
 - Use quality filters (stars, forks) for refinement
-- Use limit to control the number of repositories to return
 
-Seperate queries for different topics and repositories search and use minimal filters to get the most relevant results`;
+Separate searches for different topics and use minimal filters to get the most relevant results`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -72,7 +71,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search query with AND logic between terms. Multiple words require ALL to be present. Use quotes for exact phrases. Examples: "cli shell", "vim plugin". For negation, use embedded qualifiers like "topic:react -topic:vue". Advanced: supports GitHub search qualifiers (stars:>100, language:python, etc.)'
+            'Search by repository name. Use minimal words for repository names or specific projects. For topic discovery, use topic parameter instead.'
           ),
 
         // CORE FILTERS (GitHub CLI flags)
@@ -80,13 +79,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization name(s) (e.g., "facebook", ["google", "microsoft"]). Search within specific organizations. Do NOT use owner/repo format - just the organization/username.'
+            'Repository owner/organization name(s). Search within specific organizations or users.'
           ),
         language: z
           .string()
           .optional()
           .describe(
-            'Programming language filter. Filters repositories by primary language. Essential for language-specific searches.'
+            'Programming language filter. Filters repositories by primary language.'
           ),
         stars: z
           .union([
@@ -95,18 +94,18 @@ export function registerSearchGitHubReposTool(server: McpServer) {
               .string()
               .regex(
                 /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: ">1000", ">=500", "<100", "<=50", "10..100", or exact number "50"'
+                'Invalid format. Use: ">N", ">=N", "<N", "<=N", "N..M", or exact number'
               ),
           ])
           .optional()
           .describe(
-            'Star count filter. Format: ">1000" (more than), ">=500" (more than or equal), "<100" (less than), "<=50" (less than or equal), "100..1000" (range), "500" (exact).'
+            'Star count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
           ),
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            '🎯 BEST FOR EXPLORATION: Repository topics filter. Use for discovering projects in unknown domains. Format: single topic "react" or array ["unix", "terminal"]. Topics use kebab-case format.'
+            'Discover repositories by topic. Use for exploring unknown domains and finding projects by technology or purpose.'
           ),
         forks: z
           .union([
@@ -115,12 +114,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
               .string()
               .regex(
                 /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: ">100", ">=50", "<10", "<=5", "10..100", or exact number "5"'
+                'Invalid format. Use: ">N", ">=N", "<N", "<=N", "N..M", or exact number'
               ),
           ])
           .optional()
           .describe(
-            'Fork count filter. Format: ">100" (more than), ">=50" (more than or equal), "<10" (less than), "<=5" (less than or equal), "10..100" (range), "5" (exact).'
+            'Fork count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
           ),
 
         // Match CLI parameter name exactly
@@ -143,9 +142,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         license: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe(
-            'License filter. Examples: "mit", "apache-2.0", ["mit", "bsd-3-clause"]'
-          ),
+          .describe('License filter. Filter repositories by license type.'),
         archived: z
           .boolean()
           .optional()
@@ -247,7 +244,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Search scope. "name" (repository names only), "description" (descriptions only), "readme" (README content). Can be single value or array.'
+            'Search scope. Where to search: name, description, or readme content.'
           ),
 
         // SORTING & LIMITS - Match CLI defaults exactly
