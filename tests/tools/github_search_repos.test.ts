@@ -91,7 +91,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchRepositories', {
-        query: 'test',
+        exactQuery: 'test',
       });
 
       expect(result.isError).toBe(false);
@@ -122,7 +122,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchRepositories', {
-        query: 'nonexistent',
+        exactQuery: 'nonexistent',
       });
 
       expect(result.isError).toBe(true);
@@ -139,7 +139,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchRepositories', {
-        query: 'test',
+        exactQuery: 'test',
       });
 
       expect(result.isError).toBe(true);
@@ -167,7 +167,7 @@ describe('GitHub Search Repositories Tool', () => {
     describe('Basic Search Types', () => {
       it('should handle single term search', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'cli',
+          exactQuery: 'cli',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -184,14 +184,15 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle multi-term search', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'cli shell',
+          queryTerms: ['cli', 'shell'],
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
           'search',
           [
             'repos',
-            'cli shell',
+            'cli',
+            'shell',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],
@@ -201,7 +202,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle exact phrase search', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: '"vim plugin"',
+          exactQuery: '"vim plugin"',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -209,6 +210,43 @@ describe('GitHub Search Repositories Tool', () => {
           [
             'repos',
             '"vim plugin"',
+            '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
+            '--limit=30',
+          ],
+          { cache: false }
+        );
+      });
+
+      it('should handle queryTerms as separate arguments for AND logic', async () => {
+        await mockServer.callTool('githubSearchRepositories', {
+          queryTerms: ['cli', 'shell'],
+        });
+
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          [
+            'repos',
+            'cli',
+            'shell',
+            '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
+            '--limit=30',
+          ],
+          { cache: false }
+        );
+      });
+
+      it('should handle multiple queryTerms correctly', async () => {
+        await mockServer.callTool('githubSearchRepositories', {
+          queryTerms: ['machine', 'learning', 'python'],
+        });
+
+        expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+          'search',
+          [
+            'repos',
+            'machine',
+            'learning',
+            'python',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],
@@ -239,7 +277,7 @@ describe('GitHub Search Repositories Tool', () => {
     describe('Individual Filters', () => {
       it('should handle --language filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           language: 'python',
         });
 
@@ -258,7 +296,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --owner filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           owner: 'microsoft',
         });
 
@@ -277,7 +315,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --stars filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           stars: '>=1000',
         });
 
@@ -296,7 +334,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --forks filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           forks: '>=100',
         });
 
@@ -315,7 +353,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --topic filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           topic: ['unix', 'terminal'],
         });
 
@@ -334,7 +372,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --archived filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           archived: false,
         });
 
@@ -353,7 +391,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --visibility filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           visibility: 'public',
         });
 
@@ -372,7 +410,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --created filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           created: '>2023-01-01',
         });
 
@@ -391,7 +429,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --updated filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           updated: '<2024-06-01',
         });
 
@@ -410,7 +448,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --good-first-issues filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'good-first-issues': '>=10',
         });
 
@@ -429,7 +467,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --help-wanted-issues filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'help-wanted-issues': '>=5',
         });
 
@@ -448,7 +486,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --followers filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           followers: '>=1000',
         });
 
@@ -467,7 +505,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --size filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           size: '<100',
         });
 
@@ -486,7 +524,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --license filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           license: 'MIT',
         });
 
@@ -505,7 +543,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --include-forks filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'include-forks': 'only',
         });
 
@@ -524,7 +562,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --match filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           match: 'name',
         });
 
@@ -543,7 +581,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle --number-topics filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'number-topics': '>=3',
         });
 
@@ -564,7 +602,7 @@ describe('GitHub Search Repositories Tool', () => {
     describe('Advanced Combinations', () => {
       it('should handle multiple filters combined', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           language: 'go',
           stars: '>=1000',
           'good-first-issues': '>=10',
@@ -588,7 +626,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle multiple owners', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'api',
+          exactQuery: 'api',
           owner: ['microsoft', 'google'],
         });
 
@@ -607,7 +645,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle multiple licenses', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           license: ['MIT', 'Apache-2.0'],
         });
 
@@ -626,7 +664,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle multiple match fields', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           match: ['name', 'description'],
         });
 
@@ -645,7 +683,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle sorting and ordering', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           sort: 'stars',
           order: 'asc',
         });
@@ -666,7 +704,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle default limit when not specified', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -683,7 +721,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle explicit limit', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           limit: 10,
         });
 
@@ -703,7 +741,7 @@ describe('GitHub Search Repositories Tool', () => {
     describe('Parameter Variations and Edge Cases', () => {
       it('should handle single string topic', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           topic: 'javascript',
         });
 
@@ -722,7 +760,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle numeric stars filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           stars: 1000,
         });
 
@@ -741,7 +779,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle numeric forks filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           forks: 50,
         });
 
@@ -760,7 +798,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle numeric good-first-issues filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'good-first-issues': 5,
         });
 
@@ -779,7 +817,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle numeric help-wanted-issues filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'help-wanted-issues': 3,
         });
 
@@ -798,7 +836,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle numeric followers filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           followers: 500,
         });
 
@@ -817,7 +855,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle numeric number-topics filter', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           'number-topics': 2,
         });
 
@@ -836,7 +874,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle range filters with different operators', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           stars: '100..1000',
           forks: '<=50',
           'good-first-issues': '>5',
@@ -859,7 +897,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle date range filters', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           created: '2023-01-01..2023-12-31',
           updated: '>=2024-01-01',
         });
@@ -884,7 +922,7 @@ describe('GitHub Search Repositories Tool', () => {
 
         for (const visibility of visibilityOptions) {
           await mockServer.callTool('githubSearchRepositories', {
-            query: 'test',
+            exactQuery: 'test',
             visibility,
           });
 
@@ -907,7 +945,7 @@ describe('GitHub Search Repositories Tool', () => {
 
         for (const includeForks of includeForksOptions) {
           await mockServer.callTool('githubSearchRepositories', {
-            query: 'test',
+            exactQuery: 'test',
             'include-forks': includeForks,
           });
 
@@ -935,7 +973,7 @@ describe('GitHub Search Repositories Tool', () => {
 
         for (const sort of sortOptions) {
           await mockServer.callTool('githubSearchRepositories', {
-            query: 'test',
+            exactQuery: 'test',
             sort,
           });
 
@@ -958,7 +996,7 @@ describe('GitHub Search Repositories Tool', () => {
 
         for (const order of orderOptions) {
           await mockServer.callTool('githubSearchRepositories', {
-            query: 'test',
+            exactQuery: 'test',
             order,
           });
 
@@ -979,7 +1017,7 @@ describe('GitHub Search Repositories Tool', () => {
       it('should handle archived true/false', async () => {
         // Test archived=true
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           archived: true,
         });
 
@@ -997,7 +1035,7 @@ describe('GitHub Search Repositories Tool', () => {
 
         // Test archived=false
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           archived: false,
         });
 
@@ -1016,7 +1054,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle complex query with special characters', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: '"machine learning" OR "deep learning"',
+          exactQuery: '"machine learning" OR "deep learning"',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -1034,7 +1072,7 @@ describe('GitHub Search Repositories Tool', () => {
       it('should handle limit boundary values', async () => {
         // Test minimum limit
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           limit: 1,
         });
 
@@ -1051,7 +1089,7 @@ describe('GitHub Search Repositories Tool', () => {
 
         // Test maximum limit
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           limit: 100,
         });
 
@@ -1071,14 +1109,15 @@ describe('GitHub Search Repositories Tool', () => {
     describe('GitHub CLI Examples Verification', () => {
       it('should match official example: cli shell', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'cli shell',
+          queryTerms: ['cli', 'shell'],
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
           'search',
           [
             'repos',
-            'cli shell',
+            'cli',
+            'shell',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],
@@ -1088,7 +1127,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should match official example: "vim plugin"', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: '"vim plugin"',
+          exactQuery: '"vim plugin"',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -1181,7 +1220,7 @@ describe('GitHub Search Repositories Tool', () => {
     describe('Advanced CLI Structure Tests', () => {
       it('should handle maximum complexity command', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: '"machine learning" framework',
+          exactQuery: '"machine learning" framework',
           owner: ['microsoft', 'google', 'facebook'],
           language: 'python',
           topic: ['ai', 'ml', 'tensorflow'],
@@ -1237,7 +1276,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle embedded qualifiers and skip conflicting flags', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'language:python stars:>1000 org:microsoft',
+          exactQuery: 'language:python stars:>1000 org:microsoft',
           language: 'javascript', // Should be ignored due to embedded qualifier
           stars: '>=500', // Should be ignored due to embedded qualifier
           owner: 'google', // Should be ignored due to embedded qualifier
@@ -1259,7 +1298,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle best-match sort (default) without adding sort flag', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          query: 'test',
+          exactQuery: 'test',
           sort: 'best-match',
         });
 
