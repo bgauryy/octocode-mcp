@@ -343,8 +343,8 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
 
   // Build search query (either exactQuery OR queryTerms, never both)
   if (params.exactQuery) {
-    // Add exact query with quotes for literal matching
-    args.push(`"${params.exactQuery}"`);
+    // Add exact query - let GitHub CLI handle the quoting
+    args.push(params.exactQuery);
   } else if (params.queryTerms && params.queryTerms.length > 0) {
     // Add query terms as separate arguments (for AND logic)
     // Auto-quote terms with special characters for literal matching
