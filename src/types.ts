@@ -116,7 +116,8 @@ export interface GitHubPullRequestsSearchParams
 export interface GitHubReposSearchParams
   extends Omit<BaseSearchParams, 'query'>,
     OrderSort {
-  query?: string; // Make query optional
+  exactQuery?: string; // Exact phrase/word to search for
+  queryTerms?: string[]; // Array of search terms (AND logic)
 
   // PRIMARY FILTERS (work alone)
   language?: string;

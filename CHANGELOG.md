@@ -5,6 +5,18 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.14] - 2025-07-08 - Repository Search Improvements
+
+### Improved
+- **Repository Search**: Major improvements to GitHub repository search tool
+  - Enhanced CLI argument construction for advanced and complex queries
+  - Smarter handling of embedded qualifiers (e.g., language, stars, org) in exact queries
+  - Improved support for multiple owners, topics, and advanced filters
+  - More robust test coverage for edge cases and advanced usage
+  - Better parameter validation and error handling
+
+---
+
 ## [2.3.12] - 2025-01-08 - Search Tool Improvements
 
 ### Enhanced

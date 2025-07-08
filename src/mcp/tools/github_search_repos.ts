@@ -14,14 +14,19 @@ export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
 const DESCRIPTION = `Search GitHub repositories using gh search repos CLI.
 
-BEST PRACTICES:
-- Use topic for discovering repositories by technology/purpose
-- Use query for searching by repository name
-- Use owner to explore specific organizations
-- Use language to filter by programming language
-- Use quality filters (stars, forks) for refinement
+THREE SEARCH APPROACHES:
+- exactQuery: Single exact phrase/word search
+- queryTerms: Multiple search terms (broader coverage)  
+- topic: Find repositories by technology/subject
 
-Separate searches for different topics and use minimal filters to get the most relevant results`;
+BEST PRACTICES:
+- Use exactQuery for specific repository names
+- Use queryTerms with minimal words for broader results
+- Use topic for technology/subject discovery
+- Use owner for organization exploration
+- Use filters (language, stars, forks) for refinement
+
+Multiple focused searches work better than complex single queries.`;
 
 /**
  * Extract owner/repo information from various query formats
@@ -67,12 +72,15 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        query: z
+        exactQuery: z
           .string()
           .optional()
-          .describe(
-            'Search by repository name. Use minimal words for repository names or specific projects. For topic discovery, use topic parameter instead.'
-          ),
+          .describe('Single exact phrase/word search'),
+
+        queryTerms: z
+          .array(z.string())
+          .optional()
+          .describe('Multiple search terms for broader coverage'),
 
         // CORE FILTERS (GitHub CLI flags)
         owner: z
@@ -104,9 +112,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         topic: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe(
-            'Discover repositories by topic. Use for exploring unknown domains and finding projects by technology or purpose.'
-          ),
+          .describe('Find repositories by technology/subject'),
         forks: z
           .union([
             z.number().int().min(0),
@@ -282,15 +288,32 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       },
     },
     async (args): Promise<CallToolResult> => {
+      // Validate that exactly one search parameter is provided (not both)
+      const hasExactQuery = !!args.exactQuery;
+      const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
+
+      if (hasExactQuery && hasQueryTerms) {
+        return createResult({
+          error:
+            'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
+        });
+      }
+
       try {
         // Extract owner/repo from query if present
-        const queryInfo = args.query
-          ? extractOwnerRepoFromQuery(args.query)
-          : {
-              cleanedQuery: '',
-              extractedOwner: undefined,
-              extractedRepo: undefined,
-            };
+        const queryInfo = args.exactQuery
+          ? extractOwnerRepoFromQuery(args.exactQuery)
+          : args.queryTerms
+            ? {
+                cleanedQuery: args.queryTerms.join(' '),
+                extractedOwner: undefined,
+                extractedRepo: undefined,
+              }
+            : {
+                cleanedQuery: '',
+                extractedOwner: undefined,
+                extractedRepo: undefined,
+              };
 
         // Merge extracted owner with explicit owner parameter
         let finalOwner = args.owner;
@@ -301,13 +324,15 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         // Update parameters with extracted information
         const enhancedArgs: GitHubReposSearchParams = {
           ...args,
-          query: queryInfo.cleanedQuery || args.query,
+          exactQuery: args.exactQuery ? queryInfo.cleanedQuery : undefined,
+          queryTerms: args.queryTerms,
           owner: finalOwner,
         };
 
         // Enhanced validation logic for primary filters
         const hasPrimaryFilter =
-          enhancedArgs.query?.trim() ||
+          enhancedArgs.exactQuery?.trim() ||
+          (enhancedArgs.queryTerms && enhancedArgs.queryTerms.length > 0) ||
           enhancedArgs.owner ||
           enhancedArgs.language ||
           enhancedArgs.topic ||
@@ -316,11 +341,14 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         if (!hasPrimaryFilter) {
           return createResult({
-            error: `Repository search requires at least one filter. Try these patterns:
-• Topic exploration: { topic: ["react", "typescript"] }
-• Organization search: { owner: "microsoft", visibility: "public" }
-• Language + quality: { language: "go", "good-first-issues": ">=10" }
-• Simple query: { query: "cli shell" }`,
+            error: `Repository search requires at least one filter. Try:
+• Topic search: { topic: "react" }
+• Exact search: { exactQuery: "cli shell" }  
+• Multiple terms: { queryTerms: ["react", "hooks"] }
+• Organization: { owner: "microsoft" }
+• Language filter: { language: "go" }
+
+Alternative: Use npm search for package discovery.`,
           });
         }
 
@@ -333,20 +361,22 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           // Smart fallbacks based on error type
           if (errorMsg.includes('rate limit')) {
             return createResult({
-              error: `GitHub API rate limit. Smart alternatives:
-• Try npm package search for package discovery
-• Use broader filters (remove stars/forks constraints)
-• Search fewer organizations at once
+              error: `GitHub API rate limit exceeded. Alternatives:
+• Use npm search for package discovery
+• Remove quality filters (stars/forks)  
+• Search fewer organizations
 • Wait 5-10 minutes and retry`,
             });
           }
 
           if (errorMsg.includes('authentication')) {
             return createResult({
-              error: `Authentication required. Quick fix:
-1. Run: gh auth login
-2. For private repos: use api_status_check to verify access
-3. Public repos should work without auth - check query`,
+              error: `Authentication required:
+• Run: gh auth login
+• For private repos: use api_status_check tool
+• Public repos work without auth
+
+Alternative: Use npm search for packages.`,
             });
           }
 
@@ -359,49 +389,33 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
         // Smart fallback strategies for no results
         if (!hasResults) {
-          const fallbackSuggestions = [];
+          const suggestions = [];
 
-          if (enhancedArgs.query) {
-            fallbackSuggestions.push(
-              '• Try broader search terms or remove query filter'
-            );
+          if (enhancedArgs.exactQuery) {
+            suggestions.push('• Try broader search terms');
           }
 
           if (enhancedArgs.language) {
-            fallbackSuggestions.push(
-              '• Remove language filter for broader discovery'
-            );
+            suggestions.push('• Remove language filter');
           }
 
           if (enhancedArgs.stars || enhancedArgs.forks) {
-            fallbackSuggestions.push(
-              '• Lower quality thresholds (stars/forks)'
-            );
+            suggestions.push('• Lower quality thresholds');
           }
 
           if (!enhancedArgs.topic) {
-            fallbackSuggestions.push(
-              '• 🎯 Try topic exploration: { topic: ["web", "api"] }'
-            );
+            suggestions.push('• Try topic search: { topic: "react" }');
           }
 
           if (enhancedArgs.owner) {
-            fallbackSuggestions.push(
-              '• Search without owner filter for global discovery'
-            );
-            fallbackSuggestions.push(
-              '• Use npm package search if looking for packages'
-            );
+            suggestions.push('• Remove owner filter for global search');
           }
 
-          return createResult({
-            error: `No repositories found. Try these alternatives:
-${fallbackSuggestions.join('\n')}
+          suggestions.push('• Use npm search for package discovery');
 
-Quick discovery patterns:
-• 🎯 Topic exploration: { topic: ["react"] }
-• Organization search: { owner: "microsoft" }
-• Quality filter: { stars: ">100", language: "python" }`,
+          return createResult({
+            error: `No repositories found. Try:
+${suggestions.join('\n')}`,
           });
         }
 
@@ -573,18 +587,24 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   command: GhCommand;
   args: string[];
 } {
-  const query = params.query?.trim() || '';
   const args = ['repos'];
 
-  const hasEmbeddedQualifiers =
-    query &&
-    /\b(stars|language|org|repo|topic|user|created|updated|size|license|archived|fork|good-first-issues|help-wanted-issues):/i.test(
-      query
-    );
+  let queryForQualifierCheck = '';
 
-  if (query) {
-    args.push(query);
+  if (params.exactQuery) {
+    args.push(params.exactQuery.trim());
+    queryForQualifierCheck = params.exactQuery.trim();
+  } else if (params.queryTerms && params.queryTerms.length > 0) {
+    // Add each term as separate argument for AND logic
+    params.queryTerms.forEach(term => args.push(term.trim()));
+    queryForQualifierCheck = params.queryTerms.join(' ');
   }
+
+  const hasEmbeddedQualifiers =
+    queryForQualifierCheck &&
+    /\b(stars|language|org|repo|topic|user|created|updated|size|license|archived|fork|good-first-issues|help-wanted-issues):/i.test(
+      queryForQualifierCheck
+    );
 
   args.push(
     '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
