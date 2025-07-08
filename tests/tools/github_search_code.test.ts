@@ -93,7 +93,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"defaultValue"',
+          'defaultValue',
           '--repo=facebook/react',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
@@ -171,7 +171,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"Component"',
+          'Component',
           '--repo=facebook/react',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
@@ -230,7 +230,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"test"',
+          'test',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -405,7 +405,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"test"',
+          'test',
           '--repo=facebook/react',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -521,7 +521,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"error handling"',
+          'error handling',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -554,7 +554,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"deque"',
+          'deque',
           '--language=python',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -588,7 +588,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"cli"',
+          'cli',
           '--owner=microsoft',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -622,7 +622,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"panic"',
+          'panic',
           '--repo=cli/cli',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -656,7 +656,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"lint"',
+          'lint',
           '--filename=package.json',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -690,7 +690,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"function"',
+          'function',
           '--extension=js',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -724,7 +724,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"class"',
+          'class',
           '--size=>1000',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -758,7 +758,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"test"',
+          'test',
           '--match=path',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -794,7 +794,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"useState"',
+          'useState',
           '--language=typescript',
           '--owner=facebook',
           '--filename=*.tsx',
@@ -831,7 +831,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"component"',
+          'component',
           '--repo=facebook/react',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -916,7 +916,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"useState"',
+          'useState',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -949,7 +949,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"api"',
+          'api',
           '--owner=facebook',
           '--owner=google',
           '--limit=30',
@@ -984,7 +984,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"hook"',
+          'hook',
           '--repo=facebook/react',
           '--repo=vuejs/vue',
           '--limit=30',

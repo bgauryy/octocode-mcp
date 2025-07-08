@@ -200,7 +200,9 @@ function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
   }
 
   // Standard Unix shell escaping for other arguments
-  if (/[^a-zA-Z0-9\-_./=@:]/.test(arg)) {
+  // Only escape if contains dangerous shell metacharacters
+  // Allow common safe characters: alphanumeric, dash, underscore, dot, slash, equals, at, colon, comma
+  if (/[;&|<>$`\\*?()[\]{}^~]/.test(arg)) {
     return `'${arg.replace(/'/g, "'\"'\"'")}'`;
   }
   return arg;
@@ -227,7 +229,33 @@ export async function executeNpmCommand(
   const shellConfig = getShellConfig(options.windowsShell);
 
   // Build command with validated prefix and properly escaped arguments
-  const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
+  // NPM commands need minimal escaping - most arguments are package names or CLI flags
+  const escapedArgs = args.map(arg => {
+    const isCliFlag = arg.startsWith('--');
+
+    // CLI flags like --searchlimit=20, --json need minimal escaping
+    if (isCliFlag) {
+      // Only escape CLI flags if they contain dangerous shell characters
+      if (/[;&|<>$`\\]/.test(arg)) {
+        return escapeShellArg(arg, shellConfig.type, false);
+      }
+      return arg;
+    }
+
+    // Package names and search terms need minimal escaping
+    // Only escape if contains shell metacharacters that could be dangerous
+    if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
+      return escapeShellArg(arg, shellConfig.type, false);
+    }
+
+    // For arguments with spaces, use minimal quoting
+    if (/\s/.test(arg)) {
+      return `"${arg}"`;
+    }
+
+    return arg;
+  });
+
   const fullCommand = `npm ${command} ${escapedArgs.join(' ')}`;
 
   const executeNpmCommand = () =>
@@ -265,37 +293,45 @@ export async function executeGitHubCommand(
   const shellConfig = getShellConfig(options.windowsShell);
 
   // Build command with validated prefix and properly escaped arguments
-  // For GitHub search commands, we need to distinguish between:
-  // 1. Main query (index 1) - needs special escaping for AND logic
-  // 2. CLI flags (--flag=value) - standard escaping
-  // 3. Search qualifiers (key:value) - minimal escaping
+  // For GitHub search commands, we need minimal escaping to avoid interfering with GitHub CLI
   const escapedArgs = args.map((arg, index) => {
     const isMainQueryArgument = command === 'search' && index === 1;
     const isCliFlag = arg.startsWith('--');
-    const isGitHubQualifier =
-      command === 'search' &&
-      index > 1 &&
-      !isCliFlag &&
-      (arg.includes(':') || arg.startsWith('('));
 
-    // CLI flags like --language=javascript, --repo=owner/repo need standard escaping
+    // CLI flags like --language=javascript, --repo=owner/repo need minimal escaping
     if (isCliFlag) {
-      return escapeShellArg(arg, shellConfig.type, false);
-    }
-
-    // GitHub search qualifiers need special handling
-    // Most qualifiers can be passed as-is, but those with shell metacharacters need escaping
-    if (isGitHubQualifier) {
-      // Check if the qualifier contains shell metacharacters that need escaping
-      if (/[<>&|;`$\\]/.test(arg)) {
-        // Escape qualifiers that contain shell metacharacters like size:<1000, size:>500
+      // Only escape CLI flags if they contain dangerous shell characters
+      if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
         return escapeShellArg(arg, shellConfig.type, false);
       }
-      // Safe qualifiers like "language:typescript", "user:microsoft" can be passed as-is
       return arg;
     }
 
-    return escapeShellArg(arg, shellConfig.type, isMainQueryArgument);
+    // For search queries, only escape if absolutely necessary for shell safety
+    if (isMainQueryArgument) {
+      // Only escape if the argument contains shell metacharacters that could be dangerous
+      if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
+        return escapeShellArg(arg, shellConfig.type, false);
+      }
+      // For simple queries with spaces or special chars, use minimal quoting
+      if (/\s/.test(arg)) {
+        return `"${arg}"`;
+      }
+      return arg;
+    }
+
+    // For other arguments, use minimal escaping
+    // Only escape if contains shell metacharacters that could be dangerous
+    if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
+      return escapeShellArg(arg, shellConfig.type, false);
+    }
+
+    // For arguments with spaces, use minimal quoting
+    if (/\s/.test(arg)) {
+      return `"${arg}"`;
+    }
+
+    return arg;
   });
 
   const fullCommand = `gh ${command} ${escapedArgs.join(' ')}`;
