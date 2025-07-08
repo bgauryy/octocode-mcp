@@ -174,7 +174,7 @@ describe('exec utilities', () => {
 
       expect(mockExecAsync).toHaveBeenCalledWith(
         expect.stringContaining(
-          'language:typescript user:microsoft (user:microsoft OR org:microsoft)'
+          'language:typescript user:microsoft "(user:microsoft OR org:microsoft)"'
         ),
         expect.any(Object)
       );
@@ -216,7 +216,7 @@ describe('exec utilities', () => {
       expect(calledCommand).toContain('"package with spaces"');
     });
 
-    it('should escape arguments properly on Windows PowerShell', async () => {
+    it('should handle arguments with quotes on Windows PowerShell', async () => {
       mockPlatform.mockReturnValue('win32');
       mockExecAsync.mockResolvedValue({ stdout: '{}', stderr: '' });
 
@@ -225,7 +225,7 @@ describe('exec utilities', () => {
       });
 
       const calledCommand = mockExecAsync.mock.calls[0][0];
-      expect(calledCommand).toContain("'package''with''quotes'");
+      expect(calledCommand).toContain("package'with'quotes");
     });
 
     it('should not over-escape GitHub AND queries', async () => {
