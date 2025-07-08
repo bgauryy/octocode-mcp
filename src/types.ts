@@ -25,7 +25,8 @@ export type UserInvolvement = {
 };
 
 export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
-  query: string;
+  exactQuery?: string;
+  queryTerms?: string[];
   owner?: string | string[]; // Override to support array
   repo?: string | string[];
   language?: string;
