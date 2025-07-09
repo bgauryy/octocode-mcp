@@ -1,57 +1,43 @@
+# DXT packaging exclusions
 # Development files
-.git/
-.gitignore
-.eslintrc.json
-.prettier*
-.vscode/
-.claude/
-.DS_Store
-Thumbs.db
-
-# Dependencies
-node_modules/
-yarn.lock
-package-lock.json
-.yarnrc.yml
-
-# Build and test files
 src/
 tests/
+*.test.ts
+*.test.js
 coverage/
-.nyc_output/
-*.log
-*.tsbuildinfo
-build/
 
-# Configuration files
-tsconfig.json
-tsconfig.*.json
+# Build tools
 rollup.config.js
+tsconfig.json
+tsconfig.test.json
 vitest.config.ts
 jest.config.js
 
-# Documentation and scripts
+# Documentation
 docs/
-_docs/
-_scripts/
-*.md
-!README.md
+CHANGELOG.md
+TODO.md
 
-# CI/CD
-.github/
-.travis.yml
-.circleci/
-
-# Development tools
-.dxtignore
-.npmignore
+# Development dependencies
+.yarn/
 .yarnrc
-.nvmrc
+yarn.lock
+package-lock.json
 
-# DXT files
+# IDE and system files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs and temp files
+*.log
+tmp/
+temp/
+
+# Other DXT files
 *.dxt
 
-# Large assets that aren't needed for runtime
-assets/langchainTutorial.gif
-assets/reactVSVueJS.gif
-assets/reactZustand.gif 
+# Test fixtures
+test/ 
