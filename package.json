@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "2.3.14",
+  "version": "2.3.15",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis, code discovery, and npm package exploration. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub and npm ecosystems.",
   "author": "Guy Bary <guybary@gmail.com>",
   "homepage": "https://octocode.ai",
@@ -14,10 +14,10 @@
   "engines": {
     "node": ">=18.12.0"
   },
-  "main": "build/index.js",
+  "main": "dist/index.js",
   "license": "MIT",
   "type": "module",
-  "bin": "./build/index.js",
+  "bin": "./dist/index.js",
   "scripts": {
     "build": "yarn lint && rollup -c",
     "build:watch": "rollup -c --watch",
@@ -26,14 +26,22 @@
     "test:watch": "vitest --watch",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "debug": "npx @modelcontextprotocol/inspector node build/index.js",
+    "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js,json}\""
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
+    "dxt:validate": "dxt validate manifest.json",
+    "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
+    "dxt:pack:dev": "yarn build && dxt pack . octocode-mcp-dev.dxt",
+    "dxt:info": "dxt info octocode-mcp.dxt",
+    "dxt:sign": "dxt sign octocode-mcp.dxt --self-signed",
+    "dxt:verify": "dxt verify octocode-mcp.dxt"
   },
   "files": [
-    "build"
+    "dist",
+    "manifest.json",
+    "assets"
   ],
   "dependencies": {
     "@babel/core": "^7.28.0",
@@ -47,6 +55,7 @@
     "zod": "^3.25.26"
   },
   "devDependencies": {
+    "@anthropic-ai/dxt": "^0.2.1",
     "@rollup/plugin-commonjs": "^28.0.3",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
@@ -87,6 +96,8 @@
     "semantic-search",
     "typescript",
     "nodejs",
-    "cli-tool"
+    "cli-tool",
+    "dxt",
+    "desktop-extension"
   ]
 }

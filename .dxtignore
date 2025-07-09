@@ -1,0 +1,57 @@
+# Development files
+.git/
+.gitignore
+.eslintrc.json
+.prettier*
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+yarn.lock
+package-lock.json
+.yarnrc.yml
+
+# Build and test files
+src/
+tests/
+coverage/
+.nyc_output/
+*.log
+*.tsbuildinfo
+build/
+
+# Configuration files
+tsconfig.json
+tsconfig.*.json
+rollup.config.js
+vitest.config.ts
+jest.config.js
+
+# Documentation and scripts
+docs/
+_docs/
+_scripts/
+*.md
+!README.md
+
+# CI/CD
+.github/
+.travis.yml
+.circleci/
+
+# Development tools
+.dxtignore
+.npmignore
+.yarnrc
+.nvmrc
+
+# DXT files
+*.dxt
+
+# Large assets that aren't needed for runtime
+assets/langchainTutorial.gif
+assets/reactVSVueJS.gif
+assets/reactZustand.gif 
