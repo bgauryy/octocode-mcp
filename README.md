@@ -1,19 +1,29 @@
 # Octocode MCP
 
-Model Context Protocol (MCP) server for advanced GitHub repository analysis, code discovery, and npm package exploration. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub and npm ecosystems.
+**The Perfect AI Code Assistant - Advanced Search & Discovery Across GitHub & NPM**
 
-## Features
+<div>
+  <img src="./assets/logo.png" width="400px">
+  
+  [![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](./package.json)
+  [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
+  [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
+</div>
 
-- **GitHub Code Search**: Search across millions of repositories with advanced filtering
-- **Repository Analysis**: Explore repository structure, commits, and metadata
-- **Pull Request & Issue Tracking**: Find and analyze development activity
-- **NPM Package Discovery**: Search and analyze npm packages with dependency information
-- **Content Retrieval**: Fetch and analyze file contents with intelligent minification
-- **Commit History**: Track code changes and development patterns
 
-## DXT Extension
 
-This project is available as a Desktop Extension (DXT) for easy installation in AI applications like Claude Desktop.
+## What is Octocode? 🐙
+
+**For more details, visit [octocode.ai](https://octocode.ai)**
+
+**The perfect code assistant that can help understand anything.** Octocode provides AI-powered advanced search with heuristic discovery and smart fallbacks to understand connections between repositories and NPM packages across any privilege level you have.
+
+Instead of manually browsing repositories, ask questions like:
+- *"How did React implement concurrent rendering?"*
+- *"Show me authentication patterns in Next.js applications"*
+- *"Find examples of how to use this specific API"*
+- *"What's the architecture of this library?"*
+- *"How do I use this MCP tool effectively?"*
 
 ## Unique Value Proposition
 
@@ -54,9 +64,7 @@ npm login
 - ✅ **Automatic organization detection** - Instantly accesses your private repositories
 - ✅ **Zero configuration** - Uses existing `gh` CLI permissions
 
-### 3. Choose Your Installation Method
-
-**Option A: Traditional MCP Server** (Add to MCP Configuration)
+### 3. Add to MCP Configuration
 ```json
 {
   "octocode-mcp": {
@@ -66,29 +74,11 @@ npm login
 }
 ```
 
-**Option B: Desktop Extension (DXT)** (Recommended for Claude Desktop)
-1. Download the latest `octocode-mcp.dxt` from [GitHub Releases](https://github.com/bgauryy/octocode-mcp/releases)
-2. Open the `.dxt` file with Claude Desktop (macOS/Windows)
-3. Follow the installation prompt
-
 **That's it!** Octocode automatically works with your organization's private repositories.
 
 ## DXT Extension 📦
 
 This project is available as a **Desktop Extension (DXT)** for easy installation in AI applications like Claude Desktop.
-
-### For End Users
-
-**Installation:**
-1. Download the latest `octocode-mcp.dxt` from [GitHub Releases](https://github.com/bgauryy/octocode-mcp/releases)
-2. Open the `.dxt` file with Claude Desktop (macOS/Windows)
-3. Follow the installation prompt - **it's that simple!**
-
-**Benefits of DXT:**
-- ✅ **Single-click installation** - No configuration needed
-- ✅ **Automatic updates** - Managed by your AI application
-- ✅ **Secure packaging** - Signed and verified extensions
-- ✅ **No command-line required** - Perfect for non-technical users
 
 ### For Developers
 
@@ -125,10 +115,21 @@ yarn dxt:sign
 - Logo and assets (`assets/logo.png`)
 - Documentation (`README.md`)
 
-**Distribution:**
-- DXT files are distributed via GitHub Releases
-- Users install them directly in AI applications
-- NOT published to NPM (different from the MCP server package)
+**Building DXT from Source:**
+To build the DXT package locally from this repository:
+```bash
+# Clone the repository
+git clone https://github.com/bgauryy/octocode-mcp.git
+cd octocode-mcp
+
+# Install dependencies and build
+yarn install
+yarn build
+yarn dxt:pack
+```
+
+The generated `octocode-mcp.dxt` file can then be installed in Claude Desktop (just click on it and it will open claude desktop with the extension)
+
 
 ## How It Works 🔄
 
@@ -180,21 +181,10 @@ yarn dxt:sign
 
 **10 specialized tools** working together intelligently:
 
-### GitHub Tools
-- `githubSearchCode` - Search code across repositories with advanced filtering
-- `githubGetFileContent` - Fetch file contents from repositories with intelligent minification
-- `githubSearchRepositories` - Search for repositories with comprehensive metadata
-- `githubSearchCommits` - Search commit history and track development patterns
-- `githubSearchPullRequests` - Search pull requests and analyze code changes
-- `githubSearchIssues` - Search issues and development discussions
-- `githubViewRepoStructure` - View repository structure and explore codebases
-
-### NPM Tools
-- `npmPackageSearch` - Search npm packages with dependency information
-- `npmViewPackage` - View detailed package information and dependencies
-
-### System Tools
-- `apiStatusCheck` - Check GitHub and npm API status and connectivity
+**Discovery:** Repository Search, Package Search  
+**Analysis:** Code Search, Package Analysis, Repository Structure  
+**Activity:** Commit Search, Pull Request Search, Issue Search  
+**Content:** File Content Fetching, API Status Check  
 
 All tools feature automatic cross-referencing and intelligent fallbacks.
 
@@ -229,165 +219,32 @@ All tools feature automatic cross-referencing and intelligent fallbacks.
 ## Troubleshooting 🔧
 
 ```bash
-# Install dependencies
-yarn install
+# Check GitHub CLI status
+gh auth status
 
-# Build the DXT package
-yarn dxt:pack
+# Re-authenticate if needed
+gh auth logout && gh auth login
 
-# Validate the manifest
-yarn dxt:validate
+# Check NPM access
+npm whoami
 
-# View package information
-yarn dxt:info
-
-# Sign the package (optional)
-yarn dxt:sign
+# Clear NPX cache if needed
+rm -rf ~/.npm/_npx
 ```
 
-### DXT Scripts
+**Common Solutions:**
+- No results? Try broader search terms
+- Private repos not found? Check `gh auth status` for organization membership
+- Windows users? PowerShell is automatically supported
 
-- `yarn dxt:validate` - Validate the manifest.json file
-- `yarn dxt:pack` - Build and package the extension as a .dxt file
-- `yarn dxt:info` - Show information about the packaged extension
-- `yarn dxt:sign` - Sign the package with a self-signed certificate
-- `yarn dxt:verify` - Verify the signature of a signed package
+## Background 💭
 
-The DXT package includes:
-- Compiled MCP server (`dist/index.js`)
-- Extension manifest (`manifest.json`)
-- Package metadata (`package.json`)
-- Logo and assets (`assets/logo.png`)
-- Documentation (`README.md`)
+This project started as a personal tool while working at Wix, born from the challenge of navigating large codebases and keeping up with rapidly evolving technology landscapes. What began as a side project evolved into **the perfect code assistant that can help understand anything**.
 
-### Installation
-
-## Development 🛠️
-
-### Building and Testing
-
-```bash
-# Install dependencies
-yarn install
-
-# Build the project
-yarn build
-
-# Run tests
-yarn test
-
-# Start in development mode
-yarn build:watch
-
-# Lint and format
-yarn lint
-yarn format
-```
-
-### DXT Development
-
-```bash
-# Build and test DXT package
-yarn dxt:pack
-yarn dxt:validate
-yarn dxt:info
-
-# Development workflow
-yarn build:watch  # Watch for changes
-yarn dxt:pack     # Rebuild DXT package
-
-# Release workflow
-yarn release:dxt  # Build, pack, and sign DXT for distribution
-```
-
-### Configuration
-
-The server can be configured through environment variables:
-
-- `GITHUB_TOKEN` - GitHub personal access token (optional, increases rate limits)
-- `NPM_REGISTRY` - NPM registry URL (default: https://registry.npmjs.org)
-
-### Distribution
-
-**Two Distribution Methods:**
-
-1. **NPM Package** (`npm install -g octocode-mcp`)
-   - Traditional MCP server installation
-   - Requires manual MCP configuration
-   - Global command-line tool
-   - Published to NPM registry
-
-2. **DXT Extension** (`octocode-mcp.dxt`)
-   - Desktop Extension for AI applications
-   - Single-click installation in Claude Desktop
-   - Distributed via GitHub Releases
-   - NOT published to NPM
+The goal: **make code exploration as intelligent as having a senior developer guide you through any codebase.**
 
 ## License 📄
 
-## Tools Available
+MIT License - See [LICENSE](./LICENSE.md) for details.
 
-### GitHub Tools
-- `githubSearchCode` - Search code across repositories
-- `githubGetFileContent` - Fetch file contents from repositories
-- `githubSearchRepositories` - Search for repositories
-- `githubSearchCommits` - Search commit history
-- `githubSearchPullRequests` - Search pull requests
-- `githubSearchIssues` - Search issues
-- `githubViewRepoStructure` - View repository structure
-
-### NPM Tools
-- `npmPackageSearch` - Search npm packages
-- `npmViewPackage` - View package information and dependencies
-
-### System Tools
-- `apiStatusCheck` - Check GitHub and npm API status
-
-## Installation
-
-```bash
-npm install -g octocode-mcp
-```
-
-## Usage
-
-### As MCP Server
-
-```bash
-# Start the server
-octocode-mcp
-
-# Or with debugging
-npx @modelcontextprotocol/inspector octocode-mcp
-```
-
-### Configuration
-
-The server can be configured through environment variables or user configuration when used as a DXT extension:
-
-- `GITHUB_TOKEN` - GitHub personal access token (optional, increases rate limits)
-- `NPM_REGISTRY` - NPM registry URL (default: https://registry.npmjs.org)
-
-## Development
-
-```bash
-# Install dependencies
-yarn install
-
-# Build the project
-yarn build
-
-# Run tests
-yarn test
-
-# Start in development mode
-yarn build:watch
-
-# Lint and format
-yarn lint
-yarn format
-```
-
-## License
-
-MIT License - see LICENSE.md for details.
+---
