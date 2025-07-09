@@ -4,3 +4,6 @@ dist
 .yarn/install-state.gz
 _docs
 _scripts
+
+# DXT files (distribute via GitHub releases)
+*.dxt

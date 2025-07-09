@@ -36,7 +36,8 @@
     "dxt:pack:dev": "yarn build && dxt pack . octocode-mcp-dev.dxt",
     "dxt:info": "dxt info octocode-mcp.dxt",
     "dxt:sign": "dxt sign octocode-mcp.dxt --self-signed",
-    "dxt:verify": "dxt verify octocode-mcp.dxt"
+    "dxt:verify": "dxt verify octocode-mcp.dxt",
+    "release:dxt": "yarn build && dxt pack . octocode-mcp.dxt && dxt sign octocode-mcp.dxt --self-signed"
   },
   "files": [
     "dist",
