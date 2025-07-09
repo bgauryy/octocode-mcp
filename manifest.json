@@ -1,0 +1,110 @@
+{
+  "dxt_version": "0.1",
+  "name": "octocode-mcp",
+  "display_name": "Octocode MCP Extension",
+  "version": "1.0.0",
+  "description": "GitHub code search and npm package exploration MCP server",
+  "long_description": "A comprehensive MCP server that provides GitHub code search, repository exploration, commit history, pull requests, issues, and npm package search capabilities. This extension enables AI assistants to efficiently search and analyze code across GitHub repositories and npm packages with advanced filtering and content retrieval features.",
+  "author": {
+    "name": "Octocode Team",
+    "email": "support@octocode.dev",
+    "url": "https://github.com/octocode-dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guybary/octocode-mcp"
+  },
+  "homepage": "https://github.com/guybary/octocode-mcp",
+  "documentation": "https://github.com/guybary/octocode-mcp#readme",
+  "support": "https://github.com/guybary/octocode-mcp/issues",
+  "icon": "assets/logo.png",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "mcp_octocode_apiStatusCheck",
+      "description": "Check GitHub and npm login status"
+    },
+    {
+      "name": "mcp_octocode_githubSearchCode",
+      "description": "Search code across GitHub repositories"
+    },
+    {
+      "name": "mcp_octocode_githubGetFileContent",
+      "description": "Fetch file content from GitHub repositories"
+    },
+    {
+      "name": "mcp_octocode_githubSearchRepositories",
+      "description": "Search GitHub repositories"
+    },
+    {
+      "name": "mcp_octocode_githubSearchCommits",
+      "description": "Search commit history across GitHub repositories"
+    },
+    {
+      "name": "mcp_octocode_githubSearchPullRequests",
+      "description": "Search GitHub pull requests"
+    },
+    {
+      "name": "mcp_octocode_githubSearchIssues",
+      "description": "Search GitHub issues"
+    },
+    {
+      "name": "mcp_octocode_githubViewRepoStructure",
+      "description": "View GitHub repository structure"
+    },
+    {
+      "name": "mcp_octocode_npmPackageSearch",
+      "description": "Search npm packages"
+    },
+    {
+      "name": "mcp_octocode_npmViewPackage",
+      "description": "View npm package information"
+    }
+  ],
+  "keywords": [
+    "github",
+    "npm",
+    "code-search",
+    "repository",
+    "package-manager",
+    "development",
+    "api",
+    "search",
+    "mcp",
+    "octocode"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  },
+  "user_config": {
+    "github_token": {
+      "type": "string",
+      "title": "GitHub Token",
+      "description": "Personal access token for GitHub API (optional, increases rate limits)",
+      "sensitive": true,
+      "required": false
+    },
+    "npm_registry": {
+      "type": "string",
+      "title": "NPM Registry",
+      "description": "NPM registry URL",
+      "default": "https://registry.npmjs.org",
+      "required": false
+    }
+  }
+} 
