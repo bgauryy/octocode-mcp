@@ -6,7 +6,6 @@ import { generateCacheKey, withCache } from './cache';
 
 const safeExecAsync = promisify(nodeExec);
 
-// Allowed command prefixes - this prevents shell injection by restricting to safe commands
 const ALLOWED_NPM_COMMANDS = [
   'view',
   'search',
@@ -15,7 +14,6 @@ const ALLOWED_NPM_COMMANDS = [
   'whoami',
 ] as const;
 
-// Allowed command prefixes - this prevents shell injection by restricting to safe commands
 const ALLOWED_GH_COMMANDS = [
   'search',
   'api',
@@ -67,13 +65,12 @@ function isValidGhCommand(command: string): command is GhCommand {
 }
 
 /**
- * Get platform-specific shell configuration with improved shell detection
+ * Get platform-specific shell configuration
  */
 function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
   const isWindows = platform() === 'win32';
 
   if (!isWindows) {
-    // Use user's actual shell instead of hardcoded /bin/sh to avoid alias/function conflicts
     const userShell = process.env.SHELL || '/bin/sh';
     return {
       shell: userShell,
@@ -101,42 +98,16 @@ function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
 }
 
 /**
- * Escape shell arguments with improved GitHub CLI query handling
+ * Escape shell arguments
  */
 function escapeShellArg(
   arg: string,
-  shellType?: 'cmd' | 'powershell' | 'unix',
-  isGitHubQuery?: boolean // Flag to indicate if this is the main GitHub search query argument
+  shellType?: 'cmd' | 'powershell' | 'unix'
 ): string {
   // Auto-detect shell type if not provided
   if (!shellType) {
     const isWindows = platform() === 'win32';
     shellType = isWindows ? 'cmd' : 'unix';
-  }
-
-  // Special handling for GitHub search queries to preserve AND logic
-  if (isGitHubQuery) {
-    // If the argument already contains quotes, preserve them for exact phrases
-    if (arg.includes('"')) {
-      // For Unix-like shells, wrap the entire argument in single quotes
-      if (shellType === 'unix') {
-        return `'${arg.replace(/'/g, "'\"'\"'")}'`;
-      }
-      // For Windows CMD
-      if (shellType === 'cmd') {
-        return `"${arg.replace(/"/g, '""')}"`;
-      }
-      // For PowerShell
-      return `'${arg.replace(/'/g, "''")}'`;
-    }
-
-    // For space-separated terms (AND search), minimize escaping
-    if (arg.includes(' ') && shellType === 'unix') {
-      // Only escape if contains dangerous shell characters
-      if (!/[;&|<>$`\\]/.test(arg)) {
-        return `"${arg}"`;
-      }
-    }
   }
 
   switch (shellType) {
@@ -146,19 +117,15 @@ function escapeShellArg(
       return escapeWindowsCmdArg(arg);
     case 'unix':
     default:
-      return escapeUnixShellArg(arg, isGitHubQuery);
+      return escapeUnixShellArg(arg);
   }
 }
 
 /**
  * Escape arguments for PowerShell
- * PowerShell uses single quotes for literal strings and has special escaping rules
  */
 function escapePowerShellArg(arg: string): string {
-  // PowerShell special characters that need escaping
   if (/[\s&<>|;`$@"'()[\]{}]/.test(arg)) {
-    // Use single quotes for literal strings in PowerShell
-    // Escape single quotes by doubling them
     return `'${arg.replace(/'/g, "''")}'`;
   }
   return arg;
@@ -168,7 +135,6 @@ function escapePowerShellArg(arg: string): string {
  * Escape arguments for Windows CMD
  */
 function escapeWindowsCmdArg(arg: string): string {
-  // Windows CMD escaping
   if (/[\s&<>|^"]/.test(arg)) {
     return `"${arg.replace(/"/g, '""')}"`;
   }
@@ -176,40 +142,11 @@ function escapeWindowsCmdArg(arg: string): string {
 }
 
 /**
- * Escape arguments for Unix shells with special handling for GitHub CLI queries
- * Preserves AND search logic by not over-escaping space-separated terms
+ * Escape arguments for Unix shells
  */
-function escapeUnixShellArg(arg: string, isGitHubQuery?: boolean): string {
-  // For GitHub search queries, we need to preserve AND logic and quoted phrases
-  if (isGitHubQuery) {
-    // If the query contains quotes, we need to preserve them for GitHub CLI
-    // but escape the entire argument for the shell
-    if (arg.includes('"')) {
-      // Use single quotes to wrap the entire query while preserving internal quotes
-      // This allows GitHub CLI to see: "quoted phrase" other terms
-      return `'${arg.replace(/'/g, "'\"'\"'")}'`;
-    }
-
-    // For space-separated terms (AND search), only escape if absolutely necessary
-    // GitHub CLI expects space-separated terms for AND logic
-    if (arg.includes(' ') && !/[;&|<>$`\\]/.test(arg)) {
-      // Only wrap in quotes if it contains shell metacharacters beyond spaces
-      return `"${arg}"`;
-    }
-
-    // For single terms or terms with special chars, escape normally
-    if (/[;&|<>$`\\]/.test(arg)) {
-      return `'${arg.replace(/'/g, "'\"'\"'")}'`;
-    }
-
-    // Simple terms don't need escaping
-    return arg;
-  }
-
-  // Standard Unix shell escaping for other arguments
+function escapeUnixShellArg(arg: string): string {
   // Only escape if contains dangerous shell metacharacters
-  // Allow common safe characters: alphanumeric, dash, underscore, dot, slash, equals, at, colon, comma
-  if (/[;&|<>$`\\*?()[\]{}^~]/.test(arg)) {
+  if (/[;&|<>$`\\*?()[\]{}^~\s]/.test(arg)) {
     return `'${arg.replace(/'/g, "'\"'\"'")}'`;
   }
   return arg;
@@ -235,33 +172,8 @@ export async function executeNpmCommand(
   // Get shell configuration
   const shellConfig = getShellConfig(options.windowsShell);
 
-  // Build command with validated prefix and properly escaped arguments
-  // NPM commands need minimal escaping - most arguments are package names or CLI flags
-  const escapedArgs = args.map(arg => {
-    const isCliFlag = arg.startsWith('--');
-
-    // CLI flags like --searchlimit=20, --json need minimal escaping
-    if (isCliFlag) {
-      // Only escape CLI flags if they contain dangerous shell characters
-      if (/[;&|<>$`\\]/.test(arg)) {
-        return escapeShellArg(arg, shellConfig.type, false);
-      }
-      return arg;
-    }
-
-    // Package names and search terms need minimal escaping
-    // Only escape if contains shell metacharacters that could be dangerous
-    if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
-      return escapeShellArg(arg, shellConfig.type, false);
-    }
-
-    // For arguments with spaces, use minimal quoting
-    if (/\s/.test(arg)) {
-      return `"${arg}"`;
-    }
-
-    return arg;
-  });
+  // Build command with escaped arguments
+  const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
 
   const fullCommand = `npm ${command} ${escapedArgs.join(' ')}`;
 
@@ -281,7 +193,7 @@ export async function executeNpmCommand(
 }
 
 /**
- * Execute GitHub CLI commands safely with improved boolean query handling
+ * Execute GitHub CLI commands safely
  */
 export async function executeGitHubCommand(
   command: GhCommand,
@@ -299,62 +211,8 @@ export async function executeGitHubCommand(
   // Get shell configuration
   const shellConfig = getShellConfig(options.windowsShell);
 
-  // Build command with validated prefix and properly escaped arguments
-  const escapedArgs = args.map((arg, index) => {
-    const isMainQueryArgument = command === 'search' && index === 1;
-    const isCliFlag = arg.startsWith('--');
-    const isApiPath = command === 'api' && arg.startsWith('/');
-
-    // CLI flags like --language=javascript, --repo=owner/repo need minimal escaping
-    if (isCliFlag) {
-      // Only escape CLI flags if they contain dangerous shell characters
-      if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
-        return escapeShellArg(arg, shellConfig.type, false);
-      }
-      return arg;
-    }
-
-    // API paths with query parameters need proper escaping
-    if (isApiPath) {
-      // Always quote API paths that contain query parameters or special characters
-      if (arg.includes('?') || arg.includes('&') || /[\s*?[\]{}]/.test(arg)) {
-        if (shellConfig.type === 'unix') {
-          return `'${arg.replace(/'/g, "'\"'\"'")}'`;
-        } else if (shellConfig.type === 'cmd') {
-          return `"${arg.replace(/"/g, '""')}"`;
-        } else {
-          return `'${arg.replace(/'/g, "''")}'`;
-        }
-      }
-      return arg;
-    }
-
-    // For search queries, only escape if absolutely necessary for shell safety
-    if (isMainQueryArgument) {
-      // Only escape if the argument contains shell metacharacters that could be dangerous
-      if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
-        return escapeShellArg(arg, shellConfig.type, false);
-      }
-      // For simple queries with spaces or special chars, use minimal quoting
-      if (/\s/.test(arg)) {
-        return `"${arg}"`;
-      }
-      return arg;
-    }
-
-    // For other arguments, use minimal escaping
-    // Only escape if contains shell metacharacters that could be dangerous
-    if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
-      return escapeShellArg(arg, shellConfig.type, false);
-    }
-
-    // For arguments with spaces, use minimal quoting
-    if (/\s/.test(arg)) {
-      return `"${arg}"`;
-    }
-
-    return arg;
-  });
+  // Build command with escaped arguments
+  const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
 
   const fullCommand = `gh ${command} ${escapedArgs.join(' ')}`;
 
@@ -374,36 +232,7 @@ export async function executeGitHubCommand(
 }
 
 /**
- * Helper function to detect shell configuration errors vs real GitHub errors
- */
-function isShellConfigurationError(errorText: string): boolean {
-  if (!errorText) return false;
-
-  // Preserve GitHub API errors
-  if (
-    errorText.includes('HTTP 404') ||
-    errorText.includes('HTTP 403') ||
-    errorText.includes('Not Found') ||
-    errorText.includes('API rate limit')
-  ) {
-    return false;
-  }
-
-  // Shell configuration conflicts to ignore
-  return (
-    errorText.includes('head: illegal option') ||
-    errorText.includes('head: |: No such file or directory') ||
-    errorText.includes('head: cat: No such file or directory') ||
-    /^head:\s+/.test(errorText) ||
-    /^\s*head:\s+/.test(errorText) ||
-    (errorText.includes('No such file or directory') &&
-      !errorText.includes('HTTP') &&
-      !errorText.includes('gh:'))
-  );
-}
-
-/**
- * Execute shell commands with improved environment handling and error detection
+ * Execute shell commands
  */
 async function executeCommand(
   fullCommand: string,
@@ -422,14 +251,6 @@ async function executeCommand(
       env: {
         ...process.env,
         ...options.env,
-        // More conservative shell environment handling
-        SHELL: config.shellEnv,
-        PATH: process.env.PATH,
-        // Only disable problematic shell features, not all of them
-        ...(config.type === 'unix' && {
-          // Only disable the most problematic shell configurations
-          BASH_ENV: '', // Prevent auto-sourcing of problematic configs
-        }),
       },
       encoding: 'utf-8' as const,
       shell: config.shell,
@@ -437,7 +258,7 @@ async function executeCommand(
 
     const { stdout, stderr } = await safeExecAsync(fullCommand, execOptions);
 
-    // Improved error detection that ignores shell configuration conflicts
+    // Simple error detection
     const shouldTreatAsError =
       type === 'npm'
         ? stderr &&
@@ -446,23 +267,11 @@ async function executeCommand(
         : stderr &&
           !stderr.includes('Warning:') &&
           !stderr.includes('notice:') &&
-          // Ignore shell configuration conflicts but preserve GitHub API errors
-          !isShellConfigurationError(stderr) &&
           stderr.trim() !== '';
 
     if (shouldTreatAsError) {
       const errorType =
         type === 'npm' ? 'NPM command error' : 'GitHub CLI command error';
-
-      // Enhanced error messaging for common GitHub issues
-      if (type === 'github' && stderr.includes('404')) {
-        const isRepoNotFound = stderr.includes('Not Found');
-        const enhancedMessage = isRepoNotFound
-          ? `${stderr}\n\nThis is often due to incorrect repository name. Use github_search_code to find the correct repository.`
-          : stderr;
-        return createErrorResult(errorType, new Error(enhancedMessage));
-      }
-
       return createErrorResult(errorType, new Error(stderr));
     }
 

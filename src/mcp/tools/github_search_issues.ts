@@ -4,6 +4,7 @@ import {
   GitHubIssuesSearchParams,
   GitHubIssuesSearchResult,
   GitHubIssueItem,
+  BasicGitHubIssue,
 } from '../../types';
 import { createResult, toDDMMYYYY } from '../responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
@@ -19,7 +20,7 @@ import {
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue number, title, state, labels, and metadata for effective issue tracking and analysis.`;
+const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
@@ -267,35 +268,131 @@ async function searchGitHubIssues(
 
     const execResult = JSON.parse(result.content[0].text as string);
     const apiResponse = execResult.result;
-    const issues = apiResponse.items || [];
+    const issues = Array.isArray(apiResponse)
+      ? apiResponse
+      : apiResponse.items || [];
 
-    const cleanIssues: GitHubIssueItem[] = issues.map(
-      (issue: {
-        number: number;
-        title: string;
-        state: 'open' | 'closed';
-        user?: { login: string };
-        repository_url?: string;
-        labels?: Array<{ name: string }>;
-        created_at: string;
-        updated_at: string;
-        html_url: string;
-        comments: number;
-        reactions?: { total_count: number };
-      }) => ({
+    // First map basic issue data
+    const basicIssues: BasicGitHubIssue[] = issues.map((issue: any) => {
+      // Handle direct JSON format from gh CLI
+      const repoName =
+        issue.repository?.nameWithOwner ||
+        issue.repository?.full_name ||
+        'unknown';
+      const repo = repoName.includes('/') ? repoName.split('/')[1] : repoName;
+
+      return {
         number: issue.number,
         title: issue.title,
         state: issue.state,
-        author: issue.user?.login || '',
-        repository:
-          issue.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-        labels: issue.labels?.map(l => l.name) || [],
-        created_at: toDDMMYYYY(issue.created_at),
-        updated_at: toDDMMYYYY(issue.updated_at),
-        url: issue.html_url,
-        comments: issue.comments,
+        author:
+          typeof issue.author === 'string'
+            ? { login: issue.author }
+            : {
+                login: issue.author?.login || '',
+                id: issue.author?.id,
+                url: issue.author?.url,
+                type: issue.author?.type,
+                is_bot: issue.author?.is_bot,
+              },
+        repository: {
+          name: repo,
+          nameWithOwner: repoName,
+        },
+        labels:
+          issue.labels?.map((l: any) =>
+            typeof l === 'string'
+              ? { name: l }
+              : {
+                  name: l.name,
+                  color: l.color,
+                  description: l.description,
+                  id: l.id,
+                }
+          ) || [],
+        createdAt: issue.createdAt || issue.created_at,
+        updatedAt: issue.updatedAt || issue.updated_at,
+        url: issue.url || issue.html_url,
+        commentsCount: issue.commentsCount ?? issue.comments ?? 0,
         reactions: issue.reactions?.total_count || 0,
-      })
+        // Legacy compatibility fields
+        created_at: toDDMMYYYY(issue.createdAt || issue.created_at),
+        updated_at: toDDMMYYYY(issue.updatedAt || issue.updated_at),
+      };
+    });
+
+    // Fetch detailed issue information in parallel
+    const cleanIssues: GitHubIssueItem[] = await Promise.all(
+      basicIssues.map(
+        async (issue: BasicGitHubIssue): Promise<GitHubIssueItem> => {
+          try {
+            const { nameWithOwner } = issue.repository;
+            const [owner, repo] = nameWithOwner.split('/');
+
+            // Fetch issue details using gh issue view
+            const viewResult = await executeGitHubCommand(
+              'api' as GhCommand,
+              [`/repos/${owner}/${repo}/issues/${issue.number}`],
+              { cache: false }
+            );
+
+            if (!viewResult.isError) {
+              const execResult = JSON.parse(
+                viewResult.content[0].text as string
+              );
+              const issueDetails = execResult.result;
+
+              return {
+                ...issue,
+                body: issueDetails.body || '',
+                assignees:
+                  issueDetails.assignees?.map((a: any) => ({
+                    login: a.login,
+                    id: a.id?.toString(),
+                    url: a.html_url,
+                    type: a.type,
+                    is_bot: a.type === 'Bot',
+                  })) || [],
+                authorAssociation: issueDetails.author_association,
+                closedAt: issueDetails.closed_at,
+                isLocked: issueDetails.locked,
+                // Update with full author info
+                author: issueDetails.user
+                  ? {
+                      login: issueDetails.user.login,
+                      id: issueDetails.user.id?.toString(),
+                      url: issueDetails.user.html_url,
+                      type: issueDetails.user.type,
+                      is_bot: issueDetails.user.type === 'Bot',
+                    }
+                  : issue.author,
+                // Update labels with full info
+                labels:
+                  issueDetails.labels?.map((l: any) => ({
+                    name: l.name,
+                    color: l.color,
+                    description: l.description,
+                    id: l.id?.toString(),
+                  })) || issue.labels,
+                createdAt: issueDetails.created_at,
+                updatedAt: issueDetails.updated_at,
+                id: issueDetails.id?.toString(),
+                isPullRequest: issueDetails.pull_request !== undefined,
+                commentsCount: issueDetails.comments,
+                closed_at: issueDetails.closed_at
+                  ? toDDMMYYYY(issueDetails.closed_at)
+                  : undefined,
+              } as GitHubIssueItem;
+            }
+
+            // If fetching details fails, return basic info with empty body
+            return { ...issue, body: '' } as GitHubIssueItem;
+          } catch (error) {
+            // If any error occurs, return basic info with empty body
+            return { ...issue, body: '' } as GitHubIssueItem;
+          }
+        }
+      )
     );
 
     // Smart fallback suggestions for no results
@@ -374,125 +471,81 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   command: GhCommand;
   args: string[];
 } {
-  const queryParts: string[] = [];
+  const args = ['issues'];
 
-  // Start with the base query, but filter out qualifiers that will be added separately
-  const baseQuery = params.query?.trim() || '';
-
-  // Extract and remove qualifiers from the main query to avoid conflicts
-  const qualifierPatterns = [
-    /\bis:(open|closed)\b/gi,
-    /\blabel:("[^"]*"|[^\s]+)/gi,
-    /\bcreated:([^\s]+)/gi,
-    /\bupdated:([^\s]+)/gi,
-    /\bauthor:([^\s]+)/gi,
-    /\bassignee:([^\s]+)/gi,
-    /\bstate:(open|closed)/gi,
-    /\brepo:([^\s]+)/gi,
-    /\borg:([^\s]+)/gi,
-  ];
-
-  // Remove extracted qualifiers from base query
-  let cleanQuery = baseQuery;
-  qualifierPatterns.forEach(pattern => {
-    cleanQuery = cleanQuery.replace(pattern, '').trim();
-  });
-
-  // Add the cleaned query if it has content
-  if (cleanQuery) {
-    queryParts.push(cleanQuery);
+  // Add the search query first if provided
+  if (params.query?.trim()) {
+    args.push(params.query.trim());
   }
 
-  // Repository/organization qualifiers - prioritize function params over query
-  if (params.owner && params.repo) {
-    queryParts.push(`repo:${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    queryParts.push(`org:${params.owner}`);
-  }
+  // Add CLI flags (not search qualifiers)
+  if (params.app) args.push('--app', params.app);
+  if (params.archived !== undefined)
+    args.push('--archived', params.archived.toString());
+  if (params.assignee) args.push('--assignee', params.assignee);
+  if (params.author) args.push('--author', params.author);
+  if (params.closed) args.push('--closed', params.closed);
+  if (params.commenter) args.push('--commenter', params.commenter);
+  if (params.comments) args.push('--comments', params.comments.toString());
+  if (params.created) args.push('--created', params.created);
+  if (params['include-prs']) args.push('--include-prs');
+  if (params.interactions)
+    args.push('--interactions', params.interactions.toString());
+  if (params.involves) args.push('--involves', params.involves);
 
-  // Build search qualifiers from function parameters (these take precedence)
-  const qualifiers: Record<string, string | undefined> = {
-    author: params.author,
-    assignee: params.assignee,
-    mentions: params.mentions,
-    commenter: params.commenter,
-    involves: params.involves,
-    language: params.language,
-    state: params.state,
-    created: params.created,
-    updated: params.updated,
-    closed: params.closed,
-  };
-
-  Object.entries(qualifiers).forEach(([key, value]) => {
-    if (value) queryParts.push(`${key}:${value}`);
-  });
-
-  // Special qualifiers - handle labels carefully
+  // Handle labels
   if (params.label) {
     const labels = Array.isArray(params.label) ? params.label : [params.label];
-    labels.forEach(label => queryParts.push(`label:"${label}"`));
+    args.push('--label', labels.join(','));
   }
-  if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
-  if (params['no-assignee']) queryParts.push('no:assignee');
-  if (params['no-label']) queryParts.push('no:label');
-  if (params['no-milestone']) queryParts.push('no:milestone');
-  if (params['no-project']) queryParts.push('no:project');
-  if (params.archived !== undefined)
-    queryParts.push(`archived:${params.archived}`);
-  if (params.locked) queryParts.push('is:locked');
-  if (params.visibility) queryParts.push(`is:${params.visibility}`);
-  if (params['include-prs']) queryParts.push('is:pr');
+
+  if (params.language) args.push('--language', params.language);
+  if (params.locked) args.push('--locked');
+
+  // Handle match
+  if (params.match) {
+    args.push('--match', params.match);
+  }
+
+  if (params.mentions) args.push('--mentions', params.mentions);
+  if (params.milestone) args.push('--milestone', params.milestone);
+  if (params['no-assignee']) args.push('--no-assignee');
+  if (params['no-label']) args.push('--no-label');
+  if (params['no-milestone']) args.push('--no-milestone');
+  if (params['no-project']) args.push('--no-project');
+
+  // Handle owner/repo
+  if (params.owner && params.repo) {
+    args.push('--repo', `${params.owner}/${params.repo}`);
+  } else if (params.owner) {
+    args.push('--owner', params.owner);
+  }
+
+  if (params.project) args.push('--project', params.project);
+  if (params.reactions) args.push('--reactions', params.reactions.toString());
+  if (params.state) args.push('--state', params.state);
   if (params['team-mentions'])
-    queryParts.push(`team:${params['team-mentions']}`);
-  if (params.project) queryParts.push(`project:${params.project}`);
-  if (params.app) queryParts.push(`app:${params.app}`);
-  if (params.comments) queryParts.push(`comments:${params.comments}`);
-  if (params.interactions)
-    queryParts.push(`interactions:${params.interactions}`);
-  if (params.reactions) queryParts.push(`reactions:${params.reactions}`);
+    args.push('--team-mentions', params['team-mentions']);
+  if (params.updated) args.push('--updated', params.updated);
+  if (params.visibility) args.push('--visibility', params.visibility);
 
-  // Extract qualifiers from original query and add them if not already set by params
-  if (baseQuery.includes('is:') && !params.state) {
-    const isMatch = baseQuery.match(/\bis:(open|closed)\b/i);
-    if (isMatch && !queryParts.some(part => part.startsWith('state:'))) {
-      queryParts.push(`state:${isMatch[1].toLowerCase()}`);
-    }
-  }
-
-  if (baseQuery.includes('label:') && !params.label) {
-    const labelMatch = baseQuery.match(/\blabel:("[^"]*"|[^\s]+)/i);
-    if (labelMatch) {
-      const labelValue = labelMatch[1].replace(/"/g, '');
-      queryParts.push(`label:"${labelValue}"`);
-    }
-  }
-
-  if (baseQuery.includes('created:') && !params.created) {
-    const createdMatch = baseQuery.match(/\bcreated:([^\s]+)/i);
-    if (createdMatch) {
-      queryParts.push(`created:${createdMatch[1]}`);
-    }
-  }
-
-  const query = queryParts.filter(Boolean).join(' ');
-  const limit = Math.min(params.limit || 25, 100);
-
-  const args = [
-    'issues',
-    query,
-    '--json',
-    'assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
-    '--limit',
-    limit.toString(),
-  ];
-
+  // Sort and order
   if (params.sort) {
     args.push('--sort', params.sort);
   }
   if (params.order) {
     args.push('--order', params.order);
   }
+
+  // Limit
+  const limit = Math.min(params.limit || 25, 100);
+  args.push('--limit', limit.toString());
+
+  // JSON output - note: body is not included in search results, we fetch it separately
+  args.push(
+    '--json',
+    'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url'
+  );
 
   return { command: 'search', args };
 }

@@ -555,16 +555,80 @@ export interface GitHubIssueItem {
   number: number;
   title: string;
   state: 'open' | 'closed';
-  author: string;
-  repository: string;
-  labels: string[];
-  created_at: string;
-  updated_at: string;
+  author: {
+    login: string;
+    id?: string;
+    url?: string;
+    type?: string;
+    is_bot?: boolean;
+  };
+  authorAssociation?: string;
+  body?: string;
+  closedAt?: string;
+  commentsCount?: number;
+  createdAt: string;
+  id?: string;
+  isLocked?: boolean;
+  isPullRequest?: boolean;
+  labels: Array<{
+    name: string;
+    color?: string;
+    description?: string;
+    id?: string;
+  }>;
+  assignees?: Array<{
+    login: string;
+    id?: string;
+    url?: string;
+    type?: string;
+    is_bot?: boolean;
+  }>;
+  repository: {
+    name: string;
+    nameWithOwner: string;
+  };
   url: string;
-  comments: number;
-  reactions: number;
+  updatedAt: string;
+  // Keep legacy fields for compatibility
+  created_at?: string;
+  updated_at?: string;
+  closed_at?: string;
+  comments?: number;
+  reactions?: number;
 }
 
 export interface GitHubIssuesSearchResult {
   results: GitHubIssueItem[];
+}
+
+// Basic issue data structure before fetching full details
+export interface BasicGitHubIssue {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  author: {
+    login: string;
+    id?: string;
+    url?: string;
+    type?: string;
+    is_bot?: boolean;
+  };
+  repository: {
+    name: string;
+    nameWithOwner: string;
+  };
+  labels: Array<{
+    name: string;
+    color?: string;
+    description?: string;
+    id?: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+  commentsCount: number;
+  reactions: number;
+  // Legacy compatibility fields
+  created_at: string;
+  updated_at: string;
 }
