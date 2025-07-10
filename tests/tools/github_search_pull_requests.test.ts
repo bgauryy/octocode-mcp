@@ -92,7 +92,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'api',
-        ['search/issues?q=fix%20type%3Apr&per_page=25'],
+        ['search/issues?q=fix%20type%3Apr&per_page=30'],
         { cache: false }
       );
     });
@@ -137,6 +137,89 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Search failed');
+    });
+
+    it('should handle getChangesContent parameter for repo-specific searches', async () => {
+      registerSearchGitHubPullRequestsTool(mockServer.server);
+
+      const mockPRListResponse = {
+        result: [
+          {
+            number: 123,
+            title: 'Fix bug in component',
+            state: 'open',
+            author: { login: 'testuser' },
+            headRefOid: 'abc123',
+            baseRefOid: 'def456',
+            url: 'https://github.com/owner/repo/pull/123',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-02T00:00:00Z',
+            comments: 5,
+            isDraft: false,
+            labels: [],
+          },
+        ],
+        command: 'gh pr list --repo owner/repo --json ...',
+        type: 'github',
+      };
+
+      const mockDiffResponse = {
+        result: [
+          {
+            filename: 'src/component.js',
+            status: 'modified',
+            additions: 10,
+            deletions: 5,
+            changes: 15,
+            patch: '@@ -1,5 +1,10 @@\n console.log("hello");',
+          },
+        ],
+        command: 'gh api /repos/owner/repo/pulls/123/files',
+        type: 'github',
+      };
+
+      // Mock PR list call
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockPRListResponse) }],
+      });
+
+      // Mock diff fetch call
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockDiffResponse) }],
+      });
+
+      const result = await mockServer.callTool('githubSearchPullRequests', {
+        query: 'fix',
+        owner: 'owner',
+        repo: 'repo',
+        getChangesContent: true,
+      });
+
+      expect(result.isError).toBe(false);
+
+      // Should call PR list first
+      expect(mockExecuteGitHubCommand).toHaveBeenNthCalledWith(
+        1,
+        'pr',
+        expect.arrayContaining(['list', '--repo', 'owner/repo']),
+        { cache: false }
+      );
+
+      // Should call diff API second
+      expect(mockExecuteGitHubCommand).toHaveBeenNthCalledWith(
+        2,
+        'api',
+        ['/repos/owner/repo/pulls/123/files'],
+        { cache: false }
+      );
+
+      // Result should contain diff information
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.results[0].diff).toBeDefined();
+      expect(data.results[0].diff.changed_files).toBe(1);
+      expect(data.results[0].diff.files[0].filename).toBe('src/component.js');
     });
   });
 });

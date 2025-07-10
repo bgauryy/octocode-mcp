@@ -112,8 +112,10 @@ export async function viewRepositoryStructure(
       // Clean up path
       const cleanPath = path.startsWith('/') ? path.substring(1) : path;
 
-      // Try the requested branch first
-      const apiPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`;
+      // Try the requested branch first - handle empty path correctly
+      const apiPath = cleanPath
+        ? `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`
+        : `/repos/${owner}/${repo}/contents?ref=${branch}`;
 
       const result = await executeGitHubCommand('api', [apiPath], {
         cache: false,

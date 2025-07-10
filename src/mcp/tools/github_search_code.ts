@@ -25,24 +25,12 @@ export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API via GitHub CLI.
 
 SEARCH STRATEGY FOR BEST RESULTS:
-
-EXACT vs TERMS (Choose ONE):
-- exactQuery: Use for exact phrase matching
-- queryTerms: Use minimal words for broader coverage
-
-TERM OPTIMIZATION:
-- BEST: Single terms for maximum coverage
-- GOOD: 2-3 minimal terms 
-- AVOID: Long phrases in queryTerms
-
-MULTI-SEARCH STRATEGY:
+- use 'exactQuery' for exact phrase matching
+- use 'queryTerms' for minimal words for broader coverage (recommended: 2-3 terms)
+- queryTerms can be exacts strings or words (e.g. term1, "term2 exact string"...)
 - Use separate searches for different aspects
 - Separate searches provide broader coverage than complex queries
-
-Filter Usage:
-- Use filters to narrow scope: language, owner, repo, filename
-- Combine filters strategically: language + owner for organization-wide searches
-- Never use filters on exploratory searches - use to refine results`;
+- Use filters to narrow scope (never use filters on exploratory searches - use to refine results)`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(

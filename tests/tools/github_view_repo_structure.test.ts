@@ -98,7 +98,7 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'api',
-        ['/repos/owner/repo/contents/?ref=main'],
+        ['/repos/owner/repo/contents?ref=main'],
         { cache: false }
       );
     });

@@ -123,7 +123,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
   );
 }
 
-async function fetchGitHubFileContent(
+export async function fetchGitHubFileContent(
   params: GithubFetchRequestParams
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-file-content', params);
@@ -133,7 +133,10 @@ async function fetchGitHubFileContent(
 
     try {
       // Try to fetch file content directly
-      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
+      const isCommitSha = branch.match(/^[0-9a-f]{40}$/);
+      const apiPath = isCommitSha
+        ? `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}` // Use contents API with ref for commit SHA
+        : `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`; // Use contents API for branches/tags
 
       const result = await executeGitHubCommand('api', [apiPath], {
         cache: false,
