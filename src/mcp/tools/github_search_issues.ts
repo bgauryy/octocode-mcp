@@ -479,7 +479,6 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   const limit = Math.min(params.limit || 25, 100);
 
   const args = [
-    'search',
     'issues',
     query,
     '--json',
