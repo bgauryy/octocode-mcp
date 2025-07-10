@@ -22,15 +22,13 @@ import {
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API via GitHub CLI.
+const DESCRIPTION = `Search code across GitHub repositories using GitHub CLI.
 
-SEARCH STRATEGY FOR BEST RESULTS:
-- use 'exactQuery' for exact phrase matching
-- use 'queryTerms' for minimal words for broader coverage (recommended: 2-3 terms)
-- queryTerms can be exacts strings or words (e.g. term1, "term2 exact string"...)
-- Use separate searches for different aspects
-- Separate searches provide broader coverage than complex queries
-- Use filters to narrow scope (never use filters on exploratory searches - use to refine results)`;
+Choose one search method:
+- exactQuery: exact phrase matching
+- queryTerms: array of terms (space-separated, AND logic)
+
+Use filters to narrow results after initial broad searches.`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
@@ -46,9 +44,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         queryTerms: z
           .array(z.string())
           .optional()
-          .describe(
-            'Array of search terms (AND logic in files). Use minimal words for broader coverage'
-          ),
+          .describe('Array of search terms joined with spaces (AND logic)'),
 
         language: z
           .string()
@@ -334,14 +330,9 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
     // Add exact query - let GitHub CLI handle the quoting
     args.push(params.exactQuery);
   } else if (params.queryTerms && params.queryTerms.length > 0) {
-    // Add query terms as separate arguments (for AND logic)
-    // Auto-quote terms with special characters for literal matching
-    const processedTerms = params.queryTerms.map(term => {
-      // Check if term contains special search characters that need quoting
-      const hasSpecialChars = /[()[\]{}*?^$|.\\+]/.test(term);
-      return hasSpecialChars ? `"${term}"` : term;
-    });
-    args.push(...processedTerms);
+    // Join query terms with spaces for AND logic in a single query string
+    const queryString = params.queryTerms.join(' ');
+    args.push(queryString);
   }
 
   // Add explicit parameters as CLI flags (following GitHub CLI format)
