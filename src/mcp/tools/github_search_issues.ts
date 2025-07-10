@@ -478,9 +478,22 @@ function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   const query = queryParts.filter(Boolean).join(' ');
   const limit = Math.min(params.limit || 25, 100);
 
-  let apiPath = `search/issues?q=${encodeURIComponent(query)}&per_page=${limit}`;
-  if (params.sort) apiPath += `&sort=${params.sort}`;
-  if (params.order) apiPath += `&order=${params.order}`;
+  const args = [
+    'search',
+    'issues',
+    query,
+    '--json',
+    'assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+    '--limit',
+    limit.toString(),
+  ];
 
-  return { command: 'api', args: [apiPath] };
+  if (params.sort) {
+    args.push('--sort', params.sort);
+  }
+  if (params.order) {
+    args.push('--order', params.order);
+  }
+
+  return { command: 'search', args };
 }
