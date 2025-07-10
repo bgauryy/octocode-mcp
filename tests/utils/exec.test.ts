@@ -174,7 +174,7 @@ describe('exec utilities', () => {
 
       expect(mockExecAsync).toHaveBeenCalledWith(
         expect.stringContaining(
-          'language:typescript user:microsoft "(user:microsoft OR org:microsoft)"'
+          "gh search repos 'test query' language:typescript user:microsoft '(user:microsoft OR org:microsoft)'"
         ),
         expect.any(Object)
       );
@@ -225,7 +225,7 @@ describe('exec utilities', () => {
       });
 
       const calledCommand = mockExecAsync.mock.calls[0][0];
-      expect(calledCommand).toContain("package'with'quotes");
+      expect(calledCommand).toContain("package''with''quotes");
     });
 
     it('should not over-escape GitHub AND queries', async () => {
@@ -280,9 +280,8 @@ describe('exec utilities', () => {
 
       const result = await executeGitHubCommand('search', ['repos', 'test']);
 
-      expect(result.isError).toBe(false);
-      const content = JSON.parse(result.content[0].text as string);
-      expect(content.warning).toContain('head: illegal option');
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('head: illegal option');
     });
 
     it('should handle large output without buffer overflow', async () => {

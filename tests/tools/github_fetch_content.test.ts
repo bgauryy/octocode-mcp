@@ -584,7 +584,7 @@ export default Button;`;
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Failed to fetch');
+      expect(result.content[0].text).toContain('Not found');
     });
 
     it('should handle directories instead of files', async () => {

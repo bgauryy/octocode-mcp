@@ -137,12 +137,16 @@ describe('GitHub Search Issues Tool', () => {
       expect(result.isError).toBe(true);
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
+        'search',
         [
-          expect.stringContaining(
-            'search/issues?q=' +
-              encodeURIComponent('memory leak repo:facebook/react')
-          ),
+          'issues',
+          'memory leak',
+          '--repo',
+          'facebook/react',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
         ],
         { cache: false }
       );
@@ -177,11 +181,16 @@ describe('GitHub Search Issues Tool', () => {
       expect(result.isError).toBe(true);
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
+        'search',
         [
-          expect.stringContaining(
-            'search/issues?q=' + encodeURIComponent('performance org:microsoft')
-          ),
+          'issues',
+          'performance',
+          '--owner',
+          'microsoft',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
         ],
         { cache: false }
       );
@@ -223,16 +232,31 @@ describe('GitHub Search Issues Tool', () => {
       // Empty results should return an error
       expect(result.isError).toBe(true);
 
-      const expectedQuery = encodeURIComponent(
-        'typescript error author:developer1 assignee:maintainer1 language:typescript state:open created:>2023-01-01 label:"bug"'
-      );
-
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
+        'search',
         [
-          expect.stringContaining(
-            `search/issues?q=${expectedQuery}&per_page=10&sort=created&order=desc`
-          ),
+          'issues',
+          'typescript error',
+          '--assignee',
+          'maintainer1',
+          '--author',
+          'developer1',
+          '--created',
+          '>2023-01-01',
+          '--label',
+          'bug',
+          '--language',
+          'typescript',
+          '--state',
+          'open',
+          '--sort',
+          'created',
+          '--order',
+          'desc',
+          '--limit',
+          '10',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
         ],
         { cache: false }
       );
@@ -271,13 +295,24 @@ describe('GitHub Search Issues Tool', () => {
       // Empty results should return an error
       expect(result.isError).toBe(true);
 
-      const expectedQuery = encodeURIComponent(
-        'help wanted no:assignee no:label no:milestone archived:false is:locked is:public'
-      );
-
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
-        [expect.stringContaining(`search/issues?q=${expectedQuery}`)],
+        'search',
+        [
+          'issues',
+          'help wanted',
+          '--archived',
+          'false',
+          '--locked',
+          '--no-assignee',
+          '--no-label',
+          '--no-milestone',
+          '--visibility',
+          'public',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+        ],
         { cache: false }
       );
     });
@@ -312,13 +347,22 @@ describe('GitHub Search Issues Tool', () => {
       // Empty results should return an error
       expect(result.isError).toBe(true);
 
-      const expectedQuery = encodeURIComponent(
-        'documentation mentions:maintainer milestone:"v2.0" team:core-team'
-      );
-
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
-        [expect.stringContaining(`search/issues?q=${expectedQuery}`)],
+        'search',
+        [
+          'issues',
+          'documentation',
+          '--mentions',
+          'maintainer',
+          '--milestone',
+          'v2.0',
+          '--team-mentions',
+          'core-team',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+        ],
         { cache: false }
       );
     });
@@ -397,13 +441,28 @@ describe('GitHub Search Issues Tool', () => {
       // Empty results should return an error
       expect(result.isError).toBe(true);
 
-      const expectedQuery = encodeURIComponent(
-        'stale issues created:<2022-01-01 updated:>2023-01-01 closed:2023-01-15'
-      );
-
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
-        [expect.stringContaining(`search/issues?q=${expectedQuery}`)],
+        'search',
+        [
+          'issues',
+          'stale issues',
+          '--closed',
+          '2023-01-15',
+          '--comments',
+          '5',
+          '--created',
+          '<2022-01-01',
+          '--interactions',
+          '15',
+          '--reactions',
+          '10',
+          '--updated',
+          '>2023-01-01',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+        ],
         { cache: false }
       );
     });
@@ -585,13 +644,16 @@ describe('GitHub Search Issues Tool', () => {
         query: 'error: "undefined is not a function" & crash',
       });
 
-      const expectedQuery = encodeURIComponent(
-        'error: "undefined is not a function" & crash'
-      );
-
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
-        [expect.stringContaining(`search/issues?q=${expectedQuery}`)],
+        'search',
+        [
+          'issues',
+          'error: "undefined is not a function" & crash',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+        ],
         { cache: false }
       );
     });
@@ -621,8 +683,15 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
-        [expect.stringContaining('per_page=100')],
+        'search',
+        [
+          'issues',
+          'test',
+          '--limit',
+          '100',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+        ],
         { cache: false }
       );
     });
@@ -704,8 +773,8 @@ describe('GitHub Search Issues Tool', () => {
     });
   });
 
-  describe('URL Encoding', () => {
-    it('should properly encode complex queries for API calls', async () => {
+  describe('Complex Query Handling', () => {
+    it('should properly handle complex queries with special characters', async () => {
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: false,
         content: [
@@ -729,15 +798,20 @@ describe('GitHub Search Issues Tool', () => {
         milestone: 'v2.0 release',
       });
 
-      // Verify that the query is properly URL encoded
+      // Verify that the query is properly handled by CLI
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
+        'search',
         [
-          expect.stringContaining(
-            encodeURIComponent(
-              'memory leak in React hooks label:"bug & performance" milestone:"v2.0 release"'
-            )
-          ),
+          'issues',
+          'memory leak in React hooks',
+          '--label',
+          'bug & performance',
+          '--milestone',
+          'v2.0 release',
+          '--limit',
+          '25',
+          '--json',
+          'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
         ],
         { cache: false }
       );

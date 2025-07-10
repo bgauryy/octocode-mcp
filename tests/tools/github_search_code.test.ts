@@ -488,8 +488,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'react',
-          'hook',
+          'react hook',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -865,9 +864,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'react',
-          'functional',
-          'component',
+          'react functional component',
           '--language=typescript',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
