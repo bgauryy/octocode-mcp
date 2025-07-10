@@ -7,10 +7,7 @@ import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `initial tool to verify user connections
-
-- Github: check gh login status and list available organizations.
-- Npm: check npm login status and list npm registry.`;
+const DESCRIPTION = `Check user status: GitHub/NPM connections, organizations, and current timestamp. Essential for understanding user's data access and API capabilities.`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {
@@ -157,6 +154,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
 
         return createResult({
           data: {
+            timestamp: new Date().toISOString(),
             login: {
               github: {
                 connected: githubConnected,

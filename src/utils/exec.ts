@@ -16,7 +16,14 @@ const ALLOWED_NPM_COMMANDS = [
 ] as const;
 
 // Allowed command prefixes - this prevents shell injection by restricting to safe commands
-const ALLOWED_GH_COMMANDS = ['search', 'api', 'auth', 'org', 'pr'] as const;
+const ALLOWED_GH_COMMANDS = [
+  'search',
+  'api',
+  'auth',
+  'org',
+  'pr',
+  'repo',
+] as const;
 
 export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
 export type GhCommand = (typeof ALLOWED_GH_COMMANDS)[number];
@@ -293,16 +300,31 @@ export async function executeGitHubCommand(
   const shellConfig = getShellConfig(options.windowsShell);
 
   // Build command with validated prefix and properly escaped arguments
-  // For GitHub search commands, we need minimal escaping to avoid interfering with GitHub CLI
   const escapedArgs = args.map((arg, index) => {
     const isMainQueryArgument = command === 'search' && index === 1;
     const isCliFlag = arg.startsWith('--');
+    const isApiPath = command === 'api' && arg.startsWith('/');
 
     // CLI flags like --language=javascript, --repo=owner/repo need minimal escaping
     if (isCliFlag) {
       // Only escape CLI flags if they contain dangerous shell characters
       if (/[;&|<>$`\\*?[\]{}]/.test(arg)) {
         return escapeShellArg(arg, shellConfig.type, false);
+      }
+      return arg;
+    }
+
+    // API paths with query parameters need proper escaping
+    if (isApiPath) {
+      // Always quote API paths that contain query parameters or special characters
+      if (arg.includes('?') || arg.includes('&') || /[\s*?[\]{}]/.test(arg)) {
+        if (shellConfig.type === 'unix') {
+          return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+        } else if (shellConfig.type === 'cmd') {
+          return `"${arg.replace(/"/g, '""')}"`;
+        } else {
+          return `'${arg.replace(/'/g, "''")}'`;
+        }
       }
       return arg;
     }
@@ -352,6 +374,35 @@ export async function executeGitHubCommand(
 }
 
 /**
+ * Helper function to detect shell configuration errors vs real GitHub errors
+ */
+function isShellConfigurationError(errorText: string): boolean {
+  if (!errorText) return false;
+
+  // Preserve GitHub API errors
+  if (
+    errorText.includes('HTTP 404') ||
+    errorText.includes('HTTP 403') ||
+    errorText.includes('Not Found') ||
+    errorText.includes('API rate limit')
+  ) {
+    return false;
+  }
+
+  // Shell configuration conflicts to ignore
+  return (
+    errorText.includes('head: illegal option') ||
+    errorText.includes('head: |: No such file or directory') ||
+    errorText.includes('head: cat: No such file or directory') ||
+    /^head:\s+/.test(errorText) ||
+    /^\s*head:\s+/.test(errorText) ||
+    (errorText.includes('No such file or directory') &&
+      !errorText.includes('HTTP') &&
+      !errorText.includes('gh:'))
+  );
+}
+
+/**
  * Execute shell commands with improved environment handling and error detection
  */
 async function executeCommand(
@@ -395,13 +446,8 @@ async function executeCommand(
         : stderr &&
           !stderr.includes('Warning:') &&
           !stderr.includes('notice:') &&
-          // Ignore shell configuration conflicts - common in development environments
-          !stderr.includes('No such file or directory') &&
-          !stderr.includes('head: illegal option') &&
-          !stderr.includes('head: |: No such file or directory') &&
-          !stderr.includes('head: cat: No such file or directory') &&
-          !/^head:\s+/.test(stderr) && // Ignore all head command errors (shell conflicts)
-          !/^\s*head:\s+/.test(stderr) && // Ignore head errors with leading whitespace
+          // Ignore shell configuration conflicts but preserve GitHub API errors
+          !isShellConfigurationError(stderr) &&
           stderr.trim() !== '';
 
     if (shouldTreatAsError) {

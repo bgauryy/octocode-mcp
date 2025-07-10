@@ -65,6 +65,7 @@ export interface GitHubCommitSearchParams
   tree?: string;
   visibility?: 'public' | 'private' | 'internal';
   sort?: 'author-date' | 'committer-date' | 'best-match';
+  getChangesContent?: boolean; // Fetch actual code changes/diffs when analyzing changes (repo-specific searches only)
 }
 
 export interface GitHubPullRequestsSearchParams
@@ -96,7 +97,7 @@ export interface GitHubPullRequestsSearchParams
   milestone?: string;
   project?: string;
   visibility?: 'public' | 'private' | 'internal';
-  match?: 'title' | 'body' | 'comments';
+  match?: ('title' | 'body' | 'comments')[];
   checks?: 'pending' | 'success' | 'failure';
   review?: 'none' | 'required' | 'approved' | 'changes_requested';
   sort?:
@@ -111,6 +112,7 @@ export interface GitHubPullRequestsSearchParams
     | 'interactions'
     | 'created'
     | 'updated';
+  getChangesContent?: boolean; // Fetch actual code changes/diffs when analyzing changes (repo-specific searches only)
 }
 
 export interface GitHubReposSearchParams
@@ -225,6 +227,30 @@ export interface GitHubIssuesSearchResult {
   results: GitHubIssueItem[];
 }
 
+export interface GitHubDiffFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+export interface GitHubPullRequestDiff {
+  changed_files: number;
+  additions: number;
+  deletions: number;
+  files: GitHubDiffFile[];
+}
+
+export interface GitHubCommitDiff {
+  changed_files: number;
+  additions: number;
+  deletions: number;
+  total_changes: number;
+  files: GitHubDiffFile[];
+}
+
 export interface GitHubPullRequestItem {
   number: number;
   title: string;
@@ -244,6 +270,7 @@ export interface GitHubPullRequestItem {
   base?: string;
   head_sha?: string; // Commit SHA for the head branch
   base_sha?: string; // Commit SHA for the base branch
+  diff?: GitHubPullRequestDiff; // Code changes when getChangesContent=true
 }
 
 export interface GitHubPullRequestsSearchResult {
@@ -474,6 +501,7 @@ export interface OptimizedCommitSearchResult {
     date: string; // Relative time
     repository?: string; // owner/repo (only for multi-repo)
     url: string; // SHA or repo@SHA
+    diff?: GitHubCommitDiff; // Code changes when getChangesContent=true
   }>;
   total_count: number;
   repository?: {

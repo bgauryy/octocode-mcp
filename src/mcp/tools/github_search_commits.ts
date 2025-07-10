@@ -23,12 +23,13 @@ import {
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Search commit history across GitHub repositories. Find commits by message, author, date, or repository. Supports advanced filtering for comprehensive commit analysis. Returns commit SHA, message, author, and date information.
+const DESCRIPTION = `Search GitHub commits by message, author, or date. Returns SHAs for github_fetch_content (branch=SHA). Can fetch commit content changes (diffs/patches) when getChangesContent=true.
 
-INTEGRATION WORKFLOW:
-- Returned commit SHAs can be used directly with github fetch content (branch=SHA)
-- Use SHA as 'branch' parameter to view files from specific commits
-- Perfect for examining code changes and historical versions`;
+SEARCH STRATEGY FOR BEST RESULTS:
+- Use minimal search terms for broader coverage (2-3 words max)
+- Separate searches for different aspects vs complex queries
+- Use filters to narrow scope after getting initial results
+- getChangesContent=true only when analyzing actual code changes`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -40,22 +41,18 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .string()
           .optional()
           .describe(
-            'Search terms. Start simple: "bug fix", "refactor". Use quotes for exact phrases.'
+            'Commit message search terms (keep minimal for broader results)'
           ),
 
         // Repository filters
         owner: z
           .string()
           .optional()
-          .describe(
-            'Repository owner/organization name only (e.g., "facebook", "microsoft"). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
-          ),
+          .describe('Repository owner (use with repo param)'),
         repo: z
           .string()
           .optional()
-          .describe(
-            'Repository name only (e.g., "react", "vscode"). Do NOT include owner prefix. Must be used together with owner parameter.'
-          ),
+          .describe('Repository name (use with owner param)'),
 
         // Author filters
         author: z
@@ -86,15 +83,11 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         'author-date': z
           .string()
           .optional()
-          .describe(
-            'When authored. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
-          ),
+          .describe('Filter by author date (e.g., >2020-01-01)'),
         'committer-date': z
           .string()
           .optional()
-          .describe(
-            'When committed. Format: >2020-01-01, <2023-12-31, 2020-01-01..2023-12-31'
-          ),
+          .describe('Filter by commit date (e.g., >2020-01-01)'),
 
         // Hash filters
         hash: z.string().optional().describe('Commit SHA (full or partial)'),
@@ -121,19 +114,26 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .max(50)
           .optional()
           .default(25)
-          .describe('Results limit (1-50). Default: 25'),
+          .describe('Maximum number of results to fetch'),
         sort: z
           .enum(['author-date', 'committer-date'])
           .optional()
-          .describe('Sort by date. Default: best match'),
+          .describe('Sort by date field'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Sort order. Default: desc'),
+          .describe('Sort order'),
+        getChangesContent: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'Get actual code diffs - only use when analyzing changes, not for commit identification'
+          ),
       },
       annotations: {
-        title: 'GitHub Commit Search - Smart History Analysis',
+        title: 'GitHub Commit Search - Smart & Effective',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -156,13 +156,79 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 
         // Smart handling for no results - provide actionable suggestions
         if (items.length === 0) {
+          // Progressive simplification strategy based on current search complexity
+          const simplificationSteps: string[] = [];
+          let hasFilters = false;
+
+          // Check for active filters
+          const activeFilters = [];
+          if (args.owner && args.repo) activeFilters.push('repo');
+          if (args.author) activeFilters.push('author');
+          if (args['author-email']) activeFilters.push('author-email');
+          if (args.hash) activeFilters.push('hash');
+          if (args['author-date']) activeFilters.push('date');
+          if (args.visibility) activeFilters.push('visibility');
+
+          hasFilters = activeFilters.length > 0;
+
+          // Step 1: If complex query, simplify search terms
+          if (args.query && args.query.trim().split(' ').length > 2) {
+            const words = args.query.trim().split(' ');
+            const simplified = words.slice(0, 1).join(' '); // Take first word only
+            simplificationSteps.push(
+              `Try simpler search: "${simplified}" instead of "${args.query}"`
+            );
+          }
+
+          // Step 2: Remove filters progressively
+          if (hasFilters) {
+            if (activeFilters.length > 1) {
+              simplificationSteps.push(
+                `Remove some filters (currently: ${activeFilters.join(', ')}) and keep only the most important one`
+              );
+            } else {
+              simplificationSteps.push(
+                `Remove the ${activeFilters[0]} filter and search more broadly`
+              );
+            }
+          }
+
+          // Step 3: Alternative approaches
+          if (!args.query && hasFilters) {
+            simplificationSteps.push(
+              'Add basic search terms like "fix", "update", or "add" with your filters'
+            );
+          }
+
+          // Step 4: Ask for user guidance if no obvious simplification
+          if (simplificationSteps.length === 0) {
+            simplificationSteps.push(
+              "Try different keywords or ask the user to be more specific about what commits they're looking for"
+            );
+          }
+
           return createResult({
-            error: createNoResultsError('commits'),
+            error: `${createNoResultsError('commits')}
+
+Try these simplified searches:
+${simplificationSteps.map(step => `• ${step}`).join('\n')}
+
+Or ask the user:
+• "What specific type of commits are you looking for?" 
+• "Can you provide different keywords to search for?"
+• "Should I search in a specific repository instead?"
+
+Alternative tools:
+• Use github_search_code for file-specific commits
+• Use github_search_repos to find repositories first`,
           });
         }
 
         // Transform to optimized format
-        const optimizedResult = transformCommitsToOptimizedFormat(items, args);
+        const optimizedResult = await transformCommitsToOptimizedFormat(
+          items,
+          args
+        );
 
         return createResult({ data: optimizedResult });
       } catch (error) {
@@ -191,26 +257,90 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 /**
  * Transform GitHub CLI response to optimized format
  */
-function transformCommitsToOptimizedFormat(
+async function transformCommitsToOptimizedFormat(
   items: GitHubCommitSearchItem[],
-  _params: GitHubCommitSearchParams
-): OptimizedCommitSearchResult {
+  params: GitHubCommitSearchParams
+): Promise<OptimizedCommitSearchResult> {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
+  // Fetch diff information if requested and this is a repo-specific search
+  const shouldFetchDiff =
+    params.getChangesContent && params.owner && params.repo;
+  const diffData: Map<string, any> = new Map();
+
+  if (shouldFetchDiff && items.length > 0) {
+    // Fetch diff info for each commit (limit to first 10 to avoid rate limits)
+    const commitShas = items.slice(0, 10).map(item => item.sha);
+    const diffPromises = commitShas.map(async (sha: string) => {
+      try {
+        const diffResult = await executeGitHubCommand(
+          'api',
+          [`/repos/${params.owner}/${params.repo}/commits/${sha}`],
+          { cache: false }
+        );
+        if (!diffResult.isError) {
+          const diffExecResult = JSON.parse(
+            diffResult.content[0].text as string
+          );
+          return { sha, commitData: diffExecResult.result };
+        }
+      } catch (e) {
+        // Ignore diff fetch errors
+      }
+      return { sha, commitData: null };
+    });
+
+    const diffResults = await Promise.all(diffPromises);
+    diffResults.forEach(({ sha, commitData }) => {
+      if (commitData) {
+        diffData.set(sha, commitData);
+      }
+    });
+  }
+
   const optimizedCommits = items
-    .map(item => ({
-      sha: item.sha,
-      message: getCommitTitle(item.commit?.message ?? ''),
-      author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
-      date: toDDMMYYYY(item.commit?.author?.date ?? ''),
-      repository: singleRepo
-        ? undefined
-        : simplifyRepoUrl(item.repository?.url || ''),
-      url: singleRepo
-        ? item.sha
-        : `${simplifyRepoUrl(item.repository?.url || '')}@${item.sha}`,
-    }))
+    .map(item => {
+      const commitObj: any = {
+        sha: item.sha, // Use as branch parameter in github_fetch_content
+        message: getCommitTitle(item.commit?.message ?? ''),
+        author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
+        date: toDDMMYYYY(item.commit?.author?.date ?? ''),
+        repository: singleRepo
+          ? undefined
+          : simplifyRepoUrl(item.repository?.url || ''),
+        url: singleRepo
+          ? item.sha
+          : `${simplifyRepoUrl(item.repository?.url || '')}@${item.sha}`,
+      };
+
+      // Add diff information if available
+      if (shouldFetchDiff && diffData.has(item.sha)) {
+        const commitData = diffData.get(item.sha);
+        const files = commitData.files || [];
+        commitObj.diff = {
+          changed_files: files.length,
+          additions: commitData.stats?.additions || 0,
+          deletions: commitData.stats?.deletions || 0,
+          total_changes: commitData.stats?.total || 0,
+          files: files
+            .map((f: any) => ({
+              filename: f.filename,
+              status: f.status,
+              additions: f.additions,
+              deletions: f.deletions,
+              changes: f.changes,
+              patch: f.patch
+                ? f.patch.substring(0, 1000) +
+                  (f.patch.length > 1000 ? '...' : '')
+                : undefined,
+            }))
+            .slice(0, 5), // Limit to 5 files per commit
+        };
+      }
+
+      return commitObj;
+    })
     .map(commit => {
       // Remove undefined fields
       const cleanCommit: Record<string, unknown> = {};
