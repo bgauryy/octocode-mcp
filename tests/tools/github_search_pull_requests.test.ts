@@ -139,7 +139,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.content[0].text).toContain('Search failed');
     });
 
-    it('should handle getChangesContent parameter for repo-specific searches', async () => {
+    it('should handle getCommitData parameter for repo-specific searches', async () => {
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
       const mockPRListResponse = {
@@ -163,18 +163,40 @@ describe('GitHub Search Pull Requests Tool', () => {
         type: 'github',
       };
 
-      const mockDiffResponse = {
-        result: [
-          {
-            filename: 'src/component.js',
-            status: 'modified',
+      const mockCommitsResponse = {
+        result: {
+          commits: [
+            {
+              oid: 'abc123',
+              messageHeadline: 'Fix bug in component',
+              authors: [{ login: 'testuser', name: 'Test User' }],
+              authoredDate: '2023-01-01T00:00:00Z',
+            },
+          ],
+        },
+        command: 'gh pr view 123 --json commits --repo owner/repo',
+        type: 'github',
+      };
+
+      const mockCommitDetailResponse = {
+        result: {
+          files: [
+            {
+              filename: 'src/component.js',
+              status: 'modified',
+              additions: 10,
+              deletions: 5,
+              changes: 15,
+              patch: '@@ -1,5 +1,10 @@\n console.log("hello");',
+            },
+          ],
+          stats: {
             additions: 10,
             deletions: 5,
-            changes: 15,
-            patch: '@@ -1,5 +1,10 @@\n console.log("hello");',
+            total: 15,
           },
-        ],
-        command: 'gh api /repos/owner/repo/pulls/123/files',
+        },
+        command: 'gh api repos/owner/repo/commits/abc123',
         type: 'github',
       };
 
@@ -184,17 +206,23 @@ describe('GitHub Search Pull Requests Tool', () => {
         content: [{ text: JSON.stringify(mockPRListResponse) }],
       });
 
-      // Mock diff fetch call
+      // Mock commits fetch call
       mockExecuteGitHubCommand.mockResolvedValueOnce({
         isError: false,
-        content: [{ text: JSON.stringify(mockDiffResponse) }],
+        content: [{ text: JSON.stringify(mockCommitsResponse) }],
+      });
+
+      // Mock commit detail call
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockCommitDetailResponse) }],
       });
 
       const result = await mockServer.callTool('githubSearchPullRequests', {
         query: 'fix',
         owner: 'owner',
         repo: 'repo',
-        getChangesContent: true,
+        getCommitData: true,
       });
 
       expect(result.isError).toBe(false);
@@ -207,19 +235,42 @@ describe('GitHub Search Pull Requests Tool', () => {
         { cache: false }
       );
 
-      // Should call diff API second
+      // Should call commits API second
       expect(mockExecuteGitHubCommand).toHaveBeenNthCalledWith(
         2,
-        'api',
-        ['/repos/owner/repo/pulls/123/files'],
+        'pr',
+        expect.arrayContaining([
+          'view',
+          '123',
+          '--json',
+          'commits',
+          '--repo',
+          'owner/repo',
+        ]),
         { cache: false }
       );
 
-      // Result should contain diff information
+      // Should call commit detail API third
+      expect(mockExecuteGitHubCommand).toHaveBeenNthCalledWith(
+        3,
+        'api',
+        ['repos/owner/repo/commits/abc123'],
+        { cache: false }
+      );
+
+      // Result should contain commit information
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].diff).toBeDefined();
-      expect(data.results[0].diff.changed_files).toBe(1);
-      expect(data.results[0].diff.files[0].filename).toBe('src/component.js');
+      expect(data.results[0].commits).toBeDefined();
+      expect(data.results[0].commits.total_count).toBe(1);
+      expect(data.results[0].commits.commits[0].sha).toBe('abc123');
+      expect(data.results[0].commits.commits[0].message).toBe(
+        'Fix bug in component'
+      );
+      expect(data.results[0].commits.commits[0].diff).toBeDefined();
+      expect(data.results[0].commits.commits[0].diff.changed_files).toBe(1);
+      expect(data.results[0].commits.commits[0].diff.files[0].filename).toBe(
+        'src/component.js'
+      );
     });
   });
 });

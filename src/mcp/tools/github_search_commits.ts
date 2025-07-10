@@ -23,13 +23,39 @@ import {
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Search GitHub commits by message, author, or date. Returns SHAs for github_fetch_content (branch=SHA). Can fetch commit content changes (diffs/patches) when getChangesContent=true.
+const DESCRIPTION = `Search GitHub commits by message, author, hash, or date. Returns SHAs for github_fetch_content (branch=SHA). Can fetch commit content changes (diffs/patches) when getChangesContent=true.
 
-SEARCH STRATEGY FOR BEST RESULTS:
-- Use minimal search terms for broader coverage (2-3 words max)
-- Separate searches for different aspects vs complex queries
-- Use filters to narrow scope after getting initial results
-- getChangesContent=true only when analyzing actual code changes`;
+SEARCH OPTIONS:
+1. Query-based search:
+   - exactQuery: Exact phrase matching (e.g., "bug fix")
+   - queryTerms: Multiple keywords with AND logic (e.g., ["readme", "typo"])
+   - orTerms: Keywords with OR logic (e.g., ["bug", "fix"] finds commits with either)
+   - Combine: queryTerms=["api"] + orTerms=["auth", "login"] = api AND (auth OR login)
+
+2. Filter-only search (no query required):
+   - Search by author, committer, hash, date, etc.
+   - Example: Just committer="monalisa" to find all commits by that user
+   - Example: Search by commit hash (including head_sha/base_sha from a PR): hash="<sha>"
+
+3. Combined search:
+   - Mix queries with filters for precise results
+   - Example: queryTerms=["fix"] + author="jane" + author-date=">2023-01-01"
+
+EXAMPLES:
+• Search commits with "readme" AND "typo": queryTerms=["readme", "typo"]
+• Search exact phrase "bug fix": exactQuery="bug fix"
+• Search by committer only: committer="monalisa"
+• Search by author name: author-name="Jane Doe"
+• Search by commit hash (including head_sha/base_sha from a PR): hash="8dd03144ffdc6c0d486d6b705f9c7fba871ee7c3"
+• Search before date: author-date="<2022-02-01"
+
+CONTENT FETCHING:
+- Set getChangesContent=true to fetch actual commit changes:
+  • Gets file diffs and patches for up to 10 commits
+  • Shows changed files, additions, deletions
+  • Includes code patches (first 1000 chars)
+  • Works for both public AND private repositories
+  • Most effective when owner and repo are specified`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -37,11 +63,25 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        query: z
+        exactQuery: z
           .string()
           .optional()
           .describe(
-            'Commit message search terms (keep minimal for broader results)'
+            'Exact phrase to search for in commit messages (e.g., "bug fix")'
+          ),
+
+        queryTerms: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Array of search terms with AND logic (e.g., ["readme", "typo"] finds commits with both words)'
+          ),
+
+        orTerms: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Array of search terms with OR logic (e.g., ["bug", "fix"] finds commits with either word)'
           ),
 
         // Repository filters
@@ -58,7 +98,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         author: z
           .string()
           .optional()
-          .describe('GitHub username of commit author'),
+          .describe('GitHub username of commit author (e.g., "octocat")'),
         'author-name': z
           .string()
           .optional()
@@ -72,7 +112,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         committer: z
           .string()
           .optional()
-          .describe('GitHub username of committer'),
+          .describe('GitHub username of committer (e.g., "monalisa")'),
         'committer-name': z
           .string()
           .optional()
@@ -83,14 +123,23 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         'author-date': z
           .string()
           .optional()
-          .describe('Filter by author date (e.g., >2020-01-01)'),
+          .describe(
+            'Filter by author date (e.g., "<2022-02-01", ">2020-01-01", "2020-01-01..2021-01-01")'
+          ),
         'committer-date': z
           .string()
           .optional()
-          .describe('Filter by commit date (e.g., >2020-01-01)'),
+          .describe(
+            'Filter by commit date (e.g., "<2022-02-01", ">2020-01-01", "2020-01-01..2021-01-01")'
+          ),
 
         // Hash filters
-        hash: z.string().optional().describe('Commit SHA (full or partial)'),
+        hash: z
+          .string()
+          .optional()
+          .describe(
+            'Commit SHA (full or partial, including head_sha/base_sha from a PR as returned by github_search_pull_requests)'
+          ),
         parent: z.string().optional().describe('Parent commit SHA'),
         tree: z.string().optional().describe('Tree SHA'),
 
@@ -129,7 +178,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .optional()
           .default(false)
           .describe(
-            'Get actual code diffs - only use when analyzing changes, not for commit identification'
+            'Set to true to fetch actual commit changes (diffs/patches). Works for both public and private repositories, most effective with owner and repo specified. Limited to first 10 commits for rate limiting.'
           ),
       },
       annotations: {
@@ -141,6 +190,44 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
       },
     },
     async (args: GitHubCommitSearchParams): Promise<CallToolResult> => {
+      // Validate search parameters
+      const hasExactQuery = !!args.exactQuery;
+      const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
+      const hasOrTerms = args.orTerms && args.orTerms.length > 0;
+
+      // Check if any filters are provided
+      const hasFilters = !!(
+        args.author ||
+        args.committer ||
+        args['author-name'] ||
+        args['committer-name'] ||
+        args['author-email'] ||
+        args['committer-email'] ||
+        args.hash ||
+        args.parent ||
+        args.tree ||
+        args['author-date'] ||
+        args['committer-date'] ||
+        args.merge !== undefined ||
+        args.visibility ||
+        (args.owner && args.repo)
+      );
+
+      // Allow search with just filters (no query required)
+      if (!hasExactQuery && !hasQueryTerms && !hasOrTerms && !hasFilters) {
+        return createResult({
+          error:
+            'At least one search parameter required: exactQuery, queryTerms, orTerms, or filters (author, committer, hash, date, etc.)',
+        });
+      }
+
+      if (hasExactQuery && (hasQueryTerms || hasOrTerms)) {
+        return createResult({
+          error:
+            'exactQuery cannot be combined with queryTerms or orTerms. Use exactQuery alone or combine queryTerms + orTerms.',
+        });
+      }
+
       try {
         const result = await searchGitHubCommits(args);
 
@@ -171,16 +258,25 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 
           hasFilters = activeFilters.length > 0;
 
-          // Step 1: If complex query, simplify search terms
-          if (args.query && args.query.trim().split(' ').length > 2) {
-            const words = args.query.trim().split(' ');
-            const simplified = words.slice(0, 1).join(' '); // Take first word only
+          // Step 1: Suggest using queryTerms for broader search if using exactQuery
+          if (args.exactQuery) {
+            const words = args.exactQuery.trim().split(' ');
+            if (words.length > 1) {
+              simplificationSteps.push(
+                `Try queryTerms instead: ["${words[0]}", "${words[1]}"] for broader results`
+              );
+            }
+          }
+
+          // Step 2: Suggest separate searches for OR operations
+          if (args.queryTerms && args.queryTerms.length > 2) {
+            const simplified = args.queryTerms.slice(0, 2);
             simplificationSteps.push(
-              `Try simpler search: "${simplified}" instead of "${args.query}"`
+              `Try fewer terms: ["${simplified.join('", "')}"] instead of ${args.queryTerms.length} terms`
             );
           }
 
-          // Step 2: Remove filters progressively
+          // Step 3: Remove filters progressively
           if (hasFilters) {
             if (activeFilters.length > 1) {
               simplificationSteps.push(
@@ -193,14 +289,21 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
             }
           }
 
-          // Step 3: Alternative approaches
-          if (!args.query && hasFilters) {
+          // Step 4: Alternative approaches for OR operations
+          if (!args.exactQuery && !args.queryTerms && hasFilters) {
             simplificationSteps.push(
-              'Add basic search terms like "fix", "update", or "add" with your filters'
+              'Add search terms: use queryTerms: ["term1", "term2"] with your filters'
             );
           }
 
-          // Step 4: Ask for user guidance if no obvious simplification
+          // Step 5: Suggest using separate searches for OR operations
+          if (args.queryTerms && args.queryTerms.length === 1) {
+            simplificationSteps.push(
+              'For OR operations, run separate searches for each term instead of complex queries'
+            );
+          }
+
+          // Step 6: Ask for user guidance if no obvious simplification
           if (simplificationSteps.length === 0) {
             simplificationSteps.push(
               "Try different keywords or ask the user to be more specific about what commits they're looking for"
@@ -217,6 +320,12 @@ Or ask the user:
 • "What specific type of commits are you looking for?" 
 • "Can you provide different keywords to search for?"
 • "Should I search in a specific repository instead?"
+
+Search techniques to try:
+• Use exactQuery for phrases: "bug fix", "exact phrase"
+• Use queryTerms for multiple terms: ["term1", "term2"] (AND logic)
+• For OR operations: run separate searches for each term
+• Combine with filters: author, repo, date filters
 
 Alternative tools:
 • Use github_search_code for file-specific commits
@@ -427,11 +536,45 @@ export async function searchGitHubCommits(
 function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
   const args = ['commits'];
 
-  // Add query if provided - simplified approach for better results
-  if (params.query) {
-    // Simple, direct query handling - GitHub commit search works better with straightforward queries
-    args.push(params.query.trim());
+  // Build search query
+  if (params.exactQuery) {
+    // Add exact query - let GitHub CLI handle the quoting
+    args.push(params.exactQuery);
+  } else if (params.queryTerms || params.orTerms) {
+    // Build combined query with AND and OR logic
+    const queryParts: string[] = [];
+
+    // Add AND terms
+    if (params.queryTerms && params.queryTerms.length > 0) {
+      const processedAndTerms = params.queryTerms.map(term => {
+        const hasSpecialChars = /[()[\\]{}*?^$|.\\\\+]/.test(term);
+        return hasSpecialChars ? `"${term}"` : term;
+      });
+      queryParts.push(...processedAndTerms);
+    }
+
+    // Add OR terms (using GitHub search syntax)
+    if (params.orTerms && params.orTerms.length > 0) {
+      const processedOrTerms = params.orTerms.map(term => {
+        const hasSpecialChars = /[()[\\]{}*?^$|.\\\\+]/.test(term);
+        return hasSpecialChars ? `"${term}"` : term;
+      });
+
+      if (processedOrTerms.length === 1) {
+        queryParts.push(processedOrTerms[0]);
+      } else {
+        // GitHub CLI supports OR with parentheses: (term1 OR term2 OR term3)
+        const orQuery = `(${processedOrTerms.join(' OR ')})`;
+        queryParts.push(orQuery);
+      }
+    }
+
+    if (queryParts.length > 0) {
+      // Join all parts with spaces (AND logic between different parts)
+      args.push(queryParts.join(' '));
+    }
   }
+  // If no query parameters are provided, gh will use filters only
 
   // Repository filters
   if (params.owner && params.repo) {

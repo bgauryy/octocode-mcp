@@ -50,7 +50,10 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
 export interface GitHubCommitSearchParams
   extends Omit<BaseSearchParams, 'query'>,
     OrderSort {
-  query?: string; // Make query optional
+  exactQuery?: string;
+  queryTerms?: string[];
+  orTerms?: string[];
+  query?: string; // Deprecated - use exactQuery or queryTerms instead
   author?: string;
   committer?: string;
   'author-date'?: string;
@@ -68,26 +71,43 @@ export interface GitHubCommitSearchParams
   getChangesContent?: boolean; // Fetch actual code changes/diffs when analyzing changes (repo-specific searches only)
 }
 
-export interface GitHubPullRequestsSearchParams
-  extends BaseSearchParams,
-    UserInvolvement,
-    DateRange,
-    OrderSort {
+export interface GitHubPullRequestsSearchParams {
+  created?: string;
+  owner?: string;
+  updated?: string;
+  order?: string;
+  repo?: string;
+  exactQuery?: string;
+  queryTerms?: string[];
+  orTerms?: string[];
+  query?: string;
+  match?: ('title' | 'body' | 'comments')[];
+  type?: 'issue' | 'pr';
   state?: 'open' | 'closed';
   head?: string;
   base?: string;
-  language?: string;
-  merged?: string | boolean;
   'merged-at'?: string;
+  closed?: string;
   draft?: boolean;
+  checks?: 'pending' | 'success' | 'failure';
+  merged?: boolean;
+  review?: 'none' | 'required' | 'approved' | 'changes_requested';
   'reviewed-by'?: string;
   'review-requested'?: string;
+  'user-review-requested'?: string;
+  'team-review-requested'?: string;
+  status?: 'pending' | 'success' | 'failure';
+  author?: string;
+  assignee?: string;
+  mentions?: string;
+  commenter?: string;
+  involves?: string;
   app?: string;
   archived?: boolean;
-  comments?: string | number;
-  interactions?: string | number;
+  comments?: number;
+  interactions?: number;
   'team-mentions'?: string;
-  reactions?: string | number;
+  reactions?: number;
   locked?: boolean;
   'no-assignee'?: boolean;
   'no-label'?: boolean;
@@ -97,9 +117,7 @@ export interface GitHubPullRequestsSearchParams
   milestone?: string;
   project?: string;
   visibility?: 'public' | 'private' | 'internal';
-  match?: ('title' | 'body' | 'comments')[];
-  checks?: 'pending' | 'success' | 'failure';
-  review?: 'none' | 'required' | 'approved' | 'changes_requested';
+  language?: string;
   sort?:
     | 'comments'
     | 'reactions'
@@ -112,7 +130,10 @@ export interface GitHubPullRequestsSearchParams
     | 'interactions'
     | 'created'
     | 'updated';
-  getChangesContent?: boolean; // Fetch actual code changes/diffs when analyzing changes (repo-specific searches only)
+  limit?: number;
+  getChangesContent?: boolean;
+  getPRCommits?: boolean;
+  getCommitData?: boolean;
 }
 
 export interface GitHubReposSearchParams
@@ -161,72 +182,6 @@ export interface GithubFetchRequestParams {
   minified: boolean;
 }
 
-export interface GitHubIssuesSearchParams {
-  query: string;
-  owner?: string;
-  repo?: string;
-  app?: string;
-  archived?: boolean;
-  author?: string;
-  assignee?: string;
-  mentions?: string;
-  commenter?: string;
-  comments?: string | number;
-  involves?: string;
-  'include-prs'?: boolean;
-  interactions?: string | number;
-  state?: 'open' | 'closed';
-  label?: string | string[];
-  milestone?: string;
-  project?: string;
-  language?: string;
-  locked?: boolean;
-  match?: 'title' | 'body' | 'comments';
-  'no-assignee'?: boolean;
-  'no-label'?: boolean;
-  'no-milestone'?: boolean;
-  'no-project'?: boolean;
-  reactions?: string | number;
-  'team-mentions'?: string;
-  visibility?: 'public' | 'private' | 'internal';
-  created?: string;
-  updated?: string;
-  closed?: string;
-  limit?: number;
-  sort?:
-    | 'comments'
-    | 'created'
-    | 'interactions'
-    | 'reactions'
-    | 'reactions-+1'
-    | 'reactions--1'
-    | 'reactions-heart'
-    | 'reactions-smile'
-    | 'reactions-tada'
-    | 'reactions-thinking_face'
-    | 'updated'
-    | 'best-match';
-  order?: 'asc' | 'desc';
-}
-
-export interface GitHubIssueItem {
-  number: number;
-  title: string;
-  state: 'open' | 'closed';
-  author: string;
-  repository: string;
-  labels: string[];
-  created_at: string;
-  updated_at: string;
-  url: string;
-  comments: number;
-  reactions: number;
-}
-
-export interface GitHubIssuesSearchResult {
-  results: GitHubIssueItem[];
-}
-
 export interface GitHubDiffFile {
   filename: string;
   status: string;
@@ -271,6 +226,15 @@ export interface GitHubPullRequestItem {
   head_sha?: string; // Commit SHA for the head branch
   base_sha?: string; // Commit SHA for the base branch
   diff?: GitHubPullRequestDiff; // Code changes when getChangesContent=true
+  commits?: {
+    total_count: number;
+    commits: Array<{
+      sha: string;
+      message: string;
+      author: string;
+      url: string;
+    }>;
+  };
 }
 
 export interface GitHubPullRequestsSearchResult {
@@ -538,3 +502,69 @@ export type CallToolResult = {
   }>;
   isError: boolean;
 };
+
+export interface GitHubIssuesSearchParams {
+  query: string;
+  owner?: string;
+  repo?: string;
+  app?: string;
+  archived?: boolean;
+  author?: string;
+  assignee?: string;
+  mentions?: string;
+  commenter?: string;
+  comments?: string | number;
+  involves?: string;
+  'include-prs'?: boolean;
+  interactions?: string | number;
+  state?: 'open' | 'closed';
+  label?: string | string[];
+  milestone?: string;
+  project?: string;
+  language?: string;
+  locked?: boolean;
+  match?: 'title' | 'body' | 'comments';
+  'no-assignee'?: boolean;
+  'no-label'?: boolean;
+  'no-milestone'?: boolean;
+  'no-project'?: boolean;
+  reactions?: string | number;
+  'team-mentions'?: string;
+  visibility?: 'public' | 'private' | 'internal';
+  created?: string;
+  updated?: string;
+  closed?: string;
+  limit?: number;
+  sort?:
+    | 'comments'
+    | 'created'
+    | 'interactions'
+    | 'reactions'
+    | 'reactions-+1'
+    | 'reactions--1'
+    | 'reactions-heart'
+    | 'reactions-smile'
+    | 'reactions-tada'
+    | 'reactions-thinking_face'
+    | 'updated'
+    | 'best-match';
+  order?: 'asc' | 'desc';
+}
+
+export interface GitHubIssueItem {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  author: string;
+  repository: string;
+  labels: string[];
+  created_at: string;
+  updated_at: string;
+  url: string;
+  comments: number;
+  reactions: number;
+}
+
+export interface GitHubIssuesSearchResult {
+  results: GitHubIssueItem[];
+}
