@@ -3633,6 +3633,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"octocode-data-masker@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "octocode-data-masker@npm:1.0.0"
+  checksum: 10c0/7620a7482eb0fc8a7edd4c82ab38dc865bd7e8ff805803b5714036849136546851c08aaaf40d7d399e5c9dfdfec3022aa555f28da21be4b1da3bc063d42a930e
+  languageName: node
+  linkType: hard
+
 "octocode-mcp@workspace:.":
   version: 0.0.0-use.local
   resolution: "octocode-mcp@workspace:."
@@ -3658,6 +3665,7 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.4.1"
     node-cache: "npm:^5.1.2"
     node-fetch: "npm:^3.3.2"
+    octocode-data-masker: "npm:^1.0.0"
     prettier: "npm:^3.5.3"
     rollup: "npm:^4.41.1"
     terser: "npm:^5.43.1"

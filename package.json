@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "2.3.17",
+  "version": "2.3.18",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis, code discovery, and npm package exploration. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub and npm ecosystems.",
   "author": "Guy Bary <guybary@gmail.com>",
   "homepage": "https://octocode.ai",
@@ -52,6 +52,7 @@
     "@modelcontextprotocol/sdk": "^1.13.2",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
+    "octocode-data-masker": "^1.0.0",
     "terser": "^5.43.1",
     "zod": "^3.25.26"
   },
