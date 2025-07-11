@@ -5,16 +5,16 @@
 <div>
   <img src="./assets/logo.png" width="400px">
   
-  [![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-2.3.17-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
+    [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-☕-orange.svg)](https://buymeacoffee.com/bgauryy)
+
 </div>
 
 
+## 🌐 For More Details -  [octocode.ai](https://octocode.ai)
 
-## What is Octocode? 🐙
-
-**For more details, visit [octocode.ai](https://octocode.ai)**
 
 **The perfect code assistant that can help understand anything.** Octocode provides AI-powered advanced search with heuristic discovery and smart fallbacks to understand connections between repositories and NPM packages across any privilege level you have.
 
@@ -30,11 +30,11 @@ Instead of manually browsing repositories, ask questions like:
 **The most advanced AI-powered code assistant for understanding connections across the entire GitHub & NPM ecosystem.** While other GitHub MCPs focus on project management or basic operations, Octocode provides unparalleled depth for code discovery and technical research.
 
 **Key Differentiators:**
-- **🧠 AI-Powered Search** - Heuristic algorithms with smart fallbacks that understand code context and find relevant code even with vague queries
-- **🔐 Zero-Config Security** - Uses GitHub CLI authentication - no personal access tokens needed
-- **🔗 Connection Intelligence** - Maps NPM packages to repositories, traces dependencies, finds related implementations
-- **🌐 Universal Access** - Works seamlessly with public, private, and organization repositories
-- **⚡ LLM Optimized** - Advanced content minification and partial fetching reduces token usage by 80-90%
+- **🧠 AI-Powered Search** - Multi-modal search strategies with progressive complexity reduction and context-aware suggestions
+- **🔐 Zero-Config Security** - Uses GitHub CLI authentication with organization discovery - no personal access tokens needed
+- **🔗 Connection Intelligence** - Maps NPM packages to repositories with commit SHA integration and cross-tool data sharing
+- **🌐 Universal Access** - Works seamlessly with public, private, and organization repositories using GitHub CLI permissions
+- **⚡ LLM Optimized** - Advanced content minification, intelligent caching, and parallel processing reduces token usage by 80-90%
 
 ## Quick Start 🚀
 
@@ -130,63 +130,56 @@ yarn dxt:pack
 
 The generated `octocode-mcp.dxt` file can then be installed in Claude Desktop (just click on it and it will open claude desktop with the extension)
 
-
-## How It Works 🔄
-
-**Smart Discovery Flow:**
-1. **🔍 Query Analysis** → AI determines the best search strategy
-2. **⚡ Multi-Tool Orchestration** → Intelligently combines 10 specialized tools
-3. **🔄 Smart Fallbacks** → Automatically retries with different approaches
-4. **🔗 Cross-Reference Discovery** → Links packages to repositories with commit SHA integration
-5. **🎯 Context Synthesis** → Provides comprehensive understanding
-
-## Example Flows
-
-### Example 1: LangGraph Node.js Implementation Tutorial
-**Query:** "Show implementations of langgraph in node js. Make a tutorial for how to implement a simple agent using OpenAI API."
-
-<a href="https://youtu.be/E5HUlRckpvg?si=XXLle59C92esDscS"><img src="assets/langchainTutorial.gif" alt="LangGraph Node.js Tutorial" width="50%"></a>
-
-### Example 2: Zustand React State Management
-**Query:** "Show me how to add zustand to react application. Show examples and best practices"
-
-<a href="https://youtu.be/EgYbsuWmqsI?si=CN_KwCPgwprImynU"><img src="assets/reactZustand.gif" alt="Zustand React State Management" width="50%"></a>
-
-### Example 3: React vs Vue.js Rendering Comparison
-**Query:** "How did React implement their concurrent rendering flows? How is it different from Vue.js rendering mechanism? Which is better?"
-
-<a href="https://youtu.be/-_pbCbLXKDc?si=KiPeGCzmwWtb6G3r"><img src="assets/reactVSVueJS.gif" alt="React vs Vue.js Rendering Comparison" width="50%"></a>
-
 ## Core Features 🛠️
 
-### 🧠 AI-Powered Intelligence
-- **Advanced Search** - Heuristic pattern recognition with automatic fallback strategies
-- **Connection Mapping** - Automatically links NPM packages to GitHub repositories
-- **Cross-Reference Analysis** - Discovers how different projects implement similar patterns
-- **Progressive Refinement** - AI-guided search that improves with each iteration
-- **Context-Aware Discovery** - Understands relationships between code, commits, issues, and discussions
+### 🧠 **AI-Powered Intelligence**
+- **Advanced Search Strategies** - Multi-modal search with exact/term modes and progressive complexity reduction
+- **Connection Mapping** - Automatically links NPM packages to GitHub repositories with URL extraction
+- **Cross-Reference Analysis** - Discovers implementation patterns across projects with commit SHA integration
+- **Progressive Refinement** - AI-guided search with contextual suggestions and smart fallback chains
+- **Context-Aware Discovery** - Understands relationships between repositories, packages, commits, and issues
 
-### 🔗 Commit SHA Integration
-- **Time Travel Code Viewing** - View files from specific commits and pull requests
-- **PR Code Analysis** - Automatically fetch commit SHAs for precise code comparison
-- **Historical Implementation** - Compare code evolution across versions
+### 🔗 **Commit SHA Integration** 
+- **Time Travel Code Viewing** - View files from specific commits and pull requests using SHA references
+- **PR Code Analysis** - Fetch commit data with file changes for precise code comparison
+- **Historical Implementation** - Compare code evolution across versions with diff analysis
+- **Cross-Tool Integration** - Commit SHAs work seamlessly across search, fetch, and analysis tools
 
-### ⚡ Performance Optimization
-- **Smart Content Selection** - Extracts only relevant code sections
-- **Advanced Minification** - Language-aware compression preserving meaning
-- **Partial File Access** - Fetches targeted line ranges
-- **Token Efficiency** - 80-90% reduction in LLM token usage
+### ⚡ **Performance Optimization**
+- **Smart Content Selection** - Extracts targeted line ranges with configurable context
+- **Advanced Minification** - Language-aware compression preserving structure and meaning
+- **Intelligent Caching** - Generated cache keys with automatic invalidation
+- **Parallel Processing** - Concurrent API calls for enhanced content fetching
+- **Token Efficiency** - 80-90% reduction in LLM token usage through optimization
 
 ## Available Tools
 
 **10 specialized tools** working together intelligently:
 
-**Discovery:** Repository Search, Package Search  
-**Analysis:** Code Search, Package Analysis, Repository Structure  
-**Activity:** Commit Search, Pull Request Search, Issue Search  
-**Content:** File Content Fetching, API Status Check  
+### 🔍 **Discovery & Navigation**
+- **Repository Search** - Multi-modal search with quality filters, URL extraction, and private repository support
+- **Package Search** - NPM ecosystem discovery with deduplication and framework detection
+- **Repository Structure** - Smart branch detection with path validation and enhanced fallbacks
 
-All tools feature automatic cross-referencing and intelligent fallbacks.
+### 💻 **Code Analysis**
+- **Code Search** - Advanced search with exact/term modes, progressive strategies, and text match optimization
+- **File Content Fetching** - Intelligent retrieval with partial access, minification, and smart branch fallbacks
+- **Package Analysis** - Detailed NPM package inspection with export structure and GitHub integration
+
+### 📊 **Development Activity**
+- **Commit Search** - Multi-modal search with content fetching and SHA integration for file viewing
+- **Pull Request Search** - Dual search modes with commit data and cross-tool SHA integration
+- **Issue Search** - Rich filtering with parallel content fetching and advanced metrics
+
+### 🛠️ **System Integration**
+- **API Status Check** - Central authentication validation with organization discovery and smart error handling
+
+### 🚀 **Latest Features**
+- **Commit SHA Integration** - View files from specific commits and pull requests
+- **Progressive Search Strategies** - AI-guided complexity reduction with contextual suggestions
+- **Cross-Tool Data Sharing** - Seamless integration with shared data formats and relationship mapping
+- **Advanced Error Recovery** - Context-aware suggestions and smart fallback chains
+- **Performance Optimization** - Token efficiency, intelligent caching, and parallel processing
 
 ## Security & Privacy 🛡️
 
