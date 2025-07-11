@@ -12,25 +12,7 @@ import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetches the content of a file from a GitHub repository.
-
-**TOKEN OPTIMIZATION WORKFLOW**: From github search results -> extract lines -> Fetch targeted sections
-
-**COMMIT/BRANCH ACCESS**:
-- branch parameter accepts: branch names, tag names, OR commit SHAs
-- Perfect for viewing files from specific commits or PR states
-- Use commit SHAs from github_search_commits results directly
-
-**PARTIAL ACCESS** (startLine/endLine):
-- Target search result lines exactly
-- contextLines: Surrounding code (default: 5)
-- Full file can also be fetched for full context, but it's not recommended in most cases.
-
-**CAPABILITIES**:
-- Smart minification for optimal tokens
-- Indentation-aware processing for 15+ languages
-
-Great for research and code discovery with token efficiency`;
+const DESCRIPTION = `Fetches the content of a file from a GitHub repository. Automatically falls back between main/master branches if not found.`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -60,7 +42,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .max(255)
           .regex(/^[^\s]+$/)
           .describe(
-            `Branch name, tag name, OR commit SHA. Use commit SHAs from github_search_commits to view files from specific commits. Tool will automatically try 'main' and 'master' if specified branch is not found.`
+            `Branch name, tag name, OR commit SHA. Tool will automatically try 'main' and 'master' if specified branch is not found.`
           ),
         filePath: z
           .string()
@@ -73,17 +55,13 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .int()
           .min(1)
           .optional()
-          .describe(
-            `**STRONGLY RECOMMENDED**: Starting line number (1-based) for partial file access. Extract from github_search_code results for targeted content. Use with endLine for specific sections. Saves 80-90% tokens and ensures line numbers match search results exactly.`
-          ),
+          .describe(`Starting line number (1-based) for partial file access.`),
         endLine: z
           .number()
           .int()
           .min(1)
           .optional()
-          .describe(
-            `Ending line number (1-based) for partial file access. Use with startLine for specific sections. If omitted, gets from startLine to reasonable endpoint with context.`
-          ),
+          .describe(`Ending line number (1-based) for partial file access.`),
         contextLines: z
           .number()
           .int()
@@ -91,14 +69,12 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .max(50)
           .optional()
           .default(5)
-          .describe(
-            `Context lines around target range. Default: 5. Increase for more surrounding code, decrease for minimal context. Only used with startLine/endLine.`
-          ),
+          .describe(`Context lines around target range. Default: 5.`),
         minified: z
           .boolean()
           .default(true)
           .describe(
-            `Smart content optimization for token efficiency (enabled by default). Partial content gets balanced compression, full files get maximum compression. Use false only when you need complete formatting, comments, and documentation.`
+            `Optimize content for token efficiency (enabled by default).`
           ),
       },
       annotations: {
@@ -145,196 +121,40 @@ export async function fetchGitHubFileContent(
       if (result.isError) {
         const errorMsg = result.content[0].text as string;
 
-        // Check repository existence only after content fetch fails
-        const repoCheckResult = await executeGitHubCommand(
-          'api',
-          [`/repos/${owner}/${repo}`],
-          {
-            cache: false,
-          }
-        );
-
-        if (repoCheckResult.isError) {
-          const repoErrorMsg = repoCheckResult.content[0].text as string;
-          if (repoErrorMsg.includes('404')) {
-            return createResult({
-              error: `Repository "${owner}/${repo}" not found. This is often due to incorrect repository name. Steps to resolve:\n1. Use github_search_code with query="${filePath.split('/').pop()}" owner="${owner}" to find the correct repository\n2. Verify the exact repository name\n3. Check if the repository might have been renamed or moved`,
-            });
-          } else if (repoErrorMsg.includes('403')) {
-            return createResult({
-              error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
-            });
-          }
-        }
-
-        // Enhanced fallback strategy for 404 errors
-        if (errorMsg.includes('404')) {
-          // Get the actual default branch from the repo info we already fetched
-          let defaultBranch = 'main';
-          let repoDefaultBranchFound = false;
-
-          if (!repoCheckResult.isError) {
-            try {
-              const repoData = JSON.parse(
-                repoCheckResult.content[0].text as string
-              );
-              defaultBranch = repoData.default_branch || 'main';
-              repoDefaultBranchFound = true;
-            } catch (e) {
-              // Keep default as 'main' if parsing fails
-            }
-          }
-
-          // If we found the actual default branch, try it first
-          if (repoDefaultBranchFound && defaultBranch !== branch) {
-            const defaultBranchPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${defaultBranch}`;
-            const defaultBranchResult = await executeGitHubCommand(
-              'api',
-              [defaultBranchPath],
-              {
-                cache: false,
-              }
-            );
-
-            if (!defaultBranchResult.isError) {
-              return await processFileContent(
-                defaultBranchResult,
-                owner,
-                repo,
-                defaultBranch,
-                filePath,
-                params.minified,
-                params.startLine,
-                params.endLine,
-                params.contextLines
-              );
-            }
-          }
-
-          // Comprehensive fallback list (excluding default branch since we tried it)
-          const fallbackBranches = [
-            'main',
-            'master',
-            'develop',
-            'dev',
-            'trunk',
-          ].filter(b => b !== defaultBranch && b !== branch);
-
-          const triedBranches = [branch];
-          if (repoDefaultBranchFound && defaultBranch !== branch) {
-            triedBranches.push(`${defaultBranch} (default)`);
-          }
-
-          for (const fallbackBranch of fallbackBranches) {
-            triedBranches.push(fallbackBranch);
-
-            const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
-            const fallbackResult = await executeGitHubCommand(
-              'api',
-              [fallbackPath],
-              {
-                cache: false,
-              }
-            );
-
-            if (!fallbackResult.isError) {
-              return await processFileContent(
-                fallbackResult,
-                owner,
-                repo,
-                fallbackBranch,
-                filePath,
-                params.minified,
-                params.startLine,
-                params.endLine,
-                params.contextLines
-              );
-            }
-          }
-
-          const defaultBranchInfo = repoDefaultBranchFound
-            ? `\nRepository default branch: "${defaultBranch}"`
-            : `\nCould not determine default branch - repository info unavailable`;
-
-          return createResult({
-            error: `File not found in any common branches (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
-
-Quick solution: Use the correct branch name:
-{"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "filePath": "${filePath}"}
-
-Alternative solutions:
-• Check repository structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "main", "path": ""}
-• Search for file: github_search_code with query="filename:${filePath.split('/').pop()}" owner="${owner}"
-• Find file path: github_search_code with query="path:${filePath}"`,
-          });
-        }
-
-        // Handle common errors with more context
-        if (errorMsg.includes('404')) {
-          const searchSuggestion = await suggestCodeSearchFallback(
-            owner,
-            filePath
-          );
-          return createResult({
-            error: `File "${filePath}" not found in branch "${branch}".
-
-Quick fixes:
-• Use github_view_repo_structure to verify path exists
-• Check for typos in file path
-• Try different branch (main/master/develop)${searchSuggestion}
-
-Alternative strategies:
-• Use github_search_code with query="filename:${filePath.split('/').pop()}" owner="${owner}"
-• Use github_search_code with query="path:${filePath}" to find similar paths`,
-          });
-        } else if (errorMsg.includes('403')) {
-          return createResult({
-            error: `Access denied to "${filePath}" in "${owner}/${repo}".
-
-Possible causes & solutions:
-• Private repository: use api_status_check to verify permissions
-• File in private directory: check repository access level
-• Rate limiting: wait 5-10 minutes and retry
-• Authentication: run gh auth login
-
-Alternative approaches:
-• Use github_search_code with query="path:${filePath}" owner="${owner}"
-• Use github_view_repo_structure to explore accessible paths
-• Check repository on GitHub.com for public access`,
-          });
-        } else if (
-          errorMsg.includes('maxBuffer') ||
-          errorMsg.includes('stdout maxBuffer length exceeded')
+        // Silent fallback for main/master branches only
+        if (
+          errorMsg.includes('404') &&
+          (branch === 'main' || branch === 'master')
         ) {
-          return createResult({
-            error: `File "${filePath}" is too large (>300KB).
+          const fallbackBranch = branch === 'main' ? 'master' : 'main';
+          const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
 
-Alternative strategies:
-• Use github_search_code to search within the file
-• Download directly from: https://github.com/${owner}/${repo}/blob/${branch}/${filePath}
-• Use github_view_repo_structure to find smaller related files
-• Look for configuration or summary files instead`,
-          });
-        } else {
-          const searchSuggestion = await suggestCodeSearchFallback(
-            owner,
-            filePath
+          // Retry with fallback branch
+          const fallbackResult = await executeGitHubCommand(
+            'api',
+            [fallbackPath],
+            {
+              cache: false,
+            }
           );
-          return createResult({
-            error: `Failed to fetch "${filePath}": ${errorMsg}
 
-Troubleshooting steps:
-1. Verify repository exists: github_view_repo_structure
-2. Check network connection and GitHub status
-3. Verify authentication: gh auth status
-4. Try different branch names${searchSuggestion}
-
-Recovery strategies:
-• Use github_search_code for content discovery
-• Try github_search_repos to find similar repositories
-• Check file on GitHub.com: https://github.com/${owner}/${repo}/blob/${branch}/${filePath}`,
-          });
+          if (!fallbackResult.isError) {
+            return await processFileContent(
+              fallbackResult,
+              owner,
+              repo,
+              fallbackBranch,
+              filePath,
+              params.minified,
+              params.startLine,
+              params.endLine,
+              params.contextLines
+            );
+          }
         }
+
+        // Return original error if fallback didn't work or wasn't applicable
+        return result;
       }
 
       return await processFileContent(
@@ -547,32 +367,4 @@ async function processFileContent(
       }),
     } as GitHubFileContentResponse,
   });
-}
-
-// Helper function to suggest code search strategy
-async function suggestCodeSearchFallback(
-  owner: string,
-  filePath: string
-): Promise<string> {
-  try {
-    // Extract filename and try to find in same organization
-    const fileName = filePath.split('/').pop() || filePath;
-    const searchResult = await executeGitHubCommand(
-      'api',
-      [`/search/code?q=${encodeURIComponent(fileName)}+in:path+org:${owner}`],
-      { cache: false }
-    );
-
-    if (!searchResult.isError) {
-      const results = JSON.parse(searchResult.content[0].text as string);
-      if (results.total_count > 0) {
-        const firstMatch = results.items[0];
-        return ` File might be in ${firstMatch.repository.full_name}. Try these searches:\n1. github_search_code with query="${fileName}" owner="${owner}"\n2. github_search_code with query="path:${filePath}" owner="${owner}"`;
-      }
-    }
-  } catch {
-    // Fallback to generic message if search fails
-  }
-
-  return ` Try these searches:\n1. github_search_code with query="${filePath.split('/').pop()}" owner="${owner}"\n2. github_search_code with query="path:${filePath}"`;
 }

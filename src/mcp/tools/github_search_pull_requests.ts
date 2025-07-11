@@ -20,13 +20,44 @@ import {
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `Search GitHub PRs by keywords, state, or author. Returns head/base SHAs for github_fetch_content (branch=SHA). Can fetch PR content changes (diffs/patches) when getChangesContent=true.
+const DESCRIPTION = `Search GitHub PRs by keywords, state, or author. Returns head/base SHAs for github_fetch_content (branch=SHA). Can fetch all PR commits with changes using getCommitData=true.
 
 SEARCH STRATEGY FOR BEST RESULTS:
 - Use minimal search terms for broader coverage (2-3 words max)
 - Separate searches for different aspects vs complex queries  
 - Use filters to narrow scope after getting initial results
-- getChangesContent=true only when analyzing actual code changes`;
+- Use getCommitData=true to get all commits in PR with file changes
+- Use github_search_commits with head_sha/base_sha from results to get code changes
+
+COMMIT DATA FETCHING (getCommitData=true):
+- Fetches all commits in the PR using 'gh pr view --json commits'
+- For each commit, fetches detailed changes using GitHub API
+- Shows commit SHA, message, author, and file changes
+- Includes up to 10 commits per PR with detailed diffs
+- Each commit shows changed files with additions/deletions/patches
+- Example: Shows individual commits like "Fix bug in component" with specific file changes
+
+EXAMPLE OUTPUT WITH getCommitData=true:
+{
+  "commits": {
+    "total_count": 3,
+    "commits": [
+      {
+        "sha": "abc123",
+        "message": "Fix bug in component", 
+        "author": "username",
+        "diff": {
+          "changed_files": 2,
+          "additions": 15,
+          "deletions": 3,
+          "files": [...]
+        }
+      }
+    ]
+  }
+}
+
+NOTE: The head_sha and base_sha fields in the PR results can be used as the 'hash' parameter in github_search_commits to look up the exact commit and get actual code changes.`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
@@ -175,12 +206,12 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .optional()
           .default('desc')
           .describe('Order of results (requires --sort)'),
-        getChangesContent: z
+        getCommitData: z
           .boolean()
           .optional()
           .default(false)
           .describe(
-            'Get actual code diffs - only use when analyzing changes, not for PR identification'
+            'Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes.'
           ),
       },
       annotations: {
@@ -191,7 +222,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
+    async (args): Promise<CallToolResult> => {
       if (!args.query?.trim()) {
         return createResult({
           error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
@@ -380,150 +411,85 @@ Alternative tools:
       });
     }
 
-    // Fetch diff information if requested and this is a repo-specific search
-    const shouldFetchDiff =
-      params.getChangesContent && params.owner && params.repo;
-    const diffData: Map<number, any> = new Map();
+    const cleanPRs: GitHubPullRequestItem[] = await Promise.all(
+      pullRequests.map(async (pr: any) => {
+        // Handle gh pr list format
+        if (isListFormat) {
+          const result: GitHubPullRequestItem = {
+            number: pr.number,
+            title: pr.title,
+            state: pr.state?.toLowerCase() || 'unknown',
+            author: pr.author?.login || '',
+            repository: `${params.owner}/${params.repo}`,
+            labels: pr.labels?.map((l: any) => l.name) || [],
+            created_at: toDDMMYYYY(pr.createdAt),
+            updated_at: toDDMMYYYY(pr.updatedAt),
+            url: pr.url,
+            comments: pr.comments || 0,
+            reactions: 0, // Not available in list format
+            draft: pr.isDraft || false,
+          };
 
-    if (shouldFetchDiff && pullRequests.length > 0) {
-      // Fetch diff info for each PR (limit to first 10 to avoid rate limits)
-      const prNumbers = pullRequests.slice(0, 10).map((pr: any) => pr.number);
-      const diffPromises = prNumbers.map(async (prNumber: number) => {
-        try {
-          const diffResult = await executeGitHubCommand(
-            'api',
-            [`/repos/${params.owner}/${params.repo}/pulls/${prNumber}/files`],
-            { cache: false }
-          );
-          if (!diffResult.isError) {
-            const diffExecResult = JSON.parse(
-              diffResult.content[0].text as string
+          // Add commit SHAs for use with github_fetch_content
+          // Use head_sha/base_sha as branch parameter to view PR files
+          if (pr.headRefName) result.head = pr.headRefName;
+          if (pr.headRefOid) result.head_sha = pr.headRefOid; // Use as branch=SHA
+          if (pr.baseRefName) result.base = pr.baseRefName;
+          if (pr.baseRefOid) result.base_sha = pr.baseRefOid; // Use as branch=SHA
+
+          // Fetch commit data if requested
+          if (params.getCommitData && params.owner && params.repo) {
+            const commitData = await fetchPRCommitData(
+              params.owner,
+              params.repo,
+              pr.number
             );
-            return { prNumber, files: diffExecResult.result };
+            if (commitData) {
+              result.commits = commitData;
+            }
           }
-        } catch (e) {
-          // Ignore diff fetch errors
+
+          return result;
         }
-        return { prNumber, files: [] };
-      });
 
-      const diffResults = await Promise.all(diffPromises);
-      diffResults.forEach(({ prNumber, files }) => {
-        diffData.set(prNumber, files);
-      });
-    }
-
-    const cleanPRs: GitHubPullRequestItem[] = pullRequests.map((pr: any) => {
-      // Handle gh pr list format
-      if (isListFormat) {
+        // Handle search API format
         const result: GitHubPullRequestItem = {
           number: pr.number,
           title: pr.title,
-          state: pr.state?.toLowerCase() || 'unknown',
-          author: pr.author?.login || '',
-          repository: `${params.owner}/${params.repo}`,
+          state: pr.state,
+          author: pr.user?.login || '',
+          repository:
+            pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
           labels: pr.labels?.map((l: any) => l.name) || [],
-          created_at: toDDMMYYYY(pr.createdAt),
-          updated_at: toDDMMYYYY(pr.updatedAt),
-          url: pr.url,
-          comments: pr.comments || 0,
-          reactions: 0, // Not available in list format
-          draft: pr.isDraft || false,
+          created_at: toDDMMYYYY(pr.created_at),
+          updated_at: toDDMMYYYY(pr.updated_at),
+          url: pr.html_url,
+          comments: pr.comments,
+          reactions: pr.reactions?.total_count || 0,
+          draft: pr.draft,
         };
 
-        // Add commit SHAs for use with github_fetch_content
-        // Use head_sha/base_sha as branch parameter to view PR files
-        if (pr.headRefName) result.head = pr.headRefName;
-        if (pr.headRefOid) result.head_sha = pr.headRefOid; // Use as branch=SHA
-        if (pr.baseRefName) result.base = pr.baseRefName;
-        if (pr.baseRefOid) result.base_sha = pr.baseRefOid; // Use as branch=SHA
+        // Only include optional fields if they have values
+        if (pr.merged_at) result.merged_at = pr.merged_at;
+        if (pr.closed_at) result.closed_at = toDDMMYYYY(pr.closed_at);
+        if (pr.head?.ref) result.head = pr.head.ref;
+        if (pr.base?.ref) result.base = pr.base.ref;
 
-        // Add diff information if available
-        if (shouldFetchDiff && diffData.has(pr.number)) {
-          const files = diffData.get(pr.number);
-          result.diff = {
-            changed_files: files.length,
-            additions: files.reduce(
-              (sum: number, f: any) => sum + (f.additions || 0),
-              0
-            ),
-            deletions: files.reduce(
-              (sum: number, f: any) => sum + (f.deletions || 0),
-              0
-            ),
-            files: files
-              .map((f: any) => ({
-                filename: f.filename,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                changes: f.changes,
-                patch: f.patch
-                  ? f.patch.substring(0, 1000) +
-                    (f.patch.length > 1000 ? '...' : '')
-                  : undefined,
-              }))
-              .slice(0, 5), // Limit to 5 files per PR
-          };
+        // Fetch commit data if requested
+        if (params.getCommitData && params.owner && params.repo) {
+          const commitData = await fetchPRCommitData(
+            params.owner,
+            params.repo,
+            pr.number
+          );
+          if (commitData) {
+            result.commits = commitData;
+          }
         }
 
         return result;
-      }
-
-      // Handle search API format
-      const result: GitHubPullRequestItem = {
-        number: pr.number,
-        title: pr.title,
-        state: pr.state,
-        author: pr.user?.login || '',
-        repository:
-          pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-        labels: pr.labels?.map((l: any) => l.name) || [],
-        created_at: toDDMMYYYY(pr.created_at),
-        updated_at: toDDMMYYYY(pr.updated_at),
-        url: pr.html_url,
-        comments: pr.comments,
-        reactions: pr.reactions?.total_count || 0,
-        draft: pr.draft,
-      };
-
-      // Only include optional fields if they have values
-      if (pr.merged_at) result.merged_at = pr.merged_at;
-      if (pr.closed_at) result.closed_at = toDDMMYYYY(pr.closed_at);
-      if (pr.head?.ref) result.head = pr.head.ref;
-      if (pr.base?.ref) result.base = pr.base.ref;
-
-      // Add diff information if available (search API format)
-      if (shouldFetchDiff && diffData.has(pr.number)) {
-        const files = diffData.get(pr.number);
-        result.diff = {
-          changed_files: files.length,
-          additions: files.reduce(
-            (sum: number, f: any) => sum + (f.additions || 0),
-            0
-          ),
-          deletions: files.reduce(
-            (sum: number, f: any) => sum + (f.deletions || 0),
-            0
-          ),
-          files: files
-            .map((f: any) => ({
-              filename: f.filename,
-              status: f.status,
-              additions: f.additions,
-              deletions: f.deletions,
-              changes: f.changes,
-              patch: f.patch
-                ? f.patch.substring(0, 1000) +
-                  (f.patch.length > 1000 ? '...' : '')
-                : undefined,
-            }))
-            .slice(0, 5), // Limit to 5 files per PR
-        };
-      }
-
-      return result;
-    });
+      })
+    );
 
     const searchResult: GitHubPullRequestsSearchResult = {
       results: cleanPRs,
@@ -676,4 +642,106 @@ function buildGitHubPullRequestsListCommand(
   }
 
   return { command: 'pr', args };
+}
+
+async function fetchPRCommitData(
+  owner: string,
+  repo: string,
+  prNumber: number
+) {
+  try {
+    // First, get the list of commits in the PR
+    const commitsResult = await executeGitHubCommand(
+      'pr',
+      [
+        'view',
+        prNumber.toString(),
+        '--json',
+        'commits',
+        '--repo',
+        `${owner}/${repo}`,
+      ],
+      { cache: false }
+    );
+
+    if (commitsResult.isError) {
+      return null;
+    }
+
+    const commitsData = JSON.parse(commitsResult.content[0].text as string);
+    const commits = commitsData.result?.commits || [];
+
+    if (commits.length === 0) {
+      return null;
+    }
+
+    // Fetch detailed commit data for each commit (limit to first 10 to avoid rate limits)
+    const commitDetails = await Promise.all(
+      commits.slice(0, 10).map(async (commit: any) => {
+        try {
+          const commitResult = await executeGitHubCommand(
+            'api',
+            [`repos/${owner}/${repo}/commits/${commit.oid}`],
+            { cache: false }
+          );
+
+          if (!commitResult.isError) {
+            const commitData = JSON.parse(
+              commitResult.content[0].text as string
+            );
+            const result = commitData.result;
+
+            return {
+              sha: commit.oid,
+              message: commit.messageHeadline,
+              author:
+                commit.authors?.[0]?.login ||
+                commit.authors?.[0]?.name ||
+                'Unknown',
+              url: `https://github.com/${owner}/${repo}/commit/${commit.oid}`,
+              authoredDate: commit.authoredDate,
+              diff: result.files
+                ? {
+                    changed_files: result.files.length,
+                    additions: result.stats?.additions || 0,
+                    deletions: result.stats?.deletions || 0,
+                    total_changes: result.stats?.total || 0,
+                    files: result.files.slice(0, 5).map((f: any) => ({
+                      filename: f.filename,
+                      status: f.status,
+                      additions: f.additions,
+                      deletions: f.deletions,
+                      changes: f.changes,
+                      patch: f.patch
+                        ? f.patch.substring(0, 1000) +
+                          (f.patch.length > 1000 ? '...' : '')
+                        : undefined,
+                    })),
+                  }
+                : undefined,
+            };
+          }
+        } catch (e) {
+          // If we can't fetch commit details, return basic info
+          return {
+            sha: commit.oid,
+            message: commit.messageHeadline,
+            author:
+              commit.authors?.[0]?.login ||
+              commit.authors?.[0]?.name ||
+              'Unknown',
+            url: `https://github.com/${owner}/${repo}/commit/${commit.oid}`,
+            authoredDate: commit.authoredDate,
+          };
+        }
+      })
+    );
+
+    return {
+      total_count: commits.length,
+      commits: commitDetails.filter(Boolean),
+    };
+  } catch (error) {
+    return null;
+  }
 }
