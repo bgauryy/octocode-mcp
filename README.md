@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/bgauryy-octocode-mcp-badge.png)](https://mseep.ai/app/bgauryy-octocode-mcp)
+
 # Octocode MCP
 
 **The Perfect AI Code Assistant - Advanced Search & Discovery Across GitHub & NPM**
