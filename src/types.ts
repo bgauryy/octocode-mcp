@@ -206,6 +206,30 @@ export interface GitHubCommitDiff {
   files: GitHubDiffFile[];
 }
 
+export interface GitHubDiffFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+export interface GitHubPullRequestDiff {
+  changed_files: number;
+  additions: number;
+  deletions: number;
+  files: GitHubDiffFile[];
+}
+
+export interface GitHubCommitDiff {
+  changed_files: number;
+  additions: number;
+  deletions: number;
+  total_changes: number;
+  files: GitHubDiffFile[];
+}
+
 export interface GitHubPullRequestItem {
   number: number;
   title: string;
