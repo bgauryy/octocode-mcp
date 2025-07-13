@@ -1,0 +1,73 @@
+# Source
+src/
+tests/
+_scripts/
+_docs/
+
+# Build artifacts
+*.dxt
+coverage/
+.nyc_output/
+dist/**/*.d.ts
+dist/**/*.d.ts.map
+dist/tests/
+
+# Large assets
+assets/langchainTutorial.gif
+assets/reactVSVueJS.gif
+assets/reactZustand.gif
+
+# Development configs
+.eslintrc*
+.prettier*
+.editorconfig
+tsconfig.json
+rollup.config.js
+vitest.config.ts
+.nvmrc
+.yarnrc.yml
+
+# Documentation
+docs/
+CHANGELOG.md
+README.md
+
+# Git and CI
+.git/
+.github/
+.gitignore
+.gitlab*
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+*.swo
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temp files
+*.tmp
+*.temp
+.cache/
+
+# Source maps
+*.map
+
+# Misc
+.DS_Store
+*.log
+.env*
+.claude/
+.yarn/
+
+# Keep dist and necessary files
+!dist/
+!manifest.json
+!assets/logo.png
+!LICENSE.md 
