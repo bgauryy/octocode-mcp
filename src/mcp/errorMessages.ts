@@ -158,7 +158,7 @@ export const SUGGESTIONS = {
 • Try with dashes instead of underscores
 • Try without dashes
 • Try scoped package format
-• Use npm_package_search for discovery`,
+• Use package_search tool for discovery`,
 } as const;
 
 export const VALIDATION_MESSAGES = {

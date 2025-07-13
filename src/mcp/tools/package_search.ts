@@ -11,24 +11,36 @@ import {
 } from '../errorMessages';
 import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
+const execAsync = promisify(exec);
 
-const DESCRIPTION = `Search NPM packages using 'npm search' command. Discover packages by functionality keywords and explore alternatives.
+export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'packageSearch';
 
-**WHEN TO USE**: Use when users ask questions about npm packages or need to discover packages - provides package discovery and ecosystem insights.
+const DESCRIPTION = `Search for packages in several languages.
+Supported: NPM and Python (PyPI) ecosystems. 
+Use it to discover packages by functionality keywords and explore alternatives.
+
+**WHEN TO USE**: Use when users ask questions about npm/python packages or need to discover packages - provides package discovery and ecosystem insights.
+This tool provides more data for research and optimize research from user or research context.
+Example: when a content has import statements, you can use this tool to search for the packages (npm or python).
 
 **KEY INSIGHTS**:
-- Another code search mechanism for npm packages (along github repository search)
-- Repo discovery by npm packages search
+- Use npmPackageName for NPM packages search
+- Use npmPackagesNames for NPM packages search with multiple queries
+- Use pythonPackageName for Python packages search
+- In case of multiple python queries, call the tool multiple times with the relevant pythonPackageName
+- Automatically detects context to suggest appropriate package ecosystem
+- Repo discovery by packages search
 - Package descriptions, keywords, and version information
-- Can be used undesrsant npm depndencies better
+- Can be used to understand dependencies better
 
 **SEARCH STRATEGY**:
 - Use broad functional terms for best discovery
 - Single keywords work better than complex phrases
 - Multiple searches reveal ecosystem alternatives
-- Combine with npm_view_package for detailed analysis of discovered packages`;
+- Combine with npm_view_package for detailed analysis of discovered NPM packages`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
@@ -39,10 +51,22 @@ export function registerNpmSearchTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        queries: z
+        npmPackagesNames: z
           .union([z.string(), z.array(z.string())])
           .describe(
-            'Search terms for NPM packages (e.g., "react hooks", ["typescript", "eslint"], "data visualization"). Use functionality keywords rather than exact package names for best results.'
+            'Search terms for NPM packages only - supports multiple queries (e.g., "react hooks", ["typescript", "eslint"], "data visualization"). Note: Python search only supports single package name via pythonPackageName parameter.'
+          ),
+        npmPackageName: z
+          .string()
+          .optional()
+          .describe(
+            'NPM package name to search for. Use this for searching NPM packages.'
+          ),
+        pythonPackageName: z
+          .string()
+          .optional()
+          .describe(
+            'Python package name to search for. Use this for searching Python packages on PyPI.'
           ),
         searchLimit: z
           .number()
@@ -62,45 +86,68 @@ export function registerNpmSearchTool(server: McpServer) {
       },
     },
     async (args: {
-      queries: string | string[];
+      npmPackagesNames: string | string[];
+      npmPackageName?: string;
+      pythonPackageName?: string;
       searchLimit?: number;
     }): Promise<CallToolResult> => {
       try {
-        const queries = Array.isArray(args.queries)
-          ? args.queries
-          : [args.queries];
+        const queries = Array.isArray(args.npmPackagesNames)
+          ? args.npmPackagesNames.filter(q => q && q.trim())
+          : args.npmPackagesNames
+            ? [args.npmPackagesNames]
+            : [];
         const searchLimit = args.searchLimit || 20;
         const allPackages: NpmPackage[] = [];
 
-        // Search for each query term
-        for (const query of queries) {
+        // Determine which type of search to perform
+        if (args.pythonPackageName) {
+          // Search for Python package
           try {
-            const result = await executeNpmCommand(
-              'search',
-              [query, `--searchlimit=${searchLimit}`, '--json'],
-              { cache: true }
+            const pythonPackage = await searchPythonPackage(
+              args.pythonPackageName
             );
-
-            if (!result.isError && result.content?.[0]?.text) {
-              const packages = parseNpmSearchOutput(
-                result.content[0].text as string
-              );
-              allPackages.push(...packages);
-            } else if (result.isError) {
-              // Individual query failures are handled silently, continue with others
+            if (pythonPackage) {
+              allPackages.push(pythonPackage);
             }
-          } catch (queryError) {
-            // Continue with other queries even if one fails
+          } catch (error) {
+            // Handle Python search error below
+          }
+        } else {
+          // Default to NPM search
+          const searchQueries = args.npmPackageName
+            ? [args.npmPackageName]
+            : queries;
+
+          // Search for each query term
+          for (const query of searchQueries) {
+            try {
+              const result = await executeNpmCommand(
+                'search',
+                [query, `--searchlimit=${searchLimit}`, '--json'],
+                { cache: true }
+              );
+
+              if (!result.isError && result.content?.[0]?.text) {
+                const packages = parseNpmSearchOutput(
+                  result.content[0].text as string
+                );
+                allPackages.push(...packages);
+              } else if (result.isError) {
+                // Individual query failures are handled silently, continue with others
+              }
+            } catch (queryError) {
+              // Continue with other queries even if one fails
+            }
           }
         }
 
         const deduplicatedPackages = deduplicatePackages(allPackages);
 
         if (deduplicatedPackages.length > 0) {
-          const { nextSteps } = getToolSuggestions(
-            TOOL_NAMES.NPM_PACKAGE_SEARCH,
-            { hasResults: true }
-          );
+          const { nextSteps } = getToolSuggestions(TOOL_NAMES.package_search, {
+            hasResults: true,
+          });
 
           const hints = [];
           if (nextSteps.length > 0) {
@@ -120,15 +167,21 @@ export function registerNpmSearchTool(server: McpServer) {
         }
 
         // Smart fallback suggestions based on query patterns
-        const hasSpecificTerms = queries.some(
-          q => q.includes('-') || q.includes('@') || q.length > 15
-        );
+        const hasSpecificTerms =
+          queries.length > 0 &&
+          queries.some(
+            q => q && (q.includes('-') || q.includes('@') || q.length > 15)
+          );
 
-        const hasFrameworkTerms = queries.some(q =>
-          ['react', 'vue', 'angular', 'express', 'fastify'].some(fw =>
-            q.toLowerCase().includes(fw)
-          )
-        );
+        const hasFrameworkTerms =
+          queries.length > 0 &&
+          queries.some(
+            q =>
+              q &&
+              ['react', 'vue', 'angular', 'express', 'fastify'].some(fw =>
+                q.toLowerCase().includes(fw)
+              )
+          );
 
         let fallbackSuggestions = [
           '• Try broader functional terms: "testing" instead of "jest-unit-test"',
@@ -158,14 +211,21 @@ export function registerNpmSearchTool(server: McpServer) {
           '• Check npm registry status: https://status.npmjs.org'
         );
 
-        const { fallback } = getToolSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH, {
+        const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
           errorType: 'no_results',
         });
 
         const toolSuggestions = createToolSuggestion(
-          TOOL_NAMES.NPM_PACKAGE_SEARCH,
+          TOOL_NAMES.package_search,
           fallback
         );
+
+        // Add package type suggestion
+        const packageTypeSuggestion = args.pythonPackageName
+          ? '• Try searching with npmPackageName if this is an NPM package'
+          : '• Try searching with pythonPackageName if this is a Python package';
+
+        fallbackSuggestions.push(packageTypeSuggestion);
 
         return createResult({
           error: getErrorWithSuggestion({
@@ -182,10 +242,9 @@ export function registerNpmSearchTool(server: McpServer) {
           errorMsg.includes('timeout') ||
           errorMsg.includes('ENOTFOUND')
         ) {
-          const { fallback } = getToolSuggestions(
-            TOOL_NAMES.NPM_PACKAGE_SEARCH,
-            { hasError: true }
-          );
+          const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
+            hasError: true,
+          });
 
           return createResult({
             error: getErrorWithSuggestion({
@@ -194,7 +253,7 @@ export function registerNpmSearchTool(server: McpServer) {
                 '• Check internet connection and npm registry status',
                 '• Try fewer search terms to reduce load',
                 '• Retry in a few moments',
-                createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+                createToolSuggestion(TOOL_NAMES.package_search, fallback),
               ],
             }),
           });
@@ -205,10 +264,9 @@ export function registerNpmSearchTool(server: McpServer) {
           errorMsg.includes('command not found') ||
           errorMsg.includes('npm')
         ) {
-          const { fallback } = getToolSuggestions(
-            TOOL_NAMES.NPM_PACKAGE_SEARCH,
-            { hasError: true }
-          );
+          const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
+            hasError: true,
+          });
 
           return createResult({
             error: getErrorWithSuggestion({
@@ -217,7 +275,7 @@ export function registerNpmSearchTool(server: McpServer) {
                 '• Verify NPM installation: npm --version',
                 '• Update NPM: npm install -g npm@latest',
                 '• Check PATH environment variable',
-                createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+                createToolSuggestion(TOOL_NAMES.package_search, fallback),
               ],
             }),
           });
@@ -229,10 +287,9 @@ export function registerNpmSearchTool(server: McpServer) {
           errorMsg.includes('403') ||
           errorMsg.includes('401')
         ) {
-          const { fallback } = getToolSuggestions(
-            TOOL_NAMES.NPM_PACKAGE_SEARCH,
-            { errorType: 'access_denied' }
-          );
+          const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
+            errorType: 'access_denied',
+          });
 
           return createResult({
             error: getErrorWithSuggestion({
@@ -241,13 +298,13 @@ export function registerNpmSearchTool(server: McpServer) {
                 '• Check npm login status: npm whoami',
                 '• Use public registry search without auth',
                 '• Verify npm registry configuration',
-                createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+                createToolSuggestion(TOOL_NAMES.package_search, fallback),
               ],
             }),
           });
         }
 
-        const { fallback } = getToolSuggestions(TOOL_NAMES.NPM_PACKAGE_SEARCH, {
+        const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
           hasError: true,
         });
 
@@ -260,7 +317,7 @@ export function registerNpmSearchTool(server: McpServer) {
               'Fallback strategies:',
               '• Check npm status and retry',
               '• Use broader search terms',
-              createToolSuggestion(TOOL_NAMES.NPM_PACKAGE_SEARCH, fallback),
+              createToolSuggestion(TOOL_NAMES.package_search, fallback),
             ],
           }),
         });
@@ -342,5 +399,41 @@ function parseNpmSearchOutput(output: string): NpmPackage[] {
     return packages.map(normalizePackage);
   } catch (error) {
     return [];
+  }
+}
+
+async function searchPythonPackage(
+  packageName: string
+): Promise<NpmPackage | null> {
+  try {
+    // Fetch package info from PyPI
+    const { stdout } = await execAsync(
+      `curl -s https://pypi.org/pypi/${packageName}/json`
+    );
+
+    const packageInfo = JSON.parse(stdout);
+    const info = packageInfo.info;
+
+    // Extract GitHub URL from project_urls
+    let githubUrl: string | null = null;
+    if (info.project_urls) {
+      for (const [, url] of Object.entries(info.project_urls)) {
+        if (typeof url === 'string' && url.includes('github')) {
+          githubUrl = url;
+          break;
+        }
+      }
+    }
+
+    // Return package in NpmPackage format
+    return {
+      name: info.name || packageName,
+      version: info.version || 'latest',
+      description: info.summary || info.description || null,
+      keywords: info.keywords ? info.keywords.split(' ') : [],
+      repository: githubUrl,
+    };
+  } catch (error) {
+    return null;
   }
 }
