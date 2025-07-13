@@ -5,6 +5,28 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.20] - 2025-07-13 - NPX Installation Fix & Python Package Search
+
+### Fixed
+- **NPX Installation Error**: Added shebang line (`#!/usr/bin/env node`) to built JavaScript file to fix "syntax error near unexpected token" when installing via npx
+  - Root cause: Minified JavaScript was being executed as shell script
+  - Solution: Added `banner: '#!/usr/bin/env node'` to Rollup output configuration
+  - Impact: Users can now properly install and run octocode-mcp via `npx octocode-mcp`
+
+### Added
+- **Python Package Search**: Extended package search functionality to support Python packages via PyPI
+  - New parameters: `pythonPackageName` for searching Python packages specifically
+  - Renamed `packageName` to `npmPackageName` for clarity
+  - Automatically extracts GitHub repository URLs from PyPI package metadata
+  - Suggests alternative package type (npm/python) when searches fail
+  - Seamless integration with existing package search workflow
+
+### Enhanced
+- **Package Search Tool**: Now supports both NPM and Python ecosystems
+  - Unified interface for searching packages across different ecosystems
+  - Intelligent error messages suggesting alternative package types
+  - Updated tool description to reflect dual ecosystem support
+
 ## [2.3.14] - 2025-07-08 - Repository Search Improvements
 
 ### Improved

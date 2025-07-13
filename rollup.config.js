@@ -13,7 +13,8 @@ export default {
     dir: 'dist',
     format: 'es',
     sourcemap: false, // Disable source maps for production
-    minifyInternalExports: true
+    minifyInternalExports: true,
+    banner: '#!/usr/bin/env node'
   },
   external: [
     // List external dependencies that shouldn't be bundled
