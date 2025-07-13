@@ -51,6 +51,7 @@
     "@babel/preset-react": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
     "@modelcontextprotocol/sdk": "^1.13.2",
+    "axios": "^1.10.0",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
     "terser": "^5.43.1",
