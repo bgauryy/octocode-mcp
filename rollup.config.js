@@ -1,51 +1,44 @@
 import typescript from '@rollup/plugin-typescript';
-import resolve from '@rollup/plugin-node-resolve';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
+import { terser } from 'rollup-plugin-terser';
+import { readFileSync } from 'fs';
+
+const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 
 export default {
   input: 'src/index.ts',
   output: {
-    file: 'dist/index.js',
+    dir: 'dist',
     format: 'es',
-    banner: '#!/usr/bin/env node'
+    sourcemap: false, // Disable source maps for production
+    minifyInternalExports: true
   },
   external: [
-    // Mark Node.js built-ins as external
-    'fs',
-    'path',
-    'util',
-    'events',
-    'stream',
-    'url',
-    'buffer',
-    'child_process',
-    'crypto',
-    '@modelcontextprotocol/sdk/server/mcp.js',
-    '@modelcontextprotocol/sdk/server/stdio.js',
-    'zod',
-    'node-cache',
-    'node-fetch'
-    // NOTE: terser and @babel/core are NOT in external - they will be bundled
+    // List external dependencies that shouldn't be bundled
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.peerDependencies || {})
   ],
   plugins: [
-    resolve({
-      preferBuiltins: true,
-      exportConditions: ['node'],
-      extensions: ['.ts', '.js', '.json'],
-      // Include these packages in the bundle
-      include: ['terser', '@babel/core']
+    nodeResolve({
+      preferBuiltins: true
     }),
-    commonjs({
-      // Handle CommonJS modules for terser and babel
-      include: ['node_modules/**']
-    }),
-    json(),
+    commonjs(),
     typescript({
       tsconfig: './tsconfig.json',
-      declaration: false,
-      declarationMap: false,
-      sourceMap: false
+      sourceMap: false // Disable source maps in TypeScript compilation
+    }),
+    json(),
+    terser({ // Add aggressive minification
+      compress: {
+        passes: 2,
+        drop_console: true,
+        drop_debugger: true
+      },
+      format: {
+        comments: false
+      }
     })
   ]
 }; 
