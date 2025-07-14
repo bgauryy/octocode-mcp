@@ -9,6 +9,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContent } from '../../utils/minifier';
+import { ContentSanitizer } from '../../security/contentSanitizer';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
@@ -87,7 +88,17 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
     },
     async (args): Promise<CallToolResult> => {
       try {
-        const result = await fetchGitHubFileContent(args);
+        // Validate input parameters for security
+        const validation = ContentSanitizer.validateInputParameters(args);
+        if (!validation.isValid) {
+          return createResult({
+            error: `Security validation failed: ${validation.warnings.join(', ')}`,
+          });
+        }
+
+        const result = await fetchGitHubFileContent(
+          validation.sanitizedParams as GithubFetchRequestParams
+        );
         return result;
       } catch (error) {
         return createResult({
@@ -246,6 +257,29 @@ async function processFileContent(
     });
   }
 
+  // Sanitize the decoded content for security
+  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
+  decodedContent = sanitizationResult.content;
+
+  // Add security warnings to the response if any issues were found
+  const securityWarnings: string[] = [];
+  if (sanitizationResult.hasSecrets) {
+    securityWarnings.push(
+      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+    );
+  }
+  if (sanitizationResult.hasPromptInjection) {
+    securityWarnings.push('Potential prompt injection detected and sanitized');
+  }
+  if (sanitizationResult.isMalicious) {
+    securityWarnings.push(
+      'Potentially malicious content detected and sanitized'
+    );
+  }
+  if (sanitizationResult.warnings.length > 0) {
+    securityWarnings.push(...sanitizationResult.warnings);
+  }
+
   // Handle partial file access
   let finalContent = decodedContent;
   let actualStartLine: number | undefined;
@@ -364,6 +398,10 @@ async function processFileContent(
         minified: !minificationFailed,
         minificationFailed: minificationFailed,
         minificationType: minificationType,
+      }),
+      // Security metadata
+      ...(securityWarnings.length > 0 && {
+        securityWarnings,
       }),
     } as GitHubFileContentResponse,
   });

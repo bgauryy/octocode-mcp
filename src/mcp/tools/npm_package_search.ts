@@ -11,6 +11,7 @@ import {
 } from '../errorMessages';
 import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
+import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'npmPackageSearch';
 
@@ -65,11 +66,18 @@ export function registerNpmSearchTool(server: McpServer) {
       queries: string | string[];
       searchLimit?: number;
     }): Promise<CallToolResult> => {
+      // Validate input parameters for security
+      const securityCheck = validateSearchToolInput(args);
+      if (!securityCheck.isValid) {
+        return securityCheck.error!;
+      }
+      const sanitizedArgs = securityCheck.sanitizedArgs;
+
       try {
-        const queries = Array.isArray(args.queries)
-          ? args.queries
-          : [args.queries];
-        const searchLimit = args.searchLimit || 20;
+        const queries = Array.isArray(sanitizedArgs.queries)
+          ? sanitizedArgs.queries
+          : [sanitizedArgs.queries];
+        const searchLimit = sanitizedArgs.searchLimit || 20;
         const allPackages: NpmPackage[] = [];
 
         // Search for each query term

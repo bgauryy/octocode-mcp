@@ -15,6 +15,7 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
+import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
@@ -223,20 +224,27 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       },
     },
     async (args): Promise<CallToolResult> => {
-      if (!args.query?.trim()) {
+      // Validate input parameters for security
+      const securityCheck = validateSearchToolInput(args);
+      if (!securityCheck.isValid) {
+        return securityCheck.error!;
+      }
+      const sanitizedArgs = securityCheck.sanitizedArgs;
+
+      if (!sanitizedArgs.query?.trim()) {
         return createResult({
           error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
         });
       }
 
-      if (args.query.length > 256) {
+      if (sanitizedArgs.query.length > 256) {
         return createResult({
           error: ERROR_MESSAGES.QUERY_TOO_LONG,
         });
       }
 
       try {
-        return await searchGitHubPullRequests(args);
+        return await searchGitHubPullRequests(sanitizedArgs);
       } catch (error) {
         return createResult({
           error: createSearchFailedError('pull_requests'),
