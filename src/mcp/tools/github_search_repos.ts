@@ -9,6 +9,7 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
+import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
@@ -288,9 +289,17 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       },
     },
     async (args): Promise<CallToolResult> => {
+      // Validate input parameters for security
+      const securityCheck = validateSearchToolInput(args);
+      if (!securityCheck.isValid) {
+        return securityCheck.error!;
+      }
+      const sanitizedArgs = securityCheck.sanitizedArgs;
+
       // Validate that exactly one search parameter is provided (not both)
-      const hasExactQuery = !!args.exactQuery;
-      const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
+      const hasExactQuery = !!sanitizedArgs.exactQuery;
+      const hasQueryTerms =
+        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
 
       if (hasExactQuery && hasQueryTerms) {
         return createResult({
@@ -301,11 +310,11 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
       try {
         // Extract owner/repo from query if present
-        const queryInfo = args.exactQuery
-          ? extractOwnerRepoFromQuery(args.exactQuery)
-          : args.queryTerms
+        const queryInfo = sanitizedArgs.exactQuery
+          ? extractOwnerRepoFromQuery(sanitizedArgs.exactQuery)
+          : sanitizedArgs.queryTerms
             ? {
-                cleanedQuery: args.queryTerms.join(' '),
+                cleanedQuery: sanitizedArgs.queryTerms.join(' '),
                 extractedOwner: undefined,
                 extractedRepo: undefined,
               }
@@ -316,7 +325,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
               };
 
         // Merge extracted owner with explicit owner parameter
-        let finalOwner = args.owner;
+        let finalOwner = sanitizedArgs.owner;
         if (queryInfo.extractedOwner && !finalOwner) {
           finalOwner = queryInfo.extractedOwner;
         }
@@ -324,8 +333,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         // Update parameters with extracted information
         const enhancedArgs: GitHubReposSearchParams = {
           ...args,
-          exactQuery: args.exactQuery ? queryInfo.cleanedQuery : undefined,
-          queryTerms: args.queryTerms,
+          exactQuery: sanitizedArgs.exactQuery
+            ? queryInfo.cleanedQuery
+            : undefined,
+          queryTerms: sanitizedArgs.queryTerms,
           owner: finalOwner,
         };
 

@@ -20,6 +20,7 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
+import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
@@ -190,27 +191,36 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
       },
     },
     async (args: GitHubCommitSearchParams): Promise<CallToolResult> => {
+      // Validate input parameters for security
+      const securityCheck = validateSearchToolInput(args);
+      if (!securityCheck.isValid) {
+        return securityCheck.error!;
+      }
+      const sanitizedArgs = securityCheck.sanitizedArgs;
+
       // Validate search parameters
-      const hasExactQuery = !!args.exactQuery;
-      const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
-      const hasOrTerms = args.orTerms && args.orTerms.length > 0;
+      const hasExactQuery = !!sanitizedArgs.exactQuery;
+      const hasQueryTerms =
+        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
+      const hasOrTerms =
+        sanitizedArgs.orTerms && sanitizedArgs.orTerms.length > 0;
 
       // Check if any filters are provided
       const hasFilters = !!(
-        args.author ||
-        args.committer ||
-        args['author-name'] ||
-        args['committer-name'] ||
-        args['author-email'] ||
-        args['committer-email'] ||
-        args.hash ||
-        args.parent ||
-        args.tree ||
-        args['author-date'] ||
-        args['committer-date'] ||
-        args.merge !== undefined ||
-        args.visibility ||
-        (args.owner && args.repo)
+        sanitizedArgs.author ||
+        sanitizedArgs.committer ||
+        sanitizedArgs['author-name'] ||
+        sanitizedArgs['committer-name'] ||
+        sanitizedArgs['author-email'] ||
+        sanitizedArgs['committer-email'] ||
+        sanitizedArgs.hash ||
+        sanitizedArgs.parent ||
+        sanitizedArgs.tree ||
+        sanitizedArgs['author-date'] ||
+        sanitizedArgs['committer-date'] ||
+        sanitizedArgs.merge !== undefined ||
+        sanitizedArgs.visibility ||
+        (sanitizedArgs.owner && sanitizedArgs.repo)
       );
 
       // Allow search with just filters (no query required)
@@ -229,7 +239,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
       }
 
       try {
-        const result = await searchGitHubCommits(args);
+        const result = await searchGitHubCommits(sanitizedArgs);
 
         if (result.isError) {
           return result;
@@ -249,18 +259,19 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
 
           // Check for active filters
           const activeFilters = [];
-          if (args.owner && args.repo) activeFilters.push('repo');
-          if (args.author) activeFilters.push('author');
-          if (args['author-email']) activeFilters.push('author-email');
-          if (args.hash) activeFilters.push('hash');
-          if (args['author-date']) activeFilters.push('date');
-          if (args.visibility) activeFilters.push('visibility');
+          if (sanitizedArgs.owner && sanitizedArgs.repo)
+            activeFilters.push('repo');
+          if (sanitizedArgs.author) activeFilters.push('author');
+          if (sanitizedArgs['author-email']) activeFilters.push('author-email');
+          if (sanitizedArgs.hash) activeFilters.push('hash');
+          if (sanitizedArgs['author-date']) activeFilters.push('date');
+          if (sanitizedArgs.visibility) activeFilters.push('visibility');
 
           hasFilters = activeFilters.length > 0;
 
           // Step 1: Suggest using queryTerms for broader search if using exactQuery
-          if (args.exactQuery) {
-            const words = args.exactQuery.trim().split(' ');
+          if (sanitizedArgs.exactQuery) {
+            const words = sanitizedArgs.exactQuery.trim().split(' ');
             if (words.length > 1) {
               simplificationSteps.push(
                 `Try queryTerms instead: ["${words[0]}", "${words[1]}"] for broader results`
@@ -269,10 +280,10 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           }
 
           // Step 2: Suggest separate searches for OR operations
-          if (args.queryTerms && args.queryTerms.length > 2) {
-            const simplified = args.queryTerms.slice(0, 2);
+          if (sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 2) {
+            const simplified = sanitizedArgs.queryTerms.slice(0, 2);
             simplificationSteps.push(
-              `Try fewer terms: ["${simplified.join('", "')}"] instead of ${args.queryTerms.length} terms`
+              `Try fewer terms: ["${simplified.join('", "')}"] instead of ${sanitizedArgs.queryTerms.length} terms`
             );
           }
 
@@ -290,14 +301,21 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           }
 
           // Step 4: Alternative approaches for OR operations
-          if (!args.exactQuery && !args.queryTerms && hasFilters) {
+          if (
+            !sanitizedArgs.exactQuery &&
+            !sanitizedArgs.queryTerms &&
+            hasFilters
+          ) {
             simplificationSteps.push(
               'Add search terms: use queryTerms: ["term1", "term2"] with your filters'
             );
           }
 
           // Step 5: Suggest using separate searches for OR operations
-          if (args.queryTerms && args.queryTerms.length === 1) {
+          if (
+            sanitizedArgs.queryTerms &&
+            sanitizedArgs.queryTerms.length === 1
+          ) {
             simplificationSteps.push(
               'For OR operations, run separate searches for each term instead of complex queries'
             );
