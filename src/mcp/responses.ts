@@ -1,4 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { maskSensitiveData } from '../sanitizer/mask';
 
 export function createResult(options: {
   data?: unknown;
@@ -12,17 +13,15 @@ export function createResult(options: {
         ? error
         : (error as Error).message || 'Unknown error';
 
-    const errorResponse = errorMessage;
-
     return {
-      content: [{ type: 'text', text: errorResponse }],
+      content: [{ type: 'text', text: wrapResponse(errorMessage) }],
       isError: true,
     };
   }
 
   try {
     return {
-      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+      content: [{ type: 'text', text: wrapResponse(data) }],
       isError: false,
     };
   } catch (jsonError) {
@@ -30,12 +29,28 @@ export function createResult(options: {
       content: [
         {
           type: 'text',
-          text: `JSON serialization failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`,
+          text: wrapResponse(
+            `JSON serialization failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`
+          ),
         },
       ],
       isError: true,
     };
   }
+}
+
+/**
+ * Wraps tool data with a system prompt and escapes/sanitizes untrusted data
+ */
+function wrapResponse(data: unknown): string {
+  let text: string;
+  try {
+    text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  } catch (e) {
+    text = '[Unserializable data]';
+  }
+  // Sanitize/escape untrusted data
+  return maskSensitiveData(text);
 }
 
 /**
