@@ -222,7 +222,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
           }
 
           // Add discovery alternatives
-          suggestions.push('• Use npm_package_search for discovery');
+          suggestions.push('• Use package_search for discovery');
           suggestions.push(
             '• Use github_search_repos to find source repository'
           );
@@ -235,7 +235,7 @@ Try these alternatives:
 ${suggestions.join('\n')}
 
 Discovery workflow:
-1. Use npm_package_search with functional terms
+1. Use package_search with functional terms
 2. Use github_search_repos for related projects
 3. Verify exact package name on npmjs.com`,
           });
@@ -251,7 +251,7 @@ Discovery workflow:
             error: `NPM registry connection failed. Alternative strategies:
 • Check internet connection and npm registry status
 • Use github_search_repos to find package repository
-• Try npm_package_search for broader discovery
+• Try package_search for broader discovery
 • Visit https://npmjs.com/${args.packageName} directly
 • Retry in a few moments`,
           });
@@ -292,7 +292,7 @@ Discovery workflow:
           error: `Failed to fetch package "${args.packageName}": ${errorMessage}
 
 Fallback strategies:
-• Use npm_package_search for similar packages
+• Use package_search for similar packages
 • Use github_search_repos with package name as query
 • Check package on web: https://npmjs.com/${args.packageName}
 • Verify npm status: https://status.npmjs.org

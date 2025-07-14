@@ -30,7 +30,7 @@ import {
 import {
   NPM_PACKAGE_SEARCH_TOOL_NAME,
   registerNpmSearchTool,
-} from './mcp/tools/npm_package_search.js';
+} from './mcp/tools/package_search.js';
 import {
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
   registerViewRepositoryStructureTool,
