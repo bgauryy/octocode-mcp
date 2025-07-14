@@ -5,6 +5,17 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.23] - 2025-07-14 - Package Search Algorithm Improvements
+
+### Enhanced
+- **Package Search Algorithm**: Improved packages search algorithm for better accuracy and relevance
+  - Enhanced search logic for more precise package discovery
+  - Optimized ranking and scoring mechanisms
+  - Better handling of package metadata and descriptions
+  - Improved matching algorithms for package names and keywords
+
+---
+
 ## [2.3.22] - 2025-07-14 - Comprehensive Security Layer Implementation
 
 ### 🔐 MAJOR SECURITY ENHANCEMENT: Multi-Layer Defense System

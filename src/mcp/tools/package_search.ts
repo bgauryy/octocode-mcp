@@ -33,7 +33,7 @@ Example: when content has import statements, use this tool to search for the pac
 - Use broad functional terms for best discovery
 - Single keywords work better than complex phrases
 - Multiple searches reveal ecosystem alternatives
-- Combine with npm_view_package for detailed analysis of discovered NPM packages`;
+- Cross-Ecosystem: Search both NPM and Python to compare alternatives and find best solutions`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
