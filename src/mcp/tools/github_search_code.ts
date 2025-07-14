@@ -19,6 +19,7 @@ import {
   getErrorWithSuggestion,
   SUGGESTIONS,
 } from '../errorMessages';
+import { ContentSanitizer } from '../../security/contentSanitizer';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
@@ -113,9 +114,22 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       },
     },
     async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
+      // Validate input parameters for security
+      const validation = ContentSanitizer.validateInputParameters(args);
+      if (!validation.isValid) {
+        return createResult({
+          error: `Security validation failed: ${validation.warnings.join(', ')}`,
+        });
+      }
+
+      // Use sanitized parameters for the rest of the processing
+      const sanitizedArgs =
+        validation.sanitizedParams as GitHubCodeSearchParams;
+
       // Validate that exactly one search parameter is provided (not both)
-      const hasExactQuery = !!args.exactQuery;
-      const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
+      const hasExactQuery = !!sanitizedArgs.exactQuery;
+      const hasQueryTerms =
+        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
 
       if (!hasExactQuery && !hasQueryTerms) {
         return createResult({
@@ -131,7 +145,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       }
 
       try {
-        const result = await searchGitHubCode(args);
+        const result = await searchGitHubCode(sanitizedArgs);
 
         if (result.isError) {
           return result;
@@ -149,7 +163,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           let specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
 
           // If filters were used, suggest removing them first
-          if (args.language || args.owner || args.filename || args.extension) {
+          if (
+            sanitizedArgs.language ||
+            sanitizedArgs.owner ||
+            sanitizedArgs.filename ||
+            sanitizedArgs.extension
+          ) {
             specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
           }
 

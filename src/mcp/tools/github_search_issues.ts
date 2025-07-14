@@ -17,6 +17,7 @@ import {
   createRateLimitError,
   createSearchFailedError,
 } from '../errorMessages';
+import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
@@ -216,20 +217,29 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       },
     },
     async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
-      if (!args.query?.trim()) {
+      // Validate input parameters for security
+      const securityCheck = validateSearchToolInput(args);
+      if (!securityCheck.isValid) {
+        return securityCheck.error!;
+      }
+      const sanitizedArgs = securityCheck.sanitizedArgs;
+
+      if (!sanitizedArgs.query?.trim()) {
         return createResult({
           error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
         });
       }
 
-      if (args.query.length > 256) {
+      if (sanitizedArgs.query.length > 256) {
         return createResult({
           error: ERROR_MESSAGES.QUERY_TOO_LONG,
         });
       }
 
       try {
-        return await searchGitHubIssues(args);
+        return await searchGitHubIssues(
+          sanitizedArgs as GitHubIssuesSearchParams
+        );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : '';
         if (errorMessage.includes('authentication')) {

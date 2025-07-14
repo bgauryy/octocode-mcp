@@ -301,6 +301,8 @@ export interface GitHubFileContentResponse {
   minified?: boolean;
   minificationFailed?: boolean;
   minificationType?: 'javascript' | 'generic' | 'failed' | 'none';
+  // Security metadata
+  securityWarnings?: string[];
 }
 
 export interface NpmPackage {

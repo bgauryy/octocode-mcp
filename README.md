@@ -186,14 +186,27 @@ The generated `octocode-mcp.dxt` file can then be installed in Claude Desktop (j
 ### Local-First Architecture
 - **🏠 100% Local** - Runs entirely on your machine
 - **🚫 Zero Data Collection** - No telemetry or data transmission
-- **🔑 No Token Management** - Uses GitHub CLI authentication
+- **🔑 Safe Token Usage** - Uses GitHub CLI authentication, no personal access tokens needed
+
+### Multi-Layer Security Protection
+- **🛡️ Input Sanitization** - Comprehensive validation of all user inputs with Zod schemas
+- **🔐 Content Sanitization** - Automatic detection and redaction of 1100+ secret patterns
+- **⚡ Prompt Injection Defense** - Advanced pattern detection prevents malicious prompt manipulation
+- **🚨 Malicious Content Detection** - Real-time scanning for suspicious patterns and code
+- **🔒 Output Sanitization** - All responses are filtered and sanitized before delivery
 
 ### Command Execution Security
-- **⚪ Allowlisted Commands Only** - Pre-approved safe commands
-- **🛡️ Argument Sanitization** - Prevents shell injection attacks
-- **✅ Pre-execution Validation** - Every command is validated
+- **⚪ Allowlisted Commands Only** - Pre-approved safe commands (GitHub CLI & NPM only)
+- **🛡️ Argument Sanitization** - Prevents shell injection attacks with proper escaping
+- **✅ Pre-execution Validation** - Every command is validated before execution
 - **🔧 Controlled Environment** - Cross-platform secure shell execution
-- **⏱️ Timeout Protection** - Prevents resource exhaustion
+- **⏱️ Timeout Protection** - Prevents resource exhaustion with configurable timeouts
+
+### Secret & Credential Protection
+- **🔍 Comprehensive Detection** - Detects API keys, tokens, private keys, and credentials
+- **🎭 Smart Masking** - Preserves readability while redacting sensitive information
+- **🏢 Enterprise Ready** - Handles AWS, Google Cloud, Azure, and 100+ service patterns
+- **🔄 Real-time Processing** - Secrets are detected and masked in real-time during content processing
 
 ## Best Practices 💡
 
