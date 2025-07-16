@@ -117,6 +117,8 @@ describe('exec utilities', () => {
         command: 'view',
         args: ['test-package'],
         shell: 'unix',
+        customPath: undefined,
+        executableSource: 'system',
       });
       expect(mockWithCache).toHaveBeenCalled();
       expect(result).toBe(mockResult);
