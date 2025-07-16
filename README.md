@@ -5,7 +5,7 @@
 <div>
   <img src="./assets/logo.png" width="400px">
   
-  [![Version](https://img.shields.io/badge/version-2.3.17-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-2.3.24-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
     [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-☕-orange.svg)](https://buymeacoffee.com/bgauryy)
@@ -35,19 +35,39 @@ Instead of manually browsing repositories, ask questions like:
 - **🔗 Connection Intelligence** - Maps NPM packages to repositories with commit SHA integration and cross-tool data sharing
 - **🌐 Universal Access** - Works seamlessly with public, private, and organization repositories using GitHub CLI permissions
 - **⚡ LLM Optimized** - Advanced content minification, intelligent caching, and parallel processing reduces token usage by 80-90%
+- **🖥️ Cross-Platform Excellence** - Native Windows PowerShell support with automatic path detection and custom installation paths
 
 ## Quick Start 🚀
 
 ### 1. Install Prerequisites
+
+**macOS/Linux:**
 ```bash
 # Install Node.js 18.12+
-brew install node  # macOS
-# or download from https://nodejs.org/
+brew install node
 
 # Install GitHub CLI
-brew install gh    # macOS
-# or see: https://github.com/cli/cli#installation
+brew install gh
 ```
+
+**Windows:**
+```powershell
+# Install using WinGet (recommended)
+winget install Microsoft.PowerShell  # PowerShell 7+ for better security
+winget install GitHub.cli
+winget install OpenJS.NodeJS
+
+# Or using Chocolatey
+choco install powershell-core nodejs github-cli
+
+# Or using Scoop
+scoop install gh nodejs
+```
+
+**Manual Installation:**
+- Node.js: https://nodejs.org/
+- GitHub CLI: https://github.com/cli/cli#installation
+- PowerShell 7+: https://github.com/PowerShell/PowerShell#installation
 
 ### 2. Authenticate
 ```bash
@@ -75,6 +95,29 @@ npm login
 ```
 
 **That's it!** Octocode automatically works with your organization's private repositories.
+
+### 4. Windows PowerShell Support (v2.3.24+)
+
+**🚀 Enhanced Windows Support:**
+- **PowerShell Core Priority**: Automatically uses PowerShell 7+ for better security
+- **Automatic Path Detection**: Detects installations from WinGet, Scoop, Chocolatey, MSI
+- **Custom Path Support**: Use environment variables for custom installations
+- **Cross-Platform Security**: Implements GitHub CLI's security best practices
+
+**Custom Path Configuration:**
+```powershell
+# Set custom GitHub CLI path
+$env:GH_PATH = "C:\custom\path\gh.exe"
+
+# Set custom NPM path  
+$env:NPM_PATH = "C:\custom\path\npm.cmd"
+```
+
+**Supported Installation Methods:**
+- **WinGet**: `%LOCALAPPDATA%\Microsoft\WindowsApps\gh.exe`
+- **Scoop**: `%USERPROFILE%\scoop\apps\gh\current\bin\gh.exe`
+- **Chocolatey**: `%PROGRAMDATA%\chocolatey\bin\gh.exe`
+- **MSI**: `%PROGRAMFILES%\GitHub CLI\gh.exe`
 
 ## DXT Extension 📦
 
@@ -175,6 +218,9 @@ The generated `octocode-mcp.dxt` file can then be installed in Claude Desktop (j
 - **API Status Check** - Central authentication validation with organization discovery and smart error handling
 
 ### 🚀 **Latest Features**
+- **Windows PowerShell Support (v2.3.24)** - Native PowerShell Core integration with automatic path detection
+- **Custom Path Support (v2.3.24)** - Environment variables for custom GitHub CLI and NPM installations
+- **Enhanced Security Architecture (v2.3.24)** - Implements GitHub CLI's security best practices with safe path resolution
 - **Commit SHA Integration** - View files from specific commits and pull requests
 - **Progressive Search Strategies** - AI-guided complexity reduction with contextual suggestions
 - **Cross-Tool Data Sharing** - Seamless integration with shared data formats and relationship mapping
@@ -202,6 +248,14 @@ The generated `octocode-mcp.dxt` file can then be installed in Claude Desktop (j
 - **🔧 Controlled Environment** - Cross-platform secure shell execution
 - **⏱️ Timeout Protection** - Prevents resource exhaustion with configurable timeouts
 
+### Windows Security Enhancements (v2.3.24+)
+- **🔒 PowerShell Core Priority** - Uses PowerShell 7+ for enhanced security over Windows PowerShell
+- **🛡️ Safe Path Resolution** - Prevents Windows security vulnerability where current directory is searched
+- **🔐 Custom Path Validation** - Validates custom executable paths to prevent injection attacks
+- **✅ Absolute Path Requirements** - Custom paths must be absolute for security compliance
+- **🚨 Executable Validation** - Verifies file existence and accessibility before execution
+- **🔧 Platform-Specific Escaping** - Dedicated argument escaping for PowerShell, CMD, and Unix shells
+
 ### Secret & Credential Protection
 - **🔍 Comprehensive Detection** - Detects API keys, tokens, private keys, and credentials
 - **🎭 Smart Masking** - Preserves readability while redacting sensitive information
@@ -224,6 +278,7 @@ The generated `octocode-mcp.dxt` file can then be installed in Claude Desktop (j
 
 ## Troubleshooting 🔧
 
+**Cross-Platform Commands:**
 ```bash
 # Check GitHub CLI status
 gh auth status
@@ -233,15 +288,41 @@ gh auth logout && gh auth login
 
 # Check NPM access
 npm whoami
+```
 
-# Clear NPX cache if needed
+**Windows-Specific (PowerShell):**
+```powershell
+# Check PowerShell version (7+ recommended)
+$PSVersionTable.PSVersion
+
+# Verify custom paths
+Write-Host "GH_PATH: $env:GH_PATH"
+Write-Host "NPM_PATH: $env:NPM_PATH"
+
+# Test executable detection
+where.exe gh
+where.exe npm
+
+# Clear NPX cache
+Remove-Item -Recurse -Force "$env:APPDATA\npm\_npx" -ErrorAction SilentlyContinue
+```
+
+**macOS/Linux:**
+```bash
+# Clear NPX cache
 rm -rf ~/.npm/_npx
+
+# Check installation paths
+which gh
+which npm
 ```
 
 **Common Solutions:**
 - No results? Try broader search terms
 - Private repos not found? Check `gh auth status` for organization membership
-- Windows users? PowerShell is automatically supported
+- Windows PowerShell issues? Install PowerShell 7+ for better security
+- Custom paths not working? Ensure absolute paths and file existence
+- Permission errors? Check executable permissions and PATH configuration
 
 ## Background 💭
 

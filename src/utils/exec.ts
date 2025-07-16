@@ -2,6 +2,8 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { exec as nodeExec } from 'child_process';
 import { promisify } from 'util';
 import { platform } from 'os';
+import { existsSync, statSync } from 'fs';
+import { join, isAbsolute } from 'path';
 import { generateCacheKey, withCache } from './cache';
 
 const safeExecAsync = promisify(nodeExec);
@@ -33,6 +35,9 @@ type ExecOptions = {
   env?: Record<string, string>;
   cache?: boolean;
   windowsShell?: WindowsShell; // Allow shell preference for Windows
+  // Add support for custom executable paths
+  customGhPath?: string;
+  customNpmPath?: string;
 };
 
 type ShellConfig = {
@@ -65,7 +70,23 @@ function isValidGhCommand(command: string): command is GhCommand {
 }
 
 /**
- * Get platform-specific shell configuration
+ * Safely check if a file exists and is executable
+ */
+function isExecutableFile(filePath: string): boolean {
+  try {
+    if (!existsSync(filePath)) {
+      return false;
+    }
+
+    const stats = statSync(filePath);
+    return stats.isFile() && !stats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Enhanced Windows shell configuration with security considerations
  */
 function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
   const isWindows = platform() === 'win32';
@@ -79,17 +100,12 @@ function getShellConfig(preferredWindowsShell?: WindowsShell): ShellConfig {
     };
   }
 
-  // Windows shell selection
-  const usesPowerShell = preferredWindowsShell === 'powershell';
-
-  if (usesPowerShell) {
-    return {
-      shell: 'powershell.exe',
-      shellEnv: 'powershell.exe',
-      type: 'powershell',
-    };
+  // For Windows, prefer PowerShell for better security
+  if (preferredWindowsShell === 'powershell' || !preferredWindowsShell) {
+    return getSecurePowerShellConfig();
   }
 
+  // Fallback to CMD if explicitly requested
   return {
     shell: 'cmd.exe',
     shellEnv: 'cmd.exe',
@@ -122,13 +138,146 @@ function escapeShellArg(
 }
 
 /**
- * Escape arguments for PowerShell
+ * Validate custom executable path to prevent injection attacks
+ */
+function validateCustomPath(path: string): boolean {
+  if (!path) return false;
+
+  // Check for suspicious characters that could indicate injection attempts
+  const suspiciousChars = /[;&|<>$`\\*?()[\]{}^~]/;
+  if (suspiciousChars.test(path)) {
+    return false;
+  }
+
+  // Must be an absolute path for security
+  if (!isAbsolute(path)) {
+    return false;
+  }
+
+  // Must exist and be executable
+  return isExecutableFile(path);
+}
+
+/**
+ * Windows-safe executable resolution (safeexec equivalent)
+ * Avoids the Windows security vulnerability where current directory is searched
+ */
+function safeWindowsLookPath(command: string): string | null {
+  if (platform() !== 'win32') {
+    return null;
+  }
+
+  // Get PATH environment variable
+  const pathEnv = process.env.PATH || '';
+  const pathExt = process.env.PATHEXT || '.com;.exe;.bat;.cmd';
+  const extensions = pathExt.split(';').filter(ext => ext.startsWith('.'));
+
+  // Split PATH and filter out current directory (security fix)
+  const pathDirs = pathEnv.split(';').filter(dir => {
+    const normalized = dir.trim();
+    // Exclude current directory, relative paths, and empty entries
+    return (
+      normalized &&
+      normalized !== '.' &&
+      normalized !== '.\\' &&
+      normalized !== './' &&
+      isAbsolute(normalized)
+    );
+  });
+
+  // Try each directory in PATH
+  for (const dir of pathDirs) {
+    try {
+      // Try with and without extensions
+      const candidates = [
+        join(dir, command),
+        ...extensions.map(ext => join(dir, command + ext)),
+      ];
+
+      for (const candidate of candidates) {
+        if (isExecutableFile(candidate)) {
+          return candidate;
+        }
+      }
+    } catch {
+      // Skip invalid directories
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Securely resolve executable path with custom path support
+ * Based on GitHub CLI's approach with GH_PATH environment variable
+ */
+function resolveExecutablePath(
+  command: 'gh' | 'npm',
+  options: ExecOptions = {}
+): { path: string; source: 'custom' | 'detected' | 'system' } {
+  // Support custom paths like GitHub CLI does
+  if (command === 'gh') {
+    const customPath = options.customGhPath || process.env.GH_PATH;
+    if (customPath) {
+      if (!validateCustomPath(customPath)) {
+        throw new Error(`Invalid or unsafe custom gh path: ${customPath}`);
+      }
+      return { path: customPath, source: 'custom' };
+    }
+
+    // Try to detect installation path on Windows
+    const detectedPath = detectGitHubCLIPath();
+    if (detectedPath) {
+      return { path: detectedPath, source: 'detected' };
+    }
+  }
+
+  if (command === 'npm') {
+    const customPath = options.customNpmPath || process.env.NPM_PATH;
+    if (customPath) {
+      if (!validateCustomPath(customPath)) {
+        throw new Error(`Invalid or unsafe custom npm path: ${customPath}`);
+      }
+      return { path: customPath, source: 'custom' };
+    }
+
+    // Try to detect installation path on Windows
+    const detectedPath = detectNpmPath();
+    if (detectedPath) {
+      return { path: detectedPath, source: 'detected' };
+    }
+  }
+
+  // For Windows, use safe path resolution
+  if (platform() === 'win32') {
+    const safePath = safeWindowsLookPath(command);
+    if (safePath) {
+      return { path: safePath, source: 'system' };
+    }
+  }
+
+  // Fallback to command name for PATH resolution on non-Windows
+  return { path: command, source: 'system' };
+}
+
+/**
+ * Enhanced PowerShell argument escaping based on GitHub CLI's approach
  */
 function escapePowerShellArg(arg: string): string {
-  if (/[\s&<>|;`$@"'()[\]{}]/.test(arg)) {
-    return `'${arg.replace(/'/g, "''")}'`;
+  // Handle empty strings
+  if (arg === '') {
+    return "''";
   }
-  return arg;
+
+  // If no special characters, return as-is
+  if (!/[\s&<>|;`$@"'()[\]{}]/.test(arg)) {
+    return arg;
+  }
+
+  // Use single quotes for most cases (safer than double quotes)
+  // Escape single quotes by doubling them
+  return `'${arg.replace(/'/g, "''")}'`;
 }
 
 /**
@@ -169,31 +318,43 @@ export async function executeNpmCommand(
     );
   }
 
-  // Get shell configuration
-  const shellConfig = getShellConfig(options.windowsShell);
+  try {
+    // Get shell configuration
+    const shellConfig = getShellConfig(options.windowsShell);
 
-  // Build command with escaped arguments
-  const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
+    // Resolve executable path securely
+    const { path: npmExecutable, source } = resolveExecutablePath(
+      'npm',
+      options
+    );
 
-  const fullCommand = `npm ${command} ${escapedArgs.join(' ')}`;
+    // Build command with escaped arguments
+    const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
 
-  const executeNpmCommand = () =>
-    executeCommand(fullCommand, 'npm', options, shellConfig);
+    const fullCommand = `${npmExecutable} ${command} ${escapedArgs.join(' ')}`;
 
-  if (options.cache) {
-    const cacheKey = generateCacheKey('npm-exec', {
-      command,
-      args,
-      shell: shellConfig.type,
-    });
-    return withCache(cacheKey, executeNpmCommand);
+    const executeNpmCommand = () =>
+      executeCommand(fullCommand, 'npm', options, shellConfig);
+
+    if (options.cache) {
+      const cacheKey = generateCacheKey('npm-exec', {
+        command,
+        args,
+        shell: shellConfig.type,
+        customPath: options.customNpmPath,
+        executableSource: source,
+      });
+      return withCache(cacheKey, executeNpmCommand);
+    }
+
+    return executeNpmCommand();
+  } catch (error) {
+    return createErrorResult('Failed to resolve NPM executable', error);
   }
-
-  return executeNpmCommand();
 }
 
 /**
- * Execute GitHub CLI commands safely
+ * Execute GitHub CLI commands safely with enhanced security
  */
 export async function executeGitHubCommand(
   command: GhCommand,
@@ -208,27 +369,36 @@ export async function executeGitHubCommand(
     );
   }
 
-  // Get shell configuration
-  const shellConfig = getShellConfig(options.windowsShell);
+  try {
+    // Get shell configuration
+    const shellConfig = getShellConfig(options.windowsShell);
 
-  // Build command with escaped arguments
-  const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
+    // Resolve executable path securely
+    const { path: ghExecutable, source } = resolveExecutablePath('gh', options);
 
-  const fullCommand = `gh ${command} ${escapedArgs.join(' ')}`;
+    // Build command with escaped arguments
+    const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
 
-  const executeGhCommand = () =>
-    executeCommand(fullCommand, 'github', options, shellConfig);
+    const fullCommand = `${ghExecutable} ${command} ${escapedArgs.join(' ')}`;
 
-  if (options.cache) {
-    const cacheKey = generateCacheKey('gh-exec', {
-      command,
-      args,
-      shell: shellConfig.type,
-    });
-    return withCache(cacheKey, executeGhCommand);
+    const executeGhCommand = () =>
+      executeCommand(fullCommand, 'github', options, shellConfig);
+
+    if (options.cache) {
+      const cacheKey = generateCacheKey('gh-exec', {
+        command,
+        args,
+        shell: shellConfig.type,
+        customPath: options.customGhPath,
+        executableSource: source,
+      });
+      return withCache(cacheKey, executeGhCommand);
+    }
+
+    return executeGhCommand();
+  } catch (error) {
+    return createErrorResult('Failed to resolve GitHub CLI executable', error);
   }
-
-  return executeGhCommand();
 }
 
 /**
@@ -299,4 +469,99 @@ async function executeCommand(
         : 'Failed to execute GitHub CLI command';
     return createErrorResult(errorMessage, error);
   }
+}
+
+/**
+ * Get the most secure PowerShell execution configuration
+ */
+function getSecurePowerShellConfig(): ShellConfig {
+  const isWindows = platform() === 'win32';
+
+  if (!isWindows) {
+    throw new Error('PowerShell configuration only available on Windows');
+  }
+
+  // Try to detect PowerShell Core (pwsh) first, then fallback to Windows PowerShell
+  const pwshPaths = [
+    process.env.PROGRAMFILES + '\\PowerShell\\7\\pwsh.exe',
+    process.env['PROGRAMFILES(X86)'] + '\\PowerShell\\7\\pwsh.exe',
+  ];
+
+  for (const path of pwshPaths) {
+    if (path && isExecutableFile(path)) {
+      return {
+        shell: path,
+        shellEnv: path,
+        type: 'powershell',
+      };
+    }
+  }
+
+  // Fallback to Windows PowerShell
+  return {
+    shell: 'powershell.exe',
+    shellEnv: 'powershell.exe',
+    type: 'powershell',
+  };
+}
+
+/**
+ * Detect GitHub CLI installation path on Windows
+ * Based on common installation methods
+ */
+function detectGitHubCLIPath(): string | null {
+  if (platform() !== 'win32') {
+    return null;
+  }
+
+  // Common installation paths on Windows
+  const commonPaths = [
+    // WinGet installation
+    process.env.LOCALAPPDATA + '\\Microsoft\\WindowsApps\\gh.exe',
+    // Scoop installation
+    process.env.USERPROFILE + '\\scoop\\apps\\gh\\current\\bin\\gh.exe',
+    // Chocolatey installation
+    process.env.PROGRAMDATA + '\\chocolatey\\bin\\gh.exe',
+    // MSI installation
+    process.env.PROGRAMFILES + '\\GitHub CLI\\gh.exe',
+    // Alternative Program Files
+    process.env['PROGRAMFILES(X86)'] + '\\GitHub CLI\\gh.exe',
+  ];
+
+  // Check each path and return the first valid one
+  for (const path of commonPaths) {
+    if (path && isExecutableFile(path)) {
+      return path;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Detect NPM installation path on Windows
+ */
+function detectNpmPath(): string | null {
+  if (platform() !== 'win32') {
+    return null;
+  }
+
+  // Common NPM installation paths on Windows
+  const commonPaths = [
+    // Node.js installation
+    process.env.PROGRAMFILES + '\\nodejs\\npm.cmd',
+    process.env['PROGRAMFILES(X86)'] + '\\nodejs\\npm.cmd',
+    // npm global installation
+    process.env.APPDATA + '\\npm\\npm.cmd',
+    // Chocolatey installation
+    process.env.PROGRAMDATA + '\\chocolatey\\bin\\npm.exe',
+  ];
+
+  for (const path of commonPaths) {
+    if (path && isExecutableFile(path)) {
+      return path;
+    }
+  }
+
+  return null;
 }
