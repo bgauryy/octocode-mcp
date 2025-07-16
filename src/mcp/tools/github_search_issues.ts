@@ -21,7 +21,13 @@ import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.`;
+const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.
+
+⚠️ TOKEN OPTIMIZATION NOTICE:
+- Issue body content is EXTREMELY expensive in tokens (fetched separately for each issue)
+- Each issue body can contain thousands of characters
+- Use specific queries and filters to reduce result count
+- Consider using startLine/endLine for large issue bodies if needed`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
@@ -127,7 +133,9 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         match: z
           .enum(['title', 'body', 'comments'])
           .optional()
-          .describe('Search scope. Default: title and body'),
+          .describe(
+            'Search scope. Default: title and body. WARNING: "body" and "comments" are EXTREMELY expensive in tokens as they include full issue content and all comments.'
+          ),
         mentions: z.string().optional().describe('Issues mentioning this user'),
         milestone: z.string().optional().describe('Milestone name'),
         'no-assignee': z

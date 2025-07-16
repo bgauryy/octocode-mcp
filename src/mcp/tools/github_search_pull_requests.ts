@@ -58,7 +58,14 @@ EXAMPLE OUTPUT WITH getCommitData=true:
   }
 }
 
-NOTE: The head_sha and base_sha fields in the PR results can be used as the 'hash' parameter in github_search_commits to look up the exact commit and get actual code changes.`;
+NOTE: The head_sha and base_sha fields in the PR results can be used as the 'hash' parameter in github_search_commits to look up the exact commit and get actual code changes.
+
+⚠️ TOKEN OPTIMIZATION NOTICE:
+- getCommitData=true is EXTREMELY expensive in tokens
+- Each commit's diff/patch content consumes significant tokens
+- Limited to 10 commits per PR, 5 files per commit, 1000 chars per patch
+- Use sparingly and only when PR commit details are essential
+- Consider using github_search_commits with head_sha/base_sha instead for specific commits`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
@@ -132,9 +139,11 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .optional()
           .describe('Filter by repository archived state'),
         comments: z
-          .number()
-          .optional()
-          .describe('Filter by number of comments'),
+          .boolean()
+          .default(false)
+          .describe(
+            'Include comment content in search results. This is a very expensive operation in tokens and should be used with caution.'
+          ),
         interactions: z
           .number()
           .optional()
@@ -212,7 +221,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .optional()
           .default(false)
           .describe(
-            'Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes.'
+            'Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes. WARNING: EXTREMELY expensive in tokens - fetches diff/patch content for each commit.'
           ),
       },
       annotations: {
