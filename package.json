@@ -20,6 +20,7 @@
   "bin": "./dist/index.js",
   "scripts": {
     "build": "yarn lint && rollup -c",
+    "build:dev": "rollup -c",
     "build:watch": "rollup -c --watch",
     "prepublishOnly": "yarn lint && yarn test && rollup -c",
     "test": "vitest run",

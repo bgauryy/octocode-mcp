@@ -531,7 +531,7 @@ Alternative tools:
   });
 }
 
-function buildGitHubPullRequestsAPICommand(
+export function buildGitHubPullRequestsAPICommand(
   params: GitHubPullRequestsSearchParams
 ): { command: GhCommand; args: string[] } {
   // For repository-specific searches, use gh pr list instead of search API
@@ -619,7 +619,7 @@ function buildGitHubPullRequestsAPICommand(
   return { command: 'api', args: [apiPath] };
 }
 
-function buildGitHubPullRequestsListCommand(
+export function buildGitHubPullRequestsListCommand(
   params: GitHubPullRequestsSearchParams
 ): { command: GhCommand; args: string[] } {
   const args: string[] = [

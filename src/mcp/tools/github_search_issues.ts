@@ -483,7 +483,7 @@ Discovery strategies:
   });
 }
 
-function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
+export function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   command: GhCommand;
   args: string[];
 } {

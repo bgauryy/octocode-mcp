@@ -594,7 +594,9 @@ export async function searchGitHubRepos(
   });
 }
 
-function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
+export function buildGitHubReposSearchCommand(
+  params: GitHubReposSearchParams
+): {
   command: GhCommand;
   args: string[];
 } {

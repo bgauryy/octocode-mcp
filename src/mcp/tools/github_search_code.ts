@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import {
@@ -125,7 +126,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       // Use sanitized parameters for the rest of the processing
       const sanitizedArgs =
         validation.sanitizedParams as GitHubCodeSearchParams;
-
       // Validate that exactly one search parameter is provided (not both)
       const hasExactQuery = !!sanitizedArgs.exactQuery;
       const hasQueryTerms =
@@ -341,13 +341,13 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
  * Build command line arguments for GitHub CLI following the exact CLI format.
  * Uses proper flags (--flag=value) for filters and direct query terms.
  */
-function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
+export function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
   const args: string[] = ['code'];
 
   // Build search query (either exactQuery OR queryTerms, never both)
   if (params.exactQuery) {
-    // Add exact query - let GitHub CLI handle the quoting
-    args.push(params.exactQuery);
+    // Wrap in quotes for exact phrase matching
+    args.push(`"${params.exactQuery}"`);
   } else if (params.queryTerms && params.queryTerms.length > 0) {
     // Join query terms with spaces for AND logic in a single query string
     const queryString = params.queryTerms.join(' ');
@@ -361,13 +361,49 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
 
   // Handle owner and repo parameters properly
   if (params.repo) {
-    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    // WORKAROUND: Handle stringified arrays for repo parameter
+    let repos: string[];
+    if (Array.isArray(params.repo)) {
+      repos = params.repo;
+    } else if (typeof params.repo === 'string') {
+      if (params.repo.includes('", "')) {
+        repos = params.repo
+          .split('", "')
+          .map(item => item.replace(/^"|"$/g, ''));
+      } else if (params.repo.includes(', ')) {
+        repos = params.repo.split(', ');
+      } else if (params.repo.includes(',')) {
+        repos = params.repo.split(',');
+      } else {
+        repos = [params.repo];
+      }
+    } else {
+      repos = [String(params.repo)];
+    }
+
     repos.forEach(repo => {
       // If both owner and repo are provided, combine them for --repo flag
       if (params.owner && !repo.includes('/')) {
-        const owners = Array.isArray(params.owner)
-          ? params.owner
-          : [params.owner];
+        // WORKAROUND: Handle stringified arrays for owner parameter in this context too
+        let owners: string[];
+        if (Array.isArray(params.owner)) {
+          owners = params.owner;
+        } else if (typeof params.owner === 'string') {
+          if (params.owner.includes('", "')) {
+            owners = params.owner
+              .split('", "')
+              .map(item => item.replace(/^"|"$/g, ''));
+          } else if (params.owner.includes(', ')) {
+            owners = params.owner.split(', ');
+          } else if (params.owner.includes(',')) {
+            owners = params.owner.split(',');
+          } else {
+            owners = [params.owner];
+          }
+        } else {
+          owners = [String(params.owner)];
+        }
+
         owners.forEach(owner => args.push(`--repo=${owner}/${repo}`));
       } else {
         // Repo is already in owner/repo format or no owner provided
@@ -376,7 +412,31 @@ function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
     });
   } else if (params.owner) {
     // Only owner provided, no repo - use --owner flag for organization-wide search
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    let owners: string[];
+
+    if (Array.isArray(params.owner)) {
+      owners = params.owner;
+    } else if (typeof params.owner === 'string') {
+      // WORKAROUND: Handle various stringified array formats due to MCP SDK parameter processing
+      if (params.owner.includes('", "')) {
+        // Format: "microsoft", "facebook" (with quotes around each item)
+        owners = params.owner
+          .split('", "')
+          .map(item => item.replace(/^"|"$/g, ''));
+      } else if (params.owner.includes(', ')) {
+        // Format: microsoft, facebook (comma-space separated, no quotes)
+        owners = params.owner.split(', ');
+      } else if (params.owner.includes(',')) {
+        // Format: microsoft,facebook (comma separated, no spaces)
+        owners = params.owner.split(',');
+      } else {
+        // Single owner string
+        owners = [params.owner];
+      }
+    } else {
+      owners = [String(params.owner)];
+    }
+
     owners.forEach(owner => args.push(`--owner=${owner}`));
   }
 

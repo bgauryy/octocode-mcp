@@ -558,7 +558,9 @@ export async function searchGitHubCommits(
   });
 }
 
-function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
+export function buildGitHubCommitCliArgs(
+  params: GitHubCommitSearchParams
+): string[] {
   const args = ['commits'];
 
   // Build search query
