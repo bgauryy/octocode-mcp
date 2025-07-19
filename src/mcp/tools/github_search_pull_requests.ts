@@ -60,11 +60,8 @@ EXAMPLE OUTPUT WITH getCommitData=true:
 
 NOTE: The head_sha and base_sha fields in the PR results can be used as the 'hash' parameter in github_search_commits to look up the exact commit and get actual code changes.
 
-⚠️ TOKEN OPTIMIZATION NOTICE:
-- getCommitData=true is EXTREMELY expensive in tokens
-- Each commit's diff/patch content consumes significant tokens
-- Limited to 10 commits per PR, 5 files per commit, 1000 chars per patch
-- Use sparingly and only when PR commit details are essential
+TOKEN OPTIMIZATION:
+- getCommitData=true is expensive in tokens. Use only when necessary.
 - Consider using github_search_commits with head_sha/base_sha instead for specific commits`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {

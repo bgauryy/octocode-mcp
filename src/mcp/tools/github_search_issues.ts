@@ -23,11 +23,9 @@ export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
 const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.
 
-⚠️ TOKEN OPTIMIZATION NOTICE:
-- Issue body content is EXTREMELY expensive in tokens (fetched separately for each issue)
-- Each issue body can contain thousands of characters
-- Use specific queries and filters to reduce result count
-- Consider using startLine/endLine for large issue bodies if needed`;
+TOKEN OPTIMIZATION
+- Issue body content is expensive in tokens. Use only when necessary.
+- Use specific queries and filters to reduce result count`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(

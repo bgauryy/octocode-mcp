@@ -15,12 +15,10 @@ export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
 const DESCRIPTION = `Fetches the content of a file from a GitHub repository. Automatically falls back between main/master branches if not found.
 
-⚠️ TOKEN OPTIMIZATION NOTICE:
-- Full file content is EXTREMELY expensive in tokens (300KB limit)
+TOKEN OPTIMIZATION:
+- Full file content is expensive in tokens. Use only when necessary.
 - Use startLine/endLine parameters to fetch only specific sections
-- Use minified=true (default) to optimize content for token efficiency
-- Large files should be accessed in parts rather than full content
-- Consider using github_search_code to find specific sections first`;
+- Large files should be accessed in parts rather than full content`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
