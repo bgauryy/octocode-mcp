@@ -13,7 +13,14 @@ import { ContentSanitizer } from '../../security/contentSanitizer';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetches the content of a file from a GitHub repository. Automatically falls back between main/master branches if not found.`;
+const DESCRIPTION = `Fetches the content of a file from a GitHub repository. Automatically falls back between main/master branches if not found.
+
+⚠️ TOKEN OPTIMIZATION NOTICE:
+- Full file content is EXTREMELY expensive in tokens (300KB limit)
+- Use startLine/endLine parameters to fetch only specific sections
+- Use minified=true (default) to optimize content for token efficiency
+- Large files should be accessed in parts rather than full content
+- Consider using github_search_code to find specific sections first`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
@@ -56,13 +63,17 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .int()
           .min(1)
           .optional()
-          .describe(`Starting line number (1-based) for partial file access.`),
+          .describe(
+            `Starting line number (1-based) for partial file access. STRONGLY RECOMMENDED to save tokens instead of fetching full file content.`
+          ),
         endLine: z
           .number()
           .int()
           .min(1)
           .optional()
-          .describe(`Ending line number (1-based) for partial file access.`),
+          .describe(
+            `Ending line number (1-based) for partial file access. Use with startLine to fetch only specific sections and save tokens.`
+          ),
         contextLines: z
           .number()
           .int()
@@ -75,7 +86,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .boolean()
           .default(true)
           .describe(
-            `Optimize content for token efficiency (enabled by default).`
+            `Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.`
           ),
       },
       annotations: {

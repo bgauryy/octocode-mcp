@@ -5,6 +5,21 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.25] - 2025-01-09 - Optimize tokens usage across tools
+
+#### Enhanced
+- **Package Search Excellence**: Comprehensive validation of all search patterns and edge cases
+  - **Single Package Searches**: Validated popular packages (react, express, flask, numpy)
+  - **Multiple Package Arrays**: Tested JSON arrays, comma-separated, and mixed formats
+  - **Search Strategy Validation**: Individual vs combined strategies with performance analysis
+  - **Cross-Ecosystem Integration**: NPM + Python simultaneous searches with intelligent results
+  - **Edge Case Handling**: Non-existent packages, empty queries, malformed inputs
+  - **Input Format Flexibility**: Array formats, string parsing, parameter validation
+  - **Error Recovery**: Graceful handling of API failures, network issues, malformed responses
+  - **Performance Optimization**: Search limits, concurrent execution, response efficiency
+
+---
+
 ## [2.3.24] - 2025-01-09 - Windows PowerShell Support & Security Enhancements
 
 ### 🚀 MAJOR ENHANCEMENT: Comprehensive Windows Support with Security-First Architecture
