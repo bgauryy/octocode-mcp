@@ -225,7 +225,37 @@ export class ContentSanitizer {
         // Sanitize parameter value
         const sanitized = this.sanitizeParameter(value);
         sanitizedParams[key] = sanitized;
+      } else if (Array.isArray(value)) {
+        // Handle arrays - sanitize each string element while preserving array structure
+        const sanitizedArray: any[] = [];
+        for (const item of value) {
+          if (typeof item === 'string') {
+            // Check for prompt injection in array elements
+            if (this.detectPromptInjection(item)) {
+              warnings.push(
+                `Potential prompt injection in parameter '${key}' array element`
+              );
+              isValid = false;
+            }
+
+            // Check for malicious patterns in array elements
+            if (this.detectMaliciousContent(item)) {
+              warnings.push(
+                `Potentially malicious content in parameter '${key}' array element`
+              );
+              isValid = false;
+            }
+
+            // Sanitize array element
+            sanitizedArray.push(this.sanitizeParameter(item));
+          } else {
+            // Non-string array elements pass through
+            sanitizedArray.push(item);
+          }
+        }
+        sanitizedParams[key] = sanitizedArray;
       } else {
+        // Non-string, non-array values pass through unchanged
         sanitizedParams[key] = value;
       }
     }

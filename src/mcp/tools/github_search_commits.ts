@@ -56,7 +56,14 @@ CONTENT FETCHING:
   • Shows changed files, additions, deletions
   • Includes code patches (first 1000 chars)
   • Works for both public AND private repositories
-  • Most effective when owner and repo are specified`;
+  • Most effective when owner and repo are specified
+
+TOKEN OPTIMIZATION NOTICE:
+- getChangesContent=true is EXTREMELY expensive in tokens
+- Each commit's diff/patch content consumes significant tokens
+- Limited to 1000 characters per patch and 5 files per commit for efficiency
+- Use sparingly and only when code changes are essential to your task
+- use fetch_github_file_content to get the full content of the file`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -179,7 +186,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           .optional()
           .default(false)
           .describe(
-            'Set to true to fetch actual commit changes (diffs/patches). Works for both public and private repositories, most effective with owner and repo specified. Limited to first 10 commits for rate limiting.'
+            'Set to true to fetch actual commit changes (diffs/patches). Works for both public and private repositories, most effective with owner and repo specified. Limited to first 10 commits for rate limiting. WARNING: EXTREMELY expensive in tokens - each commit diff can consume thousands of tokens.'
           ),
       },
       annotations: {
@@ -551,7 +558,9 @@ export async function searchGitHubCommits(
   });
 }
 
-function buildGitHubCommitCliArgs(params: GitHubCommitSearchParams): string[] {
+export function buildGitHubCommitCliArgs(
+  params: GitHubCommitSearchParams
+): string[] {
   const args = ['commits'];
 
   // Build search query

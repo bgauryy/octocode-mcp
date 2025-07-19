@@ -21,7 +21,11 @@ import { validateSearchToolInput } from '../../security/searchToolSanitizer';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.`;
+const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.
+
+TOKEN OPTIMIZATION
+- Issue body content is expensive in tokens. Use only when necessary.
+- Use specific queries and filters to reduce result count`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
@@ -127,7 +131,9 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         match: z
           .enum(['title', 'body', 'comments'])
           .optional()
-          .describe('Search scope. Default: title and body'),
+          .describe(
+            'Search scope. Default: title and body. WARNING: "body" and "comments" are EXTREMELY expensive in tokens as they include full issue content and all comments.'
+          ),
         mentions: z.string().optional().describe('Issues mentioning this user'),
         milestone: z.string().optional().describe('Milestone name'),
         'no-assignee': z
@@ -477,7 +483,7 @@ Discovery strategies:
   });
 }
 
-function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
+export function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   command: GhCommand;
   args: string[];
 } {

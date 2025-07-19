@@ -594,7 +594,9 @@ export async function searchGitHubRepos(
   });
 }
 
-function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
+export function buildGitHubReposSearchCommand(
+  params: GitHubReposSearchParams
+): {
   command: GhCommand;
   args: string[];
 } {
@@ -603,7 +605,7 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   let queryForQualifierCheck = '';
 
   if (params.exactQuery) {
-    args.push(params.exactQuery.trim());
+    args.push(`"${params.exactQuery.trim()}"`);
     queryForQualifierCheck = params.exactQuery.trim();
   } else if (params.queryTerms && params.queryTerms.length > 0) {
     // Add each term as separate argument for AND logic
@@ -623,6 +625,25 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
   type ParamName = keyof GitHubReposSearchParams;
 
+  // Helper function to clean string values by removing surrounding quotes
+  const cleanStringValue = (value: any): string => {
+    if (typeof value === 'number') {
+      return value.toString();
+    }
+
+    let str = value.toString().trim();
+
+    // Remove surrounding quotes if they exist
+    if (
+      (str.startsWith('"') && str.endsWith('"')) ||
+      (str.startsWith("'") && str.endsWith("'"))
+    ) {
+      str = str.slice(1, -1);
+    }
+
+    return str;
+  };
+
   const addArg = (
     paramName: ParamName,
     cliFlag: string,
@@ -632,11 +653,13 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
     const value = params[paramName];
     if (value !== undefined && condition) {
       if (Array.isArray(value)) {
-        args.push(`--${cliFlag}=${value.join(',')}`);
+        // Clean each array element
+        const cleanedValues = value.map(v => cleanStringValue(v));
+        args.push(`--${cliFlag}=${cleanedValues.join(',')}`);
       } else if (formatter) {
         args.push(`--${cliFlag}=${formatter(value)}`);
       } else {
-        args.push(`--${cliFlag}=${value.toString()}`);
+        args.push(`--${cliFlag}=${cleanStringValue(value)}`);
       }
     }
   };
@@ -645,15 +668,15 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
   addArg('owner', 'owner', !hasEmbeddedQualifiers);
   addArg('language', 'language', !hasEmbeddedQualifiers);
   addArg('forks', 'forks', !hasEmbeddedQualifiers, value =>
-    typeof value === 'number' ? value.toString() : value.trim()
+    cleanStringValue(value)
   );
   addArg('topic', 'topic', !hasEmbeddedQualifiers);
   addArg('number-topics', 'number-topics', true, value =>
-    typeof value === 'number' ? value.toString() : value.trim()
+    cleanStringValue(value)
   );
 
   addArg('stars', 'stars', !hasEmbeddedQualifiers, value =>
-    typeof value === 'number' ? value.toString() : value.trim()
+    cleanStringValue(value)
   );
 
   // QUALITY & STATE FILTERS
@@ -669,14 +692,12 @@ function buildGitHubReposSearchCommand(params: GitHubReposSearchParams): {
 
   // COMMUNITY FILTERS
   addArg('good-first-issues', 'good-first-issues', true, value =>
-    typeof value === 'number' ? value.toString() : value
+    cleanStringValue(value)
   );
   addArg('help-wanted-issues', 'help-wanted-issues', true, value =>
-    typeof value === 'number' ? value.toString() : value
+    cleanStringValue(value)
   );
-  addArg('followers', 'followers', true, value =>
-    typeof value === 'number' ? value.toString() : value.trim()
-  );
+  addArg('followers', 'followers', true, value => cleanStringValue(value));
 
   // SEARCH SCOPE
   addArg('match', 'match');

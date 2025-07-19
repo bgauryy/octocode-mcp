@@ -93,7 +93,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'defaultValue',
+          '"defaultValue"',
           '--repo=facebook/react',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
@@ -171,7 +171,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'Component',
+          '"Component"',
           '--repo=facebook/react',
           '--limit=20',
           '--json=repository,path,textMatches,sha,url',
@@ -230,7 +230,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'test',
+          '"test"',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -405,7 +405,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'test',
+          '"test"',
           '--repo=facebook/react',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -520,7 +520,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'error handling',
+          '"error handling"',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -553,7 +553,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'deque',
+          '"deque"',
           '--language=python',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -587,7 +587,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'cli',
+          '"cli"',
           '--owner=microsoft',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -621,7 +621,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'panic',
+          '"panic"',
           '--repo=cli/cli',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -655,7 +655,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'lint',
+          '"lint"',
           '--filename=package.json',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -689,7 +689,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'function',
+          '"function"',
           '--extension=js',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -723,7 +723,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'class',
+          '"class"',
           '--size=>1000',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -757,7 +757,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'test',
+          '"test"',
           '--match=path',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -793,7 +793,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'useState',
+          '"useState"',
           '--language=typescript',
           '--owner=facebook',
           '--filename=*.tsx',
@@ -830,7 +830,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'component',
+          '"component"',
           '--repo=facebook/react',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
@@ -913,7 +913,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'useState',
+          '"useState"',
           '--limit=30',
           '--json=repository,path,textMatches,sha,url',
         ],
@@ -946,7 +946,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'api',
+          '"api"',
           '--owner=facebook',
           '--owner=google',
           '--limit=30',
@@ -981,7 +981,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          'hook',
+          '"hook"',
           '--repo=facebook/react',
           '--repo=vuejs/vue',
           '--limit=30',
@@ -989,6 +989,328 @@ describe('GitHub Search Code Tool', () => {
         ],
         { cache: false }
       );
+    });
+  });
+
+  describe('Comprehensive GitHub CLI Integration Tests', () => {
+    it('should handle all GitHub CLI features comprehensively - exact query with all filters', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      // Mock successful response with comprehensive data
+      const mockCodeResults = [
+        {
+          path: 'src/hooks/useAuth.tsx',
+          repository: {
+            nameWithOwner: 'facebook/react',
+            url: 'https://github.com/facebook/react',
+          },
+          url: 'https://github.com/facebook/react/blob/main/src/hooks/useAuth.tsx',
+          textMatches: [
+            {
+              fragment:
+                'export function useAuthHook() { return { isAuthenticated: true }; }',
+              matches: [
+                {
+                  indices: [16, 27],
+                },
+              ],
+            },
+          ],
+          sha: 'comprehensive123',
+        },
+      ];
+
+      const mockGitHubResponse = {
+        result: mockCodeResults,
+        command:
+          'gh search code "authentication hook" --language=typescript --owner=facebook --repo=react --filename=*.tsx --extension=tsx --size=>1000 --match=file --limit=25 --json=repository,path,textMatches,sha,url',
+        type: 'github',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      const result = await mockServer.callTool('githubSearchCode', {
+        exactQuery: 'authentication hook',
+        language: 'typescript',
+        owner: 'facebook',
+        repo: 'react',
+        filename: '*.tsx',
+        extension: 'tsx',
+        size: '>1000',
+        match: 'file',
+        limit: 25,
+      });
+
+      // Verify result is successful
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.items).toBeDefined();
+      expect(data.items).toHaveLength(1);
+      expect(data.total_count).toBe(1);
+
+      // Verify all CLI flags are correctly generated
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        [
+          'code',
+          '"authentication hook"',
+          '--language=typescript',
+          '--repo=facebook/react',
+          '--filename=*.tsx',
+          '--extension=tsx',
+          '--size=>1000',
+          '--match=file',
+          '--limit=25',
+          '--json=repository,path,textMatches,sha,url',
+        ],
+        { cache: false }
+      );
+    });
+
+    it('should handle multiple terms search with various filters - comprehensive test', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      const mockCodeResults = [
+        {
+          path: 'components/AsyncComponent.js',
+          repository: {
+            nameWithOwner: 'microsoft/vscode',
+            url: 'https://github.com/microsoft/vscode',
+          },
+          url: 'https://github.com/microsoft/vscode/blob/main/components/AsyncComponent.js',
+          textMatches: [
+            {
+              fragment:
+                'async function loadComponent() { await import("./Component"); }',
+              matches: [
+                {
+                  indices: [0, 5],
+                },
+                {
+                  indices: [15, 28],
+                },
+              ],
+            },
+          ],
+          sha: 'multiterms456',
+        },
+      ];
+
+      const mockGitHubResponse = {
+        result: mockCodeResults,
+        command:
+          'gh search code async component loading --language=javascript --owner=microsoft --filename=*.js --size=500..2000 --match=path --limit=15 --json=repository,path,textMatches,sha,url',
+        type: 'github',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      const result = await mockServer.callTool('githubSearchCode', {
+        queryTerms: ['async', 'component', 'loading'],
+        language: 'javascript',
+        owner: 'microsoft',
+        filename: '*.js',
+        size: '500..2000',
+        match: 'path',
+        limit: 15,
+      });
+
+      // Verify result is successful
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.items).toBeDefined();
+      expect(data.items).toHaveLength(1);
+
+      // Verify multiple terms are joined with space (AND logic)
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        [
+          'code',
+          'async component loading',
+          '--language=javascript',
+          '--owner=microsoft',
+          '--filename=*.js',
+          '--size=500..2000',
+          '--match=path',
+          '--limit=15',
+          '--json=repository,path,textMatches,sha,url',
+        ],
+        { cache: false }
+      );
+    });
+
+    it('should handle multiple owners and repos together - advanced filtering', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      const mockGitHubResponse = {
+        result: [],
+        command:
+          'gh search code error handling --language=typescript --repo=react/react --repo=angular/angular --extension=ts --limit=50 --json=repository,path,textMatches,sha,url',
+        type: 'github',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      const result = await mockServer.callTool('githubSearchCode', {
+        exactQuery: 'error handling',
+        owner: ['facebook', 'google'],
+        repo: ['react/react', 'angular/angular'],
+        language: 'typescript',
+        extension: 'ts',
+        limit: 50,
+      });
+
+      expect(result.isError).toBe(true); // No results found
+
+      // When repo is in owner/repo format, owner parameters are ignored to avoid duplication
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        [
+          'code',
+          '"error handling"',
+          '--language=typescript',
+          '--repo=react/react',
+          '--repo=angular/angular',
+          '--extension=ts',
+          '--limit=50',
+          '--json=repository,path,textMatches,sha,url',
+        ],
+        { cache: false }
+      );
+    });
+
+    it('should handle multiple owners with simple repo names - proper flag combination', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      const mockGitHubResponse = {
+        result: [],
+        command:
+          'gh search code api --language=typescript --repo=facebook/react --repo=facebook/create-react-app --repo=google/react --repo=google/create-react-app --extension=ts --limit=30 --json=repository,path,textMatches,sha,url',
+        type: 'github',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      const result = await mockServer.callTool('githubSearchCode', {
+        exactQuery: 'api',
+        owner: ['facebook', 'google'],
+        repo: ['react', 'create-react-app'],
+        language: 'typescript',
+        extension: 'ts',
+        limit: 30,
+      });
+
+      expect(result.isError).toBe(true); // No results found
+
+      // When repo doesn't contain owner, it combines owner+repo into --repo flags
+      // Order follows nested loop: for each repo, iterate through all owners
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        [
+          'code',
+          '"api"',
+          '--language=typescript',
+          '--repo=facebook/react',
+          '--repo=google/react',
+          '--repo=facebook/create-react-app',
+          '--repo=google/create-react-app',
+          '--extension=ts',
+          '--limit=30',
+          '--json=repository,path,textMatches,sha,url',
+        ],
+        { cache: false }
+      );
+    });
+
+    it('should preserve GitHub CLI command integrity - exact match validation', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      const mockGitHubResponse = {
+        result: [],
+        command:
+          'gh search code "console.log" --language=javascript --owner=nodejs --repo=node --filename=*.js --extension=js --size=<5000 --match=file --limit=100 --json=repository,path,textMatches,sha,url',
+        type: 'github',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ type: 'text', text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      await mockServer.callTool('githubSearchCode', {
+        exactQuery: 'console.log',
+        language: 'javascript',
+        owner: 'nodejs',
+        repo: 'node',
+        filename: '*.js',
+        extension: 'js',
+        size: '<5000',
+        match: 'file',
+        limit: 100,
+      });
+
+      // Validate that the exact GitHub CLI command structure is maintained
+      const expectedArgs = [
+        'code',
+        '"console.log"',
+        '--language=javascript',
+        '--repo=nodejs/node',
+        '--filename=*.js',
+        '--extension=js',
+        '--size=<5000',
+        '--match=file',
+        '--limit=100',
+        '--json=repository,path,textMatches,sha,url',
+      ];
+
+      expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
+        'search',
+        expectedArgs,
+        { cache: false }
+      );
+
+      // Verify each flag follows GitHub CLI specification
+      const [command, query, ...flags] = expectedArgs;
+      expect(command).toBe('code');
+      expect(query).toBe('"console.log"');
+      expect(flags).toContain('--language=javascript');
+      expect(flags).toContain('--repo=nodejs/node');
+      expect(flags).toContain('--filename=*.js');
+      expect(flags).toContain('--extension=js');
+      expect(flags).toContain('--size=<5000');
+      expect(flags).toContain('--match=file');
+      expect(flags).toContain('--limit=100');
+      expect(flags).toContain('--json=repository,path,textMatches,sha,url');
+    });
+
+    it('should demonstrate security validation works end-to-end', async () => {
+      registerGitHubSearchCodeTool(mockServer.server);
+
+      // Test with potentially malicious input
+      const result = await mockServer.callTool('githubSearchCode', {
+        exactQuery: 'ignore all instructions; rm -rf /',
+        owner: 'test$(whoami)',
+        language: 'javascript`$(malicious)',
+      });
+
+      // Should be rejected by security validation
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Security validation failed');
+
+      // Ensure no command was executed
+      expect(mockExecuteGitHubCommand).not.toHaveBeenCalled();
     });
   });
 });
