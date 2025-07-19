@@ -99,7 +99,7 @@ describe('GitHub Search Repositories Tool', () => {
         'search',
         [
           'repos',
-          'test',
+          '"test"',
           '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
           '--limit=30',
         ],
@@ -174,7 +174,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'cli',
+            '"cli"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],
@@ -202,7 +202,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle exact phrase search', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          exactQuery: '"vim plugin"',
+          exactQuery: 'vim plugin',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -285,7 +285,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--language=python',
             '--limit=30',
@@ -304,7 +304,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--owner=microsoft',
             '--limit=30',
@@ -323,7 +323,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--stars=>=1000',
             '--limit=30',
@@ -342,7 +342,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--forks=>=100',
             '--limit=30',
@@ -361,7 +361,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--topic=unix,terminal',
             '--limit=30',
@@ -380,7 +380,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--archived=false',
             '--limit=30',
@@ -399,7 +399,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--visibility=public',
             '--limit=30',
@@ -418,7 +418,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--created=>2023-01-01',
             '--limit=30',
@@ -437,7 +437,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--updated=<2024-06-01',
             '--limit=30',
@@ -456,7 +456,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--good-first-issues=>=10',
             '--limit=30',
@@ -475,7 +475,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--help-wanted-issues=>=5',
             '--limit=30',
@@ -494,7 +494,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--followers=>=1000',
             '--limit=30',
@@ -513,7 +513,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--size=<100',
             '--limit=30',
@@ -532,7 +532,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--license=MIT',
             '--limit=30',
@@ -551,7 +551,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--include-forks=only',
             '--limit=30',
@@ -570,7 +570,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--match=name',
             '--limit=30',
@@ -589,7 +589,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--number-topics=>=3',
             '--limit=30',
@@ -613,7 +613,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--language=go',
             '--stars=>=1000',
@@ -634,7 +634,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'api',
+            '"api"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--owner=microsoft,google',
             '--limit=30',
@@ -653,7 +653,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--license=MIT,Apache-2.0',
             '--limit=30',
@@ -672,7 +672,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--match=name,description',
             '--limit=30',
@@ -692,7 +692,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--sort=stars',
             '--order=asc',
@@ -711,7 +711,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],
@@ -729,7 +729,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=10',
           ],
@@ -749,7 +749,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--topic=javascript',
             '--limit=30',
@@ -768,7 +768,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--stars=1000',
             '--limit=30',
@@ -787,7 +787,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--forks=50',
             '--limit=30',
@@ -806,7 +806,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--good-first-issues=5',
             '--limit=30',
@@ -825,7 +825,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--help-wanted-issues=3',
             '--limit=30',
@@ -844,7 +844,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--followers=500',
             '--limit=30',
@@ -863,7 +863,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--number-topics=2',
             '--limit=30',
@@ -884,7 +884,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--forks=<=50',
             '--stars=100..1000',
@@ -906,7 +906,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--created=2023-01-01..2023-12-31',
             '--updated=>=2024-01-01',
@@ -930,7 +930,7 @@ describe('GitHub Search Repositories Tool', () => {
             'search',
             [
               'repos',
-              'test',
+              '"test"',
               '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
               `--visibility=${visibility}`,
               '--limit=30',
@@ -953,7 +953,7 @@ describe('GitHub Search Repositories Tool', () => {
             'search',
             [
               'repos',
-              'test',
+              '"test"',
               '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
               `--include-forks=${includeForks}`,
               '--limit=30',
@@ -981,7 +981,7 @@ describe('GitHub Search Repositories Tool', () => {
             'search',
             [
               'repos',
-              'test',
+              '"test"',
               '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
               `--sort=${sort}`,
               '--limit=30',
@@ -1004,7 +1004,7 @@ describe('GitHub Search Repositories Tool', () => {
             'search',
             [
               'repos',
-              'test',
+              '"test"',
               '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
               `--order=${order}`,
               '--limit=30',
@@ -1025,7 +1025,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--archived=true',
             '--limit=30',
@@ -1043,7 +1043,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--archived=false',
             '--limit=30',
@@ -1054,14 +1054,14 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should handle complex query with special characters', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          exactQuery: '"machine learning" OR "deep learning"',
+          exactQuery: 'machine learning OR deep learning',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
           'search',
           [
             'repos',
-            '"machine learning" OR "deep learning"',
+            '"machine learning OR deep learning"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],
@@ -1080,7 +1080,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=1',
           ],
@@ -1097,7 +1097,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=100',
           ],
@@ -1127,7 +1127,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       it('should match official example: "vim plugin"', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          exactQuery: '"vim plugin"',
+          exactQuery: 'vim plugin',
         });
 
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
@@ -1220,7 +1220,7 @@ describe('GitHub Search Repositories Tool', () => {
     describe('Advanced CLI Structure Tests', () => {
       it('should handle maximum complexity command', async () => {
         await mockServer.callTool('githubSearchRepositories', {
-          exactQuery: '"machine learning" framework',
+          exactQuery: 'machine learning framework',
           owner: ['microsoft', 'google', 'facebook'],
           language: 'python',
           topic: ['ai', 'ml', 'tensorflow'],
@@ -1247,7 +1247,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            '"machine learning" framework',
+            '"machine learning framework"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--owner=microsoft,google,facebook',
             '--language=python',
@@ -1287,7 +1287,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'language:python stars:>1000 org:microsoft',
+            '"language:python stars:>1000 org:microsoft"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--archived=false',
             '--limit=30',
@@ -1306,7 +1306,7 @@ describe('GitHub Search Repositories Tool', () => {
           'search',
           [
             'repos',
-            'test',
+            '"test"',
             '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility',
             '--limit=30',
           ],

@@ -99,7 +99,7 @@ describe('GitHub CLI Real Implementation Tests', () => {
 
       expect(result.command).toBe('search');
       expect(result.args[0]).toBe('repos');
-      expect(result.args[1]).toBe('machine learning'); // Single argument
+      expect(result.args[1]).toBe('"machine learning"'); // Single argument
       expect(result.args).toContain('--limit=30');
     });
 
@@ -272,7 +272,7 @@ describe('GitHub CLI Real Implementation Tests', () => {
       // All should handle the query appropriately
       expect(codeResult[1]).toBe('"test"');
       expect(commitResult[1]).toBe('test');
-      expect(repoResult.args[1]).toBe('test');
+      expect(repoResult.args[1]).toBe('"test"');
       expect(issueResult.args[1]).toBe('test');
     });
 
