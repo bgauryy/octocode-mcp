@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { createResult } from '../responses';
 import { executeNpmCommand } from '../../utils/exec';
+import { NpmPackageSearchBuilder } from './utils/NpmCommandBuilder';
 import { NpmPackage } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
@@ -198,12 +199,19 @@ export function registerNpmSearchTool(server: McpServer) {
           if (searchStrategy === 'combined' && searchQueries.length > 1) {
             // Combined search: single search with all terms together
             const combinedQuery = searchQueries.join(' ');
+            const builder = new NpmPackageSearchBuilder();
+            const fullArgs = builder.build({
+              query: combinedQuery,
+              searchLimit,
+            });
+
+            // Check if builder included base command
+            const hasBaseCommand = fullArgs[0] === 'search';
+            const command = hasBaseCommand ? fullArgs[0] : 'search';
+            const args = hasBaseCommand ? fullArgs.slice(1) : fullArgs;
+
             searchPromises.push(
-              executeNpmCommand(
-                'search',
-                [combinedQuery, `--searchlimit=${searchLimit}`, '--json'],
-                { cache: true }
-              )
+              executeNpmCommand(command as 'search', args, { cache: true })
                 .then(result => {
                   if (!result.isError && result.content?.[0]?.text) {
                     const packages = parseNpmSearchOutput(
@@ -247,12 +255,18 @@ export function registerNpmSearchTool(server: McpServer) {
             );
           } else {
             // Individual searches: run concurrent searches for each term
-            const npmSearchPromises = searchQueries.map(query =>
-              executeNpmCommand(
-                'search',
-                [query, `--searchlimit=${searchLimit}`, '--json'],
-                { cache: true }
-              )
+            const npmSearchPromises = searchQueries.map(query => {
+              const builder = new NpmPackageSearchBuilder();
+              const fullArgs = builder.build({ query, searchLimit });
+
+              // Check if builder included base command
+              const hasBaseCommand = fullArgs[0] === 'search';
+              const command = hasBaseCommand ? fullArgs[0] : 'search';
+              const args = hasBaseCommand ? fullArgs.slice(1) : fullArgs;
+
+              return executeNpmCommand(command as 'search', args, {
+                cache: true,
+              })
                 .then(result => {
                   if (!result.isError && result.content?.[0]?.text) {
                     const packages = parseNpmSearchOutput(
@@ -285,8 +299,8 @@ export function registerNpmSearchTool(server: McpServer) {
                     packages: [],
                     errors: [`NPM search failed for '${query}': ${errorMsg}`],
                   };
-                })
-            );
+                });
+            });
 
             // Combine all individual NPM search results
             searchPromises.push(

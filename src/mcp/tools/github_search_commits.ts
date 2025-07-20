@@ -21,6 +21,7 @@ import {
   createSearchFailedError,
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
@@ -546,93 +547,6 @@ export async function searchGitHubCommits(
 export function buildGitHubCommitCliArgs(
   params: GitHubCommitSearchParams
 ): string[] {
-  const args = ['commits'];
-
-  // Build search query
-  if (params.exactQuery) {
-    // Add exact query - let GitHub CLI handle the quoting
-    args.push(params.exactQuery);
-  } else if (params.queryTerms || params.orTerms) {
-    // Build combined query with AND and OR logic
-    const queryParts: string[] = [];
-
-    // Add AND terms
-    if (params.queryTerms && params.queryTerms.length > 0) {
-      const processedAndTerms = params.queryTerms.map(term => {
-        const hasSpecialChars = /[()[\\]{}*?^$|.\\\\+]/.test(term);
-        return hasSpecialChars ? `"${term}"` : term;
-      });
-      queryParts.push(...processedAndTerms);
-    }
-
-    // Add OR terms (using GitHub search syntax)
-    if (params.orTerms && params.orTerms.length > 0) {
-      const processedOrTerms = params.orTerms.map(term => {
-        const hasSpecialChars = /[()[\\]{}*?^$|.\\\\+]/.test(term);
-        return hasSpecialChars ? `"${term}"` : term;
-      });
-
-      if (processedOrTerms.length === 1) {
-        queryParts.push(processedOrTerms[0]);
-      } else {
-        // GitHub CLI supports OR with parentheses: (term1 OR term2 OR term3)
-        const orQuery = `(${processedOrTerms.join(' OR ')})`;
-        queryParts.push(orQuery);
-      }
-    }
-
-    if (queryParts.length > 0) {
-      // Join all parts with spaces (AND logic between different parts)
-      args.push(queryParts.join(' '));
-    }
-  }
-  // If no query parameters are provided, gh will use filters only
-
-  // Repository filters
-  if (params.owner && params.repo) {
-    args.push(`--repo=${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    args.push(`--owner=${params.owner}`);
-  }
-
-  // Author filters
-  if (params.author) args.push(`--author=${params.author}`);
-  if (params['author-name'])
-    args.push(`--author-name=${params['author-name']}`);
-  if (params['author-email'])
-    args.push(`--author-email=${params['author-email']}`);
-
-  // Committer filters
-  if (params.committer) args.push(`--committer=${params.committer}`);
-  if (params['committer-name'])
-    args.push(`--committer-name=${params['committer-name']}`);
-  if (params['committer-email'])
-    args.push(`--committer-email=${params['committer-email']}`);
-
-  // Date filters
-  if (params['author-date'])
-    args.push(`--author-date=${params['author-date']}`);
-  if (params['committer-date'])
-    args.push(`--committer-date=${params['committer-date']}`);
-
-  // Hash filters
-  if (params.hash) args.push(`--hash=${params.hash}`);
-  if (params.parent) args.push(`--parent=${params.parent}`);
-  if (params.tree) args.push(`--tree=${params.tree}`);
-
-  // State filters
-  if (params.merge !== undefined) args.push(`--merge`);
-
-  // Visibility
-  if (params.visibility) args.push(`--visibility=${params.visibility}`);
-
-  // Sorting and pagination
-  if (params.sort) args.push(`--sort=${params.sort}`);
-  if (params.order) args.push(`--order=${params.order}`);
-  if (params.limit) args.push(`--limit=${params.limit}`);
-
-  // JSON output
-  args.push('--json=sha,commit,author,committer,repository,url,parents');
-
-  return args;
+  const builder = new GitHubCommitsSearchBuilder();
+  return builder.build(params);
 }

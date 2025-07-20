@@ -10,6 +10,7 @@ import {
   createSearchFailedError,
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
@@ -592,119 +593,6 @@ export function buildGitHubReposSearchCommand(
   command: GhCommand;
   args: string[];
 } {
-  const args = ['repos'];
-
-  let queryForQualifierCheck = '';
-
-  if (params.exactQuery) {
-    args.push(`"${params.exactQuery.trim()}"`);
-    queryForQualifierCheck = params.exactQuery.trim();
-  } else if (params.queryTerms && params.queryTerms.length > 0) {
-    // Add each term as separate argument for AND logic
-    params.queryTerms.forEach(term => args.push(term.trim()));
-    queryForQualifierCheck = params.queryTerms.join(' ');
-  }
-
-  const hasEmbeddedQualifiers =
-    queryForQualifierCheck &&
-    /\b(stars|language|org|repo|topic|user|created|updated|size|license|archived|fork|good-first-issues|help-wanted-issues):/i.test(
-      queryForQualifierCheck
-    );
-
-  args.push(
-    '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
-  );
-
-  type ParamName = keyof GitHubReposSearchParams;
-
-  // Helper function to clean string values by removing surrounding quotes
-  const cleanStringValue = (value: any): string => {
-    if (typeof value === 'number') {
-      return value.toString();
-    }
-
-    let str = value.toString().trim();
-
-    // Remove surrounding quotes if they exist
-    if (
-      (str.startsWith('"') && str.endsWith('"')) ||
-      (str.startsWith("'") && str.endsWith("'"))
-    ) {
-      str = str.slice(1, -1);
-    }
-
-    return str;
-  };
-
-  const addArg = (
-    paramName: ParamName,
-    cliFlag: string,
-    condition: boolean = true,
-    formatter?: (value: any) => string
-  ) => {
-    const value = params[paramName];
-    if (value !== undefined && condition) {
-      if (Array.isArray(value)) {
-        // Clean each array element
-        const cleanedValues = value.map(v => cleanStringValue(v));
-        args.push(`--${cliFlag}=${cleanedValues.join(',')}`);
-      } else if (formatter) {
-        args.push(`--${cliFlag}=${formatter(value)}`);
-      } else {
-        args.push(`--${cliFlag}=${cleanStringValue(value)}`);
-      }
-    }
-  };
-
-  // CORE FILTERS
-  addArg('owner', 'owner', !hasEmbeddedQualifiers);
-  addArg('language', 'language', !hasEmbeddedQualifiers);
-  addArg('forks', 'forks', !hasEmbeddedQualifiers, value =>
-    cleanStringValue(value)
-  );
-  addArg('topic', 'topic', !hasEmbeddedQualifiers);
-  addArg('number-topics', 'number-topics', true, value =>
-    cleanStringValue(value)
-  );
-
-  addArg('stars', 'stars', !hasEmbeddedQualifiers, value =>
-    cleanStringValue(value)
-  );
-
-  // QUALITY & STATE FILTERS
-  addArg('archived', 'archived');
-  addArg('include-forks', 'include-forks');
-  addArg('visibility', 'visibility');
-  addArg('license', 'license');
-
-  // DATE & SIZE FILTERS
-  addArg('created', 'created');
-  addArg('updated', 'updated');
-  addArg('size', 'size');
-
-  // COMMUNITY FILTERS
-  addArg('good-first-issues', 'good-first-issues', true, value =>
-    cleanStringValue(value)
-  );
-  addArg('help-wanted-issues', 'help-wanted-issues', true, value =>
-    cleanStringValue(value)
-  );
-  addArg('followers', 'followers', true, value => cleanStringValue(value));
-
-  // SEARCH SCOPE
-  addArg('match', 'match');
-
-  // SORTING AND LIMITS
-  const sortBy = params.sort || 'best-match';
-  if (sortBy !== 'best-match') {
-    args.push(`--sort=${sortBy}`);
-  }
-
-  addArg('order', 'order');
-
-  // Always add limit with default of 30
-  const limit = params.limit || 30;
-  args.push(`--limit=${limit}`);
-
-  return { command: 'search', args };
+  const builder = new GitHubReposSearchBuilder();
+  return { command: 'search', args: builder.build(params) };
 }

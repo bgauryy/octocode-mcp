@@ -93,6 +93,7 @@ describe('GitHub Search Commits Tool', () => {
         [
           'commits',
           'readme typo',
+          '--limit=100',
           '--json=sha,commit,author,committer,repository,url,parents',
         ],
         { cache: false }
@@ -135,7 +136,8 @@ describe('GitHub Search Commits Tool', () => {
         'search',
         [
           'commits',
-          'bug fix',
+          '"bug fix"',
+          '--limit=100',
           '--json=sha,commit,author,committer,repository,url,parents',
         ],
         { cache: false }
@@ -180,7 +182,8 @@ describe('GitHub Search Commits Tool', () => {
         'search',
         [
           'commits',
-          'fix',
+          '"fix"',
+          '--limit=100',
           '--json=sha,commit,author,committer,repository,url,parents',
         ],
         { cache: false }
@@ -297,7 +300,13 @@ describe('GitHub Search Commits Tool', () => {
       expect(mockExecuteGitHubCommand).toHaveBeenNthCalledWith(
         1,
         'search',
-        expect.arrayContaining(['commits', 'fix', '--repo=owner/repo']),
+        expect.arrayContaining([
+          'commits',
+          '"fix"',
+          '--repo=owner/repo',
+          '--limit=100',
+          '--json=sha,commit,author,committer,repository,url,parents',
+        ]),
         { cache: false }
       );
 
@@ -441,6 +450,8 @@ describe('GitHub Search Commits Tool', () => {
         expect.arrayContaining([
           'commits',
           '--hash=8dd03144ffdc6c0d486d6b705f9c7fba871ee7c3',
+          '--limit=100',
+          '--json=sha,commit,author,committer,repository,url,parents',
         ]),
         { cache: false }
       );
