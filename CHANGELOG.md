@@ -299,14 +299,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🚀 MAJOR ACHIEVEMENT: Revolutionary Token Efficiency with Partial File Access
 
 #### 🎯 PARTIAL FILE ACCESS SYSTEM
-- **Smart Content Targeting**: New `startLine`/`endLine` parameters for `github_fetch_content` enable **80-90% token savings**
+- **Smart Content Targeting**: New `startLine`/`endLine` parameters for `github_fetch_content` enable **token optimized**
 - **Search Integration Workflow**: Seamless integration with `github_search_code` results - extract line numbers → fetch targeted sections
 - **Visual Line Markers**: Target lines highlighted with arrows (→) for precise content identification
 - **Context Control**: `contextLines` parameter (default: 5) provides smart surrounding code visibility
 - **Intelligent Minification**: Partial content gets balanced compression while preserving readability
 
 #### 📊 TOKEN EFFICIENCY METRICS
-- **Partial File Access**: **80-90% token reduction** compared to full file fetching
+- **Partial File Access**: **token optimizaed** compared to full file fetching
 - **Smart Workflow**: Search → Extract positions → Fetch targeted content → Analyze specific sections
 - **Memory Optimization**: Dramatically reduced memory footprint for large file analysis
 - **Response Speed**: 3-4x faster content delivery through targeted fetching
@@ -349,10 +349,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Real-World Testing**: Verified token savings with actual GitHub repositories and search scenarios
 - **Edge Case Handling**: Comprehensive testing of line ranges, context boundaries, and file limits
 - **Integration Testing**: Validated seamless workflow from search results to targeted content fetching
-- **Performance Benchmarking**: Confirmed 80-90% token reduction in production scenarios
+- **Performance Benchmarking**: token reduction in production scenarios
 
 #### 🔍 ENHANCED TOOL DESCRIPTIONS
-- **github_fetch_content**: Prominently features **"80-90% token savings"** and 4-step best practice workflow
+- **github_fetch_content**: Prominently features **"token optimizations"** and 4-step best practice workflow
 - **github_search_code**: Updated to emphasize line number extraction for targeted file access
 - **System Prompts**: Comprehensive integration of token-efficient workflows and progressive research strategies
 - **Cross-References**: Enhanced tool relationship guidance for optimal research patterns
