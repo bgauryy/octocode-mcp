@@ -24,6 +24,20 @@ Instead of manually browsing repositories, ask questions like:
 - *"What's the architecture of this library?"*
 - *"How do I use this MCP tool effectively?"*
 
+## 🌟 Featured On
+
+### modelcontextprotocol - Official Community MCP Server 
+[![MCP Servers](https://img.shields.io/badge/Official-MCP%20Servers-purple.svg?logo=github)](https://github.com/modelcontextprotocol/servers)
+
+### Community Collections
+[![Awesome MCP Servers](https://img.shields.io/badge/Awesome-MCP%20Servers-orange.svg?logo=awesome-lists)](https://github.com/punkpeye/awesome-mcp-servers) 
+[![Awesome MCP Servers](https://img.shields.io/badge/Awesome-MCP%20Collection-blue.svg?logo=awesome-lists)](https://github.com/appcypher/awesome-mcp-servers)
+
+### MCP Directories & Tools
+[![MCP.so](https://img.shields.io/badge/MCP.so-Server%20Directory-green.svg?logo=web)](https://mcp.so/server/octocode/bgauryy)
+[![PulseMCP](https://img.shields.io/badge/PulseMCP-Server%20Registry-red.svg?logo=pulse)](https://www.pulsemcp.com/servers/bgauryy-octocode)
+[![DevTool.io](https://img.shields.io/badge/DevTool.io-Development%20Tool-teal.svg?logo=tools)](https://devtool.io/tool/octocode-mcp)
+
 ## 🎯 Who Is This For?
 
 ### For Developers
