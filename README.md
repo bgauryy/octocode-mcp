@@ -100,7 +100,13 @@ gh auth login
 npm login
 ```
 
-### 3. Add to MCP Configuration
+### 3. Add to Claude Desktop
+```bash
+# For Claude Desktop users
+claude mcp add octocode npx 'octocode-mcp@latest'
+```
+
+### Or Add to MCP Configuration Manually
 ```json
 {
   "octocode-mcp": {
