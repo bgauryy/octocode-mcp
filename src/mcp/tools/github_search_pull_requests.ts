@@ -15,7 +15,7 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
-import { validateSearchToolInput } from '../../security/searchToolSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 
 // TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 
@@ -229,34 +229,29 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const securityCheck = validateSearchToolInput(args);
-      if (!securityCheck.isValid) {
-        return securityCheck.error!;
-      }
-      const sanitizedArgs = securityCheck.sanitizedArgs;
+    withSecurityValidation(
+      async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
+        if (!args.query?.trim()) {
+          return createResult({
+            error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
+          });
+        }
 
-      if (!sanitizedArgs.query?.trim()) {
-        return createResult({
-          error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
-        });
-      }
+        if (args.query.length > 256) {
+          return createResult({
+            error: ERROR_MESSAGES.QUERY_TOO_LONG,
+          });
+        }
 
-      if (sanitizedArgs.query.length > 256) {
-        return createResult({
-          error: ERROR_MESSAGES.QUERY_TOO_LONG,
-        });
+        try {
+          return await searchGitHubPullRequests(args);
+        } catch (error) {
+          return createResult({
+            error: createSearchFailedError('pull_requests'),
+          });
+        }
       }
-
-      try {
-        return await searchGitHubPullRequests(sanitizedArgs);
-      } catch (error) {
-        return createResult({
-          error: createSearchFailedError('pull_requests'),
-        });
-      }
-    }
+    )
   );
 }
 
@@ -541,82 +536,28 @@ export function buildGitHubPullRequestsAPICommand(
     return buildGitHubPullRequestsListCommand(params);
   }
 
-  const queryParts: string[] = [params.query?.trim() || ''];
+  // For general searches without owner/repo, use GitHub API search
+  // This searches across all repositories accessible to the user
+  const queryParts = [`${params.query}`, 'type:pr'];
 
-  // Repository/organization qualifiers
-  if (params.owner) {
-    queryParts.push(`org:${params.owner}`);
-  }
-
-  // Build search qualifiers from params
-  const qualifiers: Record<string, string | undefined> = {
-    author: params.author,
-    assignee: params.assignee,
-    mentions: params.mentions,
-    commenter: params.commenter,
-    involves: params.involves,
-    state: params.state,
-    created: params.created,
-    updated: params.updated,
-    closed: params.closed,
-    language: params.language,
-  };
-
-  Object.entries(qualifiers).forEach(([key, value]) => {
-    if (value) queryParts.push(`${key}:${value}`);
-  });
-
-  // Special qualifiers
-  if (params['reviewed-by'])
-    queryParts.push(`reviewed-by:${params['reviewed-by']}`);
-  if (params['review-requested'])
-    queryParts.push(`review-requested:${params['review-requested']}`);
-  if (params.head) queryParts.push(`head:${params.head}`);
-  if (params.base) queryParts.push(`base:${params.base}`);
-  if (params['merged-at']) queryParts.push(`merged:${params['merged-at']}`);
-  if (params.draft !== undefined) queryParts.push(`draft:${params.draft}`);
-  if (params.checks) queryParts.push(`status:${params.checks}`);
-  if (params.merged !== undefined)
-    queryParts.push(`is:${params.merged ? 'merged' : 'unmerged'}`);
-  if (params.review) queryParts.push(`review:${params.review}`);
-
-  // Additional parameters
-  if (params.app) queryParts.push(`app:${params.app}`);
-  if (params.archived !== undefined)
-    queryParts.push(`archived:${params.archived}`);
-  if (params.comments) queryParts.push(`comments:${params.comments}`);
-  if (params.interactions)
-    queryParts.push(`interactions:${params.interactions}`);
-  if (params.reactions) queryParts.push(`reactions:${params.reactions}`);
-  if (params.locked) queryParts.push('is:locked');
-  if (params.visibility) queryParts.push(`is:${params.visibility}`);
-  if (params['team-mentions'])
-    queryParts.push(`team:${params['team-mentions']}`);
-  if (params['no-assignee']) queryParts.push('no:assignee');
-  if (params['no-label']) queryParts.push('no:label');
-  if (params['no-milestone']) queryParts.push('no:milestone');
-  if (params['no-project']) queryParts.push('no:project');
+  // Add filters to the query string
+  if (params.state) queryParts.push(`state:${params.state}`);
+  if (params.author) queryParts.push(`author:${params.author}`);
+  if (params.assignee) queryParts.push(`assignee:${params.assignee}`);
+  if (params.language) queryParts.push(`language:${params.language}`);
   if (params.label) {
     const labels = Array.isArray(params.label) ? params.label : [params.label];
     labels.forEach(label => queryParts.push(`label:"${label}"`));
   }
-  if (params.milestone) queryParts.push(`milestone:"${params.milestone}"`);
-  if (params.project) queryParts.push(`project:${params.project}`);
-  if (params.match) {
-    params.match.forEach(field => queryParts.push(`in:${field}`));
-  }
 
-  // Add type qualifier to search only pull requests
-  queryParts.push('type:pr');
+  const query = queryParts.join(' ');
+  const encodedQuery = encodeURIComponent(query);
+  const perPage = Math.min(params.limit || 30, 100);
 
-  const query = queryParts.filter(Boolean).join(' ');
-  const limit = Math.min(params.limit || 30, 100);
-
-  let apiPath = `search/issues?q=${encodeURIComponent(query)}&per_page=${limit}`;
-  if (params.sort) apiPath += `&sort=${params.sort}`;
-  if (params.order) apiPath += `&order=${params.order}`;
-
-  return { command: 'api', args: [apiPath] };
+  return {
+    command: 'api',
+    args: [`search/issues?q=${encodedQuery}&per_page=${perPage}`],
+  };
 }
 
 export function buildGitHubPullRequestsListCommand(

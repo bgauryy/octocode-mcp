@@ -20,7 +20,8 @@ import {
   getErrorWithSuggestion,
   SUGGESTIONS,
 } from '../errorMessages';
-import { ContentSanitizer } from '../../security/contentSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
+import { GitHubCodeSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
@@ -114,81 +115,71 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const validation = ContentSanitizer.validateInputParameters(args);
-      if (!validation.isValid) {
-        return createResult({
-          error: `Security validation failed: ${validation.warnings.join(', ')}`,
-        });
-      }
+    withSecurityValidation(
+      async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
+        // Validate that exactly one search parameter is provided (not both)
+        const hasExactQuery = !!args.exactQuery;
+        const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
 
-      // Use sanitized parameters for the rest of the processing
-      const sanitizedArgs =
-        validation.sanitizedParams as GitHubCodeSearchParams;
-      // Validate that exactly one search parameter is provided (not both)
-      const hasExactQuery = !!sanitizedArgs.exactQuery;
-      const hasQueryTerms =
-        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
-
-      if (!hasExactQuery && !hasQueryTerms) {
-        return createResult({
-          error: 'One search parameter required: exactQuery OR queryTerms',
-        });
-      }
-
-      if (hasExactQuery && hasQueryTerms) {
-        return createResult({
-          error:
-            'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
-        });
-      }
-
-      try {
-        const result = await searchGitHubCode(sanitizedArgs);
-
-        if (result.isError) {
-          return result;
-        }
-
-        const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults: GitHubCodeSearchItem[] = execResult.result;
-
-        // GitHub CLI returns a direct array, not an object with total_count and items
-        const items = Array.isArray(codeResults) ? codeResults : [];
-
-        // Smart handling for no results - provide actionable suggestions
-        if (items.length === 0) {
-          // Provide progressive search guidance based on current parameters
-          let specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
-
-          // If filters were used, suggest removing them first
-          if (
-            sanitizedArgs.language ||
-            sanitizedArgs.owner ||
-            sanitizedArgs.filename ||
-            sanitizedArgs.extension
-          ) {
-            specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
-          }
-
+        if (!hasExactQuery && !hasQueryTerms) {
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError: createNoResultsError('code'),
-              suggestion: specificSuggestion,
-            }),
+            error: 'One search parameter required: exactQuery OR queryTerms',
           });
         }
 
-        // Transform to optimized format
-        const optimizedResult = transformToOptimizedFormat(items);
+        if (hasExactQuery && hasQueryTerms) {
+          return createResult({
+            error:
+              'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
+          });
+        }
 
-        return createResult({ data: optimizedResult });
-      } catch (error) {
-        const errorMessage = (error as Error).message || '';
-        return handleSearchError(errorMessage);
+        try {
+          const result = await searchGitHubCode(args);
+
+          if (result.isError) {
+            return result;
+          }
+
+          const execResult = JSON.parse(result.content[0].text as string);
+          const codeResults: GitHubCodeSearchItem[] = execResult.result;
+
+          // GitHub CLI returns a direct array, not an object with total_count and items
+          const items = Array.isArray(codeResults) ? codeResults : [];
+
+          // Smart handling for no results - provide actionable suggestions
+          if (items.length === 0) {
+            // Provide progressive search guidance based on current parameters
+            let specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
+
+            // If filters were used, suggest removing them first
+            if (
+              args.language ||
+              args.owner ||
+              args.filename ||
+              args.extension
+            ) {
+              specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
+            }
+
+            return createResult({
+              error: getErrorWithSuggestion({
+                baseError: createNoResultsError('code'),
+                suggestion: specificSuggestion,
+              }),
+            });
+          }
+
+          // Transform to optimized format
+          const optimizedResult = transformToOptimizedFormat(items);
+
+          return createResult({ data: optimizedResult });
+        } catch (error) {
+          const errorMessage = (error as Error).message || '';
+          return handleSearchError(errorMessage);
+        }
       }
-    }
+    )
   );
 }
 
@@ -342,129 +333,8 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
  * Uses proper flags (--flag=value) for filters and direct query terms.
  */
 export function buildGitHubCliArgs(params: GitHubCodeSearchParams): string[] {
-  const args: string[] = ['code'];
-
-  // Build search query (either exactQuery OR queryTerms, never both)
-  if (params.exactQuery) {
-    // Wrap in quotes for exact phrase matching
-    args.push(`"${params.exactQuery}"`);
-  } else if (params.queryTerms && params.queryTerms.length > 0) {
-    // Join query terms with spaces for AND logic in a single query string
-    const queryString = params.queryTerms.join(' ');
-    args.push(queryString);
-  }
-
-  // Add explicit parameters as CLI flags (following GitHub CLI format)
-  if (params.language) {
-    args.push(`--language=${params.language}`);
-  }
-
-  // Handle owner and repo parameters properly
-  if (params.repo) {
-    // WORKAROUND: Handle stringified arrays for repo parameter
-    let repos: string[];
-    if (Array.isArray(params.repo)) {
-      repos = params.repo;
-    } else if (typeof params.repo === 'string') {
-      if (params.repo.includes('", "')) {
-        repos = params.repo
-          .split('", "')
-          .map(item => item.replace(/^"|"$/g, ''));
-      } else if (params.repo.includes(', ')) {
-        repos = params.repo.split(', ');
-      } else if (params.repo.includes(',')) {
-        repos = params.repo.split(',');
-      } else {
-        repos = [params.repo];
-      }
-    } else {
-      repos = [String(params.repo)];
-    }
-
-    repos.forEach(repo => {
-      // If both owner and repo are provided, combine them for --repo flag
-      if (params.owner && !repo.includes('/')) {
-        // WORKAROUND: Handle stringified arrays for owner parameter in this context too
-        let owners: string[];
-        if (Array.isArray(params.owner)) {
-          owners = params.owner;
-        } else if (typeof params.owner === 'string') {
-          if (params.owner.includes('", "')) {
-            owners = params.owner
-              .split('", "')
-              .map(item => item.replace(/^"|"$/g, ''));
-          } else if (params.owner.includes(', ')) {
-            owners = params.owner.split(', ');
-          } else if (params.owner.includes(',')) {
-            owners = params.owner.split(',');
-          } else {
-            owners = [params.owner];
-          }
-        } else {
-          owners = [String(params.owner)];
-        }
-
-        owners.forEach(owner => args.push(`--repo=${owner}/${repo}`));
-      } else {
-        // Repo is already in owner/repo format or no owner provided
-        args.push(`--repo=${repo}`);
-      }
-    });
-  } else if (params.owner) {
-    // Only owner provided, no repo - use --owner flag for organization-wide search
-    let owners: string[];
-
-    if (Array.isArray(params.owner)) {
-      owners = params.owner;
-    } else if (typeof params.owner === 'string') {
-      // WORKAROUND: Handle various stringified array formats due to MCP SDK parameter processing
-      if (params.owner.includes('", "')) {
-        // Format: "microsoft", "facebook" (with quotes around each item)
-        owners = params.owner
-          .split('", "')
-          .map(item => item.replace(/^"|"$/g, ''));
-      } else if (params.owner.includes(', ')) {
-        // Format: microsoft, facebook (comma-space separated, no quotes)
-        owners = params.owner.split(', ');
-      } else if (params.owner.includes(',')) {
-        // Format: microsoft,facebook (comma separated, no spaces)
-        owners = params.owner.split(',');
-      } else {
-        // Single owner string
-        owners = [params.owner];
-      }
-    } else {
-      owners = [String(params.owner)];
-    }
-
-    owners.forEach(owner => args.push(`--owner=${owner}`));
-  }
-
-  if (params.filename) {
-    args.push(`--filename=${params.filename}`);
-  }
-
-  if (params.extension) {
-    args.push(`--extension=${params.extension}`);
-  }
-
-  if (params.size) {
-    args.push(`--size=${params.size}`);
-  }
-
-  // Handle match parameter - use --match flag
-  if (params.match) {
-    args.push(`--match=${params.match}`);
-  }
-
-  // Add limit flag (use default 30 if not specified)
-  const limit = params.limit || 30;
-  args.push(`--limit=${limit}`);
-
-  // Add JSON output format
-  args.push('--json=repository,path,textMatches,sha,url');
-
-  return args;
+  const builder = new GitHubCodeSearchBuilder();
+  return builder.build(params);
 }
 
 export async function searchGitHubCode(

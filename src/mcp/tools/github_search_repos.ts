@@ -9,7 +9,8 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
-import { validateSearchToolInput } from '../../security/searchToolSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
+import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
@@ -288,71 +289,62 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const securityCheck = validateSearchToolInput(args);
-      if (!securityCheck.isValid) {
-        return securityCheck.error!;
-      }
-      const sanitizedArgs = securityCheck.sanitizedArgs;
+    withSecurityValidation(
+      async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
+        // Validate that exactly one search parameter is provided (not both)
+        const hasExactQuery = !!args.exactQuery;
+        const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
 
-      // Validate that exactly one search parameter is provided (not both)
-      const hasExactQuery = !!sanitizedArgs.exactQuery;
-      const hasQueryTerms =
-        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
-
-      if (hasExactQuery && hasQueryTerms) {
-        return createResult({
-          error:
-            'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
-        });
-      }
-
-      try {
-        // Extract owner/repo from query if present
-        const queryInfo = sanitizedArgs.exactQuery
-          ? extractOwnerRepoFromQuery(sanitizedArgs.exactQuery)
-          : sanitizedArgs.queryTerms
-            ? {
-                cleanedQuery: sanitizedArgs.queryTerms.join(' '),
-                extractedOwner: undefined,
-                extractedRepo: undefined,
-              }
-            : {
-                cleanedQuery: '',
-                extractedOwner: undefined,
-                extractedRepo: undefined,
-              };
-
-        // Merge extracted owner with explicit owner parameter
-        let finalOwner = sanitizedArgs.owner;
-        if (queryInfo.extractedOwner && !finalOwner) {
-          finalOwner = queryInfo.extractedOwner;
+        if (hasExactQuery && hasQueryTerms) {
+          return createResult({
+            error:
+              'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
+          });
         }
 
-        // Update parameters with extracted information
-        const enhancedArgs: GitHubReposSearchParams = {
-          ...args,
-          exactQuery: sanitizedArgs.exactQuery
-            ? queryInfo.cleanedQuery
-            : undefined,
-          queryTerms: sanitizedArgs.queryTerms,
-          owner: finalOwner,
-        };
+        try {
+          // Extract owner/repo from query if present
+          const queryInfo = args.exactQuery
+            ? extractOwnerRepoFromQuery(args.exactQuery)
+            : args.queryTerms
+              ? {
+                  cleanedQuery: args.queryTerms.join(' '),
+                  extractedOwner: undefined,
+                  extractedRepo: undefined,
+                }
+              : {
+                  cleanedQuery: '',
+                  extractedOwner: undefined,
+                  extractedRepo: undefined,
+                };
 
-        // Enhanced validation logic for primary filters
-        const hasPrimaryFilter =
-          enhancedArgs.exactQuery?.trim() ||
-          (enhancedArgs.queryTerms && enhancedArgs.queryTerms.length > 0) ||
-          enhancedArgs.owner ||
-          enhancedArgs.language ||
-          enhancedArgs.topic ||
-          enhancedArgs.stars ||
-          enhancedArgs.forks;
+          // Merge extracted owner with explicit owner parameter
+          let finalOwner = args.owner;
+          if (queryInfo.extractedOwner && !finalOwner) {
+            finalOwner = queryInfo.extractedOwner;
+          }
 
-        if (!hasPrimaryFilter) {
-          return createResult({
-            error: `Repository search requires at least one filter. Try:
+          // Update parameters with extracted information
+          const enhancedArgs: GitHubReposSearchParams = {
+            ...args,
+            exactQuery: args.exactQuery ? queryInfo.cleanedQuery : undefined,
+            queryTerms: args.queryTerms,
+            owner: finalOwner,
+          };
+
+          // Enhanced validation logic for primary filters
+          const hasPrimaryFilter =
+            enhancedArgs.exactQuery?.trim() ||
+            (enhancedArgs.queryTerms && enhancedArgs.queryTerms.length > 0) ||
+            enhancedArgs.owner ||
+            enhancedArgs.language ||
+            enhancedArgs.topic ||
+            enhancedArgs.stars ||
+            enhancedArgs.forks;
+
+          if (!hasPrimaryFilter) {
+            return createResult({
+              error: `Repository search requires at least one filter. Try:
 • Topic search: { topic: "react" }
 • Exact search: { exactQuery: "cli shell" }  
 • Multiple terms: { queryTerms: ["react", "hooks"] }
@@ -360,108 +352,109 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 • Language filter: { language: "go" }
 
 Alternative: Use npm search for package discovery.`,
-          });
-        }
+            });
+          }
 
-        // First attempt: Search with current parameters
-        const result = await searchGitHubRepos(enhancedArgs);
+          // First attempt: Search with current parameters
+          const result = await searchGitHubRepos(enhancedArgs);
 
-        if (result.isError) {
-          const errorMsg = (result.content?.[0]?.text as string) || '';
+          if (result.isError) {
+            const errorMsg = (result.content?.[0]?.text as string) || '';
 
-          // Smart fallbacks based on error type
-          if (errorMsg.includes('rate limit')) {
-            return createResult({
-              error: `GitHub API rate limit exceeded. Alternatives:
+            // Smart fallbacks based on error type
+            if (errorMsg.includes('rate limit')) {
+              return createResult({
+                error: `GitHub API rate limit exceeded. Alternatives:
 • Use npm search for package discovery
 • Remove quality filters (stars/forks)  
 • Search fewer organizations
 • Wait 5-10 minutes and retry`,
-            });
-          }
+              });
+            }
 
-          if (errorMsg.includes('authentication')) {
-            return createResult({
-              error: `Authentication required:
+            if (errorMsg.includes('authentication')) {
+              return createResult({
+                error: `Authentication required:
 • Run: gh auth login
 • For private repos: use api_status_check tool
 • Public repos work without auth
 
 Alternative: Use npm search for packages.`,
+              });
+            }
+
+            return result; // Return original error for other cases
+          }
+
+          // Check if we got results
+          const resultData = JSON.parse(result.content[0].text as string);
+          const hasResults = resultData.total_count > 0;
+
+          // Smart fallback strategies for no results
+          if (!hasResults) {
+            const suggestions = [];
+
+            if (enhancedArgs.exactQuery) {
+              suggestions.push('• Try broader search terms');
+            }
+
+            if (enhancedArgs.language) {
+              suggestions.push('• Remove language filter');
+            }
+
+            if (enhancedArgs.stars || enhancedArgs.forks) {
+              suggestions.push('• Lower quality thresholds');
+            }
+
+            if (!enhancedArgs.topic) {
+              suggestions.push('• Try topic search: { topic: "react" }');
+            }
+
+            if (enhancedArgs.owner) {
+              suggestions.push('• Remove owner filter for global search');
+            }
+
+            suggestions.push('• Use npm search for package discovery');
+
+            return createResult({
+              error: `No repositories found. Try:
+${suggestions.join('\n')}`,
             });
           }
 
-          return result; // Return original error for other cases
-        }
+          // Fallback for private repositories: If no results and owner is specified, try with private visibility
+          if (enhancedArgs.owner && !enhancedArgs.visibility) {
+            // Try searching with private visibility for organization repos
+            const privateSearchArgs: GitHubReposSearchParams = {
+              ...enhancedArgs,
+              visibility: 'private' as const,
+            };
 
-        // Check if we got results
-        const resultData = JSON.parse(result.content[0].text as string);
-        const hasResults = resultData.total_count > 0;
-
-        // Smart fallback strategies for no results
-        if (!hasResults) {
-          const suggestions = [];
-
-          if (enhancedArgs.exactQuery) {
-            suggestions.push('• Try broader search terms');
-          }
-
-          if (enhancedArgs.language) {
-            suggestions.push('• Remove language filter');
-          }
-
-          if (enhancedArgs.stars || enhancedArgs.forks) {
-            suggestions.push('• Lower quality thresholds');
-          }
-
-          if (!enhancedArgs.topic) {
-            suggestions.push('• Try topic search: { topic: "react" }');
-          }
-
-          if (enhancedArgs.owner) {
-            suggestions.push('• Remove owner filter for global search');
-          }
-
-          suggestions.push('• Use npm search for package discovery');
-
-          return createResult({
-            error: `No repositories found. Try:
-${suggestions.join('\n')}`,
-          });
-        }
-
-        // Fallback for private repositories: If no results and owner is specified, try with private visibility
-        if (enhancedArgs.owner && !enhancedArgs.visibility) {
-          // Try searching with private visibility for organization repos
-          const privateSearchArgs: GitHubReposSearchParams = {
-            ...enhancedArgs,
-            visibility: 'private' as const,
-          };
-
-          const privateResult = await searchGitHubRepos(privateSearchArgs);
-          if (!privateResult.isError) {
-            const privateData = JSON.parse(
-              privateResult.content[0].text as string
-            );
-            if (privateData.total_count > 0) {
-              // Return private results with note
-              return createResult({
-                data: {
-                  ...privateData,
-                  note: 'Found results in private repositories within the specified organization.',
-                },
-              });
+            const privateResult = await searchGitHubRepos(privateSearchArgs);
+            if (!privateResult.isError) {
+              const privateData = JSON.parse(
+                privateResult.content[0].text as string
+              );
+              if (privateData.total_count > 0) {
+                // Return private results with note
+                return createResult({
+                  data: {
+                    ...privateData,
+                    note: 'Found results in private repositories within the specified organization.',
+                  },
+                });
+              }
             }
           }
-        }
 
-        return result;
-      } catch (error) {
-        return createResult({
-          error: createSearchFailedError('repositories'),
-        });
+          return result;
+        } catch (error) {
+          return createResult({
+            error: createSearchFailedError('repositories'),
+          });
+        }
       }
-    }
+    )
   );
 }
 
@@ -600,119 +593,6 @@ export function buildGitHubReposSearchCommand(
   command: GhCommand;
   args: string[];
 } {
-  const args = ['repos'];
-
-  let queryForQualifierCheck = '';
-
-  if (params.exactQuery) {
-    args.push(`"${params.exactQuery.trim()}"`);
-    queryForQualifierCheck = params.exactQuery.trim();
-  } else if (params.queryTerms && params.queryTerms.length > 0) {
-    // Add each term as separate argument for AND logic
-    params.queryTerms.forEach(term => args.push(term.trim()));
-    queryForQualifierCheck = params.queryTerms.join(' ');
-  }
-
-  const hasEmbeddedQualifiers =
-    queryForQualifierCheck &&
-    /\b(stars|language|org|repo|topic|user|created|updated|size|license|archived|fork|good-first-issues|help-wanted-issues):/i.test(
-      queryForQualifierCheck
-    );
-
-  args.push(
-    '--json=name,fullName,description,language,stargazersCount,forksCount,updatedAt,createdAt,url,owner,isPrivate,license,hasIssues,openIssuesCount,isArchived,isFork,visibility'
-  );
-
-  type ParamName = keyof GitHubReposSearchParams;
-
-  // Helper function to clean string values by removing surrounding quotes
-  const cleanStringValue = (value: any): string => {
-    if (typeof value === 'number') {
-      return value.toString();
-    }
-
-    let str = value.toString().trim();
-
-    // Remove surrounding quotes if they exist
-    if (
-      (str.startsWith('"') && str.endsWith('"')) ||
-      (str.startsWith("'") && str.endsWith("'"))
-    ) {
-      str = str.slice(1, -1);
-    }
-
-    return str;
-  };
-
-  const addArg = (
-    paramName: ParamName,
-    cliFlag: string,
-    condition: boolean = true,
-    formatter?: (value: any) => string
-  ) => {
-    const value = params[paramName];
-    if (value !== undefined && condition) {
-      if (Array.isArray(value)) {
-        // Clean each array element
-        const cleanedValues = value.map(v => cleanStringValue(v));
-        args.push(`--${cliFlag}=${cleanedValues.join(',')}`);
-      } else if (formatter) {
-        args.push(`--${cliFlag}=${formatter(value)}`);
-      } else {
-        args.push(`--${cliFlag}=${cleanStringValue(value)}`);
-      }
-    }
-  };
-
-  // CORE FILTERS
-  addArg('owner', 'owner', !hasEmbeddedQualifiers);
-  addArg('language', 'language', !hasEmbeddedQualifiers);
-  addArg('forks', 'forks', !hasEmbeddedQualifiers, value =>
-    cleanStringValue(value)
-  );
-  addArg('topic', 'topic', !hasEmbeddedQualifiers);
-  addArg('number-topics', 'number-topics', true, value =>
-    cleanStringValue(value)
-  );
-
-  addArg('stars', 'stars', !hasEmbeddedQualifiers, value =>
-    cleanStringValue(value)
-  );
-
-  // QUALITY & STATE FILTERS
-  addArg('archived', 'archived');
-  addArg('include-forks', 'include-forks');
-  addArg('visibility', 'visibility');
-  addArg('license', 'license');
-
-  // DATE & SIZE FILTERS
-  addArg('created', 'created');
-  addArg('updated', 'updated');
-  addArg('size', 'size');
-
-  // COMMUNITY FILTERS
-  addArg('good-first-issues', 'good-first-issues', true, value =>
-    cleanStringValue(value)
-  );
-  addArg('help-wanted-issues', 'help-wanted-issues', true, value =>
-    cleanStringValue(value)
-  );
-  addArg('followers', 'followers', true, value => cleanStringValue(value));
-
-  // SEARCH SCOPE
-  addArg('match', 'match');
-
-  // SORTING AND LIMITS
-  const sortBy = params.sort || 'best-match';
-  if (sortBy !== 'best-match') {
-    args.push(`--sort=${sortBy}`);
-  }
-
-  addArg('order', 'order');
-
-  // Always add limit with default of 30
-  const limit = params.limit || 30;
-  args.push(`--limit=${limit}`);
-
-  return { command: 'search', args };
+  const builder = new GitHubReposSearchBuilder();
+  return { command: 'search', args: builder.build(params) };
 }

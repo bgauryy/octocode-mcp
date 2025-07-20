@@ -17,7 +17,8 @@ import {
   createRateLimitError,
   createSearchFailedError,
 } from '../errorMessages';
-import { validateSearchToolInput } from '../../security/searchToolSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
+import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
@@ -222,50 +223,43 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const securityCheck = validateSearchToolInput(args);
-      if (!securityCheck.isValid) {
-        return securityCheck.error!;
-      }
-      const sanitizedArgs = securityCheck.sanitizedArgs;
-
-      if (!sanitizedArgs.query?.trim()) {
-        return createResult({
-          error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
-        });
-      }
-
-      if (sanitizedArgs.query.length > 256) {
-        return createResult({
-          error: ERROR_MESSAGES.QUERY_TOO_LONG,
-        });
-      }
-
-      try {
-        return await searchGitHubIssues(
-          sanitizedArgs as GitHubIssuesSearchParams
-        );
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '';
-        if (errorMessage.includes('authentication')) {
+    withSecurityValidation(
+      async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
+        if (!args.query?.trim()) {
           return createResult({
-            error: createAuthenticationError(),
+            error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
           });
         }
 
-        if (errorMessage.includes('rate limit')) {
+        if (args.query.length > 256) {
           return createResult({
-            error: createRateLimitError(false),
+            error: ERROR_MESSAGES.QUERY_TOO_LONG,
           });
         }
 
-        // Generic fallback
-        return createResult({
-          error: createSearchFailedError('issues'),
-        });
+        try {
+          return await searchGitHubIssues(args);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '';
+          if (errorMessage.includes('authentication')) {
+            return createResult({
+              error: createAuthenticationError(),
+            });
+          }
+
+          if (errorMessage.includes('rate limit')) {
+            return createResult({
+              error: createRateLimitError(false),
+            });
+          }
+
+          // Generic fallback
+          return createResult({
+            error: createSearchFailedError('issues'),
+          });
+        }
       }
-    }
+    )
   );
 }
 
@@ -487,81 +481,6 @@ export function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
   command: GhCommand;
   args: string[];
 } {
-  const args = ['issues'];
-
-  // Add the search query first if provided
-  if (params.query?.trim()) {
-    args.push(params.query.trim());
-  }
-
-  // Add CLI flags (not search qualifiers)
-  if (params.app) args.push('--app', params.app);
-  if (params.archived !== undefined)
-    args.push('--archived', params.archived.toString());
-  if (params.assignee) args.push('--assignee', params.assignee);
-  if (params.author) args.push('--author', params.author);
-  if (params.closed) args.push('--closed', params.closed);
-  if (params.commenter) args.push('--commenter', params.commenter);
-  if (params.comments) args.push('--comments', params.comments.toString());
-  if (params.created) args.push('--created', params.created);
-  if (params['include-prs']) args.push('--include-prs');
-  if (params.interactions)
-    args.push('--interactions', params.interactions.toString());
-  if (params.involves) args.push('--involves', params.involves);
-
-  // Handle labels
-  if (params.label) {
-    const labels = Array.isArray(params.label) ? params.label : [params.label];
-    args.push('--label', labels.join(','));
-  }
-
-  if (params.language) args.push('--language', params.language);
-  if (params.locked) args.push('--locked');
-
-  // Handle match
-  if (params.match) {
-    args.push('--match', params.match);
-  }
-
-  if (params.mentions) args.push('--mentions', params.mentions);
-  if (params.milestone) args.push('--milestone', params.milestone);
-  if (params['no-assignee']) args.push('--no-assignee');
-  if (params['no-label']) args.push('--no-label');
-  if (params['no-milestone']) args.push('--no-milestone');
-  if (params['no-project']) args.push('--no-project');
-
-  // Handle owner/repo
-  if (params.owner && params.repo) {
-    args.push('--repo', `${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    args.push('--owner', params.owner);
-  }
-
-  if (params.project) args.push('--project', params.project);
-  if (params.reactions) args.push('--reactions', params.reactions.toString());
-  if (params.state) args.push('--state', params.state);
-  if (params['team-mentions'])
-    args.push('--team-mentions', params['team-mentions']);
-  if (params.updated) args.push('--updated', params.updated);
-  if (params.visibility) args.push('--visibility', params.visibility);
-
-  // Sort and order
-  if (params.sort) {
-    args.push('--sort', params.sort);
-  }
-  if (params.order) {
-    args.push('--order', params.order);
-  }
-
-  // Limit
-  const limit = Math.min(params.limit || 25, 100);
-  args.push('--limit', limit.toString());
-
-  // JSON output - note: body is not included in search results, we fetch it separately
-  args.push(
-    '--json',
-    'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url'
-  );
-
-  return { command: 'search', args };
+  const builder = new GitHubIssuesSearchBuilder();
+  return { command: 'search', args: builder.build(params) };
 }

@@ -56,7 +56,7 @@ Dramatically increase development velocity by enabling teams to instantly learn 
 
 **Zero-Configuration Setup** - Works with existing GitHub CLI authentication, no personal access tokens needed
 
-**Enterprise-Ready Security** - Respects organizational permissions with multi-layer security protection
+**Enterprise-Ready Security** - Respects organizational permissions with content sanitization
 
 **AI Token Optimization** - Reduces AI costs by through intelligent content processing
 
@@ -100,7 +100,13 @@ gh auth login
 npm login
 ```
 
-### 3. Add to MCP Configuration
+### 3. Add to Claude Desktop
+```bash
+# For Claude Desktop users
+claude mcp add octocode npx 'octocode-mcp@latest'
+```
+
+### Or Add to MCP Configuration Manually
 ```json
 {
   "octocode-mcp": {
@@ -212,10 +218,9 @@ where.exe npm
 - **🔑 Safe Authentication** - Uses GitHub CLI OAuth, no personal tokens needed
 
 ### Enterprise Security
-- **🛡️ Multi-Layer Protection** - Input validation, content sanitization, and output filtering
-- **🔐 Secret Detection** - Automatic detection and redaction of 1100+ secret patterns
+- **🛡️ Content Protection** - Input validation and content sanitization
+- **🔐 Secret Detection** - Automatic detection and redaction of sensitive data patterns
 - **⚪ Safe Commands Only** - Pre-approved GitHub CLI and NPM commands only
-- **🚨 Threat Detection** - Real-time scanning for malicious patterns
 
 > **📚 For comprehensive security architecture details, see [Technical Summary](./docs/summary.md)**
 
