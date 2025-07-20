@@ -2,21 +2,21 @@
   "dxt_version": "0.1",
   "name": "octocode-mcp",
   "display_name": "Octocode MCP Extension",
-  "version": "1.0.0",
+  "version": "2.3.25",
   "description": "GitHub code search and npm package exploration MCP server",
   "long_description": "A comprehensive MCP server that provides GitHub code search, repository exploration, commit history, pull requests, issues, and npm package search capabilities. This extension enables AI assistants to efficiently search and analyze code across GitHub repositories and npm packages with advanced filtering and content retrieval features.",
   "author": {
-    "name": "Octocode Team",
-    "email": "support@octocode.dev",
-    "url": "https://github.com/octocode-dev"
+    "name": "Guy Bary",
+    "email": "bgauryy@gmail.com",
+    "url": "https://octocode.ai"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/guybary/octocode-mcp"
+    "url": "https://github.com/bgauryy/octocode-mcp"
   },
-  "homepage": "https://github.com/guybary/octocode-mcp",
-  "documentation": "https://github.com/guybary/octocode-mcp#readme",
-  "support": "https://github.com/guybary/octocode-mcp/issues",
+  "homepage": "https://octocode.ai",
+  "documentation": "https://github.com/bgauryy/octocode-mcp#readme",
+  "support": "https://github.com/bgauryy/octocode-mcp/issues",
   "icon": "assets/logo.png",
   "server": {
     "type": "node",
