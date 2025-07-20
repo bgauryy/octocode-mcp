@@ -17,7 +17,7 @@ import {
   createRateLimitError,
   createSearchFailedError,
 } from '../errorMessages';
-import { validateSearchToolInput } from '../../security/searchToolSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
@@ -222,50 +222,43 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const securityCheck = validateSearchToolInput(args);
-      if (!securityCheck.isValid) {
-        return securityCheck.error!;
-      }
-      const sanitizedArgs = securityCheck.sanitizedArgs;
-
-      if (!sanitizedArgs.query?.trim()) {
-        return createResult({
-          error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
-        });
-      }
-
-      if (sanitizedArgs.query.length > 256) {
-        return createResult({
-          error: ERROR_MESSAGES.QUERY_TOO_LONG,
-        });
-      }
-
-      try {
-        return await searchGitHubIssues(
-          sanitizedArgs as GitHubIssuesSearchParams
-        );
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '';
-        if (errorMessage.includes('authentication')) {
+    withSecurityValidation(
+      async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
+        if (!args.query?.trim()) {
           return createResult({
-            error: createAuthenticationError(),
+            error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
           });
         }
 
-        if (errorMessage.includes('rate limit')) {
+        if (args.query.length > 256) {
           return createResult({
-            error: createRateLimitError(false),
+            error: ERROR_MESSAGES.QUERY_TOO_LONG,
           });
         }
 
-        // Generic fallback
-        return createResult({
-          error: createSearchFailedError('issues'),
-        });
+        try {
+          return await searchGitHubIssues(args);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '';
+          if (errorMessage.includes('authentication')) {
+            return createResult({
+              error: createAuthenticationError(),
+            });
+          }
+
+          if (errorMessage.includes('rate limit')) {
+            return createResult({
+              error: createRateLimitError(false),
+            });
+          }
+
+          // Generic fallback
+          return createResult({
+            error: createSearchFailedError('issues'),
+          });
+        }
       }
-    }
+    )
   );
 }
 

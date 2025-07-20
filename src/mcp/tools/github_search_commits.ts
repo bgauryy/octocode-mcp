@@ -20,7 +20,7 @@ import {
   createNoResultsError,
   createSearchFailedError,
 } from '../errorMessages';
-import { validateSearchToolInput } from '../../security/searchToolSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
@@ -197,146 +197,130 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubCommitSearchParams): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const securityCheck = validateSearchToolInput(args);
-      if (!securityCheck.isValid) {
-        return securityCheck.error!;
-      }
-      const sanitizedArgs = securityCheck.sanitizedArgs;
+    withSecurityValidation(
+      async (args: GitHubCommitSearchParams): Promise<CallToolResult> => {
+        // Validate search parameters
+        const hasExactQuery = !!args.exactQuery;
+        const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
+        const hasOrTerms = args.orTerms && args.orTerms.length > 0;
 
-      // Validate search parameters
-      const hasExactQuery = !!sanitizedArgs.exactQuery;
-      const hasQueryTerms =
-        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
-      const hasOrTerms =
-        sanitizedArgs.orTerms && sanitizedArgs.orTerms.length > 0;
+        // Check if any filters are provided
+        const hasFilters = !!(
+          args.author ||
+          args.committer ||
+          args['author-name'] ||
+          args['committer-name'] ||
+          args['author-email'] ||
+          args['committer-email'] ||
+          args.hash ||
+          args.parent ||
+          args.tree ||
+          args['author-date'] ||
+          args['committer-date'] ||
+          args.merge !== undefined ||
+          args.visibility ||
+          (args.owner && args.repo)
+        );
 
-      // Check if any filters are provided
-      const hasFilters = !!(
-        sanitizedArgs.author ||
-        sanitizedArgs.committer ||
-        sanitizedArgs['author-name'] ||
-        sanitizedArgs['committer-name'] ||
-        sanitizedArgs['author-email'] ||
-        sanitizedArgs['committer-email'] ||
-        sanitizedArgs.hash ||
-        sanitizedArgs.parent ||
-        sanitizedArgs.tree ||
-        sanitizedArgs['author-date'] ||
-        sanitizedArgs['committer-date'] ||
-        sanitizedArgs.merge !== undefined ||
-        sanitizedArgs.visibility ||
-        (sanitizedArgs.owner && sanitizedArgs.repo)
-      );
-
-      // Allow search with just filters (no query required)
-      if (!hasExactQuery && !hasQueryTerms && !hasOrTerms && !hasFilters) {
-        return createResult({
-          error:
-            'At least one search parameter required: exactQuery, queryTerms, orTerms, or filters (author, committer, hash, date, etc.)',
-        });
-      }
-
-      if (hasExactQuery && (hasQueryTerms || hasOrTerms)) {
-        return createResult({
-          error:
-            'exactQuery cannot be combined with queryTerms or orTerms. Use exactQuery alone or combine queryTerms + orTerms.',
-        });
-      }
-
-      try {
-        const result = await searchGitHubCommits(sanitizedArgs);
-
-        if (result.isError) {
-          return result;
+        // Allow search with just filters (no query required)
+        if (!hasExactQuery && !hasQueryTerms && !hasOrTerms && !hasFilters) {
+          return createResult({
+            error:
+              'At least one search parameter required: exactQuery, queryTerms, orTerms, or filters (author, committer, hash, date, etc.)',
+          });
         }
 
-        const execResult = JSON.parse(result.content[0].text as string);
-        const commits: GitHubCommitSearchItem[] = execResult.result;
-
-        // GitHub CLI returns a direct array
-        const items = Array.isArray(commits) ? commits : [];
-
-        // Smart handling for no results - provide actionable suggestions
-        if (items.length === 0) {
-          // Progressive simplification strategy based on current search complexity
-          const simplificationSteps: string[] = [];
-          let hasFilters = false;
-
-          // Check for active filters
-          const activeFilters = [];
-          if (sanitizedArgs.owner && sanitizedArgs.repo)
-            activeFilters.push('repo');
-          if (sanitizedArgs.author) activeFilters.push('author');
-          if (sanitizedArgs['author-email']) activeFilters.push('author-email');
-          if (sanitizedArgs.hash) activeFilters.push('hash');
-          if (sanitizedArgs['author-date']) activeFilters.push('date');
-          if (sanitizedArgs.visibility) activeFilters.push('visibility');
-
-          hasFilters = activeFilters.length > 0;
-
-          // Step 1: Suggest using queryTerms for broader search if using exactQuery
-          if (sanitizedArgs.exactQuery) {
-            const words = sanitizedArgs.exactQuery.trim().split(' ');
-            if (words.length > 1) {
-              simplificationSteps.push(
-                `Try queryTerms instead: ["${words[0]}", "${words[1]}"] for broader results`
-              );
-            }
-          }
-
-          // Step 2: Suggest separate searches for OR operations
-          if (sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 2) {
-            const simplified = sanitizedArgs.queryTerms.slice(0, 2);
-            simplificationSteps.push(
-              `Try fewer terms: ["${simplified.join('", "')}"] instead of ${sanitizedArgs.queryTerms.length} terms`
-            );
-          }
-
-          // Step 3: Remove filters progressively
-          if (hasFilters) {
-            if (activeFilters.length > 1) {
-              simplificationSteps.push(
-                `Remove some filters (currently: ${activeFilters.join(', ')}) and keep only the most important one`
-              );
-            } else {
-              simplificationSteps.push(
-                `Remove the ${activeFilters[0]} filter and search more broadly`
-              );
-            }
-          }
-
-          // Step 4: Alternative approaches for OR operations
-          if (
-            !sanitizedArgs.exactQuery &&
-            !sanitizedArgs.queryTerms &&
-            hasFilters
-          ) {
-            simplificationSteps.push(
-              'Add search terms: use queryTerms: ["term1", "term2"] with your filters'
-            );
-          }
-
-          // Step 5: Suggest using separate searches for OR operations
-          if (
-            sanitizedArgs.queryTerms &&
-            sanitizedArgs.queryTerms.length === 1
-          ) {
-            simplificationSteps.push(
-              'For OR operations, run separate searches for each term instead of complex queries'
-            );
-          }
-
-          // Step 6: Ask for user guidance if no obvious simplification
-          if (simplificationSteps.length === 0) {
-            simplificationSteps.push(
-              "Try different keywords or ask the user to be more specific about what commits they're looking for"
-            );
-          }
-
+        if (hasExactQuery && (hasQueryTerms || hasOrTerms)) {
           return createResult({
-            error: `${createNoResultsError('commits')}
+            error:
+              'exactQuery cannot be combined with queryTerms or orTerms. Use exactQuery alone or combine queryTerms + orTerms.',
+          });
+        }
+
+        try {
+          const result = await searchGitHubCommits(args);
+
+          if (result.isError) {
+            return result;
+          }
+
+          const execResult = JSON.parse(result.content[0].text as string);
+          const commits: GitHubCommitSearchItem[] = execResult.result;
+
+          // GitHub CLI returns a direct array
+          const items = Array.isArray(commits) ? commits : [];
+
+          // Smart handling for no results - provide actionable suggestions
+          if (items.length === 0) {
+            // Progressive simplification strategy based on current search complexity
+            const simplificationSteps: string[] = [];
+            let hasFilters = false;
+
+            // Check for active filters
+            const activeFilters = [];
+            if (args.owner && args.repo) activeFilters.push('repo');
+            if (args.author) activeFilters.push('author');
+            if (args['author-email']) activeFilters.push('author-email');
+            if (args.hash) activeFilters.push('hash');
+            if (args['author-date']) activeFilters.push('date');
+            if (args.visibility) activeFilters.push('visibility');
+
+            hasFilters = activeFilters.length > 0;
+
+            // Step 1: Suggest using queryTerms for broader search if using exactQuery
+            if (args.exactQuery) {
+              const words = args.exactQuery.trim().split(' ');
+              if (words.length > 1) {
+                simplificationSteps.push(
+                  `Try queryTerms instead: ["${words[0]}", "${words[1]}"] for broader results`
+                );
+              }
+            }
+
+            // Step 2: Suggest separate searches for OR operations
+            if (args.queryTerms && args.queryTerms.length > 2) {
+              const simplified = args.queryTerms.slice(0, 2);
+              simplificationSteps.push(
+                `Try fewer terms: ["${simplified.join('", "')}"] instead of ${args.queryTerms.length} terms`
+              );
+            }
+
+            // Step 3: Remove filters progressively
+            if (hasFilters) {
+              if (activeFilters.length > 1) {
+                simplificationSteps.push(
+                  `Remove some filters (currently: ${activeFilters.join(', ')}) and keep only the most important one`
+                );
+              } else {
+                simplificationSteps.push(
+                  `Remove the ${activeFilters[0]} filter and search more broadly`
+                );
+              }
+            }
+
+            // Step 4: Alternative approaches for OR operations
+            if (!args.exactQuery && !args.queryTerms && hasFilters) {
+              simplificationSteps.push(
+                'Add search terms: use queryTerms: ["term1", "term2"] with your filters'
+              );
+            }
+
+            // Step 5: Suggest using separate searches for OR operations
+            if (args.queryTerms && args.queryTerms.length === 1) {
+              simplificationSteps.push(
+                'For OR operations, run separate searches for each term instead of complex queries'
+              );
+            }
+
+            // Step 6: Ask for user guidance if no obvious simplification
+            if (simplificationSteps.length === 0) {
+              simplificationSteps.push(
+                "Try different keywords or ask the user to be more specific about what commits they're looking for"
+              );
+            }
+
+            return createResult({
+              error: `${createNoResultsError('commits')}
 
 Try these simplified searches:
 ${simplificationSteps.map(step => `• ${step}`).join('\n')}
@@ -355,36 +339,37 @@ Search techniques to try:
 Alternative tools:
 • Use github_search_code for file-specific commits
 • Use github_search_repos to find repositories first`,
-          });
-        }
+            });
+          }
 
-        // Transform to optimized format
-        const optimizedResult = await transformCommitsToOptimizedFormat(
-          items,
-          args
-        );
+          // Transform to optimized format
+          const optimizedResult = await transformCommitsToOptimizedFormat(
+            items,
+            args
+          );
 
-        return createResult({ data: optimizedResult });
-      } catch (error) {
-        const errorMessage = (error as Error).message || '';
+          return createResult({ data: optimizedResult });
+        } catch (error) {
+          const errorMessage = (error as Error).message || '';
 
-        if (errorMessage.includes('authentication')) {
+          if (errorMessage.includes('authentication')) {
+            return createResult({
+              error: createAuthenticationError(),
+            });
+          }
+
+          if (errorMessage.includes('rate limit')) {
+            return createResult({
+              error: createRateLimitError(false),
+            });
+          }
+
           return createResult({
-            error: createAuthenticationError(),
+            error: createSearchFailedError('commits'),
           });
         }
-
-        if (errorMessage.includes('rate limit')) {
-          return createResult({
-            error: createRateLimitError(false),
-          });
-        }
-
-        return createResult({
-          error: createSearchFailedError('commits'),
-        });
       }
-    }
+    )
   );
 }
 

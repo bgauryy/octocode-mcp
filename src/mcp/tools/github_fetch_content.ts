@@ -10,6 +10,7 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContent } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
@@ -95,27 +96,19 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args): Promise<CallToolResult> => {
-      try {
-        // Validate input parameters for security
-        const validation = ContentSanitizer.validateInputParameters(args);
-        if (!validation.isValid) {
+    withSecurityValidation(
+      async (args: GithubFetchRequestParams): Promise<CallToolResult> => {
+        try {
+          const result = await fetchGitHubFileContent(args);
+          return result;
+        } catch (error) {
           return createResult({
-            error: `Security validation failed: ${validation.warnings.join(', ')}`,
+            error:
+              'Failed to fetch file. Verify path with github_get_contents first',
           });
         }
-
-        const result = await fetchGitHubFileContent(
-          validation.sanitizedParams as GithubFetchRequestParams
-        );
-        return result;
-      } catch (error) {
-        return createResult({
-          error:
-            'Failed to fetch file. Verify path with github_get_contents first',
-        });
       }
-    }
+    )
   );
 }
 

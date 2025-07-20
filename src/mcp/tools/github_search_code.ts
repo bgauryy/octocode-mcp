@@ -20,7 +20,7 @@ import {
   getErrorWithSuggestion,
   SUGGESTIONS,
 } from '../errorMessages';
-import { ContentSanitizer } from '../../security/contentSanitizer';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
@@ -114,81 +114,71 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
-      // Validate input parameters for security
-      const validation = ContentSanitizer.validateInputParameters(args);
-      if (!validation.isValid) {
-        return createResult({
-          error: `Security validation failed: ${validation.warnings.join(', ')}`,
-        });
-      }
+    withSecurityValidation(
+      async (args: GitHubCodeSearchParams): Promise<CallToolResult> => {
+        // Validate that exactly one search parameter is provided (not both)
+        const hasExactQuery = !!args.exactQuery;
+        const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
 
-      // Use sanitized parameters for the rest of the processing
-      const sanitizedArgs =
-        validation.sanitizedParams as GitHubCodeSearchParams;
-      // Validate that exactly one search parameter is provided (not both)
-      const hasExactQuery = !!sanitizedArgs.exactQuery;
-      const hasQueryTerms =
-        sanitizedArgs.queryTerms && sanitizedArgs.queryTerms.length > 0;
-
-      if (!hasExactQuery && !hasQueryTerms) {
-        return createResult({
-          error: 'One search parameter required: exactQuery OR queryTerms',
-        });
-      }
-
-      if (hasExactQuery && hasQueryTerms) {
-        return createResult({
-          error:
-            'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
-        });
-      }
-
-      try {
-        const result = await searchGitHubCode(sanitizedArgs);
-
-        if (result.isError) {
-          return result;
-        }
-
-        const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults: GitHubCodeSearchItem[] = execResult.result;
-
-        // GitHub CLI returns a direct array, not an object with total_count and items
-        const items = Array.isArray(codeResults) ? codeResults : [];
-
-        // Smart handling for no results - provide actionable suggestions
-        if (items.length === 0) {
-          // Provide progressive search guidance based on current parameters
-          let specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
-
-          // If filters were used, suggest removing them first
-          if (
-            sanitizedArgs.language ||
-            sanitizedArgs.owner ||
-            sanitizedArgs.filename ||
-            sanitizedArgs.extension
-          ) {
-            specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
-          }
-
+        if (!hasExactQuery && !hasQueryTerms) {
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError: createNoResultsError('code'),
-              suggestion: specificSuggestion,
-            }),
+            error: 'One search parameter required: exactQuery OR queryTerms',
           });
         }
 
-        // Transform to optimized format
-        const optimizedResult = transformToOptimizedFormat(items);
+        if (hasExactQuery && hasQueryTerms) {
+          return createResult({
+            error:
+              'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
+          });
+        }
 
-        return createResult({ data: optimizedResult });
-      } catch (error) {
-        const errorMessage = (error as Error).message || '';
-        return handleSearchError(errorMessage);
+        try {
+          const result = await searchGitHubCode(args);
+
+          if (result.isError) {
+            return result;
+          }
+
+          const execResult = JSON.parse(result.content[0].text as string);
+          const codeResults: GitHubCodeSearchItem[] = execResult.result;
+
+          // GitHub CLI returns a direct array, not an object with total_count and items
+          const items = Array.isArray(codeResults) ? codeResults : [];
+
+          // Smart handling for no results - provide actionable suggestions
+          if (items.length === 0) {
+            // Provide progressive search guidance based on current parameters
+            let specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
+
+            // If filters were used, suggest removing them first
+            if (
+              args.language ||
+              args.owner ||
+              args.filename ||
+              args.extension
+            ) {
+              specificSuggestion = SUGGESTIONS.CODE_SEARCH_NO_RESULTS;
+            }
+
+            return createResult({
+              error: getErrorWithSuggestion({
+                baseError: createNoResultsError('code'),
+                suggestion: specificSuggestion,
+              }),
+            });
+          }
+
+          // Transform to optimized format
+          const optimizedResult = transformToOptimizedFormat(items);
+
+          return createResult({ data: optimizedResult });
+        } catch (error) {
+          const errorMessage = (error as Error).message || '';
+          return handleSearchError(errorMessage);
+        }
       }
-    }
+    )
   );
 }
 
