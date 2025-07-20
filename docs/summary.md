@@ -21,7 +21,7 @@ OctoCode MCP is a Model Context Protocol server that transforms AI assistants in
 ### Key Benefits
 - **Instant Code Intelligence**: Search and analyze code across GitHub and npm ecosystems
 - **Zero-Configuration**: Works with existing GitHub CLI auth—no API tokens needed
-- **Enterprise-Ready**: Respects organizational permissions and includes multi-layer security
+- **Enterprise-Ready**: Respects organizational permissions and includes content sanitization
 - **Token-Efficient**: Reduces AI costs through smart content optimization
 - **Cross-Platform**: Native Windows PowerShell support with automatic path detection
 
@@ -53,7 +53,7 @@ OctoCode MCP is a TypeScript-based Model Context Protocol (MCP) server that prov
 │  │  • Input Validation (Zod)                           │    │
 │  │  • Command Sanitization                             │    │
 │  │  • Secret Masking (1100+ patterns)                  │    │
-│  │  • Prompt Injection Detection                       │    │
+│  │  • Basic Content Protection                         │    │
 │  └─────────────────────────────────────────────────────┘    │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │                 Tool Framework                       │    │
@@ -134,12 +134,11 @@ The codebase implements a sophisticated error recovery system:
 
 ### Security Implementation
 
-#### Multi-Layer Defense System:
+#### Content Protection System:
 
 1. **Input Validation Layer**
    - Comprehensive Zod validation with security checks
    - Parameter sanitization and validation
-   - Malicious input detection
 
 2. **Command Execution Security**
    - Platform-specific command escaping
@@ -147,12 +146,9 @@ The codebase implements a sophisticated error recovery system:
    - Secure argument handling
 
 3. **Content Security Layer**
-   - 1100+ sensitive data patterns across 18+ categories
-   - Advanced threat detection:
-     - Prompt injection patterns (30+ patterns)
-     - Malicious content detection (25+ patterns) 
-     - Cryptographic key detection (15+ key types)
-     - PII and credential masking (500+ patterns)
+   - Sensitive data pattern detection across multiple categories
+   - Cryptographic key detection and masking
+   - PII and credential sanitization
 
 ### Performance Optimizations
 
