@@ -1,6 +1,6 @@
 # Octocode MCP
 
-**The Perfect AI Code Assistant - Advanced Search & Discovery Across GitHub & NPM**
+**The Perfect AI Code Assistant - Advanced Search & Discovery Across GitHub**
 
 <div>
   <img src="./assets/logo.png" width="400px">
