@@ -4,7 +4,6 @@
 
 <div>
   <img src="./assets/logo.png" width="400px">
-  
   [![Version](https://img.shields.io/badge/version-2.3.27-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
