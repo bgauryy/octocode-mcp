@@ -5,6 +5,52 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.27] - 2025-07-21 - Bulk Request Architecture & Docker Support
+
+### 🚀 MAJOR ENHANCEMENT: Bulk Request System with Advanced Parallelization
+
+#### Added
+- **Bulk Search Strategy**: Revolutionary multi-query search system supporting up to 5 parallel searches
+  - **GitHub Code Search**: Bulk query mode with intelligent fallback parameters
+  - **GitHub Repository Search**: Bulk query mode with up to 5 parallel repository searches, fallback parameters, and comprehensive filtering support
+  - **GitHub File Content**: Parallel file fetching with automatic retry logic
+  - **Smart Fallback System**: Automatic parameter adjustment when queries fail (broader terms, relaxed filters)
+  - **Cross-Repository Analysis**: Simultaneous searches across different repos, languages, and file types
+  - **Token Optimization**: Intelligent batching reduces API calls and improves performance
+
+#### Enhanced
+- **GitHub API Rate Limiting**: Added async-mutex for serialized GitHub command execution
+  - **Prevents Rate Limiting**: Ensures only one GitHub API request processes at a time
+  - **Improved Stability**: Eliminates API throttling issues during bulk operations
+  - **Better Error Handling**: Graceful handling of concurrent request conflicts
+
+- **Repository Structure Optimization**: Advanced filtering system for cleaner project exploration
+  - **Depth Control**: Configurable exploration depth (1-4 levels) for balanced performance
+  - **Smart Filtering**: Automatically hides build artifacts, dependencies, and cache directories
+  - **Media File Control**: Optional inclusion of images, videos, and documentation files
+  - **Focus on Code**: Prioritizes source code, tests, and configuration files
+
+#### Docker Support
+- **Complete Containerization**: Full Docker setup with GitHub CLI authentication passthrough
+  - **Docker Compose**: Ready-to-use docker-compose.yml configuration
+  - **Authentication Mounting**: Seamless host GitHub CLI config integration
+  - **Security**: Non-root user execution with proper permission handling
+  - **Documentation**: Comprehensive Docker setup guide
+
+#### Technical Improvements
+- **NPM View Package**: Enhanced field selection with improved validation
+  - **Flexible Field Queries**: Support for single fields, field arrays, and custom patterns
+  - **Better Error Handling**: Improved validation for package names and field specifications
+  - **Repository Discovery**: Enhanced GitHub repository URL extraction
+
+#### Infrastructure
+- **Test Suite Optimization**: Streamlined test architecture for bulk functionality
+  - **Bulk Query Testing**: Comprehensive test coverage for parallel operations
+  - **Mock Improvements**: Enhanced mocking for GitHub API bulk responses
+  - **Performance Testing**: Validation of concurrent operation handling
+
+---
+
 ## [2.3.25] - 2025-01-09 - Optimize tokens usage across tools
 
 #### Enhanced
