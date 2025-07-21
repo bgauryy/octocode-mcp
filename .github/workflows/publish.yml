@@ -4,11 +4,36 @@ on:
   push:
     branches:
       - master
+      - main
 
 jobs:
-  publish:
+  verify:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # Enable Corepack for Yarn support
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run tests
+        run: yarn test
+
+      - name: Build package
+        run: yarn build
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -25,12 +50,6 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
-
-      - name: Run tests
-        run: yarn test
-
-      - name: Build package
-        run: yarn build
 
       - name: Check if version has been updated
         id: check
