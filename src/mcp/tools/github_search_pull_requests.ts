@@ -265,7 +265,7 @@ async function searchGitHubPullRequests(
     const result = await executeGitHubCommand(command, args, { cache: false });
 
     if (result.isError) {
-      const errorMsg = result.content[0].text as string;
+      const errorMsg = safeGetContentText(result);
 
       // Enhanced error handling for repository-specific searches
       if (params.owner && params.repo) {
@@ -288,9 +288,7 @@ async function searchGitHubPullRequests(
           // Repository exists, check if it's a branch-related error
           if (params.head || params.base) {
             try {
-              const repoData = JSON.parse(
-                repoCheckResult.content[0].text as string
-              );
+              const repoData = JSON.parse(safeGetContentText(repoCheckResult));
               const defaultBranch = repoData.result?.default_branch || 'main';
 
               let branchSuggestion = '';
@@ -329,7 +327,7 @@ async function searchGitHubPullRequests(
       return result;
     }
 
-    const execResult = JSON.parse(result.content[0].text as string);
+    const execResult = JSON.parse(safeGetContentText(result));
 
     // Handle both search API and gh pr list formats
     const isListFormat = Array.isArray(execResult.result);
@@ -623,7 +621,7 @@ async function fetchPRCommitData(
       return null;
     }
 
-    const commitsData = JSON.parse(commitsResult.content[0].text as string);
+    const commitsData = JSON.parse(safeGetContentText(commitsResult));
     const commits = commitsData.result?.commits || [];
 
     if (commits.length === 0) {
@@ -641,9 +639,7 @@ async function fetchPRCommitData(
           );
 
           if (!commitResult.isError) {
-            const commitData = JSON.parse(
-              commitResult.content[0].text as string
-            );
+            const commitData = JSON.parse(safeGetContentText(commitResult));
             const result = commitData.result;
 
             return {
@@ -699,4 +695,16 @@ async function fetchPRCommitData(
   } catch (error) {
     return null;
   }
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
 }
