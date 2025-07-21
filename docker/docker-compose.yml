@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  octocode-mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: octocode-mcp
+    volumes:
+      # Mount GitHub CLI configuration from host
+      - ~/.config/gh:/home/nodejs/.config/gh:ro
+      # Mount Git configuration
+      - ~/.gitconfig:/home/nodejs/.gitconfig:ro
+      # Mount SSH keys if needed for private repos
+      - ~/.ssh:/home/nodejs/.ssh:ro
+      # Mount npm config for npm authentication
+      - ~/.npmrc:/home/nodejs/.npmrc:ro
+    environment:
+      # Pass through environment variables
+      - NODE_ENV=production
+      - GH_TOKEN=${GH_TOKEN:-}
+      - NPM_TOKEN=${NPM_TOKEN:-}
+    # Network mode host allows the container to use host's network
+    # This can help with GitHub CLI authentication
+    network_mode: host
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
