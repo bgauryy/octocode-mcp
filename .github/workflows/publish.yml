@@ -7,7 +7,52 @@ on:
       - main
 
 jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          # Get current version from package.json
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          # Split version into major.minor.patch
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          # Increment patch version
+          NEW_VERSION="$major.$minor.$((patch + 1))"
+          echo "New version will be: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          # Update package.json
+          sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" package.json
+          
+          # Update README.md version badge
+          sed -i "s/version-$CURRENT_VERSION-blue/version-$NEW_VERSION-blue/" README.md
+          
+          # Commit and push changes
+          git add package.json README.md
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+          git push
+
   verify:
+    needs: bump-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -32,7 +77,7 @@ jobs:
         run: yarn build
 
   publish:
-    needs: verify
+    needs: [bump-version, verify]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -51,30 +96,16 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Check if version has been updated
-        id: check
+      - name: Setup npmrc for automation
         run: |
-          LATEST_VERSION=$(npm view . version || echo "0.0.0")
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          if [ "$LATEST_VERSION" = "$CURRENT_VERSION" ]; then
-            echo "No version change, skipping publish"
-            echo "version_changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "Version change detected: $LATEST_VERSION -> $CURRENT_VERSION"
-            echo "version_changed=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup npmrc
-        run: |
-          cat << EOF > .npmrc
-          //registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN
-          EOF
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          echo "registry=https://registry.npmjs.org/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish to npm
-        if: steps.check.outputs.version_changed == 'true'
-        run: yarn npm publish
+        run: yarn npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
