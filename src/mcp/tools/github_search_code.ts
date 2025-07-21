@@ -143,10 +143,139 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
   );
 }
 
+// Helper functions for safe type checking
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNonEmptyArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
+}
+
+// Helper function for safe array index access
+function safeGetIndices(match: any): [number, number] {
+  if (
+    match?.indices &&
+    Array.isArray(match.indices) &&
+    match.indices.length >= 2 &&
+    typeof match.indices[0] === 'number' &&
+    typeof match.indices[1] === 'number' &&
+    !isNaN(match.indices[0]) &&
+    !isNaN(match.indices[1]) &&
+    isFinite(match.indices[0]) &&
+    isFinite(match.indices[1])
+  ) {
+    return [match.indices[0], match.indices[1]];
+  }
+  return [0, 0];
+}
+
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[]
 ): Promise<CallToolResult> {
   const results: GitHubCodeSearchQueryResult[] = [];
+
+  // Helper function to handle fallback query execution
+  async function executeFallbackQuery(
+    originalQuery: GitHubCodeSearchQuery,
+    queryId: string
+  ): Promise<GitHubCodeSearchQueryResult> {
+    try {
+      // Create clean query by removing metadata fields
+      const cleanQuery = Object.fromEntries(
+        Object.entries(originalQuery).filter(
+          ([key]) => !['fallbackParams', 'id'].includes(key)
+        )
+      );
+
+      // Create clean fallback params by removing metadata fields
+      const cleanFallbackParams = originalQuery.fallbackParams
+        ? Object.fromEntries(
+            Object.entries(originalQuery.fallbackParams).filter(
+              ([key, value]) =>
+                !['fallbackParams', 'id'].includes(key) &&
+                value !== null &&
+                value !== undefined
+            )
+          )
+        : {};
+
+      // Merge clean query with clean fallback params
+      const fallbackQuery: GitHubCodeSearchQuery = {
+        ...cleanQuery,
+        ...cleanFallbackParams,
+      };
+
+      const fallbackResult = await searchGitHubCode(fallbackQuery);
+
+      if (!fallbackResult.isError) {
+        try {
+          const fallbackExecResult = JSON.parse(
+            safeGetContentText(fallbackResult)
+          );
+          const fallbackCodeResults: GitHubCodeSearchItem[] =
+            fallbackExecResult.result;
+          const fallbackItems = Array.isArray(fallbackCodeResults)
+            ? fallbackCodeResults
+            : [];
+          const fallbackOptimizedResult =
+            transformToOptimizedFormat(fallbackItems);
+
+          return {
+            queryId,
+            originalQuery,
+            result: fallbackOptimizedResult,
+            fallbackTriggered: true,
+            fallbackQuery,
+          };
+        } catch (parseError) {
+          return {
+            queryId,
+            originalQuery,
+            result: { items: [], total_count: 0 },
+            fallbackTriggered: true,
+            fallbackQuery,
+            error: `Failed to parse fallback results: ${
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError)
+            }`,
+          };
+        }
+      }
+
+      return {
+        queryId,
+        originalQuery,
+        result: { items: [], total_count: 0 },
+        fallbackTriggered: true,
+        fallbackQuery,
+        error: safeGetContentText(fallbackResult),
+      };
+    } catch (error) {
+      return {
+        queryId,
+        originalQuery,
+        result: { items: [], total_count: 0 },
+        fallbackTriggered: true,
+        error: `Fallback query failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
 
   // Execute queries sequentially to avoid rate limits
   for (let index = 0; index < queries.length; index++) {
@@ -154,134 +283,72 @@ async function searchMultipleGitHubCode(
     const queryId = query.id || `query_${index + 1}`;
 
     try {
-      // Validate single query
-      const hasExactQuery = !!query.exactQuery;
-      const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
+      // Enhanced validation logic for primary filters with proper type checking
+      const hasPrimaryFilter =
+        isNonEmptyString(query.exactQuery?.trim()) ||
+        isNonEmptyArray(query.queryTerms);
 
-      if (!hasExactQuery && !hasQueryTerms) {
+      if (!hasPrimaryFilter) {
         results.push({
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
           fallbackTriggered: false,
-          error: `Query ${queryId}: One search parameter required: exactQuery OR queryTerms`,
-        });
-        continue;
-      }
-
-      if (hasExactQuery && hasQueryTerms) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          fallbackTriggered: false,
-          error: `Query ${queryId}: Use either exactQuery OR queryTerms, not both`,
+          error: `Query ${queryId}: At least one search parameter required (exactQuery OR queryTerms)`,
         });
         continue;
       }
 
       // Try original query first using the working function directly
-      const result = await searchGitHubCode(query);
+      // Create clean query by removing metadata fields
+      const cleanQuery = Object.fromEntries(
+        Object.entries(query).filter(
+          ([key]) => !['fallbackParams', 'id'].includes(key)
+        )
+      );
+      const result = await searchGitHubCode(cleanQuery);
 
       if (!result.isError) {
-        // Success with original query
-        const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults: GitHubCodeSearchItem[] = execResult.result;
-        const items = Array.isArray(codeResults) ? codeResults : [];
-        const optimizedResult = transformToOptimizedFormat(items);
-
-        // Check if we should try fallback (no results found)
-        if (items.length === 0 && query.fallbackParams) {
-          // Try fallback query
-          const fallbackQuery: GitHubCodeSearchQuery = {
-            ...query,
-            ...query.fallbackParams,
-          };
-
-          const fallbackResult = await searchGitHubCode(fallbackQuery);
-
-          if (!fallbackResult.isError) {
-            // Success with fallback query
-            const fallbackExecResult = JSON.parse(
-              fallbackResult.content[0].text as string
-            );
-            const fallbackCodeResults: GitHubCodeSearchItem[] =
-              fallbackExecResult.result;
-            const fallbackItems = Array.isArray(fallbackCodeResults)
-              ? fallbackCodeResults
-              : [];
-            const fallbackOptimizedResult =
-              transformToOptimizedFormat(fallbackItems);
-
-            results.push({
-              queryId,
-              originalQuery: query,
-              result: fallbackOptimizedResult,
-              fallbackTriggered: true,
-              fallbackQuery,
-            });
-            continue;
-          }
-
-          // Both failed - return fallback error
-          results.push({
-            queryId,
-            originalQuery: query,
-            result: { items: [], total_count: 0 },
-            fallbackTriggered: true,
-            fallbackQuery,
-            error: fallbackResult.content[0].text as string,
-          });
-          continue;
-        }
-
-        // Return original success
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: optimizedResult,
-          fallbackTriggered: false,
-        });
-        continue;
-      }
-
-      // Original query failed, try fallback if available
-      if (query.fallbackParams) {
-        const fallbackQuery: GitHubCodeSearchQuery = {
-          ...query,
-          ...query.fallbackParams,
-        };
-
-        const fallbackResult = await searchGitHubCode(fallbackQuery);
-
-        if (!fallbackResult.isError) {
-          // Success with fallback query
-          const execResult = JSON.parse(
-            fallbackResult.content[0].text as string
-          );
+        try {
+          // Success with original query
+          const execResult = JSON.parse(safeGetContentText(result));
           const codeResults: GitHubCodeSearchItem[] = execResult.result;
           const items = Array.isArray(codeResults) ? codeResults : [];
           const optimizedResult = transformToOptimizedFormat(items);
 
+          // Check if we should try fallback (no results found)
+          if (items.length === 0 && query.fallbackParams) {
+            results.push(await executeFallbackQuery(query, queryId));
+            continue;
+          }
+
+          // Return original success
           results.push({
             queryId,
             originalQuery: query,
             result: optimizedResult,
-            fallbackTriggered: true,
-            fallbackQuery,
+            fallbackTriggered: false,
+          });
+          continue;
+        } catch (parseError) {
+          results.push({
+            queryId,
+            originalQuery: query,
+            result: { items: [], total_count: 0 },
+            fallbackTriggered: false,
+            error: `Failed to parse results: ${
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError)
+            }`,
           });
           continue;
         }
+      }
 
-        // Both failed - return fallback error
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          fallbackTriggered: true,
-          fallbackQuery,
-          error: fallbackResult.content[0].text as string,
-        });
+      // Original query failed, try fallback if available
+      if (query.fallbackParams) {
+        results.push(await executeFallbackQuery(query, queryId));
         continue;
       }
 
@@ -291,7 +358,7 @@ async function searchMultipleGitHubCode(
         originalQuery: query,
         result: { items: [], total_count: 0 },
         fallbackTriggered: false,
-        error: result.content[0].text as string,
+        error: safeGetContentText(result),
       });
     } catch (error) {
       // Handle any unexpected errors
@@ -424,13 +491,8 @@ function transformToOptimizedFormat(
     path: item.path,
     matches:
       item.textMatches?.map(match => ({
-        context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
-        positions:
-          match.matches?.map(m =>
-            Array.isArray(m.indices) && m.indices.length >= 2
-              ? ([m.indices[0], m.indices[1]] as [number, number])
-              : ([0, 0] as [number, number])
-          ) || [],
+        context: optimizeTextMatch(match.fragment, 120),
+        positions: match.matches?.map(m => safeGetIndices(m)) || [],
       })) || [],
     url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
     repository: {

@@ -165,7 +165,7 @@ export async function viewRepositoryStructure(
       });
 
       if (!result.isError) {
-        const execResult = JSON.parse(result.content[0].text as string);
+        const execResult = JSON.parse(safeGetContentText(result));
         const apiItems = execResult.result;
         const items = Array.isArray(apiItems) ? apiItems : [apiItems];
 
@@ -182,7 +182,7 @@ export async function viewRepositoryStructure(
       }
 
       // If initial request failed, start enhanced fallback mechanism
-      const errorMsg = result.content[0].text as string;
+      const errorMsg = safeGetContentText(result);
 
       // Check repository existence first
       const repoCheckResult = await executeGitHubCommand(
@@ -197,7 +197,7 @@ export async function viewRepositoryStructure(
         return handleRepositoryNotFound(
           owner,
           repo,
-          repoCheckResult.content[0].text as string
+          safeGetContentText(repoCheckResult)
         );
       }
 
@@ -208,9 +208,7 @@ export async function viewRepositoryStructure(
         let repoDefaultBranchFound = false;
 
         try {
-          const repoData = JSON.parse(
-            repoCheckResult.content[0].text as string
-          );
+          const repoData = JSON.parse(safeGetContentText(repoCheckResult));
           defaultBranch = repoData.default_branch || 'main';
           repoDefaultBranchFound = true;
         } catch (e) {
@@ -230,7 +228,7 @@ export async function viewRepositoryStructure(
 
           if (!defaultBranchResult.isError) {
             const execResult = JSON.parse(
-              defaultBranchResult.content[0].text as string
+              safeGetContentText(defaultBranchResult)
             );
             const apiItems = execResult.result;
             const items = Array.isArray(apiItems) ? apiItems : [apiItems];
@@ -271,9 +269,7 @@ export async function viewRepositoryStructure(
           triedBranches.push(tryBranch);
 
           if (!tryBranchResult.isError) {
-            const execResult = JSON.parse(
-              tryBranchResult.content[0].text as string
-            );
+            const execResult = JSON.parse(safeGetContentText(tryBranchResult));
             const apiItems = execResult.result;
             const items = Array.isArray(apiItems) ? apiItems : [apiItems];
 
@@ -345,7 +341,7 @@ async function fetchDirectoryContentsRecursively(
       return [];
     }
 
-    const execResult = JSON.parse(result.content[0].text as string);
+    const execResult = JSON.parse(safeGetContentText(result));
     const apiItems = execResult.result;
     const items = Array.isArray(apiItems) ? apiItems : [apiItems];
 
@@ -689,4 +685,16 @@ function handleOtherErrors(
       error: `Failed to access "${owner}/${repo}": ${errorMsg}. Check network connection and repository permissions.`,
     });
   }
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
 }

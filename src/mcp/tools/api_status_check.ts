@@ -13,7 +13,7 @@ const DESCRIPTION = `Check user status: GitHub/NPM connections, organizations, a
 function parseExecResult(result: CallToolResult): { result?: string } | null {
   if (!result.isError && result.content?.[0]?.text) {
     try {
-      const textContent = result.content[0].text;
+      const textContent = result.content?.[0]?.text;
       if (typeof textContent === 'string') {
         const parsed = JSON.parse(textContent);
         return typeof parsed === 'object' && parsed !== null ? parsed : null;

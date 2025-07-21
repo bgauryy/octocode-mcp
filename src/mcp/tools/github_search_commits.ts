@@ -245,7 +245,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
             return result;
           }
 
-          const execResult = JSON.parse(result.content[0].text as string);
+          const execResult = JSON.parse(safeGetContentText(result));
           const commits: GitHubCommitSearchItem[] = execResult.result;
 
           // GitHub CLI returns a direct array
@@ -400,9 +400,7 @@ async function transformCommitsToOptimizedFormat(
           { cache: false }
         );
         if (!diffResult.isError) {
-          const diffExecResult = JSON.parse(
-            diffResult.content[0].text as string
-          );
+          const diffExecResult = JSON.parse(safeGetContentText(diffResult));
           return { sha, commitData: diffExecResult.result };
         }
       } catch (e) {
@@ -549,4 +547,16 @@ export function buildGitHubCommitCliArgs(
 ): string[] {
   const builder = new GitHubCommitsSearchBuilder();
   return builder.build(params);
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
 }

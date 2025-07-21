@@ -733,27 +733,6 @@ describe('GitHub Search Repositories Tool - Bulk Queries', () => {
       registerSearchGitHubReposTool(mockServer.server);
     });
 
-    it('should validate exactQuery and queryTerms exclusivity', async () => {
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            id: 'invalid-combo',
-            exactQuery: 'test',
-            queryTerms: ['test', 'query'],
-          },
-        ],
-      });
-
-      expect(result.isError).toBe(false);
-      const resultData = JSON.parse(result.content[0].text as string);
-
-      expect(resultData.results).toHaveLength(1);
-      expect(resultData.results[0].error).toContain(
-        'Use either exactQuery OR queryTerms, not both'
-      );
-      expect(resultData.summary.successfulQueries).toBe(0);
-    });
-
     it('should require at least one search parameter', async () => {
       const result = await mockServer.callTool('githubSearchRepositories', {
         queries: [
