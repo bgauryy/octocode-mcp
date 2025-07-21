@@ -5,8 +5,12 @@ import { platform } from 'os';
 import { existsSync, statSync } from 'fs';
 import { join, isAbsolute } from 'path';
 import { generateCacheKey, withCache } from './cache';
+import { Mutex } from 'async-mutex';
 
 const safeExecAsync = promisify(nodeExec);
+
+// Global mutex for GitHub API calls to ensure only one request at a time
+const githubMutex = new Mutex();
 
 const ALLOWED_NPM_COMMANDS = [
   'view',
@@ -355,6 +359,7 @@ export async function executeNpmCommand(
 
 /**
  * Execute GitHub CLI commands safely with enhanced security
+ * Uses a mutex to ensure only one GitHub request is processed at a time
  */
 export async function executeGitHubCommand(
   command: GhCommand,
@@ -369,36 +374,47 @@ export async function executeGitHubCommand(
     );
   }
 
-  try {
-    // Get shell configuration
-    const shellConfig = getShellConfig(options.windowsShell);
+  // Use mutex to serialize all GitHub requests
+  return githubMutex.runExclusive(async () => {
+    try {
+      // Get shell configuration
+      const shellConfig = getShellConfig(options.windowsShell);
 
-    // Resolve executable path securely
-    const { path: ghExecutable, source } = resolveExecutablePath('gh', options);
+      // Resolve executable path securely
+      const { path: ghExecutable, source } = resolveExecutablePath(
+        'gh',
+        options
+      );
 
-    // Build command with escaped arguments
-    const escapedArgs = args.map(arg => escapeShellArg(arg, shellConfig.type));
+      // Build command with escaped arguments
+      const escapedArgs = args.map(arg =>
+        escapeShellArg(arg, shellConfig.type)
+      );
 
-    const fullCommand = `${ghExecutable} ${command} ${escapedArgs.join(' ')}`;
+      const fullCommand = `${ghExecutable} ${command} ${escapedArgs.join(' ')}`;
 
-    const executeGhCommand = () =>
-      executeCommand(fullCommand, 'github', options, shellConfig);
+      const executeGhCommand = () =>
+        executeCommand(fullCommand, 'github', options, shellConfig);
 
-    if (options.cache) {
-      const cacheKey = generateCacheKey('gh-exec', {
-        command,
-        args,
-        shell: shellConfig.type,
-        customPath: options.customGhPath,
-        executableSource: source,
-      });
-      return withCache(cacheKey, executeGhCommand);
+      if (options.cache) {
+        const cacheKey = generateCacheKey('gh-exec', {
+          command,
+          args,
+          shell: shellConfig.type,
+          customPath: options.customGhPath,
+          executableSource: source,
+        });
+        return withCache(cacheKey, executeGhCommand);
+      }
+
+      return executeGhCommand();
+    } catch (error) {
+      return createErrorResult(
+        'Failed to resolve GitHub CLI executable',
+        error
+      );
     }
-
-    return executeGhCommand();
-  } catch (error) {
-    return createErrorResult('Failed to resolve GitHub CLI executable', error);
-  }
+  });
 }
 
 /**
