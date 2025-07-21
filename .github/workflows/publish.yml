@@ -7,56 +7,45 @@ on:
       - main
 
 jobs:
-  bump-version:
+  version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
-      new_version: ${{ steps.bump.outputs.new_version }}
+      newTag: ${{ steps.version.outputs.newTag }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      
+      - name: 'Automated Version Bump'
+        id: version
+        uses: 'phips28/gh-action-bump-version@master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGEJSON_DIR: '.'
         with:
-          node-version: '18'
-
-      - name: Configure Git
-        run: |
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
-
-      - name: Bump patch version
-        id: bump
-        run: |
-          # Get current version from package.json
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          # Split version into major.minor.patch
-          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
-          # Increment patch version
-          NEW_VERSION="$major.$minor.$((patch + 1))"
-          echo "New version will be: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
-          # Update package.json
-          sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" package.json
-          
-          # Update README.md version badge
-          sed -i "s/version-$CURRENT_VERSION-blue/version-$NEW_VERSION-blue/" README.md
-          
-          # Commit and push changes
-          git add package.json README.md
-          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
-          git push
+          tag-prefix: 'v'
+          minor-wording: 'feat,minor'
+          major-wording: 'BREAKING CHANGE,major'
+          patch-wording: 'fix,patch'
+          rc-wording: 'pre-alpha,pre-beta,pre-rc'
+          skip-tag: 'false'
+          skip-commit: 'false'
+          skip-push: 'false'
+          default: 'patch'
+          commit-message: 'CI: version bump to {{version}} [skip ci]'
+          bump-policy: 'all'
+          check-last-commit-only: 'false'
 
   verify:
-    needs: bump-version
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -77,11 +66,14 @@ jobs:
         run: yarn build
 
   publish:
-    needs: [bump-version, verify]
+    needs: [version, verify]
     runs-on: ubuntu-latest
+    if: ${{ needs.version.outputs.newTag != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          ref: ${{ github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
