@@ -8,6 +8,7 @@ import { createResult } from '../responses';
 import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { filterItems } from './github_view_repo_structure_filters';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
@@ -90,6 +91,22 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .describe(
             'Depth of directory structure to explore. Default is 2. Maximum is 4 to prevent excessive API calls and maintain performance.'
           ),
+
+        includeIgnored: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'If true, shows all files and folders including configuration files, lock files, hidden directories, etc. Default is false to show only relevant code files and directories. for optimization'
+          ),
+
+        showMedia: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'If true, shows media files (images, videos, audio, documents). Default is false to hide media files and focus on code structure.'
+          ),
       },
       annotations: {
         title: 'GitHub Repository Explorer',
@@ -124,7 +141,15 @@ export async function viewRepositoryStructure(
   const cacheKey = generateCacheKey('gh-repo-structure', params);
 
   return withCache(cacheKey, async () => {
-    const { owner, repo, branch, path = '', depth = 2 } = params;
+    const {
+      owner,
+      repo,
+      branch,
+      path = '',
+      depth = 2,
+      includeIgnored = false,
+      showMedia = false,
+    } = params;
 
     try {
       // Clean up path
@@ -150,7 +175,9 @@ export async function viewRepositoryStructure(
           branch,
           cleanPath,
           items,
-          depth
+          depth,
+          includeIgnored,
+          showMedia
         );
       }
 
@@ -214,7 +241,9 @@ export async function viewRepositoryStructure(
               defaultBranch,
               cleanPath,
               items,
-              depth
+              depth,
+              includeIgnored,
+              showMedia
             );
           }
         }
@@ -254,7 +283,9 @@ export async function viewRepositoryStructure(
               tryBranch,
               cleanPath,
               items,
-              depth
+              depth,
+              includeIgnored,
+              showMedia
             );
           }
         }
@@ -371,11 +402,21 @@ async function formatRepositoryStructureWithDepth(
   branch: string,
   path: string,
   rootItems: GitHubApiFileItem[],
-  depth: number
+  depth: number,
+  includeIgnored: boolean = false,
+  showMedia: boolean = false
 ): Promise<CallToolResult> {
   // If depth is 1, use the original simple formatting
   if (depth === 1) {
-    return formatRepositoryStructure(owner, repo, branch, path, rootItems);
+    return formatRepositoryStructure(
+      owner,
+      repo,
+      branch,
+      path,
+      rootItems,
+      includeIgnored,
+      showMedia
+    );
   }
 
   // For depth > 1, fetch recursive contents
@@ -396,9 +437,15 @@ async function formatRepositoryStructureWithDepth(
     (item, index, array) => array.findIndex(i => i.path === item.path) === index
   );
 
+  // Apply filtering if not including ignored files
+  let filteredItems = uniqueItems;
+  if (!includeIgnored) {
+    filteredItems = filterItems(uniqueItems, showMedia);
+  }
+
   // Limit total items for performance (increase limit for deeper structures)
   const itemLimit = Math.min(200, 50 * depth);
-  const limitedItems = uniqueItems.slice(0, itemLimit);
+  const limitedItems = filteredItems.slice(0, itemLimit);
 
   // Sort: directories first, then by depth (shorter paths first), then alphabetically
   limitedItems.sort((a, b) => {
@@ -482,6 +529,8 @@ async function formatRepositoryStructureWithDepth(
           .map(Number)
           .sort((a, b) => a - b),
         truncated: uniqueItems.length > limitedItems.length,
+        filtered: !includeIgnored,
+        originalCount: includeIgnored ? undefined : uniqueItems.length,
       },
       files: {
         count: files.length,
@@ -505,10 +554,18 @@ function formatRepositoryStructure(
   repo: string,
   branch: string,
   path: string,
-  items: GitHubApiFileItem[]
+  items: GitHubApiFileItem[],
+  includeIgnored: boolean = false,
+  showMedia: boolean = false
 ): CallToolResult {
+  // Apply filtering if not including ignored files
+  let filteredItems = items;
+  if (!includeIgnored) {
+    filteredItems = filterItems(items, showMedia);
+  }
+
   // Limit total items to 100 for efficiency
-  const limitedItems = items.slice(0, 100);
+  const limitedItems = filteredItems.slice(0, 100);
 
   // Sort: directories first, then alphabetically
   limitedItems.sort((a, b) => {

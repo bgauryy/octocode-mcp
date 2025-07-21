@@ -266,6 +266,8 @@ export interface GitHubRepositoryStructureParams {
   branch: string;
   path?: string;
   depth?: number;
+  includeIgnored?: boolean; // If true, show all files/folders including normally ignored ones
+  showMedia?: boolean; // If true, show media files (images, videos, audio). Default: false
 }
 
 export interface GitHubRepositoryContentsResult {
