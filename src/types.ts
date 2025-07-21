@@ -265,6 +265,7 @@ export interface GitHubRepositoryStructureParams {
   repo: string;
   branch: string;
   path?: string;
+  depth?: number;
 }
 
 export interface GitHubRepositoryContentsResult {

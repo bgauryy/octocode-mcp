@@ -159,5 +159,120 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Failed to access');
     });
+
+    it('should handle depth parameter with default value', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockGitHubResponse = {
+        result: [
+          {
+            name: 'src',
+            path: 'src',
+            type: 'dir',
+            size: 0,
+            url: 'https://api.github.com/repos/owner/repo/contents/src',
+            download_url: null,
+          },
+        ],
+        command: 'gh api repos/owner/repo/contents',
+        type: 'github',
+      };
+
+      // Mock successful content retrieval
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'owner',
+        repo: 'repo',
+        branch: 'main',
+        depth: 2, // Test explicit depth parameter
+      });
+
+      expect(result.isError).toBe(false);
+      expect(mockExecuteGitHubCommand).toHaveBeenCalled();
+    });
+
+    it('should handle depth parameter with various values', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockGitHubResponse = {
+        result: [
+          {
+            name: 'src',
+            path: 'src',
+            type: 'dir',
+            size: 0,
+            url: 'https://api.github.com/repos/owner/repo/contents/src',
+            download_url: null,
+          },
+        ],
+        command: 'gh api repos/owner/repo/contents',
+        type: 'github',
+      };
+
+      // Mock successful content retrieval
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      // Test with depth 1 (minimum valid value)
+      const result1 = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'owner',
+        repo: 'repo',
+        branch: 'main',
+        depth: 1,
+      });
+
+      expect(result1.isError).toBe(false);
+
+      // Test with depth 4 (maximum valid value)
+      const result4 = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'owner',
+        repo: 'repo',
+        branch: 'main',
+        depth: 4,
+      });
+
+      expect(result4.isError).toBe(false);
+    });
+
+    it('should use default depth when not specified', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockGitHubResponse = {
+        result: [
+          {
+            name: 'README.md',
+            path: 'README.md',
+            type: 'file',
+            size: 1024,
+            url: 'https://api.github.com/repos/owner/repo/contents/README.md',
+            download_url: null,
+          },
+        ],
+        command: 'gh api repos/owner/repo/contents',
+        type: 'github',
+      };
+
+      // Mock successful content retrieval
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ text: JSON.stringify(mockGitHubResponse) }],
+      });
+
+      // Call without depth parameter to test default
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'owner',
+        repo: 'repo',
+        branch: 'main',
+      });
+
+      expect(result.isError).toBe(false);
+      expect(mockExecuteGitHubCommand).toHaveBeenCalled();
+    });
   });
 });
