@@ -50,6 +50,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
           ),
         match: z
           .union([
+            // Single field as string
             z.enum([
               'version',
               'description',
@@ -68,25 +69,76 @@ export function registerNpmViewPackageTool(server: McpServer) {
               'dist-tags',
               'time',
             ]),
-            z.array(
-              z.enum([
-                'version',
-                'description',
-                'license',
-                'author',
-                'homepage',
-                'repository',
-                'dependencies',
-                'devDependencies',
-                'keywords',
-                'main',
-                'scripts',
-                'engines',
-                'files',
-                'publishConfig',
-                'dist-tags',
-                'time',
-              ])
+            // Array of fields
+            z
+              .array(
+                z.enum([
+                  'version',
+                  'description',
+                  'license',
+                  'author',
+                  'homepage',
+                  'repository',
+                  'dependencies',
+                  'devDependencies',
+                  'keywords',
+                  'main',
+                  'scripts',
+                  'engines',
+                  'files',
+                  'publishConfig',
+                  'dist-tags',
+                  'time',
+                ])
+              )
+              .min(1, 'At least one field must be specified'),
+            // JSON string representation of array (for MCP compatibility)
+            z.string().refine(
+              val => {
+                // Allow single field names
+                const validFields = [
+                  'version',
+                  'description',
+                  'license',
+                  'author',
+                  'homepage',
+                  'repository',
+                  'dependencies',
+                  'devDependencies',
+                  'keywords',
+                  'main',
+                  'scripts',
+                  'engines',
+                  'files',
+                  'publishConfig',
+                  'dist-tags',
+                  'time',
+                ];
+
+                // If it's a single field name, it's valid
+                if (validFields.includes(val)) return true;
+
+                // If it looks like JSON array, try to parse it
+                if (val.startsWith('[') && val.endsWith(']')) {
+                  try {
+                    const parsed = JSON.parse(val);
+                    return (
+                      Array.isArray(parsed) &&
+                      parsed.length > 0 &&
+                      parsed.every(
+                        field =>
+                          typeof field === 'string' &&
+                          validFields.includes(field)
+                      )
+                    );
+                  } catch {
+                    return false;
+                  }
+                }
+
+                return false;
+              },
+              { message: 'Invalid field name or JSON array format' }
             ),
           ])
           .optional()
@@ -134,26 +186,34 @@ export function registerNpmViewPackageTool(server: McpServer) {
           });
         }
 
-        // If match is specified, filter the JSON response to only include matched fields
+        // If match is specified, npm already filtered the response for us
         if (args.match) {
           const execResult = JSON.parse(result.content[0].text as string);
           const packageData = execResult.result;
-          const matchFields = Array.isArray(args.match)
-            ? args.match
-            : [args.match];
 
-          const filteredData: any = {};
-          matchFields.forEach(field => {
-            if (packageData[field] !== undefined) {
-              filteredData[field] = packageData[field];
+          // Parse the match parameter to get the field names for metadata
+          let parsedMatch = args.match;
+          if (
+            typeof args.match === 'string' &&
+            args.match.startsWith('[') &&
+            args.match.endsWith(']')
+          ) {
+            try {
+              parsedMatch = JSON.parse(args.match);
+            } catch (e) {
+              parsedMatch = args.match;
             }
-          });
+          }
+
+          const matchFields = Array.isArray(parsedMatch)
+            ? parsedMatch
+            : [parsedMatch];
 
           return createResult({
             data: {
               package: args.packageName,
               fields: matchFields,
-              values: filteredData,
+              values: packageData, // npm already filtered this data
             },
           });
         }
@@ -417,7 +477,32 @@ export async function viewNpmPackage(
     try {
       // Build arguments based on parameters
       // Priority: field > match > full JSON
-      const args = field ? [packageName, field] : [packageName, '--json']; // For match or full info, we need JSON
+      let args: string[];
+      if (field) {
+        args = [packageName, field];
+      } else if (match) {
+        // Handle match parameter - it might be a JSON string that needs parsing
+        let parsedMatch = match;
+        if (
+          typeof match === 'string' &&
+          match.startsWith('[') &&
+          match.endsWith(']')
+        ) {
+          try {
+            parsedMatch = JSON.parse(match);
+          } catch (e) {
+            // If parsing fails, treat as a single field name
+            parsedMatch = match;
+          }
+        }
+
+        const matchFields = Array.isArray(parsedMatch)
+          ? parsedMatch
+          : [parsedMatch];
+        args = [packageName, ...matchFields, '--json'];
+      } else {
+        args = [packageName, '--json'];
+      }
 
       const result = await executeNpmCommand('view', args, {
         cache: false,
