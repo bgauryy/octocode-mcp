@@ -634,3 +634,39 @@ export interface BasicGitHubIssue {
   created_at: string;
   updated_at: string;
 }
+
+// Bulk GitHub Code Search Types
+export interface GitHubCodeSearchQuery {
+  id?: string; // Optional identifier for the query
+  exactQuery?: string;
+  queryTerms?: string[];
+  owner?: string | string[];
+  repo?: string | string[];
+  language?: string;
+  filename?: string;
+  extension?: string;
+  path?: string;
+  match?: 'file' | 'path';
+  size?: string;
+  limit?: number;
+  visibility?: 'public' | 'private' | 'internal';
+  fallbackParams?: Partial<GitHubCodeSearchQuery>; // Fallback parameters if no results
+}
+
+export interface GitHubBulkCodeSearchParams {
+  queries: GitHubCodeSearchQuery[]; // Up to 5 queries
+}
+
+export interface GitHubBulkCodeSearchResult {
+  results: Array<{
+    queryId?: string;
+    originalQuery: GitHubCodeSearchQuery;
+    result: OptimizedCodeSearchResult;
+    fallbackTriggered: boolean;
+    fallbackQuery?: GitHubCodeSearchQuery;
+    error?: string;
+  }>;
+  totalQueries: number;
+  successfulQueries: number;
+  queriesWithFallback: number;
+}
