@@ -607,21 +607,19 @@ function normalizePackage(pkg: {
   links?: { repository?: string };
   repository?: { url?: string };
 }): NpmPackage {
-  const description = pkg.description || null;
-  const truncatedDescription =
-    description && description.length > MAX_DESCRIPTION_LENGTH
-      ? description.substring(0, MAX_DESCRIPTION_LENGTH) + '...'
-      : description;
-
-  const keywords = pkg.keywords || [];
-  const limitedKeywords = keywords.slice(0, MAX_KEYWORDS);
+  // Helper function to get repository URL with proper fallback
+  const getRepoUrl = () => {
+    if (pkg.links?.repository) return pkg.links.repository;
+    if (pkg.repository?.url) return pkg.repository.url;
+    return undefined;
+  };
 
   return {
-    name: pkg.name || '',
-    version: pkg.version || '',
-    description: truncatedDescription,
-    keywords: limitedKeywords,
-    repository: pkg.links?.repository || pkg.repository?.url || null,
+    name: typeof pkg.name === 'string' ? pkg.name : 'unknown',
+    version: typeof pkg.version === 'string' ? pkg.version : 'latest',
+    description: typeof pkg.description === 'string' ? pkg.description : '',
+    keywords: Array.isArray(pkg.keywords) ? pkg.keywords : [],
+    repository: getRepoUrl() ?? '',
   };
 }
 

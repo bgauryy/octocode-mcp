@@ -184,7 +184,7 @@ async function fetchMultipleGitHubFileContents(
 
       if (!result.isError) {
         // Success with original query
-        const data = JSON.parse(result.content[0].text as string);
+        const data = JSON.parse(safeGetContentText(result));
         return {
           queryId,
           originalQuery: query,
@@ -204,7 +204,7 @@ async function fetchMultipleGitHubFileContents(
 
         if (!fallbackResult.isError) {
           // Success with fallback query
-          const data = JSON.parse(fallbackResult.content[0].text as string);
+          const data = JSON.parse(safeGetContentText(fallbackResult));
           return {
             queryId,
             originalQuery: query,
@@ -218,7 +218,7 @@ async function fetchMultipleGitHubFileContents(
         return {
           queryId,
           originalQuery: query,
-          result: { error: fallbackResult.content[0].text as string },
+          result: { error: safeGetContentText(fallbackResult) },
           fallbackTriggered: true,
           fallbackQuery: { ...query, ...query.fallbackParams },
         };
@@ -228,7 +228,7 @@ async function fetchMultipleGitHubFileContents(
       return {
         queryId,
         originalQuery: query,
-        result: { error: result.content[0].text as string },
+        result: { error: safeGetContentText(result) },
         fallbackTriggered: false,
       };
     } catch (error) {
@@ -285,7 +285,7 @@ export async function fetchGitHubFileContent(
       });
 
       if (result.isError) {
-        const errorMsg = result.content[0].text as string;
+        const errorMsg = safeGetContentText(result);
 
         // Silent fallback for main/master branches only
         if (
@@ -354,7 +354,7 @@ async function processFileContent(
   contextLines: number = 5
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
-  const execResult = JSON.parse(result.content[0].text as string);
+  const execResult = JSON.parse(safeGetContentText(result));
   const fileData = execResult.result;
   // Check if it's a directory
   if (Array.isArray(fileData)) {
@@ -560,4 +560,16 @@ async function processFileContent(
       }),
     } as GitHubFileContentResponse,
   });
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
 }

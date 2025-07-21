@@ -172,7 +172,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
 
         // If field is specified, npm returns plain text, not JSON
         if (args.field) {
-          const plainTextResult = result.content[0].text as string;
+          const plainTextResult = safeGetContentText(result);
           // Parse the plain text result from npm command
           const execResult = JSON.parse(plainTextResult);
           const fieldValue = execResult.result;
@@ -188,7 +188,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
 
         // If match is specified, npm already filtered the response for us
         if (args.match) {
-          const execResult = JSON.parse(result.content[0].text as string);
+          const execResult = JSON.parse(safeGetContentText(result));
           const packageData = execResult.result;
 
           // Parse the match parameter to get the field names for metadata
@@ -219,7 +219,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
         }
 
         // Otherwise return full optimized format (JSON response)
-        const execResult = JSON.parse(result.content[0].text as string);
+        const execResult = JSON.parse(safeGetContentText(result));
         const packageData = execResult.result;
         const optimizedResult = transformToOptimizedFormat(packageData);
         return createResult({ data: optimizedResult });
@@ -523,4 +523,16 @@ export async function viewNpmPackage(
       });
     }
   });
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
 }

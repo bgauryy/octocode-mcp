@@ -14,6 +14,35 @@ import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
+// Helper functions for safe type checking
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNonEmptyArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function isValidNumber(value: unknown): boolean {
+  if (typeof value === 'number') return !isNaN(value) && isFinite(value);
+  if (typeof value === 'string') {
+    return /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/.test(value);
+  }
+  return false;
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
+}
+
 const DESCRIPTION = `Search GitHub repositories using GitHub CLI.
 
 BULK QUERY MODE:
@@ -304,7 +333,7 @@ async function searchMultipleGitHubRepos(
         try {
           // Success with fallback query
           const fallbackExecResult = JSON.parse(
-            fallbackResult.content[0].text as string
+            safeGetContentText(fallbackResult)
           );
 
           return {
@@ -336,7 +365,7 @@ async function searchMultipleGitHubRepos(
         result: { total_count: 0, repositories: [] },
         fallbackTriggered: true,
         fallbackQuery,
-        error: fallbackResult.content[0].text as string,
+        error: safeGetContentText(fallbackResult),
       };
     } catch (error) {
       return {
@@ -357,15 +386,17 @@ async function searchMultipleGitHubRepos(
     const queryId = query.id || `query_${index + 1}`;
 
     try {
-      // Enhanced validation logic for primary filters - allow both exactQuery and queryTerms
+      // Enhanced validation logic for primary filters with proper type checking
       const hasPrimaryFilter =
-        query.exactQuery?.trim() ||
-        (query.queryTerms && query.queryTerms.length > 0) ||
-        query.owner ||
-        query.language ||
-        query.topic ||
-        query.stars ||
-        query.forks;
+        isNonEmptyString(query.exactQuery?.trim()) ||
+        isNonEmptyArray(query.queryTerms) ||
+        isNonEmptyString(query.owner) ||
+        isNonEmptyArray(query.owner) ||
+        isNonEmptyString(query.language) ||
+        isNonEmptyString(query.topic) ||
+        isNonEmptyArray(query.topic) ||
+        isValidNumber(query.stars) ||
+        isValidNumber(query.forks);
 
       if (!hasPrimaryFilter) {
         results.push({
@@ -391,7 +422,7 @@ async function searchMultipleGitHubRepos(
       if (!result.isError) {
         try {
           // Success with original query
-          const execResult = JSON.parse(result.content[0].text as string);
+          const execResult = JSON.parse(safeGetContentText(result));
 
           // Check if we should try fallback (no results found)
           if (execResult.total_count === 0 && query.fallbackParams) {
@@ -435,7 +466,7 @@ async function searchMultipleGitHubRepos(
         originalQuery: query,
         result: { total_count: 0, repositories: [] },
         fallbackTriggered: false,
-        error: result.content[0].text as string,
+        error: safeGetContentText(result),
       });
     } catch (error) {
       // Handle any unexpected errors

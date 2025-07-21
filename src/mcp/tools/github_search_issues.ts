@@ -276,7 +276,7 @@ async function searchGitHubIssues(
       return result;
     }
 
-    const execResult = JSON.parse(result.content[0].text as string);
+    const execResult = JSON.parse(safeGetContentText(result));
     const apiResponse = execResult.result;
     const issues = Array.isArray(apiResponse)
       ? apiResponse
@@ -347,10 +347,7 @@ async function searchGitHubIssues(
             );
 
             if (!viewResult.isError) {
-              const execResult = JSON.parse(
-                viewResult.content[0].text as string
-              );
-              const issueDetails = execResult.result;
+              const issueDetails = JSON.parse(safeGetContentText(viewResult));
 
               return {
                 ...issue,
@@ -483,4 +480,16 @@ export function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
 } {
   const builder = new GitHubIssuesSearchBuilder();
   return { command: 'search', args: builder.build(params) };
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
 }

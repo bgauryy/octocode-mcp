@@ -143,6 +143,45 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
   );
 }
 
+// Helper functions for safe type checking
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isNonEmptyArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+// Helper function for safe content access
+function safeGetContentText(result: any): string {
+  if (
+    result?.content &&
+    Array.isArray(result.content) &&
+    result.content.length > 0
+  ) {
+    return (result.content[0].text as string) || 'Empty response';
+  }
+  return 'Unknown error: No content in response';
+}
+
+// Helper function for safe array index access
+function safeGetIndices(match: any): [number, number] {
+  if (
+    match?.indices &&
+    Array.isArray(match.indices) &&
+    match.indices.length >= 2 &&
+    typeof match.indices[0] === 'number' &&
+    typeof match.indices[1] === 'number' &&
+    !isNaN(match.indices[0]) &&
+    !isNaN(match.indices[1]) &&
+    isFinite(match.indices[0]) &&
+    isFinite(match.indices[1])
+  ) {
+    return [match.indices[0], match.indices[1]];
+  }
+  return [0, 0];
+}
+
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[]
 ): Promise<CallToolResult> {
@@ -184,7 +223,7 @@ async function searchMultipleGitHubCode(
       if (!fallbackResult.isError) {
         try {
           const fallbackExecResult = JSON.parse(
-            fallbackResult.content[0].text as string
+            safeGetContentText(fallbackResult)
           );
           const fallbackCodeResults: GitHubCodeSearchItem[] =
             fallbackExecResult.result;
@@ -223,7 +262,7 @@ async function searchMultipleGitHubCode(
         result: { items: [], total_count: 0 },
         fallbackTriggered: true,
         fallbackQuery,
-        error: fallbackResult.content[0].text as string,
+        error: safeGetContentText(fallbackResult),
       };
     } catch (error) {
       return {
@@ -244,10 +283,10 @@ async function searchMultipleGitHubCode(
     const queryId = query.id || `query_${index + 1}`;
 
     try {
-      // Enhanced validation logic for primary filters - allow both exactQuery and queryTerms
+      // Enhanced validation logic for primary filters with proper type checking
       const hasPrimaryFilter =
-        query.exactQuery?.trim() ||
-        (query.queryTerms && query.queryTerms.length > 0);
+        isNonEmptyString(query.exactQuery?.trim()) ||
+        isNonEmptyArray(query.queryTerms);
 
       if (!hasPrimaryFilter) {
         results.push({
@@ -272,7 +311,7 @@ async function searchMultipleGitHubCode(
       if (!result.isError) {
         try {
           // Success with original query
-          const execResult = JSON.parse(result.content[0].text as string);
+          const execResult = JSON.parse(safeGetContentText(result));
           const codeResults: GitHubCodeSearchItem[] = execResult.result;
           const items = Array.isArray(codeResults) ? codeResults : [];
           const optimizedResult = transformToOptimizedFormat(items);
@@ -319,7 +358,7 @@ async function searchMultipleGitHubCode(
         originalQuery: query,
         result: { items: [], total_count: 0 },
         fallbackTriggered: false,
-        error: result.content[0].text as string,
+        error: safeGetContentText(result),
       });
     } catch (error) {
       // Handle any unexpected errors
@@ -452,13 +491,8 @@ function transformToOptimizedFormat(
     path: item.path,
     matches:
       item.textMatches?.map(match => ({
-        context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
-        positions:
-          match.matches?.map(m =>
-            Array.isArray(m.indices) && m.indices.length >= 2
-              ? ([m.indices[0], m.indices[1]] as [number, number])
-              : ([0, 0] as [number, number])
-          ) || [],
+        context: optimizeTextMatch(match.fragment, 120),
+        positions: match.matches?.map(m => safeGetIndices(m)) || [],
       })) || [],
     url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
     repository: {
