@@ -1,13 +1,7 @@
 /* eslint-disable no-console */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import {
-  GitHubCodeSearchItem,
-  OptimizedCodeSearchResult,
-  GitHubBulkCodeSearchParams,
-  GitHubCodeSearchQuery,
-  GitHubBulkCodeSearchResult,
-} from '../../types';
+import { GitHubCodeSearchItem, OptimizedCodeSearchResult } from '../../types';
 import {
   createResult,
   simplifyRepoUrl,
@@ -33,96 +27,91 @@ BULK QUERY MODE:
 
 Use for comprehensive research - query different repos, languages, or approaches in one call.`;
 
+// Define the code search query schema
+const GitHubCodeSearchQuerySchema = z.object({
+  id: z.string().optional().describe('Optional identifier for the query'),
+  exactQuery: z.string().optional().describe('Exact phrase/word to search for'),
+  queryTerms: z
+    .array(z.string())
+    .optional()
+    .describe('Array of search terms joined with spaces (AND logic)'),
+  language: z.string().optional().describe('Programming language filter'),
+  owner: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe('Repository owner/organization name(s)'),
+  repo: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe('Repository filter'),
+  filename: z
+    .string()
+    .optional()
+    .describe('Target specific filename or pattern'),
+  extension: z.string().optional().describe('File extension filter'),
+  match: z
+    .enum(['file', 'path'])
+    .optional()
+    .describe('Search scope: file for content, path for filenames'),
+  size: z
+    .string()
+    .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
+    .optional()
+    .describe('File size filter in KB'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(30)
+    .describe('Maximum results per query'),
+  visibility: z
+    .enum(['public', 'private', 'internal'])
+    .optional()
+    .describe('Repository visibility'),
+  fallbackParams: z
+    .object({
+      exactQuery: z.string().optional(),
+      queryTerms: z.array(z.string()).optional(),
+      language: z.string().optional(),
+      owner: z.union([z.string(), z.array(z.string())]).optional(),
+      repo: z.union([z.string(), z.array(z.string())]).optional(),
+      filename: z.string().optional(),
+      extension: z.string().optional(),
+      match: z.enum(['file', 'path']).optional(),
+      size: z
+        .string()
+        .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
+        .optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+      visibility: z.enum(['public', 'private', 'internal']).optional(),
+    })
+    .optional()
+    .describe(
+      'Fallback parameters if original query returns no results, overrides the original query and try again'
+    ),
+});
+
+export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
+
+export interface GitHubCodeSearchQueryResult {
+  queryId: string;
+  originalQuery: GitHubCodeSearchQuery;
+  result: OptimizedCodeSearchResult;
+  fallbackTriggered: boolean;
+  fallbackQuery?: GitHubCodeSearchQuery;
+  error?: string;
+}
+
 export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
     GITHUB_SEARCH_CODE_TOOL_NAME,
     {
       description: DESCRIPTION,
       inputSchema: {
-        // Bulk query mode (recommended)
         queries: z
-          .array(
-            z.object({
-              id: z
-                .string()
-                .optional()
-                .describe('Optional identifier for the query'),
-              exactQuery: z
-                .string()
-                .optional()
-                .describe('Exact phrase/word to search for'),
-              queryTerms: z
-                .array(z.string())
-                .optional()
-                .describe(
-                  'Array of search terms joined with spaces (AND logic)'
-                ),
-              language: z
-                .string()
-                .optional()
-                .describe('Programming language filter'),
-              owner: z
-                .union([z.string(), z.array(z.string())])
-                .optional()
-                .describe('Repository owner/organization name(s)'),
-              repo: z
-                .union([z.string(), z.array(z.string())])
-                .optional()
-                .describe('Repository filter'),
-              filename: z
-                .string()
-                .optional()
-                .describe('Target specific filename or pattern'),
-              extension: z
-                .string()
-                .optional()
-                .describe('File extension filter'),
-              match: z
-                .enum(['file', 'path'])
-                .optional()
-                .describe('Search scope: file for content, path for filenames'),
-              size: z
-                .string()
-                .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
-                .optional()
-                .describe('File size filter in KB'),
-              limit: z
-                .number()
-                .int()
-                .min(1)
-                .max(100)
-                .optional()
-                .default(30)
-                .describe('Maximum results per query'),
-              visibility: z
-                .enum(['public', 'private', 'internal'])
-                .optional()
-                .describe('Repository visibility'),
-              fallbackParams: z
-                .object({
-                  exactQuery: z.string().optional(),
-                  queryTerms: z.array(z.string()).optional(),
-                  language: z.string().optional(),
-                  owner: z.union([z.string(), z.array(z.string())]).optional(),
-                  repo: z.union([z.string(), z.array(z.string())]).optional(),
-                  filename: z.string().optional(),
-                  extension: z.string().optional(),
-                  match: z.enum(['file', 'path']).optional(),
-                  size: z
-                    .string()
-                    .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
-                    .optional(),
-                  limit: z.number().int().min(1).max(100).optional(),
-                  visibility: z
-                    .enum(['public', 'private', 'internal'])
-                    .optional(),
-                })
-                .optional()
-                .describe(
-                  'Fallback parameters if original query returns no results'
-                ),
-            })
-          )
+          .array(GitHubCodeSearchQuerySchema)
           .min(1)
           .max(5)
           .describe(
@@ -130,7 +119,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           ),
       },
       annotations: {
-        title: 'GitHub Code Search - Bulk Mode Only',
+        title: 'GitHub Code Search - Bulk Queries Only (Optimized)',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -138,169 +127,202 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: GitHubBulkCodeSearchParams): Promise<CallToolResult> => {
-        const { queries } = args;
-
-        // Validate queries array
-        if (!queries || queries.length === 0) {
-          return createResult({
-            error: 'Bulk mode requires at least one query in queries array',
-          });
-        }
-
-        if (queries.length > 5) {
-          return createResult({
-            error: 'Maximum 5 queries allowed in bulk mode',
-          });
-        }
-
-        // Helper function to clean null values (convert to undefined)
-        const cleanParams = (params: any): any => {
-          const cleaned: any = {};
-          Object.keys(params).forEach(key => {
-            if (params[key] !== null && params[key] !== undefined) {
-              cleaned[key] = params[key];
-            }
-          });
-          return cleaned;
-        };
-
+      async (args: {
+        queries: GitHubCodeSearchQuery[];
+      }): Promise<CallToolResult> => {
         try {
-          // Execute all queries in parallel
-          const results = await Promise.allSettled(
-            queries.map(async (query, index) => {
-              const queryId = query.id || `query_${index + 1}`;
-
-              // Validate single query
-              const hasExactQuery = !!query.exactQuery;
-              const hasQueryTerms =
-                query.queryTerms && query.queryTerms.length > 0;
-
-              if (!hasExactQuery && !hasQueryTerms) {
-                throw new Error(
-                  `Query ${queryId}: One search parameter required: exactQuery OR queryTerms`
-                );
-              }
-
-              if (hasExactQuery && hasQueryTerms) {
-                throw new Error(
-                  `Query ${queryId}: Use either exactQuery OR queryTerms, not both`
-                );
-              }
-
-              // Convert to GitHubCodeSearchParams format
-              const searchParams: any = cleanParams({
-                exactQuery: query.exactQuery,
-                queryTerms: query.queryTerms,
-                owner: query.owner,
-                repo: query.repo,
-                language: query.language,
-                filename: query.filename,
-                extension: query.extension,
-                match: query.match,
-                size: query.size,
-                limit: query.limit || 30,
-                visibility: query.visibility,
-              });
-
-              // Execute original query
-              let result = await searchGitHubCode(searchParams);
-              let fallbackTriggered = false;
-              let fallbackQuery: GitHubCodeSearchQuery | undefined;
-
-              // Check if we need to use fallback
-              if (!result.isError) {
-                const execResult = JSON.parse(result.content[0].text as string);
-                const codeResults: GitHubCodeSearchItem[] = execResult.result;
-                const items = Array.isArray(codeResults) ? codeResults : [];
-
-                // If no results and fallback params are provided, try fallback
-                if (items.length === 0 && query.fallbackParams) {
-                  fallbackTriggered = true;
-
-                  // Merge original params with fallback params (fallback overrides)
-                  fallbackQuery = {
-                    ...query,
-                    ...query.fallbackParams,
-                    id: queryId + '_fallback',
-                  };
-
-                  const fallbackSearchParams: any = cleanParams({
-                    exactQuery: fallbackQuery.exactQuery,
-                    queryTerms: fallbackQuery.queryTerms,
-                    owner: fallbackQuery.owner,
-                    repo: fallbackQuery.repo,
-                    language: fallbackQuery.language,
-                    filename: fallbackQuery.filename,
-                    extension: fallbackQuery.extension,
-                    match: fallbackQuery.match,
-                    size: fallbackQuery.size,
-                    limit: fallbackQuery.limit || 30,
-                    visibility: fallbackQuery.visibility,
-                  });
-
-                  result = await searchGitHubCode(fallbackSearchParams);
-                }
-              }
-
-              // Process result
-              if (result.isError) {
-                throw new Error(result.content[0].text as string);
-              }
-
-              const execResult = JSON.parse(result.content[0].text as string);
-              const codeResults: GitHubCodeSearchItem[] = execResult.result;
-              const items = Array.isArray(codeResults) ? codeResults : [];
-              const optimizedResult = transformToOptimizedFormat(items);
-
-              return {
-                queryId,
-                originalQuery: query,
-                result: optimizedResult,
-                fallbackTriggered,
-                fallbackQuery,
-              };
-            })
-          );
-
-          // Process results
-          const bulkResult: GitHubBulkCodeSearchResult = {
-            results: [],
-            totalQueries: queries.length,
-            successfulQueries: 0,
-            queriesWithFallback: 0,
-          };
-
-          results.forEach((result, index) => {
-            const queryId = queries[index].id || `query_${index + 1}`;
-
-            if (result.status === 'fulfilled') {
-              bulkResult.results.push(result.value);
-              bulkResult.successfulQueries++;
-              if (result.value.fallbackTriggered) {
-                bulkResult.queriesWithFallback++;
-              }
-            } else {
-              bulkResult.results.push({
-                queryId,
-                originalQuery: queries[index],
-                result: { items: [], total_count: 0 },
-                fallbackTriggered: false,
-                error: result.reason?.message || 'Unknown error occurred',
-              });
-            }
-          });
-
-          return createResult({ data: bulkResult });
+          return await searchMultipleGitHubCode(args.queries);
         } catch (error) {
-          const errorMessage = (error as Error).message || '';
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return createResult({
-            error: `Bulk search failed: ${errorMessage}`,
+            error: `Failed to search code: ${errorMessage}. Try broader search terms or check repository access.`,
           });
         }
       }
     )
   );
+}
+
+async function searchMultipleGitHubCode(
+  queries: GitHubCodeSearchQuery[]
+): Promise<CallToolResult> {
+  const results: GitHubCodeSearchQueryResult[] = [];
+
+  // Execute queries sequentially to avoid rate limits
+  for (let index = 0; index < queries.length; index++) {
+    const query = queries[index];
+    const queryId = query.id || `query_${index + 1}`;
+
+    try {
+      // Validate single query
+      const hasExactQuery = !!query.exactQuery;
+      const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
+
+      if (!hasExactQuery && !hasQueryTerms) {
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: { items: [], total_count: 0 },
+          fallbackTriggered: false,
+          error: `Query ${queryId}: One search parameter required: exactQuery OR queryTerms`,
+        });
+        continue;
+      }
+
+      if (hasExactQuery && hasQueryTerms) {
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: { items: [], total_count: 0 },
+          fallbackTriggered: false,
+          error: `Query ${queryId}: Use either exactQuery OR queryTerms, not both`,
+        });
+        continue;
+      }
+
+      // Try original query first using the working function directly
+      const result = await searchGitHubCode(query);
+
+      if (!result.isError) {
+        // Success with original query
+        const execResult = JSON.parse(result.content[0].text as string);
+        const codeResults: GitHubCodeSearchItem[] = execResult.result;
+        const items = Array.isArray(codeResults) ? codeResults : [];
+        const optimizedResult = transformToOptimizedFormat(items);
+
+        // Check if we should try fallback (no results found)
+        if (items.length === 0 && query.fallbackParams) {
+          // Try fallback query
+          const fallbackQuery: GitHubCodeSearchQuery = {
+            ...query,
+            ...query.fallbackParams,
+          };
+
+          const fallbackResult = await searchGitHubCode(fallbackQuery);
+
+          if (!fallbackResult.isError) {
+            // Success with fallback query
+            const fallbackExecResult = JSON.parse(
+              fallbackResult.content[0].text as string
+            );
+            const fallbackCodeResults: GitHubCodeSearchItem[] =
+              fallbackExecResult.result;
+            const fallbackItems = Array.isArray(fallbackCodeResults)
+              ? fallbackCodeResults
+              : [];
+            const fallbackOptimizedResult =
+              transformToOptimizedFormat(fallbackItems);
+
+            results.push({
+              queryId,
+              originalQuery: query,
+              result: fallbackOptimizedResult,
+              fallbackTriggered: true,
+              fallbackQuery,
+            });
+            continue;
+          }
+
+          // Both failed - return fallback error
+          results.push({
+            queryId,
+            originalQuery: query,
+            result: { items: [], total_count: 0 },
+            fallbackTriggered: true,
+            fallbackQuery,
+            error: fallbackResult.content[0].text as string,
+          });
+          continue;
+        }
+
+        // Return original success
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: optimizedResult,
+          fallbackTriggered: false,
+        });
+        continue;
+      }
+
+      // Original query failed, try fallback if available
+      if (query.fallbackParams) {
+        const fallbackQuery: GitHubCodeSearchQuery = {
+          ...query,
+          ...query.fallbackParams,
+        };
+
+        const fallbackResult = await searchGitHubCode(fallbackQuery);
+
+        if (!fallbackResult.isError) {
+          // Success with fallback query
+          const execResult = JSON.parse(
+            fallbackResult.content[0].text as string
+          );
+          const codeResults: GitHubCodeSearchItem[] = execResult.result;
+          const items = Array.isArray(codeResults) ? codeResults : [];
+          const optimizedResult = transformToOptimizedFormat(items);
+
+          results.push({
+            queryId,
+            originalQuery: query,
+            result: optimizedResult,
+            fallbackTriggered: true,
+            fallbackQuery,
+          });
+          continue;
+        }
+
+        // Both failed - return fallback error
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: { items: [], total_count: 0 },
+          fallbackTriggered: true,
+          fallbackQuery,
+          error: fallbackResult.content[0].text as string,
+        });
+        continue;
+      }
+
+      // No fallback available - return original error
+      results.push({
+        queryId,
+        originalQuery: query,
+        result: { items: [], total_count: 0 },
+        fallbackTriggered: false,
+        error: result.content[0].text as string,
+      });
+    } catch (error) {
+      // Handle any unexpected errors
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      results.push({
+        queryId,
+        originalQuery: query,
+        result: { items: [], total_count: 0 },
+        fallbackTriggered: false,
+        error: `Unexpected error: ${errorMessage}`,
+      });
+    }
+  }
+
+  // Calculate summary statistics
+  const totalQueries = results.length;
+  const successfulQueries = results.filter(r => !r.error).length;
+  const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
+
+  return createResult({
+    data: {
+      results,
+      summary: {
+        totalQueries,
+        successfulQueries,
+        queriesWithFallback,
+      },
+    },
+  });
 }
 
 /**
@@ -452,12 +474,14 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
  * Build command line arguments for GitHub CLI following the exact CLI format.
  * Uses proper flags (--flag=value) for filters and direct query terms.
  */
-export function buildGitHubCliArgs(params: any): string[] {
+export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
   const builder = new GitHubCodeSearchBuilder();
   return builder.build(params);
 }
 
-export async function searchGitHubCode(params: any): Promise<CallToolResult> {
+export async function searchGitHubCode(
+  params: GitHubCodeSearchQuery
+): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-code', params);
 
   return withCache(cacheKey, async () => {
