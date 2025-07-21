@@ -14,58 +14,212 @@ import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Search GitHub repositories using gh search repos CLI.
+const DESCRIPTION = `Search GitHub repositories using GitHub CLI.
 
-THREE SEARCH APPROACHES:
-- exactQuery: Single exact phrase/word search
-- queryTerms: Multiple search terms (broader coverage)  
-- topic: Find repositories by technology/subject
+BULK QUERY MODE:
+- queries: array of up to 5 different search queries for parallel execution
+- Each query can have fallbackParams for automatic retry with modified parameters
+- Optimizes research workflow by executing multiple searches simultaneously
+- Fallback logic automatically broadens search if no results found
 
-BEST PRACTICES:
-- Use exactQuery for specific repository names
-- Use queryTerms with minimal words for broader results
-- Use topic for technology/subject discovery
-- Use owner for organization exploration
-- Use filters (language, stars, forks) for refinement
+Use for comprehensive research - query different repos, languages, or approaches in one call.`;
 
-Multiple focused searches work better than complex single queries.`;
+// Define the repository search query schema for bulk operations
+const GitHubReposSearchQuerySchema = z.object({
+  id: z.string().optional().describe('Optional identifier for the query'),
+  exactQuery: z.string().optional().describe('Single exact phrase/word search'),
+  queryTerms: z
+    .array(z.string())
+    .optional()
+    .describe('Multiple search terms for broader coverage'),
 
-/**
- * Extract owner/repo information from various query formats
- */
-function extractOwnerRepoFromQuery(query: string): {
-  extractedOwner?: string;
-  extractedRepo?: string;
-  cleanedQuery: string;
-} {
-  let cleanedQuery = query;
-  let extractedOwner: string | undefined;
-  let extractedRepo: string | undefined;
+  // CORE FILTERS (GitHub CLI flags) - Allow null values
+  owner: z
+    .union([z.string(), z.array(z.string()), z.null()])
+    .optional()
+    .describe(
+      'Repository owner/organization name(s). Search within specific organizations or users.'
+    ),
+  language: z
+    .union([z.string(), z.null()])
+    .optional()
+    .describe(
+      'Programming language filter. Filters repositories by primary language.'
+    ),
+  stars: z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Star count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
+    ),
+  topic: z
+    .union([z.string(), z.array(z.string()), z.null()])
+    .optional()
+    .describe('Find repositories by technology/subject'),
+  forks: z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Fork count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
+    ),
 
-  const patterns = [
-    // Pattern 1: GitHub URLs (https://github.com/owner/repo)
-    /github\.com\/([^\\s]+)\/([^\\s]+)/i,
-    // Pattern 2: owner/repo format in query
-    /\b([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])\b/,
-    // Pattern 3: NPM package-like references (@scope/package)
-    /@([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\/([a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9])/,
-  ];
+  // Match CLI parameter name exactly
+  'number-topics': z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Number of topics filter. Format: ">5" (many topics), ">=3" (at least 3), "<10" (few topics), "1..3" (range), "5" (exact).'
+    ),
 
-  for (const pattern of patterns) {
-    const match = cleanedQuery.match(pattern);
-    if (match) {
-      extractedOwner = match[1];
-      extractedRepo = match[2];
-      cleanedQuery = cleanedQuery.replace(match[0], '').trim();
-      break; // Stop after the first successful match
-    }
-  }
+  // QUALITY & STATE FILTERS
+  license: z
+    .union([z.string(), z.array(z.string()), z.null()])
+    .optional()
+    .describe('License filter. Filter repositories by license type.'),
+  archived: z
+    .union([z.boolean(), z.null()])
+    .optional()
+    .describe(
+      'Archive status filter. false (active repos only), true (archived repos only).'
+    ),
+  'include-forks': z
+    .union([z.enum(['false', 'true', 'only']), z.null()])
+    .optional()
+    .describe(
+      'Fork inclusion. "false" (exclude forks), "true" (include forks), "only" (forks only).'
+    ),
+  visibility: z
+    .union([z.enum(['public', 'private', 'internal']), z.null()])
+    .optional()
+    .describe('Repository visibility.'),
 
-  return {
-    extractedOwner,
-    extractedRepo,
-    cleanedQuery: cleanedQuery || query, // Ensure original query is returned if cleaned is empty
-  };
+  // DATE & SIZE FILTERS
+  created: z
+    .union([
+      z
+        .string()
+        .regex(
+          /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+        ),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Repository creation date filter. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "<=2023-12-31" (on or before), "2020-01-01..2023-12-31" (range), "2023-01-01" (exact).'
+    ),
+  updated: z
+    .union([
+      z
+        .string()
+        .regex(
+          /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+        ),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Last updated date filter. Format: ">2024-01-01" (recently updated), ">=2024-01-01" (on or after), "<2022-01-01" (not recently updated), "2023-01-01..2024-12-31" (range).'
+    ),
+  size: z
+    .union([z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/), z.null()])
+    .optional()
+    .describe(
+      'Repository size filter in KB. Format: ">1000" (large projects), ">=500" (medium-large), "<100" (small projects), "<=50" (tiny), "100..1000" (medium range), "500" (exact).'
+    ),
+
+  // COMMUNITY FILTERS - Match CLI parameter names exactly
+  'good-first-issues': z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Good first issues count. Format: ">5" (many beginner issues), "1..10" (some beginner issues).'
+    ),
+  'help-wanted-issues': z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Help wanted issues count. Format: ">10" (many help wanted), "1..5" (some help wanted).'
+    ),
+  followers: z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Repository owner followers count. Format: ">1000" (popular developers), ">=500" (established developers), "<100" (smaller developers), "100..1000" (range).'
+    ),
+
+  // SEARCH SCOPE - Match CLI exactly
+  match: z
+    .union([
+      z.enum(['name', 'description', 'readme']),
+      z.array(z.enum(['name', 'description', 'readme'])),
+      z.null(),
+    ])
+    .optional()
+    .describe(
+      'Search scope. Where to search: name, description, or readme content.'
+    ),
+
+  // SORTING & LIMITS - Match CLI defaults exactly
+  sort: z
+    .union([
+      z.enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match']),
+      z.null(),
+    ])
+    .optional()
+    .describe('Sort criteria.'),
+  order: z
+    .union([z.enum(['asc', 'desc']), z.null()])
+    .optional()
+    .describe('Sort order direction.'),
+  limit: z
+    .union([z.number().int().min(1).max(100), z.null()])
+    .optional()
+    .describe('Maximum number of repositories to return (1-100).'),
+
+  // Simplified fallback parameters
+  fallbackParams: z
+    .record(z.any())
+    .optional()
+    .describe(
+      'Fallback parameters if original query returns no results, overrides the original query and try again'
+    ),
+});
+
+export type GitHubReposSearchQuery = z.infer<
+  typeof GitHubReposSearchQuerySchema
+>;
+
+export interface GitHubReposSearchQueryResult {
+  queryId: string;
+  originalQuery: GitHubReposSearchQuery;
+  result: any; // Repository search result
+  fallbackTriggered: boolean;
+  fallbackQuery?: any; // More flexible fallback query type
+  error?: string;
 }
 
 export function registerSearchGitHubReposTool(server: McpServer) {
@@ -74,215 +228,16 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        exactQuery: z
-          .string()
-          .optional()
-          .describe('Single exact phrase/word search'),
-
-        queryTerms: z
-          .array(z.string())
-          .optional()
-          .describe('Multiple search terms for broader coverage'),
-
-        // CORE FILTERS (GitHub CLI flags)
-        owner: z
-          .union([z.string(), z.array(z.string())])
-          .optional()
-          .describe(
-            'Repository owner/organization name(s). Search within specific organizations or users.'
-          ),
-        language: z
-          .string()
-          .optional()
-          .describe(
-            'Programming language filter. Filters repositories by primary language.'
-          ),
-        stars: z
-          .union([
-            z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: ">N", ">=N", "<N", "<=N", "N..M", or exact number'
-              ),
-          ])
-          .optional()
-          .describe(
-            'Star count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
-          ),
-        topic: z
-          .union([z.string(), z.array(z.string())])
-          .optional()
-          .describe('Find repositories by technology/subject'),
-        forks: z
-          .union([
-            z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: ">N", ">=N", "<N", "<=N", "N..M", or exact number'
-              ),
-          ])
-          .optional()
-          .describe(
-            'Fork count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
-          ),
-
-        // Match CLI parameter name exactly
-        'number-topics': z
-          .union([
-            z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: ">5", ">=3", "<10", "<=2", "3..10", or exact number "5"'
-              ),
-          ])
-          .optional()
-          .describe(
-            'Number of topics filter. Format: ">5" (many topics), ">=3" (at least 3), "<10" (few topics), "1..3" (range), "5" (exact).'
-          ),
-
-        // QUALITY & STATE FILTERS
-        license: z
-          .union([z.string(), z.array(z.string())])
-          .optional()
-          .describe('License filter. Filter repositories by license type.'),
-        archived: z
-          .boolean()
-          .optional()
-          .describe(
-            'Archive status filter. false (active repos only), true (archived repos only).'
-          ),
-        'include-forks': z
-          .enum(['false', 'true', 'only'])
-          .optional()
-          .describe(
-            'Fork inclusion. "false" (exclude forks), "true" (include forks), "only" (forks only).'
-          ),
-        visibility: z
-          .enum(['public', 'private', 'internal'])
-          .optional()
-          .describe('Repository visibility.'),
-
-        // DATE & SIZE FILTERS
-        created: z
-          .string()
-          .regex(
-            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
-            'Invalid date format. Use: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "<=2023-12-31", "2020-01-01..2023-12-31", or exact date "2023-01-01"'
-          )
-          .optional()
-          .describe(
-            'Repository creation date filter. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "<=2023-12-31" (on or before), "2020-01-01..2023-12-31" (range), "2023-01-01" (exact).'
-          ),
-        updated: z
-          .string()
-          .regex(
-            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/,
-            'Invalid date format. Use: ">2024-01-01", ">=2024-01-01", "<2022-01-01", "<=2022-01-01", "2023-01-01..2024-12-31", or exact date "2024-01-01"'
-          )
-          .optional()
-          .describe(
-            'Last updated date filter. Format: ">2024-01-01" (recently updated), ">=2024-01-01" (on or after), "<2022-01-01" (not recently updated), "2023-01-01..2024-12-31" (range).'
-          ),
-        size: z
-          .string()
-          .regex(
-            /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-            'Invalid size format. Use: ">1000", ">=500", "<100", "<=50", "100..1000", or exact number "500"'
-          )
-          .optional()
-          .describe(
-            'Repository size filter in KB. Format: ">1000" (large projects), ">=500" (medium-large), "<100" (small projects), "<=50" (tiny), "100..1000" (medium range), "500" (exact).'
-          ),
-
-        // COMMUNITY FILTERS - Match CLI parameter names exactly
-        'good-first-issues': z
-          .union([
-            z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: number, ">5", ">=10", "<20", "<=15", or "5..20"'
-              ),
-          ])
-          .optional()
-          .describe(
-            'Good first issues count. Format: ">5" (many beginner issues), "1..10" (some beginner issues).'
-          ),
-        'help-wanted-issues': z
-          .union([
-            z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: number, ">5", ">=10", "<20", "<=15", or "5..20"'
-              ),
-          ])
-          .optional()
-          .describe(
-            'Help wanted issues count. Format: ">10" (many help wanted), "1..5" (some help wanted).'
-          ),
-        followers: z
-          .union([
-            z.number().int().min(0),
-            z
-              .string()
-              .regex(
-                /^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/,
-                'Invalid format. Use: ">1000", ">=500", "<100", "<=50", "100..1000", or exact number "500"'
-              ),
-          ])
-          .optional()
-          .describe(
-            'Repository owner followers count. Format: ">1000" (popular developers), ">=500" (established developers), "<100" (smaller developers), "100..1000" (range).'
-          ),
-
-        // SEARCH SCOPE - Match CLI exactly
-        match: z
-          .union([
-            z.enum(['name', 'description', 'readme']),
-            z.array(z.enum(['name', 'description', 'readme'])),
-          ])
-          .optional()
-          .describe(
-            'Search scope. Where to search: name, description, or readme content.'
-          ),
-
-        // SORTING & LIMITS - Match CLI defaults exactly
-        sort: z
-          .enum([
-            'forks',
-            'help-wanted-issues',
-            'stars',
-            'updated',
-            'best-match',
-          ])
-          .optional()
-          .default('best-match')
-          .describe('Sort criteria.'),
-        order: z
-          .enum(['asc', 'desc'])
-          .optional()
-          .default('desc')
-          .describe('Sort order direction.'),
-        limit: z
-          .number()
-          .int()
+        queries: z
+          .array(GitHubReposSearchQuerySchema)
           .min(1)
-          .max(100)
-          .optional()
-          .default(30)
-          .describe('Maximum number of repositories to return (1-100).'),
+          .max(5)
+          .describe(
+            'Array of up to 5 different search queries for parallel execution'
+          ),
       },
       annotations: {
-        title: 'GitHub Repository Search',
+        title: 'GitHub Repository Search - Bulk Queries Only (Optimized)',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -290,172 +245,219 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: GitHubReposSearchParams): Promise<CallToolResult> => {
-        // Validate that exactly one search parameter is provided (not both)
-        const hasExactQuery = !!args.exactQuery;
-        const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
-
-        if (hasExactQuery && hasQueryTerms) {
-          return createResult({
-            error:
-              'Use either exactQuery OR queryTerms, not both. Choose one search approach.',
-          });
-        }
-
+      async (args: {
+        queries: GitHubReposSearchQuery[];
+      }): Promise<CallToolResult> => {
         try {
-          // Extract owner/repo from query if present
-          const queryInfo = args.exactQuery
-            ? extractOwnerRepoFromQuery(args.exactQuery)
-            : args.queryTerms
-              ? {
-                  cleanedQuery: args.queryTerms.join(' '),
-                  extractedOwner: undefined,
-                  extractedRepo: undefined,
-                }
-              : {
-                  cleanedQuery: '',
-                  extractedOwner: undefined,
-                  extractedRepo: undefined,
-                };
-
-          // Merge extracted owner with explicit owner parameter
-          let finalOwner = args.owner;
-          if (queryInfo.extractedOwner && !finalOwner) {
-            finalOwner = queryInfo.extractedOwner;
-          }
-
-          // Update parameters with extracted information
-          const enhancedArgs: GitHubReposSearchParams = {
-            ...args,
-            exactQuery: args.exactQuery ? queryInfo.cleanedQuery : undefined,
-            queryTerms: args.queryTerms,
-            owner: finalOwner,
-          };
-
-          // Enhanced validation logic for primary filters
-          const hasPrimaryFilter =
-            enhancedArgs.exactQuery?.trim() ||
-            (enhancedArgs.queryTerms && enhancedArgs.queryTerms.length > 0) ||
-            enhancedArgs.owner ||
-            enhancedArgs.language ||
-            enhancedArgs.topic ||
-            enhancedArgs.stars ||
-            enhancedArgs.forks;
-
-          if (!hasPrimaryFilter) {
-            return createResult({
-              error: `Repository search requires at least one filter. Try:
-• Topic search: { topic: "react" }
-• Exact search: { exactQuery: "cli shell" }  
-• Multiple terms: { queryTerms: ["react", "hooks"] }
-• Organization: { owner: "microsoft" }
-• Language filter: { language: "go" }
-
-Alternative: Use npm search for package discovery.`,
-            });
-          }
-
-          // First attempt: Search with current parameters
-          const result = await searchGitHubRepos(enhancedArgs);
-
-          if (result.isError) {
-            const errorMsg = (result.content?.[0]?.text as string) || '';
-
-            // Smart fallbacks based on error type
-            if (errorMsg.includes('rate limit')) {
-              return createResult({
-                error: `GitHub API rate limit exceeded. Alternatives:
-• Use npm search for package discovery
-• Remove quality filters (stars/forks)  
-• Search fewer organizations
-• Wait 5-10 minutes and retry`,
-              });
-            }
-
-            if (errorMsg.includes('authentication')) {
-              return createResult({
-                error: `Authentication required:
-• Run: gh auth login
-• For private repos: use api_status_check tool
-• Public repos work without auth
-
-Alternative: Use npm search for packages.`,
-              });
-            }
-
-            return result; // Return original error for other cases
-          }
-
-          // Check if we got results
-          const resultData = JSON.parse(result.content[0].text as string);
-          const hasResults = resultData.total_count > 0;
-
-          // Smart fallback strategies for no results
-          if (!hasResults) {
-            const suggestions = [];
-
-            if (enhancedArgs.exactQuery) {
-              suggestions.push('• Try broader search terms');
-            }
-
-            if (enhancedArgs.language) {
-              suggestions.push('• Remove language filter');
-            }
-
-            if (enhancedArgs.stars || enhancedArgs.forks) {
-              suggestions.push('• Lower quality thresholds');
-            }
-
-            if (!enhancedArgs.topic) {
-              suggestions.push('• Try topic search: { topic: "react" }');
-            }
-
-            if (enhancedArgs.owner) {
-              suggestions.push('• Remove owner filter for global search');
-            }
-
-            suggestions.push('• Use npm search for package discovery');
-
-            return createResult({
-              error: `No repositories found. Try:
-${suggestions.join('\n')}`,
-            });
-          }
-
-          // Fallback for private repositories: If no results and owner is specified, try with private visibility
-          if (enhancedArgs.owner && !enhancedArgs.visibility) {
-            // Try searching with private visibility for organization repos
-            const privateSearchArgs: GitHubReposSearchParams = {
-              ...enhancedArgs,
-              visibility: 'private' as const,
-            };
-
-            const privateResult = await searchGitHubRepos(privateSearchArgs);
-            if (!privateResult.isError) {
-              const privateData = JSON.parse(
-                privateResult.content[0].text as string
-              );
-              if (privateData.total_count > 0) {
-                // Return private results with note
-                return createResult({
-                  data: {
-                    ...privateData,
-                    note: 'Found results in private repositories within the specified organization.',
-                  },
-                });
-              }
-            }
-          }
-
-          return result;
+          return await searchMultipleGitHubRepos(args.queries);
         } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return createResult({
-            error: createSearchFailedError('repositories'),
+            error: `Failed to search repositories: ${errorMessage}. Try broader search terms or check repository access.`,
           });
         }
       }
     )
   );
+}
+
+async function searchMultipleGitHubRepos(
+  queries: GitHubReposSearchQuery[]
+): Promise<CallToolResult> {
+  const results: GitHubReposSearchQueryResult[] = [];
+
+  // Execute queries sequentially to avoid rate limits
+  for (let index = 0; index < queries.length; index++) {
+    const query = queries[index];
+    const queryId = query.id || `query_${index + 1}`;
+
+    try {
+      // Validate single query
+      const hasExactQuery = !!query.exactQuery;
+      const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
+
+      if (hasExactQuery && hasQueryTerms) {
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: { total_count: 0, repositories: [] },
+          fallbackTriggered: false,
+          error: `Query ${queryId}: Use either exactQuery OR queryTerms, not both`,
+        });
+        continue;
+      }
+
+      // Enhanced validation logic for primary filters
+      const hasPrimaryFilter =
+        query.exactQuery?.trim() ||
+        (query.queryTerms && query.queryTerms.length > 0) ||
+        query.owner ||
+        query.language ||
+        query.topic ||
+        query.stars ||
+        query.forks;
+
+      if (!hasPrimaryFilter) {
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: { total_count: 0, repositories: [] },
+          fallbackTriggered: false,
+          error: `Query ${queryId}: At least one search parameter required (exactQuery, queryTerms, owner, language, topic, stars, or forks)`,
+        });
+        continue;
+      }
+
+      // Use query parameters directly without modification, filter out null values
+      const enhancedQuery: GitHubReposSearchParams = Object.fromEntries(
+        Object.entries(query).filter(
+          ([_, value]) => value !== null && value !== undefined
+        )
+      ) as GitHubReposSearchParams;
+
+      // Try original query first
+      const result = await searchGitHubRepos(enhancedQuery);
+
+      if (!result.isError) {
+        // Success with original query
+        const execResult = JSON.parse(result.content[0].text as string);
+
+        // Check if we should try fallback (no results found)
+        if (execResult.total_count === 0 && query.fallbackParams) {
+          // Try fallback query - filter out null values
+          const fallbackQuery: GitHubReposSearchParams = {
+            ...enhancedQuery,
+            ...Object.fromEntries(
+              Object.entries(query.fallbackParams).filter(
+                ([_, value]) => value !== null
+              )
+            ),
+          };
+
+          const fallbackResult = await searchGitHubRepos(fallbackQuery);
+
+          if (!fallbackResult.isError) {
+            // Success with fallback query
+            const fallbackExecResult = JSON.parse(
+              fallbackResult.content[0].text as string
+            );
+
+            results.push({
+              queryId,
+              originalQuery: query,
+              result: fallbackExecResult,
+              fallbackTriggered: true,
+              fallbackQuery,
+            });
+            continue;
+          }
+
+          // Both failed - return fallback error
+          results.push({
+            queryId,
+            originalQuery: query,
+            result: { total_count: 0, repositories: [] },
+            fallbackTriggered: true,
+            fallbackQuery,
+            error: fallbackResult.content[0].text as string,
+          });
+          continue;
+        }
+
+        // Return original success
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: execResult,
+          fallbackTriggered: false,
+        });
+        continue;
+      }
+
+      // Original query failed, try fallback if available
+      if (query.fallbackParams) {
+        const fallbackQuery: GitHubReposSearchParams = {
+          ...enhancedQuery,
+          ...Object.fromEntries(
+            Object.entries(query.fallbackParams).filter(
+              ([_, value]) => value !== null
+            )
+          ),
+        };
+
+        const fallbackResult = await searchGitHubRepos(fallbackQuery);
+
+        if (!fallbackResult.isError) {
+          // Success with fallback query
+          const execResult = JSON.parse(
+            fallbackResult.content[0].text as string
+          );
+
+          results.push({
+            queryId,
+            originalQuery: query,
+            result: execResult,
+            fallbackTriggered: true,
+            fallbackQuery,
+          });
+          continue;
+        }
+
+        // Both failed - return fallback error
+        results.push({
+          queryId,
+          originalQuery: query,
+          result: { total_count: 0, repositories: [] },
+          fallbackTriggered: true,
+          fallbackQuery,
+          error: fallbackResult.content[0].text as string,
+        });
+        continue;
+      }
+
+      // No fallback available - return original error
+      results.push({
+        queryId,
+        originalQuery: query,
+        result: { total_count: 0, repositories: [] },
+        fallbackTriggered: false,
+        error: result.content[0].text as string,
+      });
+    } catch (error) {
+      // Handle any unexpected errors
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      results.push({
+        queryId,
+        originalQuery: query,
+        result: { total_count: 0, repositories: [] },
+        fallbackTriggered: false,
+        error: `Unexpected error: ${errorMessage}`,
+      });
+    }
+  }
+
+  // Calculate summary statistics
+  const totalQueries = results.length;
+  const successfulQueries = results.filter(r => !r.error).length;
+  const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
+  const totalRepositories = results.reduce(
+    (sum, r) => sum + (r.result.total_count || 0),
+    0
+  );
+
+  return createResult({
+    data: {
+      results,
+      summary: {
+        totalQueries,
+        successfulQueries,
+        queriesWithFallback,
+        totalRepositories,
+      },
+    },
+  });
 }
 
 export async function searchGitHubRepos(

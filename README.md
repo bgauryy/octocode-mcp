@@ -14,6 +14,7 @@
 
 ## 🌐 For More Details - [octocode.ai](https://octocode.ai)
 ## 📚 For Technical Details - [Technical Summary](./docs/summary.md)
+## 🐳 For Docker Setup - [Docker Guide](./docker/README.Docker.md)
 
 **The perfect code assistant that can help understand anything.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems.
 
@@ -117,6 +118,12 @@ claude mcp add octocode npx 'octocode-mcp@latest'
 ```
 
 **That's it!** Octocode automatically works with your organization's private repositories.
+
+## 🐳 Docker Support
+
+Run Octocode MCP in a Docker container while maintaining full GitHub CLI authentication. Perfect for consistent environments and deployment.
+
+[**See Docker Setup Guide →**](./docker/README.Docker.md)
 
 ## 🛠️ What You Can Do
 

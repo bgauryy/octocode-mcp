@@ -302,3 +302,95 @@ describe('exec utilities', () => {
     });
   });
 });
+
+describe('GitHub Command Mutex', () => {
+  it('should serialize GitHub commands with mutex', async () => {
+    const startTimes: number[] = [];
+    const endTimes: number[] = [];
+
+    // Mock exec to simulate async operations with timing
+    mockExecAsync.mockImplementation(async () => {
+      const startTime = Date.now();
+      startTimes.push(startTime);
+
+      // Simulate a 100ms GitHub API call
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const endTime = Date.now();
+      endTimes.push(endTime);
+
+      return Promise.resolve({
+        stdout: JSON.stringify({ result: 'test' }),
+        stderr: '',
+      });
+    });
+
+    // Execute multiple GitHub commands concurrently
+    const promises = [
+      executeGitHubCommand('search', ['repos', 'test1']),
+      executeGitHubCommand('search', ['repos', 'test2']),
+      executeGitHubCommand('search', ['repos', 'test3']),
+    ];
+
+    await Promise.all(promises);
+
+    // Verify commands were executed serially (not overlapping)
+    expect(startTimes).toHaveLength(3);
+    expect(endTimes).toHaveLength(3);
+
+    // Each command should start after the previous one ends
+    // allowing for some timing tolerance
+    for (let i = 1; i < startTimes.length; i++) {
+      expect(startTimes[i]).toBeGreaterThanOrEqual(endTimes[i - 1] - 10); // 10ms tolerance
+    }
+  });
+
+  it('should not affect NPM commands with GitHub mutex', async () => {
+    const executionTimes: Array<{
+      type: 'gh' | 'npm';
+      start: number;
+      end: number;
+    }> = [];
+
+    mockExecAsync.mockImplementation(async command => {
+      const isGitHub = command.includes('gh ');
+      const startTime = Date.now();
+
+      // Simulate async operation
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const endTime = Date.now();
+      executionTimes.push({
+        type: isGitHub ? 'gh' : 'npm',
+        start: startTime,
+        end: endTime,
+      });
+
+      return Promise.resolve({
+        stdout: JSON.stringify({ result: 'test' }),
+        stderr: '',
+      });
+    });
+
+    // Execute GitHub and NPM commands concurrently
+    const promises = [
+      executeGitHubCommand('search', ['repos', 'test']),
+      executeNpmCommand('search', ['test-package']),
+      executeGitHubCommand('api', ['user']),
+    ];
+
+    await Promise.all(promises);
+
+    // Verify NPM command can run concurrently with GitHub commands
+    expect(executionTimes).toHaveLength(3);
+
+    const ghCommands = executionTimes.filter(e => e.type === 'gh');
+    const npmCommands = executionTimes.filter(e => e.type === 'npm');
+
+    expect(ghCommands).toHaveLength(2);
+    expect(npmCommands).toHaveLength(1);
+
+    // GitHub commands should be serialized
+    expect(ghCommands[1].start).toBeGreaterThanOrEqual(ghCommands[0].end - 10);
+  });
+});

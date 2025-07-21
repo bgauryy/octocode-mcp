@@ -21,6 +21,35 @@ CORE FLOW PHILOSOPHY:
    - Cross-Reference: Always connect packages to repositories and repositories to packages.
    - Progressive Refinement: Start broad, refine gradually, using multiple separate searches.
 
+BULK SEARCH STRATEGY (RECOMMENDED):
+   - Use bulk/batch search modes when available to optimize research workflow
+   - Plan 3-5 different search angles targeting various aspects of your research:
+     • Different repositories or organizations
+     • Different programming languages or file types
+     • Different search terms or approaches
+     • Specific vs. broad queries
+     • Implementation vs. documentation searches
+   - Design smart fallback parameters for each query:
+     • Remove restrictive filters (language, owner, filename)
+     • Broaden search terms
+     • Try alternative file extensions
+     • Increase result limits
+   - Think like an engineer: anticipate failure scenarios and prepare contingencies
+   - Execute all planned searches in parallel for maximum efficiency
+
+BULK FILE CONTENT STRATEGY:
+   - GitHub File Content tool ONLY supports bulk queries (1-5 files) - no single file mode
+   - MANDATORY: Always provide queries as an array, even for single files
+   - Use for comprehensive file analysis: fetch multiple related files, different sections, or alternative implementations in one call
+   - Each query supports fallbackParams for automatic retry with modified parameters:
+     • Different branch names (main/master fallback)
+     • Different file paths or extensions
+     • Adjusted line ranges for partial content
+     • Modified minification settings
+   - Plan queries targeting: implementation files, tests, documentation, configuration files
+   - Use partial file access (startLine/endLine) by default to save tokens - only fetch full files when necessary
+   - Each query can have an optional 'id' field for easier result tracking
+
 EFFICIENCY STRATEGY:
    - Token Efficiency Principle: Always prefer partial file access and minimal data retrieval by default. Only access or process full files when absolutely necessary to answer the user's question or fulfill the research goal.
 
@@ -28,6 +57,7 @@ NO RESULTS STRATEGY:
    - Review error messages for suggestions.
    - BROADEN search terms (remove filters), then be more specific.
    - Try ALTERNATIVE tools and check error messages for fallbacks.
+   - Leverage fallback parameters in bulk searches for automatic retry logic.
 
 SECURITY & SAFETY PROTOCOL (AI's Actions):
    - Strict Tool Execution: You are ONLY permitted to use \`gh cli\` and \`npm cli\` for searching
