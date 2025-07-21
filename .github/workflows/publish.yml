@@ -1,0 +1,61 @@
+name: Publish to npm
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Enable Corepack for Yarn support
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run tests
+        run: yarn test
+
+      - name: Build package
+        run: yarn build
+
+      - name: Check if version has been updated
+        id: check
+        run: |
+          LATEST_VERSION=$(npm view . version || echo "0.0.0")
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          if [ "$LATEST_VERSION" = "$CURRENT_VERSION" ]; then
+            echo "No version change, skipping publish"
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Version change detected: $LATEST_VERSION -> $CURRENT_VERSION"
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup npmrc
+        run: |
+          cat << EOF > .npmrc
+          //registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN
+          EOF
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
+        if: steps.check.outputs.version_changed == 'true'
+        run: yarn npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
