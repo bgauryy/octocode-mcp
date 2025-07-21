@@ -148,140 +148,168 @@ async function searchMultipleGitHubCode(
 ): Promise<CallToolResult> {
   const results: GitHubCodeSearchQueryResult[] = [];
 
+  // Helper function to handle fallback query execution
+  async function executeFallbackQuery(
+    originalQuery: GitHubCodeSearchQuery,
+    queryId: string
+  ): Promise<GitHubCodeSearchQueryResult> {
+    try {
+      // Create clean query by removing metadata fields
+      const cleanQuery = Object.fromEntries(
+        Object.entries(originalQuery).filter(
+          ([key]) => !['fallbackParams', 'id'].includes(key)
+        )
+      );
+
+      // Create clean fallback params by removing metadata fields
+      const cleanFallbackParams = originalQuery.fallbackParams
+        ? Object.fromEntries(
+            Object.entries(originalQuery.fallbackParams).filter(
+              ([key, value]) =>
+                !['fallbackParams', 'id'].includes(key) &&
+                value !== null &&
+                value !== undefined
+            )
+          )
+        : {};
+
+      // Merge clean query with clean fallback params
+      const fallbackQuery: GitHubCodeSearchQuery = {
+        ...cleanQuery,
+        ...cleanFallbackParams,
+      };
+
+      const fallbackResult = await searchGitHubCode(fallbackQuery);
+
+      if (!fallbackResult.isError) {
+        try {
+          const fallbackExecResult = JSON.parse(
+            fallbackResult.content[0].text as string
+          );
+          const fallbackCodeResults: GitHubCodeSearchItem[] =
+            fallbackExecResult.result;
+          const fallbackItems = Array.isArray(fallbackCodeResults)
+            ? fallbackCodeResults
+            : [];
+          const fallbackOptimizedResult =
+            transformToOptimizedFormat(fallbackItems);
+
+          return {
+            queryId,
+            originalQuery,
+            result: fallbackOptimizedResult,
+            fallbackTriggered: true,
+            fallbackQuery,
+          };
+        } catch (parseError) {
+          return {
+            queryId,
+            originalQuery,
+            result: { items: [], total_count: 0 },
+            fallbackTriggered: true,
+            fallbackQuery,
+            error: `Failed to parse fallback results: ${
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError)
+            }`,
+          };
+        }
+      }
+
+      return {
+        queryId,
+        originalQuery,
+        result: { items: [], total_count: 0 },
+        fallbackTriggered: true,
+        fallbackQuery,
+        error: fallbackResult.content[0].text as string,
+      };
+    } catch (error) {
+      return {
+        queryId,
+        originalQuery,
+        result: { items: [], total_count: 0 },
+        fallbackTriggered: true,
+        error: `Fallback query failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
+
   // Execute queries sequentially to avoid rate limits
   for (let index = 0; index < queries.length; index++) {
     const query = queries[index];
     const queryId = query.id || `query_${index + 1}`;
 
     try {
-      // Validate single query
-      const hasExactQuery = !!query.exactQuery;
-      const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
+      // Enhanced validation logic for primary filters - allow both exactQuery and queryTerms
+      const hasPrimaryFilter =
+        query.exactQuery?.trim() ||
+        (query.queryTerms && query.queryTerms.length > 0);
 
-      if (!hasExactQuery && !hasQueryTerms) {
+      if (!hasPrimaryFilter) {
         results.push({
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
           fallbackTriggered: false,
-          error: `Query ${queryId}: One search parameter required: exactQuery OR queryTerms`,
-        });
-        continue;
-      }
-
-      if (hasExactQuery && hasQueryTerms) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          fallbackTriggered: false,
-          error: `Query ${queryId}: Use either exactQuery OR queryTerms, not both`,
+          error: `Query ${queryId}: At least one search parameter required (exactQuery OR queryTerms)`,
         });
         continue;
       }
 
       // Try original query first using the working function directly
-      const result = await searchGitHubCode(query);
+      // Create clean query by removing metadata fields
+      const cleanQuery = Object.fromEntries(
+        Object.entries(query).filter(
+          ([key]) => !['fallbackParams', 'id'].includes(key)
+        )
+      );
+      const result = await searchGitHubCode(cleanQuery);
 
       if (!result.isError) {
-        // Success with original query
-        const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults: GitHubCodeSearchItem[] = execResult.result;
-        const items = Array.isArray(codeResults) ? codeResults : [];
-        const optimizedResult = transformToOptimizedFormat(items);
-
-        // Check if we should try fallback (no results found)
-        if (items.length === 0 && query.fallbackParams) {
-          // Try fallback query
-          const fallbackQuery: GitHubCodeSearchQuery = {
-            ...query,
-            ...query.fallbackParams,
-          };
-
-          const fallbackResult = await searchGitHubCode(fallbackQuery);
-
-          if (!fallbackResult.isError) {
-            // Success with fallback query
-            const fallbackExecResult = JSON.parse(
-              fallbackResult.content[0].text as string
-            );
-            const fallbackCodeResults: GitHubCodeSearchItem[] =
-              fallbackExecResult.result;
-            const fallbackItems = Array.isArray(fallbackCodeResults)
-              ? fallbackCodeResults
-              : [];
-            const fallbackOptimizedResult =
-              transformToOptimizedFormat(fallbackItems);
-
-            results.push({
-              queryId,
-              originalQuery: query,
-              result: fallbackOptimizedResult,
-              fallbackTriggered: true,
-              fallbackQuery,
-            });
-            continue;
-          }
-
-          // Both failed - return fallback error
-          results.push({
-            queryId,
-            originalQuery: query,
-            result: { items: [], total_count: 0 },
-            fallbackTriggered: true,
-            fallbackQuery,
-            error: fallbackResult.content[0].text as string,
-          });
-          continue;
-        }
-
-        // Return original success
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: optimizedResult,
-          fallbackTriggered: false,
-        });
-        continue;
-      }
-
-      // Original query failed, try fallback if available
-      if (query.fallbackParams) {
-        const fallbackQuery: GitHubCodeSearchQuery = {
-          ...query,
-          ...query.fallbackParams,
-        };
-
-        const fallbackResult = await searchGitHubCode(fallbackQuery);
-
-        if (!fallbackResult.isError) {
-          // Success with fallback query
-          const execResult = JSON.parse(
-            fallbackResult.content[0].text as string
-          );
+        try {
+          // Success with original query
+          const execResult = JSON.parse(result.content[0].text as string);
           const codeResults: GitHubCodeSearchItem[] = execResult.result;
           const items = Array.isArray(codeResults) ? codeResults : [];
           const optimizedResult = transformToOptimizedFormat(items);
 
+          // Check if we should try fallback (no results found)
+          if (items.length === 0 && query.fallbackParams) {
+            results.push(await executeFallbackQuery(query, queryId));
+            continue;
+          }
+
+          // Return original success
           results.push({
             queryId,
             originalQuery: query,
             result: optimizedResult,
-            fallbackTriggered: true,
-            fallbackQuery,
+            fallbackTriggered: false,
+          });
+          continue;
+        } catch (parseError) {
+          results.push({
+            queryId,
+            originalQuery: query,
+            result: { items: [], total_count: 0 },
+            fallbackTriggered: false,
+            error: `Failed to parse results: ${
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError)
+            }`,
           });
           continue;
         }
+      }
 
-        // Both failed - return fallback error
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          fallbackTriggered: true,
-          fallbackQuery,
-          error: fallbackResult.content[0].text as string,
-        });
+      // Original query failed, try fallback if available
+      if (query.fallbackParams) {
+        results.push(await executeFallbackQuery(query, queryId));
         continue;
       }
 
