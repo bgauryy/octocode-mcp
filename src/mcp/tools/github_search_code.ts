@@ -30,11 +30,12 @@ Use for comprehensive research - query different repos, languages, or approaches
 // Define the code search query schema
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
-  exactQuery: z.string().optional().describe('Exact phrase/word to search for'),
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe('Array of search terms joined with spaces (AND logic)'),
+    .describe(
+      'Array of strings search terms to search for. one or many terms. all terms should be included in a file. AND logic'
+    ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
     .union([z.string(), z.array(z.string())])
@@ -71,7 +72,6 @@ const GitHubCodeSearchQuerySchema = z.object({
     .describe('Repository visibility'),
   fallbackParams: z
     .object({
-      exactQuery: z.string().optional(),
       queryTerms: z.array(z.string()).optional(),
       language: z.string().optional(),
       owner: z.union([z.string(), z.array(z.string())]).optional(),
@@ -155,27 +155,15 @@ async function searchMultipleGitHubCode(
 
     try {
       // Validate single query
-      const hasExactQuery = !!query.exactQuery;
       const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
 
-      if (!hasExactQuery && !hasQueryTerms) {
+      if (!hasQueryTerms) {
         results.push({
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
           fallbackTriggered: false,
-          error: `Query ${queryId}: One search parameter required: exactQuery OR queryTerms`,
-        });
-        continue;
-      }
-
-      if (hasExactQuery && hasQueryTerms) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          fallbackTriggered: false,
-          error: `Query ${queryId}: Use either exactQuery OR queryTerms, not both`,
+          error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term`,
         });
         continue;
       }
