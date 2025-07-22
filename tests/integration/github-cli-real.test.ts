@@ -255,9 +255,11 @@ describe('GitHub CLI Real Implementation Tests', () => {
 
   describe('Cross-Tool Consistency Checks', () => {
     it('should verify each tool produces valid command structures', () => {
-      const codeResult = buildGitHubCliArgs({ exactQuery: 'test' });
-      const commitResult = buildGitHubCommitCliArgs({ exactQuery: 'test' });
-      const repoResult = buildGitHubReposSearchCommand({ exactQuery: 'test' });
+      const codeResult = buildGitHubCliArgs({ queryTerms: ['test'] });
+      const commitResult = buildGitHubCommitCliArgs({ queryTerms: ['test'] });
+      const repoResult = buildGitHubReposSearchCommand({
+        queryTerms: ['test'],
+      });
       const issueResult = buildGitHubIssuesAPICommand({ query: 'test' });
       const prResult = buildGitHubPullRequestsAPICommand({ query: 'test' });
 
@@ -270,16 +272,18 @@ describe('GitHub CLI Real Implementation Tests', () => {
       expect(prResult.command).toBe('api');
 
       // All should handle the query appropriately
-      expect(codeResult[1]).toBe('"test"');
+      expect(codeResult[1]).toBe('test');
       expect(commitResult[1]).toBe('test');
-      expect(repoResult.args[1]).toBe('"test"');
+      expect(repoResult.args[1]).toBe('test');
       expect(issueResult.args[1]).toBe('test');
     });
 
     it('should verify JSON output specifications', () => {
-      const codeResult = buildGitHubCliArgs({ exactQuery: 'test' });
-      const commitResult = buildGitHubCommitCliArgs({ exactQuery: 'test' });
-      const repoResult = buildGitHubReposSearchCommand({ exactQuery: 'test' });
+      const codeResult = buildGitHubCliArgs({ queryTerms: ['test'] });
+      const commitResult = buildGitHubCommitCliArgs({ queryTerms: ['test'] });
+      const repoResult = buildGitHubReposSearchCommand({
+        queryTerms: ['test'],
+      });
 
       // Code search JSON fields
       expect(codeResult[codeResult.length - 1]).toBe(
@@ -309,7 +313,7 @@ describe('GitHub CLI Real Implementation Tests', () => {
 
       // Limits
       const withLimitCode = buildGitHubCliArgs({
-        exactQuery: 'test',
+        queryTerms: ['test'],
         limit: 42,
       });
       expect(withLimitCode).toContain('--limit=42');
