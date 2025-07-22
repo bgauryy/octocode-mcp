@@ -49,7 +49,7 @@ export function registerNpmSearchTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Search terms for NPM packages only - supports multiple queries (e.g., "react hooks", ["typescript", "eslint"], "data visualization"). Optional when using other parameters.'
+            'Array of package names to search for (e.g., ["react", "typescript"], or single package "react")'
           ),
         npmPackageName: z
           .string()

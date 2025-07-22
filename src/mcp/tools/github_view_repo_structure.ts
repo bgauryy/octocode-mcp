@@ -9,6 +9,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
+import { safeGetContentText } from '../../utils/responseUtils';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
@@ -687,14 +688,4 @@ function handleOtherErrors(
   }
 }
 
-// Helper function for safe content access
-function safeGetContentText(result: any): string {
-  if (
-    result?.content &&
-    Array.isArray(result.content) &&
-    result.content.length > 0
-  ) {
-    return (result.content[0].text as string) || 'Empty response';
-  }
-  return 'Unknown error: No content in response';
-}
+// Helper function removed - now using shared utility from responseUtils

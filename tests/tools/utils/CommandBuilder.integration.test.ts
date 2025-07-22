@@ -506,9 +506,9 @@ describe('Command Builder Integration Tests', () => {
       expect(() =>
         codeBuilder.build({
           exactQuery: undefined,
-          language: null,
+          language: undefined,
           owner: undefined,
-          limit: null,
+          limit: undefined,
         })
       ).not.toThrow();
     });

@@ -5,6 +5,8 @@ import { createResult } from '../responses';
 import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
 import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
+import { withSecurityValidation } from './utils/withSecurityValidation';
+import { safeJsonParse, sanitizeErrorMessage } from '../../security/utils';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
 const DESCRIPTION = `Check user status: GitHub/NPM connections, organizations, and current timestamp. Essential for understanding user's data access and API capabilities.`;
@@ -15,8 +17,11 @@ function parseExecResult(result: CallToolResult): { result?: string } | null {
     try {
       const textContent = result.content?.[0]?.text;
       if (typeof textContent === 'string') {
-        const parsed = JSON.parse(textContent);
-        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+        const parseResult = safeJsonParse<{ result?: string }>(
+          textContent,
+          'API status check'
+        );
+        return parseResult.success ? parseResult.data : null;
       }
     } catch (e) {
       return null;
@@ -39,7 +44,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    async (): Promise<CallToolResult> => {
+    withSecurityValidation(async (): Promise<CallToolResult> => {
       try {
         let githubConnected = false;
         let organizations: string[] = [];
@@ -182,7 +187,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
           error: getErrorWithSuggestion({
             baseError: [
               ERROR_MESSAGES.API_STATUS_CHECK_FAILED,
-              `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              `Error: ${sanitizeErrorMessage(error)}`,
               '',
               'This usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.',
             ],
@@ -190,6 +195,6 @@ export function registerApiStatusCheckTool(server: McpServer) {
           }),
         });
       }
-    }
+    })
   );
 }

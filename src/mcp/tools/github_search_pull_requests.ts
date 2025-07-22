@@ -76,6 +76,18 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .describe(
             'Search query for PR content (keep minimal for broader results)'
           ),
+        exactQuery: z
+          .string()
+          .optional()
+          .describe('Exact phrase to search for'),
+        queryTerms: z
+          .array(z.string())
+          .optional()
+          .describe('Multiple search terms for broader coverage'),
+        orTerms: z
+          .array(z.string())
+          .optional()
+          .describe('Search terms with OR logic'),
         owner: z
           .string()
           .optional()
@@ -136,11 +148,9 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .optional()
           .describe('Filter by repository archived state'),
         comments: z
-          .boolean()
-          .default(false)
-          .describe(
-            'Include comment content in search results. This is a very expensive operation in tokens and should be used with caution.'
-          ),
+          .number()
+          .optional()
+          .describe('Filter by number of comments'),
         interactions: z
           .number()
           .optional()
@@ -184,6 +194,22 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .array(z.enum(['title', 'body', 'comments']))
           .optional()
           .describe('Restrict search to specific fields'),
+        type: z
+          .enum(['issue', 'pr'])
+          .optional()
+          .describe('Filter by issue or PR type'),
+        status: z
+          .enum(['pending', 'success', 'failure'])
+          .optional()
+          .describe('Filter by CI status'),
+        'user-review-requested': z
+          .string()
+          .optional()
+          .describe('User requested for review'),
+        'team-review-requested': z
+          .string()
+          .optional()
+          .describe('Team requested for review'),
         limit: z
           .number()
           .int()
@@ -220,6 +246,14 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .describe(
             'Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes. WARNING: EXTREMELY expensive in tokens - fetches diff/patch content for each commit.'
           ),
+        getPRCommits: z
+          .boolean()
+          .optional()
+          .describe('Get commits information for the PR'),
+        getChangesContent: z
+          .boolean()
+          .optional()
+          .describe('Include code changes content'),
       },
       annotations: {
         title: 'GitHub PR Search - Smart & Effective',
@@ -230,7 +264,10 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
+      async (
+        sanitizedArgs: Record<string, unknown>
+      ): Promise<CallToolResult> => {
+        const args = sanitizedArgs as unknown as GitHubPullRequestsSearchParams;
         if (!args.query?.trim()) {
           return createResult({
             error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,

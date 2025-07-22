@@ -24,10 +24,26 @@ export function maskSensitiveData(text: string): string {
   const regex = getCombinedRegex();
   const matches: Match[] = [];
 
-  // Single pass to find all matches
+  // Single pass to find all matches with safety limits
   let match;
+  let iterationCount = 0;
+  const maxIterations = 10000; // Prevent infinite loops
+  const startTime = Date.now();
+  const maxExecutionTime = 5000; // 5 seconds max
 
   while ((match = regex.exec(text)) !== null) {
+    // Safety checks to prevent infinite loops and excessive execution time
+    iterationCount++;
+    if (iterationCount > maxIterations) {
+      // TODO: log
+      break;
+    }
+
+    if (Date.now() - startTime > maxExecutionTime) {
+      // TODO: log
+      break;
+    }
+
     // Find which named capture group matched
     for (let i = 0; i < patternMap.length; i++) {
       if (match.groups?.[`p${i}`]) {
@@ -43,6 +59,10 @@ export function maskSensitiveData(text: string): string {
     // Prevent infinite loop on zero-length matches
     if (match[0].length === 0) {
       regex.lastIndex++;
+      // Additional safety: if we're not advancing, break
+      if (regex.lastIndex >= text.length) {
+        break;
+      }
     }
   }
 
@@ -96,13 +116,58 @@ function maskEveryTwoChars(text: string): string {
   return result;
 }
 
-// Compile all patterns into a single regex for better performance
+// Compile all patterns into a single regex for better performance with safety checks
 function createCombinedRegex(patterns: SensitiveDataPattern[]): RegExp {
-  const regexSources = patterns.map((pattern, index) => {
-    // Remove global flag and wrap in named capture group
-    const source = pattern.regex.source;
-    return `(?<p${index}>${source})`;
-  });
+  if (!patterns || patterns.length === 0) {
+    throw new Error('No regex patterns provided for compilation');
+  }
 
-  return new RegExp(regexSources.join('|'), 'gi');
+  const regexSources: string[] = [];
+
+  for (let index = 0; index < patterns.length; index++) {
+    const pattern = patterns[index];
+
+    // Validate the pattern exists and has a regex
+    if (!pattern || !pattern.regex) {
+      // TODO: log
+      continue;
+    }
+
+    try {
+      // Validate the regex source - check for potentially dangerous patterns
+      const source = pattern.regex.source;
+
+      // Basic validation - reject empty sources or sources that are too complex
+      if (!source || source.length === 0) {
+        // TODO: log
+        continue;
+      }
+
+      if (source.length > 1000) {
+        // TODO: log
+        continue;
+      }
+
+      // Test that the regex can be compiled safely
+      new RegExp(source);
+
+      // Wrap in named capture group
+      regexSources.push(`(?<p${regexSources.length}>${source})`);
+    } catch (error) {
+      // TODO: log
+      continue;
+    }
+  }
+
+  if (regexSources.length === 0) {
+    throw new Error('No valid regex patterns available after validation');
+  }
+
+  try {
+    return new RegExp(regexSources.join('|'), 'gi');
+  } catch (error) {
+    throw new Error(
+      `Failed to create combined regex: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
