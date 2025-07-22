@@ -23,12 +23,11 @@ describe('GitHub Fetch Content Tool', () => {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(result),  // Return the GitHub API response directly
+        text: JSON.stringify(result), // Return the GitHub API response directly
       },
     ],
     isError: false,
   });
-
 
   // Helper to create mock GitHub error response
   const createMockGitHubError = (errorMessage: string) => ({
@@ -96,16 +95,16 @@ describe('GitHub Fetch Content Tool', () => {
 
       // First check if mock was called
       expect(mockExecuteGitHubCommand).toHaveBeenCalled();
-      
+
       expect(result.isError).toBe(false);
 
       // Parse response - debug what we actually get
       const responseData = JSON.parse(result.content[0].text as string);
-      
+
       // Check if responseData has the expected structure
       const results = responseData.data?.results || responseData.results;
       const summary = responseData.data?.summary || responseData.summary;
-      
+
       expect(results).toHaveLength(1);
       expect(results[0].result).toBeDefined();
       const content = results[0].result.content;

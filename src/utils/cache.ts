@@ -18,20 +18,24 @@ export function generateCacheKey(prefix: string, params: unknown): string {
     if (obj === null || obj === undefined) return null;
     if (typeof obj !== 'object') return obj;
     if (Array.isArray(obj)) return obj.map(normalizeParams).sort();
-    
+
     const sorted: any = {};
-    Object.keys(obj).sort().forEach(key => {
-      sorted[key] = normalizeParams(obj[key]);
-    });
+    Object.keys(obj)
+      .sort()
+      .forEach(key => {
+        sorted[key] = normalizeParams(obj[key]);
+      });
     return sorted;
   };
 
   const normalizedParams = normalizeParams(params);
   const paramString = JSON.stringify(normalizedParams);
-  
+
   // Use a fixed salt for deterministic hashing (for testing consistency)
-  const hash = generateSecureCacheKey(prefix, paramString, { salt: 'fixed-salt-for-testing' });
-  
+  const hash = generateSecureCacheKey(prefix, paramString, {
+    salt: 'fixed-salt-for-testing',
+  });
+
   // Return in expected format: v1-prefix:hash (truncate to 32 chars for consistency with tests)
   return `v1-${prefix}:${hash.substring(0, 32)}`;
 }

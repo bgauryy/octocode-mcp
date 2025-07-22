@@ -111,7 +111,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     GITHUB_SEARCH_CODE_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: z.object({
+      inputSchema: {
         queries: z
           .array(GitHubCodeSearchQuerySchema)
           .min(1)
@@ -119,7 +119,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .describe(
             'Array of up to 5 different search queries for parallel execution'
           ),
-      }),
+      },
       annotations: {
         title: 'GitHub Code Search - Bulk Queries Only (Optimized)',
         readOnlyHint: true,

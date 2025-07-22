@@ -44,12 +44,12 @@ export function registerNpmSearchTool(server: McpServer) {
     NPM_PACKAGE_SEARCH_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: z.object({
+      inputSchema: {
         npmPackagesNames: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Search terms for NPM packages only - supports multiple queries (e.g., "react hooks", ["typescript", "eslint"], "data visualization"). Optional when using other parameters.'
+            'Array of package names to search for (e.g., ["react", "typescript"], or single package "react")'
           ),
         npmPackageName: z
           .string()
@@ -78,7 +78,7 @@ export function registerNpmSearchTool(server: McpServer) {
           .describe(
             'NPM search strategy: "individual" runs separate searches for each term, "combined" searches all terms together. Default: individual'
           ),
-      }),
+      },
       annotations: {
         title: 'Multi-Ecosystem Package Search',
         readOnlyHint: true,

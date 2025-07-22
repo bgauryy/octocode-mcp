@@ -250,7 +250,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: z.object({
+      inputSchema: {
         queries: z
           .array(GitHubReposSearchQuerySchema)
           .min(1)
@@ -258,7 +258,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .describe(
             'Array of up to 5 different search queries for parallel execution'
           ),
-      }),
+      },
       annotations: {
         title: 'GitHub Repository Search - Bulk Queries Only (Optimized)',
         readOnlyHint: true,

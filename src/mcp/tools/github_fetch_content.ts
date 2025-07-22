@@ -128,7 +128,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
     GITHUB_GET_FILE_CONTENT_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: z.object({
+      inputSchema: {
         queries: z
           .array(FileContentQuerySchema)
           .min(1)
@@ -136,7 +136,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .describe(
             'Array of up to 5 different file fetch queries for parallel execution'
           ),
-      }),
+      },
       annotations: {
         title: 'GitHub File Content - Bulk Queries Only (Optimized)',
         readOnlyHint: true,
