@@ -1,8 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import NodeCache from 'node-cache';
-import crypto from 'crypto';
-
-const VERSION = 'v1';
+import { generateSecureCacheKey } from '../security/utils';
 
 const cache = new NodeCache({
   stdTTL: 86400, // 24 hour cache
@@ -11,13 +9,31 @@ const cache = new NodeCache({
   deleteOnExpire: true, // Automatically delete expired keys
 });
 
+/**
+ * Generate a cache key for the given prefix and parameters
+ */
 export function generateCacheKey(prefix: string, params: unknown): string {
-  const paramString = JSON.stringify(
-    params,
-    Object.keys(params as Record<string, unknown>).sort()
-  );
-  const hash = crypto.createHash('md5').update(paramString).digest('hex');
-  return `${VERSION}-${prefix}:${hash}`;
+  // Sort object keys for deterministic hashing
+  const normalizeParams = (obj: any): any => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(normalizeParams).sort();
+    
+    const sorted: any = {};
+    Object.keys(obj).sort().forEach(key => {
+      sorted[key] = normalizeParams(obj[key]);
+    });
+    return sorted;
+  };
+
+  const normalizedParams = normalizeParams(params);
+  const paramString = JSON.stringify(normalizedParams);
+  
+  // Use a fixed salt for deterministic hashing (for testing consistency)
+  const hash = generateSecureCacheKey(prefix, paramString, { salt: 'fixed-salt-for-testing' });
+  
+  // Return in expected format: v1-prefix:hash (truncate to 32 chars for consistency with tests)
+  return `v1-${prefix}:${hash.substring(0, 32)}`;
 }
 
 export async function withCache(

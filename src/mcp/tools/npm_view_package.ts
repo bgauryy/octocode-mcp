@@ -35,7 +35,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
     NPM_VIEW_PACKAGE_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: {
+      inputSchema: z.object({
         packageName: z
           .string()
           .min(1)
@@ -145,7 +145,7 @@ export function registerNpmViewPackageTool(server: McpServer) {
           .describe(
             'Specific field(s) to retrieve. Can be single field or array of fields. Examples: "version", ["version", "description"], ["dependencies", "devDependencies"]. When used, returns only the specified fields. use repository to get the repository url in github'
           ),
-      },
+      }),
       annotations: {
         title: 'NPM Package Analyzer',
         readOnlyHint: true,

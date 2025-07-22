@@ -13,6 +13,7 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCodeSearchBuilder } from './utils/GitHubCommandBuilder';
+import { safeGetContentText } from '../../utils/responseUtils';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
@@ -49,6 +50,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .optional()
     .describe('Target specific filename or pattern'),
   extension: z.string().optional().describe('File extension filter'),
+  path: z.string().optional().describe('Search within specific path/directory'),
   match: z
     .enum(['file', 'path'])
     .optional()
@@ -78,6 +80,7 @@ const GitHubCodeSearchQuerySchema = z.object({
       repo: z.union([z.string(), z.array(z.string())]).optional(),
       filename: z.string().optional(),
       extension: z.string().optional(),
+      path: z.string().optional(),
       match: z.enum(['file', 'path']).optional(),
       size: z
         .string()
@@ -108,7 +111,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     GITHUB_SEARCH_CODE_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: {
+      inputSchema: z.object({
         queries: z
           .array(GitHubCodeSearchQuerySchema)
           .min(1)
@@ -116,7 +119,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .describe(
             'Array of up to 5 different search queries for parallel execution'
           ),
-      },
+      }),
       annotations: {
         title: 'GitHub Code Search - Bulk Queries Only (Optimized)',
         readOnlyHint: true,
@@ -152,17 +155,7 @@ function isNonEmptyArray(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-// Helper function for safe content access
-function safeGetContentText(result: any): string {
-  if (
-    result?.content &&
-    Array.isArray(result.content) &&
-    result.content.length > 0
-  ) {
-    return (result.content[0].text as string) || 'Empty response';
-  }
-  return 'Unknown error: No content in response';
-}
+// Helper function removed - now using shared utility from responseUtils
 
 // Helper function for safe array index access
 function safeGetIndices(match: any): [number, number] {

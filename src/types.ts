@@ -25,6 +25,7 @@ export type UserInvolvement = {
 };
 
 export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
+  id?: string; // Optional identifier for the query
   exactQuery?: string;
   queryTerms?: string[];
   owner?: string | string[]; // Override to support array
@@ -37,6 +38,7 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   size?: string;
   limit?: number;
   visibility?: 'public' | 'private' | 'internal';
+  fallbackParams?: Partial<GitHubCodeSearchParams>; // Fallback parameters if no results
   // Legacy fields for backward compatibility
   branch?: string;
   enableQueryOptimization?: boolean;
@@ -75,12 +77,12 @@ export interface GitHubPullRequestsSearchParams {
   created?: string;
   owner?: string;
   updated?: string;
-  order?: string;
+  order?: 'asc' | 'desc';
   repo?: string;
   exactQuery?: string;
   queryTerms?: string[];
   orTerms?: string[];
-  query?: string;
+  query: string; // Required field
   match?: ('title' | 'body' | 'comments')[];
   type?: 'issue' | 'pr';
   state?: 'open' | 'closed';
@@ -169,6 +171,7 @@ export interface GitHubReposSearchParams
   // SORTING AND LIMITS
   limit?: number;
   sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
+  [key: string]: unknown; // Index signature
 }
 
 export interface GithubFetchRequestParams {
@@ -178,7 +181,7 @@ export interface GithubFetchRequestParams {
   filePath: string;
   startLine?: number;
   endLine?: number;
-  contextLines?: number;
+  contextLines: number; // Making this required with default of 10
   minified: boolean;
 }
 
@@ -554,6 +557,7 @@ export interface GitHubIssuesSearchParams {
     | 'updated'
     | 'best-match';
   order?: 'asc' | 'desc';
+  [key: string]: unknown; // Index signature
 }
 
 export interface GitHubIssueItem {

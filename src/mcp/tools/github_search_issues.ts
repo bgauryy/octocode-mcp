@@ -224,7 +224,10 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
+      async (
+        sanitizedArgs: Record<string, unknown>
+      ): Promise<CallToolResult> => {
+        const args = sanitizedArgs as unknown as GitHubIssuesSearchParams;
         if (!args.query?.trim()) {
           return createResult({
             error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,

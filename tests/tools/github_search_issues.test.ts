@@ -648,7 +648,7 @@ describe('GitHub Search Issues Tool', () => {
         'search',
         [
           'issues',
-          'error: "undefined is not a function" & crash',
+          'error: "undefined is not a function"  crash',
           '--limit',
           '25',
           '--json',
@@ -805,7 +805,7 @@ describe('GitHub Search Issues Tool', () => {
           'issues',
           'memory leak in React hooks',
           '--label',
-          'bug & performance',
+          'bug  performance',
           '--milestone',
           'v2.0 release',
           '--limit',

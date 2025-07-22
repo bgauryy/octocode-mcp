@@ -11,6 +11,10 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
+import {
+  safeGetContentText,
+  safeParseJsonResult,
+} from '../../utils/responseUtils';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
@@ -31,17 +35,7 @@ function isValidNumber(value: unknown): boolean {
   return false;
 }
 
-// Helper function for safe content access
-function safeGetContentText(result: any): string {
-  if (
-    result?.content &&
-    Array.isArray(result.content) &&
-    result.content.length > 0
-  ) {
-    return (result.content[0].text as string) || 'Empty response';
-  }
-  return 'Unknown error: No content in response';
-}
+// Helper function removed - now using shared utility from responseUtils
 
 const DESCRIPTION = `Search GitHub repositories using GitHub CLI.
 
@@ -256,7 +250,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: {
+      inputSchema: z.object({
         queries: z
           .array(GitHubReposSearchQuerySchema)
           .min(1)
@@ -264,7 +258,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .describe(
             'Array of up to 5 different search queries for parallel execution'
           ),
-      },
+      }),
       annotations: {
         title: 'GitHub Repository Search - Bulk Queries Only (Optimized)',
         readOnlyHint: true,
@@ -332,14 +326,25 @@ async function searchMultipleGitHubRepos(
       if (!fallbackResult.isError) {
         try {
           // Success with fallback query
-          const fallbackExecResult = JSON.parse(
-            safeGetContentText(fallbackResult)
+          const parseResult = safeParseJsonResult(
+            fallbackResult,
+            'fallback repository search'
           );
+          if (!parseResult.success) {
+            return {
+              queryId,
+              originalQuery,
+              result: { total_count: 0, repositories: [] },
+              fallbackTriggered: true,
+              fallbackQuery,
+              error: parseResult.error,
+            };
+          }
 
           return {
             queryId,
             originalQuery,
-            result: fallbackExecResult,
+            result: parseResult.data,
             fallbackTriggered: true,
             fallbackQuery,
           };
@@ -422,7 +427,19 @@ async function searchMultipleGitHubRepos(
       if (!result.isError) {
         try {
           // Success with original query
-          const execResult = JSON.parse(safeGetContentText(result));
+          const parseResult = safeParseJsonResult(result, 'repository search');
+          if (!parseResult.success) {
+            results.push({
+              queryId,
+              originalQuery: query,
+              result: { total_count: 0, repositories: [] },
+              fallbackTriggered: false,
+              error: parseResult.error,
+            });
+            continue;
+          }
+
+          const execResult = parseResult.data;
 
           // Check if we should try fallback (no results found)
           if (execResult.total_count === 0 && query.fallbackParams) {
@@ -521,7 +538,17 @@ export async function searchGitHubRepos(
       }
 
       try {
-        const execResult = JSON.parse(result.content[0].text as string);
+        const parseResult = safeParseJsonResult(
+          result,
+          'repository search main'
+        );
+        if (!parseResult.success) {
+          return createResult({
+            error: parseResult.error,
+          });
+        }
+
+        const execResult = parseResult.data;
         const repositories = execResult.result;
 
         if (!Array.isArray(repositories) || repositories.length === 0) {

@@ -81,13 +81,19 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
   /**
    * Add a flag with value in --flag=value format
    */
-  protected addFlag(flag: string, value: string | number | boolean): this {
+  protected addFlag(
+    flag: string,
+    value: string | number | boolean | string[] | unknown | undefined
+  ): this {
     // Skip undefined and null values
     if (value === undefined || value === null) {
       return this;
     }
 
-    if (typeof value === 'boolean') {
+    // Handle arrays by joining them
+    if (Array.isArray(value)) {
+      this.args.push(`--${flag}=${value.join(',')}`);
+    } else if (typeof value === 'boolean') {
       this.args.push(`--${flag}=${value}`);
     } else {
       this.args.push(`--${flag}=${value}`);
@@ -100,9 +106,19 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
    */
   protected addFlagWithSeparateValue(
     flag: string,
-    value: string | number
+    value: string | number | boolean | string[] | unknown | undefined
   ): this {
-    this.args.push('--' + flag, value.toString());
+    // Skip undefined and null values
+    if (value === undefined || value === null) {
+      return this;
+    }
+
+    // Handle arrays by joining them
+    if (Array.isArray(value)) {
+      this.args.push('--' + flag, value.join(','));
+    } else {
+      this.args.push('--' + flag, value.toString());
+    }
     return this;
   }
 

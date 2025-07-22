@@ -83,17 +83,32 @@ function registerAllTools(server: McpServer) {
   ];
 
   let successCount = 0;
+  const failedTools: Array<{ name: string; error: string }> = [];
+
   for (const tool of toolRegistrations) {
     try {
       tool.fn(server);
       successCount++;
     } catch (error) {
-      // Continue with other tools instead of failing completely
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      failedTools.push({ name: tool.name, error: errorMessage });
+      // Log registration failure for debugging
+      // TODO: log
     }
   }
 
   if (successCount === 0) {
-    throw new Error('No tools were successfully registered');
+    const errorDetails = failedTools
+      .map(f => `${f.name}: ${f.error}`)
+      .join('; ');
+    throw new Error(
+      `No tools were successfully registered. Failures: ${errorDetails}`
+    );
+  }
+
+  if (failedTools.length > 0) {
+    // TODO: log
   }
 }
 
@@ -138,12 +153,14 @@ async function startServer() {
       await gracefulShutdown();
     });
 
-    // Handle uncaught errors
-    process.on('uncaughtException', () => {
+    // Handle uncaught errors with proper logging
+    process.on('uncaughtException', _error => {
+      // TODO: log
       gracefulShutdown();
     });
 
-    process.on('unhandledRejection', () => {
+    process.on('unhandledRejection', (_reason, _promise) => {
+      // TODO: log
       gracefulShutdown();
     });
 

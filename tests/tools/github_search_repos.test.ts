@@ -51,9 +51,7 @@ describe('GitHub Search Repositories Tool - Bulk Queries', () => {
         'githubSearchRepositories',
         expect.objectContaining({
           description: expect.stringContaining('BULK QUERY MODE'),
-          inputSchema: expect.objectContaining({
-            queries: expect.any(Object),
-          }),
+          inputSchema: expect.any(Object),
           annotations: expect.objectContaining({
             title: 'GitHub Repository Search - Bulk Queries Only (Optimized)',
             readOnlyHint: true,

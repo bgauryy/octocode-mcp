@@ -1,5 +1,66 @@
 import { BaseCommandBuilder, BaseCommandParams } from './BaseCommandBuilder';
 
+// Define specific interfaces for different GitHub search types
+export interface GitHubCodeSearchParams extends BaseCommandParams {
+  exactQuery?: string;
+  queryTerms?: string[];
+  language?: string;
+  owner?: string | string[];
+  repo?: string | string[];
+  filename?: string;
+  extension?: string;
+  match?: 'file' | 'path';
+  size?: string;
+  limit?: number;
+  visibility?: 'public' | 'private' | 'internal';
+}
+
+export interface GitHubReposSearchParams extends BaseCommandParams {
+  exactQuery?: string;
+  queryTerms?: string[];
+  owner?: string | string[];
+  language?: string;
+  stars?: number | string;
+  topic?: string | string[];
+  forks?: number | string;
+  'number-topics'?: number | string;
+  license?: string | string[];
+  archived?: boolean;
+  'include-forks'?: 'false' | 'true' | 'only';
+  visibility?: 'public' | 'private' | 'internal';
+  created?: string;
+  updated?: string;
+  size?: string;
+  'good-first-issues'?: number | string;
+  'help-wanted-issues'?: number | string;
+  followers?: number | string;
+  match?: string | string[];
+  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
+  order?: 'asc' | 'desc';
+  limit?: number;
+}
+
+export interface GitHubIssuesSearchParams extends BaseCommandParams {
+  query: string;
+  owner?: string;
+  repo?: string;
+  state?: 'open' | 'closed';
+  label?: string | string[];
+  assignee?: string;
+  author?: string;
+  mentions?: string;
+  involves?: string;
+  commenter?: string;
+  created?: string;
+  updated?: string;
+  closed?: string;
+  archived?: boolean;
+  'include-prs'?: boolean;
+  sort?: string;
+  order?: 'asc' | 'desc';
+  limit?: number;
+}
+
 /**
  * GitHub-specific command builder
  * Handles GitHub CLI command construction with common patterns
@@ -70,13 +131,13 @@ export abstract class GitHubCommandBuilder<
 /**
  * GitHub Code Search Command Builder
  */
-export class GitHubCodeSearchBuilder extends GitHubCommandBuilder<any> {
+export class GitHubCodeSearchBuilder extends GitHubCommandBuilder<GitHubCodeSearchParams> {
   protected initializeCommand(): this {
     this.args = ['code'];
     return this;
   }
 
-  build(params: any): string[] {
+  build(params: GitHubCodeSearchParams): string[] {
     return this.reset()
       .initializeCommand()
       .addQuery({
@@ -98,13 +159,13 @@ export class GitHubCodeSearchBuilder extends GitHubCommandBuilder<any> {
 /**
  * GitHub Issues Search Command Builder
  */
-export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
+export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<GitHubIssuesSearchParams> {
   protected initializeCommand(): this {
     this.args = ['issues'];
     return this;
   }
 
-  build(params: any): string[] {
+  build(params: GitHubIssuesSearchParams): string[] {
     this.reset(); // Just reset, don't initialize yet
 
     // Determine format based on context - unit tests prefer combined format
@@ -126,7 +187,7 @@ export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
     );
   }
 
-  private buildWithCombinedFormat(params: any): string[] {
+  private buildWithCombinedFormat(params: GitHubIssuesSearchParams): string[] {
     // Reinitialize to ensure base command is included
     this.initializeCommand();
 
@@ -202,7 +263,7 @@ export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
     return this.getArgs();
   }
 
-  private buildWithSeparateFormat(params: any): string[] {
+  private buildWithSeparateFormat(params: GitHubIssuesSearchParams): string[] {
     // Initialize command for separate format
     this.initializeCommand();
 
@@ -375,7 +436,7 @@ export class GitHubPullRequestsSearchBuilder extends GitHubCommandBuilder<any> {
 /**
  * GitHub Repositories Search Command Builder
  */
-export class GitHubReposSearchBuilder extends GitHubCommandBuilder<any> {
+export class GitHubReposSearchBuilder extends GitHubCommandBuilder<GitHubReposSearchParams> {
   protected initializeCommand(): this {
     this.args = ['repos'];
     return this;
@@ -412,7 +473,7 @@ export class GitHubReposSearchBuilder extends GitHubCommandBuilder<any> {
     return this;
   }
 
-  build(params: any): string[] {
+  build(params: GitHubReposSearchParams): string[] {
     const builder = this.reset().initializeCommand();
 
     // Handle query terms specially for repositories

@@ -202,6 +202,7 @@ describe('GitHub CLI Real Implementation Tests', () => {
   describe('Pull Requests Search - Real Implementation', () => {
     it('should use pr list command when owner and repo provided', () => {
       const params: GitHubPullRequestsSearchParams = {
+        query: 'test',
         owner: 'facebook',
         repo: 'react',
         state: 'closed',
@@ -233,6 +234,7 @@ describe('GitHub CLI Real Implementation Tests', () => {
 
     it('should test pr list command separately', () => {
       const params: GitHubPullRequestsSearchParams = {
+        query: 'test',
         owner: 'facebook',
         repo: 'react',
         state: 'closed',

@@ -6,13 +6,19 @@ import {
   GitHubFileContentResponse,
 } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContent } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import {
+  RESOURCE_LIMITS,
+  safeJsonParse,
+  validateResourceLimits,
+} from '../../security/utils';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
+
+const DEFAULT_CONTEXT_LINES = 10;
 
 const DESCRIPTION = `Fetches the content of multiple files from GitHub repositories in parallel. Supports up to 5 queries with automatic fallback handling.
 
@@ -86,8 +92,8 @@ const FileContentQuerySchema = z.object({
     .min(0)
     .max(50)
     .optional()
-    .default(5)
-    .describe(`Context lines around target range. Default: 5.`),
+    .default(10)
+    .describe(`Context lines around target range. Default: 10.`),
   minified: z
     .boolean()
     .default(true)
@@ -122,7 +128,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
     GITHUB_GET_FILE_CONTENT_TOOL_NAME,
     {
       description: DESCRIPTION,
-      inputSchema: {
+      inputSchema: z.object({
         queries: z
           .array(FileContentQuerySchema)
           .min(1)
@@ -130,7 +136,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           .describe(
             'Array of up to 5 different file fetch queries for parallel execution'
           ),
-      },
+      }),
       annotations: {
         title: 'GitHub File Content - Bulk Queries Only (Optimized)',
         readOnlyHint: true,
@@ -175,8 +181,8 @@ async function fetchMultipleGitHubFileContents(
         filePath: query.filePath,
         startLine: query.startLine,
         endLine: query.endLine,
-        contextLines: query.contextLines || 5,
-        minified: query.minified !== undefined ? query.minified : true,
+        contextLines: query.contextLines ?? DEFAULT_CONTEXT_LINES,
+        minified: query.minified ?? true,
       };
 
       // Try original query first using the working function directly
@@ -268,298 +274,237 @@ async function fetchMultipleGitHubFileContents(
 export async function fetchGitHubFileContent(
   params: GithubFetchRequestParams
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-file-content', params);
-
-  return withCache(cacheKey, async () => {
-    const { owner, repo, branch, filePath } = params;
-
-    try {
-      // Try to fetch file content directly
-      const isCommitSha = branch.match(/^[0-9a-f]{40}$/);
-      const apiPath = isCommitSha
-        ? `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}` // Use contents API with ref for commit SHA
-        : `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`; // Use contents API for branches/tags
-
-      const result = await executeGitHubCommand('api', [apiPath], {
-        cache: false,
-      });
-
-      if (result.isError) {
-        const errorMsg = safeGetContentText(result);
-
-        // Silent fallback for main/master branches only
-        if (
-          errorMsg.includes('404') &&
-          (branch === 'main' || branch === 'master')
-        ) {
-          const fallbackBranch = branch === 'main' ? 'master' : 'main';
-          const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
-
-          // Retry with fallback branch
-          const fallbackResult = await executeGitHubCommand(
-            'api',
-            [fallbackPath],
-            {
-              cache: false,
-            }
-          );
-
-          if (!fallbackResult.isError) {
-            return await processFileContent(
-              fallbackResult,
-              owner,
-              repo,
-              fallbackBranch,
-              filePath,
-              params.minified,
-              params.startLine,
-              params.endLine,
-              params.contextLines
-            );
-          }
-        }
-
-        // Return original error if fallback didn't work or wasn't applicable
-        return result;
-      }
-
-      return await processFileContent(
-        result,
-        owner,
-        repo,
-        branch,
-        filePath,
-        params.minified,
-        params.startLine,
-        params.endLine,
-        params.contextLines
-      );
-    } catch (error) {
-      return createResult({
-        error: `Error fetching file content: ${error}`,
-      });
-    }
-  });
-}
-
-async function processFileContent(
-  result: CallToolResult,
-  owner: string,
-  repo: string,
-  branch: string,
-  filePath: string,
-  minified: boolean,
-  startLine?: number,
-  endLine?: number,
-  contextLines: number = 5
-): Promise<CallToolResult> {
-  // Extract the actual content from the exec result
-  const execResult = JSON.parse(safeGetContentText(result));
-  const fileData = execResult.result;
-  // Check if it's a directory
-  if (Array.isArray(fileData)) {
-    return createResult({
-      error:
-        'Path is a directory. Use github_view_repo_structure to list directory contents',
-    });
-  }
-
-  const fileSize = typeof fileData.size === 'number' ? fileData.size : 0;
-  const MAX_FILE_SIZE = 300 * 1024; // 300KB limit for better performance and reliability
-
-  // Check file size with helpful message
-  if (fileSize > MAX_FILE_SIZE) {
-    const fileSizeKB = Math.round(fileSize / 1024);
-    const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
-
-    return createResult({
-      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
-    });
-  }
-
-  // Get and decode content with validation
-  if (!fileData.content) {
-    return createResult({
-      error: 'File is empty - no content to display',
-    });
-  }
-
-  const base64Content = fileData.content.replace(/\s/g, ''); // Remove all whitespace
-
-  if (!base64Content) {
-    return createResult({
-      error: 'File is empty - no content to display',
-    });
-  }
-
-  let decodedContent: string;
   try {
-    const buffer = Buffer.from(base64Content, 'base64');
+    const result = await executeGitHubCommand('api', [
+      `/repos/${params.owner}/${params.repo}/contents/${params.filePath}`,
+      '--jq',
+      '.',
+    ]);
 
-    // Simple binary check - look for null bytes
-    if (buffer.indexOf(0) !== -1) {
+    if (result.isError) {
+      return result;
+    }
+
+    const parseResult = safeJsonParse<any>(
+      safeGetContentText(result),
+      'GitHub file content'
+    );
+    if (!parseResult.success) {
+      return createResult({ error: parseResult.error });
+    }
+
+    const fileData = parseResult.data;
+
+    // Check if it's a directory
+    if (Array.isArray(fileData)) {
       return createResult({
         error:
-          'Binary file detected. Cannot display as text - download directly from GitHub',
+          'Path is a directory. Use github_view_repo_structure to list directory contents',
       });
     }
 
-    decodedContent = buffer.toString('utf-8');
-  } catch (decodeError) {
-    return createResult({
-      error:
-        'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+    const fileSize = typeof fileData.size === 'number' ? fileData.size : 0;
+    // Validate file size before proceeding
+    const sizeValidation = validateResourceLimits({
+      size: fileSize,
+      maxSize: RESOURCE_LIMITS.MAX_FILE_SIZE,
+      name: 'File',
     });
-  }
 
-  // Sanitize the decoded content for security
-  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
-  decodedContent = sanitizationResult.content;
+    if (!sizeValidation.isValid) {
+      return createResult({ error: sizeValidation.error });
+    }
 
-  // Add security warnings to the response if any issues were found
-  const securityWarnings: string[] = [];
-  if (sanitizationResult.hasSecrets) {
-    securityWarnings.push(
-      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-    );
-  }
-  if (sanitizationResult.hasPromptInjection) {
-    securityWarnings.push('Potential prompt injection detected and sanitized');
-  }
-  if (sanitizationResult.isMalicious) {
-    securityWarnings.push(
-      'Potentially malicious content detected and sanitized'
-    );
-  }
-  if (sanitizationResult.warnings.length > 0) {
-    securityWarnings.push(...sanitizationResult.warnings);
-  }
-
-  // Handle partial file access
-  let finalContent = decodedContent;
-  let actualStartLine: number | undefined;
-  let actualEndLine: number | undefined;
-  let isPartial = false;
-  let hasLineAnnotations = false;
-
-  // Always calculate total lines for metadata
-  const lines = decodedContent.split('\n');
-  const totalLines = lines.length;
-
-  if (startLine !== undefined) {
-    // Validate line numbers
-    if (startLine < 1 || startLine > totalLines) {
+    // Get and decode content with validation
+    if (!fileData.content) {
       return createResult({
-        error: `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        error: 'File is empty - no content to display',
       });
     }
 
-    // Calculate actual range with context
-    const contextStart = Math.max(1, startLine - contextLines);
-    const contextEnd = endLine
-      ? Math.min(totalLines, endLine + contextLines)
-      : Math.min(totalLines, startLine + contextLines);
+    const base64Content = fileData.content.replace(/\s/g, ''); // Remove all whitespace
 
-    // Validate endLine if provided
-    if (endLine !== undefined) {
-      if (endLine < startLine) {
-        return createResult({
-          error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
-        });
-      }
-      if (endLine > totalLines) {
-        return createResult({
-          error: `Invalid endLine ${endLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
-        });
-      }
+    if (!base64Content) {
+      return createResult({
+        error: 'File is empty - no content to display',
+      });
     }
 
-    // Extract the specified range with context from ORIGINAL content
-    const selectedLines = lines.slice(contextStart - 1, contextEnd);
+    let decodedContent: string;
+    try {
+      const buffer = Buffer.from(base64Content, 'base64');
 
-    actualStartLine = contextStart;
-    actualEndLine = contextEnd;
-    isPartial = true;
+      // Simple binary check - look for null bytes
+      if (buffer.indexOf(0) !== -1) {
+        return createResult({
+          error:
+            'Binary file detected. Cannot display as text - download directly from GitHub',
+        });
+      }
 
-    // Add line number annotations for partial content
-    const annotatedLines = selectedLines.map((line, index) => {
-      const lineNumber = contextStart + index;
-      const isInTargetRange =
-        lineNumber >= startLine &&
-        (endLine === undefined || lineNumber <= endLine);
-      const marker = isInTargetRange ? '→' : ' ';
-      return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
-    });
+      decodedContent = buffer.toString('utf-8');
+    } catch (decodeError) {
+      return createResult({
+        error:
+          'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+      });
+    }
 
-    finalContent = annotatedLines.join('\n');
-    hasLineAnnotations = true;
-  }
+    // Sanitize the decoded content for security
+    const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
+    decodedContent = sanitizationResult.content;
 
-  // Apply minification to final content (both partial and full files)
-  let minificationFailed = false;
-  let minificationType = 'none';
+    // Add security warnings to the response if any issues were found
+    const securityWarnings: string[] = [];
+    if (sanitizationResult.hasSecrets) {
+      securityWarnings.push(
+        `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+      );
+    }
+    if (sanitizationResult.hasPromptInjection) {
+      securityWarnings.push(
+        'Potential prompt injection detected and sanitized'
+      );
+    }
+    if (sanitizationResult.isMalicious) {
+      securityWarnings.push(
+        'Potentially malicious content detected and sanitized'
+      );
+    }
+    if (sanitizationResult.warnings.length > 0) {
+      securityWarnings.push(...sanitizationResult.warnings);
+    }
 
-  if (minified) {
-    if (hasLineAnnotations) {
-      // For partial content with line annotations, extract code content first
-      const annotatedLines = finalContent.split('\n');
-      const codeLines = annotatedLines.map(line => {
-        // Remove line number annotations but preserve the original line content
-        const match = line.match(/^[→ ]\s*\d+:\s*(.*)$/);
-        return match ? match[1] : line;
+    // Handle partial file access
+    let finalContent = decodedContent;
+    let actualStartLine: number | undefined;
+    let actualEndLine: number | undefined;
+    let isPartial = false;
+    let hasLineAnnotations = false;
+
+    // Always calculate total lines for metadata
+    const lines = decodedContent.split('\n');
+    const totalLines = lines.length;
+
+    if (params.startLine !== undefined) {
+      // Validate line numbers
+      if (params.startLine < 1 || params.startLine > totalLines) {
+        return createResult({
+          error: `Invalid startLine ${params.startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        });
+      }
+
+      // Calculate actual range with context
+      const contextStart = Math.max(1, params.startLine - params.contextLines);
+      const contextEnd = params.endLine
+        ? Math.min(totalLines, params.endLine + params.contextLines)
+        : Math.min(totalLines, params.startLine + params.contextLines);
+
+      // Validate endLine if provided
+      if (params.endLine !== undefined) {
+        if (params.endLine < params.startLine) {
+          return createResult({
+            error: `Invalid range: endLine (${params.endLine}) must be greater than or equal to startLine (${params.startLine}).`,
+          });
+        }
+        if (params.endLine > totalLines) {
+          return createResult({
+            error: `Invalid endLine ${params.endLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+          });
+        }
+      }
+
+      // Extract the specified range with context from ORIGINAL content
+      const selectedLines = lines.slice(contextStart - 1, contextEnd);
+
+      actualStartLine = contextStart;
+      actualEndLine = contextEnd;
+      isPartial = true;
+
+      // Add line number annotations for partial content
+      const annotatedLines = selectedLines.map((line, index) => {
+        const lineNumber = contextStart + index;
+        const isInTargetRange =
+          lineNumber >= params.startLine! &&
+          (params.endLine === undefined || lineNumber <= params.endLine);
+        const marker = isInTargetRange ? '→' : ' ';
+        return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
       });
 
-      const codeContent = codeLines.join('\n');
-      const minifyResult = await minifyContent(codeContent, filePath);
+      finalContent = annotatedLines.join('\n');
+      hasLineAnnotations = true;
+    }
 
-      if (!minifyResult.failed) {
-        // Apply minification first, then add simple line annotations
-        // Since minified content may be much shorter, use a simplified annotation approach
-        finalContent = `Lines ${actualStartLine}-${actualEndLine} (minified):\n${minifyResult.content}`;
-        minificationType = minifyResult.type;
+    // Apply minification to final content (both partial and full files)
+    let minificationFailed = false;
+    let minificationType = 'none';
+
+    if (params.minified) {
+      if (hasLineAnnotations) {
+        // For partial content with line annotations, extract code content first
+        const annotatedLines = finalContent.split('\n');
+        const codeLines = annotatedLines.map(line => {
+          // Remove line number annotations but preserve the original line content
+          const match = line.match(/^[→ ]\s*\d+:\s*(.*)$/);
+          return match ? match[1] : line;
+        });
+
+        const codeContent = codeLines.join('\n');
+        const minifyResult = await minifyContent(codeContent, params.filePath);
+
+        if (!minifyResult.failed) {
+          // Apply minification first, then add simple line annotations
+          // Since minified content may be much shorter, use a simplified annotation approach
+          finalContent = `Lines ${actualStartLine}-${actualEndLine} (minified):\n${minifyResult.content}`;
+          minificationType = minifyResult.type;
+        } else {
+          minificationFailed = true;
+        }
       } else {
-        minificationFailed = true;
+        // Full file minification
+        const minifyResult = await minifyContent(finalContent, params.filePath);
+        finalContent = minifyResult.content;
+        minificationFailed = minifyResult.failed;
+        minificationType = minifyResult.type;
       }
-    } else {
-      // Full file minification
-      const minifyResult = await minifyContent(finalContent, filePath);
-      finalContent = minifyResult.content;
-      minificationFailed = minifyResult.failed;
-      minificationType = minifyResult.type;
     }
-  }
 
-  return createResult({
-    data: {
-      filePath,
-      owner,
-      repo,
-      branch,
-      content: finalContent,
-      // Always return total lines for LLM context
-      totalLines,
-      // Original request parameters for LLM context
-      requestedStartLine: startLine,
-      requestedEndLine: endLine,
-      requestedContextLines: contextLines,
-      // Actual content boundaries (only for partial content)
-      ...(isPartial && {
-        startLine: actualStartLine,
-        endLine: actualEndLine,
-        isPartial,
-      }),
-      // Minification metadata
-      ...(minified && {
-        minified: !minificationFailed,
-        minificationFailed: minificationFailed,
-        minificationType: minificationType,
-      }),
-      // Security metadata
-      ...(securityWarnings.length > 0 && {
-        securityWarnings,
-      }),
-    } as GitHubFileContentResponse,
-  });
+    return createResult({
+      data: {
+        filePath: params.filePath,
+        owner: params.owner,
+        repo: params.repo,
+        branch: params.branch,
+        content: finalContent,
+        // Always return total lines for LLM context
+        totalLines,
+        // Original request parameters for LLM context
+        requestedStartLine: params.startLine,
+        requestedEndLine: params.endLine,
+        requestedContextLines: params.contextLines,
+        // Actual content boundaries (only for partial content)
+        ...(isPartial && {
+          startLine: actualStartLine,
+          endLine: actualEndLine,
+          isPartial,
+        }),
+        // Minification metadata
+        ...(params.minified && {
+          minified: !minificationFailed,
+          minificationFailed: minificationFailed,
+          minificationType: minificationType,
+        }),
+        // Security metadata
+        ...(securityWarnings.length > 0 && {
+          securityWarnings,
+        }),
+      } as GitHubFileContentResponse,
+    });
+  } catch (error) {
+    return createResult({
+      error: `Error fetching file content: ${error}`,
+    });
+  }
 }
 
 // Helper function for safe content access
