@@ -37,6 +37,8 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
   size?: string;
   limit?: number;
   visibility?: 'public' | 'private' | 'internal';
+  minify?: boolean; // Default true
+  sanitize?: boolean; // Default true
   // Legacy fields for backward compatibility
   branch?: string;
   enableQueryOptimization?: boolean;
@@ -404,6 +406,11 @@ export interface OptimizedCodeSearchResult {
     name: string; // owner/repo format
     url: string; // Shortened
   };
+  // Security and processing metadata
+  securityWarnings?: string[];
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationTypes?: string[];
 }
 
 // GitHub Search Commits Types

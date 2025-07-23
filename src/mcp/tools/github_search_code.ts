@@ -12,6 +12,8 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { ContentSanitizer } from '../../security/contentSanitizer';
+import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
@@ -23,15 +25,20 @@ TERM OPTIMIZATION:
 - BEST: Single terms for maximum coverage
 - GOOD: 2-3 minimal terms 
 - AVOID: Long phrases in queryTerms
+- use smart queryTerms for your research - terms that you might find in code or docs
 
 MULTI-SEARCH STRATEGY:
 - Use separate searches for different aspects
 - Separate searches provide broader coverage than complex queries
+- Each query should be a different aspect of your research (with one ore many queryTerms)
+- Better research efficiency with several queries
+- Think how to make queries in a smart way for your research
 
 Filter Usage:
-- Use filters to narrow scope: language, owner, repo, filename
-- Combine filters strategically: language + owner for organization-wide searches
-- Never use filters on exploratory searches - use to refine results`;
+- Use filters to narrow search scope
+- Combine filters strategically
+- Never use filters on initial exploratory searches
+- Use results and context to refine search scope`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
@@ -75,6 +82,20 @@ const GitHubCodeSearchQuerySchema = z.object({
     .enum(['public', 'private', 'internal'])
     .optional()
     .describe('Repository visibility'),
+  minify: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.'
+    ),
+  sanitize: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Sanitize content for security (enabled by default). Removes potential secrets and malicious content. Set to false only when raw content is required.'
+    ),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -181,7 +202,11 @@ async function searchMultipleGitHubCode(
         const execResult = JSON.parse(result.content[0].text as string);
         const codeResults: GitHubCodeSearchItem[] = execResult.result;
         const items = Array.isArray(codeResults) ? codeResults : [];
-        const optimizedResult = transformToOptimizedFormat(items);
+        const optimizedResult = await transformToOptimizedFormat(
+          items,
+          query.minify !== false,
+          query.sanitize !== false
+        );
 
         results.push({
           queryId,
@@ -343,30 +368,92 @@ Progressive recovery strategy:
 /**
  * Transform GitHub CLI response to optimized format with enhanced metadata
  */
-function transformToOptimizedFormat(
-  items: GitHubCodeSearchItem[]
-): OptimizedCodeSearchResult {
+async function transformToOptimizedFormat(
+  items: GitHubCodeSearchItem[],
+  minify: boolean,
+  sanitize: boolean
+): Promise<OptimizedCodeSearchResult> {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
-  const optimizedItems = items.map(item => ({
-    path: item.path,
-    matches:
-      item.textMatches?.map(match => ({
-        context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
-        positions:
-          match.matches?.map(m =>
-            Array.isArray(m.indices) && m.indices.length >= 2
-              ? ([m.indices[0], m.indices[1]] as [number, number])
-              : ([0, 0] as [number, number])
-          ) || [],
-      })) || [],
-    url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
-    repository: {
-      nameWithOwner: item.repository.nameWithOwner,
-      url: item.repository.url,
-    },
-  }));
+  // Track security warnings and minification metadata
+  const allSecurityWarnings: string[] = [];
+  let hasMinificationFailures = false;
+  const minificationTypes: string[] = [];
+
+  const optimizedItems = await Promise.all(
+    items.map(async item => {
+      const processedMatches = await Promise.all(
+        (item.textMatches || []).map(async match => {
+          let processedFragment = match.fragment;
+
+          // Apply sanitization first if enabled
+          if (sanitize) {
+            const sanitizationResult =
+              ContentSanitizer.sanitizeContent(processedFragment);
+            processedFragment = sanitizationResult.content;
+
+            // Collect security warnings
+            if (sanitizationResult.hasSecrets) {
+              allSecurityWarnings.push(
+                `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
+              );
+            }
+            if (sanitizationResult.hasPromptInjection) {
+              allSecurityWarnings.push(
+                `Prompt injection detected in ${item.path}`
+              );
+            }
+            if (sanitizationResult.isMalicious) {
+              allSecurityWarnings.push(
+                `Malicious content detected in ${item.path}`
+              );
+            }
+            if (sanitizationResult.warnings.length > 0) {
+              allSecurityWarnings.push(
+                ...sanitizationResult.warnings.map(w => `${item.path}: ${w}`)
+              );
+            }
+          }
+
+          // Apply minification if enabled
+          if (minify) {
+            const minifyResult = await minifyContent(
+              processedFragment,
+              item.path
+            );
+            processedFragment = minifyResult.content;
+
+            if (minifyResult.failed) {
+              hasMinificationFailures = true;
+            } else if (minifyResult.type !== 'failed') {
+              minificationTypes.push(minifyResult.type);
+            }
+          }
+
+          return {
+            context: optimizeTextMatch(processedFragment, 120),
+            positions:
+              match.matches?.map(m =>
+                Array.isArray(m.indices) && m.indices.length >= 2
+                  ? ([m.indices[0], m.indices[1]] as [number, number])
+                  : ([0, 0] as [number, number])
+              ) || [],
+          };
+        })
+      );
+
+      return {
+        path: item.path,
+        matches: processedMatches,
+        url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
+        repository: {
+          nameWithOwner: item.repository.nameWithOwner,
+          url: item.repository.url,
+        },
+      };
+    })
+  );
 
   const result: OptimizedCodeSearchResult = {
     items: optimizedItems,
@@ -379,6 +466,19 @@ function transformToOptimizedFormat(
       name: singleRepo.nameWithOwner,
       url: simplifyRepoUrl(singleRepo.url),
     };
+  }
+
+  // Add processing metadata
+  if (sanitize && allSecurityWarnings.length > 0) {
+    result.securityWarnings = [...new Set(allSecurityWarnings)]; // Remove duplicates
+  }
+
+  if (minify) {
+    result.minified = !hasMinificationFailures;
+    result.minificationFailed = hasMinificationFailures;
+    if (minificationTypes.length > 0) {
+      result.minificationTypes = [...new Set(minificationTypes)]; // Remove duplicates
+    }
   }
 
   return result;
@@ -407,9 +507,9 @@ export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
 
   // Add query terms
   if (params.queryTerms && params.queryTerms.length > 0) {
-    // Join multiple terms for broader search
-    const joinedTerms = params.queryTerms.join(' ');
-    args.push(joinedTerms);
+    // Properly quote each term for AND logic - all terms must be present
+    const quotedTerms = params.queryTerms.map(term => `"${term}"`).join(' ');
+    args.push(quotedTerms);
   }
 
   // Add filters
