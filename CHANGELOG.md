@@ -5,6 +5,73 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2025-07-23 - Enhanced Search & Licensing Updates
+
+### 🚀 MAJOR ENHANCEMENT: Search Improvements & Infrastructure Updates
+
+#### Enhanced
+- **Search Intelligence**: Major improvements to search functionality and performance (PR #69)
+  - Enhanced search algorithms for better accuracy and relevance
+  - Improved query processing and result ranking
+  - Optimized search response times and reliability
+  - Better handling of complex search patterns and edge cases
+  - Improved npm publishing compatibility
+
+- **Model Context Protocol**: Updated to version 2.4.0 (PR #67)
+  - Enhanced MCP SDK integration and compatibility
+  - Improved protocol handling and communication
+  - Better error handling and stability improvements
+  - Updated dependencies for enhanced performance
+
+- **SDK Updates**: @modelcontextprotocol/sdk updated to 1.16.0 (PR #66)
+  - Fixed schema validation issues
+  - Improved type safety and error handling
+  - Enhanced compatibility with latest MCP standards
+  - Resolved schema-related bugs and inconsistencies
+
+#### Fixed
+- **Search Functionality**: Critical search fixes and optimizations (PR #65)
+  - Resolved search query processing issues
+  - Fixed edge cases in search result handling
+  - Improved search reliability and consistency
+  - Enhanced error recovery for failed searches
+
+#### Technical Improvements
+- **Dependency Management**: Updated Yarn configuration and lockfile (PR #70)
+  - Refreshed dependency versions and compatibility
+  - Improved package management and build stability
+  - Enhanced security through dependency updates
+  - Optimized build process and performance
+
+- **Version Management**: Consolidated version updates and release process (PR #64)
+  - Streamlined version bumping to 2.3.31 → 2.5.0
+  - Improved release workflow and automation
+  - Better version consistency across components
+  - Enhanced change tracking and documentation
+
+#### Code Quality
+- **Search Code Optimization**: Removed exactQuery parameter for simplified interface
+  - Streamlined search API for better usability
+  - Reduced complexity in search parameter handling
+  - Improved developer experience with cleaner interface
+  - Enhanced search performance through simplified logic
+
+### 🎯 PRODUCTION IMPACT
+
+#### Enhanced User Experience
+- **Faster Search Results**: Improved search response times and accuracy
+- **Better Licensing**: Clear MIT licensing improves adoption and integration
+- **Enhanced Reliability**: More stable search functionality with better error handling
+- **Simplified Interface**: Cleaner search API reduces complexity for developers
+
+#### Technical Benefits
+- **Updated Dependencies**: Latest MCP SDK ensures compatibility and security
+- **Improved Schema Handling**: Fixed validation issues improve reliability
+- **Better Error Recovery**: Enhanced error handling provides better user feedback
+- **Optimized Performance**: Search improvements provide faster, more accurate results
+
+---
+
 ## [2.3.27] - 2025-07-21 - Bulk Request Architecture & Docker Support
 
 ### 🚀 MAJOR ENHANCEMENT: Bulk Request System with Advanced Parallelization
