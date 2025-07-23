@@ -12,39 +12,51 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { GitHubCodeSearchBuilder } from './utils/GitHubCommandBuilder';
+import { ContentSanitizer } from '../../security/contentSanitizer';
+import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Search code across GitHub repositories using GitHub CLI.
+const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API via GitHub CLI.
 
-BULK QUERY MODE:
-- queries: array of up to 5 different search queries for parallel execution
-- Each query can have fallbackParams for automatic retry with modified parameters
-- Optimizes research workflow by executing multiple searches simultaneously
-- Each query should target different angles/aspects of your research
-- Fallback logic automatically broadens search if no results found
+SEARCH STRATEGY FOR BEST RESULTS:
 
-Use for comprehensive research - query different repos, languages, or approaches in one call.`;
+ALWAYS START WITH BROAD QUERIES!
 
-// Define the code search query schema
+TERM OPTIMIZATION:
+- BEST: Single terms for maximum coverage
+- GOOD: 2-3 minimal terms with AND logic (all must be present in same file)
+- AVOID: Complex multi-term combinations - they're restrictive
+- Start broad, then narrow with filters or separate queries
+
+MULTI-SEARCH STRATEGY:
+- Use separate searches for different aspects
+- Multiple simple queries > one complex query
+- Each search targets different code patterns or concepts
+- Parallel execution provides comprehensive coverage
+
+Filter Usage:
+- Use filters to narrow scope after broad initial searches
+- Combine strategically: language + owner/repo for precision
+- Start without filters, then refine based on results`;
+
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
   queryTerms: z
     .array(z.string())
     .optional()
     .describe(
-      'Array of strings search terms to search for. one or many terms. all terms should be included in a file. AND logic'
+      'Search terms with AND logic - ALL terms must be present in same file. Use sparingly: single terms get broader results, multiple terms are restrictive.'
     ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository owner/organization name(s)'),
+    .describe('Repository owner/organization name'),
   repo: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository filter'),
+    .describe('Repository name (use with owner for specific repo)'),
   filename: z
     .string()
     .optional()
@@ -53,7 +65,7 @@ const GitHubCodeSearchQuerySchema = z.object({
   match: z
     .enum(['file', 'path'])
     .optional()
-    .describe('Search scope: file for content, path for filenames'),
+    .describe('Search scope: file (content) or path (filenames)'),
   size: z
     .string()
     .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
@@ -65,30 +77,24 @@ const GitHubCodeSearchQuerySchema = z.object({
     .min(1)
     .max(100)
     .optional()
-    .describe('Maximum results per query'),
+    .describe('Maximum results per query (1-100)'),
   visibility: z
     .enum(['public', 'private', 'internal'])
     .optional()
     .describe('Repository visibility'),
-  fallbackParams: z
-    .object({
-      queryTerms: z.array(z.string()).optional(),
-      language: z.string().optional(),
-      owner: z.union([z.string(), z.array(z.string())]).optional(),
-      repo: z.union([z.string(), z.array(z.string())]).optional(),
-      filename: z.string().optional(),
-      extension: z.string().optional(),
-      match: z.enum(['file', 'path']).optional(),
-      size: z
-        .string()
-        .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
-        .optional(),
-      limit: z.number().int().min(1).max(100).optional(),
-      visibility: z.enum(['public', 'private', 'internal']).optional(),
-    })
+  minify: z
+    .boolean()
     .optional()
+    .default(true)
     .describe(
-      'Fallback parameters if original query returns no results, overrides the original query and try again'
+      'Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.'
+    ),
+  sanitize: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Sanitize content for security (enabled by default). Removes potential secrets and malicious content. Set to false only when raw content is required.'
     ),
 });
 
@@ -98,8 +104,6 @@ export interface GitHubCodeSearchQueryResult {
   queryId: string;
   originalQuery: GitHubCodeSearchQuery;
   result: OptimizedCodeSearchResult;
-  fallbackTriggered: boolean;
-  fallbackQuery?: GitHubCodeSearchQuery;
   error?: string;
 }
 
@@ -143,6 +147,29 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
   );
 }
 
+/**
+ * Execute multiple GitHub code search queries in parallel.
+ *
+ * SMART MIXED RESULTS HANDLING:
+ * - Each query is processed independently
+ * - Results array contains both successful and failed queries
+ * - Failed queries get smart error messages with fallback hints:
+ *   • Rate limit: suggests timing and alternative strategies
+ *   • Auth issues: provides specific login steps
+ *   • Invalid queries: suggests query format fixes
+ *   • Repository not found: provides discovery strategies
+ *   • Network timeouts: suggests scope reduction
+ * - Summary statistics show total vs successful queries
+ * - User gets complete picture: what worked + what failed + how to fix
+ *
+ * EXAMPLE MIXED RESULT:
+ * Query 1: Success → Returns code results
+ * Query 2: Rate limit → Smart error with timing guidance
+ * Query 3: Success → Returns code results
+ * Query 4: Repo not found → Smart error with discovery hints
+ *
+ * Result: 4 total queries, 2 successful, with actionable error messages
+ */
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[]
 ): Promise<CallToolResult> {
@@ -162,125 +189,39 @@ async function searchMultipleGitHubCode(
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
-          fallbackTriggered: false,
           error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term`,
         });
         continue;
       }
 
-      // Try original query first using the working function directly
+      // Execute the query
       const result = await searchGitHubCode(query);
 
       if (!result.isError) {
-        // Success with original query
+        // Success
         const execResult = JSON.parse(result.content[0].text as string);
         const codeResults: GitHubCodeSearchItem[] = execResult.result;
         const items = Array.isArray(codeResults) ? codeResults : [];
-        const optimizedResult = transformToOptimizedFormat(items);
+        const optimizedResult = await transformToOptimizedFormat(
+          items,
+          query.minify !== false,
+          query.sanitize !== false
+        );
 
-        // Check if we should try fallback (no results found)
-        if (items.length === 0 && query.fallbackParams) {
-          // Try fallback query
-          const fallbackQuery: GitHubCodeSearchQuery = {
-            ...query,
-            ...query.fallbackParams,
-          };
-
-          const fallbackResult = await searchGitHubCode(fallbackQuery);
-
-          if (!fallbackResult.isError) {
-            // Success with fallback query
-            const fallbackExecResult = JSON.parse(
-              fallbackResult.content[0].text as string
-            );
-            const fallbackCodeResults: GitHubCodeSearchItem[] =
-              fallbackExecResult.result;
-            const fallbackItems = Array.isArray(fallbackCodeResults)
-              ? fallbackCodeResults
-              : [];
-            const fallbackOptimizedResult =
-              transformToOptimizedFormat(fallbackItems);
-
-            results.push({
-              queryId,
-              originalQuery: query,
-              result: fallbackOptimizedResult,
-              fallbackTriggered: true,
-              fallbackQuery,
-            });
-            continue;
-          }
-
-          // Both failed - return fallback error
-          results.push({
-            queryId,
-            originalQuery: query,
-            result: { items: [], total_count: 0 },
-            fallbackTriggered: true,
-            fallbackQuery,
-            error: fallbackResult.content[0].text as string,
-          });
-          continue;
-        }
-
-        // Return original success
         results.push({
           queryId,
           originalQuery: query,
           result: optimizedResult,
-          fallbackTriggered: false,
         });
-        continue;
-      }
-
-      // Original query failed, try fallback if available
-      if (query.fallbackParams) {
-        const fallbackQuery: GitHubCodeSearchQuery = {
-          ...query,
-          ...query.fallbackParams,
-        };
-
-        const fallbackResult = await searchGitHubCode(fallbackQuery);
-
-        if (!fallbackResult.isError) {
-          // Success with fallback query
-          const execResult = JSON.parse(
-            fallbackResult.content[0].text as string
-          );
-          const codeResults: GitHubCodeSearchItem[] = execResult.result;
-          const items = Array.isArray(codeResults) ? codeResults : [];
-          const optimizedResult = transformToOptimizedFormat(items);
-
-          results.push({
-            queryId,
-            originalQuery: query,
-            result: optimizedResult,
-            fallbackTriggered: true,
-            fallbackQuery,
-          });
-          continue;
-        }
-
-        // Both failed - return fallback error
+      } else {
+        // Error
         results.push({
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
-          fallbackTriggered: true,
-          fallbackQuery,
-          error: fallbackResult.content[0].text as string,
+          error: result.content[0].text as string,
         });
-        continue;
       }
-
-      // No fallback available - return original error
-      results.push({
-        queryId,
-        originalQuery: query,
-        result: { items: [], total_count: 0 },
-        fallbackTriggered: false,
-        error: result.content[0].text as string,
-      });
     } catch (error) {
       // Handle any unexpected errors
       const errorMessage =
@@ -289,7 +230,6 @@ async function searchMultipleGitHubCode(
         queryId,
         originalQuery: query,
         result: { items: [], total_count: 0 },
-        fallbackTriggered: false,
         error: `Unexpected error: ${errorMessage}`,
       });
     }
@@ -298,16 +238,42 @@ async function searchMultipleGitHubCode(
   // Calculate summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
-  const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
+  const failedQueries = results.filter(r => r.error).length;
+
+  // Create smart summary with mixed results guidance
+  const summary: any = {
+    totalQueries,
+    successfulQueries,
+    failedQueries,
+  };
+
+  // Add guidance for mixed results scenarios
+  if (successfulQueries > 0 && failedQueries > 0) {
+    summary.mixedResults = true;
+    summary.guidance = [
+      `${successfulQueries} queries succeeded - check results for code findings`,
+      `${failedQueries} queries failed - check error messages for specific fixes`,
+      `Review individual query errors for actionable next steps`,
+    ];
+  } else if (failedQueries === totalQueries) {
+    summary.allFailed = true;
+    summary.guidance = [
+      `All ${totalQueries} queries failed`,
+      `Check error messages for specific fixes (auth, rate limits, query format)`,
+      `Try simpler queries or different search strategies`,
+    ];
+  } else if (successfulQueries === totalQueries) {
+    summary.allSucceeded = true;
+    summary.guidance = [
+      `All ${totalQueries} queries succeeded`,
+      `Check individual results for code findings`,
+    ];
+  }
 
   return createResult({
     data: {
       results,
-      summary: {
-        totalQueries,
-        successfulQueries,
-        queriesWithFallback,
-      },
+      summary,
     },
   });
 }
@@ -402,30 +368,92 @@ Progressive recovery strategy:
 /**
  * Transform GitHub CLI response to optimized format with enhanced metadata
  */
-function transformToOptimizedFormat(
-  items: GitHubCodeSearchItem[]
-): OptimizedCodeSearchResult {
+async function transformToOptimizedFormat(
+  items: GitHubCodeSearchItem[],
+  minify: boolean,
+  sanitize: boolean
+): Promise<OptimizedCodeSearchResult> {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
-  const optimizedItems = items.map(item => ({
-    path: item.path,
-    matches:
-      item.textMatches?.map(match => ({
-        context: optimizeTextMatch(match.fragment, 120), // Increased context for better understanding
-        positions:
-          match.matches?.map(m =>
-            Array.isArray(m.indices) && m.indices.length >= 2
-              ? ([m.indices[0], m.indices[1]] as [number, number])
-              : ([0, 0] as [number, number])
-          ) || [],
-      })) || [],
-    url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
-    repository: {
-      nameWithOwner: item.repository.nameWithOwner,
-      url: item.repository.url,
-    },
-  }));
+  // Track security warnings and minification metadata
+  const allSecurityWarnings: string[] = [];
+  let hasMinificationFailures = false;
+  const minificationTypes: string[] = [];
+
+  const optimizedItems = await Promise.all(
+    items.map(async item => {
+      const processedMatches = await Promise.all(
+        (item.textMatches || []).map(async match => {
+          let processedFragment = match.fragment;
+
+          // Apply sanitization first if enabled
+          if (sanitize) {
+            const sanitizationResult =
+              ContentSanitizer.sanitizeContent(processedFragment);
+            processedFragment = sanitizationResult.content;
+
+            // Collect security warnings
+            if (sanitizationResult.hasSecrets) {
+              allSecurityWarnings.push(
+                `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
+              );
+            }
+            if (sanitizationResult.hasPromptInjection) {
+              allSecurityWarnings.push(
+                `Prompt injection detected in ${item.path}`
+              );
+            }
+            if (sanitizationResult.isMalicious) {
+              allSecurityWarnings.push(
+                `Malicious content detected in ${item.path}`
+              );
+            }
+            if (sanitizationResult.warnings.length > 0) {
+              allSecurityWarnings.push(
+                ...sanitizationResult.warnings.map(w => `${item.path}: ${w}`)
+              );
+            }
+          }
+
+          // Apply minification if enabled
+          if (minify) {
+            const minifyResult = await minifyContent(
+              processedFragment,
+              item.path
+            );
+            processedFragment = minifyResult.content;
+
+            if (minifyResult.failed) {
+              hasMinificationFailures = true;
+            } else if (minifyResult.type !== 'failed') {
+              minificationTypes.push(minifyResult.type);
+            }
+          }
+
+          return {
+            context: optimizeTextMatch(processedFragment, 120),
+            positions:
+              match.matches?.map(m =>
+                Array.isArray(m.indices) && m.indices.length >= 2
+                  ? ([m.indices[0], m.indices[1]] as [number, number])
+                  : ([0, 0] as [number, number])
+              ) || [],
+          };
+        })
+      );
+
+      return {
+        path: item.path,
+        matches: processedMatches,
+        url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
+        repository: {
+          nameWithOwner: item.repository.nameWithOwner,
+          url: item.repository.url,
+        },
+      };
+    })
+  );
 
   const result: OptimizedCodeSearchResult = {
     items: optimizedItems,
@@ -438,6 +466,19 @@ function transformToOptimizedFormat(
       name: singleRepo.nameWithOwner,
       url: simplifyRepoUrl(singleRepo.url),
     };
+  }
+
+  // Add processing metadata
+  if (sanitize && allSecurityWarnings.length > 0) {
+    result.securityWarnings = [...new Set(allSecurityWarnings)]; // Remove duplicates
+  }
+
+  if (minify) {
+    result.minified = !hasMinificationFailures;
+    result.minificationFailed = hasMinificationFailures;
+    if (minificationTypes.length > 0) {
+      result.minificationTypes = [...new Set(minificationTypes)]; // Remove duplicates
+    }
   }
 
   return result;
@@ -462,8 +503,63 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
  * Uses proper flags (--flag=value) for filters and direct query terms.
  */
 export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
-  const builder = new GitHubCodeSearchBuilder();
-  return builder.build(params);
+  const args: string[] = ['code'];
+
+  // Add query terms
+  if (params.queryTerms && params.queryTerms.length > 0) {
+    // Properly quote each term for AND logic - all terms must be present
+    const quotedTerms = params.queryTerms.map(term => `"${term}"`).join(' ');
+    args.push(quotedTerms);
+  }
+
+  // Add filters
+  if (params.language) {
+    args.push(`--language=${params.language}`);
+  }
+
+  // Handle owner/repo combination
+  if (params.owner && params.repo) {
+    const ownerStr = Array.isArray(params.owner)
+      ? params.owner[0]
+      : params.owner;
+    const repoStr = Array.isArray(params.repo) ? params.repo[0] : params.repo;
+    args.push(`--repo=${ownerStr}/${repoStr}`);
+  } else if (params.owner) {
+    const ownerStr = Array.isArray(params.owner)
+      ? params.owner[0]
+      : params.owner;
+    args.push(`--owner=${ownerStr}`);
+  }
+
+  if (params.filename) {
+    args.push(`--filename=${params.filename}`);
+  }
+
+  if (params.extension) {
+    args.push(`--extension=${params.extension}`);
+  }
+
+  if (params.size) {
+    args.push(`--size=${params.size}`);
+  }
+
+  if (params.match) {
+    args.push(`--match=${params.match}`);
+  }
+
+  if (params.visibility) {
+    args.push(`--visibility=${params.visibility}`);
+  }
+
+  // Add limit (default 30 if not specified)
+  const limit = Math.min(params.limit || 30, 100);
+  args.push(`--limit=${limit}`);
+
+  // Add JSON output
+  args.push('--json');
+  args.push('repository,path,textMatches,sha,url');
+
+  return args;
 }
 
 export async function searchGitHubCode(
