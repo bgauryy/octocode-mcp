@@ -14,26 +14,11 @@ import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `PURPOSE: Search GitHub repositories for project discovery.
+const DESCRIPTION = `Search GitHub repositories by topic, language, owner, or keywords.
 
-USAGE:
-• Find repositories by topic or language
-• Discover organizational projects
-• Locate source code repositories
+Supports multiple queries (up to 5) executed sequentially.
 
-KEY FEATURES:
-• Parallel queries (up to 5)
-• Smart filtering and sorting
-• Fallback parameters for retry
-
-TOKEN OPTIMIZATION:
-• limit=3 for specific searches
-• limit=10 for exploration
-• Always sort=stars for relevance
-
-ALTERNATIVE: packageSearch is faster for packages
-
-PHILOSOPHY: Package-First - try packageSearch before repos`;
+For package discovery, consider using packageSearch tool instead.`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
@@ -222,10 +207,7 @@ export type GitHubReposSearchQuery = z.infer<
 
 export interface GitHubReposSearchQueryResult {
   queryId: string;
-  originalQuery: GitHubReposSearchQuery;
-  result: any; // Repository search result
-  fallbackTriggered: boolean;
-  fallbackQuery?: any; // More flexible fallback query type
+  result: any;
   error?: string;
 }
 
@@ -240,11 +222,11 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .min(1)
           .max(5)
           .describe(
-            'Array of up to 5 different search queries for parallel execution'
+            'Array of up to 5 different search queries for sequential execution'
           ),
       },
       annotations: {
-        title: 'GitHub Repository Search - Bulk Queries Only (Optimized)',
+        title: 'GitHub Repository Search',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -269,120 +251,118 @@ export function registerSearchGitHubReposTool(server: McpServer) {
   );
 }
 
+function validateRepositoryQuery(
+  query: GitHubReposSearchQuery,
+  queryId: string
+): { isValid: boolean; error?: string } {
+  // Just check that we have at least one search parameter
+  const hasAnyParam = !!(
+    query.exactQuery ||
+    (query.queryTerms && query.queryTerms.length > 0) ||
+    query.owner ||
+    query.language ||
+    query.topic
+  );
+
+  if (!hasAnyParam) {
+    return {
+      isValid: false,
+      error: `Query ${queryId}: At least one search parameter required`,
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Processes a single query with proper error handling
+ * @param query The query to process
+ * @param queryId The query identifier
+ * @returns Promise resolving to query result
+ */
+async function processSingleQuery(
+  query: GitHubReposSearchQuery,
+  queryId: string
+): Promise<GitHubReposSearchQueryResult> {
+  try {
+    // Validate query
+    const validation = validateRepositoryQuery(query, queryId);
+    if (!validation.isValid) {
+      return {
+        queryId,
+        result: { total_count: 0, repositories: [] },
+        error: validation.error,
+      };
+    }
+
+    // Use query parameters directly without modification, filter out null values
+    const enhancedQuery: GitHubReposSearchParams = Object.fromEntries(
+      Object.entries(query).filter(
+        ([_, value]) => value !== null && value !== undefined
+      )
+    ) as GitHubReposSearchParams;
+
+    // Execute query
+    const result = await searchGitHubRepos(enhancedQuery);
+
+    if (!result.isError) {
+      // Success with original query
+      const execResult = JSON.parse(result.content[0].text as string);
+
+      // Check for empty results
+      if (
+        execResult.total_count === 0 ||
+        (execResult.result && execResult.result.length === 0)
+      ) {
+        return {
+          queryId,
+          result: { total_count: 0, repositories: [] },
+          error:
+            'No repositories found. Try broader search terms or consider using packageSearch tool for faster package discovery.',
+        };
+      }
+
+      // Return successful result
+      return {
+        queryId,
+        result: execResult,
+      };
+    }
+
+    // Query failed
+    return {
+      queryId,
+      result: { total_count: 0, repositories: [] },
+      error: `Query failed. Try broader search terms or consider using packageSearch tool for faster package discovery.`,
+    };
+  } catch (error) {
+    // Handle any unexpected errors
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      queryId,
+      result: { total_count: 0, repositories: [] },
+      error: `Unexpected error: ${errorMessage}`,
+    };
+  }
+}
+
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[]
 ): Promise<CallToolResult> {
   const results: GitHubReposSearchQueryResult[] = [];
 
-  // Execute queries sequentially to avoid rate limits
+  // Execute queries sequentially (simple and reliable)
   for (let index = 0; index < queries.length; index++) {
     const query = queries[index];
     const queryId = query.id || `query_${index + 1}`;
 
-    try {
-      // Validate single query
-      const hasExactQuery = !!query.exactQuery;
-      const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
-
-      if (hasExactQuery && hasQueryTerms) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { total_count: 0, repositories: [] },
-          fallbackTriggered: false,
-          error: `Query ${queryId}: Use either exactQuery OR queryTerms, not both`,
-        });
-        continue;
-      }
-
-      // Enhanced validation logic for primary filters
-      const hasPrimaryFilter =
-        query.exactQuery?.trim() ||
-        (query.queryTerms && query.queryTerms.length > 0) ||
-        query.owner ||
-        query.language ||
-        query.topic ||
-        query.stars ||
-        query.forks;
-
-      if (!hasPrimaryFilter) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { total_count: 0, repositories: [] },
-          fallbackTriggered: false,
-          error: `Query ${queryId}: At least one search parameter required (exactQuery, queryTerms, owner, language, topic, stars, or forks)`,
-        });
-        continue;
-      }
-
-      // Use query parameters directly without modification, filter out null values
-      const enhancedQuery: GitHubReposSearchParams = Object.fromEntries(
-        Object.entries(query).filter(
-          ([_, value]) => value !== null && value !== undefined
-        )
-      ) as GitHubReposSearchParams;
-
-      // Try original query first
-      const result = await searchGitHubRepos(enhancedQuery);
-
-      if (!result.isError) {
-        // Success with original query
-        const execResult = JSON.parse(result.content[0].text as string);
-
-        // Check if we should try fallback (no results found)
-        if (
-          execResult.total_count === 0 ||
-          (execResult.result && execResult.result.length === 0)
-        ) {
-          // No results found - return empty result
-          results.push({
-            queryId,
-            originalQuery: query,
-            result: { total_count: 0, repositories: [] },
-            fallbackTriggered: false,
-            error:
-              'No repositories found. Try broader search terms or consider using packageSearch tool for faster package discovery.',
-          });
-          continue;
-        }
-
-        // Return original success
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: execResult,
-          fallbackTriggered: false,
-        });
-        continue;
-      }
-
-      // Original query failed, return error result
-      results.push({
-        queryId,
-        originalQuery: query,
-        result: { total_count: 0, repositories: [] },
-        fallbackTriggered: false,
-        error: `Query failed. Try broader search terms or consider using packageSearch tool for faster package discovery.`,
-      });
-    } catch (error) {
-      // Handle any unexpected errors
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      results.push({
-        queryId,
-        originalQuery: query,
-        result: { total_count: 0, repositories: [] },
-        fallbackTriggered: false,
-        error: `Unexpected error: ${errorMessage}`,
-      });
-    }
+    const result = await processSingleQuery(query, queryId);
+    results.push(result);
   }
 
-  // Calculate summary statistics
+  // Calculate simple summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
-  const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
   const totalRepositories = results.reduce(
     (sum, r) => sum + (r.result.total_count || 0),
     0
@@ -394,7 +374,6 @@ async function searchMultipleGitHubRepos(
       summary: {
         totalQueries,
         successfulQueries,
-        queriesWithFallback,
         totalRepositories,
       },
     },
@@ -426,100 +405,23 @@ export async function searchGitHubRepos(
         });
       }
 
-      const analysis = {
-        totalFound: 0,
-        languages: new Set<string>(),
-        avgStars: 0,
-        recentlyUpdated: 0,
-        topStarred: [] as Array<{
-          name: string;
-          stars: number;
-          description: string;
-          language: string;
-          url: string;
-          forks: number;
-          isPrivate: boolean;
-          isArchived: boolean;
-          isFork: boolean;
-          topics: string[];
-          license: string | null;
-          hasIssues: boolean;
-          openIssuesCount: number;
-          createdAt: string;
-          updatedAt: string;
-          visibility: string;
-          owner: string;
-        }>,
-      };
-
-      analysis.totalFound = repositories.length;
-
-      // Analyze repository data
-      let totalStars = 0;
-      const now = new Date();
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-      repositories.forEach(repo => {
-        // Collect languages
-        if (repo.language) {
-          analysis.languages.add(repo.language);
-        }
-
-        // Calculate average stars (use correct field name)
-        if (typeof repo.stargazersCount === 'number') {
-          totalStars += repo.stargazersCount;
-        }
-
-        // Count recently updated repositories (use correct field name)
-        if (repo.updatedAt) {
-          const updatedDate = new Date(repo.updatedAt);
-          if (!isNaN(updatedDate.getTime()) && updatedDate > thirtyDaysAgo) {
-            analysis.recentlyUpdated++;
-          }
-        }
-      });
-
-      analysis.avgStars =
-        repositories.length > 0
-          ? Math.round(totalStars / repositories.length)
-          : 0;
-
-      // Get all repositories with comprehensive data
-      analysis.topStarred = repositories.map(repo => ({
-        name: repo.fullName || repo.name,
-        stars: repo.stargazersCount || 0,
-        description: repo.description || 'No description',
-        language: repo.language || 'Unknown',
-        url: repo.url,
-        forks: repo.forksCount || 0,
-        isPrivate: repo.isPrivate || false,
-        isArchived: repo.isArchived || false,
-        isFork: repo.isFork || false,
-        topics: [], // GitHub CLI search repos doesn't provide topics in JSON output
-        license: repo.license?.name || null,
-        hasIssues: repo.hasIssues || false,
-        openIssuesCount: repo.openIssuesCount || 0,
-        createdAt: toDDMMYYYY(repo.createdAt),
-        updatedAt: toDDMMYYYY(repo.updatedAt),
-        visibility: repo.visibility || 'public',
-        owner: repo.owner?.login || repo.owner,
-      }));
-
+      // Return simple repository data
       return createResult({
         data: {
-          total_count: analysis.totalFound,
-          ...(analysis.totalFound > 0
-            ? {
-                repositories: analysis.topStarred,
-                summary: {
-                  languages: Array.from(analysis.languages).slice(0, 10),
-                  avgStars: analysis.avgStars,
-                  recentlyUpdated: analysis.recentlyUpdated,
-                },
-              }
-            : {
-                repositories: [],
-              }),
+          total_count: repositories.length,
+          repositories: repositories.map(repo => ({
+            name: repo.fullName || repo.name,
+            stars: repo.stargazersCount || 0,
+            description:
+              (repo.description || 'No description').length > 150
+                ? repo.description.substring(0, 150) + '...'
+                : repo.description || 'No description',
+            language: repo.language || 'Unknown',
+            url: repo.url,
+            forks: repo.forksCount || 0,
+            updatedAt: toDDMMYYYY(repo.updatedAt),
+            owner: repo.owner?.login || repo.owner,
+          })),
         },
       });
     } catch (error) {
