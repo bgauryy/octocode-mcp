@@ -21,6 +21,8 @@ const DESCRIPTION = `Search code across GitHub repositories using GitHub's code 
 
 SEARCH STRATEGY FOR BEST RESULTS:
 
+ALWAYS START  WITH BROAD QUERIES!
+
 TERM OPTIMIZATION:
 - BEST: Single terms for maximum coverage
 - GOOD: 2-3 minimal terms 
