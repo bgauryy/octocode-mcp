@@ -5,9 +5,10 @@
 <div>
   <img src="./assets/logo.png" width="400px">
   
-  [![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-2.5.1-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
+  [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/beTNk8at)
     [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-☕-orange.svg)](https://buymeacoffee.com/bgauryy)
 
 </div>
@@ -15,6 +16,7 @@
 ## 🌐 For More Details - [octocode.ai](https://octocode.ai)
 ## 📚 For Technical Details - [Technical Summary](./docs/summary.md)
 ## 🐳 For Docker Setup - [Docker Guide](./docker/README.Docker.md)
+## 💬 Join Our Community - [Discord](https://discord.gg/beTNk8at) - Follow this for useful updates and discussions
 
 **The perfect code assistant that can help understand anything.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems.
 
