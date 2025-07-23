@@ -46,7 +46,7 @@ import {
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
-  version: '1.0.0',
+  version: '2.5.0',
   description: PROMPT_SYSTEM_PROMPT,
 };
 
