@@ -21,24 +21,24 @@ const DESCRIPTION = `Search code across GitHub repositories using GitHub's code 
 
 SEARCH STRATEGY FOR BEST RESULTS:
 
+ALWAYS START WITH BROAD QUERIES!
+
 TERM OPTIMIZATION:
 - BEST: Single terms for maximum coverage
-- GOOD: 2-3 minimal terms 
-- AVOID: Long phrases in queryTerms
-- use smart queryTerms for your research - terms that you might find in code or docs
+- GOOD: 2-3 minimal terms with AND logic (all must be present in same file)
+- AVOID: Complex multi-term combinations - they're restrictive
+- Start broad, then narrow with filters or separate queries
 
 MULTI-SEARCH STRATEGY:
 - Use separate searches for different aspects
-- Separate searches provide broader coverage than complex queries
-- Each query should be a different aspect of your research (with one ore many queryTerms)
-- Better research efficiency with several queries
-- Think how to make queries in a smart way for your research
+- Multiple simple queries > one complex query
+- Each search targets different code patterns or concepts
+- Parallel execution provides comprehensive coverage
 
 Filter Usage:
-- Use filters to narrow search scope
-- Combine filters strategically
-- Never use filters on initial exploratory searches
-- Use results and context to refine search scope`;
+- Use filters to narrow scope after broad initial searches
+- Combine strategically: language + owner/repo for precision
+- Start without filters, then refine based on results`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
@@ -46,17 +46,17 @@ const GitHubCodeSearchQuerySchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      'Array of strings search terms to search for. one or many terms. all terms should be included in a file. AND logic'
+      'Search terms with AND logic - ALL terms must be present in same file. Use sparingly: single terms get broader results, multiple terms are restrictive.'
     ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository owner/organization name(s)'),
+    .describe('Repository owner/organization name'),
   repo: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository filter'),
+    .describe('Repository name (use with owner for specific repo)'),
   filename: z
     .string()
     .optional()
@@ -65,7 +65,7 @@ const GitHubCodeSearchQuerySchema = z.object({
   match: z
     .enum(['file', 'path'])
     .optional()
-    .describe('Search scope: file for content, path for filenames'),
+    .describe('Search scope: file (content) or path (filenames)'),
   size: z
     .string()
     .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
@@ -77,7 +77,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .min(1)
     .max(100)
     .optional()
-    .describe('Maximum results per query'),
+    .describe('Maximum results per query (1-100)'),
   visibility: z
     .enum(['public', 'private', 'internal'])
     .optional()
