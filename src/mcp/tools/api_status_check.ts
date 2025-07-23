@@ -7,7 +7,19 @@ import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `Check user status: GitHub/NPM connections, organizations, and current timestamp. Essential for understanding user's data access and API capabilities.`;
+const DESCRIPTION = `PURPOSE: Verify GitHub/NPM connections and user organizations for data access.
+
+USAGE:
+• Start research to verify access permissions
+• Before accessing private repositories
+• Troubleshoot authentication issues
+
+KEY FEATURES:
+• GitHub auth status and organizations
+• NPM registry connection
+• Access permissions verification
+
+PHILOSOPHY: Tool Efficiency - verify access before research`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {

@@ -21,48 +21,28 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `Search GitHub PRs by keywords, state, or author. Returns head/base SHAs for github_fetch_content (branch=SHA). Can fetch all PR commits with changes using getCommitData=true.
+const DESCRIPTION = `PURPOSE: Search pull requests and track development activity.
 
-SEARCH STRATEGY FOR BEST RESULTS:
-- Use minimal search terms for broader coverage (2-3 words max)
-- Separate searches for different aspects vs complex queries  
-- Use filters to narrow scope after getting initial results
-- Use getCommitData=true to get all commits in PR with file changes
-- Use github_search_commits with head_sha/base_sha from results to get code changes
+USAGE:
+• Find PRs by keywords or state
+• Track code review activity
+• Get commit SHAs for code analysis
 
-COMMIT DATA FETCHING (getCommitData=true):
-- Fetches all commits in the PR using 'gh pr view --json commits'
-- For each commit, fetches detailed changes using GitHub API
-- Shows commit SHA, message, author, and file changes
-- Includes up to 10 commits per PR with detailed diffs
-- Each commit shows changed files with additions/deletions/patches
-- Example: Shows individual commits like "Fix bug in component" with specific file changes
+KEY FEATURES:
+• Returns head/base SHAs for github_fetch_content
+• Optional commit data (getCommitData=true)
+• Filter by author, state, labels
 
-EXAMPLE OUTPUT WITH getCommitData=true:
-{
-  "commits": {
-    "total_count": 3,
-    "commits": [
-      {
-        "sha": "abc123",
-        "message": "Fix bug in component", 
-        "author": "username",
-        "diff": {
-          "changed_files": 2,
-          "additions": 15,
-          "deletions": 3,
-          "files": [...]
-        }
-      }
-    ]
-  }
-}
+SEARCH STRATEGY:
+• Use 2-3 words max
+• Simple queries > complex
+• Add filters to narrow
 
-NOTE: The head_sha and base_sha fields in the PR results can be used as the 'hash' parameter in github_search_commits to look up the exact commit and get actual code changes.
+TOKEN WARNING:
+• getCommitData=true is EXPENSIVE
+• Use github_search_commits with SHAs instead
 
-TOKEN OPTIMIZATION:
-- getCommitData=true is expensive in tokens. Use only when necessary.
-- Consider using github_search_commits with head_sha/base_sha instead for specific commits`;
+PHILOSOPHY: Progressive Refinement - start simple`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(

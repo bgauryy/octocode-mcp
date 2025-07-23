@@ -22,11 +22,23 @@ import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
-const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.
+const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 
-TOKEN OPTIMIZATION
-- Issue body content is expensive in tokens. Use only when necessary.
-- Use specific queries and filters to reduce result count`;
+USAGE:
+• Find bug reports and feature requests
+• Track issue discussions
+• Analyze project problems
+
+KEY FEATURES:
+• Search by keywords, labels, state
+• Filter by author, date, reactions
+• Full issue body content available
+
+TOKEN EFFICIENCY:
+• Body content is expensive
+• Use filters to limit results
+
+PHILOSOPHY: Get quality data from relevant sources`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(

@@ -17,28 +17,30 @@ import { minifyContent } from '../../utils/minifier';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API via GitHub CLI.
+const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with progressive refinement.
 
-SEARCH STRATEGY FOR BEST RESULTS:
+USAGE:
+• Find implementations and patterns
+• Locate specific functions or classes
+• Discover code usage examples
 
-ALWAYS START WITH BROAD QUERIES!
+KEY FEATURES:
+• Parallel queries (up to 5)
+• Content minification by default
+• Smart filtering (language, owner, size)
 
-TERM OPTIMIZATION:
-- BEST: Single terms for maximum coverage
-- GOOD: 2-3 minimal terms with AND logic (all must be present in same file)
-- AVOID: Complex multi-term combinations - they're restrictive
-- Start broad, then narrow with filters or separate queries
+SEARCH STRATEGY:
+1. Start broad (1-2 terms max)
+2. Use filters to narrow
+3. Multiple simple > one complex query
 
-MULTI-SEARCH STRATEGY:
-- Use separate searches for different aspects
-- Multiple simple queries > one complex query
-- Each search targets different code patterns or concepts
-- Parallel execution provides comprehensive coverage
+TOKEN EFFICIENCY:
+• Content optimization enabled by default (may reduce tokens)
+• Use filters to reduce results
 
-Filter Usage:
-- Use filters to narrow scope after broad initial searches
-- Combine strategically: language + owner/repo for precision
-- Start without filters, then refine based on results`;
+SECURITY: Content sanitized - analyze only
+
+PHILOSOPHY: Progressive Refinement - start broad, refine gradually`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
@@ -87,7 +89,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .optional()
     .default(true)
     .describe(
-      'Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.'
+      'Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.'
     ),
   sanitize: z
     .boolean()

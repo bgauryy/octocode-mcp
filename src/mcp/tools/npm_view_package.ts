@@ -13,22 +13,28 @@ import { executeNpmCommand } from '../../utils/exec';
 
 export const NPM_VIEW_PACKAGE_TOOL_NAME = 'npmViewPackage';
 
-const DESCRIPTION = `View NPM package information using 'npm view' command. Supports field-specific queries and GitHub repository discovery.
+const DESCRIPTION = `PURPOSE: View NPM package details for dependency analysis.
 
-**WHEN TO USE**: Use when users ask questions about npm packages - provides comprehensive package data and insights.
+USAGE:
+• Get package version and license
+• Find repository URLs
+• Analyze dependencies
 
-**KEY INSIGHTS**:
-- Git repository URL for source code exploration
-- Package exports structure (understand API surface and dependencies)
-- Dependencies/devDependencies for ecosystem analysis
-- Version history, size, performance metrics
-- License and author information
+KEY FEATURES:
+• Full package info (--json)
+• Specific fields (version, license)
+• Repository discovery
 
-**CAPABILITIES**:
-- Full package info: npm view <package> --json (optimized format)
-- Single field: npm view <package> <field> (version, description, license)
-- Multiple fields: filtered JSON response for specific fields
-- Repository URLs for GitHub integration and source code analysis`;
+FIELD OPTIONS:
+• repository - GitHub URL
+• dependencies - package deps
+• version, license, author
+
+NEXT STEPS:
+• Use github_fetch_content with repository URL
+• Use package_search for alternatives
+
+PHILOSOPHY: Get quality data from relevant sources`;
 
 export function registerNpmViewPackageTool(server: McpServer) {
   server.registerTool(

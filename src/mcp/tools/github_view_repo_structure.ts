@@ -12,30 +12,29 @@ import { filterItems } from './github_view_repo_structure_filters';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access.
+const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding.
 
-PROJECT UNDERSTANDING:
-- Try to understand more by the structure of the project and the files in the project
-- Identify key directories and file patterns
-- fetch important files for better understanding
+USAGE:
+• Understand project organization
+• Verify repository access
+• Navigate to specific directories
 
-DEPTH CONTROL:
-- Default depth is 2 levels for balanced performance and insight
-- Maximum depth is 4 levels to prevent excessive API calls
-- Depth 1: Shows only immediate files/folders in the specified path
-- Depth 2+: Recursively explores subdirectories up to the specified depth
-- Higher depths provide more comprehensive project understanding but use more API calls
+KEY FEATURES:
+• Recursive exploration (depth 1-4)
+• Smart filtering of irrelevant files
+• Branch/path validation
 
-IMPORTANT:
-- verify default branch (use main or master if can't find default branch)
-- verify path before calling the tool to avoid errors
-- Start with root path to understand actual repository structure and then navigate to specific directories based on research needs
-- Check repository's default branch as it varies between repositories
-- Verify path exists - don't assume repository structure
-- Verify repository existence and accessibility
-- Validate paths before accessing specific files. Use github search code to find correct paths if unsure
+DEPTH STRATEGY:
+• Default: 2 (balanced)
+• Max: 4 (prevent overload)
+• Higher = more comprehensive
 
-`;
+BEST PRACTICES:
+• Start with root path
+• Verify branch exists
+• Use search if path unknown
+
+PHILOSOPHY: Build comprehensive understanding progressively`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(

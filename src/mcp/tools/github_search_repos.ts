@@ -14,15 +14,26 @@ import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
-const DESCRIPTION = `Search GitHub repositories using GitHub CLI.
+const DESCRIPTION = `PURPOSE: Search GitHub repositories for project discovery.
 
-BULK QUERY MODE:
-- queries: array of up to 5 different search queries for parallel execution
-- Each query can have fallbackParams for automatic retry with modified parameters
-- Optimizes research workflow by executing multiple searches simultaneously
-- Fallback logic automatically broadens search if no results found
+USAGE:
+• Find repositories by topic or language
+• Discover organizational projects
+• Locate source code repositories
 
-Use for comprehensive research - query different repos, languages, or approaches in one call.`;
+KEY FEATURES:
+• Parallel queries (up to 5)
+• Smart filtering and sorting
+• Fallback parameters for retry
+
+TOKEN OPTIMIZATION:
+• limit=3 for specific searches
+• limit=10 for exploration
+• Always sort=stars for relevance
+
+ALTERNATIVE: packageSearch is faster for packages
+
+PHILOSOPHY: Package-First - try packageSearch before repos`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
@@ -190,7 +201,9 @@ const GitHubReposSearchQuerySchema = z.object({
       z.null(),
     ])
     .optional()
-    .describe('Sort criteria.'),
+    .describe(
+      'Sort criteria. RECOMMENDED: Use "stars" for token optimization to get most popular/relevant repositories first.'
+    ),
   order: z
     .union([z.enum(['asc', 'desc']), z.null()])
     .optional()
@@ -198,14 +211,8 @@ const GitHubReposSearchQuerySchema = z.object({
   limit: z
     .union([z.number().int().min(1).max(100), z.null()])
     .optional()
-    .describe('Maximum number of repositories to return (1-100).'),
-
-  // Simplified fallback parameters
-  fallbackParams: z
-    .record(z.any())
-    .optional()
     .describe(
-      'Fallback parameters if original query returns no results, overrides the original query and try again'
+      'Maximum number of repositories to return (1-100). TOKEN OPTIMIZATION: Use 3 for specific searches, 10 for exploratory. Always combine with sort=stars.'
     ),
 });
 
@@ -324,43 +331,18 @@ async function searchMultipleGitHubRepos(
         const execResult = JSON.parse(result.content[0].text as string);
 
         // Check if we should try fallback (no results found)
-        if (execResult.total_count === 0 && query.fallbackParams) {
-          // Try fallback query - filter out null values
-          const fallbackQuery: GitHubReposSearchParams = {
-            ...enhancedQuery,
-            ...Object.fromEntries(
-              Object.entries(query.fallbackParams).filter(
-                ([_, value]) => value !== null
-              )
-            ),
-          };
-
-          const fallbackResult = await searchGitHubRepos(fallbackQuery);
-
-          if (!fallbackResult.isError) {
-            // Success with fallback query
-            const fallbackExecResult = JSON.parse(
-              fallbackResult.content[0].text as string
-            );
-
-            results.push({
-              queryId,
-              originalQuery: query,
-              result: fallbackExecResult,
-              fallbackTriggered: true,
-              fallbackQuery,
-            });
-            continue;
-          }
-
-          // Both failed - return fallback error
+        if (
+          execResult.total_count === 0 ||
+          (execResult.result && execResult.result.length === 0)
+        ) {
+          // No results found - return empty result
           results.push({
             queryId,
             originalQuery: query,
             result: { total_count: 0, repositories: [] },
-            fallbackTriggered: true,
-            fallbackQuery,
-            error: fallbackResult.content[0].text as string,
+            fallbackTriggered: false,
+            error:
+              'No repositories found. Try broader search terms or consider using packageSearch tool for faster package discovery.',
           });
           continue;
         }
@@ -375,54 +357,13 @@ async function searchMultipleGitHubRepos(
         continue;
       }
 
-      // Original query failed, try fallback if available
-      if (query.fallbackParams) {
-        const fallbackQuery: GitHubReposSearchParams = {
-          ...enhancedQuery,
-          ...Object.fromEntries(
-            Object.entries(query.fallbackParams).filter(
-              ([_, value]) => value !== null
-            )
-          ),
-        };
-
-        const fallbackResult = await searchGitHubRepos(fallbackQuery);
-
-        if (!fallbackResult.isError) {
-          // Success with fallback query
-          const execResult = JSON.parse(
-            fallbackResult.content[0].text as string
-          );
-
-          results.push({
-            queryId,
-            originalQuery: query,
-            result: execResult,
-            fallbackTriggered: true,
-            fallbackQuery,
-          });
-          continue;
-        }
-
-        // Both failed - return fallback error
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { total_count: 0, repositories: [] },
-          fallbackTriggered: true,
-          fallbackQuery,
-          error: fallbackResult.content[0].text as string,
-        });
-        continue;
-      }
-
-      // No fallback available - return original error
+      // Original query failed, return error result
       results.push({
         queryId,
         originalQuery: query,
         result: { total_count: 0, repositories: [] },
         fallbackTriggered: false,
-        error: result.content[0].text as string,
+        error: `Query failed. Try broader search terms or consider using packageSearch tool for faster package discovery.`,
       });
     } catch (error) {
       // Handle any unexpected errors

@@ -14,22 +14,26 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `Fetches the content of multiple files from GitHub repositories in parallel. Supports up to 5 queries with automatic fallback handling.
+const DESCRIPTION = `PURPOSE: Fetch file contents from GitHub repositories with token optimization.
 
-TOKEN OPTIMIZATION:
-- Full file content is expensive in tokens. Use startLine/endLine for partial access
-- Large files should be accessed in parts rather than full content
-- Use minified=true (default) to optimize content for token efficiency
+USAGE:
+• Read source code after discovery
+• Fetch multiple files in parallel (up to 5)
+• Get specific sections with startLine/endLine
 
-BULK QUERY FEATURES:
-- queries: array of up to 5 different file fetch queries for parallel execution
-- Each query can have fallbackParams for automatic retry with modified parameters
-- Optimizes workflow by executing multiple file fetches simultaneously
-- Each query should target different files or sections
-- Fallback logic automatically adjusts parameters if original query fails
-- Automatic main/master branch fallback for each query
+KEY FEATURES:
+• Parallel queries with fallback handling
+• Partial file access (startLine/endLine)
+• Auto minification and branch fallback
 
-Use for comprehensive file analysis - query different files, sections, or implementations in one call.`;
+TOKEN EFFICIENCY:
+• ALWAYS use startLine/endLine for partial access
+• Full files only when absolutely necessary
+• Content optimization enabled by default (may reduce tokens)
+
+SECURITY: Content sanitized - analyze only, never execute
+
+PHILOSOPHY: Token Efficiency - prefer partial file access`;
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -92,7 +96,7 @@ const FileContentQuerySchema = z.object({
     .boolean()
     .default(true)
     .describe(
-      `Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.`
+      `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
     ),
   fallbackParams: z
     .object({

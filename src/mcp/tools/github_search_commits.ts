@@ -25,46 +25,28 @@ import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
-const DESCRIPTION = `Search GitHub commits by message, author, hash, or date. Returns SHAs for github_fetch_content (branch=SHA). Can fetch commit content changes (diffs/patches) when getChangesContent=true.
+const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 
-SEARCH OPTIONS:
-1. Query-based search:
-   - exactQuery: Exact phrase matching (e.g., "bug fix")
-   - queryTerms: Multiple keywords with AND logic (e.g., ["readme", "typo"])
-   - orTerms: Keywords with OR logic (e.g., ["bug", "fix"] finds commits with either)
-   - Combine: queryTerms=["api"] + orTerms=["auth", "login"] = api AND (auth OR login)
+USAGE:
+• Track code changes over time
+• Find commits by author or message
+• Get SHAs for github_fetch_content
 
-2. Filter-only search (no query required):
-   - Search by author, committer, hash, date, etc.
-   - Example: Just committer="monalisa" to find all commits by that user
-   - Example: Search by commit hash (including head_sha/base_sha from a PR): hash="<sha>"
-
-3. Combined search:
-   - Mix queries with filters for precise results
-   - Example: queryTerms=["fix"] + author="jane" + author-date=">2023-01-01"
+KEY FEATURES:
+• Query combinations (exactQuery, queryTerms, orTerms)
+• Filter-only search (author, hash, date)
+• Optional diff content (getChangesContent)
 
 EXAMPLES:
-• Search commits with "readme" AND "typo": queryTerms=["readme", "typo"]
-• Search exact phrase "bug fix": exactQuery="bug fix"
-• Search by committer only: committer="monalisa"
-• Search by author name: author-name="Jane Doe"
-• Search by commit hash (including head_sha/base_sha from a PR): hash="8dd03144ffdc6c0d486d6b705f9c7fba871ee7c3"
-• Search before date: author-date="<2022-02-01"
+• exactQuery="bug fix"
+• hash="<sha from PR>"
+• committer="username"
 
-CONTENT FETCHING:
-- Set getChangesContent=true to fetch actual commit changes:
-  • Gets file diffs and patches for up to 10 commits
-  • Shows changed files, additions, deletions
-  • Includes code patches (first 1000 chars)
-  • Works for both public AND private repositories
-  • Most effective when owner and repo are specified
+TOKEN WARNING:
+• getChangesContent=true is EXPENSIVE
+• Use github_fetch_content for full files
 
-TOKEN OPTIMIZATION NOTICE:
-- getChangesContent=true is EXTREMELY expensive in tokens
-- Each commit's diff/patch content consumes significant tokens
-- Limited to 1000 characters per patch and 5 files per commit for efficiency
-- Use sparingly and only when code changes are essential to your task
-- use fetch_github_file_content to get the full content of the file`;
+PHILOSOPHY: Build comprehensive understanding progressively`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(

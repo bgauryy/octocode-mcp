@@ -12,29 +12,28 @@ import axios from 'axios';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'packageSearch';
 
-const DESCRIPTION = `Search for packages across multiple ecosystems.
-Supported: NPM (Node.js) and Python (PyPI) package ecosystems.
-Use it to discover packages by functionality keywords and explore alternatives.
-Supports concurrent searches across both ecosystems in a single call.
+const DESCRIPTION = `PURPOSE: Discover packages across NPM and Python ecosystems.
 
-**WHEN TO USE**: Use when users ask questions about npm/python packages or need to discover packages - provides package discovery and ecosystem insights.
-Provides comprehensive package data for research and development context.
-Example: when content has import statements, use this tool to search for the packages (npm or python).
+USAGE:
+• Find packages by functionality
+• When code has import statements
+• Compare ecosystem alternatives
 
-**KEY CAPABILITIES**:
-- npmPackageName: Single NPM package search
-- npmPackagesNames: Multiple NPM package searches with concurrent execution
-- pythonPackageName: Python package search via PyPI API
-- Combined ecosystem searches in a single call with parallel processing
-- Results separated by ecosystem (npm: [], python: [])
-- Smart package name normalization and fallback strategies
-- Repository discovery and metadata extraction
+KEY FEATURES:
+• NPM + Python parallel search
+• Multiple concurrent queries
+• Repository URL discovery
 
-**SEARCH STRATEGY**:
-- Use broad functional terms for best discovery
-- Single keywords work better than complex phrases
-- Multiple searches reveal ecosystem alternatives
-- Cross-Ecosystem: Search both NPM and Python to compare alternatives and find best solutions`;
+SEARCH STRATEGY:
+• Broad functional terms
+• Single keywords > phrases
+• Cross-ecosystem comparison
+
+EXAMPLES:
+• npmPackagesNames: ["testing", "mock"]
+• pythonPackageName: "requests"
+
+PHILOSOPHY: Package-First - simplify research with packages`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
