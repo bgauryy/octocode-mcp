@@ -756,7 +756,7 @@ more text`;
 
       it('should return original content when generic minification fails', async () => {
         const content = 'some content that cannot be minified';
-        
+
         // Test the fallback path by mocking a potential error scenario
         // This is difficult to trigger since generic minification is robust
         const result = await minifyContent(content, 'test.unknown');

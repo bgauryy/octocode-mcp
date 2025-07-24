@@ -117,14 +117,15 @@ describe('Index Module', () => {
     // Create spies for process methods
     processExitSpy = vi
       .spyOn(process, 'exit')
-      .mockImplementation((code?: number) => {
+      .mockImplementation((code?: string | number | null | undefined) => {
         if (code && code !== 0) {
           throw new Error('process.exit called');
         }
+        return undefined as never;
       });
     processStdinResumeSpy = vi
       .spyOn(process.stdin, 'resume')
-      .mockImplementation(() => {});
+      .mockImplementation(() => process.stdin);
     processStdinOnSpy = vi
       .spyOn(process.stdin, 'on')
       .mockImplementation(() => process.stdin);

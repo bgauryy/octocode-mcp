@@ -276,7 +276,9 @@ describe('GitHub View Repository Structure Tool', () => {
 
       expect(result.isError).toBe(true);
       const errorText = result.content[0].text as string;
-      expect(errorText).toContain('Repository "test/repo" structure not accessible in any branch');
+      expect(errorText).toContain(
+        'Repository "test/repo" structure not accessible in any branch'
+      );
       expect(errorText).toContain('Repository default branch: "main"');
       expect(errorText).toContain('Verify permissions: api_status_check');
     });
@@ -363,8 +365,6 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(errorText).toContain('exists but access is denied');
       expect(errorText).toContain('api_status_check');
     });
-
-
 
     it('should handle network errors gracefully', async () => {
       registerViewRepositoryStructureTool(mockServer.server);

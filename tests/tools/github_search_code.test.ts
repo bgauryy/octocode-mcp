@@ -873,6 +873,8 @@ describe('GitHub Search Code Tool', () => {
       const args = buildGitHubCliArgs({
         queryTerms: ['function', 'export'],
         language: 'javascript',
+        minify: true,
+        sanitize: true,
       });
 
       expect(args).toEqual([
@@ -897,6 +899,8 @@ describe('GitHub Search Code Tool', () => {
         match: 'file',
         visibility: 'public',
         limit: 50,
+        minify: true,
+        sanitize: true,
       });
 
       expect(args).toEqual([
@@ -919,6 +923,8 @@ describe('GitHub Search Code Tool', () => {
       const args = buildGitHubCliArgs({
         queryTerms: ['test'],
         owner: 'facebook',
+        minify: true,
+        sanitize: true,
       });
 
       expect(args).toEqual([
@@ -934,6 +940,8 @@ describe('GitHub Search Code Tool', () => {
     it('should handle empty queryTerms by omitting search query', () => {
       const args = buildGitHubCliArgs({
         language: 'javascript',
+        minify: true,
+        sanitize: true,
       });
 
       expect(args).toEqual([
@@ -964,6 +972,8 @@ describe('GitHub Search Code Tool', () => {
       const result = await searchGitHubCode({
         queryTerms: ['test'],
         language: 'javascript',
+        minify: true,
+        sanitize: true,
       });
 
       expect(result.isError).toBe(false);
