@@ -16,9 +16,28 @@ import {
   createSearchFailedError,
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { minifyContentV2 } from '../../utils/minifier';
 
 // TODO: Consider adding PR comments support in the future: gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
 // Enhanced with gh search prs for better search capabilities vs the previous API search approach
+
+/**
+ * Minify text content using general strategy for token reduction
+ * Used specifically for PR titles and body content
+ */
+async function minifyTextContent(content: string): Promise<string> {
+  if (!content || !content.trim()) {
+    return content;
+  }
+
+  try {
+    const result = await minifyContentV2(content, 'content.txt'); // Use .txt to trigger general strategy
+    return result.content;
+  } catch (error) {
+    // Return original content if minification fails
+    return content;
+  }
+}
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
@@ -545,7 +564,8 @@ Alternative tools:
         if (isListCommand) {
           const result: GitHubPullRequestItem = {
             number: pr.number,
-            title: pr.title,
+            title: await minifyTextContent(pr.title || ''),
+            body: pr.body ? await minifyTextContent(pr.body) : undefined,
             state: pr.state?.toLowerCase() || 'unknown',
             author: pr.author?.login || '',
             repository: `${primaryOwner}/${primaryRepo}`,
@@ -584,7 +604,8 @@ Alternative tools:
         if (isSearchCommand) {
           const result: GitHubPullRequestItem = {
             number: pr.number,
-            title: pr.title,
+            title: await minifyTextContent(pr.title || ''),
+            body: pr.body ? await minifyTextContent(pr.body) : undefined,
             state: pr.state,
             author: pr.author?.login || '',
             repository: pr.repository?.full_name || pr.repository || 'unknown',
@@ -1038,7 +1059,7 @@ export function buildGitHubPullRequestsListCommand(
     `${owner}/${repo}`,
     '--json',
     // Request comprehensive PR data with commit SHAs for github_fetch_content integration
-    'number,title,headRefName,headRefOid,baseRefName,baseRefOid,state,author,labels,createdAt,updatedAt,url,comments,isDraft',
+    'number,title,body,headRefName,headRefOid,baseRefName,baseRefOid,state,author,labels,createdAt,updatedAt,url,comments,isDraft',
     '--limit',
     String(Math.min(params.limit || 30, 100)),
   ];

@@ -13,7 +13,7 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { minifyContent } from '../../utils/minifier';
+import { minifyContentV2 } from '../../utils/minifier';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
@@ -409,7 +409,7 @@ async function transformToOptimizedFormat(
 
           // Apply minification if enabled
           if (minify) {
-            const minifyResult = await minifyContent(
+            const minifyResult = await minifyContentV2(
               processedFragment,
               item.path
             );

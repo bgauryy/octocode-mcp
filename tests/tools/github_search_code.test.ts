@@ -9,7 +9,7 @@ import {
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
-const mockMinifyContent = vi.hoisted(() => vi.fn());
+const mockMinifyContentV2 = vi.hoisted(() => vi.fn());
 const mockContentSanitizer = vi.hoisted(() => ({
   sanitizeContent: vi.fn(),
   validateInputParameters: vi.fn(),
@@ -68,7 +68,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 }));
 
 vi.mock('../../src/utils/minifier.js', () => ({
-  minifyContent: mockMinifyContent,
+  minifyContentV2: mockMinifyContentV2,
 }));
 
 vi.mock('../../src/security/contentSanitizer.js', () => ({
@@ -106,7 +106,7 @@ describe('GitHub Search Code Tool', () => {
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
 
     // Default minification (no change) - preserve original content
-    mockMinifyContent.mockImplementation(async (content: string) => ({
+    mockMinifyContentV2.mockImplementation(async (content: string) => ({
       content: content, // Return original content unchanged
       type: 'none',
       failed: false,
@@ -154,7 +154,7 @@ describe('GitHub Search Code Tool', () => {
             queries: expect.any(Object),
           }),
           annotations: expect.objectContaining({
-            title: 'GitHub Code Search - Bulk Queries Only (Optimized)',
+            title: 'GitHub Code Search - Parallel Queries',
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: true,
@@ -438,7 +438,7 @@ describe('GitHub Search Code Tool', () => {
         },
       ];
 
-      mockMinifyContent.mockResolvedValue({
+      mockMinifyContentV2.mockResolvedValue({
         content: 'function test(){console.log("hello");}',
         type: 'javascript',
         failed: false,
@@ -470,7 +470,7 @@ describe('GitHub Search Code Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.results[0].result.minified).toBe(true);
       expect(data.results[0].result.minificationFailed).toBe(false);
-      expect(mockMinifyContent).toHaveBeenCalled();
+      expect(mockMinifyContentV2).toHaveBeenCalled();
     });
 
     it('should apply sanitization when enabled', async () => {
@@ -548,7 +548,7 @@ describe('GitHub Search Code Tool', () => {
         },
       ];
 
-      mockMinifyContent.mockResolvedValue({
+      mockMinifyContentV2.mockResolvedValue({
         content: 'malformed javascript code {{{',
         type: 'failed',
         failed: true,

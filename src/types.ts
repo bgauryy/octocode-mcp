@@ -248,6 +248,7 @@ export interface GitHubPullRequestComment {
 export interface GitHubPullRequestItem {
   number: number;
   title: string;
+  body?: string; // PR description/body content
   state: 'open' | 'closed';
   author: string;
   repository: string;
@@ -350,7 +351,15 @@ export interface GitHubFileContentResponse {
   requestedContextLines?: number;
   minified?: boolean;
   minificationFailed?: boolean;
-  minificationType?: 'javascript' | 'generic' | 'failed' | 'none';
+  minificationType?:
+    | 'terser'
+    | 'conservative'
+    | 'aggressive'
+    | 'json'
+    | 'general'
+    | 'markdown'
+    | 'failed'
+    | 'none';
   // Security metadata
   securityWarnings?: string[];
 }
