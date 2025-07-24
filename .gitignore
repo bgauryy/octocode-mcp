@@ -7,3 +7,5 @@ _scripts
 
 # DXT files (distribute via GitHub releases)
 *.dxt
+
+coverage

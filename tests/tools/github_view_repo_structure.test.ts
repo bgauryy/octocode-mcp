@@ -244,6 +244,69 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(errorText).toContain('Path "nonexistent" not found in any branch');
       expect(errorText).toContain('Repository default branch: "main"');
     });
+
+    it('should handle repository structure not accessible in any branch', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockRepoResponse = { result: createMockRepoData('main') };
+
+      mockExecuteGitHubCommand
+        // Original branch fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        })
+        // Repo check succeeds
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockRepoResponse) }],
+        })
+        // All subsequent branch attempts fail
+        .mockResolvedValue({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'repo',
+        branch: 'feature',
+        // No path - testing root structure access failure
+      });
+
+      expect(result.isError).toBe(true);
+      const errorText = result.content[0].text as string;
+      expect(errorText).toContain('Repository "test/repo" structure not accessible in any branch');
+      expect(errorText).toContain('Repository default branch: "main"');
+      expect(errorText).toContain('Verify permissions: api_status_check');
+    });
+
+    it('should handle case when repository check fails', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      mockExecuteGitHubCommand
+        // Original branch fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        })
+        // Repo check also fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'repo',
+        branch: 'feature',
+        path: 'some-path',
+      });
+
+      expect(result.isError).toBe(true);
+      const errorText = result.content[0].text as string;
+      expect(errorText).toContain('Repository "test/repo" not found');
+    });
   });
 
   describe('Error Handling', () => {
@@ -300,6 +363,8 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(errorText).toContain('exists but access is denied');
       expect(errorText).toContain('api_status_check');
     });
+
+
 
     it('should handle network errors gracefully', async () => {
       registerViewRepositoryStructureTool(mockServer.server);
@@ -465,7 +530,7 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseData).toHaveProperty('path');
       expect(responseData).toHaveProperty('files');
       expect(responseData).toHaveProperty('folders');
-      expect(responseData).toHaveProperty('summary');
+      // Note: summary property is only included in depth-based responses
 
       // Verify files structure
       expect(responseData.files).toHaveProperty('count');

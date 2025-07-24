@@ -25,7 +25,7 @@
     "prepublishOnly": "yarn lint && yarn test && rollup -c",
     "test": "vitest run",
     "test:watch": "vitest --watch",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
     "test:ui": "vitest --ui",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "lint": "eslint src/**/*.ts tests/**/*.ts",
