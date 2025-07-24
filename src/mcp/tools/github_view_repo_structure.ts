@@ -25,9 +25,9 @@ KEY FEATURES:
 • Branch/path validation
 
 DEPTH STRATEGY:
-• Default: 2 (balanced)
+• Default: 1 (fast, immediate content)
 • Max: 4 (prevent overload)
-• Higher = more comprehensive
+• Higher depth = more comprehensive but slower (choose for deep research)
 
 BEST PRACTICES:
 • Start with root path
@@ -86,9 +86,9 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .min(1, 'Depth must be at least 1')
           .max(4, 'Maximum depth is 4 to avoid excessive API calls')
           .optional()
-          .default(2)
+          .default(1)
           .describe(
-            'Depth of directory structure to explore. Default is 2. Maximum is 4 to prevent excessive API calls and maintain performance.'
+            'Depth of directory structure to explore. Default is 1 for fast results. Maximum is 4. Higher values take more time - choose depth > 1 only for deep research needs.'
           ),
 
         includeIgnored: z
@@ -145,7 +145,7 @@ export async function viewRepositoryStructure(
       repo,
       branch,
       path = '',
-      depth = 2,
+      depth = 1,
       includeIgnored = false,
       showMedia = false,
     } = params;

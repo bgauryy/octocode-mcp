@@ -25,14 +25,13 @@ USAGE:
 • Discover code usage examples
 
 KEY FEATURES:
-• Parallel queries (up to 5)
 • Content minification by default
 • Smart filtering (language, owner, size)
 
 SEARCH STRATEGY:
-1. Start broad (1-2 terms max)
+1. Start broad (not too many terms and filters)
 2. Use filters to narrow
-3. Multiple simple > one complex query
+3. Use several queries wisely — a query for code might be different from a query that tries to get data from documentation.
 
 TOKEN EFFICIENCY:
 • Content optimization enabled by default (may reduce tokens)
@@ -48,7 +47,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      'Search terms with AND logic - ALL terms must be present in same file. Use sparingly: single terms get broader results, multiple terms are restrictive.'
+      'Search terms with AND logic. ALL terms must be present in same file. Use sparingly: pick terms that can be found in the same file. Do not use terms that describing behavior, and choose terms that might be found in files or docs.'
     ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
