@@ -25,9 +25,14 @@ export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 const DESCRIPTION = `PURPOSE: Search pull requests and track development activity.
 
 USAGE:
-• Find PRs by keywords or state
+• Find PRs by keywords, filters, or both
 • Track code review activity  
 • Get commit SHAs for code analysis
+
+SEARCH EXAMPLES:
+• With query: "fix bug", "update dependencies", "security patch"
+• Without query: Use filters only like --repo=owner/repo --state=open --author=username
+• Combined: "refactor" --language=javascript --state=closed
 
 KEY FEATURES:
 • Returns head/base SHAs for github_fetch_content
@@ -37,10 +42,11 @@ KEY FEATURES:
 • Support for complex date filters and boolean combinations
 
 SEARCH STRATEGY:  
-• Use 2-3 words max for broad results
+• Query is optional - you can search using filters only
+• Use 2-3 keywords max for broad results when using query
 • Simple queries > complex queries
 • Add specific filters to narrow results
-• Use -- syntax for negative filters (e.g., -- -label:bug)
+• Use operators in filters: ">100", ">=50", "<20", "10..50"
 
 ADVANCED FEATURES:
 • Reaction filtering: --reactions=">100" 
@@ -48,6 +54,8 @@ ADVANCED FEATURES:
 • Check status: --checks=success|failure|pending
 • Date ranges: --created=">2023-01-01" or --updated="2023-01-01..2023-12-31"
 • Team mentions and user involvement filters
+• Comment count filtering: --comments=">10"
+• Multi-owner/repo searches: --owner=["org1","org2"] or --repo=["repo1","repo2"]
 
 TOKEN WARNING:
 • getCommitData=true is EXPENSIVE - fetches full commit diffs
@@ -62,120 +70,206 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
+        // CORE SEARCH - Query is optional, you can search with filters only
         query: z
           .string()
-          .min(1, 'Search query is required and cannot be empty')
+          .optional()
           .describe(
-            'Search query for PR content (keep minimal for broader results)'
+            'Search query for PR content (optional - you can search using filters only). Examples: "fix bug", "update dependencies", "security patch"'
           ),
+
+        // REPOSITORY FILTERS - Direct CLI flag mappings
         owner: z
-          .string()
+          .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Repository owner (use with repo param)'),
+          .describe(
+            'Repository owner(s) - single owner or array for multi-owner search (--owner)'
+          ),
         repo: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe(
+            'Repository name(s) - single repo or array for multi-repo search (--repo)'
+          ),
+        language: z
           .string()
           .optional()
-          .describe('Repository name (use with owner param)'),
-        author: z.string().optional().describe('GitHub username of PR author'),
-        assignee: z.string().optional().describe('GitHub username of assignee'),
-        mentions: z.string().optional().describe('PRs mentioning this user'),
-        commenter: z.string().optional().describe('User who commented on PR'),
-        involves: z.string().optional().describe('User involved in any way'),
-        'reviewed-by': z
-          .string()
-          .optional()
-          .describe('User who reviewed the PR'),
-        'review-requested': z
-          .string()
-          .optional()
-          .describe('User/team requested for review'),
-        state: z
-          .enum(['open', 'closed'])
-          .optional()
-          .describe('Filter by state: open or closed'),
-        head: z.string().optional().describe('Filter on head branch name'),
-        base: z.string().optional().describe('Filter on base branch name'),
-        language: z.string().optional().describe('Repository language'),
-        created: z
-          .string()
-          .optional()
-          .describe('Filter by created date (e.g., >2020-01-01)'),
-        updated: z
-          .string()
-          .optional()
-          .describe('Filter by updated date (e.g., >2020-01-01)'),
-        'merged-at': z
-          .string()
-          .optional()
-          .describe('Filter by merged date (e.g., >2020-01-01)'),
-        closed: z
-          .string()
-          .optional()
-          .describe('Filter by closed date (e.g., >2020-01-01)'),
-        draft: z.boolean().optional().describe('Filter by draft state'),
-        checks: z
-          .enum(['pending', 'success', 'failure'])
-          .optional()
-          .describe('Filter by checks status'),
-        merged: z.boolean().optional().describe('Filter by merged state'),
-        review: z
-          .enum(['none', 'required', 'approved', 'changes_requested'])
-          .optional()
-          .describe('Filter by review status'),
-        app: z.string().optional().describe('Filter by GitHub App author'),
+          .describe('Programming language filter (--language)'),
         archived: z
           .boolean()
           .optional()
-          .describe('Filter by repository archived state'),
-        withComments: z
-          .boolean()
-          .default(false)
-          .describe(
-            'Include full comment content in search results. WARNING: EXTREMELY expensive in tokens and should be used with caution. Recommended to not use unless specifically needed.'
-          ),
-        interactions: z
-          .number()
+          .describe('Filter by repository archived state (--archived)'),
+        visibility: z
+          .union([
+            z.enum(['public', 'private', 'internal']),
+            z.array(z.enum(['public', 'private', 'internal'])),
+          ])
           .optional()
-          .describe('Total interactions (reactions + comments)'),
-        'team-mentions': z
+          .describe(
+            'Repository visibility - single value or array (--visibility)'
+          ),
+
+        // USER INVOLVEMENT FILTERS - Direct CLI flag mappings
+        author: z
           .string()
           .optional()
-          .describe('Filter by team mentions'),
-        reactions: z
-          .number()
+          .describe('GitHub username of PR author (--author)'),
+        assignee: z
+          .string()
           .optional()
-          .describe('Filter by number of reactions'),
+          .describe('GitHub username of assignee (--assignee)'),
+        mentions: z
+          .string()
+          .optional()
+          .describe('PRs mentioning this user (--mentions)'),
+        commenter: z
+          .string()
+          .optional()
+          .describe('User who commented on PR (--commenter)'),
+        involves: z
+          .string()
+          .optional()
+          .describe('User involved in any way (--involves)'),
+        'reviewed-by': z
+          .string()
+          .optional()
+          .describe('User who reviewed the PR (--reviewed-by)'),
+        'review-requested': z
+          .string()
+          .optional()
+          .describe('User/team requested for review (--review-requested)'),
+
+        // BASIC STATE FILTERS - Direct CLI flag mappings
+        state: z
+          .enum(['open', 'closed'])
+          .optional()
+          .describe('Filter by state: open or closed (--state)'),
+        draft: z
+          .boolean()
+          .optional()
+          .describe('Filter by draft state (--draft)'),
+        merged: z
+          .boolean()
+          .optional()
+          .describe('Filter by merged state (--merged)'),
         locked: z
           .boolean()
           .optional()
-          .describe('Filter by locked conversation status'),
-        'no-assignee': z
-          .boolean()
+          .describe('Filter by locked conversation status (--locked)'),
+
+        // BRANCH FILTERS - Direct CLI flag mappings
+        head: z
+          .string()
           .optional()
-          .describe('Filter by missing assignee'),
-        'no-label': z.boolean().optional().describe('Filter by missing label'),
-        'no-milestone': z
-          .boolean()
+          .describe('Filter on head branch name (--head)'),
+        base: z
+          .string()
           .optional()
-          .describe('Filter by missing milestone'),
-        'no-project': z
-          .boolean()
+          .describe('Filter on base branch name (--base)'),
+
+        // DATE FILTERS - Direct CLI flag mappings with operator support
+        created: z
+          .string()
           .optional()
-          .describe('Filter by missing project'),
+          .describe(
+            'Filter by created date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--created)'
+          ),
+        updated: z
+          .string()
+          .optional()
+          .describe(
+            'Filter by updated date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--updated)'
+          ),
+        'merged-at': z
+          .string()
+          .optional()
+          .describe(
+            'Filter by merged date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--merged-at)'
+          ),
+        closed: z
+          .string()
+          .optional()
+          .describe(
+            'Filter by closed date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--closed)'
+          ),
+
+        // ENGAGEMENT FILTERS - Direct CLI flag mappings with operator support
+        comments: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            'Filter by number of comments, supports operators: ">10", ">=5", "<5", "5..10" (--comments)'
+          ),
+        reactions: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            'Filter by number of reactions, supports operators: ">10", ">=5", "<50", "5..50" (--reactions)'
+          ),
+        interactions: z
+          .union([z.number(), z.string()])
+          .optional()
+          .describe(
+            'Total interactions (reactions + comments), supports operators: ">100", ">=50", "<20", "50..200" (--interactions)'
+          ),
+
+        // REVIEW & CI FILTERS - Direct CLI flag mappings
+        review: z
+          .enum(['none', 'required', 'approved', 'changes_requested'])
+          .optional()
+          .describe('Filter by review status (--review)'),
+        checks: z
+          .enum(['pending', 'success', 'failure'])
+          .optional()
+          .describe('Filter by checks status (--checks)'),
+
+        // ORGANIZATION FILTERS - Direct CLI flag mappings
+        app: z
+          .string()
+          .optional()
+          .describe('Filter by GitHub App author (--app)'),
+        'team-mentions': z
+          .string()
+          .optional()
+          .describe('Filter by team mentions (--team-mentions)'),
         label: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Filter by label'),
-        milestone: z.string().optional().describe('Milestone title'),
-        project: z.string().optional().describe('Project board owner/number'),
-        visibility: z
-          .enum(['public', 'private', 'internal'])
+          .describe('Filter by label, supports multiple labels (--label)'),
+        milestone: z
+          .string()
           .optional()
-          .describe('Repository visibility'),
+          .describe('Milestone title (--milestone)'),
+        project: z
+          .string()
+          .optional()
+          .describe('Project board owner/number (--project)'),
+
+        // BOOLEAN "MISSING" FILTERS - Direct CLI flag mappings
+        'no-assignee': z
+          .boolean()
+          .optional()
+          .describe('Filter by missing assignee (--no-assignee)'),
+        'no-label': z
+          .boolean()
+          .optional()
+          .describe('Filter by missing label (--no-label)'),
+        'no-milestone': z
+          .boolean()
+          .optional()
+          .describe('Filter by missing milestone (--no-milestone)'),
+        'no-project': z
+          .boolean()
+          .optional()
+          .describe('Filter by missing project (--no-project)'),
+
+        // SEARCH SCOPE - Direct CLI flag mappings
         match: z
           .array(z.enum(['title', 'body', 'comments']))
           .optional()
-          .describe('Restrict search to specific fields'),
+          .describe('Restrict search to specific fields (--match)'),
+
+        // RESULT CONTROL - Direct CLI flag mappings
         limit: z
           .number()
           .int()
@@ -183,7 +277,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .max(100)
           .optional()
           .default(30)
-          .describe('Maximum number of results to fetch'),
+          .describe('Maximum number of results to fetch (--limit)'),
         sort: z
           .enum([
             'comments',
@@ -199,18 +293,26 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
             'updated',
           ])
           .optional()
-          .describe('Sort fetched results'),
+          .describe('Sort fetched results (--sort)'),
         order: z
           .enum(['asc', 'desc'])
           .optional()
           .default('desc')
-          .describe('Order of results (requires --sort)'),
+          .describe('Order of results, requires --sort (--order)'),
+
+        // EXPENSIVE OPTIONS - Custom functionality
         getCommitData: z
           .boolean()
           .optional()
           .default(false)
           .describe(
             'Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes. WARNING: EXTREMELY expensive in tokens - fetches diff/patch content for each commit.'
+          ),
+        withComments: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Include full comment content in search results. WARNING: EXTREMELY expensive in tokens and should be used with caution. Recommended to not use unless specifically needed.'
           ),
       },
       annotations: {
@@ -223,16 +325,68 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
     },
     withSecurityValidation(
       async (args: GitHubPullRequestsSearchParams): Promise<CallToolResult> => {
-        if (!args.query?.trim()) {
+        // Query is now optional - you can search using filters only
+        if (
+          args.query !== undefined &&
+          (!args.query?.trim() || args.query.length > 256)
+        ) {
           return createResult({
-            error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
+            error:
+              args.query?.length > 256
+                ? ERROR_MESSAGES.QUERY_TOO_LONG
+                : `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
           });
         }
 
-        if (args.query.length > 256) {
-          return createResult({
-            error: ERROR_MESSAGES.QUERY_TOO_LONG,
-          });
+        // If no query is provided, ensure at least some filters are present
+        if (!args.query?.trim()) {
+          const hasFilters =
+            args.owner ||
+            args.repo ||
+            args.author ||
+            args.assignee ||
+            args.state ||
+            args.label ||
+            args.milestone ||
+            args.language ||
+            args.created ||
+            args.updated ||
+            args.draft !== undefined ||
+            args.merged !== undefined ||
+            args.locked !== undefined ||
+            args.head ||
+            args.base ||
+            args.mentions ||
+            args.commenter ||
+            args.involves ||
+            args['reviewed-by'] ||
+            args['review-requested'] ||
+            args.review ||
+            args.checks ||
+            args.app ||
+            args['team-mentions'] ||
+            args.comments !== undefined ||
+            args.reactions !== undefined ||
+            args.interactions !== undefined ||
+            args.archived !== undefined ||
+            args.visibility ||
+            args['merged-at'] ||
+            args.closed ||
+            args['no-assignee'] ||
+            args['no-label'] ||
+            args['no-milestone'] ||
+            args['no-project'] ||
+            args.project ||
+            args.match;
+
+          if (!hasFilters) {
+            return createResult({
+              error: `No search query or filters provided. Either provide a query (e.g., "fix bug") or use filters (e.g., --repo owner/repo --state open). Examples:
+• With query: "security patch" --language javascript
+• Without query: --repo facebook/react --state open --author username
+• Filter only: --assignee @me --review-requested @me --state open`,
+            });
+          }
         }
 
         try {
@@ -253,6 +407,14 @@ async function searchGitHubPullRequests(
   const cacheKey = generateCacheKey('gh-prs', params);
 
   return withCache(cacheKey, async () => {
+    // Handle both string and array parameters throughout the function
+    const primaryOwner = Array.isArray(params.owner)
+      ? params.owner[0]
+      : params.owner;
+    const primaryRepo = Array.isArray(params.repo)
+      ? params.repo[0]
+      : params.repo;
+
     const { command, args } = buildGitHubPullRequestsAPICommand(params);
     const result = await executeGitHubCommand(command, args, { cache: false });
 
@@ -260,20 +422,21 @@ async function searchGitHubPullRequests(
       const errorMsg = result.content[0].text as string;
 
       // Enhanced error handling for repository-specific searches
-      if (params.owner && params.repo) {
+
+      if (primaryOwner && primaryRepo) {
         // Handle 404 errors with repository and branch checking
         if (errorMsg.includes('404')) {
           // Single repository check to avoid duplicate API calls
           const repoCheckResult = await executeGitHubCommand(
             'api',
-            [`/repos/${params.owner}/${params.repo}`],
+            [`/repos/${primaryOwner}/${primaryRepo}`],
             { cache: false }
           );
 
           if (repoCheckResult.isError) {
             // Repository doesn't exist
             return createResult({
-              error: `Repository "${params.owner}/${params.repo}" not found. Use github_search_repositories to find the correct repository name.`,
+              error: `Repository "${primaryOwner}/${primaryRepo}" not found. Use github_search_repositories to find the correct repository name.`,
             });
           }
 
@@ -428,7 +591,7 @@ Alternative tools:
             title: pr.title,
             state: pr.state?.toLowerCase() || 'unknown',
             author: pr.author?.login || '',
-            repository: `${params.owner}/${params.repo}`,
+            repository: `${primaryOwner}/${primaryRepo}`,
             labels: pr.labels?.map((l: any) => l.name) || [],
             created_at: toDDMMYYYY(pr.createdAt),
             updated_at: toDDMMYYYY(pr.updatedAt),
@@ -446,10 +609,10 @@ Alternative tools:
           if (pr.baseRefOid) result.base_sha = pr.baseRefOid; // Use as branch=SHA
 
           // Fetch commit data if requested
-          if (params.getCommitData && params.owner && params.repo) {
+          if (params.getCommitData && primaryOwner && primaryRepo) {
             const commitData = await fetchPRCommitData(
-              params.owner,
-              params.repo,
+              primaryOwner,
+              primaryRepo,
               pr.number
             );
             if (commitData) {
@@ -561,10 +724,10 @@ Alternative tools:
         if (pr.base?.ref) result.base = pr.base.ref;
 
         // Fetch commit data if requested
-        if (params.getCommitData && params.owner && params.repo) {
+        if (params.getCommitData && primaryOwner && primaryRepo) {
           const commitData = await fetchPRCommitData(
-            params.owner,
-            params.repo,
+            primaryOwner,
+            primaryRepo,
             pr.number
           );
           if (commitData) {
@@ -606,10 +769,31 @@ Alternative tools:
 export function buildGitHubPullRequestsAPICommand(
   params: GitHubPullRequestsSearchParams
 ): { command: GhCommand; args: string[] } {
-  // For repository-specific searches, use gh pr list instead of search API
-  // This provides commit SHAs (head_sha, base_sha) which are essential for
-  // integrating with github_fetch_content to view PR code at specific commits
-  if (params.owner && params.repo) {
+  // COMMAND SELECTION STRATEGY:
+  // 1. For single repository searches (owner + repo specified): use gh pr list
+  //    - Provides commit SHAs (head_sha, base_sha) for github_fetch_content integration
+  //    - Better performance and more detailed metadata for single repo
+  //    - Supports fewer filters but sufficient for focused searches
+  //
+  // 2. For general searches (no specific repo or multi-repo): use gh search prs
+  //    - More powerful search capabilities across all accessible repositories
+  //    - Supports all available search filters and operators
+  //    - Better for discovery and broad searches
+
+  // Check if this is a single repository search
+  // Handle both string and array parameters (use first element if array)
+  const hasOwner =
+    params.owner &&
+    (Array.isArray(params.owner) ? params.owner.length > 0 : true);
+  const hasRepo =
+    params.repo && (Array.isArray(params.repo) ? params.repo.length > 0 : true);
+  const isSingleRepoSearch =
+    hasOwner &&
+    hasRepo &&
+    (!Array.isArray(params.owner) || params.owner.length === 1) &&
+    (!Array.isArray(params.repo) || params.repo.length === 1);
+
+  if (isSingleRepoSearch) {
     return buildGitHubPullRequestsListCommand(params);
   }
 
@@ -621,20 +805,95 @@ export function buildGitHubPullRequestsAPICommand(
 /**
  * Build gh search prs command for general PR searches across all accessible repositories
  * This replaces the previous API search method with better search capabilities
+ *
+ * SEARCH CRITERIA MAPPING:
+ *
+ * BASIC FILTERS:
+ * - query: Main search terms (keywords in title, body, comments)
+ * - state: open, closed
+ * - draft: true (draft PRs only), false (exclude drafts)
+ * - merged: true (merged PRs only), false (unmerged PRs)
+ * - locked: true (locked conversation), false (unlocked)
+ *
+ * USER FILTERS:
+ * - author: PR creator username
+ * - assignee: PR assignee username
+ * - mentions: User mentioned in PR (@username)
+ * - commenter: User who commented on PR
+ * - involves: User involved in any way (author, assignee, commenter, mentioned)
+ * - reviewed-by: User who reviewed the PR
+ * - review-requested: User/team requested for review
+ *
+ * REPOSITORY FILTERS:
+ * - owner: Repository owner(s) - supports single string or array
+ * - repo: Repository name(s) - supports single string or array
+ * - language: Primary programming language
+ * - archived: true (archived repos), false (active repos)
+ * - visibility: public, private, internal - supports single value or array
+ *
+ * BRANCH FILTERS:
+ * - head: Head branch name (source branch)
+ * - base: Base branch name (target branch, usually main/master)
+ *
+ * DATE FILTERS (support operators: >, >=, <, <=, .. for ranges):
+ * - created: When PR was created (e.g., ">2023-01-01", "2023-01-01..2023-12-31")
+ * - updated: When PR was last updated
+ * - merged-at: When PR was merged
+ * - closed: When PR was closed
+ *
+ * ENGAGEMENT FILTERS (support operators: >, >=, <, <=, .. for ranges):
+ * - comments: Number of comments (e.g., ">10", "5..20")
+ * - reactions: Number of reactions (👍, ❤️, etc.)
+ * - interactions: Total reactions + comments
+ *
+ * REVIEW & CI FILTERS:
+ * - review: none, required, approved, changes_requested
+ * - checks: pending, success, failure (CI status)
+ *
+ * ORGANIZATION FILTERS:
+ * - label: PR labels - supports multiple labels
+ * - milestone: Milestone title
+ * - project: Project board (owner/number format)
+ * - team-mentions: Team mentioned (@org/team-name)
+ * - app: GitHub App that created the PR
+ *
+ * BOOLEAN "MISSING" FILTERS:
+ * - no-assignee: PRs without assignees
+ * - no-label: PRs without labels
+ * - no-milestone: PRs without milestones
+ * - no-project: PRs not in any project
+ *
+ * SEARCH SCOPE:
+ * - match: Restrict search to specific fields (title, body, comments)
+ *
+ * RESULT CONTROL:
+ * - limit: Max results to return (1-100)
+ * - sort: How to sort results (comments, reactions, created, updated, etc.)
+ * - order: asc or desc
+ *
+ * The function builds a `gh search prs` command with appropriate flags based on the provided parameters.
  */
 export function buildGitHubPullRequestsSearchCommand(
   params: GitHubPullRequestsSearchParams
 ): { command: GhCommand; args: string[] } {
-  const args: string[] = [
-    'prs',
-    params.query!, // Main search query (validated earlier)
-    '--json',
-    'assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isDraft,isLocked,labels,number,repository,state,title,updatedAt,url',
-    '--limit',
-    String(Math.min(params.limit || 30, 100)),
-  ];
+  const args: string[] = ['prs'];
 
-  // Add sorting and ordering
+  // Query is optional - you can search using filters only
+  if (params.query && params.query.trim()) {
+    args.push(params.query.trim()); // Main search query
+  }
+
+  // Always add JSON output and limit
+  args.push(
+    '--json',
+    // Request comprehensive PR data including new fields for better analysis
+    'assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isDraft,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+    '--limit',
+    String(Math.min(params.limit || 30, 100))
+  );
+
+  // SORTING AND ORDERING
+  // Controls how results are ranked and displayed
   if (params.sort) {
     args.push('--sort', params.sort);
   }
@@ -642,166 +901,246 @@ export function buildGitHubPullRequestsSearchCommand(
     args.push('--order', params.order);
   }
 
-  // Add filters - these map directly to gh search prs flags
+  // BASIC STATE FILTERS
+  // Core PR state and type filters
   if (params.state) {
-    args.push('--state', params.state);
+    args.push('--state', params.state); // open, closed
   }
-  if (params.author) {
-    args.push('--author', params.author);
-  }
-  if (params.assignee) {
-    args.push('--assignee', params.assignee);
-  }
-  if (params.mentions) {
-    args.push('--mentions', params.mentions);
-  }
-  if (params.commenter) {
-    args.push('--commenter', params.commenter);
-  }
-  if (params.involves) {
-    args.push('--involves', params.involves);
-  }
-  if (params['reviewed-by']) {
-    args.push('--reviewed-by', params['reviewed-by']);
-  }
-  if (params['review-requested']) {
-    args.push('--review-requested', params['review-requested']);
-  }
-  if (params.head) {
-    args.push('--head', params.head);
-  }
-  if (params.base) {
-    args.push('--base', params.base);
-  }
-  if (params.language) {
-    args.push('--language', params.language);
-  }
-
-  // Date filters - gh search prs supports more flexible date formats
-  if (params.created) {
-    args.push('--created', params.created);
-  }
-  if (params.updated) {
-    args.push('--updated', params.updated);
-  }
-  if (params['merged-at']) {
-    args.push('--merged-at', params['merged-at']);
-  }
-  if (params.closed) {
-    args.push('--closed', params.closed);
-  }
-
-  // Boolean filters
   if (params.draft !== undefined) {
     if (params.draft) {
-      args.push('--draft');
+      args.push('--draft'); // Only draft PRs
     }
-    // Note: gh search prs doesn't have a --no-draft flag, so we omit it if false
+    // Note: gh search prs doesn't have --no-draft, use query syntax if needed
   }
   if (params.merged !== undefined) {
     if (params.merged) {
-      args.push('--merged');
+      args.push('--merged'); // Only merged PRs
     }
-    // Note: for non-merged PRs, we'd need to use query syntax like "is:unmerged"
-    // This could be added to the main query if needed
+    // Note: for non-merged PRs, would need query syntax like "is:unmerged"
   }
   if (params.locked !== undefined) {
     if (params.locked) {
-      args.push('--locked');
+      args.push('--locked'); // Only locked conversations
     }
   }
 
-  // Advanced filters available in gh search prs
-  if (params.checks) {
-    args.push('--checks', params.checks);
+  // USER INVOLVEMENT FILTERS
+  // Filter by different types of user involvement in PRs
+  if (params.author) {
+    args.push('--author', params.author); // PR creator
   }
-  if (params.review) {
-    args.push('--review', params.review);
+  if (params.assignee) {
+    args.push('--assignee', params.assignee); // PR assignee
   }
-  if (params.app) {
-    args.push('--app', params.app);
+  if (params.mentions) {
+    args.push('--mentions', params.mentions); // User mentioned with @username
+  }
+  if (params.commenter) {
+    args.push('--commenter', params.commenter); // User who commented
+  }
+  if (params.involves) {
+    args.push('--involves', params.involves); // User involved in any way
+  }
+  if (params['reviewed-by']) {
+    args.push('--reviewed-by', params['reviewed-by']); // User who reviewed
+  }
+  if (params['review-requested']) {
+    args.push('--review-requested', params['review-requested']); // User/team requested to review
+  }
+
+  // REPOSITORY FILTERS
+  // Filter by repository characteristics and ownership
+  if (params.owner) {
+    // Support both single owner and multiple owners
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(owner => {
+      args.push('--owner', owner);
+    });
+  }
+  if (params.repo) {
+    // Support both single repo and multiple repos
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    repos.forEach(repo => {
+      args.push('--repo', repo);
+    });
+  }
+  if (params.language) {
+    args.push('--language', params.language); // Primary programming language
   }
   if (params.archived !== undefined) {
-    args.push('--archived', String(params.archived));
+    args.push('--archived', String(params.archived)); // Archived repo state
   }
-  if (params.interactions !== undefined) {
-    args.push('--interactions', String(params.interactions));
+  if (params.visibility) {
+    // Support both single visibility and multiple visibilities
+    const visibilities = Array.isArray(params.visibility)
+      ? params.visibility
+      : [params.visibility];
+    visibilities.forEach(visibility => {
+      args.push('--visibility', visibility);
+    });
   }
-  if (params['team-mentions']) {
-    args.push('--team-mentions', params['team-mentions']);
+
+  // BRANCH FILTERS
+  // Filter by source and target branches
+  if (params.head) {
+    args.push('--head', params.head); // Source branch (where changes come from)
+  }
+  if (params.base) {
+    args.push('--base', params.base); // Target branch (where changes go to)
+  }
+
+  // DATE FILTERS
+  // Support flexible date filtering with operators (>, >=, <, <=, ranges)
+  if (params.created) {
+    args.push('--created', params.created); // When PR was created
+  }
+  if (params.updated) {
+    args.push('--updated', params.updated); // When PR was last updated
+  }
+  if (params['merged-at']) {
+    args.push('--merged-at', params['merged-at']); // When PR was merged
+  }
+  if (params.closed) {
+    args.push('--closed', params.closed); // When PR was closed
+  }
+
+  // ENGAGEMENT FILTERS
+  // Filter by community engagement metrics (comments, reactions, interactions)
+  if (params.comments !== undefined) {
+    args.push('--comments', String(params.comments)); // Number of comments
   }
   if (params.reactions !== undefined) {
-    args.push('--reactions', String(params.reactions));
+    args.push('--reactions', String(params.reactions)); // Number of reactions (👍, ❤️, etc.)
+  }
+  if (params.interactions !== undefined) {
+    args.push('--interactions', String(params.interactions)); // Total reactions + comments
   }
 
-  // Boolean "no-" filters
+  // REVIEW AND CI FILTERS
+  // Filter by code review status and continuous integration results
+  if (params.checks) {
+    args.push('--checks', params.checks); // CI check status: pending, success, failure
+  }
+  if (params.review) {
+    args.push('--review', params.review); // Review status: none, required, approved, changes_requested
+  }
+
+  // ORGANIZATION AND PROJECT FILTERS
+  // Filter by organizational structures and project management
+  if (params.app) {
+    args.push('--app', params.app); // GitHub App that created the PR
+  }
+  if (params['team-mentions']) {
+    args.push('--team-mentions', params['team-mentions']); // Team mentioned (@org/team-name)
+  }
+  if (params.milestone) {
+    args.push('--milestone', params.milestone); // Milestone title
+  }
+  if (params.project) {
+    args.push('--project', params.project); // Project board (owner/number format)
+  }
+
+  // BOOLEAN "MISSING" FILTERS
+  // Filter for PRs that are missing certain attributes
   if (params['no-assignee']) {
-    args.push('--no-assignee');
+    args.push('--no-assignee'); // PRs without assignees
   }
   if (params['no-label']) {
-    args.push('--no-label');
+    args.push('--no-label'); // PRs without any labels
   }
   if (params['no-milestone']) {
-    args.push('--no-milestone');
+    args.push('--no-milestone'); // PRs without milestones
   }
   if (params['no-project']) {
-    args.push('--no-project');
+    args.push('--no-project'); // PRs not in any project
   }
 
-  // Array filters
+  // LABEL FILTERS
+  // Filter by PR labels (supports multiple labels)
   if (params.label) {
     const labels = Array.isArray(params.label) ? params.label : [params.label];
     labels.forEach(label => {
       args.push('--label', label);
     });
   }
-  if (params.milestone) {
-    args.push('--milestone', params.milestone);
-  }
-  if (params.project) {
-    args.push('--project', params.project);
-  }
-  if (params.visibility) {
-    args.push('--visibility', params.visibility);
-  }
+
+  // SEARCH SCOPE FILTERS
+  // Restrict search to specific fields within PRs
   if (params.match) {
     params.match.forEach(field => {
-      args.push('--match', field);
+      args.push('--match', field); // title, body, comments
     });
   }
 
   return { command: 'search', args };
 }
 
+/**
+ * Build gh pr list command for repository-specific PR searches
+ * This approach is used when both owner and repo are specified, providing:
+ * - Direct access to commit SHAs (head_sha, base_sha) for integration with github_fetch_content
+ * - Better performance for single-repository searches
+ * - More detailed PR metadata
+ *
+ * LIMITATIONS:
+ * - Only works with single repository (uses first owner/repo if arrays provided)
+ * - Fewer search filters compared to gh search prs
+ * - Cannot search across multiple repositories simultaneously
+ *
+ * REPOSITORY HANDLING:
+ * - If owner/repo are arrays, uses the first value from each
+ * - This ensures compatibility while focusing on single-repo searches
+ * - For multi-repo searches, the function falls back to buildGitHubPullRequestsSearchCommand
+ */
 export function buildGitHubPullRequestsListCommand(
   params: GitHubPullRequestsSearchParams
 ): { command: GhCommand; args: string[] } {
+  // Handle array-based owner/repo parameters by using the first value
+  // This maintains compatibility while supporting the enhanced parameter types
+  const owner = Array.isArray(params.owner) ? params.owner[0] : params.owner;
+  const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
+
+  // Validate that we have both owner and repo for repository-specific search
+  if (!owner || !repo) {
+    throw new Error(
+      'Both owner and repo are required for repository-specific PR search'
+    );
+  }
+
   const args: string[] = [
     'list',
     '--repo',
-    `${params.owner}/${params.repo}`,
+    `${owner}/${repo}`,
     '--json',
+    // Request comprehensive PR data with commit SHAs for github_fetch_content integration
     'number,title,headRefName,headRefOid,baseRefName,baseRefOid,state,author,labels,createdAt,updatedAt,url,comments,isDraft',
     '--limit',
     String(Math.min(params.limit || 30, 100)),
   ];
 
-  // Add filters
+  // BASIC STATE FILTERS
+  // gh pr list supports fewer filters than gh search prs
   if (params.state) {
-    args.push('--state', params.state);
+    args.push('--state', params.state); // open, closed
   }
+
+  // USER FILTERS
   if (params.author) {
-    args.push('--author', params.author);
+    args.push('--author', params.author); // PR creator
   }
   if (params.assignee) {
-    args.push('--assignee', params.assignee);
+    args.push('--assignee', params.assignee); // PR assignee
   }
+
+  // BRANCH FILTERS
   if (params.head) {
-    args.push('--head', params.head);
+    args.push('--head', params.head); // Source branch
   }
   if (params.base) {
-    args.push('--base', params.base);
+    args.push('--base', params.base); // Target branch
   }
+
+  // LABEL FILTERS
   if (params.label) {
     const labels = Array.isArray(params.label) ? params.label : [params.label];
     labels.forEach(label => {
