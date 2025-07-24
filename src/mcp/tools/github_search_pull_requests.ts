@@ -340,46 +340,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
 
         // If no query is provided, ensure at least some filters are present
         if (!args.query?.trim()) {
-          const hasFilters =
-            args.owner ||
-            args.repo ||
-            args.author ||
-            args.assignee ||
-            args.state ||
-            args.label ||
-            args.milestone ||
-            args.language ||
-            args.created ||
-            args.updated ||
-            args.draft !== undefined ||
-            args.merged !== undefined ||
-            args.locked !== undefined ||
-            args.head ||
-            args.base ||
-            args.mentions ||
-            args.commenter ||
-            args.involves ||
-            args['reviewed-by'] ||
-            args['review-requested'] ||
-            args.review ||
-            args.checks ||
-            args.app ||
-            args['team-mentions'] ||
-            args.comments !== undefined ||
-            args.reactions !== undefined ||
-            args.interactions !== undefined ||
-            args.archived !== undefined ||
-            args.visibility ||
-            args['merged-at'] ||
-            args.closed ||
-            args['no-assignee'] ||
-            args['no-label'] ||
-            args['no-milestone'] ||
-            args['no-project'] ||
-            args.project ||
-            args.match;
-
-          if (!hasFilters) {
+          if (!hasAnyFilters(args)) {
             return createResult({
               error: `No search query or filters provided. Either provide a query (e.g., "fix bug") or use filters (e.g., --repo owner/repo --state open). Examples:
 • With query: "security patch" --language javascript
@@ -486,18 +447,14 @@ async function searchGitHubPullRequests(
 
     const execResult = JSON.parse(result.content[0].text as string);
 
-    // Handle different command formats:
-    // 1. gh pr list format: Array of PRs directly in execResult.result
-    // 2. gh search prs format: Array of PRs directly in execResult.result
-    // 3. Legacy API search format: PRs in execResult.result.items (kept for fallback)
-    const isListFormat =
-      Array.isArray(execResult.result) && params.owner && params.repo;
-    const isSearchFormat = Array.isArray(execResult.result) && !params.owner;
+    // Determine command type based on parameters (already decided in buildGitHubPullRequestsAPICommand)
+    const isListCommand = command === 'pr' && args.includes('list');
+    const isSearchCommand = command === 'search' && args.includes('prs');
 
-    const pullRequests =
-      isListFormat || isSearchFormat
-        ? execResult.result
-        : execResult.result?.items || [];
+    // Both commands return results in execResult.result array
+    const pullRequests = Array.isArray(execResult.result)
+      ? execResult.result
+      : [];
 
     if (pullRequests.length === 0) {
       // Progressive simplification strategy based on current search complexity
@@ -585,7 +542,7 @@ Alternative tools:
     const cleanPRs: GitHubPullRequestItem[] = await Promise.all(
       pullRequests.map(async (pr: any) => {
         // Handle gh pr list format (repository-specific searches)
-        if (isListFormat) {
+        if (isListCommand) {
           const result: GitHubPullRequestItem = {
             number: pr.number,
             title: pr.title,
@@ -624,7 +581,7 @@ Alternative tools:
         }
 
         // Handle gh search prs format (general searches)
-        if (isSearchFormat) {
+        if (isSearchCommand) {
           const result: GitHubPullRequestItem = {
             number: pr.number,
             title: pr.title,
@@ -700,42 +657,10 @@ Alternative tools:
           return result;
         }
 
-        // Handle legacy search API format (fallback)
-        const result: GitHubPullRequestItem = {
-          number: pr.number,
-          title: pr.title,
-          state: pr.state,
-          author: pr.user?.login || '',
-          repository:
-            pr.repository_url?.split('/').slice(-2).join('/') || 'unknown',
-          labels: pr.labels?.map((l: any) => l.name) || [],
-          created_at: toDDMMYYYY(pr.created_at),
-          updated_at: toDDMMYYYY(pr.updated_at),
-          url: pr.html_url,
-          comments: pr.comments || [], // Will be filtered based on withComments parameter
-          reactions: pr.reactions?.total_count || 0,
-          draft: pr.draft,
-        };
-
-        // Only include optional fields if they have values
-        if (pr.merged_at) result.merged_at = pr.merged_at;
-        if (pr.closed_at) result.closed_at = toDDMMYYYY(pr.closed_at);
-        if (pr.head?.ref) result.head = pr.head.ref;
-        if (pr.base?.ref) result.base = pr.base.ref;
-
-        // Fetch commit data if requested
-        if (params.getCommitData && primaryOwner && primaryRepo) {
-          const commitData = await fetchPRCommitData(
-            primaryOwner,
-            primaryRepo,
-            pr.number
-          );
-          if (commitData) {
-            result.commits = commitData;
-          }
-        }
-
-        return result;
+        // This should never happen with current CLI commands
+        throw new Error(
+          `Unexpected PR data format: ${JSON.stringify(pr).substring(0, 100)}...`
+        );
       })
     );
 
@@ -803,75 +728,100 @@ export function buildGitHubPullRequestsAPICommand(
 }
 
 /**
+ * Helper function to add array/single parameters to command args
+ * Reduces code duplication in parameter handling
+ */
+function addParameterToArgs(
+  args: string[],
+  flag: string,
+  value: string | string[] | undefined
+): void {
+  if (!value) return;
+
+  const values = Array.isArray(value) ? value : [value];
+  values.forEach(val => {
+    args.push(`--${flag}`, val);
+  });
+}
+
+/**
+ * Helper function to check if any search filters are provided
+ * Avoids long conditional checks in validation
+ */
+function hasAnyFilters(params: GitHubPullRequestsSearchParams): boolean {
+  // Core filters
+  if (params.owner || params.repo || params.language || params.state)
+    return true;
+
+  // User filters
+  if (
+    params.author ||
+    params.assignee ||
+    params.mentions ||
+    params.commenter ||
+    params.involves ||
+    params['reviewed-by'] ||
+    params['review-requested']
+  )
+    return true;
+
+  // Date filters
+  if (params.created || params.updated || params['merged-at'] || params.closed)
+    return true;
+
+  // Engagement filters
+  if (
+    params.comments !== undefined ||
+    params.reactions !== undefined ||
+    params.interactions !== undefined
+  )
+    return true;
+
+  // Branch and metadata filters
+  if (
+    params.head ||
+    params.base ||
+    params.label ||
+    params.milestone ||
+    params.project ||
+    params.app ||
+    params['team-mentions']
+  )
+    return true;
+
+  // Boolean state filters
+  if (
+    params.draft !== undefined ||
+    params.merged !== undefined ||
+    params.locked !== undefined ||
+    params.archived !== undefined
+  )
+    return true;
+
+  // Missing attribute filters
+  if (
+    params['no-assignee'] ||
+    params['no-label'] ||
+    params['no-milestone'] ||
+    params['no-project']
+  )
+    return true;
+
+  // Other filters
+  if (params.visibility || params.review || params.checks || params.match)
+    return true;
+
+  return false;
+}
+
+/**
  * Build gh search prs command for general PR searches across all accessible repositories
- * This replaces the previous API search method with better search capabilities
+ * Maps parameters to CLI flags with support for arrays, operators, and date ranges.
  *
- * SEARCH CRITERIA MAPPING:
- *
- * BASIC FILTERS:
- * - query: Main search terms (keywords in title, body, comments)
- * - state: open, closed
- * - draft: true (draft PRs only), false (exclude drafts)
- * - merged: true (merged PRs only), false (unmerged PRs)
- * - locked: true (locked conversation), false (unlocked)
- *
- * USER FILTERS:
- * - author: PR creator username
- * - assignee: PR assignee username
- * - mentions: User mentioned in PR (@username)
- * - commenter: User who commented on PR
- * - involves: User involved in any way (author, assignee, commenter, mentioned)
- * - reviewed-by: User who reviewed the PR
- * - review-requested: User/team requested for review
- *
- * REPOSITORY FILTERS:
- * - owner: Repository owner(s) - supports single string or array
- * - repo: Repository name(s) - supports single string or array
- * - language: Primary programming language
- * - archived: true (archived repos), false (active repos)
- * - visibility: public, private, internal - supports single value or array
- *
- * BRANCH FILTERS:
- * - head: Head branch name (source branch)
- * - base: Base branch name (target branch, usually main/master)
- *
- * DATE FILTERS (support operators: >, >=, <, <=, .. for ranges):
- * - created: When PR was created (e.g., ">2023-01-01", "2023-01-01..2023-12-31")
- * - updated: When PR was last updated
- * - merged-at: When PR was merged
- * - closed: When PR was closed
- *
- * ENGAGEMENT FILTERS (support operators: >, >=, <, <=, .. for ranges):
- * - comments: Number of comments (e.g., ">10", "5..20")
- * - reactions: Number of reactions (👍, ❤️, etc.)
- * - interactions: Total reactions + comments
- *
- * REVIEW & CI FILTERS:
- * - review: none, required, approved, changes_requested
- * - checks: pending, success, failure (CI status)
- *
- * ORGANIZATION FILTERS:
- * - label: PR labels - supports multiple labels
- * - milestone: Milestone title
- * - project: Project board (owner/number format)
- * - team-mentions: Team mentioned (@org/team-name)
- * - app: GitHub App that created the PR
- *
- * BOOLEAN "MISSING" FILTERS:
- * - no-assignee: PRs without assignees
- * - no-label: PRs without labels
- * - no-milestone: PRs without milestones
- * - no-project: PRs not in any project
- *
- * SEARCH SCOPE:
- * - match: Restrict search to specific fields (title, body, comments)
- *
- * RESULT CONTROL:
- * - limit: Max results to return (1-100)
- * - sort: How to sort results (comments, reactions, created, updated, etc.)
- * - order: asc or desc
- *
- * The function builds a `gh search prs` command with appropriate flags based on the provided parameters.
+ * KEY FEATURES:
+ * - Multi-value support: owner, repo, label, visibility accept arrays
+ * - Operator support: date/numeric filters support >, >=, <, <=, ranges
+ * - Comprehensive filtering: 30+ filter types covering all PR attributes
  */
 export function buildGitHubPullRequestsSearchCommand(
   params: GitHubPullRequestsSearchParams
@@ -950,35 +900,15 @@ export function buildGitHubPullRequestsSearchCommand(
 
   // REPOSITORY FILTERS
   // Filter by repository characteristics and ownership
-  if (params.owner) {
-    // Support both single owner and multiple owners
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => {
-      args.push('--owner', owner);
-    });
-  }
-  if (params.repo) {
-    // Support both single repo and multiple repos
-    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
-    repos.forEach(repo => {
-      args.push('--repo', repo);
-    });
-  }
+  addParameterToArgs(args, 'owner', params.owner);
+  addParameterToArgs(args, 'repo', params.repo);
   if (params.language) {
     args.push('--language', params.language); // Primary programming language
   }
   if (params.archived !== undefined) {
     args.push('--archived', String(params.archived)); // Archived repo state
   }
-  if (params.visibility) {
-    // Support both single visibility and multiple visibilities
-    const visibilities = Array.isArray(params.visibility)
-      ? params.visibility
-      : [params.visibility];
-    visibilities.forEach(visibility => {
-      args.push('--visibility', visibility);
-    });
-  }
+  addParameterToArgs(args, 'visibility', params.visibility);
 
   // BRANCH FILTERS
   // Filter by source and target branches
@@ -1057,12 +987,7 @@ export function buildGitHubPullRequestsSearchCommand(
 
   // LABEL FILTERS
   // Filter by PR labels (supports multiple labels)
-  if (params.label) {
-    const labels = Array.isArray(params.label) ? params.label : [params.label];
-    labels.forEach(label => {
-      args.push('--label', label);
-    });
-  }
+  addParameterToArgs(args, 'label', params.label);
 
   // SEARCH SCOPE FILTERS
   // Restrict search to specific fields within PRs
