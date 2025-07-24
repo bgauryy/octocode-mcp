@@ -106,7 +106,7 @@ export interface GitHubPullRequestsSearchParams {
   involves?: string;
   app?: string;
   archived?: boolean;
-  comments?: number;
+  comments?: number; // Number of comments filter
   interactions?: number;
   'team-mentions'?: string;
   reactions?: number;
@@ -136,6 +136,7 @@ export interface GitHubPullRequestsSearchParams {
   getChangesContent?: boolean;
   getPRCommits?: boolean;
   getCommitData?: boolean;
+  withComments?: boolean; // Include full comment content (expensive in tokens)
 }
 
 export interface GitHubReposSearchParams
@@ -208,6 +209,22 @@ export interface GitHubCommitDiff {
   files: GitHubDiffFile[];
 }
 
+export interface GitHubPullRequestComment {
+  id: string;
+  author: {
+    login: string;
+  };
+  authorAssociation: string;
+  body: string;
+  createdAt: string;
+  includesCreatedEdit: boolean;
+  isMinimized: boolean;
+  minimizedReason: string;
+  reactionGroups: any[];
+  url: string;
+  viewerDidAuthor: boolean;
+}
+
 export interface GitHubPullRequestItem {
   number: number;
   title: string;
@@ -220,7 +237,7 @@ export interface GitHubPullRequestItem {
   merged_at?: string;
   closed_at?: string;
   url: string;
-  comments: number;
+  comments?: GitHubPullRequestComment[]; // Full comment content (only when withComments=true)
   reactions: number;
   draft: boolean;
   head?: string;
@@ -235,6 +252,14 @@ export interface GitHubPullRequestItem {
       message: string;
       author: string;
       url: string;
+      authoredDate?: string;
+      diff?: {
+        changed_files: number;
+        additions: number;
+        deletions: number;
+        total_changes: number;
+        files: GitHubDiffFile[];
+      };
     }>;
   };
 }

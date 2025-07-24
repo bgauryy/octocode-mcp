@@ -17,7 +17,8 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 
-// TODO: add PR commeents. e.g, gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
+// TODO: Consider adding PR comments support in the future: gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
+// Enhanced with gh search prs for better search capabilities vs the previous API search approach
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
@@ -25,24 +26,35 @@ const DESCRIPTION = `PURPOSE: Search pull requests and track development activit
 
 USAGE:
 • Find PRs by keywords or state
-• Track code review activity
+• Track code review activity  
 • Get commit SHAs for code analysis
 
 KEY FEATURES:
 • Returns head/base SHAs for github_fetch_content
+• Enhanced search with gh search prs (better than API search)
+• Advanced filters: reactions, interactions, checks, review status
 • Optional commit data (getCommitData=true)
-• Filter by author, state, labels
+• Support for complex date filters and boolean combinations
 
-SEARCH STRATEGY:
-• Use 2-3 words max
-• Simple queries > complex
-• Add filters to narrow
+SEARCH STRATEGY:  
+• Use 2-3 words max for broad results
+• Simple queries > complex queries
+• Add specific filters to narrow results
+• Use -- syntax for negative filters (e.g., -- -label:bug)
+
+ADVANCED FEATURES:
+• Reaction filtering: --reactions=">100" 
+• Review status: --review=approved|changes_requested|required
+• Check status: --checks=success|failure|pending
+• Date ranges: --created=">2023-01-01" or --updated="2023-01-01..2023-12-31"
+• Team mentions and user involvement filters
 
 TOKEN WARNING:
-• getCommitData=true is EXPENSIVE
-• Use github_search_commits with SHAs instead
+• getCommitData=true is EXPENSIVE - fetches full commit diffs
+• withComments=true is EXTREMELY EXPENSIVE - fetches all comment content
+• Use github_search_commits with SHAs for better performance
 
-PHILOSOPHY: Progressive Refinement - start simple`;
+PHILOSOPHY: Progressive Refinement - start simple, add filters gradually`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
@@ -115,11 +127,11 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .boolean()
           .optional()
           .describe('Filter by repository archived state'),
-        comments: z
+        withComments: z
           .boolean()
           .default(false)
           .describe(
-            'Include comment content in search results. This is a very expensive operation in tokens and should be used with caution.'
+            'Include full comment content in search results. WARNING: EXTREMELY expensive in tokens and should be used with caution. Recommended to not use unless specifically needed.'
           ),
         interactions: z
           .number()
@@ -311,11 +323,18 @@ async function searchGitHubPullRequests(
 
     const execResult = JSON.parse(result.content[0].text as string);
 
-    // Handle both search API and gh pr list formats
-    const isListFormat = Array.isArray(execResult.result);
-    const pullRequests = isListFormat
-      ? execResult.result
-      : execResult.result?.items || [];
+    // Handle different command formats:
+    // 1. gh pr list format: Array of PRs directly in execResult.result
+    // 2. gh search prs format: Array of PRs directly in execResult.result
+    // 3. Legacy API search format: PRs in execResult.result.items (kept for fallback)
+    const isListFormat =
+      Array.isArray(execResult.result) && params.owner && params.repo;
+    const isSearchFormat = Array.isArray(execResult.result) && !params.owner;
+
+    const pullRequests =
+      isListFormat || isSearchFormat
+        ? execResult.result
+        : execResult.result?.items || [];
 
     if (pullRequests.length === 0) {
       // Progressive simplification strategy based on current search complexity
@@ -402,7 +421,7 @@ Alternative tools:
 
     const cleanPRs: GitHubPullRequestItem[] = await Promise.all(
       pullRequests.map(async (pr: any) => {
-        // Handle gh pr list format
+        // Handle gh pr list format (repository-specific searches)
         if (isListFormat) {
           const result: GitHubPullRequestItem = {
             number: pr.number,
@@ -414,7 +433,7 @@ Alternative tools:
             created_at: toDDMMYYYY(pr.createdAt),
             updated_at: toDDMMYYYY(pr.updatedAt),
             url: pr.url,
-            comments: pr.comments || 0,
+            comments: pr.comments || [], // Will be filtered based on withComments parameter
             reactions: 0, // Not available in list format
             draft: pr.isDraft || false,
           };
@@ -441,7 +460,84 @@ Alternative tools:
           return result;
         }
 
-        // Handle search API format
+        // Handle gh search prs format (general searches)
+        if (isSearchFormat) {
+          const result: GitHubPullRequestItem = {
+            number: pr.number,
+            title: pr.title,
+            state: pr.state,
+            author: pr.author?.login || '',
+            repository: pr.repository?.full_name || pr.repository || 'unknown',
+            labels: pr.labels?.map((l: any) => l.name) || [],
+            created_at: toDDMMYYYY(pr.createdAt || pr.created_at),
+            updated_at: toDDMMYYYY(pr.updatedAt || pr.updated_at),
+            url: pr.url,
+            comments: pr.comments || [], // Will be filtered based on withComments parameter
+            reactions: 0, // Not available in search format, would need separate API call
+            draft: pr.isDraft || pr.draft || false,
+          };
+
+          // Optional fields
+          if (pr.closedAt || pr.closed_at) {
+            result.closed_at = toDDMMYYYY(pr.closedAt || pr.closed_at);
+          }
+
+          // For commit SHAs in search results, we need to make additional API calls
+          // if getCommitData is requested or if specifically needed
+          if (params.getCommitData || params.owner) {
+            // Extract owner/repo from repository field if not provided in params
+            const repoMatch = result.repository.match(/^([^/]+)\/([^/]+)$/);
+            if (repoMatch) {
+              const [, owner, repo] = repoMatch;
+
+              // Fetch PR details including commit SHAs
+              try {
+                const prDetailsResult = await executeGitHubCommand(
+                  'pr',
+                  [
+                    'view',
+                    pr.number.toString(),
+                    '--json',
+                    'headRefName,headRefOid,baseRefName,baseRefOid',
+                    '--repo',
+                    `${owner}/${repo}`,
+                  ],
+                  { cache: false }
+                );
+
+                if (!prDetailsResult.isError) {
+                  const prDetails = JSON.parse(
+                    prDetailsResult.content[0].text as string
+                  );
+                  const details = prDetails.result;
+
+                  if (details.headRefName) result.head = details.headRefName;
+                  if (details.headRefOid) result.head_sha = details.headRefOid;
+                  if (details.baseRefName) result.base = details.baseRefName;
+                  if (details.baseRefOid) result.base_sha = details.baseRefOid;
+                }
+              } catch (e) {
+                // Silently continue if we can't fetch PR details
+              }
+
+              // Fetch commit data if requested
+              if (params.getCommitData) {
+                const commitData = await fetchPRCommitData(
+                  owner,
+                  repo,
+                  pr.number
+                );
+                if (commitData) {
+                  result.commits = commitData;
+                }
+              }
+            }
+          }
+
+          return result;
+        }
+
+        // Handle legacy search API format (fallback)
         const result: GitHubPullRequestItem = {
           number: pr.number,
           title: pr.title,
@@ -453,7 +549,7 @@ Alternative tools:
           created_at: toDDMMYYYY(pr.created_at),
           updated_at: toDDMMYYYY(pr.updated_at),
           url: pr.html_url,
-          comments: pr.comments,
+          comments: pr.comments || [], // Will be filtered based on withComments parameter
           reactions: pr.reactions?.total_count || 0,
           draft: pr.draft,
         };
@@ -480,11 +576,12 @@ Alternative tools:
       })
     );
 
+    // Filter results based on withComments parameter
+    const filteredPRs = filterPRResults(cleanPRs, params.withComments);
+
     const searchResult: GitHubPullRequestsSearchResult = {
-      results: cleanPRs,
-      total_count: isListFormat
-        ? cleanPRs.length
-        : execResult.result?.total_count || cleanPRs.length,
+      results: filteredPRs,
+      total_count: filteredPRs.length, // gh search prs doesn't provide total_count in the same way
     };
 
     // Add helpful context if filtering by branches that might not exist
@@ -516,28 +613,164 @@ export function buildGitHubPullRequestsAPICommand(
     return buildGitHubPullRequestsListCommand(params);
   }
 
-  // For general searches without owner/repo, use GitHub API search
-  // This searches across all repositories accessible to the user
-  const queryParts = [`${params.query}`, 'type:pr'];
+  // For general searches, use gh search prs instead of GitHub API search
+  // This provides better search capabilities and more natural query syntax
+  return buildGitHubPullRequestsSearchCommand(params);
+}
 
-  // Add filters to the query string
-  if (params.state) queryParts.push(`state:${params.state}`);
-  if (params.author) queryParts.push(`author:${params.author}`);
-  if (params.assignee) queryParts.push(`assignee:${params.assignee}`);
-  if (params.language) queryParts.push(`language:${params.language}`);
-  if (params.label) {
-    const labels = Array.isArray(params.label) ? params.label : [params.label];
-    labels.forEach(label => queryParts.push(`label:"${label}"`));
+/**
+ * Build gh search prs command for general PR searches across all accessible repositories
+ * This replaces the previous API search method with better search capabilities
+ */
+export function buildGitHubPullRequestsSearchCommand(
+  params: GitHubPullRequestsSearchParams
+): { command: GhCommand; args: string[] } {
+  const args: string[] = [
+    'prs',
+    params.query!, // Main search query (validated earlier)
+    '--json',
+    'assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isDraft,isLocked,labels,number,repository,state,title,updatedAt,url',
+    '--limit',
+    String(Math.min(params.limit || 30, 100)),
+  ];
+
+  // Add sorting and ordering
+  if (params.sort) {
+    args.push('--sort', params.sort);
+  }
+  if (params.order) {
+    args.push('--order', params.order);
   }
 
-  const query = queryParts.join(' ');
-  const encodedQuery = encodeURIComponent(query);
-  const perPage = Math.min(params.limit || 30, 100);
+  // Add filters - these map directly to gh search prs flags
+  if (params.state) {
+    args.push('--state', params.state);
+  }
+  if (params.author) {
+    args.push('--author', params.author);
+  }
+  if (params.assignee) {
+    args.push('--assignee', params.assignee);
+  }
+  if (params.mentions) {
+    args.push('--mentions', params.mentions);
+  }
+  if (params.commenter) {
+    args.push('--commenter', params.commenter);
+  }
+  if (params.involves) {
+    args.push('--involves', params.involves);
+  }
+  if (params['reviewed-by']) {
+    args.push('--reviewed-by', params['reviewed-by']);
+  }
+  if (params['review-requested']) {
+    args.push('--review-requested', params['review-requested']);
+  }
+  if (params.head) {
+    args.push('--head', params.head);
+  }
+  if (params.base) {
+    args.push('--base', params.base);
+  }
+  if (params.language) {
+    args.push('--language', params.language);
+  }
 
-  return {
-    command: 'api',
-    args: [`search/issues?q=${encodedQuery}&per_page=${perPage}`],
-  };
+  // Date filters - gh search prs supports more flexible date formats
+  if (params.created) {
+    args.push('--created', params.created);
+  }
+  if (params.updated) {
+    args.push('--updated', params.updated);
+  }
+  if (params['merged-at']) {
+    args.push('--merged-at', params['merged-at']);
+  }
+  if (params.closed) {
+    args.push('--closed', params.closed);
+  }
+
+  // Boolean filters
+  if (params.draft !== undefined) {
+    if (params.draft) {
+      args.push('--draft');
+    }
+    // Note: gh search prs doesn't have a --no-draft flag, so we omit it if false
+  }
+  if (params.merged !== undefined) {
+    if (params.merged) {
+      args.push('--merged');
+    }
+    // Note: for non-merged PRs, we'd need to use query syntax like "is:unmerged"
+    // This could be added to the main query if needed
+  }
+  if (params.locked !== undefined) {
+    if (params.locked) {
+      args.push('--locked');
+    }
+  }
+
+  // Advanced filters available in gh search prs
+  if (params.checks) {
+    args.push('--checks', params.checks);
+  }
+  if (params.review) {
+    args.push('--review', params.review);
+  }
+  if (params.app) {
+    args.push('--app', params.app);
+  }
+  if (params.archived !== undefined) {
+    args.push('--archived', String(params.archived));
+  }
+  if (params.interactions !== undefined) {
+    args.push('--interactions', String(params.interactions));
+  }
+  if (params['team-mentions']) {
+    args.push('--team-mentions', params['team-mentions']);
+  }
+  if (params.reactions !== undefined) {
+    args.push('--reactions', String(params.reactions));
+  }
+
+  // Boolean "no-" filters
+  if (params['no-assignee']) {
+    args.push('--no-assignee');
+  }
+  if (params['no-label']) {
+    args.push('--no-label');
+  }
+  if (params['no-milestone']) {
+    args.push('--no-milestone');
+  }
+  if (params['no-project']) {
+    args.push('--no-project');
+  }
+
+  // Array filters
+  if (params.label) {
+    const labels = Array.isArray(params.label) ? params.label : [params.label];
+    labels.forEach(label => {
+      args.push('--label', label);
+    });
+  }
+  if (params.milestone) {
+    args.push('--milestone', params.milestone);
+  }
+  if (params.project) {
+    args.push('--project', params.project);
+  }
+  if (params.visibility) {
+    args.push('--visibility', params.visibility);
+  }
+  if (params.match) {
+    params.match.forEach(field => {
+      args.push('--match', field);
+    });
+  }
+
+  return { command: 'search', args };
 }
 
 export function buildGitHubPullRequestsListCommand(
@@ -577,6 +810,27 @@ export function buildGitHubPullRequestsListCommand(
   }
 
   return { command: 'pr', args };
+}
+
+/**
+ * Filter PR results based on withComments parameter
+ * Removes comments array when withComments is false (default behavior)
+ */
+function filterPRResults(
+  prs: GitHubPullRequestItem[],
+  withComments: boolean = false
+): GitHubPullRequestItem[] {
+  if (withComments) {
+    // Keep comments as they are
+    return prs;
+  }
+
+  // Remove comments from each PR when withComments is false
+  return prs.map(pr => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { comments, ...prWithoutComments } = pr;
+    return prWithoutComments;
+  });
 }
 
 async function fetchPRCommitData(
