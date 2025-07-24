@@ -18,7 +18,13 @@ const DESCRIPTION = `Search GitHub repositories by topic, language, owner, or ke
 
 Supports multiple queries (up to 5) executed sequentially.
 
-For package discovery, consider using packageSearch tool instead.`;
+SEARCH STRATEGY:
+ Specific repository: Use limit=1 per query
+ Multiple repositories: Separate into individual queries with limit=1 each  
+ Exploratory search: Use higher limits for broader discovery
+ Limit repositories to search for if possible to reduce tokens usage
+
+For package discovery, consider using packageSearch tool.`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
@@ -197,7 +203,7 @@ const GitHubReposSearchQuerySchema = z.object({
     .union([z.number().int().min(1).max(100), z.null()])
     .optional()
     .describe(
-      'Maximum number of repositories to return (1-100). TOKEN OPTIMIZATION: Use 3 for specific searches, 10 for exploratory. Always combine with sort=stars.'
+      'Maximum number of repositories to return (1-100). TOKEN OPTIMIZATION: Use 1 for specific repository searches, 10-20 for exploratory discovery. For multiple specific repositories, create separate queries with limit=1 each.'
     ),
 });
 
