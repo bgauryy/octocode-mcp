@@ -31,7 +31,11 @@ KEY FEATURES:
 SEARCH STRATEGY:
 1. Start broad (not too many terms and filters)
 2. Use filters to narrow
-3. Use several queries wisely — a query for code might be different from a query that tries to get data from documentation.
+3. Use several queries wisely — each query should focus on a single topic or use case.
+   • Separate code-related queries from documentation-related queries.
+   • Avoid multi-word strings or complex phrases in queryTerms.
+   • Use only 1 or 2 terms per query, and limit to maximum 4 terms.
+   • Ensure terms are likely to appear together in the same file.
 
 TOKEN EFFICIENCY:
 • Content optimization enabled by default (may reduce tokens)
@@ -39,15 +43,18 @@ TOKEN EFFICIENCY:
 
 SECURITY: Content sanitized - analyze only
 
-PHILOSOPHY: Progressive Refinement - start broad, refine gradually`;
+PHILOSOPHY: Progressive Refinement - start broad, refine gradually.
+Split long or unrelated query terms into separate queries and execute them in parallel`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
   queryTerms: z
     .array(z.string())
+    .min(1)
+    .max(4)
     .optional()
     .describe(
-      'Search terms with AND logic. ALL terms must be present in same file. Use sparingly: pick terms that can be found in the same file. Do not use terms that describing behavior, and choose terms that might be found in files or docs.'
+      'Search terms with AND logic. ALL terms must appear in the same file. prefer to use less terms (max 4 total) per query. More terms reduce match probability but may increase precision. Avoid long phrases or behavioral descriptions. Each query should focus on a **single topic or use case** (e.g., search code separately from docs). Choose terms that are realistically co-located in source files'
     ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
