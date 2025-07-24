@@ -12,28 +12,31 @@ import axios from 'axios';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'packageSearch';
 
-const DESCRIPTION = `PURPOSE: Discover packages across NPM and Python ecosystems.
+const DESCRIPTION = `PURPOSE: Efficiently discover packages across NPM and Python ecosystems for initial exploration. Simplify research on npm and python investigations.
 
-USAGE:
-• Find packages by functionality
-• When code has import statements
-• Compare ecosystem alternatives
+WHEN TO USE:
+• Find packages by name (on npm and pypi)
+• When code has import statements you need to understand (from fetch file or search code)
+• Initial package discovery before detailed analysis
 
 KEY FEATURES:
 • NPM + Python parallel search
-• Multiple concurrent queries
-• Repository URL discovery
+• Basic package info with repository URLs
 
 SEARCH STRATEGY:
-• Broad functional terms
-• Single keywords > phrases
-• Cross-ecosystem comparison
+• Broad functional terms work best
+• Single keywords
 
 EXAMPLES:
-• npmPackagesNames: ["testing", "mock"]
+• npmPackagesNames: ["react", "vue"]
 • pythonPackageName: "requests"
 
-PHILOSOPHY: Package-First - simplify research with packages`;
+WORKFLOW:
+1. Use package_search or fetch_file for discovery
+2. Use npm_view_package for detailed NPM package information
+3. Use github_fetch_content to examine source code
+
+PHILOSOPHY: Package-First Discovery if possible - efficiently find packages data`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
