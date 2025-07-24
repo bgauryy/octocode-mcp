@@ -43,10 +43,11 @@ import {
   NPM_VIEW_PACKAGE_TOOL_NAME,
   registerNpmViewPackageTool,
 } from './mcp/tools/npm_view_package.js';
+import { version } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
-  version: '2.5.1',
+  version,
   description: PROMPT_SYSTEM_PROMPT,
 };
 
