@@ -91,8 +91,15 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
-        'api',
-        ['search/issues?q=fix%20type%3Apr&per_page=30'],
+        'search',
+        [
+          'prs',
+          'fix',
+          '--json',
+          'assignees,author,authorAssociation,body,closedAt,commentsCount,createdAt,id,isDraft,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
+          '--limit',
+          '30',
+        ],
         { cache: false }
       );
     });
