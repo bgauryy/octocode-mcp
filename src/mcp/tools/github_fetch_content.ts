@@ -8,7 +8,7 @@ import {
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
-import { minifyContent } from '../../utils/minifier';
+import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 
@@ -460,23 +460,28 @@ async function processFileContent(
 
     // Calculate actual range with context
     const contextStart = Math.max(1, startLine - contextLines);
-    const contextEnd = endLine
-      ? Math.min(totalLines, endLine + contextLines)
-      : Math.min(totalLines, startLine + contextLines);
+    let adjustedEndLine = endLine;
 
-    // Validate endLine if provided
+    // Validate and auto-adjust endLine if provided
     if (endLine !== undefined) {
       if (endLine < startLine) {
         return createResult({
           error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
         });
       }
+
+      // Auto-adjust endLine to file boundaries with helpful message
       if (endLine > totalLines) {
-        return createResult({
-          error: `Invalid endLine ${endLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
-        });
+        adjustedEndLine = totalLines;
+        securityWarnings.push(
+          `Requested endLine ${endLine} adjusted to ${totalLines} (file end)`
+        );
       }
     }
+
+    const contextEnd = adjustedEndLine
+      ? Math.min(totalLines, adjustedEndLine + contextLines)
+      : Math.min(totalLines, startLine + contextLines);
 
     // Extract the specified range with context from ORIGINAL content
     const selectedLines = lines.slice(contextStart - 1, contextEnd);
@@ -490,7 +495,7 @@ async function processFileContent(
       const lineNumber = contextStart + index;
       const isInTargetRange =
         lineNumber >= startLine &&
-        (endLine === undefined || lineNumber <= endLine);
+        (adjustedEndLine === undefined || lineNumber <= adjustedEndLine);
       const marker = isInTargetRange ? '→' : ' ';
       return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
     });
@@ -514,7 +519,7 @@ async function processFileContent(
       });
 
       const codeContent = codeLines.join('\n');
-      const minifyResult = await minifyContent(codeContent, filePath);
+      const minifyResult = await minifyContentV2(codeContent, filePath);
 
       if (!minifyResult.failed) {
         // Apply minification first, then add simple line annotations
@@ -526,7 +531,7 @@ async function processFileContent(
       }
     } else {
       // Full file minification
-      const minifyResult = await minifyContent(finalContent, filePath);
+      const minifyResult = await minifyContentV2(finalContent, filePath);
       finalContent = minifyResult.content;
       minificationFailed = minifyResult.failed;
       minificationType = minifyResult.type;

@@ -306,6 +306,290 @@ describe('GitHub Fetch Content Tool', () => {
     });
   });
 
+  describe('Line Number Auto-Adjustment', () => {
+    it('should auto-adjust endLine when it exceeds file length', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const fileContent = [
+        'line 1',
+        'line 2',
+        'line 3',
+        'line 4',
+        'line 5',
+      ].join('\n');
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse({
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          name: 'small-file.txt',
+          path: 'small-file.txt',
+          type: 'file',
+          encoding: 'base64',
+        })
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            filePath: 'small-file.txt',
+            startLine: 2,
+            endLine: 50, // Exceeds file length of 5 lines
+            contextLines: 0, // No context for clearer test
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      const fileResult = responseData.results[0].result;
+
+      // Should succeed with adjusted endLine
+      expect(fileResult.error).toBeUndefined();
+      expect(fileResult.totalLines).toBe(5);
+      expect(fileResult.requestedEndLine).toBe(50);
+      expect(fileResult.endLine).toBe(5); // Auto-adjusted to file end
+
+      // Should include security warning about adjustment
+      expect(fileResult.securityWarnings).toContain(
+        'Requested endLine 50 adjusted to 5 (file end)'
+      );
+
+      // Content should include lines 2-5
+      expect(fileResult.content).toContain('line 2');
+      expect(fileResult.content).toContain('line 3');
+      expect(fileResult.content).toContain('line 4');
+      expect(fileResult.content).toContain('line 5');
+    });
+
+    it('should handle endLine adjustment with context lines', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const fileContent = Array.from(
+        { length: 10 },
+        (_, i) => `line ${i + 1}`
+      ).join('\n');
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse({
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          name: 'test.txt',
+          path: 'test.txt',
+          type: 'file',
+          encoding: 'base64',
+        })
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            filePath: 'test.txt',
+            startLine: 5,
+            endLine: 100, // Way beyond file length
+            contextLines: 2,
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      const fileResult = responseData.results[0].result;
+
+      expect(fileResult.totalLines).toBe(10);
+      expect(fileResult.requestedEndLine).toBe(100);
+      expect(fileResult.securityWarnings).toContain(
+        'Requested endLine 100 adjusted to 10 (file end)'
+      );
+    });
+
+    it('should not adjust endLine when within bounds', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const fileContent = Array.from(
+        { length: 20 },
+        (_, i) => `line ${i + 1}`
+      ).join('\n');
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse({
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          name: 'normal.txt',
+          path: 'normal.txt',
+          type: 'file',
+          encoding: 'base64',
+        })
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            filePath: 'normal.txt',
+            startLine: 5,
+            endLine: 10, // Within bounds
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      const fileResult = responseData.results[0].result;
+
+      // No adjustment needed
+      expect(fileResult.securityWarnings).toBeUndefined();
+      expect(fileResult.requestedEndLine).toBe(10);
+    });
+
+    it('should still error when endLine < startLine', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const fileContent = Array.from(
+        { length: 10 },
+        (_, i) => `line ${i + 1}`
+      ).join('\n');
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse({
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          name: 'test.txt',
+          path: 'test.txt',
+          type: 'file',
+          encoding: 'base64',
+        })
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            filePath: 'test.txt',
+            startLine: 5,
+            endLine: 3, // Less than startLine
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      const fileResult = responseData.results[0].result;
+
+      // Should error on invalid range
+      expect(fileResult.error).toContain(
+        'Invalid range: endLine (3) must be greater than or equal to startLine (5)'
+      );
+    });
+
+    it('should handle edge case: single line file with large endLine', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const fileContent = 'single line content';
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse({
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          name: 'single.txt',
+          path: 'single.txt',
+          type: 'file',
+          encoding: 'base64',
+        })
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            filePath: 'single.txt',
+            startLine: 1,
+            endLine: 1000,
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      const fileResult = responseData.results[0].result;
+
+      expect(fileResult.totalLines).toBe(1);
+      expect(fileResult.requestedEndLine).toBe(1000);
+      expect(fileResult.securityWarnings).toContain(
+        'Requested endLine 1000 adjusted to 1 (file end)'
+      );
+      expect(fileResult.content).toContain('single line content');
+    });
+
+    it('should correctly annotate lines when endLine is adjusted', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const fileContent = [
+        'line 1',
+        'line 2',
+        'line 3',
+        'line 4',
+        'line 5',
+      ].join('\n');
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse({
+          content: Buffer.from(fileContent).toString('base64'),
+          size: fileContent.length,
+          name: 'annotate-test.txt',
+          path: 'annotate-test.txt',
+          type: 'file',
+          encoding: 'base64',
+        })
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            filePath: 'annotate-test.txt',
+            startLine: 3,
+            endLine: 20, // Beyond file length
+            contextLines: 1,
+            minified: false, // Disable minification to see raw annotations
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      const fileResult = responseData.results[0].result;
+
+      // Verify the content has correct line annotations
+      const lines = fileResult.content.split('\n');
+
+      // Context line before (line 2)
+      expect(lines[0]).toMatch(/^\s+2: line 2$/);
+
+      // Target lines (3-5) should have arrow markers
+      expect(lines[1]).toMatch(/^→\s*3: line 3$/);
+      expect(lines[2]).toMatch(/^→\s*4: line 4$/);
+      expect(lines[3]).toMatch(/^→\s*5: line 5$/);
+
+      // No context after since we hit file end
+      expect(lines.length).toBe(4);
+    });
+  });
+
   describe('Error Handling', () => {
     it('should handle file not found error', async () => {
       registerFetchGitHubFileContentTool(mockServer.server);
