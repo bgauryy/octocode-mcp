@@ -20,31 +20,20 @@ export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with progressive refinement.
 
 USAGE:
-• Find implementations and patterns
-• Locate specific functions or classes
-• Discover code usage examples
-
-KEY FEATURES:
-• Content minification by default
-• Smart filtering (language, owner, size)
+• Find implementations and internal mechanisms
+• Locate specific functions, methods, or identifiers
+• Discover usage patterns in code
 
 SEARCH STRATEGY:
-1. Start broad (not too many terms and filters)
-2. Use filters to narrow
-3. Use several queries wisely — each query should focus on a single topic or use case.
-   • Separate code-related queries from documentation-related queries.
-   • Avoid multi-word strings or complex phrases in queryTerms.
-   • Use only 1 or 2 terms per query, and limit to maximum 4 terms.
-   • Ensure terms are likely to appear together in the same file.
+1. Use 1–2 precise, literal code terms per query that are likely to appear together (e.g., identifiers, keywords, filenames)
+2. Avoid abstract or semantic terms in code search (e.g., "implementation", "feature")—they rarely appear in source files
+3. When targeting documentation or high-level context, semantic terms are valid and useful
+4. For robust coverage, pair semantic-oriented queries with literal-term queries targeting code
+5. Execute up to 5 parallel queries—balance coverage and precision across them
 
-TOKEN EFFICIENCY:
-• Content optimization enabled by default (may reduce tokens)
-• Use filters to reduce results
+TOKEN EFFICIENCY: Auto-minified content, filtered structure, sanitized output
 
-SECURITY: Content sanitized - analyze only
-
-PHILOSOPHY: Progressive Refinement - start broad, refine gradually.
-Split long or unrelated query terms into separate queries and execute them in parallel`;
+PHILOSOPHY: Literal code terms for precision + semantic fallback for context = complete and effective search`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
@@ -54,7 +43,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .max(4)
     .optional()
     .describe(
-      'Search terms with AND logic. ALL terms must appear in the same file. prefer to use less terms (max 4 total) per query. More terms reduce match probability but may increase precision. Avoid long phrases or behavioral descriptions. Each query should focus on a **single topic or use case** (e.g., search code separately from docs). Choose terms that are realistically co-located in source files'
+      'Search terms with AND logic - ALL terms must appear in same file. Use 1-2 specific terms that actually co-occur in code (function names, variable names, keywords). Avoid generic words or long phrases.'
     ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
@@ -94,16 +83,12 @@ const GitHubCodeSearchQuerySchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      'Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.'
-    ),
+    .describe('Optimize content for token efficiency (default: true)'),
   sanitize: z
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      'Sanitize content for security (enabled by default). Removes potential secrets and malicious content. Set to false only when raw content is required.'
-    ),
+    .describe('Remove secrets and malicious content (default: true)'),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -123,14 +108,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       inputSchema: {
         queries: z
           .array(GitHubCodeSearchQuerySchema)
-          .min(1)
+          .min(3)
           .max(5)
-          .describe(
-            'Array of up to 5 different search queries for parallel execution'
-          ),
+          .describe('Up to 5 search queries executed in parallel'),
       },
       annotations: {
-        title: 'GitHub Code Search - Bulk Queries Only (Optimized)',
+        title: 'GitHub Code Search - Parallel Queries',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
