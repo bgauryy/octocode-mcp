@@ -257,38 +257,6 @@ export function getFileType(filePath: string): string {
   }
 }
 
-// Helper function to check if a language is indentation-sensitive
-export function isIndentationSensitive(filePath: string): boolean {
-  const fileType = getFileType(filePath);
-  const filename = filePath.split('/').pop()?.toLowerCase();
-
-  return (
-    [
-      'python',
-      'yaml',
-      'pug',
-      'sass', // Indented Sass syntax
-      'makefile',
-      'markdown', // For nested lists, code blocks
-      // Additional indentation-sensitive languages
-      'coffeescript',
-      'haml',
-      'slim',
-      'nim',
-      'fsharp',
-      'haskell',
-      'restructuredtext',
-      'livescript',
-      'elm',
-      'starlark',
-      'cmake',
-    ].includes(fileType) ||
-    filename === 'makefile' ||
-    filename === 'build' ||
-    filename === 'cmakelists.txt'
-  );
-}
-
 // Fallback minification function for non-JavaScript files
 export function minifyGenericContent(
   content: string,

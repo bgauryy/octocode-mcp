@@ -1,6 +1,6 @@
 import { allRegexPatterns } from './regexes';
 
-export interface SanitizationResult {
+interface SanitizationResult {
   content: string;
   hasSecrets: boolean;
   secretsDetected: string[];

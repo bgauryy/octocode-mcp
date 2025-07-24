@@ -32,7 +32,7 @@ interface ToolRelationship {
   }>;
 }
 
-export const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
+const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
   [TOOL_NAMES.package_search]: {
     fallbackTools: [
       {

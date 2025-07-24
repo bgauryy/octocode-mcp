@@ -68,34 +68,6 @@ export abstract class GitHubCommandBuilder<
 }
 
 /**
- * GitHub Code Search Command Builder
- */
-export class GitHubCodeSearchBuilder extends GitHubCommandBuilder<any> {
-  protected initializeCommand(): this {
-    this.args = ['code'];
-    return this;
-  }
-
-  build(params: any): string[] {
-    return this.reset()
-      .initializeCommand()
-      .addQuery({
-        exactQuery: params.exactQuery,
-        queryTerms: params.queryTerms,
-      })
-      .addLanguage(params.language)
-      .addOwnerRepo({ owner: params.owner, repo: params.repo })
-      .addFlag('filename', params.filename)
-      .addFlag('extension', params.extension)
-      .addFlag('size', params.size)
-      .addFlag('match', params.match)
-      .addLimit(params.limit, 30)
-      .addJsonOutput('repository,path,textMatches,sha,url')
-      .getArgs();
-  }
-}
-
-/**
  * GitHub Issues Search Command Builder
  */
 export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
@@ -323,52 +295,6 @@ export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
     );
 
     return this.getArgs();
-  }
-}
-
-/**
- * GitHub Pull Requests Search Command Builder
- */
-export class GitHubPullRequestsSearchBuilder extends GitHubCommandBuilder<any> {
-  protected initializeCommand(): this {
-    this.args = ['pr', 'list'];
-    return this;
-  }
-
-  build(params: any): string[] {
-    const builder = this.reset().initializeCommand();
-
-    // Add main query
-    if (params.query) {
-      this.args.push(params.query.trim());
-    }
-
-    return builder
-      .addOwnerRepo({ owner: params.owner, repo: params.repo })
-      .addUserFilters(params)
-      .addDateRange(params)
-      .addLanguage(params.language)
-      .addFlags(params, {
-        app: 'app',
-        archived: 'archived',
-        assignee: 'assignee',
-        author: 'author',
-        base: 'base',
-        closed: 'closed',
-        draft: 'draft',
-        head: 'head',
-        label: 'label',
-        milestone: 'milestone',
-        review: 'review',
-        'review-requested': 'review-requested',
-        reviewer: 'reviewer',
-        sort: 'sort',
-        state: 'state',
-        updated: 'updated',
-      })
-      .addLimit(params.limit, 30)
-      .addJsonOutput()
-      .getArgs();
   }
 }
 

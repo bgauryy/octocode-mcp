@@ -2,8 +2,7 @@
  * Base command builder for CLI tools
  * Eliminates duplicated command construction logic across tools
  */
-
-export type CommandType = 'github' | 'npm';
+type CommandType = 'github' | 'npm';
 
 export interface BaseCommandParams {
   [key: string]: unknown;

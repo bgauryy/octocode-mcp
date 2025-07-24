@@ -161,17 +161,6 @@ export const SUGGESTIONS = {
 • Use package_search tool for discovery`,
 } as const;
 
-export const VALIDATION_MESSAGES = {
-  EMPTY_QUERY_SUGGESTION:
-    'Empty query - try "useState", "authentication", or language:python',
-  REPO_FORMAT_SUGGESTION:
-    'Repository format error - use "owner/repo" format (e.g., "facebook/react")',
-  INVALID_SIZE_SUGGESTION:
-    'Invalid size format - use >N, <N, or N..M without quotes',
-  INVALID_SCOPE_SUGGESTION:
-    'Invalid scope - use "file" for content, "path" for filenames',
-} as const;
-
 // Helper function to get error message with context-specific suggestions
 export function getErrorWithSuggestion(options: {
   baseError: string | string[];
@@ -253,28 +242,4 @@ export function createSearchFailedError(
     default:
       return ERROR_MESSAGES.SEARCH_FAILED;
   }
-}
-
-export function createNpmPackageNotFoundError(packageName: string): string {
-  const suggestions = [];
-
-  if (packageName.includes('_')) {
-    suggestions.push(`• Try with dashes: "${packageName.replace(/_/g, '-')}"`);
-  }
-  if (packageName.includes('-')) {
-    suggestions.push(
-      `• Try without dashes: "${packageName.replace(/-/g, '')}"`
-    );
-  }
-  if (!packageName.includes('/') && packageName.length > 2) {
-    suggestions.push(
-      `• Try scoped format: "@${packageName.slice(0, 3)}/${packageName}"`
-    );
-  }
-
-  return `${ERROR_MESSAGES.NPM_PACKAGE_NOT_FOUND}: "${packageName}"
-
-${suggestions.length > 0 ? suggestions.join('\n') + '\n\n' : ''}${SUGGESTIONS.NPM_PACKAGE_NAME_ALTERNATIVES}
-
-${SUGGESTIONS.NPM_DISCOVERY_STRATEGIES}`;
 }

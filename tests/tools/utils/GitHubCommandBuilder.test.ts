@@ -1,87 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  GitHubCodeSearchBuilder,
   GitHubIssuesSearchBuilder,
-  GitHubPullRequestsSearchBuilder,
   GitHubReposSearchBuilder,
   GitHubCommitsSearchBuilder,
 } from '../../../src/mcp/tools/utils/GitHubCommandBuilder.js';
 
 describe('GitHubCommandBuilder', () => {
-  describe('GitHubCodeSearchBuilder', () => {
-    let builder: GitHubCodeSearchBuilder;
-
-    beforeEach(() => {
-      builder = new GitHubCodeSearchBuilder();
-    });
-
-    it('should build basic code search command', () => {
-      const result = builder.build({
-        exactQuery: 'function useEffect',
-      });
-
-      expect(result).toContain('code');
-      expect(result).toContain('"function useEffect"');
-      expect(result).toContain('--limit=30');
-      expect(result).toContain('--json=repository,path,textMatches,sha,url');
-    });
-
-    it('should build code search with query terms', () => {
-      const result = builder.build({
-        queryTerms: ['react', 'hooks', 'useState'],
-      });
-
-      expect(result).toContain('code');
-      expect(result).toContain('react hooks useState');
-    });
-
-    it('should build code search with all parameters', () => {
-      const result = builder.build({
-        exactQuery: 'async function',
-        language: 'typescript',
-        owner: 'microsoft',
-        repo: 'vscode',
-        filename: 'index.ts',
-        extension: 'ts',
-        size: '>1000',
-        match: 'file',
-        limit: 50,
-      });
-
-      expect(result).toContain('code');
-      expect(result).toContain('"async function"');
-      expect(result).toContain('--language=typescript');
-      expect(result).toContain('--repo=microsoft/vscode');
-      expect(result).toContain('--filename=index.ts');
-      expect(result).toContain('--extension=ts');
-      expect(result).toContain('--size=>1000');
-      expect(result).toContain('--match=file');
-      expect(result).toContain('--limit=50');
-    });
-
-    it('should handle multiple owners and repos', () => {
-      const result = builder.build({
-        exactQuery: 'test',
-        owner: ['facebook', 'microsoft'],
-        repo: ['react', 'jest'],
-      });
-
-      expect(result).toContain('--repo=facebook/react');
-      expect(result).toContain('--repo=facebook/jest');
-      expect(result).toContain('--repo=microsoft/react');
-      expect(result).toContain('--repo=microsoft/jest');
-    });
-
-    it('should handle owner without repo', () => {
-      const result = builder.build({
-        exactQuery: 'test',
-        owner: 'facebook',
-      });
-
-      expect(result).toContain('--owner=facebook');
-    });
-  });
-
   describe('GitHubIssuesSearchBuilder', () => {
     let builder: GitHubIssuesSearchBuilder;
 
@@ -165,82 +89,6 @@ describe('GitHubCommandBuilder', () => {
       expect(result).toContain('--locked');
     });
   });
-
-  describe('GitHubPullRequestsSearchBuilder', () => {
-    let builder: GitHubPullRequestsSearchBuilder;
-
-    beforeEach(() => {
-      builder = new GitHubPullRequestsSearchBuilder();
-    });
-
-    it('should build basic PR search command', () => {
-      const result = builder.build({
-        query: 'fix performance issue',
-      });
-
-      expect(result).toContain('pr');
-      expect(result).toContain('list');
-      expect(result).toContain('fix performance issue');
-      expect(result).toContain('--limit=30');
-      expect(result).toContain('--json');
-    });
-
-    it('should build PR search with all parameters', () => {
-      const result = builder.build({
-        query: 'feature request',
-        owner: 'microsoft',
-        repo: 'vscode',
-        author: 'joaomoreno',
-        assignee: 'alexdima',
-        mentions: 'sandy081',
-        involves: 'rebornix',
-        commenter: 'kieferrm',
-        app: 'dependabot',
-        archived: false,
-        base: 'main',
-        closed: '2023-01-01..2023-12-31',
-        draft: false,
-        head: 'feature-branch',
-        label: 'enhancement,good-first-issue',
-        language: 'typescript',
-        milestone: '1.75.0',
-        review: 'approved',
-        'review-requested': 'alexr00',
-        reviewer: 'mjbvz',
-        sort: 'created',
-        state: 'merged',
-        updated: '>2023-01-01',
-        limit: 50,
-      });
-
-      expect(result).toContain('pr');
-      expect(result).toContain('list');
-      expect(result).toContain('feature request');
-      expect(result).toContain('--repo=microsoft/vscode');
-      expect(result).toContain('--author=joaomoreno');
-      expect(result).toContain('--assignee=alexdima');
-      expect(result).toContain('--mentions=sandy081');
-      expect(result).toContain('--involves=rebornix');
-      expect(result).toContain('--commenter=kieferrm');
-      expect(result).toContain('--app=dependabot');
-      expect(result).toContain('--archived=false');
-      expect(result).toContain('--base=main');
-      expect(result).toContain('--closed=2023-01-01..2023-12-31');
-      expect(result).toContain('--draft=false');
-      expect(result).toContain('--head=feature-branch');
-      expect(result).toContain('--label=enhancement,good-first-issue');
-      expect(result).toContain('--language=typescript');
-      expect(result).toContain('--milestone=1.75.0');
-      expect(result).toContain('--review=approved');
-      expect(result).toContain('--review-requested=alexr00');
-      expect(result).toContain('--reviewer=mjbvz');
-      expect(result).toContain('--sort=created');
-      expect(result).toContain('--state=merged');
-      expect(result).toContain('--updated=>2023-01-01');
-      expect(result).toContain('--limit=50');
-    });
-  });
-
   describe('GitHubReposSearchBuilder', () => {
     let builder: GitHubReposSearchBuilder;
 
@@ -426,32 +274,6 @@ describe('GitHubCommandBuilder', () => {
   });
 
   describe('Common GitHub Features', () => {
-    it('should handle stringified array parameters across all builders', () => {
-      const codeBuilder = new GitHubCodeSearchBuilder();
-      const result = codeBuilder.build({
-        exactQuery: 'test',
-        owner: '"facebook", "microsoft"',
-        repo: 'react, vscode',
-      });
-
-      expect(result).toContain('--repo=facebook/react');
-      expect(result).toContain('--repo=facebook/vscode');
-      expect(result).toContain('--repo=microsoft/react');
-      expect(result).toContain('--repo=microsoft/vscode');
-    });
-
-    it('should handle comma-separated stringified arrays', () => {
-      const codeBuilder = new GitHubCodeSearchBuilder();
-      const result = codeBuilder.build({
-        exactQuery: 'test',
-        owner: 'facebook,microsoft',
-        repo: 'react',
-      });
-
-      expect(result).toContain('--repo=facebook/react');
-      expect(result).toContain('--repo=microsoft/react');
-    });
-
     it('should handle date range parameters consistently', () => {
       const issuesBuilder = new GitHubIssuesSearchBuilder();
       const result = issuesBuilder.build({
@@ -462,31 +284,6 @@ describe('GitHubCommandBuilder', () => {
 
       expect(result).toContain('--created=2023-01-01..2023-12-31');
       expect(result).toContain('--updated=>2023-06-01');
-    });
-
-    it('should handle user filters consistently across builders', () => {
-      const issuesBuilder = new GitHubIssuesSearchBuilder();
-      const prBuilder = new GitHubPullRequestsSearchBuilder();
-
-      const issuesResult = issuesBuilder.build({
-        query: 'test',
-        author: 'octocat',
-        assignee: 'developer',
-        mentions: 'reviewer',
-      });
-
-      const prResult = prBuilder.build({
-        query: 'test',
-        author: 'octocat',
-        assignee: 'developer',
-        mentions: 'reviewer',
-      });
-
-      [issuesResult, prResult].forEach(result => {
-        expect(result).toContain('--author=octocat');
-        expect(result).toContain('--assignee=developer');
-        expect(result).toContain('--mentions=reviewer');
-      });
     });
   });
 });
