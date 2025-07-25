@@ -9,30 +9,31 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
+import { GITHUB_SEARCH_CODE_TOOL_NAME } from './github_search_code';
+import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './github_fetch_content';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
-const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding.
+const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding and research planning
+
+Further Research With for more details:
+ ${GITHUB_SEARCH_CODE_TOOL_NAME}
+ ${GITHUB_GET_FILE_CONTENT_TOOL_NAME}
 
 USAGE:
-• Understand project organization
-• Verify repository access
-• Navigate to specific directories
+ Understand project organization
+ Verify repository access
+ Navigate to specific directories
 
 KEY FEATURES:
-• Recursive exploration (depth 1-4)
-• Smart filtering of irrelevant files
-• Branch/path validation
-
-DEPTH STRATEGY:
-• Default: 1 (fast, immediate content)
-• Max: 4 (prevent overload)
-• Higher depth = more comprehensive but slower (choose for deep research)
+ Recursive exploration
+ Smart filtering of irrelevant files
+ Branch/path validation
 
 BEST PRACTICES:
-• Start with root path
-• Verify branch exists
-• Use search if path unknown
+ Start with root path and depth 1
+ Verify branch exists
+ Use search if path unknown
 
 PHILOSOPHY: Build comprehensive understanding progressively`;
 
@@ -84,11 +85,11 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .number()
           .int()
           .min(1, 'Depth must be at least 1')
-          .max(4, 'Maximum depth is 4 to avoid excessive API calls')
+          .max(2, 'Maximum depth is 2 to avoid excessive API calls')
           .optional()
           .default(1)
           .describe(
-            'Depth of directory structure to explore. Default is 1 for fast results. Maximum is 4. Higher values take more time - choose depth > 1 only for deep research needs.'
+            'Depth of directory structure to explore. Default is 1 for fast results. Maximum is 2. Higher values take more time - choose depth > 1 only for deep research needs.'
           ),
 
         includeIgnored: z
@@ -653,9 +654,9 @@ Quick solution: Use the correct branch name:
 {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}
 
 Alternative solutions:
-• Search for path: github_search_code with query="path:${path}" owner="${owner}"
-• Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
-• Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+ Search for path: github_search_code with query="path:${path}" owner="${owner}"
+ Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
+ Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
     });
   } else {
     return createResult({
@@ -664,9 +665,9 @@ Alternative solutions:
 Repository might be empty, private, or you might not have sufficient permissions.
 
 Alternative solutions:
-• Verify permissions: api_status_check
-• Search accessible repos: github_search_code with owner="${owner}"
-• Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+ Verify permissions: api_status_check
+ Search accessible repos: github_search_code with owner="${owner}"
+ Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
     });
   }
 }
