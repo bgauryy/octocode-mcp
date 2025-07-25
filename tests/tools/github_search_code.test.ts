@@ -402,7 +402,8 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"authentication" "middleware"',
+          'authentication',
+          'middleware',
           '--language=javascript',
           '--filename=auth.js',
           '--extension=js',
@@ -879,7 +880,8 @@ describe('GitHub Search Code Tool', () => {
 
       expect(args).toEqual([
         'code',
-        '"function" "export"',
+        'function',
+        'export',
         '--language=javascript',
         '--limit=30',
         '--json',
@@ -905,7 +907,7 @@ describe('GitHub Search Code Tool', () => {
 
       expect(args).toEqual([
         'code',
-        '"authentication"',
+        'authentication',
         '--language=typescript',
         '--repo=microsoft/vscode',
         '--filename=auth.ts',
@@ -929,7 +931,7 @@ describe('GitHub Search Code Tool', () => {
 
       expect(args).toEqual([
         'code',
-        '"test"',
+        'test',
         '--owner=facebook',
         '--limit=30',
         '--json',
@@ -981,7 +983,7 @@ describe('GitHub Search Code Tool', () => {
         'search',
         [
           'code',
-          '"test"',
+          'test',
           '--language=javascript',
           '--limit=30',
           '--json',
