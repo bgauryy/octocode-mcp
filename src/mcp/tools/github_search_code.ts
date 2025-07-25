@@ -96,11 +96,11 @@ const GitHubCodeSearchQuerySchema = z.object({
   limit: z
     .number()
     .int()
-    .min(5)
+    .min(1)
     .max(20)
     .optional()
     .describe(
-      'Maximum results per query (5-20). Higher limits for discovery, lower for targeted searches'
+      'Maximum results per query (1-20). Higher limits for discovery, lower for targeted searches'
     ),
   visibility: z
     .enum(['public', 'private', 'internal'])
