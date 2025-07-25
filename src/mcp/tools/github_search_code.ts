@@ -17,23 +17,36 @@ import { minifyContentV2 } from '../../utils/minifier';
 
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 
-const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with progressive refinement.
+const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with progressive refinement strategy.
 
 USAGE:
 • Find implementations and internal mechanisms
-• Locate specific functions, methods, or identifiers
+• Locate specific functions, methods, or identifiers  
 • Discover usage patterns in code
 
-SEARCH STRATEGY:
-1. Use 1–2 precise, literal code terms per query that are likely to appear together (e.g., identifiers, keywords, filenames)
-2. Avoid abstract or semantic terms in code search (e.g., "implementation", "feature")—they rarely appear in source files
-3. When targeting documentation or high-level context, semantic terms are valid and useful
-4. For robust coverage, pair semantic-oriented queries with literal-term queries targeting code
-5. Execute up to 5 parallel queries—balance coverage and precision across them
+SEARCH STRATEGY - PROGRESSIVE REFINEMENT:
+1. **START BROAD**: Use 1 precise, literal code term per query (function names, class names, keywords)
+2. **Use all 5 queries initially**: Cast a wide net with different single terms
+3. **No language filters initially**: Let search find relevant files in any language
+4. **Then narrow down**: Based on broad results, add filters (owner, language, file types)
+5. **Avoid AND logic initially**: Multiple terms (["term1", "term2"]) require ALL terms in same file
+
+EXAMPLES OF CORRECT BROAD START:
+• Good: ["term1"], ["term2"], ["term3"], ["term4"], ["term5"]  
+• Bad: ["term1", "term2"] - AND logic too restrictive
+• Good: Single meaningful terms that exist in code
+• Bad: ["generic", "words"] - terms rarely co-occur in same file
+
+PROGRESSIVE REFINEMENT FLOW:
+1. Run 5 broad single-term queries
+2. Analyze results to identify key files/patterns
+3. Narrow with owner/repo filters for specific repositories
+4. Add language filters only after finding relevant files
+5. Use specific multi-term queries only when you know terms co-occur
 
 TOKEN EFFICIENCY: Auto-minified content, filtered structure, sanitized output
 
-PHILOSOPHY: Literal code terms for precision + semantic fallback for context = complete and effective search`;
+PHILOSOPHY: Broad discovery first → Progressive refinement → Precision targeting`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
@@ -43,7 +56,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .max(4)
     .optional()
     .describe(
-      'Search terms with AND logic - ALL terms must appear in same file. Use 1-2 specific terms that actually co-occur in code (function names, variable names, keywords). Avoid generic words or long phrases.'
+      'Search terms with AND logic - ALL terms must appear in same file. PROGRESSIVE STRATEGY: Start with 1 term per query for broad discovery. Use multiple terms only when you know they co-occur in code (e.g., function name + unique parameter). Avoid generic combinations.'
     ),
   language: z.string().optional().describe('Programming language filter'),
   owner: z
@@ -108,12 +121,14 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       inputSchema: {
         queries: z
           .array(GitHubCodeSearchQuerySchema)
-          .min(3)
+          .min(1)
           .max(5)
-          .describe('Up to 5 search queries executed in parallel'),
+          .describe(
+            '1-5 search queries executed in parallel. PROGRESSIVE STRATEGY: Start with 5 broad single-term queries for discovery, then narrow with focused searches based on results.'
+          ),
       },
       annotations: {
-        title: 'GitHub Code Search - Parallel Queries',
+        title: 'GitHub Code Search - Progressive Refinement',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -141,6 +156,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 /**
  * Execute multiple GitHub code search queries in parallel.
  *
+ * PROGRESSIVE REFINEMENT STRATEGY:
+ * - PHASE 1: Broad Discovery - Use 5 single-term queries without filters
+ * - PHASE 2: Pattern Analysis - Identify key files, repositories, languages
+ * - PHASE 3: Targeted Search - Add specific filters based on Phase 1 results
+ * - PHASE 4: Precision Queries - Use multi-term queries for known co-occurrences
+ *
  * SMART MIXED RESULTS HANDLING:
  * - Each query is processed independently
  * - Results array contains both successful and failed queries
@@ -153,13 +174,11 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
  * - Summary statistics show total vs successful queries
  * - User gets complete picture: what worked + what failed + how to fix
  *
- * EXAMPLE MIXED RESULT:
- * Query 1: Success → Returns code results
- * Query 2: Rate limit → Smart error with timing guidance
- * Query 3: Success → Returns code results
- * Query 4: Repo not found → Smart error with discovery hints
- *
- * Result: 4 total queries, 2 successful, with actionable error messages
+ * EXAMPLE PROGRESSIVE FLOW:
+ * Phase 1: ["term1"], ["term2"], ["term3"], ["term4"], ["term5"]
+ * Phase 2: Analyze results → identify relevant patterns
+ * Phase 3: Add owner filters → ["term1", owner: "target_owner"], ["term2", owner: "repo_owner"]
+ * Phase 4: Precision → ["term1", "specific_param"] (known co-occurrence)
  */
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[]
@@ -180,7 +199,7 @@ async function searchMultipleGitHubCode(
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
-          error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term`,
+          error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term. PROGRESSIVE TIP: Start with single broad terms like ["term1"] or ["term2"]`,
         });
         continue;
       }
@@ -276,11 +295,13 @@ function handleSearchError(errorMessage: string): CallToolResult {
   // Rate limit with smart timing guidance
   if (errorMessage.includes('rate limit') || errorMessage.includes('403')) {
     return createResult({
-      error: `GitHub API rate limit reached. Try again in 5-10 minutes, or use these strategies:
-• Search fewer terms per query
-• Use owner/repo filters to narrow scope
-• Try npm package search for package-related queries
-• Use separate searches instead of complex queries`,
+      error: `GitHub API rate limit reached. PROGRESSIVE STRATEGY recovery:
+• PHASE 1: Wait 5-10 minutes, then restart with 5 broad single-term queries
+• PHASE 2: Use owner/repo filters to narrow scope: owner="target_owner" 
+• PHASE 3: Try npm package search for package-related queries
+• PHASE 4: Use separate sequential searches instead of parallel queries
+
+Example restart: ["term1"], ["term2"], ["term3"], ["term4"], ["term5"]`,
     });
   }
 
@@ -289,19 +310,21 @@ function handleSearchError(errorMessage: string): CallToolResult {
     return createResult({
       error: `GitHub authentication required. Fix with:
 1. Run: gh auth login
-2. Verify access: gh auth status
-3. For private repos: use api_status_check to verify org access`,
+2. Verify access: gh auth status  
+3. For private repos: use api_status_check to verify org access
+4. Then restart with broad discovery queries: ["term1"], ["term2"]`,
     });
   }
 
   // Network/timeout with fallback suggestions
   if (errorMessage.includes('timed out') || errorMessage.includes('network')) {
     return createResult({
-      error: `Network timeout. Try these alternatives:
-• Reduce search scope with owner or language filters
-• Use github_search_repos to find repositories first
-• Try npm package search for package discovery
-• Check network connection and retry`,
+      error: `Network timeout. PROGRESSIVE RECOVERY strategy:
+• PHASE 1: Reduce scope - start with single-term queries: ["term1"]
+• PHASE 2: Add owner filter after success: ["term1", owner: "target_owner"]
+• PHASE 3: Use github_search_repos to find repositories first
+• PHASE 4: Try npm package search for package discovery
+• Check network connection and retry with simpler queries`,
     });
   }
 
@@ -311,11 +334,12 @@ function handleSearchError(errorMessage: string): CallToolResult {
     errorMessage.includes('Invalid query')
   ) {
     return createResult({
-      error: `Invalid search query. Common fixes:
+      error: `Invalid search query. PROGRESSIVE FIXES:
+• PHASE 1: Start simple - single terms: ["term1"] not ["term1", "term2"]  
 • Remove special characters: ()[]{}*?^$|.\\
-• Use quotes only for exact phrases: "error handling"
+• Use quotes only for exact phrases: "exact phrase"
 • Avoid escaped quotes: use term instead of "term"
-• Try broader terms: "react" instead of "React.Component"`,
+• PROGRESSIVE EXAMPLE: Start ["term1"] → then ["term1.method"] → then ["methodName"]`,
     });
   }
 
@@ -325,22 +349,24 @@ function handleSearchError(errorMessage: string): CallToolResult {
     errorMessage.includes('owner not found')
   ) {
     return createResult({
-      error: `Repository/owner not found. Discovery strategies:
-• Use github_search_repos to find correct names
-• Check for typos in owner/repo names
-• Try without owner filter for broader search
-• Use npm package search if looking for packages`,
+      error: `Repository/owner not found. PROGRESSIVE DISCOVERY strategies:
+• PHASE 1: Remove owner/repo filters, search broadly: ["term1"]
+• PHASE 2: Use github_search_repos to find correct names
+• PHASE 3: Check for typos in owner/repo names  
+• PHASE 4: Use npm package search if looking for packages
+• Example: ["term1"] → find owner/repo → ["term1", owner: "target_owner"]`,
     });
   }
 
   // JSON parsing with system guidance
   if (errorMessage.includes('JSON')) {
     return createResult({
-      error: `GitHub CLI response parsing failed. System issue - try:
+      error: `GitHub CLI response parsing failed. System recovery:
 • Update GitHub CLI: gh extension upgrade
-• Retry in a few moments
-• Use github_search_repos as alternative
-• Check gh auth status for authentication`,
+• Retry with simpler broad queries: ["term1"], ["term2"]
+• Use github_search_repos as alternative for repo discovery
+• Check gh auth status for authentication
+• Start with single-term queries to reduce response complexity`,
     });
   }
 
@@ -348,11 +374,11 @@ function handleSearchError(errorMessage: string): CallToolResult {
   return createResult({
     error: `Code search failed: ${errorMessage}
 
-Progressive recovery strategy:
-1. Try broader search terms
-2. Use github_search_repos to find repositories
-3. Use npm package search for package-related queries
-4. Check github CLI status: gh auth status`,
+PROGRESSIVE RECOVERY STRATEGY:
+PHASE 1: Restart broad - Use 5 single-term queries: ["term1"], ["term2"], ["term3"], ["term4"], ["term5"]
+PHASE 2: Analyze results to identify patterns and key repositories  
+PHASE 3: Add specific filters based on successful Phase 1 results
+PHASE 4: Use github_search_repos for repository discovery if needed`,
   });
 }
 

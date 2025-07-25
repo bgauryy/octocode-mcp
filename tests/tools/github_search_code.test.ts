@@ -154,7 +154,7 @@ describe('GitHub Search Code Tool', () => {
             queries: expect.any(Object),
           }),
           annotations: expect.objectContaining({
-            title: 'GitHub Code Search - Parallel Queries',
+            title: 'GitHub Code Search - Progressive Refinement',
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: true,
