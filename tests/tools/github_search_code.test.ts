@@ -954,6 +954,398 @@ describe('GitHub Search Code Tool', () => {
         'repository,path,textMatches,sha,url',
       ]);
     });
+
+    it('should handle owner arrays correctly', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['function', 'async'],
+        owner: ['facebook', 'microsoft'],
+        language: 'typescript',
+        limit: 10,
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'function',
+        'async',
+        '--language=typescript',
+        '--owner=facebook',
+        '--owner=microsoft',
+        '--limit=10',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle repo arrays correctly', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['authentication'],
+        repo: ['facebook/react', 'microsoft/typescript'],
+        language: 'javascript',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'authentication',
+        '--language=javascript',
+        '--repo=facebook/react',
+        '--repo=microsoft/typescript',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle match arrays correctly', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['import'],
+        match: ['file', 'path'],
+        language: 'python',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'import',
+        '--language=python',
+        '--match=file',
+        '--match=path',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle all match types individually', () => {
+      // Test file match
+      const fileArgs = buildGitHubCliArgs({
+        queryTerms: ['export'],
+        match: 'file',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(fileArgs).toContain('--match=file');
+
+      // Test path match
+      const pathArgs = buildGitHubCliArgs({
+        queryTerms: ['export'],
+        match: 'path',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(pathArgs).toContain('--match=path');
+    });
+
+    it('should handle various size range formats', () => {
+      const testCases = [
+        { size: '>1000', expected: '--size=>1000' },
+        { size: '>=500', expected: '--size=>=500' },
+        { size: '<2000', expected: '--size=<2000' },
+        { size: '<=1500', expected: '--size=<=1500' },
+        { size: '100..500', expected: '--size=100..500' },
+        { size: '1000', expected: '--size=1000' },
+      ];
+
+      testCases.forEach(({ size, expected }) => {
+        const args = buildGitHubCliArgs({
+          queryTerms: ['function'],
+          size,
+          minify: true,
+          sanitize: true,
+        });
+
+        expect(args).toContain(expected);
+      });
+    });
+
+    it('should handle multiple owners and repos together', () => {
+      // When both owner and repo are provided, it combines first owner with first repo
+      const args = buildGitHubCliArgs({
+        queryTerms: ['component'],
+        owner: ['facebook', 'google'],
+        repo: ['microsoft/vscode', 'vercel/next.js'],
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'component',
+        '--repo=facebook/microsoft/vscode',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle maximum complexity with all parameters', () => {
+      // When both owner and repo are provided, it combines first owner with first repo
+      const args = buildGitHubCliArgs({
+        queryTerms: ['async', 'function', 'export'],
+        language: 'typescript',
+        owner: ['facebook', 'microsoft', 'google'],
+        repo: ['vercel/next.js', 'nestjs/nest'],
+        filename: 'index.ts',
+        extension: 'ts',
+        size: '>500',
+        match: ['file', 'path'],
+        visibility: 'public',
+        limit: 100,
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'async',
+        'function',
+        'export',
+        '--language=typescript',
+        '--repo=facebook/vercel/next.js',
+        '--filename=index.ts',
+        '--extension=ts',
+        '--size=>500',
+        '--match=file',
+        '--match=path',
+        '--visibility=public',
+        '--limit=100',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle multiple owners without repo', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['react'],
+        owner: ['facebook', 'microsoft', 'google'],
+        language: 'javascript',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'react',
+        '--language=javascript',
+        '--owner=facebook',
+        '--owner=microsoft',
+        '--owner=google',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle multiple repos without owner', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['authentication'],
+        repo: ['facebook/react', 'microsoft/typescript', 'google/angular'],
+        language: 'javascript',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'authentication',
+        '--language=javascript',
+        '--repo=facebook/react',
+        '--repo=microsoft/typescript',
+        '--repo=google/angular',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle only filename without extension', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['config'],
+        filename: 'package.json',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'config',
+        '--filename=package.json',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle only extension without filename', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['import'],
+        extension: 'py',
+        language: 'python',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'import',
+        '--language=python',
+        '--extension=py',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle edge case limit values', () => {
+      // Test minimum limit
+      const minArgs = buildGitHubCliArgs({
+        queryTerms: ['test'],
+        limit: 1,
+        minify: true,
+        sanitize: true,
+      });
+      expect(minArgs).toContain('--limit=1');
+
+      // Test maximum limit
+      const maxArgs = buildGitHubCliArgs({
+        queryTerms: ['test'],
+        limit: 100,
+        minify: true,
+        sanitize: true,
+      });
+      expect(maxArgs).toContain('--limit=100');
+    });
+
+    it('should handle single queryTerm as string', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['single-term'],
+        language: 'java',
+        minify: true,
+        sanitize: true,
+      });
+
+      expect(args).toEqual([
+        'code',
+        'single-term',
+        '--language=java',
+        '--limit=30',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ]);
+    });
+
+    it('should handle visibility parameter correctly', () => {
+      const publicArgs = buildGitHubCliArgs({
+        queryTerms: ['public'],
+        visibility: 'public',
+        minify: true,
+        sanitize: true,
+      });
+      expect(publicArgs).toContain('--visibility=public');
+
+      const privateArgs = buildGitHubCliArgs({
+        queryTerms: ['private'],
+        visibility: 'private',
+        minify: true,
+        sanitize: true,
+      });
+      expect(privateArgs).toContain('--visibility=private');
+
+      const internalArgs = buildGitHubCliArgs({
+        queryTerms: ['internal'],
+        visibility: 'internal',
+        minify: true,
+        sanitize: true,
+      });
+      expect(internalArgs).toContain('--visibility=internal');
+    });
+
+    it('should maintain parameter order consistency', () => {
+      const args = buildGitHubCliArgs({
+        queryTerms: ['test'],
+        extension: 'js',
+        filename: 'test.js',
+        language: 'javascript',
+        match: 'file',
+        owner: 'facebook',
+        repo: 'react',
+        size: '>100',
+        visibility: 'public',
+        limit: 50,
+        minify: true,
+        sanitize: true,
+      });
+
+      // Verify the order matches what the CLI building function produces
+      const expectedOrder = [
+        'code',
+        'test',
+        '--language=javascript',
+        '--repo=facebook/react',
+        '--filename=test.js',
+        '--extension=js',
+        '--size=>100',
+        '--match=file',
+        '--visibility=public',
+        '--limit=50',
+        '--json',
+        'repository,path,textMatches,sha,url',
+      ];
+
+      expect(args).toEqual(expectedOrder);
+    });
+
+    it('should handle complex filename patterns', () => {
+      const testCases = [
+        { filename: 'package.json', expected: '--filename=package.json' },
+        { filename: '*.config.js', expected: '--filename=*.config.js' },
+        { filename: 'src/index.ts', expected: '--filename=src/index.ts' },
+        { filename: '.eslintrc', expected: '--filename=.eslintrc' },
+      ];
+
+      testCases.forEach(({ filename, expected }) => {
+        const args = buildGitHubCliArgs({
+          queryTerms: ['test'],
+          filename,
+          minify: true,
+          sanitize: true,
+        });
+
+        expect(args).toContain(expected);
+      });
+    });
+
+    it('should handle various programming languages', () => {
+      const languages = [
+        'javascript',
+        'typescript',
+        'python',
+        'java',
+        'go',
+        'rust',
+        'c++',
+        'c#',
+        'ruby',
+        'php',
+      ];
+
+      languages.forEach(language => {
+        const args = buildGitHubCliArgs({
+          queryTerms: ['function'],
+          language,
+          minify: true,
+          sanitize: true,
+        });
+
+        expect(args).toContain(`--language=${language}`);
+      });
+    });
   });
 
   describe('Direct Function Testing', () => {

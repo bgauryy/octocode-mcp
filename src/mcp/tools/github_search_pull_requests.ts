@@ -24,13 +24,6 @@ export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
 const DESCRIPTION = `Search GitHub pull requests with comprehensive filtering and analysis.
 
-CAPABILITIES:
- Find PRs by keywords, authors, repositories, or any combination
- Filter by state, dates, labels, review status, engagement metrics  
- Get PR metadata with commit SHAs for code analysis
-
-RETURNS: PR details, repository info, commit SHAs, optional commit diffs/comments
-
 PERFORMANCE: getCommitData=true and withComments=true are token expensive`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
@@ -64,10 +57,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .string()
           .optional()
           .describe('Programming language filter (--language)'),
-        archived: z
-          .boolean()
-          .optional()
-          .describe('Filter by repository archived state (--archived)'),
+        archived: z.boolean().optional().describe('Repository archived state'),
         visibility: z
           .union([
             z.enum(['public', 'private', 'internal']),
@@ -112,19 +102,10 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         state: z
           .enum(['open', 'closed'])
           .optional()
-          .describe('Filter by state: "open" / "closed"'),
-        draft: z
-          .boolean()
-          .optional()
-          .describe('Filter by draft state (--draft)'),
-        merged: z
-          .boolean()
-          .optional()
-          .describe('Filter by merged state (--merged)'),
-        locked: z
-          .boolean()
-          .optional()
-          .describe('Filter by locked conversation status (--locked)'),
+          .describe('PR state: "open" or "closed"'),
+        draft: z.boolean().optional().describe('Draft state'),
+        merged: z.boolean().optional().describe('Merged state'),
+        locked: z.boolean().optional().describe('Locked conversation status'),
 
         // BRANCH FILTERS - Direct CLI flag mappings
         head: z
@@ -139,73 +120,91 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         // DATE FILTERS - Direct CLI flag mappings with operator support
         created: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+          )
           .optional()
           .describe(
-            'Filter by created date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--created)'
+            'Created date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
           ),
         updated: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+          )
           .optional()
           .describe(
-            'Filter by updated date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--updated)'
+            'Updated date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
           ),
         'merged-at': z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+          )
           .optional()
           .describe(
-            'Filter by merged date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--merged-at)'
+            'Merged date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
           ),
         closed: z
           .string()
+          .regex(
+            /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+          )
           .optional()
           .describe(
-            'Filter by closed date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--closed)'
+            'Closed date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
           ),
 
         // ENGAGEMENT FILTERS - Direct CLI flag mappings with operator support
         comments: z
-          .union([z.number(), z.string()])
+          .union([
+            z.number().int().min(0),
+            z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+          ])
           .optional()
           .describe(
-            'Filter by number of comments, supports operators: ">10", ">=5", "<5", "5..10" (--comments)'
+            'Comment count. Use ">10", ">=5", "<20", "5..10", or exact number'
           ),
         reactions: z
-          .union([z.number(), z.string()])
+          .union([
+            z.number().int().min(0),
+            z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+          ])
           .optional()
           .describe(
-            'Filter by number of reactions, supports operators: ">10", ">=5", "<50", "5..50" (--reactions)'
+            'Reaction count. Use ">100", ">=10", "<50", "10..50", or exact number'
           ),
         interactions: z
-          .union([z.number(), z.string()])
+          .union([
+            z.number().int().min(0),
+            z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+          ])
           .optional()
           .describe(
-            'Total interactions (reactions + comments), supports operators: ">100", ">=50", "<20", "50..200" (--interactions)'
+            'Total interactions (reactions + comments). Use ">50", "10..100", etc.'
           ),
 
         // REVIEW & CI FILTERS - Direct CLI flag mappings
         review: z
           .enum(['none', 'required', 'approved', 'changes_requested'])
           .optional()
-          .describe('Filter by review status (--review)'),
+          .describe('Review status'),
         checks: z
           .enum(['pending', 'success', 'failure'])
           .optional()
-          .describe('Filter by checks status (--checks)'),
+          .describe('CI checks status'),
 
         // ORGANIZATION FILTERS - Direct CLI flag mappings
-        app: z
-          .string()
-          .optional()
-          .describe('Filter by GitHub App author (--app)'),
+        app: z.string().optional().describe('GitHub App author'),
         'team-mentions': z
           .string()
           .optional()
-          .describe('Filter by team mentions (--team-mentions)'),
+          .describe('Team mentions (@org/team-name)'),
         label: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Filter by label - single label or comma-separated list for OR logic: "bug,help wanted" (--label)'
+            'Labels. Single label or array for OR logic: ["bug", "feature"]'
           ),
         milestone: z
           .string()
@@ -217,22 +216,13 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .describe('Project board owner/number (--project)'),
 
         // BOOLEAN "MISSING" FILTERS - Direct CLI flag mappings
-        'no-assignee': z
-          .boolean()
-          .optional()
-          .describe('Filter by missing assignee (--no-assignee)'),
-        'no-label': z
-          .boolean()
-          .optional()
-          .describe('Filter by missing label (--no-label)'),
+        'no-assignee': z.boolean().optional().describe('PRs without assignees'),
+        'no-label': z.boolean().optional().describe('PRs without labels'),
         'no-milestone': z
           .boolean()
           .optional()
-          .describe('Filter by missing milestone (--no-milestone)'),
-        'no-project': z
-          .boolean()
-          .optional()
-          .describe('Filter by missing project (--no-project)'),
+          .describe('PRs without milestones'),
+        'no-project': z.boolean().optional().describe('PRs not in projects'),
 
         // SEARCH SCOPE - Direct CLI flag mappings
         match: z
@@ -723,9 +713,12 @@ function addParameterToArgs(
 ): void {
   if (!value) return;
 
-  // Convert array to comma-separated string as GitHub CLI expects
-  const flagValue = Array.isArray(value) ? value.join(',') : value;
-  args.push(`--${flag}`, flagValue);
+  // Handle arrays by creating multiple flags (especially important for owner, repo, etc.)
+  if (Array.isArray(value)) {
+    value.forEach((item: string) => args.push(`--${flag}`, item));
+  } else {
+    args.push(`--${flag}`, value);
+  }
 }
 
 /**

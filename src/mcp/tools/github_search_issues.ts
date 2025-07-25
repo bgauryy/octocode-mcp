@@ -53,11 +53,10 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
             'Search terms. Start simple: "error", "crash". Use quotes for exact phrases.'
           ),
         owner: z
-          .string()
-          .min(1)
+          .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization name only (e.g., "facebook", "microsoft"). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
+            'Repository owner/organization name(s) (e.g., "facebook", ["microsoft", "google"]). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()

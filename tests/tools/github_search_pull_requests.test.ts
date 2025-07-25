@@ -91,11 +91,13 @@ describe('GitHub Search Pull Requests Tool', () => {
             repo: ['repo1', 'repo2'],
           });
 
-          // Multiple owners/repos uses search command with comma-separated values
+          // Multiple owners/repos uses search command with separate flags
           expect(result.args).toContain('--owner');
-          expect(result.args).toContain('org1,org2');
+          expect(result.args).toContain('org1');
+          expect(result.args).toContain('org2');
           expect(result.args).toContain('--repo');
-          expect(result.args).toContain('repo1,repo2');
+          expect(result.args).toContain('repo1');
+          expect(result.args).toContain('repo2');
         });
 
         it('should handle state parameter', () => {
@@ -208,13 +210,17 @@ describe('GitHub Search Pull Requests Tool', () => {
 
           expect(command).toBe('search');
           expect(args).toContain('--owner');
-          expect(args).toContain('facebook,microsoft');
+          expect(args).toContain('facebook');
+          expect(args).toContain('microsoft');
           expect(args).toContain('--repo');
-          expect(args).toContain('react,vscode');
+          expect(args).toContain('react');
+          expect(args).toContain('vscode');
           expect(args).toContain('--label');
-          expect(args).toContain('bug,help wanted');
+          expect(args).toContain('bug');
+          expect(args).toContain('help wanted');
           expect(args).toContain('--visibility');
-          expect(args).toContain('public,private');
+          expect(args).toContain('public');
+          expect(args).toContain('private');
         });
 
         it('should handle single string parameters normally', () => {

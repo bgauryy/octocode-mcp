@@ -631,6 +631,567 @@ describe('GitHub Search Repositories Tool', () => {
     });
   });
 
+  describe('Comprehensive API Command Testing', () => {
+    describe('Individual Flag Testing - All String-Based', () => {
+      it('should build command with --archived flag as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          archived: true,
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('repos');
+        expect(args).toContain('--archived=true');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --archived=false flag as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          archived: false,
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--archived=false');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --created date filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          created: '>2023-01-01',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--created=>2023-01-01');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --followers number filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          followers: '>1000',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--followers=>1000');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --forks number filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          forks: '100..500',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--forks=100..500');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --good-first-issues filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          'good-first-issues': '>=10',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--good-first-issues=>=10');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --help-wanted-issues filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          'help-wanted-issues': '5..20',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--help-wanted-issues=5..20');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --include-forks flag as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          'include-forks': 'only',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--include-forks=only');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --language filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          language: 'typescript',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--language=typescript');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --license filter as string array', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          license: ['mit', 'apache-2.0'],
+        });
+
+        expect(command).toBe('search');
+        expect(args.some(arg => arg.includes('mit'))).toBe(true);
+        expect(args.some(arg => arg.includes('apache-2.0'))).toBe(true);
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --limit flag as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          limit: 50,
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--limit=50');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --match filter as string array', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          match: ['name', 'description'],
+        });
+
+        expect(command).toBe('search');
+        expect(args.some(arg => arg.includes('name'))).toBe(true);
+        expect(args.some(arg => arg.includes('description'))).toBe(true);
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --number-topics filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          'number-topics': '>3',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--number-topics=>3');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --order flag as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          order: 'asc',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--order=asc');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --owner filter as string array', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          owner: ['microsoft', 'google'],
+        });
+
+        expect(command).toBe('search');
+        expect(args.some(arg => arg.includes('microsoft'))).toBe(true);
+        expect(args.some(arg => arg.includes('google'))).toBe(true);
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --size filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          size: '>1000',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--size=>1000');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --sort flag as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          sort: 'stars',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--sort=stars');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --stars filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          stars: '>1000',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--stars=>1000');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --topic filter as string array', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          topic: ['machine-learning', 'python'],
+        });
+
+        expect(command).toBe('search');
+        expect(args.some(arg => arg.includes('machine-learning'))).toBe(true);
+        expect(args.some(arg => arg.includes('python'))).toBe(true);
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --updated date filter as string', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          updated: '2023-01-01..2023-12-31',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--updated=2023-01-01..2023-12-31');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should build command with --visibility filter as string array', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          visibility: 'public',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--visibility=public');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+
+    describe('Number Format Variations', () => {
+      it('should handle exact number values as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          stars: 1000,
+          forks: 50,
+          followers: 200,
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--stars=1000');
+        expect(args).toContain('--forks=50');
+        expect(args).toContain('--followers=200');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should handle range number formats as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          stars: '100..1000',
+          forks: '10..100',
+          'good-first-issues': '5..15',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--stars=100..1000');
+        expect(args).toContain('--forks=10..100');
+        expect(args).toContain('--good-first-issues=5..15');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should handle comparison operators as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          stars: '>=500',
+          forks: '<=100',
+          size: '>1000',
+          followers: '<10000',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--stars=>=500');
+        expect(args).toContain('--forks=<=100');
+        expect(args).toContain('--size=>1000');
+        expect(args).toContain('--followers=<10000');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+
+    describe('Date Format Variations', () => {
+      it('should handle exact date formats as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          created: '2023-01-01',
+          updated: '2023-12-31',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--created=2023-01-01');
+        expect(args).toContain('--updated=2023-12-31');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should handle date ranges as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          created: '2020-01-01..2023-12-31',
+          updated: '2023-01-01..2023-06-30',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--created=2020-01-01..2023-12-31');
+        expect(args).toContain('--updated=2023-01-01..2023-06-30');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should handle date comparison operators as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          created: '>2020-01-01',
+          updated: '>=2023-01-01',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--created=>2020-01-01');
+        expect(args).toContain('--updated=>=2023-01-01');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+
+    describe('String Array Handling', () => {
+      it('should handle single string values as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          owner: 'facebook',
+          topic: 'javascript',
+          license: 'mit',
+          visibility: 'public',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('--owner=facebook');
+        expect(args).toContain('--topic=javascript');
+        expect(args).toContain('--license=mit');
+        expect(args).toContain('--visibility=public');
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+
+      it('should handle multiple string values as string arrays', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          owner: ['facebook', 'google', 'microsoft'],
+          topic: ['javascript', 'typescript', 'react'],
+          license: ['mit', 'apache-2.0', 'bsd-3-clause'],
+        });
+
+        expect(command).toBe('search');
+
+        // Check that all owner values are present as strings
+        const ownerArgs = args.filter(arg => arg.startsWith('--owner='));
+        expect(ownerArgs.length).toBeGreaterThan(0);
+        ownerArgs.forEach(arg => expect(typeof arg).toBe('string'));
+
+        // Check that all topic values are present as strings
+        const topicArgs = args.filter(arg => arg.startsWith('--topic='));
+        expect(topicArgs.length).toBeGreaterThan(0);
+        topicArgs.forEach(arg => expect(typeof arg).toBe('string'));
+
+        // Check that all license values are present as strings
+        const licenseArgs = args.filter(arg => arg.startsWith('--license='));
+        expect(licenseArgs.length).toBeGreaterThan(0);
+        licenseArgs.forEach(arg => expect(typeof arg).toBe('string'));
+
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+
+    describe('Boolean Flag Variations', () => {
+      it('should handle include-forks string options as strings', () => {
+        const testCases: Array<'false' | 'true' | 'only'> = [
+          'false',
+          'true',
+          'only',
+        ];
+
+        testCases.forEach(value => {
+          const { command, args } = buildGitHubReposSearchCommand({
+            exactQuery: 'test',
+            'include-forks': value,
+          });
+
+          expect(command).toBe('search');
+          expect(args).toContain(`--include-forks=${value}`);
+          args.forEach(arg => expect(typeof arg).toBe('string'));
+        });
+      });
+
+      it('should handle archived boolean values as strings', () => {
+        const { command: cmd1, args: args1 } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          archived: true,
+        });
+
+        const { command: cmd2, args: args2 } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          archived: false,
+        });
+
+        expect(cmd1).toBe('search');
+        expect(cmd2).toBe('search');
+        expect(args1).toContain('--archived=true');
+        expect(args2).toContain('--archived=false');
+
+        args1.forEach(arg => expect(typeof arg).toBe('string'));
+        args2.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+
+    describe('Sort and Order Combinations', () => {
+      const sortOptions: Array<
+        'forks' | 'help-wanted-issues' | 'stars' | 'updated'
+      > = ['forks', 'help-wanted-issues', 'stars', 'updated'];
+      const orderOptions: Array<'asc' | 'desc'> = ['asc', 'desc'];
+
+      sortOptions.forEach(sortValue => {
+        orderOptions.forEach(orderValue => {
+          it(`should handle --sort=${sortValue} --order=${orderValue} as strings`, () => {
+            const { command, args } = buildGitHubReposSearchCommand({
+              exactQuery: 'test',
+              sort: sortValue,
+              order: orderValue,
+            });
+
+            expect(command).toBe('search');
+            expect(args).toContain(`--sort=${sortValue}`);
+            expect(args).toContain(`--order=${orderValue}`);
+            args.forEach(arg => expect(typeof arg).toBe('string'));
+          });
+        });
+      });
+    });
+
+    describe('Match Field Options', () => {
+      const matchOptions: Array<'name' | 'description' | 'readme'> = [
+        'name',
+        'description',
+        'readme',
+      ];
+
+      it('should handle single match field as string', () => {
+        matchOptions.forEach(field => {
+          const { command, args } = buildGitHubReposSearchCommand({
+            exactQuery: 'test',
+            match: field,
+          });
+
+          expect(command).toBe('search');
+          expect(args.some(arg => arg.includes(field))).toBe(true);
+          args.forEach(arg => expect(typeof arg).toBe('string'));
+        });
+      });
+
+      it('should handle multiple match fields as string array', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'test',
+          match: ['name', 'description', 'readme'],
+        });
+
+        expect(command).toBe('search');
+        matchOptions.forEach(field => {
+          expect(args.some(arg => arg.includes(field))).toBe(true);
+        });
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+
+    describe('Visibility Options', () => {
+      const visibilityOptions: Array<'public' | 'private' | 'internal'> = [
+        'public',
+        'private',
+        'internal',
+      ];
+
+      visibilityOptions.forEach(visibility => {
+        it(`should handle --visibility=${visibility} as string`, () => {
+          const { command, args } = buildGitHubReposSearchCommand({
+            exactQuery: 'test',
+            visibility: visibility,
+          });
+
+          expect(command).toBe('search');
+          expect(args).toContain(`--visibility=${visibility}`);
+          args.forEach(arg => expect(typeof arg).toBe('string'));
+        });
+      });
+    });
+
+    describe('Maximum Complexity Test - All Parameters as Strings', () => {
+      it('should handle all available parameters together as strings', () => {
+        const { command, args } = buildGitHubReposSearchCommand({
+          exactQuery: 'machine learning framework',
+          archived: false,
+          created: '>2020-01-01',
+          updated: '2023-01-01..2023-12-31',
+          followers: '>1000',
+          forks: '100..1000',
+          'good-first-issues': '>=5',
+          'help-wanted-issues': '>=10',
+          'include-forks': 'false',
+          language: 'python',
+          license: ['mit', 'apache-2.0'],
+          limit: 25,
+          match: ['name', 'description'],
+          'number-topics': '>2',
+          order: 'desc',
+          owner: ['facebook', 'google', 'microsoft'],
+          size: '>500',
+          sort: 'stars',
+          stars: '>1000',
+          topic: ['machine-learning', 'deep-learning', 'neural-networks'],
+          visibility: 'public',
+        });
+
+        expect(command).toBe('search');
+        expect(args).toContain('repos');
+
+        // Verify all parameters are present and are strings
+        expect(args).toContain('--archived=false');
+        expect(args).toContain('--created=>2020-01-01');
+        expect(args).toContain('--updated=2023-01-01..2023-12-31');
+        expect(args).toContain('--followers=>1000');
+        expect(args).toContain('--forks=100..1000');
+        expect(args).toContain('--good-first-issues=>=5');
+        expect(args).toContain('--help-wanted-issues=>=10');
+        expect(args).toContain('--include-forks=false');
+        expect(args).toContain('--language=python');
+        expect(args).toContain('--limit=25');
+        expect(args).toContain('--number-topics=>2');
+        expect(args).toContain('--order=desc');
+        expect(args).toContain('--size=>500');
+        expect(args).toContain('--sort=stars');
+        expect(args).toContain('--stars=>1000');
+        expect(args).toContain('--visibility=public');
+
+        // Verify array parameters are handled as strings
+        expect(args.some(arg => arg.includes('mit'))).toBe(true);
+        expect(args.some(arg => arg.includes('apache-2.0'))).toBe(true);
+        expect(args.some(arg => arg.includes('facebook'))).toBe(true);
+        expect(args.some(arg => arg.includes('google'))).toBe(true);
+        expect(args.some(arg => arg.includes('microsoft'))).toBe(true);
+        expect(args.some(arg => arg.includes('machine-learning'))).toBe(true);
+        expect(args.some(arg => arg.includes('deep-learning'))).toBe(true);
+        expect(args.some(arg => arg.includes('neural-networks'))).toBe(true);
+        expect(args.some(arg => arg.includes('name'))).toBe(true);
+        expect(args.some(arg => arg.includes('description'))).toBe(true);
+
+        // Ensure ALL arguments are strings
+        args.forEach(arg => expect(typeof arg).toBe('string'));
+      });
+    });
+  });
+
   describe('Error Handling', () => {
     it('should handle tool execution errors gracefully', async () => {
       registerSearchGitHubReposTool(mockServer.server);

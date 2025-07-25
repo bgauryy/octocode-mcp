@@ -81,7 +81,7 @@ const GitHubCodeSearchQuerySchema = z.object({
     .optional()
     .describe('File extension filter (e.g., "md", "js", "yml")'),
   match: z
-    .enum(['file', 'path'])
+    .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
     .optional()
     .describe(
       'Search scope: "file" (content search - default), "path" (filename search)'
@@ -561,10 +561,13 @@ export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
     const repoStr = Array.isArray(params.repo) ? params.repo[0] : params.repo;
     args.push(`--repo=${ownerStr}/${repoStr}`);
   } else if (params.owner) {
-    const ownerStr = Array.isArray(params.owner)
-      ? params.owner[0]
-      : params.owner;
-    args.push(`--owner=${ownerStr}`);
+    // Handle owner arrays by creating multiple --owner flags
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach((owner: string) => args.push(`--owner=${owner}`));
+  } else if (params.repo) {
+    // Handle standalone repo arrays
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    repos.forEach((repo: string) => args.push(`--repo=${repo}`));
   }
 
   if (params.filename) {
@@ -580,7 +583,9 @@ export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
   }
 
   if (params.match) {
-    args.push(`--match=${params.match}`);
+    // Handle match arrays by creating multiple --match flags
+    const matches = Array.isArray(params.match) ? params.match : [params.match];
+    matches.forEach((match: string) => args.push(`--match=${match}`));
   }
 
   if (params.visibility) {

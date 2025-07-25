@@ -88,7 +88,37 @@ describe('GitHubCommandBuilder', () => {
       expect(result).not.toContain('--include-prs');
       expect(result).toContain('--locked');
     });
+
+    it('should handle owner array correctly', () => {
+      const result = builder.build({
+        query: 'memory leak',
+        owner: ['facebook', 'vuejs'],
+        state: 'open',
+      });
+
+      expect(result).toContain('issues');
+      expect(result).toContain('memory leak');
+      expect(result).toContain('--owner=facebook');
+      expect(result).toContain('--owner=vuejs');
+      expect(result).toContain('--state=open');
+      expect(result).not.toContain('"facebook", "vuejs"');
+    });
+
+    it('should handle owner array with repo correctly', () => {
+      const result = builder.build({
+        query: 'bug',
+        owner: ['facebook', 'vuejs'],
+        repo: 'react',
+      });
+
+      expect(result).toContain('issues');
+      expect(result).toContain('bug');
+      // When both owner and repo are provided, it should use repo format with first owner
+      expect(result).toContain('--repo=facebook/react');
+      expect(result).not.toContain('--owner=vuejs');
+    });
   });
+
   describe('GitHubReposSearchBuilder', () => {
     let builder: GitHubReposSearchBuilder;
 
@@ -173,6 +203,21 @@ describe('GitHubCommandBuilder', () => {
 
       expect(result).toContain('--archived');
       expect(result).not.toContain('--fork');
+    });
+
+    it('should handle owner array correctly', () => {
+      const result = builder.build({
+        exactQuery: 'web framework',
+        owner: ['facebook', 'vercel'],
+        language: 'javascript',
+      });
+
+      expect(result).toContain('repos');
+      expect(result).toContain('"web framework"');
+      expect(result).toContain('--owner=facebook');
+      expect(result).toContain('--owner=vercel');
+      expect(result).toContain('--language=javascript');
+      expect(result).not.toContain('"facebook", "vercel"');
     });
   });
 
@@ -284,6 +329,22 @@ describe('GitHubCommandBuilder', () => {
 
       expect(result).toContain('--created=2023-01-01..2023-12-31');
       expect(result).toContain('--updated=>2023-06-01');
+    });
+
+    it('should handle owner arrays consistently across all builders', () => {
+      // Test GitHubCommitsSearchBuilder with owner arrays
+      const commitsBuilder = new GitHubCommitsSearchBuilder();
+      const commitsResult = commitsBuilder.build({
+        exactQuery: 'fix security',
+        owner: ['microsoft', 'google'],
+        repo: 'typescript',
+      });
+
+      expect(commitsResult).toContain('commits');
+      expect(commitsResult).toContain('"fix security"');
+      // Should generate multiple --owner flags (handled by BaseCommandBuilder.addOwnerRepo)
+      expect(commitsResult).toContain('--repo=microsoft/typescript');
+      expect(commitsResult).toContain('--repo=google/typescript');
     });
   });
 });
