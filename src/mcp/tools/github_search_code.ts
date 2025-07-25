@@ -124,7 +124,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .min(1)
           .max(5)
           .describe(
-            '1-5 search queries executed in parallel. PROGRESSIVE STRATEGY: Start with 5 broad single-term queries for discovery, then narrow with focused searches based on results.'
+            '1-5 search queries executed sequentially to avoid rate limits. PROGRESSIVE STRATEGY: Start with 5 broad single-term queries for discovery, then narrow with focused searches based on results.'
           ),
       },
       annotations: {
@@ -154,7 +154,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 }
 
 /**
- * Execute multiple GitHub code search queries in parallel.
+ * Execute multiple GitHub code search queries sequentially to avoid rate limits.
  *
  * PROGRESSIVE REFINEMENT STRATEGY:
  * - PHASE 1: Broad Discovery - Use 5 single-term queries without filters
@@ -299,7 +299,7 @@ function handleSearchError(errorMessage: string): CallToolResult {
 • PHASE 1: Wait 5-10 minutes, then restart with 5 broad single-term queries
 • PHASE 2: Use owner/repo filters to narrow scope: owner="target_owner" 
 • PHASE 3: Try npm package search for package-related queries
-• PHASE 4: Use separate sequential searches instead of parallel queries
+• PHASE 4: Reduce query count - use fewer, more targeted searches
 
 Example restart: ["term1"], ["term2"], ["term3"], ["term4"], ["term5"]`,
     });
