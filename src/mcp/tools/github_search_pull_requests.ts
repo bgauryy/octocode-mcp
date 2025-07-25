@@ -18,70 +18,20 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
 
-// TODO: Consider adding PR comments support in the future: gh pr view <PR_NUMBER_OR_URL_OR_BRANCH> --comments
-// Enhanced with gh search prs for better search capabilities vs the previous API search approach
-
-/**
- * Minify text content using general strategy for token reduction
- * Used specifically for PR titles and body content
- */
-async function minifyTextContent(content: string): Promise<string> {
-  if (!content || !content.trim()) {
-    return content;
-  }
-
-  try {
-    const result = await minifyContentV2(content, 'content.txt'); // Use .txt to trigger general strategy
-    return result.content;
-  } catch (error) {
-    // Return original content if minification fails
-    return content;
-  }
-}
+// TODO: summerize body
 
 export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
-const DESCRIPTION = `PURPOSE: Search pull requests and track development activity.
+const DESCRIPTION = `Search GitHub pull requests with comprehensive filtering and analysis.
 
-USAGE:
-• Find PRs by keywords, filters, or both
-• Track code review activity  
-• Get commit SHAs for code analysis
+CAPABILITIES:
+ Find PRs by keywords, authors, repositories, or any combination
+ Filter by state, dates, labels, review status, engagement metrics  
+ Get PR metadata with commit SHAs for code analysis
 
-SEARCH EXAMPLES:
-• With query: "fix bug", "update dependencies", "security patch"
-• Without query: Use filters only like --repo=owner/repo --state=open --author=username
-• Combined: "refactor" --language=javascript --state=closed
+RETURNS: PR details, repository info, commit SHAs, optional commit diffs/comments
 
-KEY FEATURES:
-• Returns head/base SHAs for github_fetch_content
-• Enhanced search with gh search prs (better than API search)
-• Advanced filters: reactions, interactions, checks, review status
-• Optional commit data (getCommitData=true)
-• Support for complex date filters and boolean combinations
-
-SEARCH STRATEGY:  
-• Query is optional - you can search using filters only
-• Use 2-3 keywords max for broad results when using query
-• Simple queries > complex queries
-• Add specific filters to narrow results
-• Use operators in filters: ">100", ">=50", "<20", "10..50"
-
-ADVANCED FEATURES:
-• Reaction filtering: --reactions=">100" 
-• Review status: --review=approved|changes_requested|required
-• Check status: --checks=success|failure|pending
-• Date ranges: --created=">2023-01-01" or --updated="2023-01-01..2023-12-31"
-• Team mentions and user involvement filters
-• Comment count filtering: --comments=">10"
-• Multi-owner/repo searches: --owner=["org1","org2"] or --repo=["repo1","repo2"]
-
-TOKEN WARNING:
-• getCommitData=true is EXPENSIVE - fetches full commit diffs
-• withComments=true is EXTREMELY EXPENSIVE - fetches all comment content
-• Use github_search_commits with SHAs for better performance
-
-PHILOSOPHY: Progressive Refinement - start simple, add filters gradually`;
+PERFORMANCE: getCommitData=true and withComments=true are token expensive`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
@@ -102,13 +52,13 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner(s) - single owner or array for multi-owner search (--owner)'
+            'Repository owner - single owner or comma-separated list. Multi-owner searches have limited practical use (--owner)'
           ),
         repo: z
           .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository name(s) - single repo or array for multi-repo search (--repo)'
+            'Repository name - single repo or comma-separated list. Multi-repo searches work best with single owner (--repo)'
           ),
         language: z
           .string()
@@ -125,7 +75,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           ])
           .optional()
           .describe(
-            'Repository visibility - single value or array (--visibility)'
+            'Repository visibility - single value or comma-separated list: public,private,internal (--visibility)'
           ),
 
         // USER INVOLVEMENT FILTERS - Direct CLI flag mappings
@@ -162,7 +112,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         state: z
           .enum(['open', 'closed'])
           .optional()
-          .describe('Filter by state: open or closed (--state)'),
+          .describe('Filter by state: "open" / "closed"'),
         draft: z
           .boolean()
           .optional()
@@ -254,7 +204,9 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         label: z
           .union([z.string(), z.array(z.string())])
           .optional()
-          .describe('Filter by label, supports multiple labels (--label)'),
+          .describe(
+            'Filter by label - single label or comma-separated list for OR logic: "bug,help wanted" (--label)'
+          ),
         milestone: z
           .string()
           .optional()
@@ -362,11 +314,22 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           if (!hasAnyFilters(args)) {
             return createResult({
               error: `No search query or filters provided. Either provide a query (e.g., "fix bug") or use filters (e.g., --repo owner/repo --state open). Examples:
-• With query: "security patch" --language javascript
-• Without query: --repo facebook/react --state open --author username
-• Filter only: --assignee @me --review-requested @me --state open`,
+ With query: "security patch" --language javascript
+ Without query: --repo facebook/react --state open --author username
+ Filter only: --assignee @me --review-requested @me --state open`,
             });
           }
+        }
+
+        // Validate array parameter usage and warn about potential issues
+        const validationWarnings = validateParameterCombinations(args);
+        if (validationWarnings.length > 0) {
+          // Log warnings but don't fail - let the user proceed with caveats
+          // eslint-disable-next-line no-console
+          console.warn(
+            'Parameter combination warnings:',
+            validationWarnings.join('; ')
+          );
         }
 
         try {
@@ -544,17 +507,17 @@ async function searchGitHubPullRequests(
         error: `${createNoResultsError('pull_requests')}
 
 Try these simplified searches:
-${simplificationSteps.map(step => `• ${step}`).join('\n')}
+${simplificationSteps.map(step => ` ${step}`).join('\n')}
 
 Or ask the user:
-• "What specific type of pull requests are you looking for?"
-• "Can you provide different keywords to search for?"
-• "Should I search in a specific repository instead?"
-• "Are you looking for open or closed PRs?"
+ "What specific type of pull requests are you looking for?"
+ "Can you provide different keywords to search for?"
+ "Should I search in a specific repository instead?"
+ "Are you looking for open or closed PRs?"
 
 Alternative tools:
-• Use github_search_code for PR-related file changes
-• Use github_search_repos to find repositories first`,
+ Use github_search_code for PR-related file changes
+ Use github_search_repos to find repositories first`,
       });
     }
 
@@ -608,7 +571,8 @@ Alternative tools:
             body: pr.body ? await minifyTextContent(pr.body) : undefined,
             state: pr.state,
             author: pr.author?.login || '',
-            repository: pr.repository?.full_name || pr.repository || 'unknown',
+            repository:
+              pr.repository?.nameWithOwner || pr.repository?.name || 'unknown',
             labels: pr.labels?.map((l: any) => l.name) || [],
             created_at: toDDMMYYYY(pr.createdAt || pr.created_at),
             updated_at: toDDMMYYYY(pr.updatedAt || pr.updated_at),
@@ -750,7 +714,7 @@ export function buildGitHubPullRequestsAPICommand(
 
 /**
  * Helper function to add array/single parameters to command args
- * Reduces code duplication in parameter handling
+ * GitHub CLI expects comma-separated values for multi-value flags, not repeated flags
  */
 function addParameterToArgs(
   args: string[],
@@ -759,10 +723,48 @@ function addParameterToArgs(
 ): void {
   if (!value) return;
 
-  const values = Array.isArray(value) ? value : [value];
-  values.forEach(val => {
-    args.push(`--${flag}`, val);
-  });
+  // Convert array to comma-separated string as GitHub CLI expects
+  const flagValue = Array.isArray(value) ? value.join(',') : value;
+  args.push(`--${flag}`, flagValue);
+}
+
+/**
+ * Validate parameter combinations and return warnings for potentially problematic usage
+ */
+function validateParameterCombinations(
+  params: GitHubPullRequestsSearchParams
+): string[] {
+  const warnings: string[] = [];
+
+  // Warn about multi-owner searches which have limited practical use
+  if (Array.isArray(params.owner) && params.owner.length > 1) {
+    warnings.push(
+      'Multi-owner searches have limited effectiveness in GitHub CLI'
+    );
+  }
+
+  // Warn about multi-repo searches without owner specification
+  if (Array.isArray(params.repo) && params.repo.length > 1 && !params.owner) {
+    warnings.push(
+      'Multi-repo searches work best when combined with a single owner parameter'
+    );
+  }
+
+  // Warn about complex array combinations that may not work as expected
+  const arrayParams = [
+    params.owner && Array.isArray(params.owner) ? 'owner' : null,
+    params.repo && Array.isArray(params.repo) ? 'repo' : null,
+    params.label && Array.isArray(params.label) ? 'label' : null,
+    params.visibility && Array.isArray(params.visibility) ? 'visibility' : null,
+  ].filter(Boolean);
+
+  if (arrayParams.length > 2) {
+    warnings.push(
+      `Using multiple array parameters (${arrayParams.join(', ')}) may produce unexpected results`
+    );
+  }
+
+  return warnings;
 }
 
 /**
@@ -1217,5 +1219,19 @@ async function fetchPRCommitData(
     };
   } catch (error) {
     return null;
+  }
+}
+
+async function minifyTextContent(content: string): Promise<string> {
+  if (!content || !content.trim()) {
+    return content;
+  }
+
+  try {
+    const result = await minifyContentV2(content, 'content.txt'); // Use .txt to trigger general strategy
+    return result.content;
+  } catch (error) {
+    // Return original content if minification fails
+    return content;
   }
 }

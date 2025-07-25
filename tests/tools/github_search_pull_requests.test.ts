@@ -91,13 +91,11 @@ describe('GitHub Search Pull Requests Tool', () => {
             repo: ['repo1', 'repo2'],
           });
 
-          // Multiple owners/repos uses search command with separate flags
+          // Multiple owners/repos uses search command with comma-separated values
           expect(result.args).toContain('--owner');
-          expect(result.args).toContain('org1');
-          expect(result.args).toContain('org2');
+          expect(result.args).toContain('org1,org2');
           expect(result.args).toContain('--repo');
-          expect(result.args).toContain('repo1');
-          expect(result.args).toContain('repo2');
+          expect(result.args).toContain('repo1,repo2');
         });
 
         it('should handle state parameter', () => {
@@ -191,6 +189,53 @@ describe('GitHub Search Pull Requests Tool', () => {
 
           expect(result.args).toContain('--limit');
           expect(result.args).toContain('50');
+        });
+      });
+
+      describe('Array Parameter Handling', () => {
+        it('should handle array parameters with comma-separated values', () => {
+          const params = {
+            owner: ['facebook', 'microsoft'],
+            repo: ['react', 'vscode'],
+            label: ['bug', 'help wanted'],
+            visibility: ['public', 'private'] as ('public' | 'private')[],
+            state: 'open' as const,
+            limit: 50,
+          };
+
+          const { command, args } =
+            buildGitHubPullRequestsSearchCommand(params);
+
+          expect(command).toBe('search');
+          expect(args).toContain('--owner');
+          expect(args).toContain('facebook,microsoft');
+          expect(args).toContain('--repo');
+          expect(args).toContain('react,vscode');
+          expect(args).toContain('--label');
+          expect(args).toContain('bug,help wanted');
+          expect(args).toContain('--visibility');
+          expect(args).toContain('public,private');
+        });
+
+        it('should handle single string parameters normally', () => {
+          const params = {
+            owner: 'facebook',
+            repo: 'react',
+            label: 'bug',
+            state: 'open' as const,
+            limit: 30,
+          };
+
+          const { command, args } =
+            buildGitHubPullRequestsSearchCommand(params);
+
+          expect(command).toBe('search');
+          expect(args).toContain('--owner');
+          expect(args).toContain('facebook');
+          expect(args).toContain('--repo');
+          expect(args).toContain('react');
+          expect(args).toContain('--label');
+          expect(args).toContain('bug');
         });
       });
 
