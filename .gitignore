@@ -9,3 +9,5 @@ _scripts
 *.dxt
 
 coverage
+
+.cursor
