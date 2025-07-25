@@ -170,7 +170,7 @@ describe('Index Module', () => {
       expect(mockMcpServerConstructor).toHaveBeenCalledWith({
         name: 'octocode-mcp',
         version: expect.any(String),
-        description: expect.stringContaining('CORE RESEARCH PHILOSOPHY:'),
+        description: expect.stringContaining('expert code research engineer'),
       });
     });
 
