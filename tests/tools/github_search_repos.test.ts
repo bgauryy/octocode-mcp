@@ -238,7 +238,10 @@ describe('GitHub Search Repositories Tool', () => {
         owner: 'owner',
         url: 'https://github.com/owner/awesome-repo',
       });
-      expect(data.hints).toHaveLength(0); // No errors, so no hints
+      expect(data.hints).toHaveLength(1); // Success message
+      expect(data.hints[0]).toContain(
+        'Successfully returned 1 repositories - proceed with analysis'
+      );
     });
 
     it('should handle query with no results', async () => {
@@ -345,7 +348,10 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(3); // All repositories merged from both queries
-      expect(data.hints).toHaveLength(0); // No errors, so no hints
+      expect(data.hints).toHaveLength(1); // Success message
+      expect(data.hints[0]).toContain(
+        'Successfully returned 3 repositories - proceed with analysis'
+      );
 
       // Test repositories from both queries are merged - just check we have expected count
       expect(data.data.length).toBeGreaterThan(0);
@@ -382,8 +388,12 @@ describe('GitHub Search Repositories Tool', () => {
         )
       ).toBe(true);
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('Partial results obtained')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('returned') &&
+            hint.includes(
+              'repositories - some queries failed but data may be sufficient to proceed'
+            )
         )
       ).toBe(true);
     });
@@ -411,7 +421,10 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(3); // All repositories from 3 queries
-      expect(data.hints).toHaveLength(0); // No errors, so no hints
+      expect(data.hints).toHaveLength(1); // Success message
+      expect(data.hints[0]).toContain(
+        'Successfully returned 3 repositories - proceed with analysis'
+      );
     });
 
     it('should process maximum 5 queries', async () => {
@@ -437,7 +450,10 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(5); // All repositories from 5 queries
-      expect(data.hints).toHaveLength(0); // No errors, so no hints
+      expect(data.hints).toHaveLength(1); // Success message
+      expect(data.hints[0]).toContain(
+        'Successfully returned 5 repositories - proceed with analysis'
+      );
       expect(mockExecuteGitHubCommand).toHaveBeenCalledTimes(5);
     });
   });
@@ -1230,7 +1246,10 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(1);
-      expect(data.hints).toHaveLength(0);
+      expect(data.hints).toHaveLength(1); // Success message
+      expect(data.hints[0]).toContain(
+        'Successfully returned 1 repositories - proceed with analysis'
+      );
       expect(data.metadata).toBeDefined();
       expect(data.metadata.queries).toHaveLength(1);
       expect(data.metadata.summary).toBeDefined();
@@ -1257,7 +1276,10 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(1);
-      expect(data.hints).toHaveLength(0);
+      expect(data.hints).toHaveLength(1); // Success message
+      expect(data.hints[0]).toContain(
+        'Successfully returned 1 repositories - proceed with analysis'
+      );
       expect(data.metadata).toBeUndefined();
     });
   });

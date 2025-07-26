@@ -22,6 +22,7 @@ USAGE:
  Find implementations and internal mechanisms
  Locate specific functions, methods, or identifiers  
  Discover usage patterns in code and documentation
+ Find files and parts within files that match search criteria
 
 PROGRESSIVE REFINEMENT STRATEGY - Start broad, then narrow:
  PHASE 1: DISCOVERY - Start with queryTerms + owner/repo only (no language/extension filters)
@@ -30,11 +31,11 @@ PROGRESSIVE REFINEMENT STRATEGY - Start broad, then narrow:
  PHASE 4: DEEP-DIVE - Use results to guide more specific searches
 
 STRATEGIC APPROACH - Plan up to 5 queries progressing from broad to specific:
- Query 1: ["core-concept"] + owner/repo (broad discovery)
- Query 2: ["specific-function"] + owner/repo + language (if needed)
- Query 3: ["pattern"] + owner/repo + extension="ext" (documentation)
- Query 4: ["test-example"] + owner/repo + filename="pattern" (examples)
- Query 5: ["config"] + owner/repo + extension="ext" (configuration)
+ Query 1: id="discovery" + ["core-concept"] + owner/repo (broad discovery)
+ Query 2: id="function-focused" + ["specific-function"] + owner/repo + language (if needed)
+ Query 3: id="documentation" + ["pattern"] + owner/repo + extension="ext" (documentation)
+ Query 4: id="test-examples" + ["test-example"] + owner/repo + filename="pattern" (examples)
+ Query 5: id="config-files" + ["config"] + owner/repo + extension="ext" (configuration)
 
 AVOID INITIAL OVER-FILTERING: Don't use language/extension filters in first query unless you know the codebase structure!
 
@@ -139,6 +140,13 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .describe(
             '1-5 progressive refinement queries, starting broad then narrowing. PROGRESSIVE STRATEGY: Query 1 should be broad (queryTerms + owner/repo only), then progressively add filters based on initial findings. Use meaningful id descriptions to track refinement phases.'
           ),
+        verbose: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'Include detailed metadata for debugging. Default: false for cleaner responses'
+          ),
       },
       annotations: {
         title: 'GitHub Code Search - Progressive Refinement',
@@ -151,9 +159,13 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     withSecurityValidation(
       async (args: {
         queries: GitHubCodeSearchQuery[];
+        verbose?: boolean;
       }): Promise<CallToolResult> => {
         try {
-          return await searchMultipleGitHubCode(args.queries);
+          return await searchMultipleGitHubCode(
+            args.queries,
+            args.verbose ?? false
+          );
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -195,9 +207,11 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
  * Query 5 (id: "config-build"): ["core-concept"] + owner="owner-name" + repo="repo-name" + extension="ext"
  */
 async function searchMultipleGitHubCode(
-  queries: GitHubCodeSearchQuery[]
+  queries: GitHubCodeSearchQuery[],
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const results: GitHubCodeSearchQueryResult[] = [];
+  const hints: string[] = [];
 
   // Execute queries sequentially to avoid rate limits
   for (let index = 0; index < queries.length; index++) {
@@ -259,46 +273,119 @@ async function searchMultipleGitHubCode(
     }
   }
 
+  // Collect all code items from successful queries
+  const allCodeItems: any[] = [];
+  results.forEach(result => {
+    if (!result.error && result.result.items) {
+      result.result.items.forEach(item => {
+        // Convert to flattened format
+        const matches = item.matches.map(match => match.context);
+        allCodeItems.push({
+          queryId: result.queryId,
+          repository: item.repository.nameWithOwner,
+          path: item.path,
+          matches: matches,
+          repositoryInfo: {
+            nameWithOwner: item.repository.nameWithOwner,
+          },
+        });
+      });
+    }
+  });
+
+  // Generate hints for failures and guidance
+  results.forEach(result => {
+    if (result.error) {
+      if (result.error.includes('queryTerms parameter is required')) {
+        hints.push(
+          `Query "${result.queryId}" missing search terms - use meaningful queryTerms like ["function-name", "api-call"]`
+        );
+      } else if (result.error.includes('rate limit')) {
+        hints.push(
+          `Query "${result.queryId}" hit rate limit - try fewer, broader queries with progressive refinement`
+        );
+      } else if (result.error.includes('authentication')) {
+        hints.push(
+          `Query "${result.queryId}" needs authentication - run 'gh auth login' and verify access`
+        );
+      } else if (result.error.includes('repository not found')) {
+        hints.push(
+          `Query "${result.queryId}" repository not found - verify owner/repo names or use github_search_repos to find correct names`
+        );
+      } else {
+        hints.push(`Query "${result.queryId}" failed: ${result.error}`);
+      }
+    } else if (result.result.items.length === 0) {
+      // Successful query but no results found
+      hints.push(
+        `Query "${result.queryId}" found no results - try broader search terms, remove filters, or verify repository contains matching code`
+      );
+    }
+  });
+
+  // Add strategic hints
+  if (allCodeItems.length === 0) {
+    hints.push(
+      'No code found across all queries - try broader search terms, verify repository access, or use different query strategies'
+    );
+  } else if (results.some(r => r.error) && allCodeItems.length > 0) {
+    hints.push(
+      'Partial results obtained - some queries succeeded while others failed. Check individual query errors for specific fixes.'
+    );
+  }
+
   // Calculate summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
   const failedQueries = results.filter(r => r.error).length;
+  const totalCodeItems = allCodeItems.length;
 
-  // Create smart summary with mixed results guidance
-  const summary: any = {
-    totalQueries,
-    successfulQueries,
-    failedQueries,
+  const responseData: any = {
+    data: allCodeItems,
+    hints,
   };
 
-  // Add guidance for mixed results scenarios
-  if (successfulQueries > 0 && failedQueries > 0) {
-    summary.mixedResults = true;
-    summary.guidance = [
-      `${successfulQueries} queries succeeded - check results for code findings`,
-      `${failedQueries} queries failed - check error messages for specific fixes`,
-      `Review individual query errors for actionable next steps`,
-    ];
-  } else if (failedQueries === totalQueries) {
-    summary.allFailed = true;
-    summary.guidance = [
-      `All ${totalQueries} queries failed`,
-      `Check error messages for specific fixes (auth, rate limits, query format)`,
-      `Try simpler queries or different search strategies`,
-    ];
-  } else if (successfulQueries === totalQueries) {
-    summary.allSucceeded = true;
-    summary.guidance = [
-      `All ${totalQueries} queries succeeded`,
-      `Check individual results for code findings`,
-    ];
+  // Add metadata only if verbose mode is enabled
+  if (verbose) {
+    responseData.metadata = {
+      queries: results,
+      summary: {
+        totalQueries,
+        successfulQueries,
+        failedQueries,
+        totalCodeItems,
+        // Add guidance for mixed results scenarios
+        ...(successfulQueries > 0 && failedQueries > 0
+          ? {
+              mixedResults: true,
+              guidance: [
+                `${successfulQueries} queries succeeded - check results for code findings`,
+                `${failedQueries} queries failed - check error messages for specific fixes`,
+                `Review individual query errors for actionable next steps`,
+              ],
+            }
+          : failedQueries === totalQueries
+            ? {
+                allFailed: true,
+                guidance: [
+                  `All ${totalQueries} queries failed`,
+                  `Check error messages for specific fixes (auth, rate limits, query format)`,
+                  `Try simpler queries or different search strategies`,
+                ],
+              }
+            : {
+                allSucceeded: true,
+                guidance: [
+                  `All ${totalQueries} queries succeeded`,
+                  `Check individual results for code findings`,
+                ],
+              }),
+      },
+    };
   }
 
   return createResult({
-    data: {
-      results,
-      summary,
-    },
+    data: responseData,
   });
 }
 

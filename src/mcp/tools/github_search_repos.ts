@@ -418,7 +418,11 @@ async function searchMultipleGitHubRepos(
     );
   } else if (results.some(r => r.error) && allRepositories.length > 0) {
     hints.push(
-      'Partial results obtained - some queries failed but others succeeded'
+      `returned ${allRepositories.length} repositories - some queries failed but data may be sufficient to proceed`
+    );
+  } else if (!results.some(r => r.error) && allRepositories.length > 0) {
+    hints.push(
+      `Successfully returned ${allRepositories.length} repositories - proceed with analysis`
     );
   }
 

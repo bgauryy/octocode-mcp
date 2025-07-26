@@ -214,18 +214,17 @@ describe('GitHub Search Code Tool', () => {
             language: 'typescript',
           },
         ],
+        verbose: true,
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toBeDefined();
-      expect(data.results).toHaveLength(1);
-      expect(data.results[0].result.items).toHaveLength(1);
-      expect(data.results[0].result.items[0].path).toBe(
-        'src/components/Button.tsx'
-      );
-      expect(data.summary.totalQueries).toBe(1);
-      expect(data.summary.successfulQueries).toBe(1);
+      expect(data.data).toBeDefined();
+      expect(data.data).toHaveLength(1);
+      expect(data.data[0].path).toBe('src/components/Button.tsx');
+      expect(data.data[0].matches).toBeDefined();
+      expect(data.metadata.summary.totalQueries).toBe(1);
+      expect(data.metadata.summary.successfulQueries).toBe(1);
     });
 
     it('should handle multiple parallel queries', async () => {
@@ -306,15 +305,17 @@ describe('GitHub Search Code Tool', () => {
             language: 'typescript',
           },
         ],
+        verbose: true,
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(2);
-      expect(data.results[0].queryId).toBe('button-search');
-      expect(data.results[1].queryId).toBe('hook-search');
-      expect(data.summary.totalQueries).toBe(2);
-      expect(data.summary.successfulQueries).toBe(2);
+      expect(data.metadata.queries).toHaveLength(2);
+      expect(data.metadata.queries[0].queryId).toBe('button-search');
+      expect(data.metadata.queries[1].queryId).toBe('hook-search');
+      expect(data.metadata.summary.totalQueries).toBe(2);
+      expect(data.metadata.summary.successfulQueries).toBe(2);
+      expect(data.data).toHaveLength(2); // Should have items from both queries
     });
 
     it('should handle single repository search', async () => {
@@ -352,6 +353,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'single-repo-test',
             queryTerms: ['render'],
             owner: 'facebook',
             repo: 'react',
@@ -362,8 +364,9 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].result.repository).toBeDefined();
-      expect(data.results[0].result.repository.name).toBe('facebook/react');
+      expect(data.data).toHaveLength(1);
+      expect(data.data[0].repository).toBe('facebook/react');
+      expect(data.data[0].repositoryInfo.nameWithOwner).toBe('facebook/react');
     });
 
     it('should handle complex search filters', async () => {
@@ -461,17 +464,22 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'minify-test',
             queryTerms: ['test'],
             minify: true,
           },
         ],
+        verbose: true,
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].result.minified).toBe(true);
-      expect(data.results[0].result.minificationFailed).toBe(false);
+      expect(data.data).toHaveLength(1);
+      expect(data.data[0].matches).toBeDefined();
       expect(mockMinifyContentV2).toHaveBeenCalled();
+      // Check metadata in verbose mode
+      expect(data.metadata.queries[0].result.minified).toBe(true);
+      expect(data.metadata.queries[0].result.minificationFailed).toBe(false);
     });
 
     it('should apply sanitization when enabled', async () => {
@@ -571,16 +579,21 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'minify-failure-test',
             queryTerms: ['malformed'],
             minify: true,
           },
         ],
+        verbose: true,
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].result.minified).toBe(false);
-      expect(data.results[0].result.minificationFailed).toBe(true);
+      expect(data.data).toHaveLength(1);
+      expect(data.data[0].matches).toBeDefined();
+      // Check metadata in verbose mode
+      expect(data.metadata.queries[0].result.minified).toBe(false);
+      expect(data.metadata.queries[0].result.minificationFailed).toBe(true);
     });
   });
 
@@ -589,6 +602,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'test-query',
             language: 'javascript',
           },
         ],
@@ -596,15 +610,20 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain(
-        'queryTerms parameter is required'
-      );
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('test-query') && hint.includes('missing search terms')
+        )
+      ).toBe(true);
     });
 
     it('should reject empty queryTerms array', async () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'empty-terms-query',
             queryTerms: [],
             language: 'javascript',
           },
@@ -613,9 +632,14 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain(
-        'queryTerms parameter is required'
-      );
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('empty-terms-query') &&
+            hint.includes('missing search terms')
+        )
+      ).toBe(true);
     });
 
     it('should accept valid queries', async () => {
@@ -635,6 +659,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'valid-query',
             queryTerms: ['function', 'export'],
             language: 'javascript',
           },
@@ -643,26 +668,50 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toBeUndefined();
+      // Should have a hint for no results since mock returns empty array
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('valid-query') && hint.includes('found no results')
+        )
+      ).toBe(true);
     });
 
     it('should enforce maximum of 5 queries', async () => {
+      // Mock to return empty results for all queries
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: [], // Empty results to trigger "no results" hints
+              command: 'gh search code',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
-          { queryTerms: ['test1'] },
-          { queryTerms: ['test2'] },
-          { queryTerms: ['test3'] },
-          { queryTerms: ['test4'] },
-          { queryTerms: ['test5'] },
-          { queryTerms: ['test6'] }, // This should cause validation error
+          { id: 'test1', queryTerms: ['test1'] },
+          { id: 'test2', queryTerms: ['test2'] },
+          { id: 'test3', queryTerms: ['test3'] },
+          { id: 'test4', queryTerms: ['test4'] },
+          { id: 'test5', queryTerms: ['test5'] },
+          { id: 'test6', queryTerms: ['test6'] }, // This should cause validation error
         ],
+        verbose: true,
       });
 
       // Note: In test environment, schema validation may not be enforced
       // The tool processes the queries and returns individual results
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(6); // All queries processed
+      expect(data.metadata.queries).toHaveLength(6); // All queries processed
+      // Each query should have a hint for no results since mock returns empty
+      expect(data.hints.length).toBeGreaterThanOrEqual(6);
     });
   });
 
@@ -676,6 +725,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'cli-error-test',
             queryTerms: ['test'],
           },
         ],
@@ -683,10 +733,14 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain(
-        'GitHub CLI error: Authentication required'
-      );
-      expect(data.summary.failedQueries).toBe(1);
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('cli-error-test') &&
+            hint.includes('GitHub CLI error: Authentication required')
+        )
+      ).toBe(true);
     });
 
     it('should handle rate limit errors with smart guidance', async () => {
@@ -698,6 +752,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'rate-limit-test',
             queryTerms: ['popular'],
           },
         ],
@@ -705,8 +760,13 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain('API rate limit exceeded');
-      // Note: Mock only returns basic error message
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('rate-limit-test') && hint.includes('hit rate limit')
+        )
+      ).toBe(true);
     });
 
     it('should handle authentication errors', async () => {
@@ -718,6 +778,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'auth-error-test',
             queryTerms: ['test'],
           },
         ],
@@ -725,8 +786,14 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain('authentication failed');
-      // Note: Mock only returns basic error message
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('auth-error-test') &&
+            hint.includes('needs authentication')
+        )
+      ).toBe(true);
     });
 
     it('should handle network timeout errors', async () => {
@@ -738,6 +805,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'timeout-error-test',
             queryTerms: ['test'],
           },
         ],
@@ -745,8 +813,14 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain('request timed out');
-      // Note: Mock only returns basic error message
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('timeout-error-test') &&
+            hint.includes('request timed out')
+        )
+      ).toBe(true);
     });
 
     it('should handle malformed JSON responses', async () => {
@@ -762,6 +836,7 @@ describe('GitHub Search Code Tool', () => {
       const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
         queries: [
           {
+            id: 'json-error-test',
             queryTerms: ['test'],
           },
         ],
@@ -769,7 +844,14 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain('Unexpected error');
+      expect(data.hints).toBeDefined();
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('json-error-test') &&
+            hint.includes('Unexpected error')
+        )
+      ).toBe(true);
     });
 
     it('should handle mixed success and failure results', async () => {
@@ -824,13 +906,17 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(2);
-      expect(data.results[0].error).toBeUndefined();
-      expect(data.results[1].error).toBeDefined();
-      expect(data.summary.totalQueries).toBe(2);
-      expect(data.summary.successfulQueries).toBe(1);
-      expect(data.summary.failedQueries).toBe(1);
-      expect(data.summary.mixedResults).toBe(true);
+      expect(data.data).toHaveLength(1); // Only successful query returns data
+      expect(data.data[0].queryId).toBe('success-query');
+      expect(data.hints).toBeDefined();
+      // Should have a hint for the failed query
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('fail-query') &&
+            hint.includes('Authentication required')
+        )
+      ).toBe(true);
     });
   });
 
