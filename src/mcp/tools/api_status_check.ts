@@ -2,24 +2,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { createResult } from '../responses';
-import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
-import { getToolSuggestions } from './utils/toolRelationships';
-import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-const DESCRIPTION = `PURPOSE: Verify GitHub/NPM connections and user organizations for data access.
-
-USAGE:
- Start research to verify access permissions
- Before accessing private repositories
- Troubleshoot authentication issues
-
-KEY FEATURES:
- GitHub auth status and organizations
- NPM registry connection
- Access permissions verification
-
-PHILOSOPHY: Tool Efficiency - verify access before research`;
+const DESCRIPTION = `PURPOSE: Verify GitHub/NPM connections and user organizations for data access.`;
 
 // Helper function to parse execution results with proper typing
 function parseExecResult(result: CallToolResult): { result?: string } | null {
@@ -73,7 +58,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
             if (isAuthenticated) {
               githubConnected = true;
 
-              // Get user organizations using direct GitHub CLI command
+              // Get user organizations
               try {
                 const orgsResult = await executeGitHubCommand(
                   'org',
@@ -86,7 +71,6 @@ export function registerApiStatusCheckTool(server: McpServer) {
                     ? orgsExecResult.result
                     : '';
 
-                // Parse organizations into clean array
                 if (typeof output === 'string') {
                   organizations = output
                     .split('\n')
@@ -95,27 +79,14 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 }
               } catch (orgError) {
                 // Organizations fetch failed, but GitHub is still connected
-                // Don't propagate organization fetch failures - they are expected
-                // GitHub connection is still valid even if we can't fetch organizations
               }
             }
           }
         } catch (error) {
-          // Check if this is an expected error (network/auth failure) or unexpected (sync throw)
-          if (
-            error instanceof Error &&
-            (error.message.includes('JSON parsing failed') ||
-              error.message.includes('Unexpected error') ||
-              error.stack?.includes('mockImplementationOnce'))
-          ) {
-            // This is an unexpected error, propagate it
-            throw error;
-          }
-          // GitHub CLI not available or authentication failed - expected error
           githubConnected = false;
         }
 
-        // Check NPM connectivity using whoami
+        // Check NPM connectivity
         try {
           const npmResult = await executeNpmCommand('whoami', [], {
             timeout: 5000,
@@ -133,35 +104,10 @@ export function registerApiStatusCheckTool(server: McpServer) {
             registry =
               typeof registryExecResult?.result === 'string'
                 ? registryExecResult.result.trim()
-                : 'https://registry.npmjs.org/'; // default fallback
+                : 'https://registry.npmjs.org/';
           }
         } catch (error) {
-          // Check if this is an unexpected error
-          if (
-            error instanceof Error &&
-            (error.message.includes('Unexpected error') ||
-              error.stack?.includes('mockImplementationOnce'))
-          ) {
-            // This is an unexpected error, propagate it
-            throw error;
-          }
           npmConnected = false;
-        }
-
-        const { nextSteps } = getToolSuggestions(API_STATUS_CHECK_TOOL_NAME, {
-          hasResults: true,
-        });
-
-        const hints = [
-          'Use user organizations to search private repositories when requested - verify access by checking query and repository structure',
-        ];
-
-        // Add tool suggestions as hints
-        if (nextSteps.length > 0) {
-          hints.push('Next steps:');
-          nextSteps.forEach(({ tool, reason }) => {
-            hints.push(`- ${tool}: ${reason}`);
-          });
         }
 
         return createResult({
@@ -176,30 +122,12 @@ export function registerApiStatusCheckTool(server: McpServer) {
                 connected: npmConnected,
                 registry: registry || 'https://registry.npmjs.org/',
               },
-              hints,
             },
           },
         });
       } catch (error) {
-        const { nextSteps } = getToolSuggestions(API_STATUS_CHECK_TOOL_NAME, {
-          hasError: true,
-        });
-
-        const toolSuggestions = createToolSuggestion(
-          API_STATUS_CHECK_TOOL_NAME,
-          nextSteps
-        );
-
         return createResult({
-          error: getErrorWithSuggestion({
-            baseError: [
-              ERROR_MESSAGES.API_STATUS_CHECK_FAILED,
-              `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              '',
-              'This usually indicates a system configuration issue. Please verify GitHub CLI and NPM are properly installed.',
-            ],
-            suggestion: toolSuggestions,
-          }),
+          error: `API status check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
       }
     }
