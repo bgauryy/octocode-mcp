@@ -238,7 +238,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .min(1)
           .max(5)
           .describe(
-            'Array of up to 5 different search queries for sequential execution'
+            'Array of up to 5 different search queries for sequential execution. Use several queries to get more results in one tool call'
           ),
         verbose: z
           .boolean()
