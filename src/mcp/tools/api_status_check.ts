@@ -3,7 +3,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { createResult } from '../responses';
 import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
-import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
+import { getToolSuggestions } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 
 export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
@@ -148,7 +148,7 @@ export function registerApiStatusCheckTool(server: McpServer) {
           npmConnected = false;
         }
 
-        const { nextSteps } = getToolSuggestions(TOOL_NAMES.API_STATUS_CHECK, {
+        const { nextSteps } = getToolSuggestions(API_STATUS_CHECK_TOOL_NAME, {
           hasResults: true,
         });
 
@@ -181,12 +181,12 @@ export function registerApiStatusCheckTool(server: McpServer) {
           },
         });
       } catch (error) {
-        const { nextSteps } = getToolSuggestions(TOOL_NAMES.API_STATUS_CHECK, {
+        const { nextSteps } = getToolSuggestions(API_STATUS_CHECK_TOOL_NAME, {
           hasError: true,
         });
 
         const toolSuggestions = createToolSuggestion(
-          TOOL_NAMES.API_STATUS_CHECK,
+          API_STATUS_CHECK_TOOL_NAME,
           nextSteps
         );
 

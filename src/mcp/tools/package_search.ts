@@ -24,7 +24,7 @@ import {
 } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
-import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
+import { getToolSuggestions } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import axios from 'axios';
@@ -654,9 +654,12 @@ export function registerNpmSearchTool(server: McpServer) {
 
         // If we have results, process them based on requested format
         if (totalCount > 0) {
-          const { nextSteps } = getToolSuggestions(TOOL_NAMES.package_search, {
-            hasResults: true,
-          });
+          const { nextSteps } = getToolSuggestions(
+            NPM_PACKAGE_SEARCH_TOOL_NAME,
+            {
+              hasResults: true,
+            }
+          );
 
           const hints = [];
 
@@ -991,12 +994,12 @@ export function registerNpmSearchTool(server: McpServer) {
           );
         }
 
-        const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
+        const { fallback } = getToolSuggestions(NPM_PACKAGE_SEARCH_TOOL_NAME, {
           errorType: 'no_results',
         });
 
         const toolSuggestions = createToolSuggestion(
-          TOOL_NAMES.package_search,
+          NPM_PACKAGE_SEARCH_TOOL_NAME,
           fallback
         );
 
@@ -1023,9 +1026,12 @@ export function registerNpmSearchTool(server: McpServer) {
           errorMsg.includes('timeout') ||
           errorMsg.includes('ENOTFOUND')
         ) {
-          const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
-            hasError: true,
-          });
+          const { fallback } = getToolSuggestions(
+            NPM_PACKAGE_SEARCH_TOOL_NAME,
+            {
+              hasError: true,
+            }
+          );
 
           return createResult({
             error: getErrorWithSuggestion({
@@ -1034,7 +1040,7 @@ export function registerNpmSearchTool(server: McpServer) {
                 ' Check internet connection and npm registry status',
                 ' Try fewer search terms to reduce load',
                 ' Retry in a few moments',
-                createToolSuggestion(TOOL_NAMES.package_search, fallback),
+                createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
               ],
             }),
           });
@@ -1045,9 +1051,12 @@ export function registerNpmSearchTool(server: McpServer) {
           errorMsg.includes('command not found') ||
           errorMsg.includes('npm')
         ) {
-          const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
-            hasError: true,
-          });
+          const { fallback } = getToolSuggestions(
+            NPM_PACKAGE_SEARCH_TOOL_NAME,
+            {
+              hasError: true,
+            }
+          );
 
           return createResult({
             error: getErrorWithSuggestion({
@@ -1056,7 +1065,7 @@ export function registerNpmSearchTool(server: McpServer) {
                 ' Verify NPM installation: npm --version',
                 ' Update NPM: npm install -g npm@latest',
                 ' Check PATH environment variable',
-                createToolSuggestion(TOOL_NAMES.package_search, fallback),
+                createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
               ],
             }),
           });
@@ -1068,9 +1077,12 @@ export function registerNpmSearchTool(server: McpServer) {
           errorMsg.includes('403') ||
           errorMsg.includes('401')
         ) {
-          const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
-            errorType: 'access_denied',
-          });
+          const { fallback } = getToolSuggestions(
+            NPM_PACKAGE_SEARCH_TOOL_NAME,
+            {
+              errorType: 'access_denied',
+            }
+          );
 
           return createResult({
             error: getErrorWithSuggestion({
@@ -1079,13 +1091,13 @@ export function registerNpmSearchTool(server: McpServer) {
                 ' Check npm login status: npm whoami',
                 ' Use public registry search without auth',
                 ' Verify npm registry configuration',
-                createToolSuggestion(TOOL_NAMES.package_search, fallback),
+                createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
               ],
             }),
           });
         }
 
-        const { fallback } = getToolSuggestions(TOOL_NAMES.package_search, {
+        const { fallback } = getToolSuggestions(NPM_PACKAGE_SEARCH_TOOL_NAME, {
           hasError: true,
         });
 
@@ -1098,7 +1110,7 @@ export function registerNpmSearchTool(server: McpServer) {
               'Fallback strategies:',
               ' Check npm status and retry',
               ' Use broader search terms',
-              createToolSuggestion(TOOL_NAMES.package_search, fallback),
+              createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
             ],
           }),
         });

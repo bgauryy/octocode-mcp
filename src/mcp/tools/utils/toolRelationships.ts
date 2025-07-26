@@ -1,20 +1,12 @@
-/**
- * Tool relationship map for standardized cross-tool suggestions
- * Defines how tools connect and when to suggest alternatives
- */
-
-export const TOOL_NAMES = {
-  API_STATUS_CHECK: 'api_status_check',
-  GITHUB_FETCH_CONTENT: 'github_fetch_content',
-  GITHUB_SEARCH_CODE: 'github_search_code',
-  GITHUB_SEARCH_COMMITS: 'github_search_commits',
-  GITHUB_SEARCH_ISSUES: 'github_search_issues',
-  GITHUB_SEARCH_PULL_REQUESTS: 'github_search_pull_requests',
-  GITHUB_SEARCH_REPOSITORIES: 'github_search_repositories',
-  GITHUB_VIEW_REPO_STRUCTURE: 'github_view_repo_structure',
-  package_search: 'package_search',
-  NPM_VIEW_PACKAGE: 'npm_view_package',
-} as const;
+import { API_STATUS_CHECK_TOOL_NAME } from '../api_status_check';
+import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from '../github_fetch_content';
+import { GITHUB_SEARCH_CODE_TOOL_NAME } from '../github_search_code';
+import { GITHUB_SEARCH_COMMITS_TOOL_NAME } from '../github_search_commits';
+import { GITHUB_SEARCH_ISSUES_TOOL_NAME } from '../github_search_issues';
+import { GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME } from '../github_search_pull_requests';
+import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from '../github_search_repos';
+import { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME } from '../github_view_repo_structure';
+import { NPM_PACKAGE_SEARCH_TOOL_NAME } from '../package_search';
 
 interface ToolRelationship {
   fallbackTools: Array<{
@@ -33,249 +25,218 @@ interface ToolRelationship {
 }
 
 const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
-  [TOOL_NAMES.package_search]: {
+  [NPM_PACKAGE_SEARCH_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
         reason: 'to find repositories by topic or language',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to search for package usage examples',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.NPM_VIEW_PACKAGE,
-        reason: 'to get detailed package information and repository URL',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to explore the package source code structure',
       },
     ],
   },
 
-  [TOOL_NAMES.NPM_VIEW_PACKAGE]: {
+  [GITHUB_SEARCH_REPOSITORIES_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.package_search,
-        reason: 'to discover similar packages',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        reason: 'to find the repository directly',
-      },
-    ],
-    nextSteps: [
-      {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        reason: 'to explore repository structure',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        reason: 'to read specific files like README or package.json',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        reason: 'to find usage examples',
-      },
-    ],
-  },
-
-  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
-    fallbackTools: [
-      {
-        tool: TOOL_NAMES.package_search,
+        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
         reason: 'if searching for packages or libraries',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to search within repository contents',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to explore repository contents',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        tool: GITHUB_SEARCH_ISSUES_TOOL_NAME,
         reason: 'to check open issues and discussions',
       },
       {
-        tool: TOOL_NAMES.NPM_VIEW_PACKAGE,
+        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
         reason: 'if repository is an NPM package',
       },
     ],
   },
 
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: {
+  [GITHUB_SEARCH_CODE_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.package_search,
+        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
         reason: 'if searching for package implementations',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
         reason: 'to find repositories by topic',
       },
       {
-        tool: TOOL_NAMES.API_STATUS_CHECK,
+        tool: API_STATUS_CHECK_TOOL_NAME,
         reason: 'if no results (might be private repos)',
         condition: 'no_results',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        tool: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
         reason: 'to view full file contents',
       },
       {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to explore repository structure',
       },
     ],
     prerequisites: [
       {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to verify file paths before searching',
       },
     ],
   },
 
-  [TOOL_NAMES.GITHUB_FETCH_CONTENT]: {
+  [GITHUB_GET_FILE_CONTENT_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to verify correct file path',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to search for similar files',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to explore related files',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to find usage examples',
       },
     ],
     prerequisites: [
       {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        tool: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         reason: 'to verify file exists and get correct path',
       },
     ],
   },
 
-  [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: {
+  [GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
         reason: 'to find the correct repository',
       },
       {
-        tool: TOOL_NAMES.API_STATUS_CHECK,
+        tool: API_STATUS_CHECK_TOOL_NAME,
         reason: 'if access denied (check authentication)',
         condition: 'access_denied',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        tool: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
         reason: 'to read specific files',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to search within the repository',
       },
     ],
   },
 
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: {
+  [GITHUB_SEARCH_COMMITS_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
         reason: 'to find repositories first',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        tool: GITHUB_SEARCH_ISSUES_TOOL_NAME,
         reason: 'to find related discussions',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        tool: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
         reason:
           'to view files from specific commits using returned commit SHAs as branch parameter',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to find current implementation',
       },
     ],
   },
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {
+  [GITHUB_SEARCH_ISSUES_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        tool: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
         reason: 'to find related PRs',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
         reason: 'to find the repository first',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        tool: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
         reason: 'to find solutions or implementations',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to find related code',
       },
     ],
   },
 
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
+  [GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        tool: GITHUB_SEARCH_ISSUES_TOOL_NAME,
         reason: 'to find related issues',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+        tool: GITHUB_SEARCH_COMMITS_TOOL_NAME,
         reason: 'to find specific commit SHAs from PR for file viewing',
       },
     ],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        tool: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
         reason: 'to view PR files using head/base branch names or commit SHAs',
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        tool: GITHUB_SEARCH_CODE_TOOL_NAME,
         reason: 'to find current implementation',
       },
     ],
   },
 
-  [TOOL_NAMES.API_STATUS_CHECK]: {
+  [API_STATUS_CHECK_TOOL_NAME]: {
     fallbackTools: [],
     nextSteps: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
         reason: 'to search accessible repositories',
       },
       {
-        tool: TOOL_NAMES.package_search,
+        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
         reason: 'to search public packages',
       },
     ],
