@@ -9,33 +9,36 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
+import {
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+} from './utils/toolConstants';
 
-export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
+export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access.
+const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding and research planning
 
-PROJECT UNDERSTANDING:
-- Try to understand more by the structure of the project and the files in the project
-- Identify key directories and file patterns
-- fetch important files for better understanding
+Further Research With for more details:
+ ${GITHUB_SEARCH_CODE_TOOL_NAME}
+ ${GITHUB_GET_FILE_CONTENT_TOOL_NAME}
 
-DEPTH CONTROL:
-- Default depth is 2 levels for balanced performance and insight
-- Maximum depth is 4 levels to prevent excessive API calls
-- Depth 1: Shows only immediate files/folders in the specified path
-- Depth 2+: Recursively explores subdirectories up to the specified depth
-- Higher depths provide more comprehensive project understanding but use more API calls
+USAGE:
+ Understand project organization
+ Verify repository access
+ Navigate to specific directories
 
-IMPORTANT:
-- verify default branch (use main or master if can't find default branch)
-- verify path before calling the tool to avoid errors
-- Start with root path to understand actual repository structure and then navigate to specific directories based on research needs
-- Check repository's default branch as it varies between repositories
-- Verify path exists - don't assume repository structure
-- Verify repository existence and accessibility
-- Validate paths before accessing specific files. Use github search code to find correct paths if unsure
+KEY FEATURES:
+ Recursive exploration
+ Smart filtering of irrelevant files
+ Branch/path validation
 
-`;
+BEST PRACTICES:
+ Start with root path and depth 1
+ Verify branch exists
+ Use search if path unknown
+
+PHILOSOPHY: Build comprehensive understanding progressively`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -85,11 +88,11 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .number()
           .int()
           .min(1, 'Depth must be at least 1')
-          .max(4, 'Maximum depth is 4 to avoid excessive API calls')
+          .max(2, 'Maximum depth is 2 to avoid excessive API calls')
           .optional()
-          .default(2)
+          .default(1)
           .describe(
-            'Depth of directory structure to explore. Default is 2. Maximum is 4 to prevent excessive API calls and maintain performance.'
+            'Depth of directory structure to explore. Default is 1 for fast results. Maximum is 2. Higher values take more time - choose depth > 1 only for deep research needs.'
           ),
 
         includeIgnored: z
@@ -146,7 +149,7 @@ export async function viewRepositoryStructure(
       repo,
       branch,
       path = '',
-      depth = 2,
+      depth = 1,
       includeIgnored = false,
       showMedia = false,
     } = params;
@@ -654,9 +657,9 @@ Quick solution: Use the correct branch name:
 {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}
 
 Alternative solutions:
-• Search for path: github_search_code with query="path:${path}" owner="${owner}"
-• Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
-• Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+ Search for path: github_search_code with query="path:${path}" owner="${owner}"
+ Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
+ Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
     });
   } else {
     return createResult({
@@ -665,9 +668,9 @@ Alternative solutions:
 Repository might be empty, private, or you might not have sufficient permissions.
 
 Alternative solutions:
-• Verify permissions: api_status_check
-• Search accessible repos: github_search_code with owner="${owner}"
-• Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+ Verify permissions: api_status_check
+ Search accessible repos: github_search_code with owner="${owner}"
+ Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
     });
   }
 }

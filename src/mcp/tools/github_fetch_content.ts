@@ -8,28 +8,25 @@ import {
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
-import { minifyContent } from '../../utils/minifier';
+import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import {
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+} from './utils/toolConstants';
 
-export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
+const DESCRIPTION = `Fetch file contents with smart context extraction.
 
-const DESCRIPTION = `Fetches the content of multiple files from GitHub repositories in parallel. Supports up to 5 queries with automatic fallback handling.
+Supports: Up to 10 files fetching with auto-fallback for branches
 
-TOKEN OPTIMIZATION:
-- Full file content is expensive in tokens. Use startLine/endLine for partial access
-- Large files should be accessed in parts rather than full content
-- Use minified=true (default) to optimize content for token efficiency
+KEY WORKFLOW: 
+  - Code Research: ${GITHUB_SEARCH_CODE_TOOL_NAME} results -> fetch file using  "matchString" ->  get context around matches
+  - File Content: ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} results  -> fetch relevant files to fetch by structure and file path
 
-BULK QUERY FEATURES:
-- queries: array of up to 5 different file fetch queries for parallel execution
-- Each query can have fallbackParams for automatic retry with modified parameters
-- Optimizes workflow by executing multiple file fetches simultaneously
-- Each query should target different files or sections
-- Fallback logic automatically adjusts parameters if original query fails
-- Automatic main/master branch fallback for each query
-
-Use for comprehensive file analysis - query different files, sections, or implementations in one call.`;
+OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
+`;
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -88,11 +85,17 @@ const FileContentQuerySchema = z.object({
     .optional()
     .default(5)
     .describe(`Context lines around target range. Default: 5.`),
+  matchString: z
+    .string()
+    .optional()
+    .describe(
+      `🔥 SMART MATCH FINDER: Exact string to find in the file (from code search results). When provided, automatically locates this string and returns surrounding context with contextLines. Perfect for getting full context of search results!`
+    ),
   minified: z
     .boolean()
     .default(true)
     .describe(
-      `Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.`
+      `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
     ),
   fallbackParams: z
     .object({
@@ -101,6 +104,7 @@ const FileContentQuerySchema = z.object({
       startLine: z.number().int().min(1).optional(),
       endLine: z.number().int().min(1).optional(),
       contextLines: z.number().int().min(0).max(50).optional(),
+      matchString: z.string().optional(),
       minified: z.boolean().optional(),
     })
     .optional()
@@ -126,9 +130,9 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         queries: z
           .array(FileContentQuerySchema)
           .min(1)
-          .max(5)
+          .max(10)
           .describe(
-            'Array of up to 5 different file fetch queries for parallel execution'
+            'Array of up to 10 different file fetch queries for parallel execution'
           ),
       },
       annotations: {
@@ -176,6 +180,7 @@ async function fetchMultipleGitHubFileContents(
         startLine: query.startLine,
         endLine: query.endLine,
         contextLines: query.contextLines || 5,
+        matchString: query.matchString,
         minified: query.minified !== undefined ? query.minified : true,
       };
 
@@ -314,7 +319,8 @@ export async function fetchGitHubFileContent(
               params.minified,
               params.startLine,
               params.endLine,
-              params.contextLines
+              params.contextLines,
+              params.matchString
             );
           }
         }
@@ -332,7 +338,8 @@ export async function fetchGitHubFileContent(
         params.minified,
         params.startLine,
         params.endLine,
-        params.contextLines
+        params.contextLines,
+        params.matchString
       );
     } catch (error) {
       return createResult({
@@ -351,7 +358,8 @@ async function processFileContent(
   minified: boolean,
   startLine?: number,
   endLine?: number,
-  contextLines: number = 5
+  contextLines: number = 5,
+  matchString?: string
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
@@ -446,6 +454,38 @@ async function processFileContent(
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
+  // 🔥 SMART MATCH FINDER: If matchString is provided, find it and set line range
+  if (matchString) {
+    const matchingLines: number[] = [];
+
+    // Find all lines that contain the match string
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(matchString)) {
+        matchingLines.push(i + 1); // Convert to 1-based line numbers
+      }
+    }
+
+    if (matchingLines.length === 0) {
+      return createResult({
+        error: `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+      });
+    }
+
+    // Use the first match, with context lines around it
+    const firstMatch = matchingLines[0];
+    const matchStartLine = Math.max(1, firstMatch - contextLines);
+    const matchEndLine = Math.min(totalLines, firstMatch + contextLines);
+
+    // Override any manually provided startLine/endLine when matchString is used
+    startLine = matchStartLine;
+    endLine = matchEndLine;
+
+    // Add info about the match for user context
+    securityWarnings.push(
+      `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
+    );
+  }
+
   if (startLine !== undefined) {
     // Validate line numbers
     if (startLine < 1 || startLine > totalLines) {
@@ -456,23 +496,28 @@ async function processFileContent(
 
     // Calculate actual range with context
     const contextStart = Math.max(1, startLine - contextLines);
-    const contextEnd = endLine
-      ? Math.min(totalLines, endLine + contextLines)
-      : Math.min(totalLines, startLine + contextLines);
+    let adjustedEndLine = endLine;
 
-    // Validate endLine if provided
+    // Validate and auto-adjust endLine if provided
     if (endLine !== undefined) {
       if (endLine < startLine) {
         return createResult({
           error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
         });
       }
+
+      // Auto-adjust endLine to file boundaries with helpful message
       if (endLine > totalLines) {
-        return createResult({
-          error: `Invalid endLine ${endLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
-        });
+        adjustedEndLine = totalLines;
+        securityWarnings.push(
+          `Requested endLine ${endLine} adjusted to ${totalLines} (file end)`
+        );
       }
     }
+
+    const contextEnd = adjustedEndLine
+      ? Math.min(totalLines, adjustedEndLine + contextLines)
+      : Math.min(totalLines, startLine + contextLines);
 
     // Extract the specified range with context from ORIGINAL content
     const selectedLines = lines.slice(contextStart - 1, contextEnd);
@@ -486,7 +531,7 @@ async function processFileContent(
       const lineNumber = contextStart + index;
       const isInTargetRange =
         lineNumber >= startLine &&
-        (endLine === undefined || lineNumber <= endLine);
+        (adjustedEndLine === undefined || lineNumber <= adjustedEndLine);
       const marker = isInTargetRange ? '→' : ' ';
       return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
     });
@@ -510,7 +555,7 @@ async function processFileContent(
       });
 
       const codeContent = codeLines.join('\n');
-      const minifyResult = await minifyContent(codeContent, filePath);
+      const minifyResult = await minifyContentV2(codeContent, filePath);
 
       if (!minifyResult.failed) {
         // Apply minification first, then add simple line annotations
@@ -522,7 +567,7 @@ async function processFileContent(
       }
     } else {
       // Full file minification
-      const minifyResult = await minifyContent(finalContent, filePath);
+      const minifyResult = await minifyContentV2(finalContent, filePath);
       finalContent = minifyResult.content;
       minificationFailed = minifyResult.failed;
       minificationType = minifyResult.type;

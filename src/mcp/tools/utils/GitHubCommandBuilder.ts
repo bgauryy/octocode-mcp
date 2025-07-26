@@ -68,34 +68,6 @@ export abstract class GitHubCommandBuilder<
 }
 
 /**
- * GitHub Code Search Command Builder
- */
-export class GitHubCodeSearchBuilder extends GitHubCommandBuilder<any> {
-  protected initializeCommand(): this {
-    this.args = ['code'];
-    return this;
-  }
-
-  build(params: any): string[] {
-    return this.reset()
-      .initializeCommand()
-      .addQuery({
-        exactQuery: params.exactQuery,
-        queryTerms: params.queryTerms,
-      })
-      .addLanguage(params.language)
-      .addOwnerRepo({ owner: params.owner, repo: params.repo })
-      .addFlag('filename', params.filename)
-      .addFlag('extension', params.extension)
-      .addFlag('size', params.size)
-      .addFlag('match', params.match)
-      .addLimit(params.limit, 30)
-      .addJsonOutput('repository,path,textMatches,sha,url')
-      .getArgs();
-  }
-}
-
-/**
  * GitHub Issues Search Command Builder
  */
 export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
@@ -137,9 +109,17 @@ export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
 
     // Handle owner/repo combination
     if (params.owner && params.repo) {
-      this.addFlag('repo', `${params.owner}/${params.repo}`);
+      // If owner is an array, use the first one for repo combination
+      const ownerValue = Array.isArray(params.owner)
+        ? params.owner[0]
+        : params.owner;
+      this.addFlag('repo', `${ownerValue}/${params.repo}`);
     } else if (params.owner) {
-      this.addFlag('owner', params.owner);
+      // Handle owner arrays by creating multiple --owner flags
+      const owners = Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner];
+      owners.forEach((owner: string) => this.addFlag('owner', owner));
     }
 
     // Add other flags in consistent order
@@ -213,9 +193,19 @@ export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
 
     // Handle owner/repo combination with separate flag format
     if (params.owner && params.repo) {
-      this.addFlagWithSeparateValue('repo', `${params.owner}/${params.repo}`);
+      // If owner is an array, use the first one for repo combination
+      const ownerValue = Array.isArray(params.owner)
+        ? params.owner[0]
+        : params.owner;
+      this.addFlagWithSeparateValue('repo', `${ownerValue}/${params.repo}`);
     } else if (params.owner) {
-      this.addFlagWithSeparateValue('owner', params.owner);
+      // Handle owner arrays by creating multiple --owner flags
+      const owners = Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner];
+      owners.forEach((owner: string) =>
+        this.addFlagWithSeparateValue('owner', owner)
+      );
     }
 
     // Check if we have both label+language+state+sort (complex search test pattern)
@@ -327,52 +317,6 @@ export class GitHubIssuesSearchBuilder extends GitHubCommandBuilder<any> {
 }
 
 /**
- * GitHub Pull Requests Search Command Builder
- */
-export class GitHubPullRequestsSearchBuilder extends GitHubCommandBuilder<any> {
-  protected initializeCommand(): this {
-    this.args = ['pr', 'list'];
-    return this;
-  }
-
-  build(params: any): string[] {
-    const builder = this.reset().initializeCommand();
-
-    // Add main query
-    if (params.query) {
-      this.args.push(params.query.trim());
-    }
-
-    return builder
-      .addOwnerRepo({ owner: params.owner, repo: params.repo })
-      .addUserFilters(params)
-      .addDateRange(params)
-      .addLanguage(params.language)
-      .addFlags(params, {
-        app: 'app',
-        archived: 'archived',
-        assignee: 'assignee',
-        author: 'author',
-        base: 'base',
-        closed: 'closed',
-        draft: 'draft',
-        head: 'head',
-        label: 'label',
-        milestone: 'milestone',
-        review: 'review',
-        'review-requested': 'review-requested',
-        reviewer: 'reviewer',
-        sort: 'sort',
-        state: 'state',
-        updated: 'updated',
-      })
-      .addLimit(params.limit, 30)
-      .addJsonOutput()
-      .getArgs();
-  }
-}
-
-/**
  * GitHub Repositories Search Command Builder
  */
 export class GitHubReposSearchBuilder extends GitHubCommandBuilder<any> {
@@ -443,7 +387,13 @@ export class GitHubReposSearchBuilder extends GitHubCommandBuilder<any> {
 
     if (isComplexTest && params.license && params.followers) {
       // Specific order for the complex command test
-      if (params.owner) this.addFlag('owner', params.owner);
+      if (params.owner) {
+        // Handle owner arrays by creating multiple --owner flags
+        const owners = Array.isArray(params.owner)
+          ? params.owner
+          : [params.owner];
+        owners.forEach((owner: string) => this.addFlag('owner', owner));
+      }
       if (params.language && !hasEmbeddedLanguage)
         this.addFlag('language', params.language);
       if (params.forks) this.addFlag('forks', params.forks);
@@ -501,7 +451,15 @@ export class GitHubReposSearchBuilder extends GitHubCommandBuilder<any> {
           if (flag === 'owner' && hasEmbeddedOrg) return;
           if (flag === 'stars' && hasEmbeddedStars) return;
 
-          this.addFlag(flag, params[flag]);
+          // Handle owner arrays specially
+          if (flag === 'owner') {
+            const owners = Array.isArray(params[flag])
+              ? params[flag]
+              : [params[flag]];
+            owners.forEach((owner: string) => this.addFlag(flag, owner));
+          } else {
+            this.addFlag(flag, params[flag]);
+          }
         }
       });
 

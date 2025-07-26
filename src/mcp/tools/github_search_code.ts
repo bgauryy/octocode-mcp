@@ -13,46 +13,48 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { minifyContent } from '../../utils/minifier';
+import { minifyContentV2 } from '../../utils/minifier';
+import {
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+} from './utils/toolConstants';
 
-export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
+const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
-const DESCRIPTION = `Search code across GitHub repositories using GitHub's code search API via GitHub CLI.
+SEARCH STRATEGY:
+SEMANTIC: Natural language terms describing functionality, concepts, business logic
+TECHNICAL: Actual code terms, function names, class names, file patterns
 
-SEARCH STRATEGY FOR BEST RESULTS:
+Use bulk queries from different angles. Start narrow, broaden if needed.
+Workflow: Search → Use ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with matchString for context.
 
-ALWAYS START WITH BROAD QUERIES!
-
-TERM OPTIMIZATION:
-- BEST: Single terms for maximum coverage
-- GOOD: 2-3 minimal terms with AND logic (all must be present in same file)
-- AVOID: Complex multi-term combinations - they're restrictive
-- Start broad, then narrow with filters or separate queries
-
-MULTI-SEARCH STRATEGY:
-- Use separate searches for different aspects
-- Multiple simple queries > one complex query
-- Each search targets different code patterns or concepts
-- Parallel execution provides comprehensive coverage
-
-Filter Usage:
-- Use filters to narrow scope after broad initial searches
-- Combine strategically: language + owner/repo for precision
-- Start without filters, then refine based on results`;
+Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
 const GitHubCodeSearchQuerySchema = z.object({
-  id: z.string().optional().describe('Optional identifier for the query'),
-  queryTerms: z
-    .array(z.string())
+  id: z
+    .string()
     .optional()
     .describe(
-      'Search terms with AND logic - ALL terms must be present in same file. Use sparingly: single terms get broader results, multiple terms are restrictive.'
+      'Query description/purpose (e.g., "core-implementation", "documentation-guide", "config-files")'
     ),
-  language: z.string().optional().describe('Programming language filter'),
+  queryTerms: z
+    .array(z.string())
+    .min(1)
+    .max(4)
+    .optional()
+    .describe(
+      'Search terms with AND logic - ALL terms must appear in same file'
+    ),
+  language: z
+    .string()
+    .optional()
+    .describe(
+      'Programming language filter (e.g., "language-name", "script-language", "compiled-language")'
+    ),
   owner: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository owner/organization name'),
+    .describe('Repository owner name'),
   repo: z
     .union([z.string(), z.array(z.string())])
     .optional()
@@ -60,24 +62,35 @@ const GitHubCodeSearchQuerySchema = z.object({
   filename: z
     .string()
     .optional()
-    .describe('Target specific filename or pattern'),
-  extension: z.string().optional().describe('File extension filter'),
-  match: z
-    .enum(['file', 'path'])
+    .describe(
+      'Target specific filename or pattern (e.g., "README", "test", ".env")'
+    ),
+  extension: z
+    .string()
     .optional()
-    .describe('Search scope: file (content) or path (filenames)'),
+    .describe('File extension filter (e.g., "md", "js", "yml")'),
+  match: z
+    .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
+    .optional()
+    .describe(
+      'Search scope: "file" (content search - default), "path" (filename search)'
+    ),
   size: z
     .string()
     .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
     .optional()
-    .describe('File size filter in KB'),
+    .describe(
+      'File size filter in KB. Use ">50" for substantial files, "<10" for simple examples'
+    ),
   limit: z
     .number()
     .int()
     .min(1)
-    .max(100)
+    .max(20)
     .optional()
-    .describe('Maximum results per query (1-100)'),
+    .describe(
+      'Maximum results per query (1-20). Higher limits for discovery, lower for targeted searches'
+    ),
   visibility: z
     .enum(['public', 'private', 'internal'])
     .optional()
@@ -86,16 +99,12 @@ const GitHubCodeSearchQuerySchema = z.object({
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      'Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.'
-    ),
+    .describe('Optimize content for token efficiency (default: true)'),
   sanitize: z
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      'Sanitize content for security (enabled by default). Removes potential secrets and malicious content. Set to false only when raw content is required.'
-    ),
+    .describe('Remove secrets and malicious content (default: true)'),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -118,11 +127,18 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           .min(1)
           .max(5)
           .describe(
-            'Array of up to 5 different search queries for parallel execution'
+            '1-5 progressive refinement queries, starting broad then narrowing. PROGRESSIVE STRATEGY: Query 1 should be broad (queryTerms + owner/repo only), then progressively add filters based on initial findings. Use meaningful id descriptions to track refinement phases.'
+          ),
+        verbose: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'Include detailed metadata for debugging. Default: false for cleaner responses'
           ),
       },
       annotations: {
-        title: 'GitHub Code Search - Bulk Queries Only (Optimized)',
+        title: 'GitHub Code Search - Progressive Refinement',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -132,9 +148,13 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     withSecurityValidation(
       async (args: {
         queries: GitHubCodeSearchQuery[];
+        verbose?: boolean;
       }): Promise<CallToolResult> => {
         try {
-          return await searchMultipleGitHubCode(args.queries);
+          return await searchMultipleGitHubCode(
+            args.queries,
+            args.verbose ?? false
+          );
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -148,32 +168,39 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 }
 
 /**
- * Execute multiple GitHub code search queries in parallel.
+ * Execute multiple GitHub code search queries sequentially to avoid rate limits.
+ *
+ * PROGRESSIVE REFINEMENT APPROACH:
+ * - PHASE 1: DISCOVERY - Start broad with queryTerms + owner/repo only (no restrictive filters)
+ * - PHASE 2: CONTEXT ANALYSIS - Examine initial results to understand codebase structure and file types
+ * - PHASE 3: TARGETED SEARCH - Apply specific filters (language, extension, filename) based on findings
+ * - PHASE 4: DEEP EXPLORATION - Use insights to guide more focused searches
  *
  * SMART MIXED RESULTS HANDLING:
- * - Each query is processed independently
+ * - Each query is processed independently with descriptive IDs tracking refinement phases
  * - Results array contains both successful and failed queries
- * - Failed queries get smart error messages with fallback hints:
- *   • Rate limit: suggests timing and alternative strategies
- *   • Auth issues: provides specific login steps
- *   • Invalid queries: suggests query format fixes
- *   • Repository not found: provides discovery strategies
- *   • Network timeouts: suggests scope reduction
- * - Summary statistics show total vs successful queries
- * - User gets complete picture: what worked + what failed + how to fix
+ * - Failed queries get progressive refinement guidance:
+ *    No results: suggests broader search terms and removing filters
+ *    Rate limit: suggests starting with fewer, broader queries
+ *    Auth issues: provides specific login steps
+ *    Repository not found: provides discovery strategies
+ *    Over-filtering: suggests removing restrictive filters and starting broad
+ * - Summary statistics show total vs successful queries with refinement guidance
+ * - User gets complete picture: what worked + what failed + next refinement steps
  *
- * EXAMPLE MIXED RESULT:
- * Query 1: Success → Returns code results
- * Query 2: Rate limit → Smart error with timing guidance
- * Query 3: Success → Returns code results
- * Query 4: Repo not found → Smart error with discovery hints
- *
- * Result: 4 total queries, 2 successful, with actionable error messages
+ * EXAMPLE PROGRESSIVE FLOW:
+ * Query 1 (id: "discovery"): ["core-concept"] + owner="owner-name" + repo="repo-name" (broad start)
+ * Query 2 (id: "function-focused"): ["function-name", "method-name"] + owner="owner-name" + repo="repo-name" + language="language-name"
+ * Query 3 (id: "documentation"): ["feature guide"] + owner="owner-name" + repo="repo-name" + extension="ext"
+ * Query 4 (id: "test-examples"): ["core-concept"] + owner="owner-name" + repo="repo-name" + filename="pattern"
+ * Query 5 (id: "config-build"): ["core-concept"] + owner="owner-name" + repo="repo-name" + extension="ext"
  */
 async function searchMultipleGitHubCode(
-  queries: GitHubCodeSearchQuery[]
+  queries: GitHubCodeSearchQuery[],
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const results: GitHubCodeSearchQueryResult[] = [];
+  const hints: string[] = [];
 
   // Execute queries sequentially to avoid rate limits
   for (let index = 0; index < queries.length; index++) {
@@ -189,7 +216,7 @@ async function searchMultipleGitHubCode(
           queryId,
           originalQuery: query,
           result: { items: [], total_count: 0 },
-          error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term`,
+          error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term. PROGRESSIVE REFINEMENT TIP: Start broad with simple terms ["search-term", "function-name"] + owner/repo, then add filters in subsequent queries based on initial results.`,
         });
         continue;
       }
@@ -235,46 +262,121 @@ async function searchMultipleGitHubCode(
     }
   }
 
+  // Collect all code items from successful queries
+  const allCodeItems: any[] = [];
+  results.forEach(result => {
+    if (!result.error && result.result.items) {
+      result.result.items.forEach(item => {
+        // Convert to flattened format
+        const matches = item.matches.map(match => match.context);
+        allCodeItems.push({
+          queryId: result.queryId,
+          repository: item.repository.nameWithOwner,
+          path: item.path,
+          matches: matches,
+          repositoryInfo: {
+            nameWithOwner: item.repository.nameWithOwner,
+          },
+        });
+      });
+    }
+  });
+
+  // Generate research hints
+  results.forEach(result => {
+    if (result.error) {
+      if (result.error.includes('queryTerms parameter is required')) {
+        hints.push(
+          `Query "${result.queryId}": missing search terms - try semantic + technical terms`
+        );
+      } else if (result.error.includes('rate limit')) {
+        hints.push(
+          `Query "${result.queryId}": hit rate limit - reduce to 2-3 focused queries`
+        );
+      } else if (result.error.includes('authentication')) {
+        hints.push(
+          `Query "${result.queryId}": needs authentication - run 'gh auth login' then retry`
+        );
+      } else if (result.error.includes('repository not found')) {
+        hints.push(
+          `Query "${result.queryId}": Use github_search_repos to find correct owner/repo names`
+        );
+      } else {
+        hints.push(`Query "${result.queryId}": ${result.error}`);
+      }
+    } else if (result.result.items.length === 0) {
+      hints.push(
+        `Query "${result.queryId}": found no results - try broader semantic or different technical terms`
+      );
+    }
+  });
+
+  // Add strategic guidance
+  if (allCodeItems.length === 0) {
+    hints.push('NEXT: Try broader semantic + technical term combinations');
+  } else if (allCodeItems.length > 0) {
+    hints.push(
+      `FOUND ${allCodeItems.length} matches - use github_fetch_content with matchString for detailed context`
+    );
+    if (results.some(r => r.error)) {
+      hints.push(
+        'Some queries failed - retry failed searches with different terms'
+      );
+    }
+  }
+
   // Calculate summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
   const failedQueries = results.filter(r => r.error).length;
+  const totalCodeItems = allCodeItems.length;
 
-  // Create smart summary with mixed results guidance
-  const summary: any = {
-    totalQueries,
-    successfulQueries,
-    failedQueries,
+  const responseData: any = {
+    data: allCodeItems,
+    hints,
   };
 
-  // Add guidance for mixed results scenarios
-  if (successfulQueries > 0 && failedQueries > 0) {
-    summary.mixedResults = true;
-    summary.guidance = [
-      `${successfulQueries} queries succeeded - check results for code findings`,
-      `${failedQueries} queries failed - check error messages for specific fixes`,
-      `Review individual query errors for actionable next steps`,
-    ];
-  } else if (failedQueries === totalQueries) {
-    summary.allFailed = true;
-    summary.guidance = [
-      `All ${totalQueries} queries failed`,
-      `Check error messages for specific fixes (auth, rate limits, query format)`,
-      `Try simpler queries or different search strategies`,
-    ];
-  } else if (successfulQueries === totalQueries) {
-    summary.allSucceeded = true;
-    summary.guidance = [
-      `All ${totalQueries} queries succeeded`,
-      `Check individual results for code findings`,
-    ];
+  // Add metadata only if verbose mode is enabled
+  if (verbose) {
+    responseData.metadata = {
+      queries: results,
+      summary: {
+        totalQueries,
+        successfulQueries,
+        failedQueries,
+        totalCodeItems,
+        // Add guidance for mixed results scenarios
+        ...(successfulQueries > 0 && failedQueries > 0
+          ? {
+              mixedResults: true,
+              guidance: [
+                `${successfulQueries} queries succeeded - check results for code findings`,
+                `${failedQueries} queries failed - check error messages for specific fixes`,
+                `Review individual query errors for actionable next steps`,
+              ],
+            }
+          : failedQueries === totalQueries
+            ? {
+                allFailed: true,
+                guidance: [
+                  `All ${totalQueries} queries failed`,
+                  `Check error messages for specific fixes (auth, rate limits, query format)`,
+                  `Try simpler queries or different search strategies`,
+                ],
+              }
+            : {
+                allSucceeded: true,
+                guidance: [
+                  `All ${totalQueries} queries succeeded`,
+                  `Check individual results for code findings`,
+                ],
+              }),
+      },
+    };
   }
 
   return createResult({
-    data: {
-      results,
-      summary,
-    },
+    data: responseData,
   });
 }
 
@@ -282,86 +384,57 @@ async function searchMultipleGitHubCode(
  * Handles various search errors and returns a formatted CallToolResult with smart fallbacks.
  */
 function handleSearchError(errorMessage: string): CallToolResult {
-  // Rate limit with smart timing guidance
+  // Rate limit recovery
   if (errorMessage.includes('rate limit') || errorMessage.includes('403')) {
     return createResult({
-      error: `GitHub API rate limit reached. Try again in 5-10 minutes, or use these strategies:
-• Search fewer terms per query
-• Use owner/repo filters to narrow scope
-• Try npm package search for package-related queries
-• Use separate searches instead of complex queries`,
+      error: `Rate limit reached. Wait 5-10 minutes. Use 2-3 focused queries with core technical + semantic terms.`,
     });
   }
 
-  // Authentication with clear next steps
+  // Authentication
   if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
     return createResult({
-      error: `GitHub authentication required. Fix with:
-1. Run: gh auth login
-2. Verify access: gh auth status
-3. For private repos: use api_status_check to verify org access`,
+      error: `Authentication required: Run 'gh auth login' then retry search`,
     });
   }
 
-  // Network/timeout with fallback suggestions
+  // Network/timeout
   if (errorMessage.includes('timed out') || errorMessage.includes('network')) {
     return createResult({
-      error: `Network timeout. Try these alternatives:
-• Reduce search scope with owner or language filters
-• Use github_search_repos to find repositories first
-• Try npm package search for package discovery
-• Check network connection and retry`,
+      error: `Network timeout: Check connection, reduce query limit to 10-15, use simpler terms`,
     });
   }
 
-  // Invalid query with specific fixes
+  // Invalid query
   if (
     errorMessage.includes('validation failed') ||
     errorMessage.includes('Invalid query')
   ) {
     return createResult({
-      error: `Invalid search query. Common fixes:
-• Remove special characters: ()[]{}*?^$|.\\
-• Use quotes only for exact phrases: "error handling"
-• Avoid escaped quotes: use term instead of "term"
-• Try broader terms: "react" instead of "React.Component"`,
+      error: `Invalid query: Remove special characters, use simple terms`,
     });
   }
 
-  // Repository not found with discovery suggestions
+  // Repository not found
   if (
     errorMessage.includes('repository not found') ||
     errorMessage.includes('owner not found')
   ) {
     return createResult({
-      error: `Repository/owner not found. Discovery strategies:
-• Use github_search_repos to find correct names
-• Check for typos in owner/repo names
-• Try without owner filter for broader search
-• Use npm package search if looking for packages`,
+      error: `Repository not found: Use github_search_repos to find correct owner/repo names`,
     });
   }
 
-  // JSON parsing with system guidance
+  // JSON parsing
   if (errorMessage.includes('JSON')) {
     return createResult({
-      error: `GitHub CLI response parsing failed. System issue - try:
-• Update GitHub CLI: gh extension upgrade
-• Retry in a few moments
-• Use github_search_repos as alternative
-• Check gh auth status for authentication`,
+      error: `Parsing failed: Update GitHub CLI, check 'gh auth status', try simpler queries`,
     });
   }
 
-  // Generic fallback with progressive strategy
+  // Generic fallback
   return createResult({
-    error: `Code search failed: ${errorMessage}
-
-Progressive recovery strategy:
-1. Try broader search terms
-2. Use github_search_repos to find repositories
-3. Use npm package search for package-related queries
-4. Check github CLI status: gh auth status`,
+    error: `Search failed: ${errorMessage}. Try broader semantic + technical terms. Use github_search_repos if repo access issues.`,
   });
 }
 
@@ -418,7 +491,7 @@ async function transformToOptimizedFormat(
 
           // Apply minification if enabled
           if (minify) {
-            const minifyResult = await minifyContent(
+            const minifyResult = await minifyContentV2(
               processedFragment,
               item.path
             );
@@ -507,9 +580,10 @@ export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
 
   // Add query terms
   if (params.queryTerms && params.queryTerms.length > 0) {
-    // Properly quote each term for AND logic - all terms must be present
-    const quotedTerms = params.queryTerms.map(term => `"${term}"`).join(' ');
-    args.push(quotedTerms);
+    // Add each term as a separate argument - GitHub CLI handles AND logic automatically
+    params.queryTerms.forEach(term => {
+      args.push(term);
+    });
   }
 
   // Add filters
@@ -525,10 +599,13 @@ export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
     const repoStr = Array.isArray(params.repo) ? params.repo[0] : params.repo;
     args.push(`--repo=${ownerStr}/${repoStr}`);
   } else if (params.owner) {
-    const ownerStr = Array.isArray(params.owner)
-      ? params.owner[0]
-      : params.owner;
-    args.push(`--owner=${ownerStr}`);
+    // Handle owner arrays by creating multiple --owner flags
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach((owner: string) => args.push(`--owner=${owner}`));
+  } else if (params.repo) {
+    // Handle standalone repo arrays
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+    repos.forEach((repo: string) => args.push(`--repo=${repo}`));
   }
 
   if (params.filename) {
@@ -544,7 +621,9 @@ export function buildGitHubCliArgs(params: GitHubCodeSearchQuery): string[] {
   }
 
   if (params.match) {
-    args.push(`--match=${params.match}`);
+    // Handle match arrays by creating multiple --match flags
+    const matches = Array.isArray(params.match) ? params.match : [params.match];
+    matches.forEach((match: string) => args.push(`--match=${match}`));
   }
 
   if (params.visibility) {

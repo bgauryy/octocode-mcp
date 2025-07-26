@@ -22,49 +22,31 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
+import { ContentSanitizer } from '../../security/contentSanitizer';
+import { GITHUB_SEARCH_COMMITS_TOOL_NAME } from './utils/toolConstants';
 
-export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
+const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 
-const DESCRIPTION = `Search GitHub commits by message, author, hash, or date. Returns SHAs for github_fetch_content (branch=SHA). Can fetch commit content changes (diffs/patches) when getChangesContent=true.
+USAGE:
+ Track code changes over time
+ Find commits by author or message
+ Get SHAs for github_fetch_content
 
-SEARCH OPTIONS:
-1. Query-based search:
-   - exactQuery: Exact phrase matching (e.g., "bug fix")
-   - queryTerms: Multiple keywords with AND logic (e.g., ["readme", "typo"])
-   - orTerms: Keywords with OR logic (e.g., ["bug", "fix"] finds commits with either)
-   - Combine: queryTerms=["api"] + orTerms=["auth", "login"] = api AND (auth OR login)
-
-2. Filter-only search (no query required):
-   - Search by author, committer, hash, date, etc.
-   - Example: Just committer="monalisa" to find all commits by that user
-   - Example: Search by commit hash (including head_sha/base_sha from a PR): hash="<sha>"
-
-3. Combined search:
-   - Mix queries with filters for precise results
-   - Example: queryTerms=["fix"] + author="jane" + author-date=">2023-01-01"
+KEY FEATURES:
+ Query combinations (exactQuery, queryTerms, orTerms)
+ Filter-only search (author, hash, date)
+ Optional diff content (getChangesContent)
 
 EXAMPLES:
-• Search commits with "readme" AND "typo": queryTerms=["readme", "typo"]
-• Search exact phrase "bug fix": exactQuery="bug fix"
-• Search by committer only: committer="monalisa"
-• Search by author name: author-name="Jane Doe"
-• Search by commit hash (including head_sha/base_sha from a PR): hash="8dd03144ffdc6c0d486d6b705f9c7fba871ee7c3"
-• Search before date: author-date="<2022-02-01"
+ exactQuery="bug fix"
+ hash="<sha from PR>"
+ committer="username"
 
-CONTENT FETCHING:
-- Set getChangesContent=true to fetch actual commit changes:
-  • Gets file diffs and patches for up to 10 commits
-  • Shows changed files, additions, deletions
-  • Includes code patches (first 1000 chars)
-  • Works for both public AND private repositories
-  • Most effective when owner and repo are specified
+TOKEN WARNING:
+ getChangesContent=true is EXPENSIVE
+ Use github_fetch_content for full files
 
-TOKEN OPTIMIZATION NOTICE:
-- getChangesContent=true is EXTREMELY expensive in tokens
-- Each commit's diff/patch content consumes significant tokens
-- Limited to 1000 characters per patch and 5 files per commit for efficiency
-- Use sparingly and only when code changes are essential to your task
-- use fetch_github_file_content to get the full content of the file`;
+PHILOSOPHY: Build comprehensive understanding progressively`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -324,22 +306,22 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
               error: `${createNoResultsError('commits')}
 
 Try these simplified searches:
-${simplificationSteps.map(step => `• ${step}`).join('\n')}
+${simplificationSteps.map(step => ` ${step}`).join('\n')}
 
 Or ask the user:
-• "What specific type of commits are you looking for?" 
-• "Can you provide different keywords to search for?"
-• "Should I search in a specific repository instead?"
+ "What specific type of commits are you looking for?" 
+ "Can you provide different keywords to search for?"
+ "Should I search in a specific repository instead?"
 
 Search techniques to try:
-• Use exactQuery for phrases: "bug fix", "exact phrase"
-• Use queryTerms for multiple terms: ["term1", "term2"] (AND logic)
-• For OR operations: run separate searches for each term
-• Combine with filters: author, repo, date filters
+ Use exactQuery for phrases: "bug fix", "exact phrase"
+ Use queryTerms for multiple terms: ["term1", "term2"] (AND logic)
+ For OR operations: run separate searches for each term
+ Combine with filters: author, repo, date filters
 
 Alternative tools:
-• Use github_search_code for file-specific commits
-• Use github_search_repos to find repositories first`,
+ Use github_search_code for file-specific commits
+ Use github_search_repos to find repositories first`,
             });
           }
 
@@ -421,9 +403,14 @@ async function transformCommitsToOptimizedFormat(
 
   const optimizedCommits = items
     .map(item => {
+      // Sanitize commit message
+      const rawMessage = getCommitTitle(item.commit?.message ?? '');
+      const messageSanitized = ContentSanitizer.sanitizeContent(rawMessage);
+      const warningsCollector: string[] = [...messageSanitized.warnings];
+
       const commitObj: any = {
         sha: item.sha, // Use as branch parameter in github_fetch_content
-        message: getCommitTitle(item.commit?.message ?? ''),
+        message: messageSanitized.content,
         author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
         date: toDDMMYYYY(item.commit?.author?.date ?? ''),
         repository: singleRepo
@@ -433,6 +420,11 @@ async function transformCommitsToOptimizedFormat(
           ? item.sha
           : `${simplifyRepoUrl(item.repository?.url || '')}@${item.sha}`,
       };
+
+      // Add security warnings if any were detected
+      if (warningsCollector.length > 0) {
+        commitObj._sanitization_warnings = warningsCollector;
+      }
 
       // Add diff information if available
       if (shouldFetchDiff && diffData.has(item.sha)) {
@@ -444,19 +436,44 @@ async function transformCommitsToOptimizedFormat(
           deletions: commitData.stats?.deletions || 0,
           total_changes: commitData.stats?.total || 0,
           files: files
-            .map((f: any) => ({
-              filename: f.filename,
-              status: f.status,
-              additions: f.additions,
-              deletions: f.deletions,
-              changes: f.changes,
-              patch: f.patch
-                ? f.patch.substring(0, 1000) +
-                  (f.patch.length > 1000 ? '...' : '')
-                : undefined,
-            }))
+            .map((f: any) => {
+              const fileObj: any = {
+                filename: f.filename,
+                status: f.status,
+                additions: f.additions,
+                deletions: f.deletions,
+                changes: f.changes,
+              };
+
+              // Sanitize patch content if present
+              if (f.patch) {
+                const rawPatch =
+                  f.patch.substring(0, 1000) +
+                  (f.patch.length > 1000 ? '...' : '');
+                const patchSanitized =
+                  ContentSanitizer.sanitizeContent(rawPatch);
+                fileObj.patch = patchSanitized.content;
+
+                // Collect patch sanitization warnings
+                if (patchSanitized.warnings.length > 0) {
+                  warningsCollector.push(
+                    ...patchSanitized.warnings.map(w => `[${f.filename}] ${w}`)
+                  );
+                }
+              }
+
+              return fileObj;
+            })
             .slice(0, 5), // Limit to 5 files per commit
         };
+
+        // Update warnings if patch sanitization added any
+        if (
+          warningsCollector.length >
+          (commitObj._sanitization_warnings?.length || 0)
+        ) {
+          commitObj._sanitization_warnings = warningsCollector;
+        }
       }
 
       return commitObj;
