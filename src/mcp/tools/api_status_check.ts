@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { executeGitHubCommand, executeNpmCommand } from '../../utils/exec';
 import { createResult } from '../responses';
+import { API_STATUS_CHECK_TOOL_NAME } from './utils/toolConstants';
 
-export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
 const DESCRIPTION = `PURPOSE: Verify GitHub/NPM connections and user organizations for data access.`;
 
 // Helper function to parse execution results with proper typing

@@ -18,10 +18,9 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
+import { GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME } from './utils/toolConstants';
 
 // TODO: summerize body
-
-export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
 
 const DESCRIPTION = `Search GitHub pull requests with comprehensive filtering and analysis.
 

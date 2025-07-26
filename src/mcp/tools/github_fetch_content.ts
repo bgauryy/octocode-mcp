@@ -11,8 +11,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-
-export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
+import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './utils/toolConstants';
 
 const DESCRIPTION = `PURPOSE: Fetch file contents from GitHub repositories with token optimization.
 

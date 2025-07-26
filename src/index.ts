@@ -3,30 +3,12 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { clearAllCache } from './utils/cache.js';
-import {
-  API_STATUS_CHECK_TOOL_NAME,
-  registerApiStatusCheckTool,
-} from './mcp/tools/api_status_check.js';
-import {
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  registerGitHubSearchCodeTool,
-} from './mcp/tools/github_search_code.js';
-import {
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  registerFetchGitHubFileContentTool,
-} from './mcp/tools/github_fetch_content.js';
-import {
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  registerSearchGitHubReposTool,
-} from './mcp/tools/github_search_repos.js';
-import {
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  registerGitHubSearchCommitsTool,
-} from './mcp/tools/github_search_commits.js';
-import {
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  registerSearchGitHubPullRequestsTool,
-} from './mcp/tools/github_search_pull_requests.js';
+import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
+import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
+import { registerGitHubSearchCommitsTool } from './mcp/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import {
   NPM_PACKAGE_SEARCH_TOOL_NAME,
   registerNpmSearchTool,
@@ -35,11 +17,17 @@ import {
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
   registerViewRepositoryStructureTool,
 } from './mcp/tools/github_view_repo_structure.js';
+import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
+import { version } from '../package.json';
 import {
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  registerSearchGitHubIssuesTool,
-} from './mcp/tools/github_search_issues.js';
-import { version } from '../package.json';
+  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+  GITHUB_SEARCH_COMMITS_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  API_STATUS_CHECK_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+} from './mcp/tools/utils/toolConstants.js';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',

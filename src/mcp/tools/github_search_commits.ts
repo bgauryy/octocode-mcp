@@ -23,8 +23,7 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-
-export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
+import { GITHUB_SEARCH_COMMITS_TOOL_NAME } from './utils/toolConstants';
 
 const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 

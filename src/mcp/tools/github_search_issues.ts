@@ -20,8 +20,7 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-
-export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
+import { GITHUB_SEARCH_ISSUES_TOOL_NAME } from './utils/toolConstants';
 
 const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 

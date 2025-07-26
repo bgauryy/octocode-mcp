@@ -19,30 +19,12 @@ vi.mock('../src/mcp/tools/npm_view_package.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
-import {
-  registerApiStatusCheckTool,
-  API_STATUS_CHECK_TOOL_NAME,
-} from '../src/mcp/tools/api_status_check.js';
-import {
-  registerGitHubSearchCodeTool,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-} from '../src/mcp/tools/github_search_code.js';
-import {
-  registerFetchGitHubFileContentTool,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-} from '../src/mcp/tools/github_fetch_content.js';
-import {
-  registerSearchGitHubReposTool,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-} from '../src/mcp/tools/github_search_repos.js';
-import {
-  registerGitHubSearchCommitsTool,
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-} from '../src/mcp/tools/github_search_commits.js';
-import {
-  registerSearchGitHubPullRequestsTool,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-} from '../src/mcp/tools/github_search_pull_requests.js';
+import { registerApiStatusCheckTool } from '../src/mcp/tools/api_status_check.js';
+import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
+import { registerGitHubSearchCommitsTool } from '../src/mcp/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
 import {
   registerNpmSearchTool,
   NPM_PACKAGE_SEARCH_TOOL_NAME,
@@ -51,10 +33,16 @@ import {
   registerViewRepositoryStructureTool,
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
 } from '../src/mcp/tools/github_view_repo_structure.js';
+import { registerSearchGitHubIssuesTool } from '../src/mcp/tools/github_search_issues.js';
 import {
-  registerSearchGitHubIssuesTool,
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
-} from '../src/mcp/tools/github_search_issues.js';
+  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+  GITHUB_SEARCH_COMMITS_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  API_STATUS_CHECK_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+} from '../src/mcp/tools/utils/toolConstants.js';
 
 // Mock implementations
 const mockMcpServer = {

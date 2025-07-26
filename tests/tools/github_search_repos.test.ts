@@ -24,8 +24,8 @@ import {
   registerSearchGitHubReposTool,
   searchGitHubRepos,
   buildGitHubReposSearchCommand,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
 } from '../../src/mcp/tools/github_search_repos.js';
+import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from '../../src/mcp/tools/utils/toolConstants.js';
 
 describe('GitHub Search Repositories Tool', () => {
   let mockServer: MockMcpServer;

@@ -80,8 +80,8 @@ import {
   registerGitHubSearchCodeTool,
   buildGitHubCliArgs,
   searchGitHubCode,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
 } from '../../src/mcp/tools/github_search_code.js';
+import { GITHUB_SEARCH_CODE_TOOL_NAME } from '../../src/mcp/tools/utils/toolConstants.js';
 
 describe('GitHub Search Code Tool', () => {
   let mockServer: MockMcpServer;

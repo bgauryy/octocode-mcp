@@ -9,10 +9,13 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
-import { GITHUB_SEARCH_CODE_TOOL_NAME } from './github_search_code';
-import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './github_fetch_content';
+import {
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+} from './utils/toolConstants';
 
-export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
+export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
 const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding and research planning
 

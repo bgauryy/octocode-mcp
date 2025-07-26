@@ -1,12 +1,14 @@
-import { API_STATUS_CHECK_TOOL_NAME } from '../api_status_check';
-import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from '../github_fetch_content';
-import { GITHUB_SEARCH_CODE_TOOL_NAME } from '../github_search_code';
-import { GITHUB_SEARCH_COMMITS_TOOL_NAME } from '../github_search_commits';
-import { GITHUB_SEARCH_ISSUES_TOOL_NAME } from '../github_search_issues';
-import { GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME } from '../github_search_pull_requests';
-import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from '../github_search_repos';
-import { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME } from '../github_view_repo_structure';
-import { NPM_PACKAGE_SEARCH_TOOL_NAME } from '../package_search';
+import {
+  API_STATUS_CHECK_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_SEARCH_COMMITS_TOOL_NAME,
+  GITHUB_SEARCH_ISSUES_TOOL_NAME,
+  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+  NPM_PACKAGE_SEARCH_TOOL_NAME,
+} from './toolConstants';
 
 interface ToolRelationship {
   fallbackTools: Array<{

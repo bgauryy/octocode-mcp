@@ -27,9 +27,10 @@ import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
 import { getToolSuggestions } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 import { generateCacheKey, withCache } from '../../utils/cache';
+import { NPM_PACKAGE_SEARCH_TOOL_NAME } from './utils/toolConstants';
 import axios from 'axios';
 
-export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'packageSearch';
+export { NPM_PACKAGE_SEARCH_TOOL_NAME };
 
 const DESCRIPTION = `PURPOSE: Efficiently discover and analyze packages across NPM and Python ecosystems with metadata and repository links.
 

@@ -11,8 +11,7 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
-
-export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
+import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from './utils/toolConstants';
 
 const DESCRIPTION = `Search GitHub repositories by topic, language, owner, or keywords.
 

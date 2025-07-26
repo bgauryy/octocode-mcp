@@ -14,8 +14,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { minifyContentV2 } from '../../utils/minifier';
-
-export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
+import { GITHUB_SEARCH_CODE_TOOL_NAME } from './utils/toolConstants';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with PROGRESSIVE REFINEMENT strategy.
 
