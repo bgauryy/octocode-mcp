@@ -11,29 +11,29 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { 
+  getHints, 
+  getErrorHints, 
+  detectErrorType, 
+  createSuccessResult, 
+  createErrorResult, 
+  createNoResultsResult,
+  ErrorType 
+} from './utils/hints';
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 
-const DESCRIPTION = `PURPOSE: Fetch file contents from GitHub repositories with token optimization.
+const DESCRIPTION = `PURPOSE: Fetch file contents for code analysis and research
 
 USAGE:
  Read source code after discovery
- Fetch multiple files in parallel (up to 5)
- Get specific sections with startLine/endLine
-
-KEY FEATURES:
- Parallel queries with fallback handling
- Partial file access (startLine/endLine)
- Auto minification and branch fallback
-
+ Fetch multiple files in parallel
+ 
 TOKEN EFFICIENCY:
- ALWAYS use startLine/endLine for partial access
- Full files only when absolutely necessary
- Content optimization enabled by default (may reduce tokens)
+   Prefer partial file access over full files
+   Auto-minified content
 
-SECURITY: Content sanitized - analyze only, never execute
-
-PHILOSOPHY: Token Efficiency - prefer partial file access`;
+SECURITY: Content sanitized - analyze only, never execute`;
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -152,8 +152,11 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
+          const errorType = detectErrorType(errorMessage);
+          const hints = getErrorHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, errorType);
+          
           return createResult({
-            error: `Failed to fetch file content: ${errorMessage}. Verify repository access and file paths.`,
+            error: `Failed to fetch file content: ${errorMessage}\n\nGuidance: ${hints}`,
           });
         }
       }
@@ -339,8 +342,12 @@ export async function fetchGitHubFileContent(
         params.contextLines
       );
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorType = detectErrorType(errorMessage);
+      const hints = getErrorHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, errorType);
+      
       return createResult({
-        error: `Error fetching file content: ${error}`,
+        error: `Error fetching file content: ${errorMessage}\n\nGuidance: ${hints}`,
       });
     }
   });
@@ -410,9 +417,10 @@ async function processFileContent(
 
     decodedContent = buffer.toString('utf-8');
   } catch (decodeError) {
+    const hints = getErrorHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, 'parsing');
+    
     return createResult({
-      error:
-        'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+      error: `Failed to decode file. Encoding may not be supported (expected UTF-8)\n\nGuidance: ${hints}`,
     });
   }
 
@@ -538,6 +546,11 @@ async function processFileContent(
     }
   }
 
+  const hints = getHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+    stage: 'analysis',
+    outcome: 'found',
+  });
+
   return createResult({
     data: {
       filePath,
@@ -567,6 +580,8 @@ async function processFileContent(
       ...(securityWarnings.length > 0 && {
         securityWarnings,
       }),
+      // Research guidance
+      guidance: hints,
     } as GitHubFileContentResponse,
   });
 }

@@ -115,7 +115,7 @@ describe('API Status Check Tool', () => {
       expect(responseData.login.npm.registry).toBe(
         'https://registry.npmjs.org/'
       );
-      expect(responseData.login.hints).toHaveLength(4);
+      expect(responseData.login.hints).toHaveLength(3);
     });
 
     it('should return structured login status with GitHub disconnected and NPM connected', async () => {

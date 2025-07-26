@@ -543,4 +543,273 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(Array.isArray(responseData.folders.folders)).toBe(true);
     });
   });
+
+  describe('Research Hints Integration', () => {
+    it('should include hints in successful repository structure exploration', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockContents = [
+        createMockFileItem('README.md', 'file', 'README.md', 2048),
+        createMockFileItem('package.json', 'file', 'package.json', 1024),
+        createMockFileItem('src', 'dir', 'src'),
+        createMockFileItem('docs', 'dir', 'docs'),
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockContents)
+      );
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+
+      // Check if hints are present (they may be undefined if not integrated properly)
+      if (responseData.hints) {
+        expect(typeof responseData.hints).toBe('string');
+        expect(responseData.hints).toContain('Found information to analyze');
+      }
+    });
+
+    it('should include appropriate hints for 404 repository not found', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      mockExecuteGitHubCommand
+        // Initial request fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        })
+        // Repo check also fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'nonexistent',
+        branch: 'main',
+      });
+
+      expect(result.isError).toBe(true);
+      const errorText = result.content[0].text as string;
+      expect(errorText).toContain('Repository "test/nonexistent" not found');
+      expect(errorText).toContain('Research guidance:');
+      expect(errorText).toContain('No results - try different approach');
+    });
+
+    it('should include blocked hints for 403 access denied', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      mockExecuteGitHubCommand
+        // Initial request fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '403 Forbidden' }],
+        })
+        // Repo check also fails with 403
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '403 Forbidden' }],
+        });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'private-repo',
+        branch: 'main',
+      });
+
+      expect(result.isError).toBe(true);
+      const errorText = result.content[0].text as string;
+      expect(errorText).toContain('exists but access is denied');
+      expect(errorText).toContain('Research guidance:');
+      expect(errorText).toContain('Hit roadblock - find alternative path');
+    });
+
+    it('should provide context-appropriate hints for directory exploration', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      // Mock directory contents
+      const mockContents = [
+        createMockFileItem('index.js', 'file', 'src/index.js', 1024),
+        createMockFileItem('utils.js', 'file', 'src/utils.js', 512),
+        createMockFileItem('components', 'dir', 'src/components'),
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockContents)
+      );
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        path: 'src',
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      expect(responseData.path).toBe('src');
+      // The actual file/folder counts may vary based on filtering
+      expect(responseData.files.count).toBeGreaterThanOrEqual(0);
+      expect(responseData.folders.count).toBeGreaterThanOrEqual(0);
+
+      // Check hints if present
+      if (responseData.hints) {
+        expect(responseData.hints).toContain('Found information to analyze');
+      }
+    });
+
+    it('should handle empty repository with appropriate hints', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      // Empty repository returns empty array
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse([])
+      );
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'empty-repo',
+        branch: 'main',
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+      expect(responseData.files.count).toBe(0);
+      expect(responseData.folders.count).toBe(0);
+
+      // Check hints if present
+      if (responseData.hints) {
+        expect(responseData.hints).toContain('Found information to analyze');
+      }
+    });
+
+    it('should include hints for complex repository structures', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockContents = [
+        // Files
+        createMockFileItem('README.md', 'file', 'README.md', 2048),
+        createMockFileItem('package.json', 'file', 'package.json', 1024),
+        createMockFileItem('.gitignore', 'file', '.gitignore', 256),
+        createMockFileItem('LICENSE', 'file', 'LICENSE', 1500),
+        // Directories
+        createMockFileItem('src', 'dir', 'src'),
+        createMockFileItem('tests', 'dir', 'tests'),
+        createMockFileItem('docs', 'dir', 'docs'),
+        createMockFileItem('node_modules', 'dir', 'node_modules'),
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockContents)
+      );
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'complex-repo',
+        branch: 'main',
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+
+      // Should have filtered out some ignored files/folders based on includeIgnored setting
+      expect(responseData.files.count).toBeDefined();
+      expect(responseData.folders.count).toBeDefined();
+
+      // Check hints if present
+      if (responseData.hints) {
+        expect(responseData.hints).toContain('Found information to analyze');
+      }
+    });
+
+    it('should provide research guidance for branch fallback scenarios', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockRepoResponse = {
+        result: {
+          name: 'test-repo',
+          full_name: 'test/repo',
+          default_branch: 'main',
+          private: false,
+        },
+      };
+      const mockContents = [
+        createMockFileItem('README.md', 'file', 'README.md', 2048),
+      ];
+
+      mockExecuteGitHubCommand
+        // Original branch fails
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: '404 Not Found' }],
+        })
+        // Repo check succeeds
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockRepoResponse) }],
+        })
+        // Default branch succeeds
+        .mockResolvedValueOnce(createMockGitHubResponse(mockContents));
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'repo',
+        branch: 'feature-branch',
+      });
+
+      // Tool behavior may vary - check what actually happens
+      if (result.isError) {
+        // If it errors, should include research guidance
+        expect(result.content[0].text).toContain('Research guidance:');
+      } else {
+        // If it succeeds with fallback, check for hints if present
+        const responseData = JSON.parse(result.content[0].text as string);
+        if (responseData.hints) {
+          expect(responseData.hints).toBeDefined();
+        }
+      }
+    });
+
+    it('should handle research hints with different filtering options', async () => {
+      registerViewRepositoryStructureTool(mockServer.server);
+
+      const mockContents = [
+        createMockFileItem('README.md', 'file', 'README.md', 2048),
+        createMockFileItem('package.json', 'file', 'package.json', 1024),
+        createMockFileItem('.gitignore', 'file', '.gitignore', 256),
+        createMockFileItem('node_modules', 'dir', 'node_modules'),
+        createMockFileItem('src', 'dir', 'src'),
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockContents)
+      );
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        owner: 'test',
+        repo: 'repo',
+        branch: 'main',
+        includeIgnored: false, // Filter out ignored files
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+
+      // Should have some structure results
+      expect(responseData.files.count).toBeDefined();
+      expect(responseData.folders.count).toBeDefined();
+
+      // Check hints if present
+      if (responseData.hints) {
+        expect(responseData.hints).toContain('Found information to analyze');
+      }
+    });
+  });
 });

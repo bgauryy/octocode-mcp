@@ -11,6 +11,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
 import { GITHUB_SEARCH_CODE_TOOL_NAME } from './github_search_code';
 import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './github_fetch_content';
+import { getHints, getErrorHints, ErrorType } from './utils/hints';
 
 export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
 
@@ -514,6 +515,12 @@ async function formatRepositoryStructureWithDepth(
       url: item.path, // Use path for browsing
     }));
 
+  // Generate research hints based on structure findings
+  const hints = getHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    stage: 'discovery',
+    outcome: 'found',
+  });
+
   return createResult({
     data: {
       repository: `${owner}/${repo}`,
@@ -542,6 +549,7 @@ async function formatRepositoryStructureWithDepth(
       },
       // Include depth-organized view for better understanding
       byDepth: structureByDepth,
+      hints: hints.trim() ? hints : undefined,
     },
   });
 }
@@ -618,12 +626,19 @@ function handleRepositoryNotFound(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('404')) {
+    const hints = getHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      stage: 'discovery',
+      outcome: 'empty',
+    });
+
     return createResult({
-      error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
+      error: `Repository "${owner}/${repo}" not found. ${hints}`,
     });
   } else if (errorMsg.includes('403')) {
+    const hints = getErrorHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, 'auth');
+
     return createResult({
-      error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
+      error: `Repository "${owner}/${repo}" access denied. ${hints}`,
     });
   }
   return createResult({
@@ -642,34 +657,24 @@ function handlePathNotFound(
   defaultBranch: string,
   repoDefaultBranchFound: boolean
 ): CallToolResult {
-  const defaultBranchInfo = repoDefaultBranchFound
-    ? `\nRepository default branch: "${defaultBranch}"`
-    : `\nCould not determine default branch - repository info unavailable`;
+  const hints = getErrorHints(
+    GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+    'not_found'
+  );
 
-  if (path) {
-    return createResult({
-      error: `Path "${path}" not found in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
+  const ownerRepo = `owner: ${owner}, repo: ${repo}`;
 
-Quick solution: Use the correct branch name:
-{"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}
+  const branchInfo = repoDefaultBranchFound
+    ? `default branch: "${defaultBranch}"`
+    : `Could not determine default branch`;
 
-Alternative solutions:
- Search for path: github_search_code with query="path:${path}" owner="${owner}"
- Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
- Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
-    });
-  } else {
-    return createResult({
-      error: `Repository "${owner}/${repo}" structure not accessible in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
+  const pathContext = path
+    ? `Path "${path}" not found in branches: ${triedBranches.join(', ')}`
+    : `Repository structure not accessible in branches: ${triedBranches.join(', ')}`;
 
-Repository might be empty, private, or you might not have sufficient permissions.
-
-Alternative solutions:
- Verify permissions: api_status_check
- Search accessible repos: github_search_code with owner="${owner}"
- Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
-    });
-  }
+  return createResult({
+    error: `${ownerRepo} ${pathContext}. ${branchInfo}\n\n${hints}`,
+  });
 }
 
 /**
@@ -680,13 +685,14 @@ function handleOtherErrors(
   repo: string,
   errorMsg: string
 ): CallToolResult {
+  let errorType: ErrorType | undefined;
   if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-    return createResult({
-      error: `Access denied to "${owner}/${repo}". Repository exists but might be private/archived. Use api_status_check to verify permissions, or github_search_code with owner="${owner}" to find accessible repositories.`,
-    });
-  } else {
-    return createResult({
-      error: `Failed to access "${owner}/${repo}": ${errorMsg}. Check network connection and repository permissions.`,
-    });
+    errorType = 'auth';
   }
+
+  const hints = getErrorHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, errorType);
+
+  return createResult({
+    error: `Failed to access "${owner}/${repo}": ${errorMsg}\n\n${hints}`,
+  });
 }

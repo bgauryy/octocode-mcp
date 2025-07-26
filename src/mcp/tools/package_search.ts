@@ -23,9 +23,8 @@ import {
   PythonPackageQuery,
 } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
-import { getToolSuggestions } from './utils/toolRelationships';
-import { createToolSuggestion } from './utils/validation';
+import { getErrorWithSuggestion } from './utils/hints';
+import { getHints, getErrorHints, ErrorType } from './utils/hints';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import axios from 'axios';
 
@@ -654,28 +653,24 @@ export function registerNpmSearchTool(server: McpServer) {
 
         // If we have results, process them based on requested format
         if (totalCount > 0) {
-          const { nextSteps } = getToolSuggestions(
-            NPM_PACKAGE_SEARCH_TOOL_NAME,
-            {
-              hasResults: true,
-            }
-          );
+          const hints = getHints(NPM_PACKAGE_SEARCH_TOOL_NAME, {
+            stage: 'discovery',
+            outcome: 'found',
+          });
 
-          const hints = [];
+          const hintLines = [];
 
           // Add error information if there were failures
           if (errors.npm.length > 0 || errors.python.length > 0) {
-            hints.push('Search warnings:');
-            errors.npm.forEach(error => hints.push(` ${error}`));
-            errors.python.forEach(error => hints.push(` ${error}`));
-            hints.push('');
+            hintLines.push('Search warnings:');
+            errors.npm.forEach(error => hintLines.push(` ${error}`));
+            errors.python.forEach(error => hintLines.push(` ${error}`));
+            hintLines.push('');
           }
 
-          if (nextSteps.length > 0) {
-            hints.push('Next steps:');
-            nextSteps.forEach(({ tool, reason }) => {
-              hints.push(` Use ${tool} ${reason}`);
-            });
+          // Add research hints if available
+          if (hints.trim()) {
+            hintLines.push(hints);
           }
 
           // Check if enhanced metadata fetching is requested for NPM packages
@@ -828,9 +823,9 @@ export function registerNpmSearchTool(server: McpServer) {
 
               // Add metadata errors to hints
               if (metadataErrors.length > 0) {
-                hints.push('NPM metadata warnings:');
-                metadataErrors.forEach(error => hints.push(` ${error}`));
-                hints.push('');
+                hintLines.push('NPM metadata warnings:');
+                metadataErrors.forEach(error => hintLines.push(` ${error}`));
+                hintLines.push('');
               }
 
               // Process Python packages (simpler - no enhanced metadata yet)
@@ -856,7 +851,7 @@ export function registerNpmSearchTool(server: McpServer) {
               // Return enhanced response format
               const enhancedResult: EnhancedPackageSearchResult = {
                 total_count: totalCount,
-                hints: hints.length > 0 ? hints : undefined,
+                hints: hintLines.length > 0 ? hintLines : undefined,
               };
 
               if (Object.keys(enhancedNpmResults).length > 0) {
@@ -872,8 +867,8 @@ export function registerNpmSearchTool(server: McpServer) {
               // If metadata fetching fails completely, fall back to basic response
               const errorMsg =
                 error instanceof Error ? error.message : String(error);
-              hints.push(`NPM metadata fetching failed: ${errorMsg}`);
-              hints.push('Falling back to basic search results');
+              hintLines.push(`NPM metadata fetching failed: ${errorMsg}`);
+              hintLines.push('Falling back to basic search results');
             }
           }
 
@@ -883,235 +878,54 @@ export function registerNpmSearchTool(server: McpServer) {
               total_count: totalCount,
               npm: deduplicatedNpmPackages,
               python: deduplicatedPythonPackages,
-              hints: hints.length > 0 ? hints : undefined,
+              hints: hintLines.length > 0 ? hintLines : undefined,
             },
           });
         }
 
-        // Build detailed error message with ecosystem-specific information
-        const errorDetails = [];
-
-        if (errors.npm.length > 0) {
-          errorDetails.push('NPM Search Issues:');
-          errors.npm.forEach(error => errorDetails.push(`   ${error}`));
-        }
-
-        if (errors.python.length > 0) {
-          errorDetails.push('Python Search Issues:');
-          errors.python.forEach(error => errorDetails.push(`   ${error}`));
-        }
-
-        // If no specific errors were captured, use generic message
-        if (errorDetails.length === 0) {
-          const searchedTerms = [];
-          if (normalizedPythonQueries.length > 0)
-            searchedTerms.push(
-              `Python: [${normalizedPythonQueries.map(q => q.name).join(', ')}]`
-            );
-          if (normalizedNpmQueries.length > 0)
-            searchedTerms.push(
-              `NPM: [${normalizedNpmQueries.map(q => q.name).join(', ')}]`
-            );
-          errorDetails.push(
-            `No packages found for: ${searchedTerms.join(', ')}`
-          );
-        }
-
-        // Smart fallback suggestions based on query patterns
-        const hasSpecificTerms =
-          normalizedNpmQueries.length > 0 &&
-          normalizedNpmQueries.some(
-            q =>
-              q &&
-              (q.name.includes('-') ||
-                q.name.includes('@') ||
-                q.name.length > 15)
-          );
-
-        const hasFrameworkTerms =
-          normalizedNpmQueries.length > 0 &&
-          normalizedNpmQueries.some(
-            q =>
-              q &&
-              ['react', 'vue', 'angular', 'express', 'fastify'].some(fw =>
-                q.name.toLowerCase().includes(fw)
-              )
-          );
-
-        let fallbackSuggestions = [
-          ' Try broader functional terms: "testing" instead of "jest-unit-test"',
-          ' Remove version numbers or specific constraints',
-          ' Use single keywords: "http" instead of "http-client-library"',
-        ];
-
-        if (hasSpecificTerms) {
-          fallbackSuggestions = [
-            ' Use simpler terms: "validation" instead of "schema-validation-library"',
-            ' Try category terms: "database", "testing", "auth"',
-            ...fallbackSuggestions.slice(1),
-          ];
-        }
-
-        if (hasFrameworkTerms) {
-          fallbackSuggestions.unshift(
-            ' Try specific framework searches: "react hooks", "vue components"'
-          );
-        }
-
-        // Add ecosystem-specific suggestions
-        if (normalizedPythonQueries.length > 0 && errors.python.length > 0) {
-          fallbackSuggestions.push(
-            ' For Python: Try alternative names (e.g., "pillow" instead of "PIL")'
-          );
-          fallbackSuggestions.push(
-            ' For Python: Check exact spelling on https://pypi.org'
-          );
-          fallbackSuggestions.push(
-            'For Python: Use github_search_repos to find repository when PyPI lacks repository info'
-          );
-          fallbackSuggestions.push(
-            'For Python: Search GitHub with package name as topic for alternative sources'
-          );
-        }
-
-        if (normalizedNpmQueries.length > 0 && errors.npm.length > 0) {
-          fallbackSuggestions.push(
-            ' For NPM: Check package availability on https://npmjs.com'
-          );
-          fallbackSuggestions.push(
-            ' For NPM: Try searching with exact package names'
-          );
-        }
-
-        // Add GitHub integration suggestions
-        fallbackSuggestions.push(
-          ' Use github_search_repos with topic filters for project discovery'
-        );
-
-        if (normalizedNpmQueries.length > 0) {
-          fallbackSuggestions.push(
-            ' Check npm registry status: https://status.npmjs.org'
-          );
-        }
-
-        const { fallback } = getToolSuggestions(NPM_PACKAGE_SEARCH_TOOL_NAME, {
-          errorType: 'no_results',
+        // No results found - use centralized hints
+        const hints = getHints(NPM_PACKAGE_SEARCH_TOOL_NAME, {
+          stage: 'discovery',
+          outcome: 'empty',
         });
-
-        const toolSuggestions = createToolSuggestion(
-          NPM_PACKAGE_SEARCH_TOOL_NAME,
-          fallback
-        );
-
-        // Add package type suggestion
-        const packageTypeSuggestion =
-          normalizedPythonQueries.length > 0
-            ? ' Try searching with npmPackageName if this is an NPM package'
-            : ' Try searching with pythonPackageName if this is a Python package';
-
-        fallbackSuggestions.push(packageTypeSuggestion);
 
         return createResult({
           error: getErrorWithSuggestion({
-            baseError: errorDetails.join('\n'),
-            suggestion: [fallbackSuggestions.join('\n'), toolSuggestions],
+            baseError: 'No packages found in any ecosystem.',
+            suggestion: hints,
           }),
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
 
-        // Network/connectivity issues
+        // Determine error type for specific hints
+        let errorType: ErrorType | undefined;
+
         if (
           errorMsg.includes('network') ||
           errorMsg.includes('timeout') ||
           errorMsg.includes('ENOTFOUND')
         ) {
-          const { fallback } = getToolSuggestions(
-            NPM_PACKAGE_SEARCH_TOOL_NAME,
-            {
-              hasError: true,
-            }
-          );
-
-          return createResult({
-            error: getErrorWithSuggestion({
-              baseError: ERROR_MESSAGES.NPM_CONNECTION_FAILED,
-              suggestion: [
-                ' Check internet connection and npm registry status',
-                ' Try fewer search terms to reduce load',
-                ' Retry in a few moments',
-                createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
-              ],
-            }),
-          });
-        }
-
-        // NPM CLI issues
-        if (
+          errorType = 'network';
+        } else if (
           errorMsg.includes('command not found') ||
           errorMsg.includes('npm')
         ) {
-          const { fallback } = getToolSuggestions(
-            NPM_PACKAGE_SEARCH_TOOL_NAME,
-            {
-              hasError: true,
-            }
-          );
-
-          return createResult({
-            error: getErrorWithSuggestion({
-              baseError: ERROR_MESSAGES.NPM_CLI_ERROR,
-              suggestion: [
-                ' Verify NPM installation: npm --version',
-                ' Update NPM: npm install -g npm@latest',
-                ' Check PATH environment variable',
-                createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
-              ],
-            }),
-          });
-        }
-
-        // Permission/auth issues
-        if (
+          errorType = 'cli';
+        } else if (
           errorMsg.includes('permission') ||
           errorMsg.includes('403') ||
           errorMsg.includes('401')
         ) {
-          const { fallback } = getToolSuggestions(
-            NPM_PACKAGE_SEARCH_TOOL_NAME,
-            {
-              errorType: 'access_denied',
-            }
-          );
-
-          return createResult({
-            error: getErrorWithSuggestion({
-              baseError: ERROR_MESSAGES.NPM_PERMISSION_ERROR,
-              suggestion: [
-                ' Check npm login status: npm whoami',
-                ' Use public registry search without auth',
-                ' Verify npm registry configuration',
-                createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
-              ],
-            }),
-          });
+          errorType = 'permission';
         }
 
-        const { fallback } = getToolSuggestions(NPM_PACKAGE_SEARCH_TOOL_NAME, {
-          hasError: true,
-        });
+        const hints = getErrorHints(NPM_PACKAGE_SEARCH_TOOL_NAME, errorType);
 
         return createResult({
           error: getErrorWithSuggestion({
-            baseError: ERROR_MESSAGES.PACKAGE_SEARCH_FAILED,
-            suggestion: [
-              `Error details: ${errorMsg}`,
-              '',
-              'Fallback strategies:',
-              ' Check npm status and retry',
-              ' Use broader search terms',
-              createToolSuggestion(NPM_PACKAGE_SEARCH_TOOL_NAME, fallback),
-            ],
+            baseError: `Package search failed: ${errorMsg}`,
+            suggestion: hints,
           }),
         });
       }

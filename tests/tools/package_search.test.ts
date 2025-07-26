@@ -732,4 +732,218 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(result.content[0].text).toContain('legacy format');
     });
   });
+
+  describe('Research Hints Integration', () => {
+    it('should include hints when packages are found successfully', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'express',
+            version: '4.18.2',
+            description: 'Fast web framework',
+            keywords: ['express', 'framework'],
+            links: { repository: 'https://github.com/expressjs/express' },
+          },
+        ],
+        command: 'npm search express --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValue({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackagesNames: 'express',
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.hints).toBeDefined();
+      expect(Array.isArray(data.hints)).toBe(true);
+      expect(data.hints.length).toBeGreaterThan(0);
+      expect(data.hints.join(' ')).toContain('Found information to analyze');
+    });
+
+    it('should include appropriate hints when no packages found', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      const mockNpmResponse = {
+        result: '[]', // Empty results
+        command: 'npm search nonexistent-xyz --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValue({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackagesNames: 'nonexistent-xyz',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should include blocked hints for network errors', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      mockExecuteNpmCommand.mockResolvedValue({
+        isError: true,
+        content: [{ text: 'ENOTFOUND network error' }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackagesNames: 'test-package',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should include blocked hints for authentication errors', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      mockExecuteNpmCommand.mockResolvedValue({
+        isError: true,
+        content: [{ text: '401 Unauthorized access' }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackagesNames: 'private-package',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should include research hints for Python package search', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      const mockPyPIResponse = {
+        info: {
+          name: 'requests',
+          version: '2.31.0',
+          summary: 'Python HTTP library',
+          project_urls: {
+            Source: 'https://github.com/psf/requests',
+          },
+        },
+      };
+
+      mockAxios.get.mockResolvedValue({
+        data: mockPyPIResponse,
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackageName: 'requests',
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.hints).toBeDefined();
+      expect(Array.isArray(data.hints)).toBe(true);
+      expect(data.hints.join(' ')).toContain('Found information to analyze');
+    });
+
+    it('should include empty hints for Python package not found', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      mockAxios.get.mockRejectedValue(new Error('404 Not Found'));
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackageName: 'nonexistent-python-package',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should provide contextual hints based on search results', async () => {
+      registerNpmSearchTool(mockServer.server);
+
+      // Mock successful NPM search
+      const mockNpmResponse1 = {
+        result: [
+          {
+            name: 'react',
+            version: '18.2.0',
+            description: 'React library',
+            links: { repository: 'https://github.com/facebook/react' },
+          },
+        ],
+        command: 'npm search react --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      // Mock failed NPM search
+      const mockNpmResponse2 = {
+        result: '[]',
+        command: 'npm search nonexistent --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse1) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse2) }],
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackagesNames: ['react', 'nonexistent'],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.total_count).toBe(1); // Only react found
+      expect(data.hints).toBeDefined();
+      expect(data.hints.join(' ')).toContain('Found information to analyze'); // Should show success hints since we found some packages
+    });
+
+    it('should handle bulk query format with research hints', async () => {
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'lodash',
+            version: '4.17.21',
+            description: 'Utility library',
+            links: { repository: 'https://github.com/lodash/lodash' },
+          },
+        ],
+        command: 'npm search lodash --searchlimit=5 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'lodash', searchLimit: 5, id: 'util-query' }],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.hints).toBeDefined();
+      expect(data.hints.join(' ')).toContain('Found information to analyze');
+    });
+  });
 });

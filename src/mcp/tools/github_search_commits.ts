@@ -16,10 +16,10 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
 import {
   createAuthenticationError,
-  createRateLimitError,
   createNoResultsError,
   createSearchFailedError,
-} from '../errorMessages';
+  ERROR_MESSAGES,
+} from './utils/hints';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
@@ -33,21 +33,7 @@ USAGE:
  Find commits by author or message
  Get SHAs for github_fetch_content
 
-KEY FEATURES:
- Query combinations (exactQuery, queryTerms, orTerms)
- Filter-only search (author, hash, date)
- Optional diff content (getChangesContent)
-
-EXAMPLES:
- exactQuery="bug fix"
- hash="<sha from PR>"
- committer="username"
-
-TOKEN WARNING:
- getChangesContent=true is EXPENSIVE
- Use github_fetch_content for full files
-
-PHILOSOPHY: Build comprehensive understanding progressively`;
+TOKEN WARNING: getChangesContent=true is EXPENSIVE - use github_fetch_content for full files`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -344,7 +330,7 @@ Alternative tools:
 
           if (errorMessage.includes('rate limit')) {
             return createResult({
-              error: createRateLimitError(false),
+              error: ERROR_MESSAGES.AUTHENTICATION_REQUIRED,
             });
           }
 
@@ -551,7 +537,7 @@ export async function searchGitHubCommits(
 
       if (errorMessage.includes('rate limit')) {
         return createResult({
-          error: createRateLimitError(false),
+          error: ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
         });
       }
 

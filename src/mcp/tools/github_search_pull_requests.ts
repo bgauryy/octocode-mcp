@@ -14,7 +14,7 @@ import {
   SUGGESTIONS,
   createNoResultsError,
   createSearchFailedError,
-} from '../errorMessages';
+} from './utils/hints';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
@@ -296,7 +296,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
             error:
               args.query?.length > 256
                 ? ERROR_MESSAGES.QUERY_TOO_LONG
-                : `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
+                : `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
           });
         }
 

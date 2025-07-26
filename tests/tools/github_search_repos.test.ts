@@ -1257,6 +1257,163 @@ describe('GitHub Search Repositories Tool', () => {
     });
   });
 
+  describe('Research Hints Integration', () => {
+    it('should include hints in successful multiple repository searches', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([
+        { name: 'test-repo', stars: 100, language: 'JavaScript' },
+      ]);
+
+      mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        {
+          queries: [{ exactQuery: 'test' }],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.summary.hints).toBeDefined();
+      expect(typeof data.summary.hints).toBe('string');
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+
+    it('should include appropriate hints when no repositories found', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([]);
+
+      mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        {
+          queries: [{ exactQuery: 'nonexistent-repo-xyz' }],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.summary.hints).toBeDefined();
+      expect(typeof data.summary.hints).toBe('string');
+      // The hint should be for empty results
+      expect(data.summary.hints).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should include hints in single repository search success', async () => {
+      const mockResponse = createMockRepositoryResponse([
+        { name: 'success-repo', stars: 100, language: 'JavaScript' },
+      ]);
+
+      mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
+
+      const result = await searchGitHubRepos({ exactQuery: 'success' });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.hints).toBeDefined();
+      expect(typeof data.hints).toBe('string');
+      expect(data.hints).toContain('Found information to analyze');
+    });
+
+    it('should include hints in single repository search with no results', async () => {
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [{ text: JSON.stringify({ result: [] }) }],
+      });
+
+      const result = await searchGitHubRepos({ exactQuery: 'nonexistent' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No repositories found');
+      expect(result.content[0].text).toContain('Research guidance:');
+      expect(result.content[0].text).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should include blocked hints for search execution errors', async () => {
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: true,
+        content: [{ text: 'GitHub API error' }],
+      });
+
+      const result = await searchGitHubRepos({ exactQuery: 'test' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('GitHub API error');
+      // Note: This is a direct GitHub CLI error response, not processed with hints
+    });
+
+    it('should provide context-appropriate hints for different research stages', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse1 = createMockRepositoryResponse([
+        { name: 'repo1', stars: 100, language: 'JavaScript' },
+      ]);
+      const mockResponse2 = createMockRepositoryResponse([]);
+
+      mockExecuteGitHubCommand
+        .mockResolvedValueOnce(mockResponse1)
+        .mockResolvedValueOnce(mockResponse2);
+
+      const result = await mockServer.callTool(
+        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        {
+          queries: [
+            { exactQuery: 'success', id: 'success-query' },
+            { exactQuery: 'failure', id: 'failure-query' },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+
+      // Should have mixed results with appropriate hints
+      expect(data.summary.totalQueries).toBe(2);
+      expect(data.summary.successfulQueries).toBe(1);
+      expect(data.summary.hints).toBeDefined();
+
+      // Since we have at least one result, should show "found" hints
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+
+    it('should handle research hints with different outcome types', async () => {
+      // Test with overwhelmed scenario (many results)
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const manyRepos = Array.from({ length: 50 }, (_, i) => ({
+        name: `repo-${i}`,
+        stars: i * 10,
+        language: 'JavaScript',
+      }));
+
+      const mockResponse = createMockRepositoryResponse(manyRepos);
+      mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        {
+          queries: [{ exactQuery: 'popular' }],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.summary.hints).toBeDefined();
+      expect(data.summary.totalRepositories).toBe(50);
+
+      // With many results, should still show "found" guidance
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+  });
+
   // Helper function to create mock repository responses
   function createMockRepositoryResponse(repositories: Record<string, any>[]) {
     return {

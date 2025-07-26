@@ -1385,4 +1385,335 @@ describe('GitHub Search Code Tool', () => {
       );
     });
   });
+
+  describe('Research Hints Integration', () => {
+    it('should include hints in successful code search results', async () => {
+      const mockCodeResults = [
+        {
+          path: 'src/components/Button.tsx',
+          repository: {
+            nameWithOwner: 'facebook/react',
+            url: 'https://github.com/facebook/react',
+          },
+          textMatches: [
+            {
+              fragment:
+                'function Button() { return <button>Click me</button>; }',
+              matches: [{ indices: [9, 15] }],
+            },
+          ],
+          url: 'https://github.com/facebook/react/blob/main/src/components/Button.tsx',
+          sha: 'abc123',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: mockCodeResults,
+              command: 'gh search code',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            queryTerms: ['Button'],
+            language: 'typescript',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.summary.hints).toBeDefined();
+      expect(typeof data.summary.hints).toBe('string');
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+
+    it('should include appropriate hints when no code found', async () => {
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: [],
+              command: 'gh search code',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            queryTerms: ['nonexistent-function-xyz'],
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.summary.hints).toBeDefined();
+      expect(typeof data.summary.hints).toBe('string');
+      expect(data.summary.hints).toContain(
+        'No results - try different approach'
+      );
+    });
+
+    it('should include blocked hints for rate limit errors', async () => {
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: true,
+        content: [{ text: 'API rate limit exceeded' }],
+      });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            queryTerms: ['popular'],
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.results[0].error).toContain('API rate limit exceeded');
+      // The individual query error doesn't contain hints - they're handled by the error handler
+    });
+
+    it('should include blocked hints for authentication errors', async () => {
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: true,
+        content: [{ text: 'authentication failed' }],
+      });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            queryTerms: ['private-function'],
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.results[0].error).toContain('authentication failed');
+      // The individual query error doesn't contain hints - they're handled by the error handler
+    });
+
+    it('should provide context-appropriate hints for mixed results', async () => {
+      const mockCodeResults = [
+        {
+          path: 'src/test.js',
+          repository: {
+            nameWithOwner: 'test/repo',
+            url: 'https://github.com/test/repo',
+          },
+          textMatches: [
+            {
+              fragment: 'function test() {}',
+              matches: [{ indices: [9, 13] }],
+            },
+          ],
+          url: 'https://github.com/test/repo/blob/main/src/test.js',
+          sha: 'abc123',
+        },
+      ];
+
+      mockExecuteGitHubCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [
+            {
+              text: JSON.stringify({
+                result: mockCodeResults,
+                command: 'gh search code',
+                type: 'github',
+              }),
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          isError: true,
+          content: [{ text: 'Authentication required' }],
+        });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            id: 'success-query',
+            queryTerms: ['test'],
+          },
+          {
+            id: 'fail-query',
+            queryTerms: ['private'],
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.results).toHaveLength(2);
+      expect(data.results[0].error).toBeUndefined();
+      expect(data.results[1].error).toBeDefined();
+
+      // Should show hints based on overall results (we found some code)
+      expect(data.summary.hints).toBeDefined();
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+
+    it('should handle research hints for single vs multiple queries', async () => {
+      const mockCodeResults = [
+        {
+          path: 'src/utils.js',
+          repository: {
+            nameWithOwner: 'test/utils',
+            url: 'https://github.com/test/utils',
+          },
+          textMatches: [
+            {
+              fragment: 'export function helper() {}',
+              matches: [{ indices: [15, 21] }],
+            },
+          ],
+          url: 'https://github.com/test/utils/blob/main/src/utils.js',
+          sha: 'def456',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: mockCodeResults,
+              command: 'gh search code',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            id: 'single-query',
+            queryTerms: ['helper'],
+            language: 'javascript',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.summary.totalQueries).toBe(1);
+      expect(data.summary.successfulQueries).toBe(1);
+      expect(data.summary.hints).toBeDefined();
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+
+    it('should provide appropriate hints for overwhelming search results', async () => {
+      // Create many mock results to simulate overwhelming response
+      const manyResults = Array.from({ length: 30 }, (_, i) => ({
+        path: `src/file${i}.js`,
+        repository: {
+          nameWithOwner: `org/repo${i}`,
+          url: `https://github.com/org/repo${i}`,
+        },
+        textMatches: [
+          {
+            fragment: `function example${i}() {}`,
+            matches: [{ indices: [9, 16] }],
+          },
+        ],
+        url: `https://github.com/org/repo${i}/blob/main/src/file${i}.js`,
+        sha: `sha${i}`,
+      }));
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: manyResults,
+              command: 'gh search code',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
+      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+        queries: [
+          {
+            queryTerms: ['example'],
+            language: 'javascript',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.results[0].result.items.length).toBe(30);
+      expect(data.summary.hints).toBeDefined();
+      expect(data.summary.hints).toContain('Found information to analyze');
+    });
+
+    it('should handle direct searchGitHubCode function with hints context', async () => {
+      const mockCodeResults = [
+        {
+          path: 'src/direct.js',
+          repository: {
+            nameWithOwner: 'direct/repo',
+            url: 'https://github.com/direct/repo',
+          },
+          textMatches: [
+            {
+              fragment: 'function direct() { return true; }',
+              matches: [{ indices: [9, 15] }],
+            },
+          ],
+          url: 'https://github.com/direct/repo/blob/main/src/direct.js',
+          sha: 'direct123',
+        },
+      ];
+
+      mockExecuteGitHubCommand.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            text: JSON.stringify({
+              result: mockCodeResults,
+              command: 'gh search code',
+              type: 'github',
+            }),
+          },
+        ],
+      });
+
+      const result = await searchGitHubCode({
+        queryTerms: ['direct'],
+        language: 'javascript',
+        minify: false,
+        sanitize: false,
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+
+      // Direct function returns the GitHub CLI response structure
+      expect(data.result).toBeDefined();
+      expect(data.result.length).toBe(1);
+      expect(data.result[0].path).toBe('src/direct.js');
+
+      // Direct function doesn't include hints, but multiple search function does
+      expect(data.hints).toBeUndefined();
+    });
+  });
 });

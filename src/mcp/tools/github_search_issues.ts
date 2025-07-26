@@ -13,10 +13,8 @@ import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import {
   ERROR_MESSAGES,
   SUGGESTIONS,
-  createAuthenticationError,
-  createRateLimitError,
   createSearchFailedError,
-} from '../errorMessages';
+} from './utils/hints';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
@@ -255,13 +253,13 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
           const errorMessage = error instanceof Error ? error.message : '';
           if (errorMessage.includes('authentication')) {
             return createResult({
-              error: createAuthenticationError(),
+              error: ERROR_MESSAGES.AUTHENTICATION_REQUIRED,
             });
           }
 
           if (errorMessage.includes('rate limit')) {
             return createResult({
-              error: createRateLimitError(false),
+              error: ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
             });
           }
 

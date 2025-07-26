@@ -5,12 +5,10 @@ import { GitHubReposSearchParams } from '../../types';
 import { executeGitHubCommand, GhCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import {
-  createNoResultsError,
-  createSearchFailedError,
-} from '../errorMessages';
+import { createNoResultsError, createSearchFailedError } from './utils/hints';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
+import { getHints, getErrorHints, ErrorType } from './utils/hints';
 
 export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
 
@@ -320,11 +318,15 @@ async function processSingleQuery(
         execResult.total_count === 0 ||
         (execResult.result && execResult.result.length === 0)
       ) {
+        const hints = getHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+          stage: 'discovery',
+          outcome: 'empty',
+        });
+
         return {
           queryId,
           result: { total_count: 0, repositories: [] },
-          error:
-            'No repositories found. Try broader search terms or consider using packageSearch tool for faster package discovery.',
+          error: `No repositories found. ${hints}`,
         };
       }
 
@@ -335,11 +337,24 @@ async function processSingleQuery(
       };
     }
 
-    // Query failed
+    // Query failed - use centralized error hints
+    let errorType: ErrorType | undefined;
+    const errorText = String(result.content?.[0]?.text || '');
+    if (errorText.includes('403')) {
+      errorType = 'rate_limit';
+    } else if (errorText.includes('401')) {
+      errorType = 'auth';
+    }
+
+    const hints = getErrorHints(
+      GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+      errorType
+    );
+
     return {
       queryId,
       result: { total_count: 0, repositories: [] },
-      error: `Query failed. Try broader search terms or consider using packageSearch tool for faster package discovery.`,
+      error: `Query failed. ${hints}`,
     };
   } catch (error) {
     // Handle any unexpected errors
@@ -374,6 +389,12 @@ async function searchMultipleGitHubRepos(
     0
   );
 
+  // Generate research hints based on results
+  const hints = getHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+    stage: 'discovery',
+    outcome: totalRepositories > 0 ? 'found' : 'empty',
+  });
+
   return createResult({
     data: {
       results,
@@ -381,6 +402,7 @@ async function searchMultipleGitHubRepos(
         totalQueries,
         successfulQueries,
         totalRepositories,
+        hints: hints.trim() ? hints : undefined,
       },
     },
   });
@@ -406,10 +428,23 @@ export async function searchGitHubRepos(
       const repositories = execResult.result;
 
       if (!Array.isArray(repositories) || repositories.length === 0) {
+        const hints = getHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+          stage: 'discovery',
+          outcome: 'empty',
+        });
+
         return createResult({
-          error: createNoResultsError('repositories'),
+          error:
+            createNoResultsError('repositories') +
+            (hints.trim() ? '\n\nResearch guidance:\n' + hints : ''),
         });
       }
+
+      // Generate research hints for successful results
+      const hints = getHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+        stage: 'discovery',
+        outcome: 'found',
+      });
 
       // Return simple repository data
       return createResult({
@@ -428,11 +463,19 @@ export async function searchGitHubRepos(
             updatedAt: toDDMMYYYY(repo.updatedAt),
             owner: repo.owner?.login || repo.owner,
           })),
+          hints: hints.trim() ? hints : undefined,
         },
       });
     } catch (error) {
+      const hints = getHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+        stage: 'discovery',
+        outcome: 'blocked',
+      });
+
       return createResult({
-        error: createSearchFailedError('repositories'),
+        error:
+          createSearchFailedError('repositories') +
+          (hints.trim() ? '\n\nResearch guidance:\n' + hints : ''),
       });
     }
   });
