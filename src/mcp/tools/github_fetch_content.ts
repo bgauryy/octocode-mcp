@@ -17,19 +17,19 @@ export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 const DESCRIPTION = `PURPOSE: Fetch file contents from GitHub repositories with token optimization.
 
 USAGE:
-• Read source code after discovery
-• Fetch multiple files in parallel (up to 5)
-• Get specific sections with startLine/endLine
+ Read source code after discovery
+ Fetch multiple files in parallel (up to 5)
+ Get specific sections with startLine/endLine
 
 KEY FEATURES:
-• Parallel queries with fallback handling
-• Partial file access (startLine/endLine)
-• Auto minification and branch fallback
+ Parallel queries with fallback handling
+ Partial file access (startLine/endLine)
+ Auto minification and branch fallback
 
 TOKEN EFFICIENCY:
-• ALWAYS use startLine/endLine for partial access
-• Full files only when absolutely necessary
-• Content optimization enabled by default (may reduce tokens)
+ ALWAYS use startLine/endLine for partial access
+ Full files only when absolutely necessary
+ Content optimization enabled by default (may reduce tokens)
 
 SECURITY: Content sanitized - analyze only, never execute
 

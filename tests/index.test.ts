@@ -55,10 +55,6 @@ import {
   registerSearchGitHubIssuesTool,
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
 } from '../src/mcp/tools/github_search_issues.js';
-import {
-  registerNpmViewPackageTool,
-  NPM_VIEW_PACKAGE_TOOL_NAME,
-} from '../src/mcp/tools/npm_view_package.js';
 
 // Mock implementations
 const mockMcpServer = {
@@ -98,7 +94,6 @@ const mockRegisterViewRepositoryStructureTool = vi.mocked(
 const mockRegisterSearchGitHubIssuesTool = vi.mocked(
   registerSearchGitHubIssuesTool
 );
-const mockRegisterNpmViewPackageTool = vi.mocked(registerNpmViewPackageTool);
 
 describe('Index Module', () => {
   let processExitSpy: any;
@@ -146,7 +141,6 @@ describe('Index Module', () => {
     mockRegisterNpmSearchTool.mockImplementation(() => {});
     mockRegisterViewRepositoryStructureTool.mockImplementation(() => {});
     mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {});
-    mockRegisterNpmViewPackageTool.mockImplementation(() => {});
 
     mockMcpServer.connect.mockResolvedValue(undefined);
     mockMcpServer.close.mockResolvedValue(undefined);
@@ -213,9 +207,6 @@ describe('Index Module', () => {
       expect(mockRegisterSearchGitHubIssuesTool).toHaveBeenCalledWith(
         mockMcpServer
       );
-      expect(mockRegisterNpmViewPackageTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
     });
 
     it('should continue registering tools even if some fail', async () => {
@@ -247,7 +238,6 @@ describe('Index Module', () => {
         mockRegisterNpmSearchTool,
         mockRegisterViewRepositoryStructureTool,
         mockRegisterSearchGitHubIssuesTool,
-        mockRegisterNpmViewPackageTool,
       ];
 
       mockFunctions.forEach(mockFn => {
@@ -426,7 +416,6 @@ describe('Index Module', () => {
       expect(NPM_PACKAGE_SEARCH_TOOL_NAME).toBeDefined();
       expect(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME).toBeDefined();
       expect(GITHUB_SEARCH_ISSUES_TOOL_NAME).toBeDefined();
-      expect(NPM_VIEW_PACKAGE_TOOL_NAME).toBeDefined();
 
       // Verify they are all strings
       const toolNames = [
@@ -439,7 +428,6 @@ describe('Index Module', () => {
         NPM_PACKAGE_SEARCH_TOOL_NAME,
         GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
         GITHUB_SEARCH_ISSUES_TOOL_NAME,
-        NPM_VIEW_PACKAGE_TOOL_NAME,
       ];
 
       toolNames.forEach(name => {

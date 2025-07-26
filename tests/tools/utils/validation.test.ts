@@ -13,7 +13,7 @@ describe('Validation Utilities', () => {
       expect(result).toBe(
         '\n\nCurrent tool: current_tool\n' +
           'Alternative tools:\n' +
-          '• Use github_search_repos to find repositories'
+          ' Use github_search_repos to find repositories'
       );
     });
 
@@ -29,9 +29,9 @@ describe('Validation Utilities', () => {
       expect(result).toBe(
         '\n\nCurrent tool: current_tool\n' +
           'Alternative tools:\n' +
-          '• Use github_search_repos to find repositories\n' +
-          '• Use github_fetch_content to get file contents\n' +
-          '• Use package_search to find npm packages'
+          ' Use github_search_repos to find repositories\n' +
+          ' Use github_fetch_content to get file contents\n' +
+          ' Use package_search to find npm packages'
       );
     });
 
@@ -56,7 +56,7 @@ describe('Validation Utilities', () => {
       expect(result).toBe(
         '\n\nCurrent tool: current_tool\n' +
           'Alternative tools:\n' +
-          '• Use tool-with-dashes for special use-cases & edge scenarios'
+          ' Use tool-with-dashes for special use-cases & edge scenarios'
       );
     });
 
@@ -66,7 +66,7 @@ describe('Validation Utilities', () => {
       const result = createToolSuggestion('current_tool', suggestions);
 
       expect(result).toBe(
-        '\n\nCurrent tool: current_tool\n' + 'Alternative tools:\n' + '• Use  '
+        '\n\nCurrent tool: current_tool\n' + 'Alternative tools:\n' + ' Use  '
       );
     });
 
@@ -83,7 +83,7 @@ describe('Validation Utilities', () => {
       expect(result).toBe(
         '\n\nCurrent tool: current-tool_with_chars\n' +
           'Alternative tools:\n' +
-          '• Use alternative_tool for better results'
+          ' Use alternative_tool for better results'
       );
     });
 
@@ -101,7 +101,7 @@ describe('Validation Utilities', () => {
       expect(result).toBe(
         '\n\nCurrent tool: current_tool\n' +
           'Alternative tools:\n' +
-          '• Use very_long_tool_name_with_many_underscores_and_words to handle very specific and complex use cases that require detailed processing and analysis of multiple data sources'
+          ' Use very_long_tool_name_with_many_underscores_and_words to handle very specific and complex use cases that require detailed processing and analysis of multiple data sources'
       );
     });
 
@@ -115,7 +115,7 @@ describe('Validation Utilities', () => {
       expect(result).toBe(
         '\n\nCurrent tool: current tool\n' +
           'Alternative tools:\n' +
-          '• Use tool with spaces for   spaced   reasons'
+          ' Use tool with spaces for   spaced   reasons'
       );
     });
   });

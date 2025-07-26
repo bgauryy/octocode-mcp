@@ -132,15 +132,15 @@ export const SUGGESTIONS = {
 
   // File Content Suggestions
   FILE_NOT_FOUND_RECOVERY: `Quick fixes:
-• Use github_view_repo_structure to verify path exists
-• Check for typos in file path
-• Try different branch (main/master/develop)`,
+ Use github_view_repo_structure to verify path exists
+ Check for typos in file path
+ Try different branch (main/master/develop)`,
 
   FILE_TOO_LARGE_RECOVERY: `Alternative strategies:
-• Use github_search_code to search within the file
-• Download directly from GitHub
-• Use github_view_repo_structure to find smaller related files
-• Look for configuration or summary files instead`,
+ Use github_search_code to search within the file
+ Download directly from GitHub
+ Use github_view_repo_structure to find smaller related files
+ Look for configuration or summary files instead`,
 
   // Repository Suggestions
   REPOSITORY_NOT_FOUND_RECOVERY: `This is often due to incorrect repository name. Steps to resolve:
@@ -150,15 +150,15 @@ export const SUGGESTIONS = {
 
   // NPM Suggestions
   NPM_DISCOVERY_STRATEGIES: `Discovery strategies:
-• Functional search: "validation", "testing", "charts"
-• Ecosystem search: "react", "typescript", "node"
-• Use github_search_repositories for related projects`,
+ Functional search: "validation", "testing", "charts"
+ Ecosystem search: "react", "typescript", "node"
+ Use github_search_repositories for related projects`,
 
   NPM_PACKAGE_NAME_ALTERNATIVES: `Try these alternatives:
-• Try with dashes instead of underscores
-• Try without dashes
-• Try scoped package format
-• Use package_search tool for discovery`,
+ Try with dashes instead of underscores
+ Try without dashes
+ Try scoped package format
+ Use package_search tool for discovery`,
 } as const;
 
 // Helper function to get error message with context-specific suggestions

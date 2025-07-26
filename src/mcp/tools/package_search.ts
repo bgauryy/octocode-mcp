@@ -1,42 +1,49 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import { createResult } from '../responses';
+import {
+  createResult,
+  toDDMMYYYY,
+  humanizeBytes,
+  simplifyRepoUrl,
+} from '../responses';
 import { executeNpmCommand } from '../../utils/exec';
-import { NpmPackageSearchBuilder } from './utils/NpmCommandBuilder';
-import { NpmPackage } from '../../types';
+import {
+  NpmPackageSearchBuilder,
+  NpmPackageViewBuilder,
+} from './utils/NpmCommandBuilder';
+import {
+  NpmPackage,
+  EnhancedPackageSearchResult,
+  EnhancedPackageMetadata,
+  OptimizedNpmPackageResult,
+  PythonPackageMetadata,
+  PackageSearchWithMetadataParams,
+  PackageSearchBulkParams,
+  NpmPackageQuery,
+  PythonPackageQuery,
+} from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
 import { getToolSuggestions, TOOL_NAMES } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
+import { generateCacheKey, withCache } from '../../utils/cache';
 import axios from 'axios';
 
 export const NPM_PACKAGE_SEARCH_TOOL_NAME = 'packageSearch';
 
-const DESCRIPTION = `PURPOSE: Efficiently discover packages across NPM and Python ecosystems for initial exploration. Simplify research on npm and python investigations.
+const DESCRIPTION = `PURPOSE: Efficiently discover and analyze packages across NPM and Python ecosystems with metadata and repository links.
 
-WHEN TO USE:
-• Find packages by name (on npm and pypi)
-• When code has import statements you need to understand (from fetch file or search code)
-• Initial package discovery before detailed analysis
+WHEN TO USE
+  Prefer using this tool to get repository URLs first before using GitHub tools.
+  Need to know more data about npm/python packages (by name, imports, or code or context)
+  Need package metadata: versions, dependencies, exports, repository URLs
+  Analyzing project dependencies or exploring alternatives
+  Helping GitHub tools - get repository URLs first
 
-KEY FEATURES:
-• NPM + Python parallel search
-• Basic package info with repository URLs
+ HINT:
+  Not all results are guaranteed to be correct, so you should always verify the results
 
-SEARCH STRATEGY:
-• Broad functional terms work best
-• Single keywords
-
-EXAMPLES:
-• npmPackagesNames: ["react", "vue"]
-• pythonPackageName: "requests"
-
-WORKFLOW:
-1. Use package_search or fetch_file for discovery
-2. Use npm_view_package for detailed NPM package information
-3. Use github_fetch_content to examine source code
-
-PHILOSOPHY: Package-First Discovery if possible - efficiently find packages data`;
+INTEGRATION: Essential first step before GitHub repository exploration or while exploring github code - provides repository URLs and package context for deeper code analysis.`;
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
@@ -47,112 +54,460 @@ export function registerNpmSearchTool(server: McpServer) {
     {
       description: DESCRIPTION,
       inputSchema: {
-        npmPackagesNames: z
-          .union([z.string(), z.array(z.string())])
+        // New bulk query parameters
+        npmPackages: z
+          .array(
+            z.object({
+              name: z.string().describe('NPM package name to search for'),
+              searchLimit: z
+                .number()
+                .int()
+                .min(1)
+                .max(10)
+                .optional()
+                .describe(
+                  'Results limit for this query (1-10). Default: 1 for specific packages, up to 10 for exploration'
+                ),
+              npmSearchStrategy: z
+                .enum(['individual', 'combined'])
+                .optional()
+                .describe('Search strategy for this query'),
+              npmFetchMetadata: z
+                .boolean()
+                .optional()
+                .describe(
+                  'Whether to fetch detailed metadata for this package'
+                ),
+              npmField: z
+                .string()
+                .optional()
+                .describe('Specific field to retrieve from this NPM package'),
+              npmMatch: z
+                .union([
+                  z.enum([
+                    'version',
+                    'description',
+                    'license',
+                    'author',
+                    'homepage',
+                    'repository',
+                    'dependencies',
+                    'devDependencies',
+                    'keywords',
+                    'main',
+                    'scripts',
+                    'engines',
+                    'files',
+                    'publishConfig',
+                    'dist-tags',
+                    'time',
+                  ]),
+                  z.array(
+                    z.enum([
+                      'version',
+                      'description',
+                      'license',
+                      'author',
+                      'homepage',
+                      'repository',
+                      'dependencies',
+                      'devDependencies',
+                      'keywords',
+                      'main',
+                      'scripts',
+                      'engines',
+                      'files',
+                      'publishConfig',
+                      'dist-tags',
+                      'time',
+                    ])
+                  ),
+                  z.string().refine(
+                    val => {
+                      const validFields = [
+                        'version',
+                        'description',
+                        'license',
+                        'author',
+                        'homepage',
+                        'repository',
+                        'dependencies',
+                        'devDependencies',
+                        'keywords',
+                        'main',
+                        'scripts',
+                        'engines',
+                        'files',
+                        'publishConfig',
+                        'dist-tags',
+                        'time',
+                      ];
+                      if (validFields.includes(val)) return true;
+                      if (val.startsWith('[') && val.endsWith(']')) {
+                        try {
+                          const parsed = JSON.parse(val);
+                          return (
+                            Array.isArray(parsed) &&
+                            parsed.length > 0 &&
+                            parsed.every(
+                              field =>
+                                typeof field === 'string' &&
+                                validFields.includes(field)
+                            )
+                          );
+                        } catch {
+                          return false;
+                        }
+                      }
+                      return false;
+                    },
+                    { message: 'Invalid field name or JSON array format' }
+                  ),
+                ])
+                .optional()
+                .describe(
+                  'Specific field(s) to retrieve from this NPM package'
+                ),
+              id: z
+                .string()
+                .optional()
+                .describe('Optional identifier for this query'),
+            })
+          )
+          .max(10)
           .optional()
           .describe(
-            'Search terms for NPM packages only - supports multiple queries (e.g., "react hooks", ["typescript", "eslint"], "data visualization"). Optional when using other parameters.'
+            'Array of NPM package queries (max 10). Each query can have individual parameters for customized search behavior.'
           ),
-        npmPackageName: z
-          .string()
+        pythonPackages: z
+          .array(
+            z.object({
+              name: z.string().describe('Python package name to search for'),
+              searchLimit: z
+                .number()
+                .int()
+                .min(1)
+                .max(10)
+                .optional()
+                .describe(
+                  'Results limit for this query (1-10). Default: 1 for specific packages, up to 10 for exploration'
+                ),
+              id: z
+                .string()
+                .optional()
+                .describe('Optional identifier for this query'),
+            })
+          )
+          .max(10)
           .optional()
           .describe(
-            'NPM package name to search for. Use this for searching NPM packages.'
+            'Array of Python package queries (max 10). Each query searches PyPI for the specified package name with individual result limits.'
           ),
-        pythonPackageName: z
-          .string()
-          .optional()
-          .describe(
-            'Python package name to search for. Use this for searching Python packages on PyPI.'
-          ),
+        // Global defaults (can be overridden per query)
         searchLimit: z
           .number()
           .int()
           .min(1)
-          .max(50)
+          .max(10)
           .optional()
-          .default(20)
-          .describe('Results limit per query (1-50). Default: 20'),
+          .default(1)
+          .describe(
+            'Global default results limit per query (1-10). Use 1 for specific packages, up to 10 for exploration. Can be overridden per query. Default: 1'
+          ),
         npmSearchStrategy: z
           .enum(['individual', 'combined'])
           .optional()
           .default('individual')
           .describe(
-            'NPM search strategy: "individual" runs separate searches for each term, "combined" searches all terms together. Default: individual'
+            'Global default NPM search strategy. Can be overridden per query. Default: individual'
+          ),
+        npmFetchMetadata: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'Global default for NPM metadata fetching. Can be overridden per query. Default: false'
+          ),
+
+        // Legacy parameters for backward compatibility (deprecated)
+        npmPackagesNames: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe(
+            'DEPRECATED: Use npmPackages array instead. Search terms for NPM packages - supports multiple queries.'
+          ),
+        npmPackageName: z
+          .string()
+          .optional()
+          .describe(
+            'DEPRECATED: Use npmPackages array instead. NPM package name to search for.'
+          ),
+        pythonPackageName: z
+          .string()
+          .optional()
+          .describe(
+            'DEPRECATED: Use pythonPackages array instead. Python package name to search for.'
+          ),
+        npmField: z
+          .string()
+          .optional()
+          .describe(
+            'DEPRECATED: Use npmPackages with per-query npmField instead. Optional field for NPM packages.'
+          ),
+        npmMatch: z
+          .union([
+            z.enum([
+              'version',
+              'description',
+              'license',
+              'author',
+              'homepage',
+              'repository',
+              'dependencies',
+              'devDependencies',
+              'keywords',
+              'main',
+              'scripts',
+              'engines',
+              'files',
+              'publishConfig',
+              'dist-tags',
+              'time',
+            ]),
+            z.array(
+              z.enum([
+                'version',
+                'description',
+                'license',
+                'author',
+                'homepage',
+                'repository',
+                'dependencies',
+                'devDependencies',
+                'keywords',
+                'main',
+                'scripts',
+                'engines',
+                'files',
+                'publishConfig',
+                'dist-tags',
+                'time',
+              ])
+            ),
+            z.string().refine(
+              val => {
+                const validFields = [
+                  'version',
+                  'description',
+                  'license',
+                  'author',
+                  'homepage',
+                  'repository',
+                  'dependencies',
+                  'devDependencies',
+                  'keywords',
+                  'main',
+                  'scripts',
+                  'engines',
+                  'files',
+                  'publishConfig',
+                  'dist-tags',
+                  'time',
+                ];
+                if (validFields.includes(val)) return true;
+                if (val.startsWith('[') && val.endsWith(']')) {
+                  try {
+                    const parsed = JSON.parse(val);
+                    return (
+                      Array.isArray(parsed) &&
+                      parsed.length > 0 &&
+                      parsed.every(
+                        field =>
+                          typeof field === 'string' &&
+                          validFields.includes(field)
+                      )
+                    );
+                  } catch {
+                    return false;
+                  }
+                }
+                return false;
+              },
+              { message: 'Invalid field name or JSON array format' }
+            ),
+          ])
+          .optional()
+          .describe(
+            'DEPRECATED: Use npmPackages with per-query npmMatch instead. Specific field(s) to retrieve from NPM packages.'
           ),
       },
       annotations: {
-        title: 'Multi-Ecosystem Package Search',
+        title: 'Multi-Ecosystem Package Search with Bulk Queries',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
       },
     },
-    async (args: {
-      npmPackagesNames?: string | string[];
-      npmPackageName?: string;
-      pythonPackageName?: string;
-      searchLimit?: number;
-      npmSearchStrategy?: 'individual' | 'combined';
-    }): Promise<CallToolResult> => {
+    async (
+      args: PackageSearchBulkParams & PackageSearchWithMetadataParams
+    ): Promise<CallToolResult> => {
       try {
-        // Early parameter validation to avoid expensive operations
-        if (
-          !args.npmPackagesNames &&
-          !args.npmPackageName &&
-          !args.pythonPackageName
-        ) {
+        // Detect if using new bulk format or legacy format
+        const isUsingBulkFormat = !!(args.npmPackages || args.pythonPackages);
+        const isUsingLegacyFormat = !!(
+          args.npmPackagesNames ||
+          args.npmPackageName ||
+          args.pythonPackageName
+        );
+
+        // Early parameter validation
+        if (!isUsingBulkFormat && !isUsingLegacyFormat) {
           return createResult({
             error: getErrorWithSuggestion({
               baseError:
-                'At least one search parameter must be provided (npmPackagesNames, npmPackageName, or pythonPackageName)',
+                'At least one search parameter must be provided. Use new bulk format (npmPackages, pythonPackages) or legacy format for backward compatibility.',
               suggestion: [
-                '• Use npmPackagesNames for multiple NPM package searches',
-                '• Use npmPackageName for single NPM package search',
-                '• Use pythonPackageName for Python package search',
-                '• Can combine npmPackageName and pythonPackageName for both ecosystems',
+                ' NEW: Use npmPackages array for multiple NPM package queries with individual parameters',
+                ' NEW: Use pythonPackages array for multiple Python package queries',
+                ' LEGACY: Use npmPackagesNames for multiple NPM package searches',
+                ' LEGACY: Use npmPackageName for single NPM package search',
+                ' LEGACY: Use pythonPackageName for Python package search',
               ],
             }),
           });
         }
 
-        const queries = (() => {
-          if (!args.npmPackagesNames) return [];
+        // Normalize parameters to bulk format
+        let normalizedNpmQueries: NpmPackageQuery[] = [];
+        let normalizedPythonQueries: PythonPackageQuery[] = [];
 
-          if (Array.isArray(args.npmPackagesNames)) {
-            return args.npmPackagesNames.filter(q => q && q.trim());
+        if (isUsingBulkFormat) {
+          // Use new bulk format directly
+          normalizedNpmQueries = args.npmPackages || [];
+          normalizedPythonQueries = args.pythonPackages || [];
+        } else {
+          // Convert legacy format to bulk format for consistent processing
+          if (args.npmPackageName) {
+            normalizedNpmQueries.push({
+              name: args.npmPackageName,
+              searchLimit: args.searchLimit,
+              npmSearchStrategy: args.npmSearchStrategy,
+              npmFetchMetadata: args.npmFetchMetadata,
+              npmField: args.npmField,
+              npmMatch: args.npmMatch,
+              id: 'legacy-single',
+            });
           }
 
-          const input = args.npmPackagesNames;
-
-          // Handle JSON array strings like "["react", "vue"]"
-          if (input.startsWith('[') && input.endsWith(']')) {
-            try {
-              const parsed = JSON.parse(input);
-              if (Array.isArray(parsed)) {
-                return parsed.filter(
-                  q => q && typeof q === 'string' && q.trim()
-                );
+          if (args.npmPackagesNames) {
+            const queries = (() => {
+              if (Array.isArray(args.npmPackagesNames)) {
+                return args.npmPackagesNames.filter(q => q && q.trim());
               }
-            } catch (e) {
-              // Fall through to single string handling
+
+              const input = args.npmPackagesNames;
+
+              // Handle JSON array strings like "["react", "vue"]"
+              if (input.startsWith('[') && input.endsWith(']')) {
+                try {
+                  const parsed = JSON.parse(input);
+                  if (Array.isArray(parsed)) {
+                    return parsed.filter(
+                      q => q && typeof q === 'string' && q.trim()
+                    );
+                  }
+                } catch (e) {
+                  // Fall through to single string handling
+                }
+              }
+
+              // Handle comma-separated strings
+              if (input.includes(',')) {
+                return input
+                  .split(',')
+                  .map(s => s.trim())
+                  .filter(s => s);
+              }
+
+              // Single string
+              return [input];
+            })();
+
+            // Handle combined vs individual strategy for legacy npmPackagesNames
+            if (args.npmSearchStrategy === 'combined' && queries.length > 1) {
+              // Combined search: join all terms into single query
+              normalizedNpmQueries.push({
+                name: queries.join(' '),
+                searchLimit: args.searchLimit,
+                npmSearchStrategy: args.npmSearchStrategy,
+                npmFetchMetadata: args.npmFetchMetadata,
+                npmField: args.npmField,
+                npmMatch: args.npmMatch,
+                id: 'legacy-combined',
+              });
+            } else {
+              // Individual searches: create separate query for each term
+              queries.forEach((name, index) => {
+                normalizedNpmQueries.push({
+                  name,
+                  searchLimit: args.searchLimit,
+                  npmSearchStrategy: args.npmSearchStrategy,
+                  npmFetchMetadata: args.npmFetchMetadata,
+                  npmField: args.npmField,
+                  npmMatch: args.npmMatch,
+                  id: `legacy-multi-${index}`,
+                });
+              });
             }
           }
 
-          // Handle comma-separated strings
-          if (input.includes(',')) {
-            return input
-              .split(',')
-              .map(s => s.trim())
-              .filter(s => s);
+          if (args.pythonPackageName) {
+            normalizedPythonQueries.push({
+              name: args.pythonPackageName,
+              id: 'legacy-python',
+            });
           }
+        }
 
-          // Single string
-          return [input];
-        })();
-        const searchLimit = args.searchLimit || 20;
-        const searchStrategy = args.npmSearchStrategy || 'individual';
+        // Apply global defaults to queries that don't have specific values
+        const globalDefaults = {
+          searchLimit: args.searchLimit || 1,
+          npmSearchStrategy: args.npmSearchStrategy || 'individual',
+          npmFetchMetadata: args.npmFetchMetadata || false,
+        };
+
+        normalizedNpmQueries = normalizedNpmQueries.map(query => ({
+          ...query,
+          searchLimit: query.searchLimit ?? globalDefaults.searchLimit,
+          npmSearchStrategy:
+            query.npmSearchStrategy ?? globalDefaults.npmSearchStrategy,
+          npmFetchMetadata:
+            query.npmFetchMetadata ?? globalDefaults.npmFetchMetadata,
+        }));
+
+        normalizedPythonQueries = normalizedPythonQueries.map(query => ({
+          ...query,
+          searchLimit: query.searchLimit ?? globalDefaults.searchLimit,
+        }));
+
+        if (
+          normalizedNpmQueries.length === 0 &&
+          normalizedPythonQueries.length === 0
+        ) {
+          return createResult({
+            error: getErrorWithSuggestion({
+              baseError:
+                'No valid package queries found after processing parameters.',
+              suggestion: [
+                ' Ensure package names are not empty strings',
+                ' Check array format for bulk queries',
+                ' Verify at least one npmPackages or pythonPackages query is provided',
+              ],
+            }),
+          });
+        }
+
         const errors: { npm: string[]; python: string[] } = {
           npm: [],
           python: [],
@@ -166,17 +521,15 @@ export function registerNpmSearchTool(server: McpServer) {
         }>[] = [];
 
         // Add Python search promise if specified
-        if (args.pythonPackageName) {
-          searchPromises.push(
-            searchPythonPackage(args.pythonPackageName)
+        if (normalizedPythonQueries.length > 0) {
+          const pythonSearchPromises = normalizedPythonQueries.map(query => {
+            return searchPythonPackage(query.name)
               .then(pythonPackage => ({
                 type: 'python' as const,
                 packages: pythonPackage ? [pythonPackage] : [],
                 errors: pythonPackage
                   ? []
-                  : [
-                      `Python package '${args.pythonPackageName}' not found on PyPI`,
-                    ],
+                  : [`Python package '${query.name}' not found on PyPI`],
               }))
               .catch(error => {
                 const errorMsg =
@@ -185,26 +538,32 @@ export function registerNpmSearchTool(server: McpServer) {
                   type: 'python' as const,
                   packages: [],
                   errors: [
-                    `Python search failed for '${args.pythonPackageName}': ${errorMsg}`,
+                    `Python search failed for '${query.name}': ${errorMsg}`,
                   ],
                 };
-              })
+              });
+          });
+
+          searchPromises.push(
+            Promise.all(pythonSearchPromises).then(results => {
+              const allPackages = results.flatMap(r => r.packages);
+              const allErrors = results.flatMap(r => r.errors);
+              return {
+                type: 'python' as const,
+                packages: allPackages,
+                errors: allErrors,
+              };
+            })
           );
         }
 
         // Add NPM search promises if specified
-        const searchQueries = args.npmPackageName
-          ? [args.npmPackageName]
-          : queries;
-
-        if (searchQueries.length > 0) {
-          if (searchStrategy === 'combined' && searchQueries.length > 1) {
-            // Combined search: single search with all terms together
-            const combinedQuery = searchQueries.join(' ');
+        if (normalizedNpmQueries.length > 0) {
+          const npmSearchPromises = normalizedNpmQueries.map(query => {
             const builder = new NpmPackageSearchBuilder();
             const fullArgs = builder.build({
-              query: combinedQuery,
-              searchLimit,
+              query: query.name,
+              searchLimit: query.searchLimit,
             });
 
             // Check if builder included base command
@@ -212,111 +571,61 @@ export function registerNpmSearchTool(server: McpServer) {
             const command = hasBaseCommand ? fullArgs[0] : 'search';
             const args = hasBaseCommand ? fullArgs.slice(1) : fullArgs;
 
-            searchPromises.push(
-              executeNpmCommand(command as 'search', args, { cache: true })
-                .then(result => {
-                  if (!result.isError && result.content?.[0]?.text) {
-                    const packages = parseNpmSearchOutput(
-                      result.content[0].text as string
-                    );
-                    return {
-                      type: 'npm' as const,
-                      packages,
-                      errors:
-                        packages.length === 0
-                          ? [
-                              `NPM search for '${combinedQuery}' returned no results`,
-                            ]
-                          : [],
-                    };
-                  } else {
-                    const errorContent =
-                      result.content?.[0]?.text || 'Unknown NPM error';
-                    return {
-                      type: 'npm' as const,
-                      packages: [],
-                      errors: [
-                        `NPM combined search failed for '${combinedQuery}': ${errorContent}`,
-                      ],
-                    };
-                  }
-                })
-                .catch(queryError => {
-                  const errorMsg =
-                    queryError instanceof Error
-                      ? queryError.message
-                      : String(queryError);
+            return executeNpmCommand(command as 'search', args, {
+              cache: true,
+            })
+              .then(result => {
+                if (!result.isError && result.content?.[0]?.text) {
+                  const packages = parseNpmSearchOutput(
+                    result.content[0].text as string
+                  );
+                  return {
+                    type: 'npm' as const,
+                    packages,
+                    errors:
+                      packages.length === 0
+                        ? [`NPM package '${query.name}' not found`]
+                        : [],
+                  };
+                } else {
+                  const errorContent =
+                    result.content?.[0]?.text || 'Unknown NPM error';
                   return {
                     type: 'npm' as const,
                     packages: [],
                     errors: [
-                      `NPM combined search failed for '${combinedQuery}': ${errorMsg}`,
+                      `NPM search failed for '${query.name}': ${errorContent}`,
                     ],
                   };
-                })
-            );
-          } else {
-            // Individual searches: run concurrent searches for each term
-            const npmSearchPromises = searchQueries.map(query => {
-              const builder = new NpmPackageSearchBuilder();
-              const fullArgs = builder.build({ query, searchLimit });
-
-              // Check if builder included base command
-              const hasBaseCommand = fullArgs[0] === 'search';
-              const command = hasBaseCommand ? fullArgs[0] : 'search';
-              const args = hasBaseCommand ? fullArgs.slice(1) : fullArgs;
-
-              return executeNpmCommand(command as 'search', args, {
-                cache: true,
+                }
               })
-                .then(result => {
-                  if (!result.isError && result.content?.[0]?.text) {
-                    const packages = parseNpmSearchOutput(
-                      result.content[0].text as string
-                    );
-                    return {
-                      packages,
-                      errors:
-                        packages.length === 0
-                          ? [`NPM package '${query}' not found`]
-                          : [],
-                    };
-                  } else {
-                    const errorContent =
-                      result.content?.[0]?.text || 'Unknown NPM error';
-                    return {
-                      packages: [],
-                      errors: [
-                        `NPM search failed for '${query}': ${errorContent}`,
-                      ],
-                    };
-                  }
-                })
-                .catch(queryError => {
-                  const errorMsg =
-                    queryError instanceof Error
-                      ? queryError.message
-                      : String(queryError);
-                  return {
-                    packages: [],
-                    errors: [`NPM search failed for '${query}': ${errorMsg}`],
-                  };
-                });
-            });
-
-            // Combine all individual NPM search results
-            searchPromises.push(
-              Promise.all(npmSearchPromises).then(results => {
-                const allPackages = results.flatMap(r => r.packages);
-                const allErrors = results.flatMap(r => r.errors);
+              .catch(queryError => {
+                const errorMsg =
+                  queryError instanceof Error
+                    ? queryError.message
+                    : String(queryError);
                 return {
                   type: 'npm' as const,
-                  packages: allPackages,
-                  errors: allErrors,
+                  packages: [],
+                  errors: [
+                    `NPM search failed for '${query.name}': ${errorMsg}`,
+                  ],
                 };
-              })
-            );
-          }
+              });
+          });
+
+          // Combine all individual NPM search results
+          searchPromises.push(
+            Promise.all(npmSearchPromises).then(results => {
+              const allPackages = results.flatMap(r => r.packages);
+              const allErrors = results.flatMap(r => r.errors);
+              return {
+                type: 'npm' as const,
+                packages: allPackages,
+                errors: allErrors,
+              };
+            })
+          );
         }
 
         // Execute all searches concurrently
@@ -343,7 +652,7 @@ export function registerNpmSearchTool(server: McpServer) {
         const totalCount =
           deduplicatedNpmPackages.length + deduplicatedPythonPackages.length;
 
-        // If we have results, return them (even if there were some errors)
+        // If we have results, process them based on requested format
         if (totalCount > 0) {
           const { nextSteps } = getToolSuggestions(TOOL_NAMES.package_search, {
             hasResults: true,
@@ -354,18 +663,218 @@ export function registerNpmSearchTool(server: McpServer) {
           // Add error information if there were failures
           if (errors.npm.length > 0 || errors.python.length > 0) {
             hints.push('Search warnings:');
-            errors.npm.forEach(error => hints.push(`• ${error}`));
-            errors.python.forEach(error => hints.push(`• ${error}`));
+            errors.npm.forEach(error => hints.push(` ${error}`));
+            errors.python.forEach(error => hints.push(` ${error}`));
             hints.push('');
           }
 
           if (nextSteps.length > 0) {
             hints.push('Next steps:');
             nextSteps.forEach(({ tool, reason }) => {
-              hints.push(`• Use ${tool} ${reason}`);
+              hints.push(` Use ${tool} ${reason}`);
             });
           }
 
+          // Check if enhanced metadata fetching is requested for NPM packages
+          if (
+            normalizedNpmQueries.some(q => q.npmFetchMetadata) &&
+            deduplicatedNpmPackages.length > 0
+          ) {
+            try {
+              // Fetch detailed metadata for npm packages concurrently
+              const npmMetadataPromises = deduplicatedNpmPackages.map(
+                async (
+                  pkg
+                ): Promise<{
+                  packageName: string;
+                  metadata: EnhancedPackageMetadata | null;
+                  error?: string;
+                }> => {
+                  try {
+                    const metadataResult = await viewNpmPackage(
+                      pkg.name,
+                      normalizedNpmQueries.find(q => q.name === pkg.name)
+                        ?.npmField,
+                      normalizedNpmQueries.find(q => q.name === pkg.name)
+                        ?.npmMatch
+                    );
+
+                    if (metadataResult.isError) {
+                      return {
+                        packageName: pkg.name,
+                        metadata: null,
+                        error: metadataResult.content[0]?.text as string,
+                      };
+                    }
+
+                    // Parse the npm view result
+                    const execResult = JSON.parse(
+                      metadataResult.content[0].text as string
+                    );
+                    let packageData;
+
+                    // Handle different response formats based on field/match parameters
+                    const queryConfig = normalizedNpmQueries.find(
+                      q => q.name === pkg.name
+                    );
+                    if (queryConfig?.npmField) {
+                      // Field-specific response
+                      packageData = {
+                        name: pkg.name,
+                        [queryConfig.npmField]: execResult.result,
+                        // Include basic info from original search
+                        version: pkg.version,
+                        description: pkg.description,
+                        repository: pkg.repository,
+                      };
+                    } else if (queryConfig?.npmMatch) {
+                      // Match-specific response
+                      packageData = {
+                        name: pkg.name,
+                        ...execResult.result,
+                        // Ensure we have basic info
+                        version: execResult.result.version || pkg.version,
+                        description:
+                          execResult.result.description || pkg.description,
+                        repository:
+                          execResult.result.repository || pkg.repository,
+                      };
+                    } else {
+                      // Full metadata response
+                      packageData = execResult.result;
+                    }
+
+                    // Transform to optimized format if full metadata was requested
+                    const optimizedMetadata =
+                      queryConfig?.npmField || queryConfig?.npmMatch
+                        ? packageData
+                        : transformToOptimizedFormat(packageData);
+
+                    // Extract git URL (repository URL)
+                    const gitURL =
+                      optimizedMetadata.repository || pkg.repository || '';
+
+                    return {
+                      packageName: pkg.name,
+                      metadata: {
+                        gitURL,
+                        metadata: optimizedMetadata,
+                      },
+                    };
+                  } catch (error) {
+                    const errorMsg =
+                      error instanceof Error ? error.message : String(error);
+                    return {
+                      packageName: pkg.name,
+                      metadata: null,
+                      error: `Failed to fetch metadata: ${errorMsg}`,
+                    };
+                  }
+                }
+              );
+
+              // Execute npm metadata fetching concurrently with rate limiting (max 5 concurrent)
+              const batchSize = 5;
+              const npmMetadataResults: {
+                packageName: string;
+                metadata: EnhancedPackageMetadata | null;
+                error?: string;
+              }[] = [];
+
+              for (let i = 0; i < npmMetadataPromises.length; i += batchSize) {
+                const batch = npmMetadataPromises.slice(i, i + batchSize);
+                const batchResults = await Promise.all(batch);
+                npmMetadataResults.push(...batchResults);
+              }
+
+              // Process results and build enhanced response
+              const enhancedNpmResults: Record<
+                string,
+                EnhancedPackageMetadata
+              > = {};
+              const metadataErrors: string[] = [];
+
+              for (const result of npmMetadataResults) {
+                if (result.metadata) {
+                  enhancedNpmResults[result.packageName] = result.metadata;
+                } else if (result.error) {
+                  metadataErrors.push(`${result.packageName}: ${result.error}`);
+                  // Fallback: use basic search data with repository as gitURL
+                  const originalPkg = deduplicatedNpmPackages.find(
+                    p => p.name === result.packageName
+                  );
+                  if (originalPkg) {
+                    enhancedNpmResults[result.packageName] = {
+                      gitURL: originalPkg.repository || '',
+                      metadata: {
+                        name: originalPkg.name,
+                        version: originalPkg.version,
+                        description: originalPkg.description || '',
+                        license: 'Unknown',
+                        repository: originalPkg.repository || '',
+                        size: 'Unknown',
+                        created: 'Unknown',
+                        updated: 'Unknown',
+                        versions: [],
+                        stats: { total_versions: 0 },
+                      } as OptimizedNpmPackageResult,
+                    };
+                  }
+                }
+              }
+
+              // Add metadata errors to hints
+              if (metadataErrors.length > 0) {
+                hints.push('NPM metadata warnings:');
+                metadataErrors.forEach(error => hints.push(` ${error}`));
+                hints.push('');
+              }
+
+              // Process Python packages (simpler - no enhanced metadata yet)
+              const enhancedPythonResults: Record<
+                string,
+                EnhancedPackageMetadata
+              > = {};
+              for (const pkg of deduplicatedPythonPackages) {
+                const pythonMetadata: PythonPackageMetadata = {
+                  name: pkg.name,
+                  version: pkg.version,
+                  description: pkg.description,
+                  keywords: pkg.keywords,
+                  repository: pkg.repository,
+                };
+
+                enhancedPythonResults[pkg.name] = {
+                  gitURL: pkg.repository || '',
+                  metadata: pythonMetadata,
+                };
+              }
+
+              // Return enhanced response format
+              const enhancedResult: EnhancedPackageSearchResult = {
+                total_count: totalCount,
+                hints: hints.length > 0 ? hints : undefined,
+              };
+
+              if (Object.keys(enhancedNpmResults).length > 0) {
+                enhancedResult.npm = enhancedNpmResults;
+              }
+
+              if (Object.keys(enhancedPythonResults).length > 0) {
+                enhancedResult.python = enhancedPythonResults;
+              }
+
+              return createResult({ data: enhancedResult });
+            } catch (error) {
+              // If metadata fetching fails completely, fall back to basic response
+              const errorMsg =
+                error instanceof Error ? error.message : String(error);
+              hints.push(`NPM metadata fetching failed: ${errorMsg}`);
+              hints.push('Falling back to basic search results');
+            }
+          }
+
+          // Return basic response format (when npmFetchMetadata is false or fallback)
           return createResult({
             data: {
               total_count: totalCount,
@@ -381,21 +890,25 @@ export function registerNpmSearchTool(server: McpServer) {
 
         if (errors.npm.length > 0) {
           errorDetails.push('NPM Search Issues:');
-          errors.npm.forEach(error => errorDetails.push(`  • ${error}`));
+          errors.npm.forEach(error => errorDetails.push(`   ${error}`));
         }
 
         if (errors.python.length > 0) {
           errorDetails.push('Python Search Issues:');
-          errors.python.forEach(error => errorDetails.push(`  • ${error}`));
+          errors.python.forEach(error => errorDetails.push(`   ${error}`));
         }
 
         // If no specific errors were captured, use generic message
         if (errorDetails.length === 0) {
           const searchedTerms = [];
-          if (args.pythonPackageName)
-            searchedTerms.push(`Python: '${args.pythonPackageName}'`);
-          if (searchQueries.length > 0)
-            searchedTerms.push(`NPM: [${searchQueries.join(', ')}]`);
+          if (normalizedPythonQueries.length > 0)
+            searchedTerms.push(
+              `Python: [${normalizedPythonQueries.map(q => q.name).join(', ')}]`
+            );
+          if (normalizedNpmQueries.length > 0)
+            searchedTerms.push(
+              `NPM: [${normalizedNpmQueries.map(q => q.name).join(', ')}]`
+            );
           errorDetails.push(
             `No packages found for: ${searchedTerms.join(', ')}`
           );
@@ -403,48 +916,52 @@ export function registerNpmSearchTool(server: McpServer) {
 
         // Smart fallback suggestions based on query patterns
         const hasSpecificTerms =
-          queries.length > 0 &&
-          queries.some(
-            q => q && (q.includes('-') || q.includes('@') || q.length > 15)
+          normalizedNpmQueries.length > 0 &&
+          normalizedNpmQueries.some(
+            q =>
+              q &&
+              (q.name.includes('-') ||
+                q.name.includes('@') ||
+                q.name.length > 15)
           );
 
         const hasFrameworkTerms =
-          queries.length > 0 &&
-          queries.some(
+          normalizedNpmQueries.length > 0 &&
+          normalizedNpmQueries.some(
             q =>
               q &&
               ['react', 'vue', 'angular', 'express', 'fastify'].some(fw =>
-                q.toLowerCase().includes(fw)
+                q.name.toLowerCase().includes(fw)
               )
           );
 
         let fallbackSuggestions = [
-          '• Try broader functional terms: "testing" instead of "jest-unit-test"',
-          '• Remove version numbers or specific constraints',
-          '• Use single keywords: "http" instead of "http-client-library"',
+          ' Try broader functional terms: "testing" instead of "jest-unit-test"',
+          ' Remove version numbers or specific constraints',
+          ' Use single keywords: "http" instead of "http-client-library"',
         ];
 
         if (hasSpecificTerms) {
           fallbackSuggestions = [
-            '• Use simpler terms: "validation" instead of "schema-validation-library"',
-            '• Try category terms: "database", "testing", "auth"',
+            ' Use simpler terms: "validation" instead of "schema-validation-library"',
+            ' Try category terms: "database", "testing", "auth"',
             ...fallbackSuggestions.slice(1),
           ];
         }
 
         if (hasFrameworkTerms) {
           fallbackSuggestions.unshift(
-            '• Try specific framework searches: "react hooks", "vue components"'
+            ' Try specific framework searches: "react hooks", "vue components"'
           );
         }
 
         // Add ecosystem-specific suggestions
-        if (args.pythonPackageName && errors.python.length > 0) {
+        if (normalizedPythonQueries.length > 0 && errors.python.length > 0) {
           fallbackSuggestions.push(
-            '• For Python: Try alternative names (e.g., "pillow" instead of "PIL")'
+            ' For Python: Try alternative names (e.g., "pillow" instead of "PIL")'
           );
           fallbackSuggestions.push(
-            '• For Python: Check exact spelling on https://pypi.org'
+            ' For Python: Check exact spelling on https://pypi.org'
           );
           fallbackSuggestions.push(
             'For Python: Use github_search_repos to find repository when PyPI lacks repository info'
@@ -454,23 +971,23 @@ export function registerNpmSearchTool(server: McpServer) {
           );
         }
 
-        if (searchQueries.length > 0 && errors.npm.length > 0) {
+        if (normalizedNpmQueries.length > 0 && errors.npm.length > 0) {
           fallbackSuggestions.push(
-            '• For NPM: Check package availability on https://npmjs.com'
+            ' For NPM: Check package availability on https://npmjs.com'
           );
           fallbackSuggestions.push(
-            '• For NPM: Try searching with exact package names'
+            ' For NPM: Try searching with exact package names'
           );
         }
 
         // Add GitHub integration suggestions
         fallbackSuggestions.push(
-          '• Use github_search_repos with topic filters for project discovery'
+          ' Use github_search_repos with topic filters for project discovery'
         );
 
-        if (searchQueries.length > 0) {
+        if (normalizedNpmQueries.length > 0) {
           fallbackSuggestions.push(
-            '• Check npm registry status: https://status.npmjs.org'
+            ' Check npm registry status: https://status.npmjs.org'
           );
         }
 
@@ -484,9 +1001,10 @@ export function registerNpmSearchTool(server: McpServer) {
         );
 
         // Add package type suggestion
-        const packageTypeSuggestion = args.pythonPackageName
-          ? '• Try searching with npmPackageName if this is an NPM package'
-          : '• Try searching with pythonPackageName if this is a Python package';
+        const packageTypeSuggestion =
+          normalizedPythonQueries.length > 0
+            ? ' Try searching with npmPackageName if this is an NPM package'
+            : ' Try searching with pythonPackageName if this is a Python package';
 
         fallbackSuggestions.push(packageTypeSuggestion);
 
@@ -513,9 +1031,9 @@ export function registerNpmSearchTool(server: McpServer) {
             error: getErrorWithSuggestion({
               baseError: ERROR_MESSAGES.NPM_CONNECTION_FAILED,
               suggestion: [
-                '• Check internet connection and npm registry status',
-                '• Try fewer search terms to reduce load',
-                '• Retry in a few moments',
+                ' Check internet connection and npm registry status',
+                ' Try fewer search terms to reduce load',
+                ' Retry in a few moments',
                 createToolSuggestion(TOOL_NAMES.package_search, fallback),
               ],
             }),
@@ -535,9 +1053,9 @@ export function registerNpmSearchTool(server: McpServer) {
             error: getErrorWithSuggestion({
               baseError: ERROR_MESSAGES.NPM_CLI_ERROR,
               suggestion: [
-                '• Verify NPM installation: npm --version',
-                '• Update NPM: npm install -g npm@latest',
-                '• Check PATH environment variable',
+                ' Verify NPM installation: npm --version',
+                ' Update NPM: npm install -g npm@latest',
+                ' Check PATH environment variable',
                 createToolSuggestion(TOOL_NAMES.package_search, fallback),
               ],
             }),
@@ -558,9 +1076,9 @@ export function registerNpmSearchTool(server: McpServer) {
             error: getErrorWithSuggestion({
               baseError: ERROR_MESSAGES.NPM_PERMISSION_ERROR,
               suggestion: [
-                '• Check npm login status: npm whoami',
-                '• Use public registry search without auth',
-                '• Verify npm registry configuration',
+                ' Check npm login status: npm whoami',
+                ' Use public registry search without auth',
+                ' Verify npm registry configuration',
                 createToolSuggestion(TOOL_NAMES.package_search, fallback),
               ],
             }),
@@ -578,8 +1096,8 @@ export function registerNpmSearchTool(server: McpServer) {
               `Error details: ${errorMsg}`,
               '',
               'Fallback strategies:',
-              '• Check npm status and retry',
-              '• Use broader search terms',
+              ' Check npm status and retry',
+              ' Use broader search terms',
               createToolSuggestion(TOOL_NAMES.package_search, fallback),
             ],
           }),
@@ -789,4 +1307,178 @@ async function searchPythonPackage(
 
   // If we get here, all name variations failed
   return null;
+}
+
+/**
+ * Fetch NPM package metadata using npm view command
+ * Merged from npm_view_package.ts functionality
+ */
+async function viewNpmPackage(
+  packageName: string,
+  field?: string,
+  match?: string | string[]
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('npm-view', { packageName, field, match });
+
+  return withCache(cacheKey, async () => {
+    try {
+      const builder = new NpmPackageViewBuilder();
+      // Build arguments based on parameters
+      // Priority: field > match > full JSON
+      let args: string[];
+      if (field) {
+        args = builder.build({ packageName, field });
+      } else if (match) {
+        // Handle match parameter - it might be a JSON string that needs parsing
+        let parsedMatch = match;
+        if (
+          typeof match === 'string' &&
+          match.startsWith('[') &&
+          match.endsWith(']')
+        ) {
+          try {
+            parsedMatch = JSON.parse(match);
+          } catch (e) {
+            // If parsing fails, treat as a single field name
+            parsedMatch = match;
+          }
+        }
+
+        const matchFields = Array.isArray(parsedMatch)
+          ? parsedMatch
+          : [parsedMatch];
+        args = builder.build({ packageName, match: matchFields });
+      } else {
+        args = builder.build({ packageName });
+      }
+
+      // Determine the command type based on whether builder includes base command
+      const hasBaseCommand = args[0] === 'view';
+      const command = hasBaseCommand ? args[0] : 'view';
+      const commandArgs = hasBaseCommand ? args.slice(1) : args;
+
+      const result = await executeNpmCommand(command as 'view', commandArgs, {
+        cache: false,
+      });
+      return result;
+    } catch (error) {
+      const errorMessage = (error as Error).message || '';
+
+      if (errorMessage.includes('404')) {
+        return createResult({
+          error:
+            'Package not found on NPM registry. Verify the exact package name',
+        });
+      }
+
+      return createResult({
+        error: 'Failed to execute NPM command. Check npm installation',
+      });
+    }
+  });
+}
+
+/**
+ * Transform NPM CLI response to optimized format for code analysis
+ * Merged from npm_view_package.ts functionality
+ */
+function transformToOptimizedFormat(
+  packageData: any
+): OptimizedNpmPackageResult {
+  // Extract repository URL and simplify
+  const repoUrl =
+    packageData.repository?.url || packageData.repositoryGitUrl || '';
+  const repository = repoUrl ? simplifyRepoUrl(repoUrl) : '';
+
+  // Simplify exports to essential entry points only
+  const exports = packageData.exports
+    ? simplifyExports(packageData.exports)
+    : undefined;
+
+  // Get version timestamps from time object and limit to last 5
+  const timeData = packageData.time || {};
+  const versionList = Array.isArray(packageData.versions)
+    ? packageData.versions
+    : [];
+  const recentVersions = versionList.slice(-5).map((version: string) => ({
+    version,
+    date: timeData[version] ? toDDMMYYYY(timeData[version]) : 'Unknown',
+  }));
+
+  const result: OptimizedNpmPackageResult = {
+    name: packageData.name,
+    version: packageData.version,
+    description: packageData.description || '',
+    license: packageData.license || 'Unknown',
+    repository,
+    size: humanizeBytes(packageData.dist?.unpackedSize || 0),
+    created: timeData.created ? toDDMMYYYY(timeData.created) : 'Unknown',
+    updated: timeData.modified ? toDDMMYYYY(timeData.modified) : 'Unknown',
+    versions: recentVersions,
+    stats: {
+      total_versions: versionList.length,
+      weekly_downloads: packageData.weeklyDownloads,
+    },
+  };
+
+  // Add exports only if they exist and are useful
+  if (exports && Object.keys(exports).length > 0) {
+    result.exports = exports;
+  }
+
+  return result;
+}
+
+/**
+ * Simplify exports to show only essential entry points for code navigation
+ * Merged from npm_view_package.ts functionality
+ */
+function simplifyExports(exports: any): {
+  main: string;
+  types?: string;
+  [key: string]: any;
+} {
+  if (typeof exports === 'string') {
+    return { main: exports };
+  }
+
+  if (typeof exports === 'object') {
+    const simplified: any = {};
+
+    // Extract main entry point
+    if (exports['.']) {
+      const mainExport = exports['.'];
+      if (typeof mainExport === 'string') {
+        simplified.main = mainExport;
+      } else if (mainExport.default) {
+        simplified.main = mainExport.default;
+      } else if (mainExport.import) {
+        simplified.main = mainExport.import;
+      }
+    }
+
+    // Extract types if available with safe property access
+    if (
+      exports['./types'] ||
+      (exports['.'] && typeof exports['.'] === 'object' && exports['.'].types)
+    ) {
+      simplified.types = exports['./types'] || (exports['.'] as any).types;
+    }
+
+    // Add a few other important exports (max 3 total)
+    let count = 0;
+    for (const [key, value] of Object.entries(exports)) {
+      if (count >= 3 || key === '.' || key === './types') continue;
+      if (key.includes('package.json') || key.includes('node_modules'))
+        continue;
+
+      simplified[key] =
+        typeof value === 'object' ? (value as any).default || value : value;
+      count++;
+    }
+
+    return simplified;
+  }
+
+  return { main: 'index.js' };
 }

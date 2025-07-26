@@ -29,23 +29,23 @@ export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 
 USAGE:
-• Track code changes over time
-• Find commits by author or message
-• Get SHAs for github_fetch_content
+ Track code changes over time
+ Find commits by author or message
+ Get SHAs for github_fetch_content
 
 KEY FEATURES:
-• Query combinations (exactQuery, queryTerms, orTerms)
-• Filter-only search (author, hash, date)
-• Optional diff content (getChangesContent)
+ Query combinations (exactQuery, queryTerms, orTerms)
+ Filter-only search (author, hash, date)
+ Optional diff content (getChangesContent)
 
 EXAMPLES:
-• exactQuery="bug fix"
-• hash="<sha from PR>"
-• committer="username"
+ exactQuery="bug fix"
+ hash="<sha from PR>"
+ committer="username"
 
 TOKEN WARNING:
-• getChangesContent=true is EXPENSIVE
-• Use github_fetch_content for full files
+ getChangesContent=true is EXPENSIVE
+ Use github_fetch_content for full files
 
 PHILOSOPHY: Build comprehensive understanding progressively`;
 
@@ -307,22 +307,22 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
               error: `${createNoResultsError('commits')}
 
 Try these simplified searches:
-${simplificationSteps.map(step => `• ${step}`).join('\n')}
+${simplificationSteps.map(step => ` ${step}`).join('\n')}
 
 Or ask the user:
-• "What specific type of commits are you looking for?" 
-• "Can you provide different keywords to search for?"
-• "Should I search in a specific repository instead?"
+ "What specific type of commits are you looking for?" 
+ "Can you provide different keywords to search for?"
+ "Should I search in a specific repository instead?"
 
 Search techniques to try:
-• Use exactQuery for phrases: "bug fix", "exact phrase"
-• Use queryTerms for multiple terms: ["term1", "term2"] (AND logic)
-• For OR operations: run separate searches for each term
-• Combine with filters: author, repo, date filters
+ Use exactQuery for phrases: "bug fix", "exact phrase"
+ Use queryTerms for multiple terms: ["term1", "term2"] (AND logic)
+ For OR operations: run separate searches for each term
+ Combine with filters: author, repo, date filters
 
 Alternative tools:
-• Use github_search_code for file-specific commits
-• Use github_search_repos to find repositories first`,
+ Use github_search_code for file-specific commits
+ Use github_search_repos to find repositories first`,
             });
           }
 

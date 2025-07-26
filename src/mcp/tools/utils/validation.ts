@@ -15,7 +15,7 @@ export function createToolSuggestion(
   }
 
   const suggestions = suggestedTools
-    .map(({ tool, reason }) => `• Use ${tool} ${reason}`)
+    .map(({ tool, reason }) => ` Use ${tool} ${reason}`)
     .join('\n');
 
   return `\n\nCurrent tool: ${currentTool}\nAlternative tools:\n${suggestions}`;

@@ -10,14 +10,14 @@ export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
 const DESCRIPTION = `PURPOSE: Verify GitHub/NPM connections and user organizations for data access.
 
 USAGE:
-• Start research to verify access permissions
-• Before accessing private repositories
-• Troubleshoot authentication issues
+ Start research to verify access permissions
+ Before accessing private repositories
+ Troubleshoot authentication issues
 
 KEY FEATURES:
-• GitHub auth status and organizations
-• NPM registry connection
-• Access permissions verification
+ GitHub auth status and organizations
+ NPM registry connection
+ Access permissions verification
 
 PHILOSOPHY: Tool Efficiency - verify access before research`;
 

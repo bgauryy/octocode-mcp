@@ -26,18 +26,18 @@ export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 
 USAGE:
-• Find bug reports and feature requests
-• Track issue discussions
-• Analyze project problems
+ Find bug reports and feature requests
+ Track issue discussions
+ Analyze project problems
 
 KEY FEATURES:
-• Search by keywords, labels, state
-• Filter by author, date, reactions
-• Full issue body content available
+ Search by keywords, labels, state
+ Filter by author, date, reactions
+ Full issue body content available
 
 TOKEN EFFICIENCY:
-• Body content is expensive
-• Use filters to limit results
+ Body content is expensive
+ Use filters to limit results
 
 PHILOSOPHY: Get quality data from relevant sources`;
 
@@ -451,13 +451,13 @@ async function searchGitHubIssues(
 
       // Analyze search parameters for specific suggestions
       if (params.state === 'closed') {
-        fallbackSuggestions.push('• Try state:open or remove state filter');
+        fallbackSuggestions.push(' Try state:open or remove state filter');
       }
 
       if (params.author) {
-        fallbackSuggestions.push('• Remove author filter for broader search');
+        fallbackSuggestions.push(' Remove author filter for broader search');
         fallbackSuggestions.push(
-          `• Use github_search_code to find ${params.author}'s contributions`
+          ` Use github_search_code to find ${params.author}'s contributions`
         );
       }
 
@@ -465,35 +465,35 @@ async function searchGitHubIssues(
         const labels = Array.isArray(params.label)
           ? params.label
           : [params.label];
-        fallbackSuggestions.push(`• Try broader labels or remove label filter`);
+        fallbackSuggestions.push(` Try broader labels or remove label filter`);
         fallbackSuggestions.push(
-          `• Search for label variations: ${labels.map(l => `"${l}"`).join(', ')}`
+          ` Search for label variations: ${labels.map(l => `"${l}"`).join(', ')}`
         );
       }
 
       if (params.owner && params.repo) {
-        fallbackSuggestions.push('• Check repository name spelling');
+        fallbackSuggestions.push(' Check repository name spelling');
         fallbackSuggestions.push(
-          '• Use github_view_repo_structure to verify repository exists'
+          ' Use github_view_repo_structure to verify repository exists'
         );
       } else if (params.owner) {
-        fallbackSuggestions.push('• Remove owner filter for global search');
+        fallbackSuggestions.push(' Remove owner filter for global search');
         fallbackSuggestions.push(
-          '• Use github_search_repos to find organization repositories'
+          ' Use github_search_repos to find organization repositories'
         );
       }
 
       if (params.created || params.updated) {
-        fallbackSuggestions.push('• Expand date range or remove date filters');
+        fallbackSuggestions.push(' Expand date range or remove date filters');
       }
 
       // Add general alternatives
-      fallbackSuggestions.push('• Try broader search terms');
+      fallbackSuggestions.push(' Try broader search terms');
       fallbackSuggestions.push(
-        '• Use github_search_pull_requests for related development activity'
+        ' Use github_search_pull_requests for related development activity'
       );
       fallbackSuggestions.push(
-        '• Use github_search_code to find implementation patterns'
+        ' Use github_search_code to find implementation patterns'
       );
 
       return createResult({
@@ -503,9 +503,9 @@ Try these alternatives:
 ${fallbackSuggestions.join('\n')}
 
 Discovery strategies:
-• Broader terms: "error" instead of "TypeError"
-• Remove filters: state, labels, author
-• Related searches: pull requests, code implementations`,
+ Broader terms: "error" instead of "TypeError"
+ Remove filters: state, labels, author
+ Related searches: pull requests, code implementations`,
       });
     }
 

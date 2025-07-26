@@ -29,6 +29,9 @@ describe('Package Search Tool (NPM & Python)', () => {
     // Create mock server using the fixture
     mockServer = createMockMcpServer();
 
+    // Register the tool for testing
+    registerNpmSearchTool(mockServer.server);
+
     // Clear all mocks
     vi.clearAllMocks();
   });
@@ -64,7 +67,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/facebook/react' },
           },
         ],
-        command: 'npm search react --searchlimit=20 --json',
+        command: 'npm search react --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -80,7 +83,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(result.isError).toBe(false);
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['react', '--searchlimit=20', '--json'],
+        ['react', '--searchlimit=1', '--json'],
         { cache: true }
       );
 
@@ -101,7 +104,7 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       const mockNpmResponse = {
         result: '[]', // Empty results
-        command: 'npm search nonexistent-package-xyz --searchlimit=20 --json',
+        command: 'npm search nonexistent-package-xyz --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -203,7 +206,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/microsoft/TypeScript' },
           },
         ],
-        command: 'npm search typescript --searchlimit=20 --json',
+        command: 'npm search typescript --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -217,7 +220,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/eslint/eslint' },
           },
         ],
-        command: 'npm search eslint --searchlimit=20 --json',
+        command: 'npm search eslint --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -260,7 +263,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/expressjs/express' },
           },
         ],
-        command: 'npm search express --searchlimit=20 --json',
+        command: 'npm search express --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -276,7 +279,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(result.isError).toBe(false);
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['express', '--searchlimit=20', '--json'],
+        ['express', '--searchlimit=1', '--json'],
         { cache: true }
       );
     });
@@ -294,7 +297,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/remix-run/react-router' },
           },
         ],
-        command: 'npm search react router --searchlimit=20 --json',
+        command: 'npm search react router --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -311,7 +314,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(result.isError).toBe(false);
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        ['react router', '--searchlimit=20', '--json'],
+        ['react router', '--searchlimit=1', '--json'],
         { cache: true }
       );
 
@@ -333,7 +336,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/lodash/lodash' },
           },
         ],
-        command: 'npm search lodash --searchlimit=20 --json',
+        command: 'npm search lodash --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -347,7 +350,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/axios/axios' },
           },
         ],
-        command: 'npm search axios --searchlimit=20 --json',
+        command: 'npm search axios --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -386,7 +389,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/moment/moment' },
           },
         ],
-        command: 'npm search moment --searchlimit=20 --json',
+        command: 'npm search moment --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -400,7 +403,7 @@ describe('Package Search Tool (NPM & Python)', () => {
             links: { repository: 'https://github.com/iamkun/dayjs' },
           },
         ],
-        command: 'npm search dayjs --searchlimit=20 --json',
+        command: 'npm search dayjs --searchlimit=1 --json',
         type: 'npm',
       };
 
@@ -424,6 +427,309 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(data.npm).toHaveLength(2);
       expect(data.npm[0].name).toBe('moment');
       expect(data.npm[1].name).toBe('dayjs');
+    });
+  });
+
+  describe('Bulk Query Support (New Format)', () => {
+    it('should handle npmPackages array with individual parameters', async () => {
+      const mockNpmResponse1 = {
+        result: [
+          {
+            name: 'react',
+            version: '18.2.0',
+            description: 'React library',
+            links: { repository: 'https://github.com/facebook/react' },
+          },
+        ],
+        command: 'npm search react --searchlimit=5 --json',
+        type: 'npm',
+      };
+
+      const mockNpmResponse2 = {
+        result: [
+          {
+            name: 'vue',
+            version: '3.3.0',
+            description: 'Vue.js framework',
+            links: { repository: 'https://github.com/vuejs/vue' },
+          },
+        ],
+        command: 'npm search vue --searchlimit=10 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse1) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse2) }],
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'react', searchLimit: 5, id: 'react-query' },
+          { name: 'vue', searchLimit: 10, id: 'vue-query' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.npm).toHaveLength(2);
+      expect(data.npm[0].name).toBe('react');
+      expect(data.npm[1].name).toBe('vue');
+
+      // Verify individual search limits were used
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['react', '--searchlimit=5', '--json']),
+        { cache: true }
+      );
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['vue', '--searchlimit=10', '--json']),
+        { cache: true }
+      );
+    });
+
+    it('should handle pythonPackages array', async () => {
+      mockAxios.get
+        .mockResolvedValueOnce({
+          data: {
+            info: {
+              name: 'requests',
+              version: '2.31.0',
+              summary: 'Python HTTP library',
+              project_urls: {
+                Source: 'https://github.com/psf/requests',
+              },
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            info: {
+              name: 'django',
+              version: '4.2.0',
+              summary: 'Django web framework',
+              project_urls: {
+                Repository: 'https://github.com/django/django',
+              },
+            },
+          },
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [
+          { name: 'requests', id: 'http-lib' },
+          { name: 'django', id: 'web-framework' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.python).toHaveLength(2);
+      expect(data.python[0].name).toBe('requests');
+      expect(data.python[1].name).toBe('django');
+    });
+
+    it('should handle mixed ecosystem bulk queries', async () => {
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'express',
+            version: '4.18.0',
+            description: 'Fast web framework',
+            links: { repository: 'https://github.com/expressjs/express' },
+          },
+        ],
+        command: 'npm search express --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      mockAxios.get.mockResolvedValueOnce({
+        data: {
+          info: {
+            name: 'flask',
+            version: '2.3.0',
+            summary: 'Python web framework',
+            project_urls: {
+              Repository: 'https://github.com/pallets/flask',
+            },
+          },
+        },
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'express' }],
+        pythonPackages: [{ name: 'flask' }],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.npm).toHaveLength(1);
+      expect(data.python).toHaveLength(1);
+      expect(data.npm[0].name).toBe('express');
+      expect(data.python[0].name).toBe('flask');
+    });
+
+    it('should apply global defaults to queries without specific values', async () => {
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'lodash',
+            version: '4.17.21',
+            description: 'Utility library',
+            links: { repository: 'https://github.com/lodash/lodash' },
+          },
+        ],
+        command: 'npm search lodash --searchlimit=15 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'lodash' }], // No searchLimit specified
+        searchLimit: 15, // Global default
+      });
+
+      expect(result.isError).toBe(false);
+      // Verify global default was applied
+      expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
+        'search',
+        expect.arrayContaining(['lodash', '--searchlimit=15', '--json']),
+        { cache: true }
+      );
+    });
+
+    it('should handle NPM metadata fetching for specific queries', async () => {
+      const mockSearchResponse = {
+        result: [
+          {
+            name: 'typescript',
+            version: '5.0.0',
+            description: 'TypeScript compiler',
+            links: { repository: 'https://github.com/microsoft/typescript' },
+          },
+        ],
+        command: 'npm search typescript --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      const mockViewResponse = {
+        result: {
+          name: 'typescript',
+          version: '5.0.0',
+          description: 'TypeScript compiler',
+          license: 'Apache-2.0',
+          repository: { url: 'https://github.com/microsoft/typescript' },
+          dist: { unpackedSize: 12345678 },
+          time: {
+            created: '2012-10-01T12:00:00.000Z',
+            modified: '2023-03-16T12:00:00.000Z',
+          },
+          versions: ['4.9.0', '5.0.0'],
+        },
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockSearchResponse) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockViewResponse) }],
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'typescript', npmFetchMetadata: true, id: 'ts-query' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.npm).toBeDefined();
+      expect(data.npm.typescript).toBeDefined();
+      expect(data.npm.typescript.metadata).toBeDefined();
+      expect(data.npm.typescript.gitURL).toContain('microsoft/typescript');
+    });
+  });
+
+  describe('Backward Compatibility', () => {
+    it('should still support legacy npmPackageName parameter', async () => {
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'lodash',
+            version: '4.17.21',
+            description: 'Utility library',
+            links: { repository: 'https://github.com/lodash/lodash' },
+          },
+        ],
+        command: 'npm search lodash --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackageName: 'lodash', // Legacy parameter
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.npm).toHaveLength(1);
+      expect(data.npm[0].name).toBe('lodash');
+    });
+
+    it('should still support legacy pythonPackageName parameter', async () => {
+      mockAxios.get.mockResolvedValueOnce({
+        data: {
+          info: {
+            name: 'numpy',
+            version: '1.24.0',
+            summary: 'NumPy array library',
+            project_urls: {
+              Source: 'https://github.com/numpy/numpy',
+            },
+          },
+        },
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackageName: 'numpy', // Legacy parameter
+      });
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.python).toHaveLength(1);
+      expect(data.python[0].name).toBe('numpy');
+    });
+
+    it('should detect format conflict and provide helpful error', async () => {
+      const result = await mockServer.callTool('packageSearch', {
+        // No parameters provided
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('bulk format');
+      expect(result.content[0].text).toContain('legacy format');
     });
   });
 });

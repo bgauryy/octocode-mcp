@@ -39,10 +39,6 @@ import {
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
   registerSearchGitHubIssuesTool,
 } from './mcp/tools/github_search_issues.js';
-import {
-  NPM_VIEW_PACKAGE_TOOL_NAME,
-  registerNpmViewPackageTool,
-} from './mcp/tools/npm_view_package.js';
 import { version } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -80,7 +76,9 @@ function registerAllTools(server: McpServer) {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,
     },
-    { name: NPM_VIEW_PACKAGE_TOOL_NAME, fn: registerNpmViewPackageTool },
+    // NOTE: npm_view_package functionality has been merged into package_search tool
+    // Use packageSearch with npmFetchMetadata=true and npmField/npmMatch parameters instead
+    // { name: NPM_VIEW_PACKAGE_TOOL_NAME, fn: registerNpmViewPackageTool },
   ];
 
   let successCount = 0;
