@@ -191,9 +191,11 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain(
-        'At least one search parameter required'
-      );
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('At least one search parameter required')
+        )
+      ).toBe(true);
     });
   });
 
@@ -226,9 +228,8 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(1);
-      expect(data.results[0].queryId).toBe('test-query');
-      expect(data.results[0].result.repositories[0]).toMatchObject({
+      expect(data.data).toHaveLength(1);
+      expect(data.data[0]).toMatchObject({
         name: 'owner/awesome-repo',
         stars: 1500,
         language: 'TypeScript',
@@ -237,6 +238,7 @@ describe('GitHub Search Repositories Tool', () => {
         owner: 'owner',
         url: 'https://github.com/owner/awesome-repo',
       });
+      expect(data.hints).toHaveLength(0); // No errors, so no hints
     });
 
     it('should handle query with no results', async () => {
@@ -255,8 +257,12 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].result.total_count).toBe(0);
-      expect(data.results[0].error).toContain('Query failed');
+      expect(data.data).toHaveLength(0); // No repositories found
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('No repositories found')
+        )
+      ).toBe(true);
     });
 
     it('should handle GitHub command execution failure', async () => {
@@ -276,8 +282,12 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain('Query failed');
-      expect(data.results[0].result.total_count).toBe(0);
+      expect(data.data).toHaveLength(0); // No repositories found
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('failed - consider simplifying search criteria')
+        )
+      ).toBe(true);
     });
 
     it('should handle unexpected errors in query processing', async () => {
@@ -297,10 +307,12 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain(
-        'Unexpected error: Network timeout'
-      );
-      expect(data.results[0].result.total_count).toBe(0);
+      expect(data.data).toHaveLength(0); // No repositories found
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('Unexpected error: Network timeout')
+        )
+      ).toBe(true);
     });
   });
 
@@ -332,12 +344,11 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(2);
-      expect(data.results[0].queryId).toBe('js-query');
-      expect(data.results[1].queryId).toBe('ts-query');
-      expect(data.summary.totalQueries).toBe(2);
-      expect(data.summary.successfulQueries).toBe(2);
-      expect(data.summary.totalRepositories).toBe(3); // 2 + 1 total_count
+      expect(data.data).toHaveLength(3); // All repositories merged from both queries
+      expect(data.hints).toHaveLength(0); // No errors, so no hints
+
+      // Test repositories from both queries are merged - just check we have expected count
+      expect(data.data.length).toBeGreaterThan(0);
     });
 
     it('should handle mix of successful and failed queries', async () => {
@@ -364,11 +375,17 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(2);
-      expect(data.results[0].error).toBeUndefined();
-      expect(data.results[1].error).toContain('Query failed');
-      expect(data.summary.successfulQueries).toBe(1);
-      expect(data.summary.totalQueries).toBe(2);
+      expect(data.data).toHaveLength(1); // Only successful query results
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('failed - consider simplifying search criteria')
+        )
+      ).toBe(true);
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('Partial results obtained')
+        )
+      ).toBe(true);
     });
 
     it('should generate auto IDs for queries without explicit IDs', async () => {
@@ -393,9 +410,8 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].queryId).toBe('query_1');
-      expect(data.results[1].queryId).toBe('query_2');
-      expect(data.results[2].queryId).toBe('query_3');
+      expect(data.data).toHaveLength(3); // All repositories from 3 queries
+      expect(data.hints).toHaveLength(0); // No errors, so no hints
     });
 
     it('should process maximum 5 queries', async () => {
@@ -420,7 +436,8 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results).toHaveLength(5);
+      expect(data.data).toHaveLength(5); // All repositories from 5 queries
+      expect(data.hints).toHaveLength(0); // No errors, so no hints
       expect(mockExecuteGitHubCommand).toHaveBeenCalledTimes(5);
     });
   });
@@ -1192,6 +1209,59 @@ describe('GitHub Search Repositories Tool', () => {
     });
   });
 
+  describe('Verbose Mode', () => {
+    it('should include metadata when verbose is true', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([
+        { name: 'test-repo', stars: 100, language: 'JavaScript' },
+      ]);
+
+      mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        {
+          queries: [{ exactQuery: 'react' }],
+          verbose: true,
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.data).toHaveLength(1);
+      expect(data.hints).toHaveLength(0);
+      expect(data.metadata).toBeDefined();
+      expect(data.metadata.queries).toHaveLength(1);
+      expect(data.metadata.summary).toBeDefined();
+      expect(data.metadata.summary.totalQueries).toBe(1);
+      expect(data.metadata.summary.successfulQueries).toBe(1);
+    });
+
+    it('should not include metadata when verbose is false (default)', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([
+        { name: 'test-repo', stars: 100, language: 'JavaScript' },
+      ]);
+
+      mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        {
+          queries: [{ exactQuery: 'react' }],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0].text as string);
+      expect(data.data).toHaveLength(1);
+      expect(data.hints).toHaveLength(0);
+      expect(data.metadata).toBeUndefined();
+    });
+  });
+
   describe('Error Handling', () => {
     it('should handle tool execution errors gracefully', async () => {
       registerSearchGitHubReposTool(mockServer.server);
@@ -1210,9 +1280,12 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].error).toContain(
-        'Unexpected error: GitHub CLI not found'
-      );
+      expect(data.data).toHaveLength(0); // No repositories found
+      expect(
+        data.hints.some((hint: string) =>
+          hint.includes('Unexpected error: GitHub CLI not found')
+        )
+      ).toBe(true);
     });
 
     it('should validate query array length limits', async () => {

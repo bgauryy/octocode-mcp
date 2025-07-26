@@ -11,19 +11,17 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
-import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from './utils/toolConstants';
+import {
+  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+  PACKAGE_SEARCH_TOOL_NAME,
+} from './utils/toolConstants';
 
-const DESCRIPTION = `Search GitHub repositories 
+const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
 
-SEARCH STRATEGY:
-  For specific repository search use query with limit=1 each  
-  For exploratory search (by topic, language, owner, or keyword): Use higher limits
-
- TOKEN OPTIMIZATION:
-  Limit repositories to search for if possible to reduce tokens usage
-
- HINT:
-  If cannot find repository, consider using packageSearch tool.`;
+Search strategy:
+  Use limit=1 on queries as a default (e.g. when searching specific repository)
+  Use larget limit for exploratory search (e.g. when searching by topic, language, owner, or keyword)
+  If cannot find repository, consider using ${PACKAGE_SEARCH_TOOL_NAME} tool`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
@@ -216,6 +214,19 @@ export interface GitHubReposSearchQueryResult {
   error?: string;
 }
 
+export interface GitHubReposResponse {
+  data: any[]; // Repository array
+  hints: string[];
+  metadata?: {
+    queries: GitHubReposSearchQueryResult[];
+    summary: {
+      totalQueries: number;
+      successfulQueries: number;
+      totalRepositories: number;
+    };
+  };
+}
+
 export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
     GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
@@ -229,6 +240,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           .describe(
             'Array of up to 5 different search queries for sequential execution'
           ),
+        verbose: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            'Include detailed metadata for debugging. Default: false for cleaner responses'
+          ),
       },
       annotations: {
         title: 'GitHub Repository Search',
@@ -241,9 +259,13 @@ export function registerSearchGitHubReposTool(server: McpServer) {
     withSecurityValidation(
       async (args: {
         queries: GitHubReposSearchQuery[];
+        verbose?: boolean;
       }): Promise<CallToolResult> => {
         try {
-          return await searchMultipleGitHubRepos(args.queries);
+          return await searchMultipleGitHubRepos(
+            args.queries,
+            args.verbose ?? false
+          );
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -322,8 +344,7 @@ async function processSingleQuery(
         return {
           queryId,
           result: { total_count: 0, repositories: [] },
-          error:
-            'No repositories found. Try broader search terms or consider using packageSearch tool for faster package discovery.',
+          error: 'No repositories found',
         };
       }
 
@@ -338,7 +359,7 @@ async function processSingleQuery(
     return {
       queryId,
       result: { total_count: 0, repositories: [] },
-      error: `Query failed. Try broader search terms or consider using packageSearch tool for faster package discovery.`,
+      error: 'Query failed',
     };
   } catch (error) {
     // Handle any unexpected errors
@@ -352,9 +373,11 @@ async function processSingleQuery(
 }
 
 async function searchMultipleGitHubRepos(
-  queries: GitHubReposSearchQuery[]
+  queries: GitHubReposSearchQuery[],
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const results: GitHubReposSearchQueryResult[] = [];
+  const hints: string[] = [];
 
   // Execute queries sequentially (simple and reliable)
   for (let index = 0; index < queries.length; index++) {
@@ -363,25 +386,66 @@ async function searchMultipleGitHubRepos(
 
     const result = await processSingleQuery(query, queryId);
     results.push(result);
+
+    // Generate hints for failures
+    if (result.error) {
+      if (result.error.includes('No repositories found')) {
+        hints.push(
+          `Query "${queryId}" found no results - try broader search terms or use packageSearch tool for package discovery`
+        );
+      } else if (result.error.includes('Query failed')) {
+        hints.push(
+          `Query "${queryId}" failed - consider simplifying search criteria or checking repository access`
+        );
+      } else {
+        hints.push(`Query "${queryId}" encountered an error: ${result.error}`);
+      }
+    }
   }
 
-  // Calculate simple summary statistics
+  // Collect all repositories from successful queries
+  const allRepositories: any[] = [];
+  results.forEach(result => {
+    if (!result.error && result.result.repositories) {
+      allRepositories.push(...result.result.repositories);
+    }
+  });
+
+  // Add strategic hints
+  if (allRepositories.length === 0) {
+    hints.push(
+      'No repositories found across all queries - consider using packageSearch for npm/python packages or try different search terms'
+    );
+  } else if (results.some(r => r.error) && allRepositories.length > 0) {
+    hints.push(
+      'Partial results obtained - some queries failed but others succeeded'
+    );
+  }
+
+  // Calculate summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
-  const totalRepositories = results.reduce(
-    (sum, r) => sum + (r.result.total_count || 0),
-    0
-  );
+  const totalRepositories = allRepositories.length;
 
-  return createResult({
-    data: {
-      results,
+  const responseData: any = {
+    data: allRepositories,
+    hints,
+  };
+
+  // Add metadata only if verbose mode is enabled
+  if (verbose) {
+    responseData.metadata = {
+      queries: results,
       summary: {
         totalQueries,
         successfulQueries,
         totalRepositories,
       },
-    },
+    };
+  }
+
+  return createResult({
+    data: responseData,
   });
 }
 

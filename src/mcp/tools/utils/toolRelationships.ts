@@ -7,7 +7,7 @@ import {
   GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
   GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  NPM_PACKAGE_SEARCH_TOOL_NAME,
+  PACKAGE_SEARCH_TOOL_NAME,
 } from './toolConstants';
 
 interface ToolRelationship {
@@ -27,7 +27,7 @@ interface ToolRelationship {
 }
 
 const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
-  [NPM_PACKAGE_SEARCH_TOOL_NAME]: {
+  [PACKAGE_SEARCH_TOOL_NAME]: {
     fallbackTools: [
       {
         tool: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
@@ -49,7 +49,7 @@ const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
   [GITHUB_SEARCH_REPOSITORIES_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
+        tool: PACKAGE_SEARCH_TOOL_NAME,
         reason: 'if searching for packages or libraries',
       },
       {
@@ -67,7 +67,7 @@ const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
         reason: 'to check open issues and discussions',
       },
       {
-        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
+        tool: PACKAGE_SEARCH_TOOL_NAME,
         reason: 'if repository is an NPM package',
       },
     ],
@@ -76,7 +76,7 @@ const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
   [GITHUB_SEARCH_CODE_TOOL_NAME]: {
     fallbackTools: [
       {
-        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
+        tool: PACKAGE_SEARCH_TOOL_NAME,
         reason: 'if searching for package implementations',
       },
       {
@@ -238,7 +238,7 @@ const TOOL_RELATIONSHIPS: Record<string, ToolRelationship> = {
         reason: 'to search accessible repositories',
       },
       {
-        tool: NPM_PACKAGE_SEARCH_TOOL_NAME,
+        tool: PACKAGE_SEARCH_TOOL_NAME,
         reason: 'to search public packages',
       },
     ],

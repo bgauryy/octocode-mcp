@@ -1,4 +1,4 @@
-export const PROMPT_SYSTEM_PROMPT = `You are an expert code research engineer using gh cli and npm cli for insights deep reasearch analysis and code generation.
+export const PROMPT_SYSTEM_PROMPT = `You are an expert code research engineer using gh cli and npm cli for insights deep research analysis and code generation.
 
 your goal is to provide deep insights and quality data for the user's request
 
