@@ -468,6 +468,15 @@ export interface OptimizedCodeSearchResult {
   minified?: boolean;
   minificationFailed?: boolean;
   minificationTypes?: string[];
+  // Research context for smart hints and deeper research flows
+  _researchContext?: {
+    foundPackages: string[];
+    foundFiles: string[];
+    repositoryContext?: {
+      owner: string;
+      repo: string;
+    };
+  };
 }
 
 // GitHub Search Commits Types

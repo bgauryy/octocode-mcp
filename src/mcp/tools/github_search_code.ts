@@ -18,6 +18,7 @@ import {
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
 } from './utils/toolConstants';
+import { generateSmartResearchHints } from './utils/toolRelationships';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -168,6 +169,195 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 }
 
 /**
+ * Transform GitHub CLI response to optimized format with enhanced metadata
+ */
+async function transformToOptimizedFormat(
+  items: GitHubCodeSearchItem[],
+  minify: boolean,
+  sanitize: boolean
+): Promise<OptimizedCodeSearchResult> {
+  // Extract repository info if single repo search
+  const singleRepo = extractSingleRepository(items);
+
+  // Track security warnings and minification metadata
+  const allSecurityWarnings: string[] = [];
+  let hasMinificationFailures = false;
+  const minificationTypes: string[] = [];
+
+  // Extract packages and dependencies from code matches
+  const foundPackages = new Set<string>();
+  const foundFiles = new Set<string>();
+
+  const optimizedItems = await Promise.all(
+    items.map(async item => {
+      // Track found files for deeper research
+      foundFiles.add(item.path);
+
+      const processedMatches = await Promise.all(
+        (item.textMatches || []).map(async match => {
+          let processedFragment = match.fragment;
+
+          // Extract package/dependency information for smart hints
+          extractPackageReferences(processedFragment).forEach(pkg =>
+            foundPackages.add(pkg)
+          );
+
+          // Apply sanitization first if enabled
+          if (sanitize) {
+            const sanitizationResult =
+              ContentSanitizer.sanitizeContent(processedFragment);
+            processedFragment = sanitizationResult.content;
+
+            // Collect security warnings
+            if (sanitizationResult.hasSecrets) {
+              allSecurityWarnings.push(
+                `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
+              );
+            }
+            if (sanitizationResult.hasPromptInjection) {
+              allSecurityWarnings.push(
+                `Prompt injection detected in ${item.path}`
+              );
+            }
+            if (sanitizationResult.isMalicious) {
+              allSecurityWarnings.push(
+                `Malicious content detected in ${item.path}`
+              );
+            }
+            if (sanitizationResult.warnings.length > 0) {
+              allSecurityWarnings.push(
+                ...sanitizationResult.warnings.map(w => `${item.path}: ${w}`)
+              );
+            }
+          }
+
+          // Apply minification if enabled
+          if (minify) {
+            const minifyResult = await minifyContentV2(
+              processedFragment,
+              item.path
+            );
+            processedFragment = minifyResult.content;
+
+            if (minifyResult.failed) {
+              hasMinificationFailures = true;
+            } else if (minifyResult.type !== 'failed') {
+              minificationTypes.push(minifyResult.type);
+            }
+          }
+
+          return {
+            context: optimizeTextMatch(processedFragment, 120),
+            positions:
+              match.matches?.map(m =>
+                Array.isArray(m.indices) && m.indices.length >= 2
+                  ? ([m.indices[0], m.indices[1]] as [number, number])
+                  : ([0, 0] as [number, number])
+              ) || [],
+          };
+        })
+      );
+
+      return {
+        path: item.path,
+        matches: processedMatches,
+        url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
+        repository: {
+          nameWithOwner: item.repository.nameWithOwner,
+          url: item.repository.url,
+        },
+      };
+    })
+  );
+
+  const result: OptimizedCodeSearchResult = {
+    items: optimizedItems,
+    total_count: items.length,
+    // Add research context for smart hints
+    _researchContext: {
+      foundPackages: Array.from(foundPackages),
+      foundFiles: Array.from(foundFiles),
+      repositoryContext: singleRepo
+        ? {
+            owner: singleRepo.nameWithOwner.split('/')[0],
+            repo: singleRepo.nameWithOwner.split('/')[1],
+          }
+        : undefined,
+    },
+  };
+
+  // Add repository info if single repo
+  if (singleRepo) {
+    result.repository = {
+      name: singleRepo.nameWithOwner,
+      url: simplifyRepoUrl(singleRepo.url),
+    };
+  }
+
+  // Add processing metadata
+  if (sanitize && allSecurityWarnings.length > 0) {
+    result.securityWarnings = [...new Set(allSecurityWarnings)]; // Remove duplicates
+  }
+
+  if (minify) {
+    result.minified = !hasMinificationFailures;
+    result.minificationFailed = hasMinificationFailures;
+    if (minificationTypes.length > 0) {
+      result.minificationTypes = [...new Set(minificationTypes)]; // Remove duplicates
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Extract package references from code content for smart research hints
+ */
+function extractPackageReferences(content: string): string[] {
+  const packages: string[] = [];
+
+  // JavaScript/TypeScript imports
+  const importMatches = content.match(
+    /import\s+.+?\s+from\s+['"]([^'"]+)['"]/g
+  );
+  if (importMatches) {
+    importMatches.forEach(match => {
+      const packageMatch = match.match(/from\s+['"]([^'"]+)['"]/);
+      if (packageMatch && !packageMatch[1].startsWith('.')) {
+        packages.push(packageMatch[1].split('/')[0]);
+      }
+    });
+  }
+
+  // require() statements
+  const requireMatches = content.match(/require\(['"]([^'"]+)['"]\)/g);
+  if (requireMatches) {
+    requireMatches.forEach(match => {
+      const packageMatch = match.match(/require\(['"]([^'"]+)['"]\)/);
+      if (packageMatch && !packageMatch[1].startsWith('.')) {
+        packages.push(packageMatch[1].split('/')[0]);
+      }
+    });
+  }
+
+  // Python imports
+  const pythonImports = content.match(/(?:from\s+(\w+)|import\s+(\w+))/g);
+  if (pythonImports) {
+    pythonImports.forEach(match => {
+      const packageMatch = match.match(/(?:from\s+(\w+)|import\s+(\w+))/);
+      if (packageMatch) {
+        const pkg = packageMatch[1] || packageMatch[2];
+        if (pkg && !['os', 'sys', 'json', 'time', 'datetime'].includes(pkg)) {
+          packages.push(pkg);
+        }
+      }
+    });
+  }
+
+  return [...new Set(packages)]; // Remove duplicates
+}
+
+/**
  * Execute multiple GitHub code search queries sequentially to avoid rate limits.
  *
  * PROGRESSIVE REFINEMENT APPROACH:
@@ -202,6 +392,13 @@ async function searchMultipleGitHubCode(
   const results: GitHubCodeSearchQueryResult[] = [];
   const hints: string[] = [];
 
+  // Collect aggregated research context
+  const aggregatedContext = {
+    foundPackages: new Set<string>(),
+    foundFiles: new Set<string>(),
+    repositoryContexts: new Set<string>(),
+  };
+
   // Execute queries sequentially to avoid rate limits
   for (let index = 0; index < queries.length; index++) {
     const query = queries[index];
@@ -234,6 +431,21 @@ async function searchMultipleGitHubCode(
           query.minify !== false,
           query.sanitize !== false
         );
+
+        // Collect research context from results
+        if (optimizedResult._researchContext) {
+          optimizedResult._researchContext.foundPackages?.forEach(pkg =>
+            aggregatedContext.foundPackages.add(pkg)
+          );
+          optimizedResult._researchContext.foundFiles?.forEach(file =>
+            aggregatedContext.foundFiles.add(file)
+          );
+          if (optimizedResult._researchContext.repositoryContext) {
+            const { owner, repo } =
+              optimizedResult._researchContext.repositoryContext;
+            aggregatedContext.repositoryContexts.add(`${owner}/${repo}`);
+          }
+        }
 
         results.push({
           queryId,
@@ -282,7 +494,27 @@ async function searchMultipleGitHubCode(
     }
   });
 
-  // Generate research hints
+  // Generate enhanced research hints using the new system
+  const hasResults = allCodeItems.length > 0;
+  const smartHints = generateSmartResearchHints(GITHUB_SEARCH_CODE_TOOL_NAME, {
+    hasResults,
+    foundPackages: Array.from(aggregatedContext.foundPackages),
+    foundFiles: Array.from(aggregatedContext.foundFiles),
+    repositoryContext:
+      aggregatedContext.repositoryContexts.size === 1
+        ? (() => {
+            const repoString = Array.from(
+              aggregatedContext.repositoryContexts
+            )[0];
+            const [owner, repo] = repoString.split('/');
+            return { owner, repo };
+          })()
+        : undefined,
+  });
+
+  hints.push(...smartHints);
+
+  // Generate research hints for specific query failures
   results.forEach(result => {
     if (result.error) {
       if (result.error.includes('queryTerms parameter is required')) {
@@ -311,16 +543,18 @@ async function searchMultipleGitHubCode(
     }
   });
 
-  // Add strategic guidance
+  // Add strategic guidance based on results
   if (allCodeItems.length === 0) {
-    hints.push('NEXT: Try broader semantic + technical term combinations');
-  } else if (allCodeItems.length > 0) {
     hints.push(
-      `FOUND ${allCodeItems.length} matches - use github_fetch_content with matchString for detailed context`
+      '🔍 STRATEGY: Try broader semantic + technical term combinations'
+    );
+  } else {
+    hints.push(
+      `✅ FOUND ${allCodeItems.length} matches - use ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with matchString for detailed context`
     );
     if (results.some(r => r.error)) {
       hints.push(
-        'Some queries failed - retry failed searches with different terms'
+        '⚠️  Some queries failed - retry failed searches with different terms'
       );
     }
   }
@@ -345,6 +579,12 @@ async function searchMultipleGitHubCode(
         successfulQueries,
         failedQueries,
         totalCodeItems,
+        // Add research context
+        researchContext: {
+          foundPackages: Array.from(aggregatedContext.foundPackages),
+          foundFiles: Array.from(aggregatedContext.foundFiles).slice(0, 10), // Limit for token efficiency
+          repositoryContexts: Array.from(aggregatedContext.repositoryContexts),
+        },
         // Add guidance for mixed results scenarios
         ...(successfulQueries > 0 && failedQueries > 0
           ? {
@@ -436,125 +676,6 @@ function handleSearchError(errorMessage: string): CallToolResult {
   return createResult({
     error: `Search failed: ${errorMessage}. Try broader semantic + technical terms. Use github_search_repos if repo access issues.`,
   });
-}
-
-/**
- * Transform GitHub CLI response to optimized format with enhanced metadata
- */
-async function transformToOptimizedFormat(
-  items: GitHubCodeSearchItem[],
-  minify: boolean,
-  sanitize: boolean
-): Promise<OptimizedCodeSearchResult> {
-  // Extract repository info if single repo search
-  const singleRepo = extractSingleRepository(items);
-
-  // Track security warnings and minification metadata
-  const allSecurityWarnings: string[] = [];
-  let hasMinificationFailures = false;
-  const minificationTypes: string[] = [];
-
-  const optimizedItems = await Promise.all(
-    items.map(async item => {
-      const processedMatches = await Promise.all(
-        (item.textMatches || []).map(async match => {
-          let processedFragment = match.fragment;
-
-          // Apply sanitization first if enabled
-          if (sanitize) {
-            const sanitizationResult =
-              ContentSanitizer.sanitizeContent(processedFragment);
-            processedFragment = sanitizationResult.content;
-
-            // Collect security warnings
-            if (sanitizationResult.hasSecrets) {
-              allSecurityWarnings.push(
-                `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
-              );
-            }
-            if (sanitizationResult.hasPromptInjection) {
-              allSecurityWarnings.push(
-                `Prompt injection detected in ${item.path}`
-              );
-            }
-            if (sanitizationResult.isMalicious) {
-              allSecurityWarnings.push(
-                `Malicious content detected in ${item.path}`
-              );
-            }
-            if (sanitizationResult.warnings.length > 0) {
-              allSecurityWarnings.push(
-                ...sanitizationResult.warnings.map(w => `${item.path}: ${w}`)
-              );
-            }
-          }
-
-          // Apply minification if enabled
-          if (minify) {
-            const minifyResult = await minifyContentV2(
-              processedFragment,
-              item.path
-            );
-            processedFragment = minifyResult.content;
-
-            if (minifyResult.failed) {
-              hasMinificationFailures = true;
-            } else if (minifyResult.type !== 'failed') {
-              minificationTypes.push(minifyResult.type);
-            }
-          }
-
-          return {
-            context: optimizeTextMatch(processedFragment, 120),
-            positions:
-              match.matches?.map(m =>
-                Array.isArray(m.indices) && m.indices.length >= 2
-                  ? ([m.indices[0], m.indices[1]] as [number, number])
-                  : ([0, 0] as [number, number])
-              ) || [],
-          };
-        })
-      );
-
-      return {
-        path: item.path,
-        matches: processedMatches,
-        url: singleRepo ? item.path : simplifyGitHubUrl(item.url),
-        repository: {
-          nameWithOwner: item.repository.nameWithOwner,
-          url: item.repository.url,
-        },
-      };
-    })
-  );
-
-  const result: OptimizedCodeSearchResult = {
-    items: optimizedItems,
-    total_count: items.length,
-  };
-
-  // Add repository info if single repo
-  if (singleRepo) {
-    result.repository = {
-      name: singleRepo.nameWithOwner,
-      url: simplifyRepoUrl(singleRepo.url),
-    };
-  }
-
-  // Add processing metadata
-  if (sanitize && allSecurityWarnings.length > 0) {
-    result.securityWarnings = [...new Set(allSecurityWarnings)]; // Remove duplicates
-  }
-
-  if (minify) {
-    result.minified = !hasMinificationFailures;
-    result.minificationFailed = hasMinificationFailures;
-    if (minificationTypes.length > 0) {
-      result.minificationTypes = [...new Set(minificationTypes)]; // Remove duplicates
-    }
-  }
-
-  return result;
 }
 
 /**
