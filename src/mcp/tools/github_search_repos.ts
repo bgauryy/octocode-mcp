@@ -13,17 +13,17 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from './utils/toolConstants';
 
-const DESCRIPTION = `Search GitHub repositories by topic, language, owner, or keywords.
-
-Supports multiple queries (up to 5) executed sequentially.
+const DESCRIPTION = `Search GitHub repositories 
 
 SEARCH STRATEGY:
- Specific repository: Use limit=1 per query
- Multiple repositories: Separate into individual queries with limit=1 each  
- Exploratory search: Use higher limits for broader discovery
- Limit repositories to search for if possible to reduce tokens usage
+  For specific repository search use query with limit=1 each  
+  For exploratory search (by topic, language, owner, or keyword): Use higher limits
 
-For package discovery, consider using packageSearch tool.`;
+ TOKEN OPTIMIZATION:
+  Limit repositories to search for if possible to reduce tokens usage
+
+ HINT:
+  If cannot find repository, consider using packageSearch tool.`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
