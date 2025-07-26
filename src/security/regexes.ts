@@ -10,7 +10,7 @@ const aiProviderPatterns: SensitiveDataPattern[] = [
   {
     name: 'openaiApiKey',
     description: 'OpenAI API key',
-    regex: /\bsk-[a-zA-Z0-9-_]{48,}\b/g,
+    regex: /\b(sk-[a-zA-Z0-9_-]+T3BlbkFJ[a-zA-Z0-9_-]+)\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -63,7 +63,7 @@ const aiProviderPatterns: SensitiveDataPattern[] = [
   {
     name: 'anthropicApiKey',
     description: 'Anthropic API key',
-    regex: /\bsk-ant-[a-zA-Z0-9-_]{48,}\b/g,
+    regex: /\b(sk-ant-(?:admin01|api03)-[\w-]{93}AA)\b/g,
     matchAccuracy: 'high',
   },
 ];
@@ -72,8 +72,7 @@ const awsPatterns: SensitiveDataPattern[] = [
   {
     name: 'awsAccessKeyId',
     description: 'AWS access key ID',
-    regex:
-      /\b(?:AKIA|ABIA|ACCA|ASCA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ANWA)[0-9A-Z]{16,20}\b/g,
+    regex: /\b((?:AKIA|ABIA|ACCA)[A-Z0-9]{16})\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -175,7 +174,8 @@ const authPatterns: SensitiveDataPattern[] = [
   {
     name: 'jwtToken',
     description: 'JWT (JSON Web Token - 3-part)',
-    regex: /\beyJ[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\b/g,
+    regex:
+      /\b(ey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/_-]{17,}\.(?:[a-zA-Z0-9/_-]{10,}={0,2})?)\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -372,7 +372,7 @@ const cloudProviderPatterns: SensitiveDataPattern[] = [
   {
     name: 'dockerHubToken',
     description: 'Docker Hub personal access token',
-    regex: /\bdckr_pat_[a-zA-Z0-9_-]{36}\b/g,
+    regex: /\bdckr_pat_[a-zA-Z0-9_]{36}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -718,12 +718,6 @@ const databasePatterns: SensitiveDataPattern[] = [
 
 const developerToolsPatterns: SensitiveDataPattern[] = [
   {
-    name: 'dockerHubPersonalAccessToken',
-    description: 'Docker Hub personal access token',
-    regex: /\bdckr_pat_[a-zA-Z0-9_-]{36}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
     name: 'npmAccessToken',
     description: 'NPM access token',
     regex: /\bnpm_[a-zA-Z0-9]{36}\b/g,
@@ -751,7 +745,7 @@ const developerToolsPatterns: SensitiveDataPattern[] = [
     name: 'herokuApiKey',
     description: 'Heroku API key',
     regex:
-      /\b[h|H][e|E][r|R][o|O][k|K][u|U].*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b/g,
+      /\bheroku.*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\b/gi,
     matchAccuracy: 'high',
   },
   {
@@ -781,7 +775,7 @@ const developerToolsPatterns: SensitiveDataPattern[] = [
   {
     name: 'linearApiKey',
     description: 'Linear API key',
-    regex: /\blin_pat_[a-zA-Z0-9_-]{40}\b/g,
+    regex: /\blin_api_[0-9A-Za-z]{40}\b/g,
     matchAccuracy: 'high',
   },
   {
@@ -880,39 +874,33 @@ const versionControlPatterns: SensitiveDataPattern[] = [
     matchAccuracy: 'high',
   },
   {
+    name: 'gitlabRunnerAuthToken',
+    description: 'GitLab runner authentication token',
+    regex: /\bglrt-[0-9a-zA-Z_-]{20}\b/g,
+    matchAccuracy: 'high',
+  },
+  {
+    name: 'gitlabPipelineTriggerToken',
+    description: 'GitLab pipeline trigger token',
+    regex: /\bglptt-[0-9a-f]{40}\b/g,
+    matchAccuracy: 'high',
+  },
+  {
     name: 'bitbucketAppPassword',
     description: 'Bitbucket app password',
     regex: /\bATBB[a-zA-Z0-9]{24}\b/g,
     matchAccuracy: 'high',
   },
   {
-    name: 'githubPersonalAccessToken',
+    name: 'githubTokens',
     description: 'GitHub personal access token (classic)',
-    regex: /\bghp_[A-Za-z0-9_]{36}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'githubFineGrainedPersonalAccessToken',
-    description: 'GitHub fine-grained personal access token',
-    regex: /\bgithub_pat_[0-9a-zA-Z_]{82}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'githubOAuthAccessToken',
-    description: 'GitHub OAuth access token',
-    regex: /\bgho_[A-Za-z0-9_]{36}\b/g,
+    regex: /\b((?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{36,255})\b/g,
     matchAccuracy: 'high',
   },
   {
     name: 'githubAppInstallationToken',
-    description: 'GitHub app installation token',
+    description: 'GitHub App installation token',
     regex: /\bghs_[0-9a-zA-Z]{37}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'githubRefreshToken',
-    description: 'GitHub refresh token',
-    regex: /\bghr_[0-9a-zA-Z]{76}\b/g,
     matchAccuracy: 'high',
   },
 ];
@@ -947,26 +935,18 @@ const mappingMonitoringPatterns: SensitiveDataPattern[] = [
 ];
 
 const paymentProviderPatterns: SensitiveDataPattern[] = [
-  // Stripe (consolidated patterns)
   {
     name: 'stripeSecretKey',
-    description: 'Stripe secret key (live/test)',
-    regex: /\bsk_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'stripeRestrictedKey',
-    description: 'Stripe restricted API key (live/test)',
-    regex: /\brk_(?:live|test)_[0-9a-zA-Z]{24,}\b/g,
+    description: 'Stripe secret key (sk_*, rk_*)',
+    regex: /\b[rs]k_live_[a-zA-Z0-9]{20,247}\b/g,
     matchAccuracy: 'high',
   },
   {
     name: 'stripeWebhookSecret',
-    description: 'Stripe webhook endpoint secret',
+    description: 'Stripe webhook signing secret',
     regex: /\bwhsec_[a-zA-Z0-9]{32,}\b/g,
     matchAccuracy: 'high',
   },
-
   // PayPal
   {
     name: 'paypalAccessToken',
@@ -1086,32 +1066,25 @@ const slackPatterns: SensitiveDataPattern[] = [
   {
     name: 'slackBotToken',
     description: 'Slack bot token',
-    regex: /\bxoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}\b/g,
+    regex: /\bxoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*\b/g,
     matchAccuracy: 'high',
   },
   {
     name: 'slackUserToken',
     description: 'Slack user token',
-    regex: /\bxoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{32}\b/g,
+    regex: /\bxoxp-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*\b/g,
     matchAccuracy: 'high',
   },
   {
-    name: 'slackAppToken',
-    description: 'Slack app-level token',
-    regex: /\bxapp-[0-9]-[A-Z0-9]+-[0-9]+-[a-zA-Z0-9]+\b/g,
-    matchAccuracy: 'high',
-  },
-  {
-    name: 'slackWebhookUrl',
-    description: 'Slack webhook URL',
-    regex:
-      /\bhttps:\/\/hooks\.slack\.com\/services\/[A-Z0-9]{9}\/[A-Z0-9]{11}\/[a-zA-Z0-9]{24}\b/g,
+    name: 'slackWorkspaceToken',
+    description: 'Slack workspace token',
+    regex: /\bxoxa-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*\b/g,
     matchAccuracy: 'high',
   },
   {
     name: 'slackRefreshToken',
     description: 'Slack refresh token',
-    regex: /\bxoxr-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{32}\b/g,
+    regex: /\bxoxr-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*\b/g,
     matchAccuracy: 'high',
   },
 ];

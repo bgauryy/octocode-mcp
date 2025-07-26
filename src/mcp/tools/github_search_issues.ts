@@ -19,6 +19,7 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
+import { ContentSanitizer } from '../../security/contentSanitizer';
 
 export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
 
@@ -302,9 +303,14 @@ async function searchGitHubIssues(
         'unknown';
       const repo = repoName.includes('/') ? repoName.split('/')[1] : repoName;
 
-      return {
+      // Sanitize issue title
+      const titleSanitized = ContentSanitizer.sanitizeContent(
+        issue.title || ''
+      );
+
+      const basicIssue: BasicGitHubIssue = {
         number: issue.number,
-        title: issue.title,
+        title: titleSanitized.content,
         state: issue.state,
         author:
           typeof issue.author === 'string'
@@ -340,6 +346,13 @@ async function searchGitHubIssues(
         created_at: toDDMMYYYY(issue.createdAt || issue.created_at),
         updated_at: toDDMMYYYY(issue.updatedAt || issue.updated_at),
       };
+
+      // Add sanitization warnings if any were detected for title
+      if (titleSanitized.warnings.length > 0) {
+        basicIssue._sanitization_warnings = titleSanitized.warnings;
+      }
+
+      return basicIssue;
     });
 
     // Fetch detailed issue information in parallel
@@ -363,9 +376,14 @@ async function searchGitHubIssues(
               );
               const issueDetails = execResult.result;
 
-              return {
+              // Sanitize issue body content
+              const bodySanitized = ContentSanitizer.sanitizeContent(
+                issueDetails.body || ''
+              );
+
+              const result: GitHubIssueItem = {
                 ...issue,
-                body: issueDetails.body || '',
+                body: bodySanitized.content,
                 assignees:
                   issueDetails.assignees?.map((a: any) => ({
                     login: a.login,
@@ -403,7 +421,18 @@ async function searchGitHubIssues(
                 closed_at: issueDetails.closed_at
                   ? toDDMMYYYY(issueDetails.closed_at)
                   : undefined,
-              } as GitHubIssueItem;
+              };
+
+              // Add sanitization warnings if any were detected (merge with existing title warnings)
+              const allWarnings = [
+                ...(issue._sanitization_warnings || []),
+                ...bodySanitized.warnings,
+              ];
+              if (allWarnings.length > 0) {
+                result._sanitization_warnings = allWarnings;
+              }
+
+              return result;
             }
 
             // If fetching details fails, return basic info with empty body

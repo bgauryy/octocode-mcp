@@ -695,4 +695,504 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseData.results[0].result.error).toContain('400KB');
     });
   });
+
+  describe('Content Sanitization', () => {
+    it('should sanitize GitHub tokens from file content', async () => {
+      const mockFileContentWithToken = {
+        name: 'config.env',
+        path: 'config.env',
+        sha: 'abc123def456',
+        size: 150,
+        type: 'file',
+        content: Buffer.from(
+          `# Configuration file
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+API_URL=https://api.example.com
+DEBUG=true`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockFileContentWithToken)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'config.env',
+            minified: false, // Disable minification to preserve original formatting
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const fileContent = response.results[0].result.content;
+
+      expect(fileContent).not.toContain(
+        'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+      );
+      expect(fileContent).toContain('[REDACTED-GITHUBTOKENS]');
+      expect(fileContent).toContain('# Configuration file');
+      expect(fileContent).toContain('API_URL=https://api.example.com');
+    });
+
+    it('should sanitize API keys from file content', async () => {
+      const mockFileContentWithApiKeys = {
+        name: 'secrets.json',
+        path: 'config/secrets.json',
+        sha: 'def456ghi789',
+        size: 300,
+        type: 'file',
+        content: Buffer.from(
+          `{
+  "openai": {
+    "apiKey": "sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO"
+  },
+  "aws": {
+    "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+    "secretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  },
+  "database": {
+    "url": "mongodb://admin:secret@cluster0.mongodb.net:27017/app"
+  }
+}`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockFileContentWithApiKeys)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'config/secrets.json',
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const fileContent = response.results[0].result.content;
+
+      expect(fileContent).not.toContain(
+        'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+      );
+      expect(fileContent).not.toContain('AKIAIOSFODNN7EXAMPLE');
+      expect(fileContent).not.toContain(
+        'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+      );
+      expect(fileContent).not.toContain(
+        'mongodb://admin:secret@cluster0.mongodb.net:27017/app'
+      );
+
+      expect(fileContent).toContain('[REDACTED-OPENAIAPIKEY]');
+      expect(fileContent).toContain('[REDACTED-AWSACCESSKEYID]');
+      expect(fileContent).toContain('[REDACTED-AWSSECRETACCESSKEY]');
+      expect(fileContent).toContain('[REDACTED-MONGODBCONNECTIONSTRING]');
+
+      // Verify non-sensitive structure is preserved
+      expect(fileContent).toContain('"openai"');
+      expect(fileContent).toContain('"apiKey"');
+      expect(fileContent).toContain('"aws"');
+      expect(fileContent).toContain('"database"');
+    });
+
+    it('should sanitize private keys from file content', async () => {
+      const mockFileContentWithPrivateKey = {
+        name: 'id_rsa',
+        path: '.ssh/id_rsa',
+        sha: 'ghi789jkl012',
+        size: 1600,
+        type: 'file',
+        content: Buffer.from(
+          `-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ==
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB
+Fuj9A4f7qOHaKMB3PqN9sTkKJDo2e4r7qp8eX4ZkG7AiCw==
+-----END RSA PRIVATE KEY-----`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockFileContentWithPrivateKey)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: '.ssh/id_rsa',
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const fileContent = response.results[0].result.content;
+
+      expect(fileContent).not.toContain(
+        'MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ'
+      );
+      expect(fileContent).not.toContain(
+        'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB'
+      );
+      expect(fileContent).not.toContain(
+        'Fuj9A4f7qOHaKMB3PqN9sTkKJDo2e4r7qp8eX4ZkG7AiCw'
+      );
+      expect(fileContent).toContain('[REDACTED-RSAPRIVATEKEY]');
+    });
+
+    it('should sanitize database connection strings from configuration files', async () => {
+      const mockConfigFileWithDb = {
+        name: 'database.yml',
+        path: 'config/database.yml',
+        sha: 'jkl012mno345',
+        size: 400,
+        type: 'file',
+        content: Buffer.from(
+          `development:
+  adapter: postgresql
+  database: myapp_development
+  host: localhost
+  username: developer
+  password: dev_password
+  
+production:
+  url: postgresql://produser:prodpass@db.example.com:5432/myapp_prod
+  
+redis:
+  url: redis://user:redispass@redis.example.com:6379/0`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockConfigFileWithDb)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'config/database.yml',
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const fileContent = response.results[0].result.content;
+
+      expect(fileContent).not.toContain(
+        'postgresql://produser:prodpass@db.example.com:5432/myapp_prod'
+      );
+      expect(fileContent).not.toContain(
+        'redis://user:redispass@redis.example.com:6379/0'
+      );
+
+      expect(fileContent).toContain('[REDACTED-POSTGRESQLCONNECTIONSTRING]');
+      expect(fileContent).toContain('[REDACTED-REDISCONNECTIONSTRING]');
+
+      // Verify non-sensitive configuration is preserved
+      expect(fileContent).toContain('development:');
+      expect(fileContent).toContain('adapter: postgresql');
+      expect(fileContent).toContain('database: myapp_development');
+    });
+
+    it('should handle partial file content with sensitive data', async () => {
+      const mockPartialFileWithSecrets = {
+        name: 'app.js',
+        path: 'src/app.js',
+        sha: 'mno345pqr678',
+        size: 2000,
+        type: 'file',
+        content: Buffer.from(
+          `// App configuration
+const config = {
+  github: {
+    token: 'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+  },
+  openai: {
+    apiKey: 'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+  }
+};
+
+module.exports = config;`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockPartialFileWithSecrets)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'src/app.js',
+            startLine: 1,
+            endLine: 20,
+            minified: false, // Disable minification to preserve comments and formatting
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const fileContent = response.results[0].result.content;
+
+      expect(fileContent).not.toContain(
+        'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+      );
+      expect(fileContent).not.toContain(
+        'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+      );
+
+      expect(fileContent).toContain('[REDACTED-GITHUBTOKENS]');
+      expect(fileContent).toContain('[REDACTED-OPENAIAPIKEY]');
+
+      // Verify non-sensitive code structure is preserved (with line annotations)
+      expect(fileContent).toContain('// App configuration');
+      expect(fileContent).toContain('const config = {');
+      expect(fileContent).toContain('github: {');
+      expect(fileContent).toContain('openai: {');
+      expect(fileContent).toContain('module.exports = config;');
+    });
+
+    it('should preserve clean file content without secrets', async () => {
+      const mockCleanFileContent = {
+        name: 'README.md',
+        path: 'README.md',
+        sha: 'pqr678stu901',
+        size: 500,
+        type: 'file',
+        content: Buffer.from(
+          `# My Project
+
+This is a sample project that demonstrates best practices for web development.
+
+## Features
+
+- User authentication
+- Data visualization
+- API integration
+- Responsive design
+
+## Installation
+
+\`\`\`bash
+npm install
+npm start
+\`\`\`
+
+## Contributing
+
+Please read our contributing guidelines before submitting pull requests.`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockCleanFileContent)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'README.md',
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const fileContent = response.results[0].result.content;
+
+      // Content should remain unchanged
+      expect(fileContent).toContain('# My Project');
+      expect(fileContent).toContain('This is a sample project');
+      expect(fileContent).toContain('## Features');
+      expect(fileContent).toContain('npm install');
+      expect(fileContent).not.toContain('[REDACTED-');
+    });
+
+    it('should sanitize multiple queries with different file types containing secrets', async () => {
+      const mockEnvironmentFile = {
+        name: '.env',
+        path: '.env',
+        sha: 'env123abc456',
+        size: 200,
+        type: 'file',
+        content: Buffer.from(
+          `NODE_ENV=production
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+OPENAI_API_KEY=sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO
+DATABASE_URL=postgresql://user:pass@localhost:5432/myapp`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      const mockDockerCompose = {
+        name: 'docker-compose.yml',
+        path: 'docker-compose.yml',
+        sha: 'docker456def789',
+        size: 300,
+        type: 'file',
+        content: Buffer.from(
+          `version: '3.8'
+services:
+  app:
+    image: myapp:latest
+    environment:
+      GITHUB_TOKEN: "ghp_1234567890abcdefghijklmnopqrstuvwxyz123456"
+      OPENAI_API_KEY: "sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO"
+  db:
+    image: postgres:13
+    environment:
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/myapp"`
+        ).toString('base64'),
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand
+        .mockResolvedValueOnce(createMockGitHubResponse(mockEnvironmentFile))
+        .mockResolvedValueOnce(createMockGitHubResponse(mockDockerCompose));
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      // Test first file
+      const envResult = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: '.env',
+          },
+        ],
+      });
+
+      const envResponse = JSON.parse(envResult.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const envContent = envResponse.results[0].result.content;
+
+      expect(envContent).not.toContain(
+        'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+      );
+      expect(envContent).not.toContain(
+        'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+      );
+      expect(envContent).not.toContain(
+        'postgresql://user:pass@localhost:5432/myapp'
+      );
+
+      expect(envContent).toContain('[REDACTED-GITHUBTOKENS]');
+      expect(envContent).toContain('[REDACTED-OPENAIAPIKEY]');
+      expect(envContent).toContain('[REDACTED-POSTGRESQLCONNECTIONSTRING]');
+      expect(envContent).toContain('NODE_ENV=production');
+
+      // Test second file
+      const dockerResult = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'docker-compose.yml',
+          },
+        ],
+      });
+
+      const dockerResponse = JSON.parse(dockerResult.content[0].text as string);
+      // The tool returns already-decoded and sanitized text content
+      const dockerContent = dockerResponse.results[0].result.content;
+
+      expect(dockerContent).not.toContain(
+        'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+      );
+      expect(dockerContent).not.toContain(
+        'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+      );
+      expect(dockerContent).not.toContain(
+        'postgresql://user:pass@localhost:5432/myapp'
+      );
+      expect(dockerContent).toContain("version: '3.8'");
+      expect(dockerContent).toContain('services:');
+      expect(dockerContent).toContain('image: myapp:latest');
+      // Verify the secrets are redacted
+      expect(dockerContent).toContain('[REDACTED-GITHUBTOKENS]');
+      expect(dockerContent).toContain('[REDACTED-OPENAIAPIKEY]');
+      expect(dockerContent).toContain('[REDACTED-POSTGRESQLCONNECTIONSTRING]');
+    });
+
+    it('should handle binary files without sanitization issues', async () => {
+      const mockBinaryFile = {
+        name: 'logo.png',
+        path: 'assets/logo.png',
+        sha: 'binary789ghi012',
+        size: 5000,
+        type: 'file',
+        content:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+        encoding: 'base64',
+      };
+
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubResponse(mockBinaryFile)
+      );
+
+      registerFetchGitHubFileContentTool(mockServer.server);
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            branch: 'main',
+            filePath: 'assets/logo.png',
+          },
+        ],
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+
+      // Should return error for binary file detection instead of content
+      expect(response.results[0].result.error).toContain(
+        'Binary file detected'
+      );
+    });
+  });
 });

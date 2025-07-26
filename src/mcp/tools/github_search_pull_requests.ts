@@ -17,6 +17,7 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
+import { ContentSanitizer } from '../../security/contentSanitizer';
 
 // TODO: summerize body
 
@@ -515,10 +516,24 @@ Alternative tools:
       pullRequests.map(async (pr: any) => {
         // Handle gh pr list format (repository-specific searches)
         if (isListCommand) {
+          // Sanitize title and body content
+          const titleSanitized = await minifyAndSanitizeTextContent(
+            pr.title || ''
+          );
+          const bodySanitized = pr.body
+            ? await minifyAndSanitizeTextContent(pr.body)
+            : { content: undefined, warnings: [] };
+
+          // Collect all sanitization warnings
+          const sanitizationWarnings = [
+            ...titleSanitized.warnings,
+            ...bodySanitized.warnings,
+          ];
+
           const result: GitHubPullRequestItem = {
             number: pr.number,
-            title: await minifyTextContent(pr.title || ''),
-            body: pr.body ? await minifyTextContent(pr.body) : undefined,
+            title: titleSanitized.content,
+            body: bodySanitized.content,
             state: pr.state?.toLowerCase() || 'unknown',
             author: pr.author?.login || '',
             repository: `${primaryOwner}/${primaryRepo}`,
@@ -530,6 +545,11 @@ Alternative tools:
             reactions: 0, // Not available in list format
             draft: pr.isDraft || false,
           };
+
+          // Add sanitization warnings if any were detected
+          if (sanitizationWarnings.length > 0) {
+            result._sanitization_warnings = sanitizationWarnings;
+          }
 
           // Add commit SHAs for use with github_fetch_content
           // Use head_sha/base_sha as branch parameter to view PR files
@@ -555,10 +575,24 @@ Alternative tools:
 
         // Handle gh search prs format (general searches)
         if (isSearchCommand) {
+          // Sanitize title and body content
+          const titleSanitized = await minifyAndSanitizeTextContent(
+            pr.title || ''
+          );
+          const bodySanitized = pr.body
+            ? await minifyAndSanitizeTextContent(pr.body)
+            : { content: undefined, warnings: [] };
+
+          // Collect all sanitization warnings
+          const sanitizationWarnings = [
+            ...titleSanitized.warnings,
+            ...bodySanitized.warnings,
+          ];
+
           const result: GitHubPullRequestItem = {
             number: pr.number,
-            title: await minifyTextContent(pr.title || ''),
-            body: pr.body ? await minifyTextContent(pr.body) : undefined,
+            title: titleSanitized.content,
+            body: bodySanitized.content,
             state: pr.state,
             author: pr.author?.login || '',
             repository:
@@ -571,6 +605,11 @@ Alternative tools:
             reactions: 0, // Not available in search format, would need separate API call
             draft: pr.isDraft || pr.draft || false,
           };
+
+          // Add sanitization warnings if any were detected
+          if (sanitizationWarnings.length > 0) {
+            result._sanitization_warnings = sanitizationWarnings;
+          }
 
           // Optional fields
           if (pr.closedAt || pr.closed_at) {
@@ -1160,9 +1199,15 @@ async function fetchPRCommitData(
             );
             const result = commitData.result;
 
+            // Sanitize commit message
+            const messageSanitized = ContentSanitizer.sanitizeContent(
+              commit.messageHeadline || ''
+            );
+            const commitWarnings = [...messageSanitized.warnings];
+
             return {
               sha: commit.oid,
-              message: commit.messageHeadline,
+              message: messageSanitized.content,
               author:
                 commit.authors?.[0]?.login ||
                 commit.authors?.[0]?.name ||
@@ -1175,19 +1220,42 @@ async function fetchPRCommitData(
                     additions: result.stats?.additions || 0,
                     deletions: result.stats?.deletions || 0,
                     total_changes: result.stats?.total || 0,
-                    files: result.files.slice(0, 5).map((f: any) => ({
-                      filename: f.filename,
-                      status: f.status,
-                      additions: f.additions,
-                      deletions: f.deletions,
-                      changes: f.changes,
-                      patch: f.patch
-                        ? f.patch.substring(0, 1000) +
-                          (f.patch.length > 1000 ? '...' : '')
-                        : undefined,
-                    })),
+                    files: result.files.slice(0, 5).map((f: any) => {
+                      const fileObj: any = {
+                        filename: f.filename,
+                        status: f.status,
+                        additions: f.additions,
+                        deletions: f.deletions,
+                        changes: f.changes,
+                      };
+
+                      // Sanitize patch content if present
+                      if (f.patch) {
+                        const rawPatch =
+                          f.patch.substring(0, 1000) +
+                          (f.patch.length > 1000 ? '...' : '');
+                        const patchSanitized =
+                          ContentSanitizer.sanitizeContent(rawPatch);
+                        fileObj.patch = patchSanitized.content;
+
+                        // Collect patch sanitization warnings
+                        if (patchSanitized.warnings.length > 0) {
+                          commitWarnings.push(
+                            ...patchSanitized.warnings.map(
+                              w => `[${f.filename}] ${w}`
+                            )
+                          );
+                        }
+                      }
+
+                      return fileObj;
+                    }),
                   }
                 : undefined,
+              // Add sanitization warnings if any were detected
+              ...(commitWarnings.length > 0 && {
+                _sanitization_warnings: commitWarnings,
+              }),
             };
           }
         } catch (e) {
@@ -1215,16 +1283,30 @@ async function fetchPRCommitData(
   }
 }
 
-async function minifyTextContent(content: string): Promise<string> {
+async function minifyAndSanitizeTextContent(
+  content: string
+): Promise<{ content: string; warnings: string[] }> {
   if (!content || !content.trim()) {
-    return content;
+    return { content, warnings: [] };
   }
 
   try {
-    const result = await minifyContentV2(content, 'content.txt'); // Use .txt to trigger general strategy
-    return result.content;
+    // First sanitize for security
+    const sanitized = ContentSanitizer.sanitizeContent(content);
+
+    // Then minify the sanitized content
+    const minified = await minifyContentV2(sanitized.content, 'content.txt'); // Use .txt to trigger general strategy
+
+    return {
+      content: minified.content,
+      warnings: sanitized.warnings,
+    };
   } catch (error) {
-    // Return original content if minification fails
-    return content;
+    // Fallback: sanitize without minification if minification fails
+    const sanitized = ContentSanitizer.sanitizeContent(content);
+    return {
+      content: sanitized.content,
+      warnings: sanitized.warnings,
+    };
   }
 }

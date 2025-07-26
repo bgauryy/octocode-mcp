@@ -281,8 +281,10 @@ export interface GitHubPullRequestItem {
         total_changes: number;
         files: GitHubDiffFile[];
       };
+      _sanitization_warnings?: string[]; // Optional sanitization warnings
     }>;
   };
+  _sanitization_warnings?: string[]; // Optional sanitization warnings
 }
 
 export interface GitHubPullRequestsSearchResult {
@@ -532,6 +534,7 @@ export interface OptimizedCommitSearchResult {
     repository?: string; // owner/repo (only for multi-repo)
     url: string; // SHA or repo@SHA
     diff?: GitHubCommitDiff; // Code changes when getChangesContent=true
+    _sanitization_warnings?: string[]; // Optional sanitization warnings
   }>;
   total_count: number;
   repository?: {
@@ -661,6 +664,7 @@ export interface GitHubIssueItem {
   closed_at?: string;
   comments?: number;
   reactions?: number;
+  _sanitization_warnings?: string[]; // Optional sanitization warnings
 }
 
 export interface GitHubIssuesSearchResult {
@@ -697,6 +701,7 @@ export interface BasicGitHubIssue {
   // Legacy compatibility fields
   created_at: string;
   updated_at: string;
+  _sanitization_warnings?: string[]; // Optional sanitization warnings
 }
 
 // Bulk GitHub Code Search Types

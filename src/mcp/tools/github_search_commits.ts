@@ -22,6 +22,7 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
+import { ContentSanitizer } from '../../security/contentSanitizer';
 
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
 
@@ -403,9 +404,14 @@ async function transformCommitsToOptimizedFormat(
 
   const optimizedCommits = items
     .map(item => {
+      // Sanitize commit message
+      const rawMessage = getCommitTitle(item.commit?.message ?? '');
+      const messageSanitized = ContentSanitizer.sanitizeContent(rawMessage);
+      const warningsCollector: string[] = [...messageSanitized.warnings];
+
       const commitObj: any = {
         sha: item.sha, // Use as branch parameter in github_fetch_content
-        message: getCommitTitle(item.commit?.message ?? ''),
+        message: messageSanitized.content,
         author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
         date: toDDMMYYYY(item.commit?.author?.date ?? ''),
         repository: singleRepo
@@ -415,6 +421,11 @@ async function transformCommitsToOptimizedFormat(
           ? item.sha
           : `${simplifyRepoUrl(item.repository?.url || '')}@${item.sha}`,
       };
+
+      // Add security warnings if any were detected
+      if (warningsCollector.length > 0) {
+        commitObj._sanitization_warnings = warningsCollector;
+      }
 
       // Add diff information if available
       if (shouldFetchDiff && diffData.has(item.sha)) {
@@ -426,19 +437,44 @@ async function transformCommitsToOptimizedFormat(
           deletions: commitData.stats?.deletions || 0,
           total_changes: commitData.stats?.total || 0,
           files: files
-            .map((f: any) => ({
-              filename: f.filename,
-              status: f.status,
-              additions: f.additions,
-              deletions: f.deletions,
-              changes: f.changes,
-              patch: f.patch
-                ? f.patch.substring(0, 1000) +
-                  (f.patch.length > 1000 ? '...' : '')
-                : undefined,
-            }))
+            .map((f: any) => {
+              const fileObj: any = {
+                filename: f.filename,
+                status: f.status,
+                additions: f.additions,
+                deletions: f.deletions,
+                changes: f.changes,
+              };
+
+              // Sanitize patch content if present
+              if (f.patch) {
+                const rawPatch =
+                  f.patch.substring(0, 1000) +
+                  (f.patch.length > 1000 ? '...' : '');
+                const patchSanitized =
+                  ContentSanitizer.sanitizeContent(rawPatch);
+                fileObj.patch = patchSanitized.content;
+
+                // Collect patch sanitization warnings
+                if (patchSanitized.warnings.length > 0) {
+                  warningsCollector.push(
+                    ...patchSanitized.warnings.map(w => `[${f.filename}] ${w}`)
+                  );
+                }
+              }
+
+              return fileObj;
+            })
             .slice(0, 5), // Limit to 5 files per commit
         };
+
+        // Update warnings if patch sanitization added any
+        if (
+          warningsCollector.length >
+          (commitObj._sanitization_warnings?.length || 0)
+        ) {
+          commitObj._sanitization_warnings = warningsCollector;
+        }
       }
 
       return commitObj;

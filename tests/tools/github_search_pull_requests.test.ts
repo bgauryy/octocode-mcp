@@ -369,7 +369,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         );
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain(
+        expect(result.content[0].text as string).toContain(
           'No search query or filters provided'
         );
       });
@@ -383,7 +383,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('PR search failed');
+        expect(result.content[0].text as string).toContain('PR search failed');
       });
 
       it('should handle withComments parameter warning', async () => {
@@ -418,7 +418,9 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('authentication required');
+        expect(result.content[0].text as string).toContain(
+          'authentication required'
+        );
       });
 
       it('should handle GitHub API rate limiting', async () => {
@@ -434,7 +436,9 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('rate limit exceeded');
+        expect(result.content[0].text as string).toContain(
+          'rate limit exceeded'
+        );
       });
 
       it('should handle malformed JSON responses', async () => {
@@ -450,7 +454,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('failed');
+        expect(result.content[0].text as string).toContain('failed');
       });
     });
 
@@ -533,22 +537,19 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
       const mockGitHubResponse = {
-        result: JSON.stringify({
-          total_count: 1,
-          items: [
-            {
-              number: 123,
-              title: 'Fix bug in component',
-              state: 'open',
-              html_url: 'https://github.com/owner/repo/pull/123',
-              user: { login: 'testuser' },
-              repository: {
-                full_name: 'owner/repo',
-                html_url: 'https://github.com/owner/repo',
-              },
+        result: [
+          {
+            number: 123,
+            title: 'Fix bug in component',
+            state: 'open',
+            html_url: 'https://github.com/owner/repo/pull/123',
+            user: { login: 'testuser' },
+            repository: {
+              full_name: 'owner/repo',
+              html_url: 'https://github.com/owner/repo',
             },
-          ],
-        }),
+          },
+        ],
         command: 'gh search prs fix --limit=25 --json',
         type: 'github',
       };
@@ -562,7 +563,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         query: 'fix',
       });
 
-      expect(result.isError).toBe(true);
+      expect(result.isError).toBe(false);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
         'search',
         [
@@ -581,10 +582,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
       const mockGitHubResponse = {
-        result: JSON.stringify({
-          total_count: 0,
-          items: [],
-        }),
+        result: [],
         command: 'gh search prs nonexistent --limit=25 --json',
         type: 'github',
       };
@@ -616,7 +614,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Search failed');
+      expect(result.content[0].text as string).toContain('Search failed');
     });
 
     it('should handle getCommitData parameter for repo-specific searches', async () => {
@@ -752,5 +750,523 @@ describe('GitHub Search Pull Requests Tool', () => {
         'src/component.js'
       );
     });
+  });
+});
+
+describe('Content Sanitization', () => {
+  let mockServer: MockMcpServer;
+
+  beforeEach(() => {
+    mockServer = createMockMcpServer();
+    registerSearchGitHubPullRequestsTool(mockServer.server);
+    vi.clearAllMocks();
+
+    // Default cache behavior
+    // @ts-expect-error - mockWithCache is not typed
+    mockWithCache.mockImplementation(async (key, fn) => await fn());
+    mockGenerateCacheKey.mockReturnValue('test-cache-key');
+  });
+
+  afterEach(() => {
+    mockServer.cleanup();
+    vi.resetAllMocks();
+  });
+
+  it('should sanitize GitHub tokens in PR titles and bodies', async () => {
+    const mockResponse = {
+      result: [
+        {
+          number: 123,
+          title: 'Fix CI with token ghp_1234567890abcdefghijklmnopqrstuvwxyz',
+          body: 'This PR updates the GitHub token from ghp_oldtoken to ghp_1234567890abcdefghijklmnopqrstuvwxyz for CI authentication.',
+          state: 'open',
+          html_url: 'https://github.com/test/repo/pull/123',
+          user: { login: 'developer1' },
+          repository: {
+            full_name: 'test/repo',
+            html_url: 'https://github.com/test/repo',
+          },
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-02T00:00:00Z',
+        },
+      ],
+      command: 'gh search prs token --json',
+      type: 'github',
+    };
+
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify(mockResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'token',
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+
+    // Title should be sanitized
+    expect(data.results[0].title).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
+    );
+    expect(data.results[0].title).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(data.results[0].title).toContain('Fix CI with token');
+
+    // Body should be sanitized
+    expect(data.results[0].body).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
+    );
+    expect(data.results[0].body).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(data.results[0].body).toContain('This PR updates the GitHub token');
+
+    // Check for sanitization warnings
+    expect(data.results[0]._sanitization_warnings).toBeDefined();
+    expect(data.results[0]._sanitization_warnings.length).toBeGreaterThan(0);
+  });
+
+  it('should sanitize OpenAI keys in PR content', async () => {
+    const mockResponse = {
+      result: [
+        {
+          number: 456,
+          title: 'Update OpenAI integration',
+          body: 'This PR updates the OpenAI API key from sk-oldkey to sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO for better AI functionality.',
+          state: 'open',
+          html_url: 'https://github.com/ai/project/pull/456',
+          user: { login: 'ai-developer' },
+          repository: {
+            full_name: 'ai/project',
+            html_url: 'https://github.com/ai/project',
+          },
+          created_at: '2023-02-01T00:00:00Z',
+          updated_at: '2023-02-02T00:00:00Z',
+        },
+      ],
+      command: 'gh search prs openai --json',
+      type: 'github',
+    };
+
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify(mockResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'openai',
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+
+    // Body should be sanitized
+    expect(data.results[0].body).not.toContain(
+      'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+    );
+    expect(data.results[0].body).toContain('[REDACTED-OPENAIAPIKEY]');
+    expect(data.results[0].body).toContain(
+      'This PR updates the OpenAI API key'
+    );
+
+    // Check for sanitization warnings
+    expect(data.results[0]._sanitization_warnings).toBeDefined();
+    expect(data.results[0]._sanitization_warnings.length).toBeGreaterThan(0);
+  });
+
+  it('should sanitize secrets in PR commit data', async () => {
+    const mockPRListResponse = {
+      result: [
+        {
+          number: 789,
+          title: 'Security improvements',
+          state: 'open',
+          author: { login: 'security-team' },
+          headRefOid: 'abc123',
+          baseRefOid: 'def456',
+          url: 'https://github.com/secure/repo/pull/789',
+          createdAt: '2023-03-01T00:00:00Z',
+          updatedAt: '2023-03-02T00:00:00Z',
+          comments: 2,
+          isDraft: false,
+          labels: [{ name: 'security' }],
+        },
+      ],
+      command: 'gh pr list --repo secure/repo --json ...',
+      type: 'github',
+    };
+
+    const mockCommitsResponse = {
+      result: {
+        commits: [
+          {
+            oid: 'abc123',
+            messageHeadline:
+              'Update API keys: ghp_1234567890abcdefghijklmnopqrstuvwxyz123456 and sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO',
+            authors: [{ login: 'security-team', name: 'Security Team' }],
+            authoredDate: '2023-03-01T00:00:00Z',
+          },
+        ],
+      },
+      command: 'gh pr view 789 --json commits --repo secure/repo',
+      type: 'github',
+    };
+
+    const mockCommitDetailResponse = {
+      result: {
+        files: [
+          {
+            filename: 'config/secrets.env',
+            status: 'modified',
+            additions: 2,
+            deletions: 2,
+            changes: 4,
+            patch: `@@ -1,4 +1,4 @@
+# API Keys
+-GITHUB_TOKEN=ghp_oldtoken1234567890abcdefghijklmnopqrstuvwxyz
++GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+-OPENAI_API_KEY=sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJOLDKEY
++OPENAI_API_KEY=sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO`,
+          },
+        ],
+        stats: {
+          additions: 2,
+          deletions: 2,
+          total: 4,
+        },
+      },
+      command: 'gh api repos/secure/repo/commits/abc123',
+      type: 'github',
+    };
+
+    // Mock PR list call
+    mockExecuteGitHubCommand.mockResolvedValueOnce({
+      isError: false,
+      content: [{ text: JSON.stringify(mockPRListResponse) }],
+    });
+
+    // Mock commits fetch call
+    mockExecuteGitHubCommand.mockResolvedValueOnce({
+      isError: false,
+      content: [{ text: JSON.stringify(mockCommitsResponse) }],
+    });
+
+    // Mock commit detail call
+    mockExecuteGitHubCommand.mockResolvedValueOnce({
+      isError: false,
+      content: [{ text: JSON.stringify(mockCommitDetailResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'security',
+      owner: 'secure',
+      repo: 'repo',
+      getCommitData: true,
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+
+    // Commit message should be sanitized
+    const commitMessage = data.results[0].commits.commits[0].message;
+    expect(commitMessage).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+    );
+    expect(commitMessage).not.toContain(
+      'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+    );
+    expect(commitMessage).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(commitMessage).toContain('[REDACTED-OPENAIAPIKEY]');
+
+    // Commit diff should be sanitized
+    const patchContent = data.results[0].commits.commits[0].diff.files[0].patch;
+    expect(patchContent).not.toContain(
+      'ghp_oldtoken1234567890abcdefghijklmnopqrstuvwxyz'
+    );
+    expect(patchContent).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+    );
+    expect(patchContent).not.toContain(
+      'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJOLDKEY'
+    );
+    expect(patchContent).not.toContain(
+      'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+    );
+
+    expect(patchContent).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(patchContent).toContain('[REDACTED-OPENAIAPIKEY]');
+
+    // Non-sensitive content should remain
+    expect(patchContent).toContain('# API Keys');
+    expect(patchContent).toContain('GITHUB_TOKEN=');
+    expect(patchContent).toContain('OPENAI_API_KEY=');
+
+    // Check for sanitization warnings
+    expect(
+      data.results[0].commits.commits[0]._sanitization_warnings
+    ).toBeDefined();
+    expect(
+      data.results[0].commits.commits[0]._sanitization_warnings.length
+    ).toBeGreaterThan(0);
+  });
+
+  it('should sanitize multiple credential types in PR content', async () => {
+    const mockResponse = {
+      result: [
+        {
+          number: 999,
+          title: 'Credential management update',
+          body: `This PR updates multiple credentials:
+            - GitHub PAT: ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+            - GitHub OAuth: gho_1234567890abcdefghijklmnopqrstuvwxyz123456
+            - OpenAI: sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO
+            - Anthropic: sk-ant-api03-123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123AA
+            - AWS Access Key: AKIAIOSFODNN7EXAMPLE
+            - Stripe: sk_live_1234567890abcdefghijklmnopqrstuvwxyz
+            
+            All credentials have been rotated for security.`,
+          state: 'closed',
+          html_url: 'https://github.com/security/audit/pull/999',
+          user: { login: 'security-admin' },
+          repository: {
+            full_name: 'security/audit',
+            html_url: 'https://github.com/security/audit',
+          },
+          created_at: '2023-04-01T00:00:00Z',
+          updated_at: '2023-04-01T02:00:00Z',
+        },
+      ],
+      command: 'gh search prs credentials --json',
+      type: 'github',
+    };
+
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify(mockResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'credentials',
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+
+    const body = data.results[0].body;
+
+    // All credentials should be sanitized
+    expect(body).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+    );
+    expect(body).not.toContain(
+      'gho_1234567890abcdefghijklmnopqrstuvwxyz123456'
+    );
+    expect(body).not.toContain(
+      'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+    );
+    expect(body).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(body).not.toContain('sk_live_1234567890abcdefghijklmnopqrstuvwxyz');
+
+    // Should contain redacted versions
+    expect(body).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(body).toContain('[REDACTED-OPENAIAPIKEY]');
+    expect(body).toContain('[REDACTED-ANTHROPICAPIKEY]');
+    expect(body).toContain('[REDACTED-AWSACCESSKEYID]');
+    expect(body).toContain('[REDACTED-STRIPESECRETKEY]');
+
+    // Non-sensitive content should be preserved
+    expect(body).toContain('This PR updates multiple credentials:');
+    expect(body).toContain('All credentials have been rotated');
+
+    // Should have multiple sanitization warnings
+    expect(data.results[0]._sanitization_warnings).toBeDefined();
+    expect(
+      data.results[0]._sanitization_warnings.length
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  it('should sanitize private keys in PR content', async () => {
+    const mockResponse = {
+      result: [
+        {
+          number: 555,
+          title: 'Replace SSL certificates',
+          body: `Updating SSL certificates and private keys:
+            
+            \`\`\`
+            -----BEGIN RSA PRIVATE KEY-----
+            MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ==
+            -----END RSA PRIVATE KEY-----
+            \`\`\`
+            
+            New certificate has been generated.`,
+          state: 'open',
+          html_url: 'https://github.com/infra/ssl/pull/555',
+          user: { login: 'infra-team' },
+          repository: {
+            full_name: 'infra/ssl',
+            html_url: 'https://github.com/infra/ssl',
+          },
+          created_at: '2023-05-01T00:00:00Z',
+          updated_at: '2023-05-01T01:00:00Z',
+        },
+      ],
+      command: 'gh search prs certificates --json',
+      type: 'github',
+    };
+
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify(mockResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'certificates',
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+
+    const body = data.results[0].body;
+
+    // Private key should be sanitized
+    expect(body).not.toContain(
+      'MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ=='
+    );
+    expect(body).toContain('[REDACTED-RSAPRIVATEKEY]');
+
+    // Non-sensitive content should be preserved
+    expect(body).toContain('Updating SSL certificates');
+    expect(body).toContain('New certificate has been generated');
+
+    // Check for sanitization warnings
+    expect(data.results[0]._sanitization_warnings).toBeDefined();
+    expect(data.results[0]._sanitization_warnings.length).toBeGreaterThan(0);
+  });
+
+  it('should handle PRs with no sensitive content', async () => {
+    const mockResponse = {
+      result: [
+        {
+          number: 100,
+          title: 'Add new feature: user profiles',
+          body: 'This PR adds user profile functionality with avatar uploads and basic information editing.',
+          state: 'open',
+          html_url: 'https://github.com/app/frontend/pull/100',
+          user: { login: 'frontend-dev' },
+          repository: {
+            full_name: 'app/frontend',
+            html_url: 'https://github.com/app/frontend',
+          },
+          created_at: '2023-06-01T00:00:00Z',
+          updated_at: '2023-06-01T00:00:00Z',
+        },
+      ],
+      command: 'gh search prs feature --json',
+      type: 'github',
+    };
+
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify(mockResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'feature',
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+
+    // Content should remain unchanged
+    expect(data.results[0].title).toBe('Add new feature: user profiles');
+    expect(data.results[0].body).toBe(
+      'This PR adds user profile functionality with avatar uploads and basic information editing.'
+    );
+
+    // Should not have sanitization warnings for clean content
+    expect(data.results[0]._sanitization_warnings).toBeUndefined();
+  });
+
+  it('should sanitize multiple types of sensitive data in single PR', async () => {
+    const mockResponse = {
+      result: [
+        {
+          number: 48,
+          title: 'Emergency security fix',
+          body: `Critical security issue found. Exposed credentials:
+
+## Configuration Dump
+\`\`\`
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+OPENAI_API_KEY=sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+DATABASE_URL=postgresql://user:password@localhost:5432/myapp
+\`\`\`
+
+## Private Key Found
+\`\`\`
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ==
+-----END RSA PRIVATE KEY-----
+\`\`\`
+
+Please rotate all credentials immediately!`,
+          state: 'open',
+          user: { login: 'securityteam' },
+          html_url: 'https://github.com/test/repo/pull/48',
+          created_at: '2023-01-07T00:00:00Z',
+          updated_at: '2023-01-07T00:00:00Z',
+          repository: {
+            full_name: 'test/repo',
+            html_url: 'https://github.com/test/repo',
+          },
+        },
+      ],
+      command: 'gh search prs emergency security --json',
+      type: 'github',
+    };
+
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify(mockResponse) }],
+    });
+
+    const result = await mockServer.callTool('githubSearchPullRequests', {
+      query: 'emergency security',
+    });
+
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.content[0].text as string);
+    const prBody = data.results[0].body;
+
+    // Verify all secrets are redacted
+    expect(prBody).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+    );
+    expect(prBody).not.toContain(
+      'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+    );
+    expect(prBody).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(prBody).not.toContain(
+      'postgresql://user:password@localhost:5432/myapp'
+    );
+    expect(prBody).not.toContain(
+      'MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ'
+    );
+
+    // Verify redacted placeholders are present
+    expect(prBody).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(prBody).toContain('[REDACTED-OPENAIAPIKEY]');
+    expect(prBody).toContain('[REDACTED-AWSACCESSKEYID]');
+    expect(prBody).toContain('[REDACTED-POSTGRESQLCONNECTIONSTRING]');
+    expect(prBody).toContain('[REDACTED-RSAPRIVATEKEY]');
+
+    // Verify non-sensitive content is preserved
+    expect(prBody).toContain('Critical security issue found');
+    expect(prBody).toContain('## Configuration Dump');
+    expect(prBody).toContain('## Private Key Found');
+    expect(prBody).toContain('Please rotate all credentials immediately!');
+    expect(prBody).toContain('GITHUB_TOKEN=');
+    expect(prBody).toContain('OPENAI_API_KEY=');
   });
 });
