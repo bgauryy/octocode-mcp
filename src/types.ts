@@ -202,6 +202,7 @@ export interface GithubFetchRequestParams {
   startLine?: number;
   endLine?: number;
   contextLines?: number;
+  matchString?: string;
   minified: boolean;
 }
 

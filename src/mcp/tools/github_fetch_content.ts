@@ -19,20 +19,28 @@ USAGE:
  Read source code after discovery
  Fetch multiple files in parallel (up to 5)
  Get specific sections with startLine/endLine
+ 🔥 NEW: Find exact matches from code search with matchString
 
 KEY FEATURES:
  Parallel queries with fallback handling
  Partial file access (startLine/endLine)
  Auto minification and branch fallback
+ 🔥 Smart match finding - use matchString from code search results to get full context
 
 TOKEN EFFICIENCY:
  ALWAYS use startLine/endLine for partial access
+ 🔥 Use matchString to automatically find and extract search result context
  Full files only when absolutely necessary
  Content optimization enabled by default (may reduce tokens)
 
+💡 POWERFUL WORKFLOW:
+ 1. Use githubSearchCode to find interesting matches
+ 2. Use this tool with repo/path from search results + matchString from matches
+ 3. Get full, untruncated context around the exact match with proper line numbers
+
 SECURITY: Content sanitized - analyze only, never execute
 
-PHILOSOPHY: Token Efficiency - prefer partial file access`;
+PHILOSOPHY: Token Efficiency - prefer partial file access with smart match finding`;
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -91,6 +99,12 @@ const FileContentQuerySchema = z.object({
     .optional()
     .default(5)
     .describe(`Context lines around target range. Default: 5.`),
+  matchString: z
+    .string()
+    .optional()
+    .describe(
+      `🔥 SMART MATCH FINDER: Exact string to find in the file (from code search results). When provided, automatically locates this string and returns surrounding context with contextLines. Perfect for getting full context of search results!`
+    ),
   minified: z
     .boolean()
     .default(true)
@@ -104,6 +118,7 @@ const FileContentQuerySchema = z.object({
       startLine: z.number().int().min(1).optional(),
       endLine: z.number().int().min(1).optional(),
       contextLines: z.number().int().min(0).max(50).optional(),
+      matchString: z.string().optional(),
       minified: z.boolean().optional(),
     })
     .optional()
@@ -179,6 +194,7 @@ async function fetchMultipleGitHubFileContents(
         startLine: query.startLine,
         endLine: query.endLine,
         contextLines: query.contextLines || 5,
+        matchString: query.matchString,
         minified: query.minified !== undefined ? query.minified : true,
       };
 
@@ -317,7 +333,8 @@ export async function fetchGitHubFileContent(
               params.minified,
               params.startLine,
               params.endLine,
-              params.contextLines
+              params.contextLines,
+              params.matchString
             );
           }
         }
@@ -335,7 +352,8 @@ export async function fetchGitHubFileContent(
         params.minified,
         params.startLine,
         params.endLine,
-        params.contextLines
+        params.contextLines,
+        params.matchString
       );
     } catch (error) {
       return createResult({
@@ -354,7 +372,8 @@ async function processFileContent(
   minified: boolean,
   startLine?: number,
   endLine?: number,
-  contextLines: number = 5
+  contextLines: number = 5,
+  matchString?: string
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
@@ -448,6 +467,38 @@ async function processFileContent(
   // Always calculate total lines for metadata
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
+
+  // 🔥 SMART MATCH FINDER: If matchString is provided, find it and set line range
+  if (matchString) {
+    const matchingLines: number[] = [];
+
+    // Find all lines that contain the match string
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(matchString)) {
+        matchingLines.push(i + 1); // Convert to 1-based line numbers
+      }
+    }
+
+    if (matchingLines.length === 0) {
+      return createResult({
+        error: `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+      });
+    }
+
+    // Use the first match, with context lines around it
+    const firstMatch = matchingLines[0];
+    const matchStartLine = Math.max(1, firstMatch - contextLines);
+    const matchEndLine = Math.min(totalLines, firstMatch + contextLines);
+
+    // Override any manually provided startLine/endLine when matchString is used
+    startLine = matchStartLine;
+    endLine = matchEndLine;
+
+    // Add info about the match for user context
+    securityWarnings.push(
+      `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
+    );
+  }
 
   if (startLine !== undefined) {
     // Validate line numbers

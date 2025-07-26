@@ -10,6 +10,42 @@ The tool operates on the principle that effective code search requires a systema
 
 **Base Search Logic Check**: ✅ This maintains the core principle that broad discovery precedes targeted searching.
 
+## 🔥 POWERFUL INTEGRATION: Search → Fetch Workflow
+
+**NEW: Smart Match Finding with File Fetch**
+
+The code search tool now integrates seamlessly with `github_fetch_content` through the new `matchString` parameter:
+
+### The Perfect Research Workflow
+```typescript
+// Step 1: Search broadly to find interesting matches
+const searchResults = await githubSearchCode({
+  queryTerms: ["render"],
+  owner: "facebook"
+});
+
+// Step 2: Extract promising results
+const match = searchResults.find(r => r.path.includes("reconciler"));
+// Result: { repository: "facebook/react", path: "src/ReactFiber.js", matches: ["function render() {"] }
+
+// Step 3: Get full context using matchString
+const fileContent = await githubGetFileContent({
+  owner: "facebook", 
+  repo: "react",
+  branch: "main",
+  filePath: "src/ReactFiber.js",
+  matchString: "function render() {" // 🔥 Automatically finds and extracts context!
+});
+```
+
+### Key Benefits
+- **No Line Number Guessing**: matchString automatically finds the exact location
+- **Full Context**: Gets untruncated code around the match with proper line numbers  
+- **Handles Changes**: If file changed since search, provides helpful error message
+- **Multi-Match Awareness**: Reports if string appears multiple times, uses first occurrence
+
+**Integration Check**: ✅ This creates an intelligent research pipeline that eliminates manual work.
+
 ## 🔄 Progressive Refinement Phases
 
 ### Phase 1: Broad Discovery
