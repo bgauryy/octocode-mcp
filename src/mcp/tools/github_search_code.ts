@@ -14,32 +14,21 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { minifyContentV2 } from '../../utils/minifier';
-import { GITHUB_SEARCH_CODE_TOOL_NAME } from './utils/toolConstants';
+import {
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+} from './utils/toolConstants';
 
-const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with PROGRESSIVE REFINEMENT strategy.
+const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
-USAGE:
- Find implementations and internal mechanisms
- Locate specific functions, methods, or identifiers  
- Discover usage patterns in code and documentation
- Find files and parts within files that match search criteria
+SEARCH STRATEGY:
+SEMANTIC: Natural language terms describing functionality, concepts, business logic
+TECHNICAL: Actual code terms, function names, class names, file patterns
 
-PROGRESSIVE REFINEMENT STRATEGY - Start broad, then narrow:
- PHASE 1: DISCOVERY - Start with queryTerms + owner/repo only (no language/extension filters)
- PHASE 2: CONTEXT - Analyze initial results to understand codebase structure
- PHASE 3: TARGETED - Apply specific filters (language, extension, filename) based on findings
- PHASE 4: DEEP-DIVE - Use results to guide more specific searches
+Use bulk queries from different angles. Start narrow, broaden if needed.
+Workflow: Search → Use ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with matchString for context.
 
-STRATEGIC APPROACH - Plan up to 5 queries progressing from broad to specific:
- Query 1: id="discovery" + ["core-concept"] + owner/repo (broad discovery)
- Query 2: id="function-focused" + ["specific-function"] + owner/repo + language (if needed)
- Query 3: id="documentation" + ["pattern"] + owner/repo + extension="ext" (documentation)
- Query 4: id="test-examples" + ["test-example"] + owner/repo + filename="pattern" (examples)
- Query 5: id="config-files" + ["config"] + owner/repo + extension="ext" (configuration)
-
-AVOID INITIAL OVER-FILTERING: Don't use language/extension filters in first query unless you know the codebase structure!
-
-TOKEN EFFICIENCY: Auto-minified content, filtered structure, sanitized output`;
+Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
 const GitHubCodeSearchQuerySchema = z.object({
   id: z
@@ -293,45 +282,47 @@ async function searchMultipleGitHubCode(
     }
   });
 
-  // Generate hints for failures and guidance
+  // Generate research hints
   results.forEach(result => {
     if (result.error) {
       if (result.error.includes('queryTerms parameter is required')) {
         hints.push(
-          `Query "${result.queryId}" missing search terms - use meaningful queryTerms like ["function-name", "api-call"]`
+          `Query "${result.queryId}": missing search terms - try semantic + technical terms`
         );
       } else if (result.error.includes('rate limit')) {
         hints.push(
-          `Query "${result.queryId}" hit rate limit - try fewer, broader queries with progressive refinement`
+          `Query "${result.queryId}": hit rate limit - reduce to 2-3 focused queries`
         );
       } else if (result.error.includes('authentication')) {
         hints.push(
-          `Query "${result.queryId}" needs authentication - run 'gh auth login' and verify access`
+          `Query "${result.queryId}": needs authentication - run 'gh auth login' then retry`
         );
       } else if (result.error.includes('repository not found')) {
         hints.push(
-          `Query "${result.queryId}" repository not found - verify owner/repo names or use github_search_repos to find correct names`
+          `Query "${result.queryId}": Use github_search_repos to find correct owner/repo names`
         );
       } else {
-        hints.push(`Query "${result.queryId}" failed: ${result.error}`);
+        hints.push(`Query "${result.queryId}": ${result.error}`);
       }
     } else if (result.result.items.length === 0) {
-      // Successful query but no results found
       hints.push(
-        `Query "${result.queryId}" found no results - try broader search terms, remove filters, or verify repository contains matching code`
+        `Query "${result.queryId}": found no results - try broader semantic or different technical terms`
       );
     }
   });
 
-  // Add strategic hints
+  // Add strategic guidance
   if (allCodeItems.length === 0) {
+    hints.push('NEXT: Try broader semantic + technical term combinations');
+  } else if (allCodeItems.length > 0) {
     hints.push(
-      'No code found across all queries - try broader search terms, verify repository access, or use different query strategies'
+      `FOUND ${allCodeItems.length} matches - use github_fetch_content with matchString for detailed context`
     );
-  } else if (results.some(r => r.error) && allCodeItems.length > 0) {
-    hints.push(
-      'Partial results obtained - some queries succeeded while others failed. Check individual query errors for specific fixes.'
-    );
+    if (results.some(r => r.error)) {
+      hints.push(
+        'Some queries failed - retry failed searches with different terms'
+      );
+    }
   }
 
   // Calculate summary statistics
@@ -393,96 +384,57 @@ async function searchMultipleGitHubCode(
  * Handles various search errors and returns a formatted CallToolResult with smart fallbacks.
  */
 function handleSearchError(errorMessage: string): CallToolResult {
-  // Rate limit with progressive refinement guidance
+  // Rate limit recovery
   if (errorMessage.includes('rate limit') || errorMessage.includes('403')) {
     return createResult({
-      error: `GitHub API rate limit reached. PROGRESSIVE RECOVERY approach:
- START BROADER: Use fewer queries (1-2) with basic terms + owner/repo only
- AVOID OVER-FILTERING: Remove language/extension filters initially  
- PROGRESSIVE EXAMPLE: Query 1: ["search-term"] + owner="owner-name" + repo="repo-name" (discover first)
- Then Query 2: Add specific filters based on Query 1 results
-
-Wait 5-10 minutes, then restart with broad discovery approach.`,
+      error: `Rate limit reached. Wait 5-10 minutes. Use 2-3 focused queries with core technical + semantic terms.`,
     });
   }
 
-  // Authentication with clear next steps
+  // Authentication
   if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
     return createResult({
-      error: `GitHub authentication required. Fix with:
-1. Run: gh auth login
-2. Verify access: gh auth status  
-3. For private repos: use api_status_check to verify org access
-4. Then restart with progressive refinement: start broad with simple queryTerms + owner/repo, then add filters based on results`,
+      error: `Authentication required: Run 'gh auth login' then retry search`,
     });
   }
 
-  // Network/timeout with progressive refinement suggestions
+  // Network/timeout
   if (errorMessage.includes('timed out') || errorMessage.includes('network')) {
     return createResult({
-      error: `Network timeout. PROGRESSIVE RECOVERY approach:
- START SIMPLE: Use basic queryTerms + owner/repo only (no filters initially)
- SMALLER LIMITS: Use limit=10-15 instead of default 30
- PROGRESSIVE EXAMPLE: ["search-term"] + owner="owner-name" + repo="repo-name" + limit=10
- AVOID COMPLEX FILTERS: Don't use language/extension filters in first query
- Check network connection and retry with broad, simple queries`,
+      error: `Network timeout: Check connection, reduce query limit to 10-15, use simpler terms`,
     });
   }
 
-  // Invalid query with progressive refinement fixes
+  // Invalid query
   if (
     errorMessage.includes('validation failed') ||
     errorMessage.includes('Invalid query')
   ) {
     return createResult({
-      error: `Invalid search query. PROGRESSIVE REFINEMENT FIXES:
- START SIMPLE: Use basic terms ["search-term", "function-name"] without special characters
- AVOID INITIAL FILTERS: Don't use language/extension filters in first discovery query
- Remove special characters: ()[]{}*?^$|.\\
- Use meaningful query IDs: id="discovery", id="targeted-search"
- PROGRESSIVE EXAMPLE: {id: "discovery", queryTerms: ["search-term"], owner: "owner-name", repo: "repo-name"}`,
+      error: `Invalid query: Remove special characters, use simple terms`,
     });
   }
 
-  // Repository not found with discovery suggestions
+  // Repository not found
   if (
     errorMessage.includes('repository not found') ||
     errorMessage.includes('owner not found')
   ) {
     return createResult({
-      error: `Repository/owner not found. PROGRESSIVE DISCOVERY approach:
- VERIFY REPO NAMES: Try github_search_repos to find correct owner/repo names first
- EXAMPLE: owner-name/repo-name, not variation-name/repo-name or alt-org/repo-name
- CHECK COMMON VARIATIONS: org might be different (owner-name vs alt-org vs another-org)
- START BROAD: Try without owner/repo filters if unsure, then narrow down
- PROGRESSIVE EXAMPLE: First verify "owner-name/repo-name" exists, then search ["search-term"] + owner="owner-name" + repo="repo-name"
- Check for typos in owner/repo names`,
+      error: `Repository not found: Use github_search_repos to find correct owner/repo names`,
     });
   }
 
-  // JSON parsing with system guidance
+  // JSON parsing
   if (errorMessage.includes('JSON')) {
     return createResult({
-      error: `GitHub CLI response parsing failed. System recovery:
- Update GitHub CLI: gh extension upgrade
- Retry with strategic filtered queries: add extension/language filters to reduce response complexity
- Use github_search_repos as alternative for repo discovery
- Check gh auth status for authentication
- STRATEGIC APPROACH: Start with simple, well-filtered queries with meaningful IDs`,
+      error: `Parsing failed: Update GitHub CLI, check 'gh auth status', try simpler queries`,
     });
   }
 
-  // Generic fallback with progressive refinement strategy
+  // Generic fallback
   return createResult({
-    error: `Code search failed: ${errorMessage}
-
-PROGRESSIVE REFINEMENT RECOVERY:
-PHASE 1: DISCOVERY - Start with simple queryTerms + owner/repo only (no filters)
-PHASE 2: CONTEXT - Analyze initial results to understand codebase structure  
-PHASE 3: TARGETED - Add specific filters based on findings from Phase 1
-PHASE 4: VERIFY - Use github_search_repos if repository access issues
-
-EXAMPLE RECOVERY: ["search-term"] + owner="owner-name" + repo="repo-name" → analyze results → then add language/extension filters`,
+    error: `Search failed: ${errorMessage}. Try broader semantic + technical terms. Use github_search_repos if repo access issues.`,
   });
 }
 

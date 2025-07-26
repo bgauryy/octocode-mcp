@@ -11,36 +11,22 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './utils/toolConstants';
+import {
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+} from './utils/toolConstants';
 
-const DESCRIPTION = `PURPOSE: Fetch file contents from GitHub repositories with token optimization.
+const DESCRIPTION = `Fetch file contents with smart context extraction.
 
-USAGE:
- Read source code after discovery
- Fetch multiple files in parallel (up to 5)
- Get specific sections with startLine/endLine
- 🔥 NEW: Find exact matches from code search with matchString
+Supports: Up to 10 files fetching with auto-fallback for branches
 
-KEY FEATURES:
- Parallel queries with fallback handling
- Partial file access (startLine/endLine)
- Auto minification and branch fallback
- 🔥 Smart match finding - use matchString from code search results to get full context
+KEY WORKFLOW: 
+  - Code Research: ${GITHUB_SEARCH_CODE_TOOL_NAME} results -> fetch file using  "matchString" ->  get context around matches
+  - File Content: ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} results  -> fetch relevant files to fetch by structure and file path
 
-TOKEN EFFICIENCY:
- ALWAYS use startLine/endLine for partial access
- 🔥 Use matchString to automatically find and extract search result context
- Full files only when absolutely necessary
- Content optimization enabled by default (may reduce tokens)
-
-💡 POWERFUL WORKFLOW:
- 1. Use githubSearchCode to find interesting matches
- 2. Use this tool with repo/path from search results + matchString from matches
- 3. Get full, untruncated context around the exact match with proper line numbers
-
-SECURITY: Content sanitized - analyze only, never execute
-
-PHILOSOPHY: Token Efficiency - prefer partial file access with smart match finding`;
+OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
+`;
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -144,9 +130,9 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         queries: z
           .array(FileContentQuerySchema)
           .min(1)
-          .max(5)
+          .max(10)
           .describe(
-            'Array of up to 5 different file fetch queries for parallel execution'
+            'Array of up to 10 different file fetch queries for parallel execution'
           ),
       },
       annotations: {
