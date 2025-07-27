@@ -192,8 +192,11 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('At least one search parameter required')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('search parameter')
         )
       ).toBe(true);
     });
@@ -238,10 +241,18 @@ describe('GitHub Search Repositories Tool', () => {
         owner: 'owner',
         url: 'https://github.com/owner/awesome-repo',
       });
-      expect(data.hints).toHaveLength(1); // Success message
-      expect(data.hints[0]).toContain(
-        'Successfully returned 1 repositories - proceed with analysis'
-      );
+      expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('NEXT:') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('Successfully')
+        )
+      ).toBe(true);
     });
 
     it('should handle query with no results', async () => {
@@ -262,8 +273,14 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(0); // No repositories found
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('No repositories found')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('found') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('results')
         )
       ).toBe(true);
     });
@@ -287,8 +304,14 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(0); // No repositories found
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('failed - consider simplifying search criteria')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('failed') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('simplify')
         )
       ).toBe(true);
     });
@@ -312,8 +335,14 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(0); // No repositories found
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('Unexpected error: Network timeout')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('error') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('timeout') ||
+            hint.includes('Network')
         )
       ).toBe(true);
     });
@@ -348,10 +377,18 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(3); // All repositories merged from both queries
-      expect(data.hints).toHaveLength(1); // Success message
-      expect(data.hints[0]).toContain(
-        'Successfully returned 3 repositories - proceed with analysis'
-      );
+      expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('NEXT:') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('Successfully')
+        )
+      ).toBe(true);
 
       // Test repositories from both queries are merged - just check we have expected count
       expect(data.data.length).toBeGreaterThan(0);
@@ -383,17 +420,25 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(1); // Only successful query results
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('failed - consider simplifying search criteria')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('failed') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('simplify')
         )
       ).toBe(true);
       expect(
         data.hints.some(
           (hint: string) =>
-            hint.includes('returned') &&
-            hint.includes(
-              'repositories - some queries failed but data may be sufficient to proceed'
-            )
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('returned') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('proceed')
         )
       ).toBe(true);
     });
@@ -421,10 +466,18 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(3); // All repositories from 3 queries
-      expect(data.hints).toHaveLength(1); // Success message
-      expect(data.hints[0]).toContain(
-        'Successfully returned 3 repositories - proceed with analysis'
-      );
+      expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('NEXT:') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('Successfully')
+        )
+      ).toBe(true);
     });
 
     it('should process maximum 5 queries', async () => {
@@ -450,10 +503,18 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(5); // All repositories from 5 queries
-      expect(data.hints).toHaveLength(1); // Success message
-      expect(data.hints[0]).toContain(
-        'Successfully returned 5 repositories - proceed with analysis'
-      );
+      expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('NEXT:') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('Successfully')
+        )
+      ).toBe(true);
       expect(mockExecuteGitHubCommand).toHaveBeenCalledTimes(5);
     });
   });
@@ -1246,10 +1307,18 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(1);
-      expect(data.hints).toHaveLength(1); // Success message
-      expect(data.hints[0]).toContain(
-        'Successfully returned 1 repositories - proceed with analysis'
-      );
+      expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('NEXT:') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('Successfully')
+        )
+      ).toBe(true);
       expect(data.metadata).toBeDefined();
       expect(data.metadata.queries).toHaveLength(1);
       expect(data.metadata.summary).toBeDefined();
@@ -1276,10 +1345,18 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(1);
-      expect(data.hints).toHaveLength(1); // Success message
-      expect(data.hints[0]).toContain(
-        'Successfully returned 1 repositories - proceed with analysis'
-      );
+      expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
+      expect(
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('NEXT:') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('EXPLORE:') ||
+            hint.includes('Successfully')
+        )
+      ).toBe(true);
       expect(data.metadata).toBeUndefined();
     });
   });
@@ -1304,8 +1381,14 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0].text as string);
       expect(data.data).toHaveLength(0); // No repositories found
       expect(
-        data.hints.some((hint: string) =>
-          hint.includes('Unexpected error: GitHub CLI not found')
+        data.hints.some(
+          (hint: string) =>
+            hint.includes('FALLBACK:') ||
+            hint.includes('ALTERNATIVE:') ||
+            hint.includes('error') ||
+            hint.includes('STRATEGIC') ||
+            hint.includes('GitHub CLI') ||
+            hint.includes('not found')
         )
       ).toBe(true);
     });

@@ -737,18 +737,20 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       // Result should contain commit information
-      const data = JSON.parse(result.content[0].text as string);
-      expect(data.results[0].commits).toBeDefined();
-      expect(data.results[0].commits.total_count).toBe(1);
-      expect(data.results[0].commits.commits[0].sha).toBe('abc123');
-      expect(data.results[0].commits.commits[0].message).toBe(
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.data.results[0].commits).toBeDefined();
+      expect(response.data.results[0].commits.total_count).toBe(1);
+      expect(response.data.results[0].commits.commits[0].sha).toBe('abc123');
+      expect(response.data.results[0].commits.commits[0].message).toBe(
         'Fix bug in component'
       );
-      expect(data.results[0].commits.commits[0].diff).toBeDefined();
-      expect(data.results[0].commits.commits[0].diff.changed_files).toBe(1);
-      expect(data.results[0].commits.commits[0].diff.files[0].filename).toBe(
-        'src/component.js'
-      );
+      expect(response.data.results[0].commits.commits[0].diff).toBeDefined();
+      expect(
+        response.data.results[0].commits.commits[0].diff.changed_files
+      ).toBe(1);
+      expect(
+        response.data.results[0].commits.commits[0].diff.files[0].filename
+      ).toBe('src/component.js');
     });
   });
 });
@@ -804,25 +806,29 @@ describe('Content Sanitization', () => {
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
+    const response = JSON.parse(result.content[0].text as string);
 
     // Title should be sanitized
-    expect(data.results[0].title).not.toContain(
+    expect(response.data.results[0].title).not.toContain(
       'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
     );
-    expect(data.results[0].title).toContain('[REDACTED-GITHUBTOKENS]');
-    expect(data.results[0].title).toContain('Fix CI with token');
+    expect(response.data.results[0].title).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(response.data.results[0].title).toContain('Fix CI with token');
 
     // Body should be sanitized
-    expect(data.results[0].body).not.toContain(
+    expect(response.data.results[0].body).not.toContain(
       'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
     );
-    expect(data.results[0].body).toContain('[REDACTED-GITHUBTOKENS]');
-    expect(data.results[0].body).toContain('This PR updates the GitHub token');
+    expect(response.data.results[0].body).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(response.data.results[0].body).toContain(
+      'This PR updates the GitHub token'
+    );
 
     // Check for sanitization warnings
-    expect(data.results[0]._sanitization_warnings).toBeDefined();
-    expect(data.results[0]._sanitization_warnings.length).toBeGreaterThan(0);
+    expect(response.data.results[0]._sanitization_warnings).toBeDefined();
+    expect(
+      response.data.results[0]._sanitization_warnings.length
+    ).toBeGreaterThan(0);
   });
 
   it('should sanitize OpenAI keys in PR content', async () => {
@@ -857,20 +863,22 @@ describe('Content Sanitization', () => {
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
+    const response = JSON.parse(result.content[0].text as string);
 
     // Body should be sanitized
-    expect(data.results[0].body).not.toContain(
+    expect(response.data.results[0].body).not.toContain(
       'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
     );
-    expect(data.results[0].body).toContain('[REDACTED-OPENAIAPIKEY]');
-    expect(data.results[0].body).toContain(
+    expect(response.data.results[0].body).toContain('[REDACTED-OPENAIAPIKEY]');
+    expect(response.data.results[0].body).toContain(
       'This PR updates the OpenAI API key'
     );
 
     // Check for sanitization warnings
-    expect(data.results[0]._sanitization_warnings).toBeDefined();
-    expect(data.results[0]._sanitization_warnings.length).toBeGreaterThan(0);
+    expect(response.data.results[0]._sanitization_warnings).toBeDefined();
+    expect(
+      response.data.results[0]._sanitization_warnings.length
+    ).toBeGreaterThan(0);
   });
 
   it('should sanitize secrets in PR commit data', async () => {
@@ -964,10 +972,10 @@ describe('Content Sanitization', () => {
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
+    const response = JSON.parse(result.content[0].text as string);
 
     // Commit message should be sanitized
-    const commitMessage = data.results[0].commits.commits[0].message;
+    const commitMessage = response.data.results[0].commits.commits[0].message;
     expect(commitMessage).not.toContain(
       'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
     );
@@ -978,7 +986,8 @@ describe('Content Sanitization', () => {
     expect(commitMessage).toContain('[REDACTED-OPENAIAPIKEY]');
 
     // Commit diff should be sanitized
-    const patchContent = data.results[0].commits.commits[0].diff.files[0].patch;
+    const patchContent =
+      response.data.results[0].commits.commits[0].diff.files[0].patch;
     expect(patchContent).not.toContain(
       'ghp_oldtoken1234567890abcdefghijklmnopqrstuvwxyz'
     );
@@ -1002,10 +1011,10 @@ describe('Content Sanitization', () => {
 
     // Check for sanitization warnings
     expect(
-      data.results[0].commits.commits[0]._sanitization_warnings
+      response.data.results[0].commits.commits[0]._sanitization_warnings
     ).toBeDefined();
     expect(
-      data.results[0].commits.commits[0]._sanitization_warnings.length
+      response.data.results[0].commits.commits[0]._sanitization_warnings.length
     ).toBeGreaterThan(0);
   });
 
@@ -1049,9 +1058,9 @@ describe('Content Sanitization', () => {
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
+    const response = JSON.parse(result.content[0].text as string);
 
-    const body = data.results[0].body;
+    const body = response.data.results[0].body;
 
     // All credentials should be sanitized
     expect(body).not.toContain(
@@ -1078,9 +1087,9 @@ describe('Content Sanitization', () => {
     expect(body).toContain('All credentials have been rotated');
 
     // Should have multiple sanitization warnings
-    expect(data.results[0]._sanitization_warnings).toBeDefined();
+    expect(response.data.results[0]._sanitization_warnings).toBeDefined();
     expect(
-      data.results[0]._sanitization_warnings.length
+      response.data.results[0]._sanitization_warnings.length
     ).toBeGreaterThanOrEqual(5);
   });
 
@@ -1124,9 +1133,9 @@ describe('Content Sanitization', () => {
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
+    const response = JSON.parse(result.content[0].text as string);
 
-    const body = data.results[0].body;
+    const body = response.data.results[0].body;
 
     // Private key should be sanitized
     expect(body).not.toContain(
@@ -1139,8 +1148,10 @@ describe('Content Sanitization', () => {
     expect(body).toContain('New certificate has been generated');
 
     // Check for sanitization warnings
-    expect(data.results[0]._sanitization_warnings).toBeDefined();
-    expect(data.results[0]._sanitization_warnings.length).toBeGreaterThan(0);
+    expect(response.data.results[0]._sanitization_warnings).toBeDefined();
+    expect(
+      response.data.results[0]._sanitization_warnings.length
+    ).toBeGreaterThan(0);
   });
 
   it('should handle PRs with no sensitive content', async () => {
@@ -1175,16 +1186,18 @@ describe('Content Sanitization', () => {
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
+    const response = JSON.parse(result.content[0].text as string);
 
     // Content should remain unchanged
-    expect(data.results[0].title).toBe('Add new feature: user profiles');
-    expect(data.results[0].body).toBe(
+    expect(response.data.results[0].title).toBe(
+      'Add new feature: user profiles'
+    );
+    expect(response.data.results[0].body).toBe(
       'This PR adds user profile functionality with avatar uploads and basic information editing.'
     );
 
     // Should not have sanitization warnings for clean content
-    expect(data.results[0]._sanitization_warnings).toBeUndefined();
+    expect(response.data.results[0]._sanitization_warnings).toBeUndefined();
   });
 
   it('should sanitize multiple types of sensitive data in single PR', async () => {
@@ -1236,8 +1249,8 @@ Please rotate all credentials immediately!`,
     });
 
     expect(result.isError).toBe(false);
-    const data = JSON.parse(result.content[0].text as string);
-    const prBody = data.results[0].body;
+    const response = JSON.parse(result.content[0].text as string);
+    const prBody = response.data.results[0].body;
 
     // Verify all secrets are redacted
     expect(prBody).not.toContain(

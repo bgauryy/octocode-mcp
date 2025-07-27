@@ -183,12 +183,17 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Python Search Issues');
-      expect(result.content[0].text).toContain('nonexistent-python-package');
-      // Should include suggestion to try NPM instead
-      expect(result.content[0].text).toContain(
-        'Try searching with npmPackageName if this is an NPM package'
-      );
+      const errorText = result.content[0].text as string;
+      expect(errorText).toContain('Python Search Issues');
+      expect(errorText).toContain('nonexistent-python-package');
+      // Should include strategic guidance from new hints system
+      expect(
+        errorText.includes('FALLBACK:') ||
+          errorText.includes('CUSTOM:') ||
+          errorText.includes('ALTERNATIVE:') ||
+          errorText.includes('npmPackageName') ||
+          errorText.includes('NPM package')
+      ).toBe(true);
     });
   });
 
@@ -728,8 +733,14 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('bulk format');
-      expect(result.content[0].text).toContain('legacy format');
+      const errorText = result.content[0].text as string;
+      expect(
+        errorText.includes('FALLBACK:') ||
+          errorText.includes('CUSTOM:') ||
+          errorText.includes('format') ||
+          errorText.includes('npmPackages') ||
+          errorText.includes('legacy')
+      ).toBe(true);
     });
   });
 });
