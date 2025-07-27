@@ -184,7 +184,7 @@ async function transformToOptimizedFormat(
   const singleRepo = extractSingleRepository(items);
 
   // Track security warnings and minification metadata
-  const allSecurityWarnings: string[] = [];
+  const allSecurityWarningsSet = new Set<string>();
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
 
@@ -209,23 +209,23 @@ async function transformToOptimizedFormat(
 
             // Collect security warnings
             if (sanitizationResult.hasSecrets) {
-              allSecurityWarnings.push(
+              allSecurityWarningsSet.add(
                 `Secrets detected in ${item.path}: ${sanitizationResult.secretsDetected.join(', ')}`
               );
             }
             if (sanitizationResult.hasPromptInjection) {
-              allSecurityWarnings.push(
+              allSecurityWarningsSet.add(
                 `Prompt injection detected in ${item.path}`
               );
             }
             if (sanitizationResult.isMalicious) {
-              allSecurityWarnings.push(
+              allSecurityWarningsSet.add(
                 `Malicious content detected in ${item.path}`
               );
             }
             if (sanitizationResult.warnings.length > 0) {
-              allSecurityWarnings.push(
-                ...sanitizationResult.warnings.map(w => `${item.path}: ${w}`)
+              sanitizationResult.warnings.forEach(w =>
+                allSecurityWarningsSet.add(`${item.path}: ${w}`)
               );
             }
           }
@@ -294,8 +294,8 @@ async function transformToOptimizedFormat(
   }
 
   // Add processing metadata
-  if (sanitize && allSecurityWarnings.length > 0) {
-    result.securityWarnings = [...new Set(allSecurityWarnings)]; // Remove duplicates
+  if (sanitize && allSecurityWarningsSet.size > 0) {
+    result.securityWarnings = Array.from(allSecurityWarningsSet); // Remove duplicates
   }
 
   if (minify) {

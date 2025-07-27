@@ -36,13 +36,14 @@ export class ContentSanitizer {
     sanitizedContent: string;
   } {
     let sanitizedContent = content;
-    const secretsDetected: string[] = [];
+    const secretsDetectedSet = new Set<string>();
 
     try {
       for (const pattern of allRegexPatterns) {
         const matches = sanitizedContent.match(pattern.regex);
         if (matches && matches.length > 0) {
-          secretsDetected.push(...matches.map(_match => pattern.name));
+          // Add each match to the set (automatically deduplicates)
+          matches.forEach(_match => secretsDetectedSet.add(pattern.name));
 
           // Replace with redacted placeholder
           sanitizedContent = sanitizedContent.replace(
@@ -59,6 +60,8 @@ export class ContentSanitizer {
         sanitizedContent: content,
       };
     }
+
+    const secretsDetected = Array.from(secretsDetectedSet);
 
     return {
       hasSecrets: secretsDetected.length > 0,

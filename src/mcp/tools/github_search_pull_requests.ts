@@ -550,10 +550,10 @@ async function searchGitHubPullRequests(
             : { content: undefined, warnings: [] };
 
           // Collect all sanitization warnings
-          const sanitizationWarnings = [
+          const sanitizationWarningsSet = new Set<string>([
             ...titleSanitized.warnings,
             ...bodySanitized.warnings,
-          ];
+          ]);
 
           const result: GitHubPullRequestItem = {
             number: pr.number,
@@ -572,8 +572,8 @@ async function searchGitHubPullRequests(
           };
 
           // Add sanitization warnings if any were detected
-          if (sanitizationWarnings.length > 0) {
-            result._sanitization_warnings = sanitizationWarnings;
+          if (sanitizationWarningsSet.size > 0) {
+            result._sanitization_warnings = Array.from(sanitizationWarningsSet);
           }
 
           // Add commit SHAs for use with github_fetch_content
@@ -609,10 +609,10 @@ async function searchGitHubPullRequests(
             : { content: undefined, warnings: [] };
 
           // Collect all sanitization warnings
-          const sanitizationWarnings = [
+          const sanitizationWarnings = new Set<string>([
             ...titleSanitized.warnings,
             ...bodySanitized.warnings,
-          ];
+          ]);
 
           const result: GitHubPullRequestItem = {
             number: pr.number,
@@ -632,8 +632,8 @@ async function searchGitHubPullRequests(
           };
 
           // Add sanitization warnings if any were detected
-          if (sanitizationWarnings.length > 0) {
-            result._sanitization_warnings = sanitizationWarnings;
+          if (sanitizationWarnings.size > 0) {
+            result._sanitization_warnings = Array.from(sanitizationWarnings);
           }
 
           // Optional fields
@@ -1238,7 +1238,9 @@ async function fetchPRCommitData(
             const messageSanitized = ContentSanitizer.sanitizeContent(
               commit.messageHeadline || ''
             );
-            const commitWarnings = [...messageSanitized.warnings];
+            const commitWarningsSet = new Set<string>(
+              messageSanitized.warnings
+            );
 
             return {
               sha: commit.oid,
@@ -1275,10 +1277,8 @@ async function fetchPRCommitData(
 
                         // Collect patch sanitization warnings
                         if (patchSanitized.warnings.length > 0) {
-                          commitWarnings.push(
-                            ...patchSanitized.warnings.map(
-                              w => `[${f.filename}] ${w}`
-                            )
+                          patchSanitized.warnings.forEach(w =>
+                            commitWarningsSet.add(`[${f.filename}] ${w}`)
                           );
                         }
                       }
@@ -1288,8 +1288,8 @@ async function fetchPRCommitData(
                   }
                 : undefined,
               // Add sanitization warnings if any were detected
-              ...(commitWarnings.length > 0 && {
-                _sanitization_warnings: commitWarnings,
+              ...(commitWarningsSet.size > 0 && {
+                _sanitization_warnings: Array.from(commitWarningsSet),
               }),
             };
           }

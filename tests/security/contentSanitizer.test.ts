@@ -503,7 +503,7 @@ describe('ContentSanitizer', () => {
           'gho_1234567890abcdefghijklmnopqrstuvwxyz123456'
         );
         expect(result.content).toContain('[REDACTED-GITHUBTOKENS]');
-        expect(result.secretsDetected).toHaveLength(2);
+        expect(result.secretsDetected).toHaveLength(1);
       });
     });
 

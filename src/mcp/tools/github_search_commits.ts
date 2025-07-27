@@ -337,7 +337,7 @@ async function transformCommitsToOptimizedFormat(
       // Sanitize commit message
       const rawMessage = getCommitTitle(item.commit?.message ?? '');
       const messageSanitized = ContentSanitizer.sanitizeContent(rawMessage);
-      const warningsCollector: string[] = [...messageSanitized.warnings];
+      const warningsCollectorSet = new Set<string>(messageSanitized.warnings);
 
       const commitObj: any = {
         sha: item.sha, // Use as branch parameter in github_fetch_content
@@ -353,8 +353,8 @@ async function transformCommitsToOptimizedFormat(
       };
 
       // Add security warnings if any were detected
-      if (warningsCollector.length > 0) {
-        commitObj._sanitization_warnings = warningsCollector;
+      if (warningsCollectorSet.size > 0) {
+        commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
       }
 
       // Add diff information if available
@@ -387,8 +387,8 @@ async function transformCommitsToOptimizedFormat(
 
                 // Collect patch sanitization warnings
                 if (patchSanitized.warnings.length > 0) {
-                  warningsCollector.push(
-                    ...patchSanitized.warnings.map(w => `[${f.filename}] ${w}`)
+                  patchSanitized.warnings.forEach(w =>
+                    warningsCollectorSet.add(`[${f.filename}] ${w}`)
                   );
                 }
               }
@@ -400,10 +400,10 @@ async function transformCommitsToOptimizedFormat(
 
         // Update warnings if patch sanitization added any
         if (
-          warningsCollector.length >
+          warningsCollectorSet.size >
           (commitObj._sanitization_warnings?.length || 0)
         ) {
-          commitObj._sanitization_warnings = warningsCollector;
+          commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
         }
       }
 

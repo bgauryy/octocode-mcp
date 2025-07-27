@@ -29,6 +29,47 @@ KEY WORKFLOW:
 OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
 `;
 
+// Simple in-memory cache for default branch results
+const defaultBranchCache = new Map<string, string>();
+
+// Cached function to get repository's default branch
+async function getRepositoryDefaultBranch(
+  owner: string,
+  repo: string
+): Promise<string | null> {
+  const cacheKey = `${owner}/${repo}`;
+
+  // Check cache first
+  if (defaultBranchCache.has(cacheKey)) {
+    return defaultBranchCache.get(cacheKey)!;
+  }
+
+  try {
+    const repoResult = await executeGitHubCommand(
+      'api',
+      [`/repos/${owner}/${repo}`],
+      {
+        cache: false,
+      }
+    );
+
+    if (repoResult.isError) {
+      return null;
+    }
+
+    const repoData = JSON.parse(repoResult.content[0].text as string);
+    const execResult = repoData.result || repoData;
+    const defaultBranch = execResult.default_branch || 'main';
+
+    // Cache the successful result
+    defaultBranchCache.set(cacheKey, defaultBranch);
+
+    return defaultBranch;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
@@ -53,8 +94,9 @@ const FileContentQuerySchema = z.object({
     .min(1)
     .max(255)
     .regex(/^[^\s]+$/)
+    .optional()
     .describe(
-      `Branch name, tag name, OR commit SHA. Tool will automatically try 'main' and 'master' if specified branch is not found.`
+      `Branch name, tag name, OR commit SHA. If not provided, uses repository's default branch automatically. If provided branch fails, tries 'main' and 'master' as fallback.`
     ),
   filePath: z
     .string()
@@ -90,7 +132,7 @@ const FileContentQuerySchema = z.object({
     .string()
     .optional()
     .describe(
-      `🔥 SMART MATCH FINDER: Exact string to find in the file (from code search results). When provided, automatically locates this string and returns surrounding context with contextLines. Perfect for getting full context of search results!`
+      `Exact string to find in the file (from search results). Automatically locates this string and returns surrounding context with contextLines. Perfect for getting full context of search results.`
     ),
   minified: z
     .boolean()
@@ -183,7 +225,7 @@ async function fetchMultipleGitHubFileContents(
         filePath: query.filePath,
         startLine: query.startLine,
         endLine: query.endLine,
-        contextLines: query.contextLines || 5,
+        contextLines: query.contextLines !== undefined ? query.contextLines : 5,
         matchString: query.matchString,
         minified: query.minified !== undefined ? query.minified : true,
       };
@@ -288,11 +330,26 @@ export async function fetchGitHubFileContent(
   const cacheKey = generateCacheKey('gh-file-content', params);
 
   return withCache(cacheKey, async () => {
-    const { owner, repo, branch, filePath } = params;
+    const { owner, repo, filePath } = params;
+    let { branch } = params;
 
     try {
+      // If no branch provided, get the default branch
+      if (!branch) {
+        const defaultBranch = await getRepositoryDefaultBranch(owner, repo);
+
+        if (!defaultBranch) {
+          return createResult({
+            isError: true,
+            hints: [`Repository ${owner}/${repo} not found or not accessible`],
+          });
+        }
+
+        branch = defaultBranch;
+      }
+
       // Try to fetch file content directly
-      const isCommitSha = branch.match(/^[0-9a-f]{40}$/);
+      const isCommitSha = branch!.match(/^[0-9a-f]{40}$/);
       const apiPath = isCommitSha
         ? `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}` // Use contents API with ref for commit SHA
         : `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`; // Use contents API for branches/tags
@@ -304,40 +361,42 @@ export async function fetchGitHubFileContent(
       if (result.isError) {
         const errorMsg = result.content[0].text as string;
 
-        // Silent fallback for main/master branches only
-        if (
-          errorMsg.includes('404') &&
-          (branch === 'main' || branch === 'master')
-        ) {
-          const fallbackBranch = branch === 'main' ? 'master' : 'main';
-          const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
+        // Efficient fallback: try common branches directly on 404
+        if (errorMsg.includes('404')) {
+          const commonBranches = ['main', 'master'];
+          const triedBranches = [branch];
 
-          // Retry with fallback branch
-          const fallbackResult = await executeGitHubCommand(
-            'api',
-            [fallbackPath],
-            {
-              cache: false,
-            }
-          );
+          // Try common branches directly without additional repo info calls
+          for (const tryBranch of commonBranches) {
+            if (triedBranches.includes(tryBranch)) continue;
 
-          if (!fallbackResult.isError) {
-            return await processFileContent(
-              fallbackResult,
-              owner,
-              repo,
-              fallbackBranch,
-              filePath,
-              params.minified,
-              params.startLine,
-              params.endLine,
-              params.contextLines,
-              params.matchString
+            const tryBranchPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${tryBranch}`;
+            const tryBranchResult = await executeGitHubCommand(
+              'api',
+              [tryBranchPath],
+              {
+                cache: false,
+              }
             );
+
+            if (!tryBranchResult.isError) {
+              return await processFileContent(
+                tryBranchResult,
+                owner,
+                repo,
+                tryBranch,
+                filePath,
+                params.minified,
+                params.startLine,
+                params.endLine,
+                params.contextLines,
+                params.matchString
+              );
+            }
           }
         }
 
-        // Return original error if fallback didn't work or wasn't applicable
+        // Return original error if all fallbacks failed
         return result;
       }
 
@@ -345,7 +404,7 @@ export async function fetchGitHubFileContent(
         result,
         owner,
         repo,
-        branch,
+        branch!,
         filePath,
         params.minified,
         params.startLine,
@@ -448,23 +507,28 @@ async function processFileContent(
   decodedContent = sanitizationResult.content;
 
   // Add security warnings to the response if any issues were found
-  const securityWarnings: string[] = [];
+  const securityWarningsSet = new Set<string>();
   if (sanitizationResult.hasSecrets) {
-    securityWarnings.push(
+    securityWarningsSet.add(
       `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
     );
   }
   if (sanitizationResult.hasPromptInjection) {
-    securityWarnings.push('Potential prompt injection detected and sanitized');
+    securityWarningsSet.add(
+      'Potential prompt injection detected and sanitized'
+    );
   }
   if (sanitizationResult.isMalicious) {
-    securityWarnings.push(
+    securityWarningsSet.add(
       'Potentially malicious content detected and sanitized'
     );
   }
   if (sanitizationResult.warnings.length > 0) {
-    securityWarnings.push(...sanitizationResult.warnings);
+    sanitizationResult.warnings.forEach(warning =>
+      securityWarningsSet.add(warning)
+    );
   }
+  const securityWarnings = Array.from(securityWarningsSet);
 
   // Handle partial file access
   let finalContent = decodedContent;

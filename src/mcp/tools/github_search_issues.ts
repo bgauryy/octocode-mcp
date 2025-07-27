@@ -415,12 +415,12 @@ async function searchGitHubIssues(
               };
 
               // Add sanitization warnings if any were detected (merge with existing title warnings)
-              const allWarnings = [
+              const allWarningsSet = new Set<string>([
                 ...(issue._sanitization_warnings || []),
                 ...bodySanitized.warnings,
-              ];
-              if (allWarnings.length > 0) {
-                result._sanitization_warnings = allWarnings;
+              ]);
+              if (allWarningsSet.size > 0) {
+                result._sanitization_warnings = Array.from(allWarningsSet);
               }
 
               return result;

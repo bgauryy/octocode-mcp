@@ -197,7 +197,7 @@ export interface GitHubReposSearchParams
 export interface GithubFetchRequestParams {
   owner: string;
   repo: string;
-  branch: string;
+  branch?: string;
   filePath: string;
   startLine?: number;
   endLine?: number;
