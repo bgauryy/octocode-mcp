@@ -100,10 +100,38 @@ export class ContentSanitizer {
       }
     }
 
+    // Check if any secrets were detected during sanitization
+    const warnings = new Set<string>();
+    let hasSecrets = false;
+
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === 'string') {
+        const secretsResult = this.detectSecrets(value);
+        if (secretsResult.hasSecrets) {
+          hasSecrets = true;
+          warnings.add(
+            `Sensitive data detected and sanitized in parameter: ${key}`
+          );
+        }
+      } else if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          if (typeof value[i] === 'string') {
+            const secretsResult = this.detectSecrets(value[i]);
+            if (secretsResult.hasSecrets) {
+              hasSecrets = true;
+              warnings.add(
+                `Sensitive data detected and sanitized in parameter: ${key}[${i}]`
+              );
+            }
+          }
+        }
+      }
+    }
+
     return {
       sanitizedParams,
-      isValid: true, // Default to true for compatibility
-      warnings: [], // Default to empty array for compatibility
+      isValid: !hasSecrets, // Valid only if no secrets were detected
+      warnings: Array.from(warnings),
     };
   }
 }
