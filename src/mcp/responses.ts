@@ -37,6 +37,7 @@ export function createResult(options: {
   const dataWithHints = hints ? { data, hints } : data;
   return {
     content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
+    isError: false,
   };
 }
 

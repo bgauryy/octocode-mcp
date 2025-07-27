@@ -134,6 +134,11 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     crossConnections: [
       {
+        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        reason: 'investigate known problems, roadmaps, and community health',
+        priority: 'medium',
+      },
+      {
         tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         reason: 'examine recent improvements and pending features',
         priority: 'low',
@@ -247,6 +252,16 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     crossConnections: [
       {
+        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        reason: 'understand problems and discussions around this code',
+        priority: 'medium',
+      },
+      {
+        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+        reason: 'trace evolution and recent changes to this code',
+        priority: 'medium',
+      },
+      {
         tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         reason: 'examine changes and review discussions',
         priority: 'low',
@@ -306,6 +321,11 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
       },
     ],
     crossConnections: [
+      {
+        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+        reason: 'trace change history and evolution of this content',
+        priority: 'medium',
+      },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         reason: 'examine recent changes and reviews',
@@ -414,6 +434,11 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     crossConnections: [
       {
+        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
+        reason: 'find issues and discussions that motivated these changes',
+        priority: 'high',
+      },
+      {
         tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
         reason: 'understand context and impacted areas',
         priority: 'low',
@@ -471,6 +496,11 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
       },
     ],
     crossConnections: [
+      {
+        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+        reason: 'trace commits that resolved or referenced these issues',
+        priority: 'high',
+      },
       {
         tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
         reason: 'understand project context for reported issues',

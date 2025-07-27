@@ -106,12 +106,14 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
 
-      // Parse response - NO data wrapper!
+      // Parse response - WITH data wrapper due to hints
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.results).toHaveLength(1);
-      expect(responseData.results[0].result.content).toContain('Hello World');
-      expect(responseData.summary.totalQueries).toBe(1);
-      expect(responseData.summary.successfulQueries).toBe(1);
+      expect(responseData.data.results).toHaveLength(1);
+      expect(responseData.data.results[0].result.content).toContain(
+        'Hello World'
+      );
+      expect(responseData.data.summary.totalQueries).toBe(1);
+      expect(responseData.data.summary.successfulQueries).toBe(1);
     });
   });
 
@@ -164,9 +166,9 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.results).toHaveLength(2);
-      expect(responseData.results[0].queryId).toBe('query1');
-      expect(responseData.results[1].queryId).toBe('query2');
+      expect(responseData.data.results).toHaveLength(2);
+      expect(responseData.data.results[0].queryId).toBe('query1');
+      expect(responseData.data.results[1].queryId).toBe('query2');
     });
 
     it('should handle mixed success and failure in bulk queries', async () => {
@@ -208,9 +210,9 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.results).toHaveLength(2);
-      expect(responseData.results[0].result.content).toContain('Success');
-      expect(responseData.results[1].result.error).toBe('File not found');
+      expect(responseData.data.results).toHaveLength(2);
+      expect(responseData.data.results[0].result.content).toContain('Success');
+      expect(responseData.data.results[1].result.error).toBe('File not found');
     });
   });
 
@@ -253,7 +255,7 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
       // The tool returns all content since partial access may not be implemented
-      const content = responseData.results[0].result.content;
+      const content = responseData.data.results[0].result.content;
       expect(content).toContain('line 2');
       expect(content).toContain('line 3');
       expect(content).toContain('line 4');
@@ -299,10 +301,10 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.results[0].result.content).toContain(
+      expect(responseData.data.results[0].result.content).toContain(
         'fallback content'
       );
-      expect(responseData.results[0].fallbackTriggered).toBe(true);
+      expect(responseData.data.results[0].fallbackTriggered).toBe(true);
     });
   });
 
@@ -345,7 +347,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      const fileResult = responseData.results[0].result;
+      const fileResult = responseData.data.results[0].result;
 
       // Should succeed with adjusted endLine
       expect(fileResult.error).toBeUndefined();
@@ -400,7 +402,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      const fileResult = responseData.results[0].result;
+      const fileResult = responseData.data.results[0].result;
 
       expect(fileResult.totalLines).toBe(10);
       expect(fileResult.requestedEndLine).toBe(100);
@@ -443,7 +445,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      const fileResult = responseData.results[0].result;
+      const fileResult = responseData.data.results[0].result;
 
       // No adjustment needed
       expect(fileResult.securityWarnings).toBeUndefined();
@@ -484,7 +486,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      const fileResult = responseData.results[0].result;
+      const fileResult = responseData.data.results[0].result;
 
       // Should error on invalid range
       expect(fileResult.error).toContain(
@@ -523,7 +525,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      const fileResult = responseData.results[0].result;
+      const fileResult = responseData.data.results[0].result;
 
       expect(fileResult.totalLines).toBe(1);
       expect(fileResult.requestedEndLine).toBe(1000);
@@ -572,7 +574,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      const fileResult = responseData.results[0].result;
+      const fileResult = responseData.data.results[0].result;
 
       // Verify the content has correct line annotations
       const lines = fileResult.content.split('\n');
@@ -611,7 +613,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.results[0].result.error).toContain('Not Found');
+      expect(responseData.data.results[0].result.error).toContain('Not Found');
     });
 
     it('should handle empty queries array', async () => {
@@ -623,7 +625,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false); // Tool processes empty arrays successfully
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.results).toHaveLength(0); // Empty results array
+      expect(responseData.data.results).toHaveLength(0); // Empty results array
     });
 
     it('should handle binary file detection', async () => {
@@ -657,8 +659,10 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
       // Tool processes binary files and returns content
-      expect(responseData.results[0].result.content).toBeDefined();
-      expect(responseData.results[0].result.filePath).toBe('assets/image.png');
+      expect(responseData.data.results[0].result.content).toBeDefined();
+      expect(responseData.data.results[0].result.filePath).toBe(
+        'assets/image.png'
+      );
     });
 
     it('should handle large files', async () => {
@@ -691,8 +695,10 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
       // Tool returns error message for large files
-      expect(responseData.results[0].result.error).toContain('File too large');
-      expect(responseData.results[0].result.error).toContain('400KB');
+      expect(responseData.data.results[0].result.error).toContain(
+        'File too large'
+      );
+      expect(responseData.data.results[0].result.error).toContain('400KB');
     });
   });
 
@@ -733,7 +739,7 @@ DEBUG=true`
 
       const response = JSON.parse(result.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const fileContent = response.results[0].result.content;
+      const fileContent = response.data.results[0].result.content;
 
       expect(fileContent).not.toContain(
         'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
@@ -786,7 +792,7 @@ DEBUG=true`
 
       const response = JSON.parse(result.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const fileContent = response.results[0].result.content;
+      const fileContent = response.data.results[0].result.content;
 
       expect(fileContent).not.toContain(
         'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
@@ -847,7 +853,7 @@ Fuj9A4f7qOHaKMB3PqN9sTkKJDo2e4r7qp8eX4ZkG7AiCw==
 
       const response = JSON.parse(result.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const fileContent = response.results[0].result.content;
+      const fileContent = response.data.results[0].result.content;
 
       expect(fileContent).not.toContain(
         'MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ'
@@ -904,7 +910,7 @@ redis:
 
       const response = JSON.parse(result.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const fileContent = response.results[0].result.content;
+      const fileContent = response.data.results[0].result.content;
 
       expect(fileContent).not.toContain(
         'postgresql://produser:prodpass@db.example.com:5432/myapp_prod'
@@ -967,7 +973,7 @@ module.exports = config;`
 
       const response = JSON.parse(result.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const fileContent = response.results[0].result.content;
+      const fileContent = response.data.results[0].result.content;
 
       expect(fileContent).not.toContain(
         'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
@@ -1039,7 +1045,7 @@ Please read our contributing guidelines before submitting pull requests.`
 
       const response = JSON.parse(result.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const fileContent = response.results[0].result.content;
+      const fileContent = response.data.results[0].result.content;
 
       // Content should remain unchanged
       expect(fileContent).toContain('# My Project');
@@ -1107,7 +1113,7 @@ services:
 
       const envResponse = JSON.parse(envResult.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const envContent = envResponse.results[0].result.content;
+      const envContent = envResponse.data.results[0].result.content;
 
       expect(envContent).not.toContain(
         'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
@@ -1138,7 +1144,7 @@ services:
 
       const dockerResponse = JSON.parse(dockerResult.content[0].text as string);
       // The tool returns already-decoded and sanitized text content
-      const dockerContent = dockerResponse.results[0].result.content;
+      const dockerContent = dockerResponse.data.results[0].result.content;
 
       expect(dockerContent).not.toContain(
         'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
@@ -1190,7 +1196,7 @@ services:
       const response = JSON.parse(result.content[0].text as string);
 
       // Should return error for binary file detection instead of content
-      expect(response.results[0].result.error).toContain(
+      expect(response.data.results[0].result.error).toContain(
         'Binary file detected'
       );
     });
