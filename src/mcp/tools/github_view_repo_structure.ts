@@ -14,6 +14,7 @@ import {
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
 } from './utils/toolConstants';
+import { generateSmartHints } from './utils/toolRelationships';
 
 export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
@@ -126,8 +127,14 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
+        const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+          hasResults: false,
+          errorMessage: `Failed to explore repository: ${errorMessage}`,
+          customHints: ['Verify repository exists and is accessible'],
+        });
         return createResult({
-          error: `Failed to explore repository. ${errorMessage}. Verify repository exists and is accessible`,
+          isError: true,
+          hints,
         });
       }
     }
@@ -309,8 +316,16 @@ export async function viewRepositoryStructure(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+        hasResults: false,
+        errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMessage}`,
+        customHints: [
+          'Verify repository name, permissions, and network connection',
+        ],
+      });
       return createResult({
-        error: `Failed to access repository "${owner}/${repo}": ${errorMessage}. Verify repository name, permissions, and network connection.`,
+        isError: true,
+        hints,
       });
     }
   });
@@ -517,6 +532,15 @@ async function formatRepositoryStructureWithDepth(
       url: item.path, // Use path for browsing
     }));
 
+  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    hasResults: true,
+    totalItems: files.length + folders.length,
+    customHints:
+      uniqueItems.length > limitedItems.length
+        ? ['Results truncated for performance']
+        : [],
+  });
+
   return createResult({
     data: {
       repository: `${owner}/${repo}`,
@@ -546,6 +570,7 @@ async function formatRepositoryStructureWithDepth(
       // Include depth-organized view for better understanding
       byDepth: structureByDepth,
     },
+    hints,
   });
 }
 
@@ -594,6 +619,15 @@ function formatRepositoryStructure(
       url: item.path, // Use path for browsing
     }));
 
+  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    hasResults: true,
+    totalItems: files.length + folders.length,
+    customHints:
+      filteredItems.length < items.length
+        ? ['Some files filtered for relevance']
+        : [],
+  });
+
   return createResult({
     data: {
       repository: `${owner}/${repo}`,
@@ -609,6 +643,7 @@ function formatRepositoryStructure(
         folders: folders,
       },
     },
+    hints,
   });
 }
 
@@ -621,16 +656,36 @@ function handleRepositoryNotFound(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('404')) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Repository "${owner}/${repo}" not found`,
+      customHints: [
+        'Repository might have been deleted, renamed, or made private',
+      ],
+    });
     return createResult({
-      error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
+      isError: true,
+      hints,
     });
   } else if (errorMsg.includes('403')) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Repository "${owner}/${repo}" access denied`,
+      customHints: ['Repository might be private or archived'],
+    });
     return createResult({
-      error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
+      isError: true,
+      hints,
     });
   }
+  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    hasResults: false,
+    errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMsg}`,
+    customHints: ['Verify repository exists and is accessible'],
+  });
   return createResult({
-    error: `Failed to access repository "${owner}/${repo}": ${errorMsg}. Verify repository exists and is accessible.`,
+    isError: true,
+    hints,
   });
 }
 
@@ -650,27 +705,32 @@ function handlePathNotFound(
     : `\nCould not determine default branch - repository info unavailable`;
 
   if (path) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Path "${path}" not found in any branch`,
+      customHints: [
+        `Tried branches: ${triedBranches.join(', ')}${defaultBranchInfo}`,
+        `Try correct branch: {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}`,
+        `Search for path: use github_search_code with query="path:${path}" owner="${owner}"`,
+      ],
+    });
     return createResult({
-      error: `Path "${path}" not found in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
-
-Quick solution: Use the correct branch name:
-{"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}
-
-Alternative solutions:
- Search for path: github_search_code with query="path:${path}" owner="${owner}"
- Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
- Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+      isError: true,
+      hints,
     });
   } else {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Repository "${owner}/${repo}" not accessible`,
+      customHints: [
+        `Tried branches: ${triedBranches.join(', ')}`,
+        `May be empty, private, or insufficient permissions`,
+        `Try branch "${defaultBranch}"`,
+      ],
+    });
     return createResult({
-      error: `Repository "${owner}/${repo}" structure not accessible in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
-
-Repository might be empty, private, or you might not have sufficient permissions.
-
-Alternative solutions:
- Verify permissions: api_status_check
- Search accessible repos: github_search_code with owner="${owner}"
- Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+      isError: true,
+      hints,
     });
   }
 }
@@ -684,12 +744,27 @@ function handleOtherErrors(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Access denied to "${owner}/${repo}"`,
+      customHints: [
+        'Repository exists but might be private/archived',
+        `Try github_search_code with owner="${owner}" to find accessible repositories`,
+      ],
+    });
     return createResult({
-      error: `Access denied to "${owner}/${repo}". Repository exists but might be private/archived. Use api_status_check to verify permissions, or github_search_code with owner="${owner}" to find accessible repositories.`,
+      isError: true,
+      hints,
     });
   } else {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Failed to access "${owner}/${repo}": ${errorMsg}`,
+      customHints: ['Check network connection and repository permissions'],
+    });
     return createResult({
-      error: `Failed to access "${owner}/${repo}": ${errorMsg}. Check network connection and repository permissions.`,
+      isError: true,
+      hints,
     });
   }
 }

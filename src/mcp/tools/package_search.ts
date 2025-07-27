@@ -23,8 +23,11 @@ import {
   PythonPackageQuery,
 } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ERROR_MESSAGES, getErrorWithSuggestion } from '../errorMessages';
-import { getToolSuggestions } from './utils/toolRelationships';
+import { ERROR_MESSAGES } from '../errorMessages';
+import {
+  generateSmartHints,
+  getToolSuggestions,
+} from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { PACKAGE_SEARCH_TOOL_NAME } from './utils/toolConstants';
@@ -364,18 +367,16 @@ export function registerNpmSearchTool(server: McpServer) {
 
         // Early parameter validation
         if (!isUsingBulkFormat && !isUsingLegacyFormat) {
+          const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+            hasResults: false,
+            errorMessage: 'No search parameters provided',
+            customHints: [
+              'Use npmPackages[], pythonPackages[], or legacy npmPackageName/pythonPackageName',
+            ],
+          });
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError:
-                'At least one search parameter must be provided. Use new bulk format (npmPackages, pythonPackages) or legacy format for backward compatibility.',
-              suggestion: [
-                ' NEW: Use npmPackages array for multiple NPM package queries with individual parameters',
-                ' NEW: Use pythonPackages array for multiple Python package queries',
-                ' LEGACY: Use npmPackagesNames for multiple NPM package searches',
-                ' LEGACY: Use npmPackageName for single NPM package search',
-                ' LEGACY: Use pythonPackageName for Python package search',
-              ],
-            }),
+            isError: true,
+            hints,
           });
         }
 
@@ -496,16 +497,20 @@ export function registerNpmSearchTool(server: McpServer) {
           normalizedNpmQueries.length === 0 &&
           normalizedPythonQueries.length === 0
         ) {
+          const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+            hasResults: false,
+            errorMessage:
+              'No valid package queries found after processing parameters',
+            customHints: [
+              'Ensure package names are not empty strings',
+              'Check array format for bulk queries',
+              'Verify at least one npmPackages or pythonPackages query is provided',
+            ],
+          });
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError:
-                'No valid package queries found after processing parameters.',
-              suggestion: [
-                ' Ensure package names are not empty strings',
-                ' Check array format for bulk queries',
-                ' Verify at least one npmPackages or pythonPackages query is provided',
-              ],
-            }),
+            isError: true,
+            hints,
+            error: true,
           });
         }
 
@@ -655,26 +660,21 @@ export function registerNpmSearchTool(server: McpServer) {
 
         // If we have results, process them based on requested format
         if (totalCount > 0) {
-          const { nextSteps } = getToolSuggestions(PACKAGE_SEARCH_TOOL_NAME, {
-            hasResults: true,
-          });
-
-          const hints = [];
-
-          // Add error information if there were failures
+          // Build custom hints for errors if any
+          const customHints = [];
           if (errors.npm.length > 0 || errors.python.length > 0) {
-            hints.push('Search warnings:');
-            errors.npm.forEach(error => hints.push(` ${error}`));
-            errors.python.forEach(error => hints.push(` ${error}`));
-            hints.push('');
+            customHints.push('Search had some errors:');
+            errors.npm.forEach(error => customHints.push(`NPM: ${error}`));
+            errors.python.forEach(error =>
+              customHints.push(`Python: ${error}`)
+            );
           }
 
-          if (nextSteps.length > 0) {
-            hints.push('Next steps:');
-            nextSteps.forEach(({ tool, reason }) => {
-              hints.push(` Use ${tool} ${reason}`);
-            });
-          }
+          const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+            hasResults: true,
+            totalItems: totalCount,
+            customHints,
+          });
 
           // Check if enhanced metadata fetching is requested for NPM packages
           if (
@@ -992,28 +992,25 @@ export function registerNpmSearchTool(server: McpServer) {
           );
         }
 
-        const { fallback } = getToolSuggestions(PACKAGE_SEARCH_TOOL_NAME, {
-          errorType: 'no_results',
-        });
-
-        const toolSuggestions = createToolSuggestion(
-          PACKAGE_SEARCH_TOOL_NAME,
-          fallback
-        );
-
         // Add package type suggestion
         const packageTypeSuggestion =
           normalizedPythonQueries.length > 0
-            ? ' Try searching with npmPackageName if this is an NPM package'
-            : ' Try searching with pythonPackageName if this is a Python package';
+            ? 'Try searching with npmPackageName if this is an NPM package'
+            : 'Try searching with pythonPackageName if this is a Python package';
 
         fallbackSuggestions.push(packageTypeSuggestion);
 
+        const customHints = [...errorDetails, ...fallbackSuggestions];
+
+        const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+          hasResults: false,
+          errorMessage: 'No packages found',
+          customHints,
+        });
+
         return createResult({
-          error: getErrorWithSuggestion({
-            baseError: errorDetails.join('\n'),
-            suggestion: [fallbackSuggestions.join('\n'), toolSuggestions],
-          }),
+          isError: true,
+          hints,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1029,15 +1026,14 @@ export function registerNpmSearchTool(server: McpServer) {
           });
 
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError: ERROR_MESSAGES.NPM_CONNECTION_FAILED,
-              suggestion: [
-                ' Check internet connection and npm registry status',
-                ' Try fewer search terms to reduce load',
-                ' Retry in a few moments',
-                createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
-              ],
-            }),
+            isError: true,
+            hints: [
+              ERROR_MESSAGES.NPM_CONNECTION_FAILED,
+              ' Check internet connection and npm registry status',
+              ' Try fewer search terms to reduce load',
+              ' Retry in a few moments',
+              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+            ],
           });
         }
 
@@ -1051,15 +1047,14 @@ export function registerNpmSearchTool(server: McpServer) {
           });
 
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError: ERROR_MESSAGES.NPM_CLI_ERROR,
-              suggestion: [
-                ' Verify NPM installation: npm --version',
-                ' Update NPM: npm install -g npm@latest',
-                ' Check PATH environment variable',
-                createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
-              ],
-            }),
+            isError: true,
+            hints: [
+              ERROR_MESSAGES.NPM_CLI_ERROR,
+              ' Verify NPM installation: npm --version',
+              ' Update NPM: npm install -g npm@latest',
+              ' Check PATH environment variable',
+              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+            ],
           });
         }
 
@@ -1074,15 +1069,14 @@ export function registerNpmSearchTool(server: McpServer) {
           });
 
           return createResult({
-            error: getErrorWithSuggestion({
-              baseError: ERROR_MESSAGES.NPM_PERMISSION_ERROR,
-              suggestion: [
-                ' Check npm login status: npm whoami',
-                ' Use public registry search without auth',
-                ' Verify npm registry configuration',
-                createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
-              ],
-            }),
+            isError: true,
+            hints: [
+              ERROR_MESSAGES.NPM_PERMISSION_ERROR,
+              ' Check npm login status: npm whoami',
+              ' Use public registry search without auth',
+              ' Verify npm registry configuration',
+              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+            ],
           });
         }
 
@@ -1091,17 +1085,15 @@ export function registerNpmSearchTool(server: McpServer) {
         });
 
         return createResult({
-          error: getErrorWithSuggestion({
-            baseError: ERROR_MESSAGES.PACKAGE_SEARCH_FAILED,
-            suggestion: [
-              `Error details: ${errorMsg}`,
-              '',
-              'Fallback strategies:',
-              ' Check npm status and retry',
-              ' Use broader search terms',
-              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
-            ],
-          }),
+          isError: true,
+          hints: [
+            ERROR_MESSAGES.PACKAGE_SEARCH_FAILED,
+            `Error: ${errorMsg}`,
+            'Troubleshooting steps:',
+            ' 1. Check npm status and try again',
+            ' 2. Try broader or alternative search terms',
+            createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+          ],
         });
       }
     }

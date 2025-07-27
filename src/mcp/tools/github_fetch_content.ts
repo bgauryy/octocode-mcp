@@ -11,6 +11,7 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { generateSmartHints } from './utils/toolRelationships';
 import {
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
@@ -153,7 +154,10 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           return createResult({
-            error: `Failed to fetch file content: ${errorMessage}. Verify repository access and file paths.`,
+            isError: true,
+            hints: [
+              `Failed to fetch file content: ${errorMessage}. Verify repository access and file paths.`,
+            ],
           });
         }
       }
@@ -258,6 +262,13 @@ async function fetchMultipleGitHubFileContents(
   const successfulQueries = results.filter(r => !('error' in r.result)).length;
   const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
 
+  const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+    hasResults: successfulQueries > 0,
+    totalItems: successfulQueries,
+    errorMessage:
+      successfulQueries === 0 ? 'Some or all file fetches failed' : undefined,
+  });
+
   return createResult({
     data: {
       results,
@@ -267,6 +278,7 @@ async function fetchMultipleGitHubFileContents(
         queriesWithFallback,
       },
     },
+    hints,
   });
 }
 
@@ -367,8 +379,10 @@ async function processFileContent(
   // Check if it's a directory
   if (Array.isArray(fileData)) {
     return createResult({
-      error:
+      isError: true,
+      hints: [
         'Path is a directory. Use github_view_repo_structure to list directory contents',
+      ],
     });
   }
 
@@ -381,14 +395,18 @@ async function processFileContent(
     const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
     return createResult({
-      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+      isError: true,
+      hints: [
+        `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+      ],
     });
   }
 
   // Get and decode content with validation
   if (!fileData.content) {
     return createResult({
-      error: 'File is empty - no content to display',
+      isError: true,
+      hints: ['File is empty - no content to display'],
     });
   }
 
@@ -396,7 +414,8 @@ async function processFileContent(
 
   if (!base64Content) {
     return createResult({
-      error: 'File is empty - no content to display',
+      isError: true,
+      hints: ['File is empty - no content to display'],
     });
   }
 
@@ -407,16 +426,20 @@ async function processFileContent(
     // Simple binary check - look for null bytes
     if (buffer.indexOf(0) !== -1) {
       return createResult({
-        error:
+        isError: true,
+        hints: [
           'Binary file detected. Cannot display as text - download directly from GitHub',
+        ],
       });
     }
 
     decodedContent = buffer.toString('utf-8');
   } catch (decodeError) {
     return createResult({
-      error:
+      isError: true,
+      hints: [
         'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+      ],
     });
   }
 
@@ -467,7 +490,10 @@ async function processFileContent(
 
     if (matchingLines.length === 0) {
       return createResult({
-        error: `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+        isError: true,
+        hints: [
+          `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+        ],
       });
     }
 
@@ -490,7 +516,10 @@ async function processFileContent(
     // Validate line numbers
     if (startLine < 1 || startLine > totalLines) {
       return createResult({
-        error: `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        isError: true,
+        hints: [
+          `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        ],
       });
     }
 
@@ -502,7 +531,10 @@ async function processFileContent(
     if (endLine !== undefined) {
       if (endLine < startLine) {
         return createResult({
-          error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+          isError: true,
+          hints: [
+            `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+          ],
         });
       }
 
@@ -574,6 +606,12 @@ async function processFileContent(
     }
   }
 
+  const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+    hasResults: true,
+    totalItems: 1,
+    customHints: securityWarnings.length > 0 ? securityWarnings : undefined,
+  });
+
   return createResult({
     data: {
       filePath,
@@ -604,5 +642,6 @@ async function processFileContent(
         securityWarnings,
       }),
     } as GitHubFileContentResponse,
+    hints,
   });
 }

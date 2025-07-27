@@ -19,6 +19,7 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME } from './utils/toolConstants';
+import { generateSmartHints } from './utils/toolRelationships';
 
 // TODO: summerize body
 
@@ -291,22 +292,44 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           args.query !== undefined &&
           (!args.query?.trim() || args.query.length > 256)
         ) {
+          const hints = generateSmartHints(
+            GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+            {
+              hasResults: false,
+              errorMessage:
+                args.query?.length > 256 ? 'Query too long' : 'Query required',
+              customHints: [
+                'Use shorter search terms',
+                'Try filter-only search without query',
+              ],
+            }
+          );
           return createResult({
             error:
               args.query?.length > 256
                 ? ERROR_MESSAGES.QUERY_TOO_LONG
                 : `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_PR_KEYWORDS}`,
+            hints,
           });
         }
 
         // If no query is provided, ensure at least some filters are present
         if (!args.query?.trim()) {
           if (!hasAnyFilters(args)) {
+            const hints = generateSmartHints(
+              GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+              {
+                hasResults: false,
+                errorMessage: 'No search criteria provided',
+                customHints: [
+                  'Add search query OR filters',
+                  'Try specific repo: --owner owner --repo repo',
+                ],
+              }
+            );
             return createResult({
-              error: `No search query or filters provided. Either provide a query (e.g., "fix bug") or use filters (e.g., --repo owner/repo --state open). Examples:
- With query: "security patch" --language javascript
- Without query: --repo facebook/react --state open --author username
- Filter only: --assignee @me --review-requested @me --state open`,
+              error: `No search query or filters provided. Either provide a query (e.g., "fix bug") or use filters (e.g., --repo owner/repo --state open).`,
+              hints,
             });
           }
         }
@@ -325,8 +348,17 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         try {
           return await searchGitHubPullRequests(args);
         } catch (error) {
+          const hints = generateSmartHints(
+            GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+            {
+              hasResults: false,
+              errorMessage: 'Search failed',
+              customHints: ['Check authentication', 'Verify repository access'],
+            }
+          );
           return createResult({
             error: createSearchFailedError('pull_requests'),
+            hints,
           });
         }
       }
@@ -368,8 +400,20 @@ async function searchGitHubPullRequests(
 
           if (repoCheckResult.isError) {
             // Repository doesn't exist
+            const hints = generateSmartHints(
+              GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+              {
+                hasResults: false,
+                errorMessage: 'Repository not found',
+                customHints: [
+                  'Search repositories first',
+                  'Check repository name spelling',
+                ],
+              }
+            );
             return createResult({
-              error: `Repository "${primaryOwner}/${primaryRepo}" not found. Use github_search_repositories to find the correct repository name.`,
+              error: `Repository "${primaryOwner}/${primaryRepo}" not found.`,
+              hints,
             });
           }
 
@@ -392,9 +436,21 @@ async function searchGitHubPullRequests(
               }
 
               if (branchSuggestion) {
+                const hints = generateSmartHints(
+                  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+                  {
+                    hasResults: false,
+                    errorMessage: 'Branch not found',
+                    customHints: [
+                      `Use default branch: ${defaultBranch}`,
+                      'Remove branch filters',
+                    ],
+                  }
+                );
                 return createResult({
                   error:
                     createNoResultsError('pull_requests') + branchSuggestion,
+                  hints,
                 });
               }
             } catch (e) {
@@ -408,8 +464,17 @@ async function searchGitHubPullRequests(
           errorMsg.includes('rate limit') ||
           errorMsg.includes('API rate limit')
         ) {
+          const hints = generateSmartHints(
+            GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+            {
+              hasResults: false,
+              errorMessage: 'Rate limit exceeded',
+              customHints: ['Wait 5-10 minutes', 'Use more specific filters'],
+            }
+          );
           return createResult({
             error: ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+            hints,
           });
         }
       }
@@ -429,11 +494,18 @@ async function searchGitHubPullRequests(
       : [];
 
     if (pullRequests.length === 0) {
-      // Progressive simplification strategy based on current search complexity
-      const simplificationSteps: string[] = [];
-      let hasFilters = false;
+      // Generate contextual custom hints based on current search
+      const customHints: string[] = [];
 
-      // Check for active filters
+      // Query-related suggestions
+      if (params.query && params.query.trim().split(' ').length > 2) {
+        customHints.push('Simplify search terms');
+      }
+      if (!params.query) {
+        customHints.push('Add search terms: "fix", "feature", "bug"');
+      }
+
+      // Filter-related suggestions
       const activeFilters = [];
       if (params.owner && params.repo) activeFilters.push('repo');
       if (params.author) activeFilters.push('author');
@@ -441,73 +513,27 @@ async function searchGitHubPullRequests(
       if (params.label) activeFilters.push('label');
       if (params.head) activeFilters.push('head-branch');
       if (params.base) activeFilters.push('base-branch');
-      if (params.assignee) activeFilters.push('assignee');
-      if (params.created) activeFilters.push('date');
 
-      hasFilters = activeFilters.length > 0;
-
-      // Step 1: If complex query, simplify search terms
-      if (params.query && params.query.trim().split(' ').length > 2) {
-        const words = params.query.trim().split(' ');
-        const simplified = words.slice(0, 1).join(' '); // Take first word only
-        simplificationSteps.push(
-          `Try simpler search: "${simplified}" instead of "${params.query}"`
-        );
+      if (activeFilters.length > 2) {
+        customHints.push('Remove some filters to broaden search');
+      } else if (!params.owner && !params.repo) {
+        customHints.push('Try specific repository: --owner --repo');
       }
 
-      // Step 2: Remove filters progressively
-      if (hasFilters) {
-        if (activeFilters.length > 2) {
-          simplificationSteps.push(
-            `Remove some filters (currently: ${activeFilters.join(', ')}) and keep only the most important ones`
-          );
-        } else if (activeFilters.length > 1) {
-          simplificationSteps.push(
-            `Remove one filter (currently: ${activeFilters.join(', ')}) to broaden search`
-          );
-        } else {
-          simplificationSteps.push(
-            `Remove the ${activeFilters[0]} filter and search more broadly`
-          );
-        }
+      // State-specific suggestions
+      if (!params.state) {
+        customHints.push('Try --state open or --state closed');
       }
 
-      // Step 3: Alternative approaches
-      if (!params.query && hasFilters) {
-        simplificationSteps.push(
-          'Add basic search terms like "fix", "feature", "bug", or "update" with your filters'
-        );
-      }
-
-      // Step 4: Repository-specific guidance
-      if (!params.owner && !params.repo) {
-        simplificationSteps.push(
-          'Try searching in a specific repository first using owner and repo parameters'
-        );
-      }
-
-      // Step 5: Ask for user guidance if no obvious simplification
-      if (simplificationSteps.length === 0) {
-        simplificationSteps.push(
-          "Try different keywords or ask the user to be more specific about what PRs they're looking for"
-        );
-      }
+      const hints = generateSmartHints(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME, {
+        hasResults: false,
+        errorMessage: 'No pull requests found',
+        customHints,
+      });
 
       return createResult({
-        error: `${createNoResultsError('pull_requests')}
-
-Try these simplified searches:
-${simplificationSteps.map(step => ` ${step}`).join('\n')}
-
-Or ask the user:
- "What specific type of pull requests are you looking for?"
- "Can you provide different keywords to search for?"
- "Should I search in a specific repository instead?"
- "Are you looking for open or closed PRs?"
-
-Alternative tools:
- Use github_search_code for PR-related file changes
- Use github_search_repos to find repositories first`,
+        error: createNoResultsError('pull_requests'),
+        hints,
       });
     }
 
@@ -697,8 +723,18 @@ Alternative tools:
         '\n\nNote: No PRs found with specified branch filters. Consider removing head/base filters or checking if branches exist.';
     }
 
+    // Generate smart hints for successful results
+    const hints = generateSmartHints(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME, {
+      hasResults: true,
+      totalItems: filteredPRs.length,
+      customHints: additionalContext
+        ? ['Branch filters may need adjustment']
+        : [],
+    });
+
     return createResult({
       data: searchResult,
+      hints,
       ...(additionalContext && { message: additionalContext }),
     });
   });

@@ -161,28 +161,6 @@ export const SUGGESTIONS = {
  Use package_search tool for discovery`,
 } as const;
 
-// Helper function to get error message with context-specific suggestions
-export function getErrorWithSuggestion(options: {
-  baseError: string | string[];
-  suggestion?: string | string[];
-}): string {
-  const { baseError, suggestion } = options;
-  const errors = Array.isArray(baseError) ? baseError : [baseError];
-  const suggestions = Array.isArray(suggestion)
-    ? suggestion
-    : suggestion
-      ? [suggestion]
-      : [];
-
-  let result = errors.join('\n');
-
-  if (suggestions.length > 0) {
-    result += '\n\nSuggestion: ' + suggestions.join('\n');
-  }
-
-  return result;
-}
-
 // Common error handling patterns
 export function createAuthenticationError(): string {
   return ERROR_MESSAGES.AUTHENTICATION_REQUIRED;

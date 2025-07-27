@@ -127,7 +127,8 @@ export function registerApiStatusCheckTool(server: McpServer) {
         });
       } catch (error) {
         return createResult({
-          error: `API status check failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          isError: true,
+          hints: [`API status check failed. Check npm and gh connections.`],
         });
       }
     }

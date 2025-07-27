@@ -15,6 +15,7 @@ import {
   GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
   PACKAGE_SEARCH_TOOL_NAME,
 } from './utils/toolConstants';
+import { generateSmartHints } from './utils/toolRelationships';
 
 const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
 
@@ -270,7 +271,10 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           return createResult({
-            error: `Failed to search repositories: ${errorMessage}. Try broader search terms or check repository access.`,
+            isError: true,
+            hints: [
+              `Failed to search repositories: ${errorMessage}. Try broader search terms or check repository access.`,
+            ],
           });
         }
       }
@@ -377,7 +381,6 @@ async function searchMultipleGitHubRepos(
   verbose: boolean = false
 ): Promise<CallToolResult> {
   const results: GitHubReposSearchQueryResult[] = [];
-  const hints: string[] = [];
 
   // Execute queries sequentially (simple and reliable)
   for (let index = 0; index < queries.length; index++) {
@@ -386,21 +389,6 @@ async function searchMultipleGitHubRepos(
 
     const result = await processSingleQuery(query, queryId);
     results.push(result);
-
-    // Generate hints for failures
-    if (result.error) {
-      if (result.error.includes('No repositories found')) {
-        hints.push(
-          `Query "${queryId}" found no results - try broader search terms or use packageSearch tool for package discovery`
-        );
-      } else if (result.error.includes('Query failed')) {
-        hints.push(
-          `Query "${queryId}" failed - consider simplifying search criteria or checking repository access`
-        );
-      } else {
-        hints.push(`Query "${queryId}" encountered an error: ${result.error}`);
-      }
-    }
   }
 
   // Collect all repositories from successful queries
@@ -411,20 +399,14 @@ async function searchMultipleGitHubRepos(
     }
   });
 
-  // Add strategic hints
-  if (allRepositories.length === 0) {
-    hints.push(
-      'No repositories found across all queries - consider using packageSearch for npm/python packages or try different search terms'
-    );
-  } else if (results.some(r => r.error) && allRepositories.length > 0) {
-    hints.push(
-      `returned ${allRepositories.length} repositories - some queries failed but data may be sufficient to proceed`
-    );
-  } else if (!results.some(r => r.error) && allRepositories.length > 0) {
-    hints.push(
-      `Successfully returned ${allRepositories.length} repositories - proceed with analysis`
-    );
-  }
+  // Generate hints using centralized system
+  const errorMessages = results.filter(r => r.error).map(r => r.error!);
+  const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
+  const hints = generateSmartHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+    hasResults: allRepositories.length > 0,
+    totalItems: allRepositories.length,
+    errorMessage,
+  });
 
   // Calculate summary statistics
   const totalQueries = results.length;
@@ -474,7 +456,8 @@ export async function searchGitHubRepos(
 
       if (!Array.isArray(repositories) || repositories.length === 0) {
         return createResult({
-          error: createNoResultsError('repositories'),
+          isError: true,
+          hints: [createNoResultsError('repositories')],
         });
       }
 
@@ -499,7 +482,8 @@ export async function searchGitHubRepos(
       });
     } catch (error) {
       return createResult({
-        error: createSearchFailedError('repositories'),
+        isError: true,
+        hints: [createSearchFailedError('repositories')],
       });
     }
   });
