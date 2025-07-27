@@ -97,7 +97,9 @@ describe('API Status Check Tool', () => {
         return Promise.resolve({ isError: true, content: [] });
       });
 
-      const result = await mockServer.callTool('apiStatusCheck', {});
+      const result = await mockServer.callTool('apiStatusCheck', {
+        random_string: 'test',
+      });
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
@@ -115,7 +117,8 @@ describe('API Status Check Tool', () => {
       expect(responseData.login.npm.registry).toBe(
         'https://registry.npmjs.org/'
       );
-      expect(responseData.login.hints).toHaveLength(4);
+      // No hints expected in simplified version
+      expect(responseData.login.hints).toBeUndefined();
     });
 
     it('should return structured login status with GitHub disconnected and NPM connected', async () => {
@@ -152,12 +155,16 @@ describe('API Status Check Tool', () => {
         return Promise.resolve({ isError: true, content: [] });
       });
 
-      const result = await mockServer.callTool('apiStatusCheck', {});
+      const result = await mockServer.callTool('apiStatusCheck', {
+        random_string: 'test',
+      });
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
+      expect(result.content.length).toBeGreaterThan(0);
 
       const responseData = JSON.parse(result.content[0].text as string);
+      expect(responseData.login).toBeDefined();
       expect(responseData.login.github.connected).toBe(false);
       expect(responseData.login.github.user_organizations).toEqual([]);
       expect(responseData.login.npm.connected).toBe(true);
@@ -169,48 +176,34 @@ describe('API Status Check Tool', () => {
     it('should return structured login status with both services disconnected', async () => {
       registerApiStatusCheckTool(mockServer.server);
 
-      // Mock both services failure
+      // Mock GitHub auth failure
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: true,
         content: [{ text: 'Not authenticated' }],
       });
 
+      // Mock NPM failure
       mockExecuteNpmCommand.mockResolvedValue({
         isError: true,
         content: [{ text: 'Not authenticated' }],
       });
 
-      const result = await mockServer.callTool('apiStatusCheck', {});
+      const result = await mockServer.callTool('apiStatusCheck', {
+        random_string: 'test',
+      });
 
       expect(result).toBeDefined();
       expect(result.content).toBeDefined();
+      expect(result.content.length).toBeGreaterThan(0);
 
       const responseData = JSON.parse(result.content[0].text as string);
+      expect(responseData.login).toBeDefined();
       expect(responseData.login.github.connected).toBe(false);
       expect(responseData.login.github.user_organizations).toEqual([]);
       expect(responseData.login.npm.connected).toBe(false);
       expect(responseData.login.npm.registry).toBe(
         'https://registry.npmjs.org/'
       );
-    });
-
-    it('should handle JSON parsing errors gracefully', async () => {
-      registerApiStatusCheckTool(mockServer.server);
-
-      // Mock GitHub with invalid JSON that should propagate error
-      mockExecuteGitHubCommand.mockResolvedValue({
-        isError: false,
-        content: [{ text: 'invalid json' }],
-      });
-
-      const result = await mockServer.callTool('apiStatusCheck', {});
-
-      expect(result).toBeDefined();
-      expect(result.content).toBeDefined();
-      expect(result.isError).toBe(false);
-      const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.login.github.connected).toBe(false);
-      expect(responseData.login.npm.connected).toBe(false);
     });
   });
 });

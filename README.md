@@ -5,7 +5,7 @@
 <div>
   <img src="./assets/logo.png" width="400px">
   
-  [![Version](https://img.shields.io/badge/version-2.5.1-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://modelcontextprotocol.io/)
   [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2.svg?logo=discord&logoColor=white)](https://discord.gg/beTNk8at)
@@ -29,12 +29,18 @@ Instead of manually browsing repositories, ask questions like:
 
 ## 🌟 Featured On
 
-### modelcontextprotocol - Official Community MCP Server 
-[![MCP Servers](https://img.shields.io/badge/Official-MCP%20Servers-purple.svg?logo=github)](https://github.com/modelcontextprotocol/servers)
+### modelcontextprotocol/servers - Official Community MCP Server 
+[![GitHub stars](https://img.shields.io/github/stars/modelcontextprotocol/servers?style=social)](https://github.com/modelcontextprotocol/servers)
 
 ### Community Collections
-[![Awesome MCP Servers](https://img.shields.io/badge/Awesome-MCP%20Servers-orange.svg?logo=awesome-lists)](https://github.com/punkpeye/awesome-mcp-servers) 
-[![Awesome MCP Servers](https://img.shields.io/badge/Awesome-MCP%20Collection-blue.svg?logo=awesome-lists)](https://github.com/appcypher/awesome-mcp-servers)
+#### punkpeye/awesome-mcp-servers
+[![GitHub stars](https://img.shields.io/github/stars/punkpeye/awesome-mcp-servers?style=social)](https://github.com/punkpeye/awesome-mcp-servers)
+
+#### appcypher/awesome-mcp-servers
+[![GitHub stars](https://img.shields.io/github/stars/appcypher/awesome-mcp-servers?style=social)](https://github.com/appcypher/awesome-mcp-servers)
+
+#### Puliczek/awesome-mcp-security
+[![GitHub stars](https://img.shields.io/github/stars/Puliczek/awesome-mcp-security?style=social)](https://github.com/Puliczek/awesome-mcp-security)
 
 ### MCP Directories & Tools
 [![MCP.so](https://img.shields.io/badge/MCP.so-Server%20Directory-green.svg?logo=web)](https://mcp.so/server/octocode/bgauryy)

@@ -132,15 +132,15 @@ export const SUGGESTIONS = {
 
   // File Content Suggestions
   FILE_NOT_FOUND_RECOVERY: `Quick fixes:
-• Use github_view_repo_structure to verify path exists
-• Check for typos in file path
-• Try different branch (main/master/develop)`,
+ Use github_view_repo_structure to verify path exists
+ Check for typos in file path
+ Try different branch (main/master/develop)`,
 
   FILE_TOO_LARGE_RECOVERY: `Alternative strategies:
-• Use github_search_code to search within the file
-• Download directly from GitHub
-• Use github_view_repo_structure to find smaller related files
-• Look for configuration or summary files instead`,
+ Use github_search_code to search within the file
+ Download directly from GitHub
+ Use github_view_repo_structure to find smaller related files
+ Look for configuration or summary files instead`,
 
   // Repository Suggestions
   REPOSITORY_NOT_FOUND_RECOVERY: `This is often due to incorrect repository name. Steps to resolve:
@@ -150,49 +150,16 @@ export const SUGGESTIONS = {
 
   // NPM Suggestions
   NPM_DISCOVERY_STRATEGIES: `Discovery strategies:
-• Functional search: "validation", "testing", "charts"
-• Ecosystem search: "react", "typescript", "node"
-• Use github_search_repositories for related projects`,
+ Functional search: "validation", "testing", "charts"
+ Ecosystem search: "react", "typescript", "node"
+ Use github_search_repositories for related projects`,
 
   NPM_PACKAGE_NAME_ALTERNATIVES: `Try these alternatives:
-• Try with dashes instead of underscores
-• Try without dashes
-• Try scoped package format
-• Use package_search tool for discovery`,
+ Try with dashes instead of underscores
+ Try without dashes
+ Try scoped package format
+ Use package_search tool for discovery`,
 } as const;
-
-export const VALIDATION_MESSAGES = {
-  EMPTY_QUERY_SUGGESTION:
-    'Empty query - try "useState", "authentication", or language:python',
-  REPO_FORMAT_SUGGESTION:
-    'Repository format error - use "owner/repo" format (e.g., "facebook/react")',
-  INVALID_SIZE_SUGGESTION:
-    'Invalid size format - use >N, <N, or N..M without quotes',
-  INVALID_SCOPE_SUGGESTION:
-    'Invalid scope - use "file" for content, "path" for filenames',
-} as const;
-
-// Helper function to get error message with context-specific suggestions
-export function getErrorWithSuggestion(options: {
-  baseError: string | string[];
-  suggestion?: string | string[];
-}): string {
-  const { baseError, suggestion } = options;
-  const errors = Array.isArray(baseError) ? baseError : [baseError];
-  const suggestions = Array.isArray(suggestion)
-    ? suggestion
-    : suggestion
-      ? [suggestion]
-      : [];
-
-  let result = errors.join('\n');
-
-  if (suggestions.length > 0) {
-    result += '\n\nSuggestion: ' + suggestions.join('\n');
-  }
-
-  return result;
-}
 
 // Common error handling patterns
 export function createAuthenticationError(): string {
@@ -253,28 +220,4 @@ export function createSearchFailedError(
     default:
       return ERROR_MESSAGES.SEARCH_FAILED;
   }
-}
-
-export function createNpmPackageNotFoundError(packageName: string): string {
-  const suggestions = [];
-
-  if (packageName.includes('_')) {
-    suggestions.push(`• Try with dashes: "${packageName.replace(/_/g, '-')}"`);
-  }
-  if (packageName.includes('-')) {
-    suggestions.push(
-      `• Try without dashes: "${packageName.replace(/-/g, '')}"`
-    );
-  }
-  if (!packageName.includes('/') && packageName.length > 2) {
-    suggestions.push(
-      `• Try scoped format: "@${packageName.slice(0, 3)}/${packageName}"`
-    );
-  }
-
-  return `${ERROR_MESSAGES.NPM_PACKAGE_NOT_FOUND}: "${packageName}"
-
-${suggestions.length > 0 ? suggestions.join('\n') + '\n\n' : ''}${SUGGESTIONS.NPM_PACKAGE_NAME_ALTERNATIVES}
-
-${SUGGESTIONS.NPM_DISCOVERY_STRATEGIES}`;
 }

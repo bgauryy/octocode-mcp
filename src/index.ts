@@ -3,30 +3,12 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { clearAllCache } from './utils/cache.js';
-import {
-  API_STATUS_CHECK_TOOL_NAME,
-  registerApiStatusCheckTool,
-} from './mcp/tools/api_status_check.js';
-import {
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  registerGitHubSearchCodeTool,
-} from './mcp/tools/github_search_code.js';
-import {
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  registerFetchGitHubFileContentTool,
-} from './mcp/tools/github_fetch_content.js';
-import {
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  registerSearchGitHubReposTool,
-} from './mcp/tools/github_search_repos.js';
-import {
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  registerGitHubSearchCommitsTool,
-} from './mcp/tools/github_search_commits.js';
-import {
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  registerSearchGitHubPullRequestsTool,
-} from './mcp/tools/github_search_pull_requests.js';
+import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
+import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
+import { registerGitHubSearchCommitsTool } from './mcp/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import {
   NPM_PACKAGE_SEARCH_TOOL_NAME,
   registerNpmSearchTool,
@@ -35,18 +17,21 @@ import {
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
   registerViewRepositoryStructureTool,
 } from './mcp/tools/github_view_repo_structure.js';
+import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
+import { version } from '../package.json';
 import {
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  registerSearchGitHubIssuesTool,
-} from './mcp/tools/github_search_issues.js';
-import {
-  NPM_VIEW_PACKAGE_TOOL_NAME,
-  registerNpmViewPackageTool,
-} from './mcp/tools/npm_view_package.js';
+  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+  GITHUB_SEARCH_COMMITS_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  API_STATUS_CHECK_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+} from './mcp/tools/utils/toolConstants.js';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
-  version: '2.5.1',
+  version,
   description: PROMPT_SYSTEM_PROMPT,
 };
 
@@ -79,17 +64,31 @@ function registerAllTools(server: McpServer) {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,
     },
-    { name: NPM_VIEW_PACKAGE_TOOL_NAME, fn: registerNpmViewPackageTool },
+    // NOTE: npm_view_package functionality has been merged into package_search tool
+    // Use packageSearch with npmFetchMetadata=true and npmField/npmMatch parameters instead
+    // { name: NPM_VIEW_PACKAGE_TOOL_NAME, fn: registerNpmViewPackageTool },
   ];
 
   let successCount = 0;
+  const failedTools: string[] = [];
+
   for (const tool of toolRegistrations) {
     try {
       tool.fn(server);
       successCount++;
     } catch (error) {
-      // Continue with other tools instead of failing completely
+      // Log the error but continue with other tools
+      // eslint-disable-next-line no-console
+      console.error(`Failed to register tool '${tool.name}':`, error);
+      failedTools.push(tool.name);
     }
+  }
+
+  if (failedTools.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Warning: ${failedTools.length} tools failed to register: ${failedTools.join(', ')}`
+    );
   }
 
   if (successCount === 0) {
@@ -115,16 +114,32 @@ async function startServer() {
       try {
         clearAllCache();
 
-        // Give server time to close properly
-        await Promise.race([
-          server.close(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Server close timeout')), 5000)
-          ),
-        ]);
+        // Create promises for server close and timeout
+        const closePromise = server.close();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Server close timeout after 5 seconds')),
+            5000
+          )
+        );
 
-        process.exit(0);
+        try {
+          // Race between close and timeout
+          await Promise.race([closePromise, timeoutPromise]);
+          // If we reach here, server closed successfully
+          process.exit(0);
+        } catch (timeoutError) {
+          // eslint-disable-next-line no-console
+          console.error(
+            'Server close timed out, forcing shutdown:',
+            timeoutError
+          );
+          // Exit with error code when timeout occurs
+          process.exit(1);
+        }
       } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Error during graceful shutdown:', error);
         process.exit(1);
       }
     };
@@ -139,12 +154,16 @@ async function startServer() {
     });
 
     // Handle uncaught errors
-    process.on('uncaughtException', () => {
-      gracefulShutdown();
+    process.on('uncaughtException', error => {
+      // eslint-disable-next-line no-console
+      console.error('Uncaught exception:', error);
+      gracefulShutdown().finally(() => process.exit(1));
     });
 
-    process.on('unhandledRejection', () => {
-      gracefulShutdown();
+    process.on('unhandledRejection', (reason, promise) => {
+      // eslint-disable-next-line no-console
+      console.error('Unhandled rejection at:', promise, 'reason:', reason);
+      gracefulShutdown().finally(() => process.exit(1));
     });
 
     // Keep process alive

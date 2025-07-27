@@ -5,8 +5,19 @@ import { ContentSanitizer } from '../security/contentSanitizer';
 export function createResult(options: {
   data?: unknown;
   error?: unknown | string;
+  isError?: boolean;
+  hints?: string[];
 }): CallToolResult {
-  const { data, error } = options;
+  const { data, error, isError, hints } = options;
+
+  // TODO - support only one flow for error and hints (requires refactoring..)
+  if (isError) {
+    const dataWithHints = hints ? { data, hints } : data;
+    return {
+      content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
+      isError: true,
+    };
+  }
 
   if (error) {
     const errorMessage =
@@ -14,30 +25,20 @@ export function createResult(options: {
         ? error
         : (error as Error).message || 'Unknown error';
 
+    const dataWithHints = hints ? { data: errorMessage, hints } : errorMessage;
+
     return {
-      content: [{ type: 'text', text: wrapResponse(errorMessage) }],
+      content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
       isError: true,
     };
   }
 
-  try {
-    return {
-      content: [{ type: 'text', text: wrapResponse(data) }],
-      isError: false,
-    };
-  } catch (jsonError) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: wrapResponse(
-            `JSON serialization failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`
-          ),
-        },
-      ],
-      isError: true,
-    };
-  }
+  // Success case - include hints if provided
+  const dataWithHints = hints ? { data, hints } : data;
+  return {
+    content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
+    isError: false,
+  };
 }
 
 /**

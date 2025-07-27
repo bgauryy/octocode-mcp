@@ -74,52 +74,72 @@ export interface GitHubCommitSearchParams
 }
 
 export interface GitHubPullRequestsSearchParams {
-  created?: string;
-  owner?: string;
-  updated?: string;
-  order?: string;
-  repo?: string;
-  exactQuery?: string;
-  queryTerms?: string[];
-  orTerms?: string[];
-  query?: string;
-  match?: ('title' | 'body' | 'comments')[];
-  type?: 'issue' | 'pr';
-  state?: 'open' | 'closed';
-  head?: string;
-  base?: string;
-  'merged-at'?: string;
-  closed?: string;
-  draft?: boolean;
-  checks?: 'pending' | 'success' | 'failure';
-  merged?: boolean;
-  review?: 'none' | 'required' | 'approved' | 'changes_requested';
-  'reviewed-by'?: string;
-  'review-requested'?: string;
-  'user-review-requested'?: string;
-  'team-review-requested'?: string;
-  status?: 'pending' | 'success' | 'failure';
-  author?: string;
-  assignee?: string;
-  mentions?: string;
-  commenter?: string;
-  involves?: string;
-  app?: string;
-  archived?: boolean;
-  comments?: number;
-  interactions?: number;
-  'team-mentions'?: string;
-  reactions?: number;
-  locked?: boolean;
-  'no-assignee'?: boolean;
-  'no-label'?: boolean;
-  'no-milestone'?: boolean;
-  'no-project'?: boolean;
-  label?: string | string[];
-  milestone?: string;
-  project?: string;
-  visibility?: 'public' | 'private' | 'internal';
-  language?: string;
+  // CORE SEARCH - Query is optional, you can search with filters only
+  query?: string; // Search query for PR content (optional - you can search using filters only). Examples: "fix bug", "update dependencies", "security patch"
+
+  // REPOSITORY FILTERS - Direct CLI flag mappings
+  owner?: string | string[]; // Repository owner(s) - single owner or array for multi-owner search (--owner)
+  repo?: string | string[]; // Repository name(s) - single repo or array for multi-repo search (--repo)
+  language?: string; // Programming language filter (--language)
+  archived?: boolean; // Filter by repository archived state (--archived)
+  visibility?:
+    | 'public'
+    | 'private'
+    | 'internal'
+    | ('public' | 'private' | 'internal')[]; // Repository visibility - single value or array (--visibility)
+
+  // USER INVOLVEMENT FILTERS - Direct CLI flag mappings
+  author?: string; // GitHub username of PR author (--author)
+  assignee?: string; // GitHub username of assignee (--assignee)
+  mentions?: string; // PRs mentioning this user (--mentions)
+  commenter?: string; // User who commented on PR (--commenter)
+  involves?: string; // User involved in any way (--involves)
+  'reviewed-by'?: string; // User who reviewed the PR (--reviewed-by)
+  'review-requested'?: string; // User/team requested for review (--review-requested)
+
+  // BASIC STATE FILTERS - Direct CLI flag mappings
+  state?: 'open' | 'closed'; // Filter by state: open or closed (--state)
+  draft?: boolean; // Filter by draft state (--draft)
+  merged?: boolean; // Filter by merged state (--merged)
+  locked?: boolean; // Filter by locked conversation status (--locked)
+
+  // BRANCH FILTERS - Direct CLI flag mappings
+  head?: string; // Filter on head branch name (--head)
+  base?: string; // Filter on base branch name (--base)
+
+  // DATE FILTERS - Direct CLI flag mappings with operator support
+  created?: string; // Filter by created date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--created)
+  updated?: string; // Filter by updated date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--updated)
+  'merged-at'?: string; // Filter by merged date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--merged-at)
+  closed?: string; // Filter by closed date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--closed)
+
+  // ENGAGEMENT FILTERS - Direct CLI flag mappings with operator support
+  comments?: number | string; // Filter by number of comments, supports operators: ">10", ">=5", "<5", "5..10" (--comments)
+  reactions?: number | string; // Filter by number of reactions, supports operators: ">10", ">=5", "<50", "5..50" (--reactions)
+  interactions?: number | string; // Total interactions (reactions + comments), supports operators: ">100", ">=50", "<20", "50..200" (--interactions)
+
+  // REVIEW & CI FILTERS - Direct CLI flag mappings
+  review?: 'none' | 'required' | 'approved' | 'changes_requested'; // Filter by review status (--review)
+  checks?: 'pending' | 'success' | 'failure'; // Filter by checks status (--checks)
+
+  // ORGANIZATION FILTERS - Direct CLI flag mappings
+  app?: string; // Filter by GitHub App author (--app)
+  'team-mentions'?: string; // Filter by team mentions (--team-mentions)
+  label?: string | string[]; // Filter by label, supports multiple labels (--label)
+  milestone?: string; // Milestone title (--milestone)
+  project?: string; // Project board owner/number (--project)
+
+  // BOOLEAN "MISSING" FILTERS - Direct CLI flag mappings
+  'no-assignee'?: boolean; // Filter by missing assignee (--no-assignee)
+  'no-label'?: boolean; // Filter by missing label (--no-label)
+  'no-milestone'?: boolean; // Filter by missing milestone (--no-milestone)
+  'no-project'?: boolean; // Filter by missing project (--no-project)
+
+  // SEARCH SCOPE - Direct CLI flag mappings
+  match?: ('title' | 'body' | 'comments')[]; // Restrict search to specific fields (--match)
+
+  // RESULT CONTROL - Direct CLI flag mappings
+  limit?: number; // Maximum number of results to fetch (--limit)
   sort?:
     | 'comments'
     | 'reactions'
@@ -131,11 +151,12 @@ export interface GitHubPullRequestsSearchParams {
     | 'reactions-tada'
     | 'interactions'
     | 'created'
-    | 'updated';
-  limit?: number;
-  getChangesContent?: boolean;
-  getPRCommits?: boolean;
-  getCommitData?: boolean;
+    | 'updated'; // Sort fetched results (--sort)
+  order?: 'asc' | 'desc'; // Order of results, requires --sort (--order)
+
+  // EXPENSIVE OPTIONS - Custom functionality
+  getCommitData?: boolean; // Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes. WARNING: EXTREMELY expensive in tokens - fetches diff/patch content for each commit.
+  withComments?: boolean; // Include full comment content in search results. WARNING: EXTREMELY expensive in tokens and should be used with caution. Recommended to not use unless specifically needed.
 }
 
 export interface GitHubReposSearchParams
@@ -176,11 +197,12 @@ export interface GitHubReposSearchParams
 export interface GithubFetchRequestParams {
   owner: string;
   repo: string;
-  branch: string;
+  branch?: string;
   filePath: string;
   startLine?: number;
   endLine?: number;
   contextLines?: number;
+  matchString?: string;
   minified: boolean;
 }
 
@@ -208,9 +230,26 @@ export interface GitHubCommitDiff {
   files: GitHubDiffFile[];
 }
 
+export interface GitHubPullRequestComment {
+  id: string;
+  author: {
+    login: string;
+  };
+  authorAssociation: string;
+  body: string;
+  createdAt: string;
+  includesCreatedEdit: boolean;
+  isMinimized: boolean;
+  minimizedReason: string;
+  reactionGroups: any[];
+  url: string;
+  viewerDidAuthor: boolean;
+}
+
 export interface GitHubPullRequestItem {
   number: number;
   title: string;
+  body?: string; // PR description/body content
   state: 'open' | 'closed';
   author: string;
   repository: string;
@@ -220,7 +259,7 @@ export interface GitHubPullRequestItem {
   merged_at?: string;
   closed_at?: string;
   url: string;
-  comments: number;
+  comments?: GitHubPullRequestComment[]; // Full comment content (only when withComments=true)
   reactions: number;
   draft: boolean;
   head?: string;
@@ -235,8 +274,18 @@ export interface GitHubPullRequestItem {
       message: string;
       author: string;
       url: string;
+      authoredDate?: string;
+      diff?: {
+        changed_files: number;
+        additions: number;
+        deletions: number;
+        total_changes: number;
+        files: GitHubDiffFile[];
+      };
+      _sanitization_warnings?: string[]; // Optional sanitization warnings
     }>;
   };
+  _sanitization_warnings?: string[]; // Optional sanitization warnings
 }
 
 export interface GitHubPullRequestsSearchResult {
@@ -305,7 +354,15 @@ export interface GitHubFileContentResponse {
   requestedContextLines?: number;
   minified?: boolean;
   minificationFailed?: boolean;
-  minificationType?: 'javascript' | 'generic' | 'failed' | 'none';
+  minificationType?:
+    | 'terser'
+    | 'conservative'
+    | 'aggressive'
+    | 'json'
+    | 'general'
+    | 'markdown'
+    | 'failed'
+    | 'none';
   // Security metadata
   securityWarnings?: string[];
 }
@@ -411,6 +468,15 @@ export interface OptimizedCodeSearchResult {
   minified?: boolean;
   minificationFailed?: boolean;
   minificationTypes?: string[];
+  // Research context for smart hints and deeper research flows
+  _researchContext?: {
+    foundPackages: string[];
+    foundFiles: string[];
+    repositoryContext?: {
+      owner: string;
+      repo: string;
+    };
+  };
 }
 
 // GitHub Search Commits Types
@@ -478,6 +544,7 @@ export interface OptimizedCommitSearchResult {
     repository?: string; // owner/repo (only for multi-repo)
     url: string; // SHA or repo@SHA
     diff?: GitHubCommitDiff; // Code changes when getChangesContent=true
+    _sanitization_warnings?: string[]; // Optional sanitization warnings
   }>;
   total_count: number;
   repository?: {
@@ -607,6 +674,7 @@ export interface GitHubIssueItem {
   closed_at?: string;
   comments?: number;
   reactions?: number;
+  _sanitization_warnings?: string[]; // Optional sanitization warnings
 }
 
 export interface GitHubIssuesSearchResult {
@@ -643,6 +711,7 @@ export interface BasicGitHubIssue {
   // Legacy compatibility fields
   created_at: string;
   updated_at: string;
+  _sanitization_warnings?: string[]; // Optional sanitization warnings
 }
 
 // Bulk GitHub Code Search Types
@@ -679,4 +748,68 @@ export interface GitHubBulkCodeSearchResult {
   totalQueries: number;
   successfulQueries: number;
   queriesWithFallback: number;
+}
+
+// Enhanced Package Search Types - Merged npm_view_package functionality
+export interface EnhancedPackageMetadata {
+  gitURL: string;
+  metadata: OptimizedNpmPackageResult | PythonPackageMetadata;
+}
+
+export interface PythonPackageMetadata {
+  name: string;
+  version: string;
+  description: string | null;
+  keywords: string[];
+  repository: string | null;
+  // Additional Python-specific metadata can be added here
+  homepage?: string;
+  author?: string;
+  license?: string;
+}
+
+export interface EnhancedPackageSearchResult {
+  npm?: Record<string, EnhancedPackageMetadata>;
+  python?: Record<string, EnhancedPackageMetadata>;
+  total_count: number;
+  hints?: string[];
+}
+
+export interface NpmPackageQuery {
+  name: string; // Package name to search for
+  searchLimit?: number; // Results limit per query (1-50)
+  npmSearchStrategy?: 'individual' | 'combined'; // Search strategy
+  npmFetchMetadata?: boolean; // Whether to fetch detailed metadata
+  npmField?: string; // Specific field to retrieve
+  npmMatch?: string | string[]; // Specific field(s) to retrieve
+  id?: string; // Optional identifier for the query
+}
+
+export interface PythonPackageQuery {
+  name: string; // Package name to search for
+  searchLimit?: number; // Results limit for this query (1-10)
+  id?: string; // Optional identifier for the query
+}
+
+export interface PackageSearchBulkParams {
+  npmPackages?: NpmPackageQuery[]; // Array of NPM package queries
+  pythonPackages?: PythonPackageQuery[]; // Array of Python package queries
+  // Global defaults (can be overridden per query)
+  searchLimit?: number;
+  npmSearchStrategy?: 'individual' | 'combined';
+  npmFetchMetadata?: boolean;
+}
+
+// Keep the old interface for backward compatibility (deprecated)
+export interface PackageSearchWithMetadataParams {
+  npmPackagesNames?: string | string[];
+  npmPackageName?: string;
+  pythonPackageName?: string;
+  searchLimit?: number;
+  npmSearchStrategy?: 'individual' | 'combined';
+  // New parameter to control npm metadata fetching
+  npmFetchMetadata?: boolean;
+  // NPM View Package parameters - prefixed with npm
+  npmField?: string;
+  npmMatch?: string | string[];
 }

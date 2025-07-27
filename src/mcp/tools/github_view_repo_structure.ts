@@ -9,33 +9,37 @@ import { executeGitHubCommand } from '../../utils/exec';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
+import {
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+} from './utils/toolConstants';
+import { generateSmartHints } from './utils/toolRelationships';
 
-export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
+export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access.
+const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding and research planning
 
-PROJECT UNDERSTANDING:
-- Try to understand more by the structure of the project and the files in the project
-- Identify key directories and file patterns
-- fetch important files for better understanding
+Further Research With for more details:
+ ${GITHUB_SEARCH_CODE_TOOL_NAME}
+ ${GITHUB_GET_FILE_CONTENT_TOOL_NAME}
 
-DEPTH CONTROL:
-- Default depth is 2 levels for balanced performance and insight
-- Maximum depth is 4 levels to prevent excessive API calls
-- Depth 1: Shows only immediate files/folders in the specified path
-- Depth 2+: Recursively explores subdirectories up to the specified depth
-- Higher depths provide more comprehensive project understanding but use more API calls
+USAGE:
+ Understand project organization
+ Verify repository access
+ Navigate to specific directories
 
-IMPORTANT:
-- verify default branch (use main or master if can't find default branch)
-- verify path before calling the tool to avoid errors
-- Start with root path to understand actual repository structure and then navigate to specific directories based on research needs
-- Check repository's default branch as it varies between repositories
-- Verify path exists - don't assume repository structure
-- Verify repository existence and accessibility
-- Validate paths before accessing specific files. Use github search code to find correct paths if unsure
+KEY FEATURES:
+ Recursive exploration
+ Smart filtering of irrelevant files
+ Branch/path validation
 
-`;
+BEST PRACTICES:
+ Start with root path and depth 1
+ Verify branch exists
+ Use search if path unknown
+
+PHILOSOPHY: Build comprehensive understanding progressively`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -85,11 +89,11 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .number()
           .int()
           .min(1, 'Depth must be at least 1')
-          .max(4, 'Maximum depth is 4 to avoid excessive API calls')
+          .max(2, 'Maximum depth is 2 to avoid excessive API calls')
           .optional()
-          .default(2)
+          .default(1)
           .describe(
-            'Depth of directory structure to explore. Default is 2. Maximum is 4 to prevent excessive API calls and maintain performance.'
+            'Depth of directory structure to explore. Default is 1 for fast results. Maximum is 2. Higher values take more time - choose depth > 1 only for deep research needs.'
           ),
 
         includeIgnored: z
@@ -123,8 +127,14 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
+        const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+          hasResults: false,
+          errorMessage: `Failed to explore repository: ${errorMessage}`,
+          customHints: ['Verify repository exists and is accessible'],
+        });
         return createResult({
-          error: `Failed to explore repository. ${errorMessage}. Verify repository exists and is accessible`,
+          isError: true,
+          hints,
         });
       }
     }
@@ -146,7 +156,7 @@ export async function viewRepositoryStructure(
       repo,
       branch,
       path = '',
-      depth = 2,
+      depth = 1,
       includeIgnored = false,
       showMedia = false,
     } = params;
@@ -306,8 +316,16 @@ export async function viewRepositoryStructure(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+        hasResults: false,
+        errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMessage}`,
+        customHints: [
+          'Verify repository name, permissions, and network connection',
+        ],
+      });
       return createResult({
-        error: `Failed to access repository "${owner}/${repo}": ${errorMessage}. Verify repository name, permissions, and network connection.`,
+        isError: true,
+        hints,
       });
     }
   });
@@ -514,6 +532,15 @@ async function formatRepositoryStructureWithDepth(
       url: item.path, // Use path for browsing
     }));
 
+  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    hasResults: true,
+    totalItems: files.length + folders.length,
+    customHints:
+      uniqueItems.length > limitedItems.length
+        ? ['Results truncated for performance']
+        : [],
+  });
+
   return createResult({
     data: {
       repository: `${owner}/${repo}`,
@@ -543,6 +570,7 @@ async function formatRepositoryStructureWithDepth(
       // Include depth-organized view for better understanding
       byDepth: structureByDepth,
     },
+    hints,
   });
 }
 
@@ -591,6 +619,15 @@ function formatRepositoryStructure(
       url: item.path, // Use path for browsing
     }));
 
+  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    hasResults: true,
+    totalItems: files.length + folders.length,
+    customHints:
+      filteredItems.length < items.length
+        ? ['Some files filtered for relevance']
+        : [],
+  });
+
   return createResult({
     data: {
       repository: `${owner}/${repo}`,
@@ -606,6 +643,7 @@ function formatRepositoryStructure(
         folders: folders,
       },
     },
+    hints,
   });
 }
 
@@ -618,16 +656,36 @@ function handleRepositoryNotFound(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('404')) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Repository "${owner}/${repo}" not found`,
+      customHints: [
+        'Repository might have been deleted, renamed, or made private',
+      ],
+    });
     return createResult({
-      error: `Repository "${owner}/${repo}" not found. It might have been deleted, renamed, or made private. Use github_search_code to find current location.`,
+      isError: true,
+      hints,
     });
   } else if (errorMsg.includes('403')) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Repository "${owner}/${repo}" access denied`,
+      customHints: ['Repository might be private or archived'],
+    });
     return createResult({
-      error: `Repository "${owner}/${repo}" exists but access is denied. Repository might be private or archived. Use api_status_check to verify permissions.`,
+      isError: true,
+      hints,
     });
   }
+  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    hasResults: false,
+    errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMsg}`,
+    customHints: ['Verify repository exists and is accessible'],
+  });
   return createResult({
-    error: `Failed to access repository "${owner}/${repo}": ${errorMsg}. Verify repository exists and is accessible.`,
+    isError: true,
+    hints,
   });
 }
 
@@ -647,27 +705,32 @@ function handlePathNotFound(
     : `\nCould not determine default branch - repository info unavailable`;
 
   if (path) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Path "${path}" not found in any branch`,
+      customHints: [
+        `Tried branches: ${triedBranches.join(', ')}${defaultBranchInfo}`,
+        `Try correct branch: {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}`,
+        `Search for path: use github_search_code with query="path:${path}" owner="${owner}"`,
+      ],
+    });
     return createResult({
-      error: `Path "${path}" not found in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
-
-Quick solution: Use the correct branch name:
-{"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": "${path}"}
-
-Alternative solutions:
-• Search for path: github_search_code with query="path:${path}" owner="${owner}"
-• Search for directory: github_search_code with query="${path.split('/').pop()}" owner="${owner}"
-• Check root structure: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+      isError: true,
+      hints,
     });
   } else {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Repository "${owner}/${repo}" not accessible`,
+      customHints: [
+        `Tried branches: ${triedBranches.join(', ')}`,
+        `May be empty, private, or insufficient permissions`,
+        `Try branch "${defaultBranch}"`,
+      ],
+    });
     return createResult({
-      error: `Repository "${owner}/${repo}" structure not accessible in any branch (tried: ${triedBranches.join(', ')}).${defaultBranchInfo}
-
-Repository might be empty, private, or you might not have sufficient permissions.
-
-Alternative solutions:
-• Verify permissions: api_status_check
-• Search accessible repos: github_search_code with owner="${owner}"
-• Try different branch: github_view_repo_structure with {"owner": "${owner}", "repo": "${repo}", "branch": "${defaultBranch}", "path": ""}`,
+      isError: true,
+      hints,
     });
   }
 }
@@ -681,12 +744,27 @@ function handleOtherErrors(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Access denied to "${owner}/${repo}"`,
+      customHints: [
+        'Repository exists but might be private/archived',
+        `Try github_search_code with owner="${owner}" to find accessible repositories`,
+      ],
+    });
     return createResult({
-      error: `Access denied to "${owner}/${repo}". Repository exists but might be private/archived. Use api_status_check to verify permissions, or github_search_code with owner="${owner}" to find accessible repositories.`,
+      isError: true,
+      hints,
     });
   } else {
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Failed to access "${owner}/${repo}": ${errorMsg}`,
+      customHints: ['Check network connection and repository permissions'],
+    });
     return createResult({
-      error: `Failed to access "${owner}/${repo}": ${errorMsg}. Check network connection and repository permissions.`,
+      isError: true,
+      hints,
     });
   }
 }

@@ -19,14 +19,18 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
+import { ContentSanitizer } from '../../security/contentSanitizer';
+import { GITHUB_SEARCH_ISSUES_TOOL_NAME } from './utils/toolConstants';
+import { generateSmartHints } from './utils/toolRelationships';
 
-export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
+const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 
-const DESCRIPTION = `Search GitHub issues for bug reports, feature requests, and discussions. Find issues by keywords, state, labels, author, or repository. Returns issue details including body content for effective issue tracking and analysis.
+USAGE:
+ Find bug reports and feature requests
+ Track issue discussions
+ Analyze project problems
 
-TOKEN OPTIMIZATION
-- Issue body content is expensive in tokens. Use only when necessary.
-- Use specific queries and filters to reduce result count`;
+PHILOSOPHY: Get quality data from relevant sources`;
 
 export function registerSearchGitHubIssuesTool(server: McpServer) {
   server.registerTool(
@@ -41,11 +45,10 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
             'Search terms. Start simple: "error", "crash". Use quotes for exact phrases.'
           ),
         owner: z
-          .string()
-          .min(1)
+          .union([z.string(), z.array(z.string())])
           .optional()
           .describe(
-            'Repository owner/organization name only (e.g., "facebook", "microsoft"). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
+            'Repository owner/organization name(s) (e.g., "facebook", ["microsoft", "google"]). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
@@ -291,9 +294,14 @@ async function searchGitHubIssues(
         'unknown';
       const repo = repoName.includes('/') ? repoName.split('/')[1] : repoName;
 
-      return {
+      // Sanitize issue title
+      const titleSanitized = ContentSanitizer.sanitizeContent(
+        issue.title || ''
+      );
+
+      const basicIssue: BasicGitHubIssue = {
         number: issue.number,
-        title: issue.title,
+        title: titleSanitized.content,
         state: issue.state,
         author:
           typeof issue.author === 'string'
@@ -329,6 +337,13 @@ async function searchGitHubIssues(
         created_at: toDDMMYYYY(issue.createdAt || issue.created_at),
         updated_at: toDDMMYYYY(issue.updatedAt || issue.updated_at),
       };
+
+      // Add sanitization warnings if any were detected for title
+      if (titleSanitized.warnings.length > 0) {
+        basicIssue._sanitization_warnings = titleSanitized.warnings;
+      }
+
+      return basicIssue;
     });
 
     // Fetch detailed issue information in parallel
@@ -352,9 +367,14 @@ async function searchGitHubIssues(
               );
               const issueDetails = execResult.result;
 
-              return {
+              // Sanitize issue body content
+              const bodySanitized = ContentSanitizer.sanitizeContent(
+                issueDetails.body || ''
+              );
+
+              const result: GitHubIssueItem = {
                 ...issue,
-                body: issueDetails.body || '',
+                body: bodySanitized.content,
                 assignees:
                   issueDetails.assignees?.map((a: any) => ({
                     login: a.login,
@@ -392,7 +412,18 @@ async function searchGitHubIssues(
                 closed_at: issueDetails.closed_at
                   ? toDDMMYYYY(issueDetails.closed_at)
                   : undefined,
-              } as GitHubIssueItem;
+              };
+
+              // Add sanitization warnings if any were detected (merge with existing title warnings)
+              const allWarningsSet = new Set<string>([
+                ...(issue._sanitization_warnings || []),
+                ...bodySanitized.warnings,
+              ]);
+              if (allWarningsSet.size > 0) {
+                result._sanitization_warnings = Array.from(allWarningsSet);
+              }
+
+              return result;
             }
 
             // If fetching details fails, return basic info with empty body
@@ -405,67 +436,36 @@ async function searchGitHubIssues(
       )
     );
 
-    // Smart fallback suggestions for no results
+    // Generate smart research hints for no results
     if (cleanIssues.length === 0) {
-      const fallbackSuggestions = [];
+      const customHints = [];
 
-      // Analyze search parameters for specific suggestions
+      // Add parameter-specific hints
       if (params.state === 'closed') {
-        fallbackSuggestions.push('• Try state:open or remove state filter');
+        customHints.push('Try state:open or remove state filter');
       }
-
       if (params.author) {
-        fallbackSuggestions.push('• Remove author filter for broader search');
-        fallbackSuggestions.push(
-          `• Use github_search_code to find ${params.author}'s contributions`
-        );
+        customHints.push('Remove author filter for broader search');
       }
-
       if (params.label) {
-        const labels = Array.isArray(params.label)
-          ? params.label
-          : [params.label];
-        fallbackSuggestions.push(`• Try broader labels or remove label filter`);
-        fallbackSuggestions.push(
-          `• Search for label variations: ${labels.map(l => `"${l}"`).join(', ')}`
-        );
+        customHints.push('Try broader labels or remove label filter');
       }
-
       if (params.owner && params.repo) {
-        fallbackSuggestions.push('• Check repository name spelling');
-        fallbackSuggestions.push(
-          '• Use github_view_repo_structure to verify repository exists'
-        );
-      } else if (params.owner) {
-        fallbackSuggestions.push('• Remove owner filter for global search');
-        fallbackSuggestions.push(
-          '• Use github_search_repos to find organization repositories'
-        );
+        customHints.push('Check repository name spelling');
       }
-
       if (params.created || params.updated) {
-        fallbackSuggestions.push('• Expand date range or remove date filters');
+        customHints.push('Expand date range or remove date filters');
       }
 
-      // Add general alternatives
-      fallbackSuggestions.push('• Try broader search terms');
-      fallbackSuggestions.push(
-        '• Use github_search_pull_requests for related development activity'
-      );
-      fallbackSuggestions.push(
-        '• Use github_search_code to find implementation patterns'
-      );
+      const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+        hasResults: false,
+        totalItems: 0,
+        customHints,
+      });
 
       return createResult({
-        error: `No issues found for query: "${params.query}"
-
-Try these alternatives:
-${fallbackSuggestions.join('\n')}
-
-Discovery strategies:
-• Broader terms: "error" instead of "TypeError"
-• Remove filters: state, labels, author
-• Related searches: pull requests, code implementations`,
+        error: `No issues found for query: "${params.query}"`,
+        hints,
       });
     }
 

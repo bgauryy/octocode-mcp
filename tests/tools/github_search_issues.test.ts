@@ -494,7 +494,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No issues found');
+      expect(result.content[0].text as string).toContain('No issues found');
     });
   });
 
@@ -510,7 +510,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('GitHub CLI error');
+      expect(result.content[0].text as string).toContain('GitHub CLI error');
     });
 
     it('should handle malformed JSON responses', async () => {
@@ -528,7 +528,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Issue search failed');
+      expect(result.content[0].text as string).toContain('Issue search failed');
     });
 
     it('should handle network timeout errors', async () => {
@@ -540,7 +540,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Issue search failed');
+      expect(result.content[0].text as string).toContain('Issue search failed');
     });
 
     it('should handle API rate limit errors', async () => {
@@ -554,7 +554,9 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('API rate limit exceeded');
+      expect(result.content[0].text as string).toContain(
+        'API rate limit exceeded'
+      );
     });
   });
 
@@ -565,7 +567,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
+      expect(result.content[0].text as string).toContain(
         'Query required - provide search keywords'
       );
     });
@@ -576,7 +578,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
+      expect(result.content[0].text as string).toContain(
         'Query required - provide search keywords'
       );
     });
@@ -589,7 +591,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
+      expect(result.content[0].text as string).toContain(
         'Query too long (max 256 chars)'
       );
     });
@@ -814,6 +816,483 @@ describe('GitHub Search Issues Tool', () => {
           'assignees,author,authorAssociation,closedAt,commentsCount,createdAt,id,isLocked,isPullRequest,labels,number,repository,state,title,updatedAt,url',
         ],
         { cache: false }
+      );
+    });
+  });
+
+  describe('Content Sanitization', () => {
+    it('should sanitize GitHub tokens from issue responses', async () => {
+      const mockResponseWithTokens = {
+        items: [
+          {
+            id: 1,
+            number: 1,
+            title: 'Issue with authentication',
+            body: 'Using token ghp_1234567890abcdefghijklmnopqrstuvwxyz123456 in CI pipeline',
+            user: {
+              login: 'testuser',
+            },
+            html_url: 'https://github.com/test/repo/issues/1',
+            state: 'open',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            labels: [],
+            repository: {
+              nameWithOwner: 'test/repo',
+            },
+          },
+        ],
+        total_count: 1,
+      };
+
+      // Mock the initial search
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /search/issues',
+              result: mockResponseWithTokens,
+              timestamp: new Date().toISOString(),
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      // Mock the detailed issue fetch
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /repos/test/repo/issues/1',
+              result: {
+                number: 1,
+                title: 'Issue with authentication',
+                body: 'Using token ghp_1234567890abcdefghijklmnopqrstuvwxyz123456 in CI pipeline',
+                state: 'open',
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+              },
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'authentication',
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.results[0].body).not.toContain(
+        'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+      );
+      expect(response.results[0].body).toContain('[REDACTED-GITHUBTOKENS]');
+    });
+
+    it('should sanitize API keys from issue responses', async () => {
+      const mockResponseWithApiKeys = {
+        items: [
+          {
+            id: 2,
+            number: 2,
+            title: 'API configuration issue',
+            body: 'OpenAI API key: sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO\nAWS key: AKIAIOSFODNN7EXAMPLE',
+            user: {
+              login: 'testuser',
+            },
+            html_url: 'https://github.com/test/repo/issues/2',
+            state: 'open',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            labels: [],
+            repository: {
+              nameWithOwner: 'test/repo',
+            },
+          },
+        ],
+        total_count: 1,
+      };
+
+      // Mock the initial search
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /search/issues',
+              result: mockResponseWithApiKeys,
+              timestamp: new Date().toISOString(),
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      // Mock the detailed issue fetch
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /repos/test/repo/issues/2',
+              result: {
+                number: 2,
+                title: 'API configuration issue',
+                body: 'OpenAI API key: sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO\nAWS key: AKIAIOSFODNN7EXAMPLE',
+                state: 'open',
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+              },
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'API configuration',
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.results[0].body).not.toContain(
+        'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+      );
+      expect(response.results[0].body).not.toContain('AKIAIOSFODNN7EXAMPLE');
+      expect(response.results[0].body).toContain('[REDACTED-OPENAIAPIKEY]');
+      expect(response.results[0].body).toContain('[REDACTED-AWSACCESSKEYID]');
+    });
+
+    it('should sanitize database connection strings from issue responses', async () => {
+      const mockResponseWithDbCredentials = {
+        items: [
+          {
+            id: 3,
+            number: 3,
+            title: 'Database connection error',
+            body: 'Connection string: postgresql://user:password123@localhost:5432/mydb',
+            user: {
+              login: 'testuser',
+            },
+            html_url: 'https://github.com/test/repo/issues/3',
+            state: 'open',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            labels: [],
+            repository: {
+              nameWithOwner: 'test/repo',
+            },
+          },
+        ],
+        total_count: 1,
+      };
+
+      // Mock the initial search
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /search/issues',
+              result: mockResponseWithDbCredentials,
+              timestamp: new Date().toISOString(),
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      // Mock the detailed issue fetch
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /repos/test/repo/issues/3',
+              result: {
+                number: 3,
+                title: 'Database connection error',
+                body: 'Connection string: postgresql://user:password123@localhost:5432/mydb',
+                state: 'open',
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+              },
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'database connection',
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.results[0].body).not.toContain(
+        'postgresql://user:password123@localhost:5432/mydb'
+      );
+      expect(response.results[0].body).toContain(
+        '[REDACTED-POSTGRESQLCONNECTIONSTRING]'
+      );
+    });
+
+    it('should sanitize private keys from issue responses', async () => {
+      const mockResponseWithPrivateKey = {
+        items: [
+          {
+            id: 4,
+            number: 4,
+            title: 'SSH key issue',
+            body: `SSH private key:
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ==
+-----END RSA PRIVATE KEY-----`,
+            user: {
+              login: 'testuser',
+            },
+            html_url: 'https://github.com/test/repo/issues/4',
+            state: 'open',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            labels: [],
+            repository: {
+              nameWithOwner: 'test/repo',
+            },
+          },
+        ],
+        total_count: 1,
+      };
+
+      // Mock the initial search
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /search/issues',
+              result: mockResponseWithPrivateKey,
+              timestamp: new Date().toISOString(),
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      // Mock the detailed issue fetch
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /repos/test/repo/issues/4',
+              result: {
+                number: 4,
+                title: 'SSH key issue',
+                body: `SSH private key:
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ==
+-----END RSA PRIVATE KEY-----`,
+                state: 'open',
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+              },
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'SSH key',
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.results[0].body).not.toContain(
+        'MIIEpAIBAAKCAQEA7YQnm/eSVyv24Bn5p7vSpJLPWdNw5MzQs1sVJQ'
+      );
+      expect(response.results[0].body).toContain('[REDACTED-RSAPRIVATEKEY]');
+    });
+
+    it('should sanitize multiple types of sensitive data in single issue', async () => {
+      const mockResponseWithMixedSecrets = {
+        items: [
+          {
+            id: 5,
+            number: 5,
+            title: 'Configuration dump',
+            body: `Config file contents:
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+OPENAI_API_KEY=sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+DATABASE_URL=mongodb://admin:secret@cluster0.mongodb.net:27017/app`,
+            user: {
+              login: 'testuser',
+            },
+            html_url: 'https://github.com/test/repo/issues/5',
+            state: 'open',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            labels: [],
+            repository: {
+              nameWithOwner: 'test/repo',
+            },
+          },
+        ],
+        total_count: 1,
+      };
+
+      // Mock the initial search
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /search/issues',
+              result: mockResponseWithMixedSecrets,
+              timestamp: new Date().toISOString(),
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      // Mock the detailed issue fetch
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /repos/test/repo/issues/5',
+              result: {
+                number: 5,
+                title: 'Configuration dump',
+                body: `Config file contents:
+GITHUB_TOKEN=ghp_1234567890abcdefghijklmnopqrstuvwxyz123456
+OPENAI_API_KEY=sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+DATABASE_URL=mongodb://admin:secret@cluster0.mongodb.net:27017/app`,
+                state: 'open',
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+              },
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'configuration',
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      const issueBody = response.results[0].body;
+
+      // Verify all secrets are redacted
+      expect(issueBody).not.toContain(
+        'ghp_1234567890abcdefghijklmnopqrstuvwxyz123456'
+      );
+      expect(issueBody).not.toContain(
+        'sk-1234567890abcdefghijklmnopqrstuvwxyzT3BlbkFJABCDEFGHIJKLMNO'
+      );
+      expect(issueBody).not.toContain('AKIAIOSFODNN7EXAMPLE');
+      expect(issueBody).not.toContain(
+        'mongodb://admin:secret@cluster0.mongodb.net:27017/app'
+      );
+
+      // Verify redacted placeholders are present
+      expect(issueBody).toContain('[REDACTED-GITHUBTOKENS]');
+      expect(issueBody).toContain('[REDACTED-OPENAIAPIKEY]');
+      expect(issueBody).toContain('[REDACTED-AWSACCESSKEYID]');
+      expect(issueBody).toContain('[REDACTED-MONGODBCONNECTIONSTRING]');
+
+      // Verify non-sensitive content is preserved
+      expect(issueBody).toContain('Config file contents:');
+      expect(issueBody).toContain('GITHUB_TOKEN=');
+      expect(issueBody).toContain('OPENAI_API_KEY=');
+    });
+
+    it('should preserve clean content without secrets', async () => {
+      const mockCleanResponse = {
+        items: [
+          {
+            id: 6,
+            number: 6,
+            title: 'Regular issue',
+            body: 'This is a normal issue description without any sensitive information.',
+            user: {
+              login: 'testuser',
+            },
+            html_url: 'https://github.com/test/repo/issues/6',
+            state: 'open',
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            labels: [],
+            repository: {
+              nameWithOwner: 'test/repo',
+            },
+          },
+        ],
+        total_count: 1,
+      };
+
+      // Mock the initial search
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /search/issues',
+              result: mockCleanResponse,
+              timestamp: new Date().toISOString(),
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      // Mock the detailed issue fetch
+      mockExecuteGitHubCommand.mockResolvedValueOnce({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              command: 'gh api /repos/test/repo/issues/6',
+              result: {
+                number: 6,
+                title: 'Regular issue',
+                body: 'This is a normal issue description without any sensitive information.',
+                state: 'open',
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+              },
+              type: 'github',
+            }),
+          },
+        ],
+        isError: false,
+      });
+
+      const result = await mockServer.callTool('githubSearchIssues', {
+        query: 'regular issue',
+      });
+
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.results[0].body).toBe(
+        'This is a normal issue description without any sensitive information.'
       );
     });
   });

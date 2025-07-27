@@ -22,49 +22,22 @@ import {
 } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
+import { ContentSanitizer } from '../../security/contentSanitizer';
+import { GITHUB_SEARCH_COMMITS_TOOL_NAME } from './utils/toolConstants';
+import { generateSmartHints } from './utils/toolRelationships';
 
-export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
+const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 
-const DESCRIPTION = `Search GitHub commits by message, author, hash, or date. Returns SHAs for github_fetch_content (branch=SHA). Can fetch commit content changes (diffs/patches) when getChangesContent=true.
+USAGE:
+Track code changes over time
+Find commits by author or message
+Get SHAs for github_fetch_content
 
-SEARCH OPTIONS:
-1. Query-based search:
-   - exactQuery: Exact phrase matching (e.g., "bug fix")
-   - queryTerms: Multiple keywords with AND logic (e.g., ["readme", "typo"])
-   - orTerms: Keywords with OR logic (e.g., ["bug", "fix"] finds commits with either)
-   - Combine: queryTerms=["api"] + orTerms=["auth", "login"] = api AND (auth OR login)
+TOKEN WARNING:
+getChangesContent=true is EXPENSIVE
+Use github_fetch_content for full files
 
-2. Filter-only search (no query required):
-   - Search by author, committer, hash, date, etc.
-   - Example: Just committer="monalisa" to find all commits by that user
-   - Example: Search by commit hash (including head_sha/base_sha from a PR): hash="<sha>"
-
-3. Combined search:
-   - Mix queries with filters for precise results
-   - Example: queryTerms=["fix"] + author="jane" + author-date=">2023-01-01"
-
-EXAMPLES:
-• Search commits with "readme" AND "typo": queryTerms=["readme", "typo"]
-• Search exact phrase "bug fix": exactQuery="bug fix"
-• Search by committer only: committer="monalisa"
-• Search by author name: author-name="Jane Doe"
-• Search by commit hash (including head_sha/base_sha from a PR): hash="8dd03144ffdc6c0d486d6b705f9c7fba871ee7c3"
-• Search before date: author-date="<2022-02-01"
-
-CONTENT FETCHING:
-- Set getChangesContent=true to fetch actual commit changes:
-  • Gets file diffs and patches for up to 10 commits
-  • Shows changed files, additions, deletions
-  • Includes code patches (first 1000 chars)
-  • Works for both public AND private repositories
-  • Most effective when owner and repo are specified
-
-TOKEN OPTIMIZATION NOTICE:
-- getChangesContent=true is EXTREMELY expensive in tokens
-- Each commit's diff/patch content consumes significant tokens
-- Limited to 1000 characters per patch and 5 files per commit for efficiency
-- Use sparingly and only when code changes are essential to your task
-- use fetch_github_file_content to get the full content of the file`;
+PHILOSOPHY: Build comprehensive understanding progressively`;
 
 export function registerGitHubSearchCommitsTool(server: McpServer) {
   server.registerTool(
@@ -251,95 +224,18 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
           // GitHub CLI returns a direct array
           const items = Array.isArray(commits) ? commits : [];
 
-          // Smart handling for no results - provide actionable suggestions
+          // Handle no results with smart hints
           if (items.length === 0) {
-            // Progressive simplification strategy based on current search complexity
-            const simplificationSteps: string[] = [];
-            let hasFilters = false;
-
-            // Check for active filters
-            const activeFilters = [];
-            if (args.owner && args.repo) activeFilters.push('repo');
-            if (args.author) activeFilters.push('author');
-            if (args['author-email']) activeFilters.push('author-email');
-            if (args.hash) activeFilters.push('hash');
-            if (args['author-date']) activeFilters.push('date');
-            if (args.visibility) activeFilters.push('visibility');
-
-            hasFilters = activeFilters.length > 0;
-
-            // Step 1: Suggest using queryTerms for broader search if using exactQuery
-            if (args.exactQuery) {
-              const words = args.exactQuery.trim().split(' ');
-              if (words.length > 1) {
-                simplificationSteps.push(
-                  `Try queryTerms instead: ["${words[0]}", "${words[1]}"] for broader results`
-                );
-              }
-            }
-
-            // Step 2: Suggest separate searches for OR operations
-            if (args.queryTerms && args.queryTerms.length > 2) {
-              const simplified = args.queryTerms.slice(0, 2);
-              simplificationSteps.push(
-                `Try fewer terms: ["${simplified.join('", "')}"] instead of ${args.queryTerms.length} terms`
-              );
-            }
-
-            // Step 3: Remove filters progressively
-            if (hasFilters) {
-              if (activeFilters.length > 1) {
-                simplificationSteps.push(
-                  `Remove some filters (currently: ${activeFilters.join(', ')}) and keep only the most important one`
-                );
-              } else {
-                simplificationSteps.push(
-                  `Remove the ${activeFilters[0]} filter and search more broadly`
-                );
-              }
-            }
-
-            // Step 4: Alternative approaches for OR operations
-            if (!args.exactQuery && !args.queryTerms && hasFilters) {
-              simplificationSteps.push(
-                'Add search terms: use queryTerms: ["term1", "term2"] with your filters'
-              );
-            }
-
-            // Step 5: Suggest using separate searches for OR operations
-            if (args.queryTerms && args.queryTerms.length === 1) {
-              simplificationSteps.push(
-                'For OR operations, run separate searches for each term instead of complex queries'
-              );
-            }
-
-            // Step 6: Ask for user guidance if no obvious simplification
-            if (simplificationSteps.length === 0) {
-              simplificationSteps.push(
-                "Try different keywords or ask the user to be more specific about what commits they're looking for"
-              );
-            }
+            const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+              hasResults: false,
+              totalItems: 0,
+              errorMessage: createNoResultsError('commits'),
+              customHints: buildCustomHints(args),
+            });
 
             return createResult({
-              error: `${createNoResultsError('commits')}
-
-Try these simplified searches:
-${simplificationSteps.map(step => `• ${step}`).join('\n')}
-
-Or ask the user:
-• "What specific type of commits are you looking for?" 
-• "Can you provide different keywords to search for?"
-• "Should I search in a specific repository instead?"
-
-Search techniques to try:
-• Use exactQuery for phrases: "bug fix", "exact phrase"
-• Use queryTerms for multiple terms: ["term1", "term2"] (AND logic)
-• For OR operations: run separate searches for each term
-• Combine with filters: author, repo, date filters
-
-Alternative tools:
-• Use github_search_code for file-specific commits
-• Use github_search_repos to find repositories first`,
+              error: createNoResultsError('commits'),
+              hints,
             });
           }
 
@@ -349,24 +245,41 @@ Alternative tools:
             args
           );
 
-          return createResult({ data: optimizedResult });
-        } catch (error) {
-          const errorMessage = (error as Error).message || '';
-
-          if (errorMessage.includes('authentication')) {
-            return createResult({
-              error: createAuthenticationError(),
-            });
-          }
-
-          if (errorMessage.includes('rate limit')) {
-            return createResult({
-              error: createRateLimitError(false),
-            });
-          }
+          // Generate smart hints for successful results
+          const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+            hasResults: true,
+            totalItems: items.length,
+            customHints: buildCustomHints(args),
+          });
 
           return createResult({
-            error: createSearchFailedError('commits'),
+            data: {
+              ...optimizedResult,
+              hints,
+            },
+          });
+        } catch (error) {
+          const errorMessage = (error as Error).message || '';
+          let finalError: string;
+
+          if (errorMessage.includes('authentication')) {
+            finalError = createAuthenticationError();
+          } else if (errorMessage.includes('rate limit')) {
+            finalError = createRateLimitError(false);
+          } else {
+            finalError = createSearchFailedError('commits');
+          }
+
+          const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: finalError,
+            customHints: buildCustomHints(args),
+          });
+
+          return createResult({
+            error: finalError,
+            hints,
           });
         }
       }
@@ -421,9 +334,14 @@ async function transformCommitsToOptimizedFormat(
 
   const optimizedCommits = items
     .map(item => {
+      // Sanitize commit message
+      const rawMessage = getCommitTitle(item.commit?.message ?? '');
+      const messageSanitized = ContentSanitizer.sanitizeContent(rawMessage);
+      const warningsCollectorSet = new Set<string>(messageSanitized.warnings);
+
       const commitObj: any = {
         sha: item.sha, // Use as branch parameter in github_fetch_content
-        message: getCommitTitle(item.commit?.message ?? ''),
+        message: messageSanitized.content,
         author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
         date: toDDMMYYYY(item.commit?.author?.date ?? ''),
         repository: singleRepo
@@ -433,6 +351,11 @@ async function transformCommitsToOptimizedFormat(
           ? item.sha
           : `${simplifyRepoUrl(item.repository?.url || '')}@${item.sha}`,
       };
+
+      // Add security warnings if any were detected
+      if (warningsCollectorSet.size > 0) {
+        commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
+      }
 
       // Add diff information if available
       if (shouldFetchDiff && diffData.has(item.sha)) {
@@ -444,19 +367,44 @@ async function transformCommitsToOptimizedFormat(
           deletions: commitData.stats?.deletions || 0,
           total_changes: commitData.stats?.total || 0,
           files: files
-            .map((f: any) => ({
-              filename: f.filename,
-              status: f.status,
-              additions: f.additions,
-              deletions: f.deletions,
-              changes: f.changes,
-              patch: f.patch
-                ? f.patch.substring(0, 1000) +
-                  (f.patch.length > 1000 ? '...' : '')
-                : undefined,
-            }))
+            .map((f: any) => {
+              const fileObj: any = {
+                filename: f.filename,
+                status: f.status,
+                additions: f.additions,
+                deletions: f.deletions,
+                changes: f.changes,
+              };
+
+              // Sanitize patch content if present
+              if (f.patch) {
+                const rawPatch =
+                  f.patch.substring(0, 1000) +
+                  (f.patch.length > 1000 ? '...' : '');
+                const patchSanitized =
+                  ContentSanitizer.sanitizeContent(rawPatch);
+                fileObj.patch = patchSanitized.content;
+
+                // Collect patch sanitization warnings
+                if (patchSanitized.warnings.length > 0) {
+                  patchSanitized.warnings.forEach(w =>
+                    warningsCollectorSet.add(`[${f.filename}] ${w}`)
+                  );
+                }
+              }
+
+              return fileObj;
+            })
             .slice(0, 5), // Limit to 5 files per commit
         };
+
+        // Update warnings if patch sanitization added any
+        if (
+          warningsCollectorSet.size >
+          (commitObj._sanitization_warnings?.length || 0)
+        ) {
+          commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
+        }
       }
 
       return commitObj;
@@ -524,21 +472,25 @@ export async function searchGitHubCommits(
       return result;
     } catch (error) {
       const errorMessage = (error as Error).message || '';
+      let finalError: string;
 
       if (errorMessage.includes('authentication')) {
-        return createResult({
-          error: createAuthenticationError(),
-        });
+        finalError = createAuthenticationError();
+      } else if (errorMessage.includes('rate limit')) {
+        finalError = createRateLimitError(false);
+      } else {
+        finalError = createSearchFailedError('commits');
       }
 
-      if (errorMessage.includes('rate limit')) {
-        return createResult({
-          error: createRateLimitError(false),
-        });
-      }
+      const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+        hasResults: false,
+        totalItems: 0,
+        errorMessage: finalError,
+      });
 
       return createResult({
-        error: createSearchFailedError('commits'),
+        error: finalError,
+        hints,
       });
     }
   });
@@ -549,4 +501,51 @@ export function buildGitHubCommitCliArgs(
 ): string[] {
   const builder = new GitHubCommitsSearchBuilder();
   return builder.build(params);
+}
+
+/**
+ * Build custom hints based on search parameters for better LLM guidance
+ */
+function buildCustomHints(args: GitHubCommitSearchParams): string[] {
+  const hints: string[] = [];
+
+  // Query optimization hints
+  if (args.exactQuery && args.exactQuery.split(' ').length > 2) {
+    hints.push(
+      'Try queryTerms for broader search: split exact phrase into terms'
+    );
+  }
+
+  if (args.queryTerms && args.queryTerms.length > 3) {
+    hints.push(
+      'Reduce queryTerms count: use 2-3 core terms for better results'
+    );
+  }
+
+  // Filter optimization hints
+  const filterCount = [
+    args.owner && args.repo,
+    args.author,
+    args['author-email'],
+    args.hash,
+    args['author-date'],
+    args.visibility,
+  ].filter(Boolean).length;
+
+  if (filterCount > 2) {
+    hints.push('Remove some filters: too many constraints may limit results');
+  }
+
+  // Strategic hints
+  if (args.hash) {
+    hints.push('Use commit SHA with github_fetch_content for full context');
+  }
+
+  if (args.getChangesContent && (!args.owner || !args.repo)) {
+    hints.push(
+      'Add owner/repo for getChangesContent: diff requires repository context'
+    );
+  }
+
+  return hints;
 }

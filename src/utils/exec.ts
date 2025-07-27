@@ -374,8 +374,10 @@ export async function executeGitHubCommand(
     );
   }
 
-  // Use mutex to serialize all GitHub requests
-  return githubMutex.runExclusive(async () => {
+  // Use mutex to serialize all GitHub requests with timeout
+  const MUTEX_TIMEOUT = 30000; // 30 seconds
+
+  const mutexOperation = githubMutex.runExclusive(async () => {
     try {
       // Get shell configuration
       const shellConfig = getShellConfig(options.windowsShell);
@@ -415,6 +417,21 @@ export async function executeGitHubCommand(
       );
     }
   });
+
+  // Add timeout handling to prevent deadlock
+  const timeoutPromise = new Promise<CallToolResult>((_, reject) =>
+    setTimeout(
+      () =>
+        reject(new Error('GitHub mutex operation timeout after 30 seconds')),
+      MUTEX_TIMEOUT
+    )
+  );
+
+  return Promise.race([mutexOperation, timeoutPromise]).catch(
+    (error: Error) => {
+      return createErrorResult('GitHub operation failed or timed out', error);
+    }
+  );
 }
 
 /**

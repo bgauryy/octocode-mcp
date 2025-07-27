@@ -8,28 +8,67 @@ import {
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { generateCacheKey, withCache } from '../../utils/cache';
 import { executeGitHubCommand } from '../../utils/exec';
-import { minifyContent } from '../../utils/minifier';
+import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { withSecurityValidation } from './utils/withSecurityValidation';
+import { generateSmartHints } from './utils/toolRelationships';
+import {
+  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GITHUB_SEARCH_CODE_TOOL_NAME,
+  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+} from './utils/toolConstants';
 
-export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
+const DESCRIPTION = `Fetch file contents with smart context extraction.
 
-const DESCRIPTION = `Fetches the content of multiple files from GitHub repositories in parallel. Supports up to 5 queries with automatic fallback handling.
+Supports: Up to 10 files fetching with auto-fallback for branches
 
-TOKEN OPTIMIZATION:
-- Full file content is expensive in tokens. Use startLine/endLine for partial access
-- Large files should be accessed in parts rather than full content
-- Use minified=true (default) to optimize content for token efficiency
+KEY WORKFLOW: 
+  - Code Research: ${GITHUB_SEARCH_CODE_TOOL_NAME} results -> fetch file using  "matchString" ->  get context around matches
+  - File Content: ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} results  -> fetch relevant files to fetch by structure and file path
 
-BULK QUERY FEATURES:
-- queries: array of up to 5 different file fetch queries for parallel execution
-- Each query can have fallbackParams for automatic retry with modified parameters
-- Optimizes workflow by executing multiple file fetches simultaneously
-- Each query should target different files or sections
-- Fallback logic automatically adjusts parameters if original query fails
-- Automatic main/master branch fallback for each query
+OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
+`;
 
-Use for comprehensive file analysis - query different files, sections, or implementations in one call.`;
+// Simple in-memory cache for default branch results
+const defaultBranchCache = new Map<string, string>();
+
+// Cached function to get repository's default branch
+async function getRepositoryDefaultBranch(
+  owner: string,
+  repo: string
+): Promise<string | null> {
+  const cacheKey = `${owner}/${repo}`;
+
+  // Check cache first
+  if (defaultBranchCache.has(cacheKey)) {
+    return defaultBranchCache.get(cacheKey)!;
+  }
+
+  try {
+    const repoResult = await executeGitHubCommand(
+      'api',
+      [`/repos/${owner}/${repo}`],
+      {
+        cache: false,
+      }
+    );
+
+    if (repoResult.isError) {
+      return null;
+    }
+
+    const repoData = JSON.parse(repoResult.content[0].text as string);
+    const execResult = repoData.result || repoData;
+    const defaultBranch = execResult.default_branch || 'main';
+
+    // Cache the successful result
+    defaultBranchCache.set(cacheKey, defaultBranch);
+
+    return defaultBranch;
+  } catch (e) {
+    return null;
+  }
+}
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -55,8 +94,9 @@ const FileContentQuerySchema = z.object({
     .min(1)
     .max(255)
     .regex(/^[^\s]+$/)
+    .optional()
     .describe(
-      `Branch name, tag name, OR commit SHA. Tool will automatically try 'main' and 'master' if specified branch is not found.`
+      `Branch name, tag name, OR commit SHA. If not provided, uses repository's default branch automatically. If provided branch fails, tries 'main' and 'master' as fallback.`
     ),
   filePath: z
     .string()
@@ -88,11 +128,17 @@ const FileContentQuerySchema = z.object({
     .optional()
     .default(5)
     .describe(`Context lines around target range. Default: 5.`),
+  matchString: z
+    .string()
+    .optional()
+    .describe(
+      `Exact string to find in the file (from search results). Automatically locates this string and returns surrounding context with contextLines. Perfect for getting full context of search results.`
+    ),
   minified: z
     .boolean()
     .default(true)
     .describe(
-      `Optimize content for token efficiency (enabled by default). Removes excessive whitespace and comments. Set to false only when exact formatting is required.`
+      `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
     ),
   fallbackParams: z
     .object({
@@ -101,6 +147,7 @@ const FileContentQuerySchema = z.object({
       startLine: z.number().int().min(1).optional(),
       endLine: z.number().int().min(1).optional(),
       contextLines: z.number().int().min(0).max(50).optional(),
+      matchString: z.string().optional(),
       minified: z.boolean().optional(),
     })
     .optional()
@@ -126,9 +173,9 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         queries: z
           .array(FileContentQuerySchema)
           .min(1)
-          .max(5)
+          .max(10)
           .describe(
-            'Array of up to 5 different file fetch queries for parallel execution'
+            'Array of up to 10 different file fetch queries for parallel execution'
           ),
       },
       annotations: {
@@ -149,7 +196,10 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           return createResult({
-            error: `Failed to fetch file content: ${errorMessage}. Verify repository access and file paths.`,
+            isError: true,
+            hints: [
+              `Failed to fetch file content: ${errorMessage}. Verify repository access and file paths.`,
+            ],
           });
         }
       }
@@ -175,7 +225,8 @@ async function fetchMultipleGitHubFileContents(
         filePath: query.filePath,
         startLine: query.startLine,
         endLine: query.endLine,
-        contextLines: query.contextLines || 5,
+        contextLines: query.contextLines !== undefined ? query.contextLines : 5,
+        matchString: query.matchString,
         minified: query.minified !== undefined ? query.minified : true,
       };
 
@@ -253,6 +304,13 @@ async function fetchMultipleGitHubFileContents(
   const successfulQueries = results.filter(r => !('error' in r.result)).length;
   const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
 
+  const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+    hasResults: successfulQueries > 0,
+    totalItems: successfulQueries,
+    errorMessage:
+      successfulQueries === 0 ? 'Some or all file fetches failed' : undefined,
+  });
+
   return createResult({
     data: {
       results,
@@ -262,6 +320,7 @@ async function fetchMultipleGitHubFileContents(
         queriesWithFallback,
       },
     },
+    hints,
   });
 }
 
@@ -271,11 +330,26 @@ export async function fetchGitHubFileContent(
   const cacheKey = generateCacheKey('gh-file-content', params);
 
   return withCache(cacheKey, async () => {
-    const { owner, repo, branch, filePath } = params;
+    const { owner, repo, filePath } = params;
+    let { branch } = params;
 
     try {
+      // If no branch provided, get the default branch
+      if (!branch) {
+        const defaultBranch = await getRepositoryDefaultBranch(owner, repo);
+
+        if (!defaultBranch) {
+          return createResult({
+            isError: true,
+            hints: [`Repository ${owner}/${repo} not found or not accessible`],
+          });
+        }
+
+        branch = defaultBranch;
+      }
+
       // Try to fetch file content directly
-      const isCommitSha = branch.match(/^[0-9a-f]{40}$/);
+      const isCommitSha = branch!.match(/^[0-9a-f]{40}$/);
       const apiPath = isCommitSha
         ? `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}` // Use contents API with ref for commit SHA
         : `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`; // Use contents API for branches/tags
@@ -287,39 +361,42 @@ export async function fetchGitHubFileContent(
       if (result.isError) {
         const errorMsg = result.content[0].text as string;
 
-        // Silent fallback for main/master branches only
-        if (
-          errorMsg.includes('404') &&
-          (branch === 'main' || branch === 'master')
-        ) {
-          const fallbackBranch = branch === 'main' ? 'master' : 'main';
-          const fallbackPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${fallbackBranch}`;
+        // Efficient fallback: try common branches directly on 404
+        if (errorMsg.includes('404')) {
+          const commonBranches = ['main', 'master'];
+          const triedBranches = [branch];
 
-          // Retry with fallback branch
-          const fallbackResult = await executeGitHubCommand(
-            'api',
-            [fallbackPath],
-            {
-              cache: false,
-            }
-          );
+          // Try common branches directly without additional repo info calls
+          for (const tryBranch of commonBranches) {
+            if (triedBranches.includes(tryBranch)) continue;
 
-          if (!fallbackResult.isError) {
-            return await processFileContent(
-              fallbackResult,
-              owner,
-              repo,
-              fallbackBranch,
-              filePath,
-              params.minified,
-              params.startLine,
-              params.endLine,
-              params.contextLines
+            const tryBranchPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${tryBranch}`;
+            const tryBranchResult = await executeGitHubCommand(
+              'api',
+              [tryBranchPath],
+              {
+                cache: false,
+              }
             );
+
+            if (!tryBranchResult.isError) {
+              return await processFileContent(
+                tryBranchResult,
+                owner,
+                repo,
+                tryBranch,
+                filePath,
+                params.minified,
+                params.startLine,
+                params.endLine,
+                params.contextLines,
+                params.matchString
+              );
+            }
           }
         }
 
-        // Return original error if fallback didn't work or wasn't applicable
+        // Return original error if all fallbacks failed
         return result;
       }
 
@@ -327,12 +404,13 @@ export async function fetchGitHubFileContent(
         result,
         owner,
         repo,
-        branch,
+        branch!,
         filePath,
         params.minified,
         params.startLine,
         params.endLine,
-        params.contextLines
+        params.contextLines,
+        params.matchString
       );
     } catch (error) {
       return createResult({
@@ -351,7 +429,8 @@ async function processFileContent(
   minified: boolean,
   startLine?: number,
   endLine?: number,
-  contextLines: number = 5
+  contextLines: number = 5,
+  matchString?: string
 ): Promise<CallToolResult> {
   // Extract the actual content from the exec result
   const execResult = JSON.parse(result.content[0].text as string);
@@ -359,8 +438,10 @@ async function processFileContent(
   // Check if it's a directory
   if (Array.isArray(fileData)) {
     return createResult({
-      error:
+      isError: true,
+      hints: [
         'Path is a directory. Use github_view_repo_structure to list directory contents',
+      ],
     });
   }
 
@@ -373,14 +454,18 @@ async function processFileContent(
     const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
     return createResult({
-      error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+      isError: true,
+      hints: [
+        `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+      ],
     });
   }
 
   // Get and decode content with validation
   if (!fileData.content) {
     return createResult({
-      error: 'File is empty - no content to display',
+      isError: true,
+      hints: ['File is empty - no content to display'],
     });
   }
 
@@ -388,7 +473,8 @@ async function processFileContent(
 
   if (!base64Content) {
     return createResult({
-      error: 'File is empty - no content to display',
+      isError: true,
+      hints: ['File is empty - no content to display'],
     });
   }
 
@@ -399,16 +485,20 @@ async function processFileContent(
     // Simple binary check - look for null bytes
     if (buffer.indexOf(0) !== -1) {
       return createResult({
-        error:
+        isError: true,
+        hints: [
           'Binary file detected. Cannot display as text - download directly from GitHub',
+        ],
       });
     }
 
     decodedContent = buffer.toString('utf-8');
   } catch (decodeError) {
     return createResult({
-      error:
+      isError: true,
+      hints: [
         'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+      ],
     });
   }
 
@@ -417,23 +507,28 @@ async function processFileContent(
   decodedContent = sanitizationResult.content;
 
   // Add security warnings to the response if any issues were found
-  const securityWarnings: string[] = [];
+  const securityWarningsSet = new Set<string>();
   if (sanitizationResult.hasSecrets) {
-    securityWarnings.push(
+    securityWarningsSet.add(
       `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
     );
   }
   if (sanitizationResult.hasPromptInjection) {
-    securityWarnings.push('Potential prompt injection detected and sanitized');
+    securityWarningsSet.add(
+      'Potential prompt injection detected and sanitized'
+    );
   }
   if (sanitizationResult.isMalicious) {
-    securityWarnings.push(
+    securityWarningsSet.add(
       'Potentially malicious content detected and sanitized'
     );
   }
   if (sanitizationResult.warnings.length > 0) {
-    securityWarnings.push(...sanitizationResult.warnings);
+    sanitizationResult.warnings.forEach(warning =>
+      securityWarningsSet.add(warning)
+    );
   }
+  const securityWarnings = Array.from(securityWarningsSet);
 
   // Handle partial file access
   let finalContent = decodedContent;
@@ -446,33 +541,79 @@ async function processFileContent(
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
+  // 🔥 SMART MATCH FINDER: If matchString is provided, find it and set line range
+  if (matchString) {
+    const matchingLines: number[] = [];
+
+    // Find all lines that contain the match string
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(matchString)) {
+        matchingLines.push(i + 1); // Convert to 1-based line numbers
+      }
+    }
+
+    if (matchingLines.length === 0) {
+      return createResult({
+        isError: true,
+        hints: [
+          `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+        ],
+      });
+    }
+
+    // Use the first match, with context lines around it
+    const firstMatch = matchingLines[0];
+    const matchStartLine = Math.max(1, firstMatch - contextLines);
+    const matchEndLine = Math.min(totalLines, firstMatch + contextLines);
+
+    // Override any manually provided startLine/endLine when matchString is used
+    startLine = matchStartLine;
+    endLine = matchEndLine;
+
+    // Add info about the match for user context
+    securityWarnings.push(
+      `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
+    );
+  }
+
   if (startLine !== undefined) {
     // Validate line numbers
     if (startLine < 1 || startLine > totalLines) {
       return createResult({
-        error: `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        isError: true,
+        hints: [
+          `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        ],
       });
     }
 
     // Calculate actual range with context
     const contextStart = Math.max(1, startLine - contextLines);
-    const contextEnd = endLine
-      ? Math.min(totalLines, endLine + contextLines)
-      : Math.min(totalLines, startLine + contextLines);
+    let adjustedEndLine = endLine;
 
-    // Validate endLine if provided
+    // Validate and auto-adjust endLine if provided
     if (endLine !== undefined) {
       if (endLine < startLine) {
         return createResult({
-          error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+          isError: true,
+          hints: [
+            `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+          ],
         });
       }
+
+      // Auto-adjust endLine to file boundaries with helpful message
       if (endLine > totalLines) {
-        return createResult({
-          error: `Invalid endLine ${endLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
-        });
+        adjustedEndLine = totalLines;
+        securityWarnings.push(
+          `Requested endLine ${endLine} adjusted to ${totalLines} (file end)`
+        );
       }
     }
+
+    const contextEnd = adjustedEndLine
+      ? Math.min(totalLines, adjustedEndLine + contextLines)
+      : Math.min(totalLines, startLine + contextLines);
 
     // Extract the specified range with context from ORIGINAL content
     const selectedLines = lines.slice(contextStart - 1, contextEnd);
@@ -486,7 +627,7 @@ async function processFileContent(
       const lineNumber = contextStart + index;
       const isInTargetRange =
         lineNumber >= startLine &&
-        (endLine === undefined || lineNumber <= endLine);
+        (adjustedEndLine === undefined || lineNumber <= adjustedEndLine);
       const marker = isInTargetRange ? '→' : ' ';
       return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
     });
@@ -510,7 +651,7 @@ async function processFileContent(
       });
 
       const codeContent = codeLines.join('\n');
-      const minifyResult = await minifyContent(codeContent, filePath);
+      const minifyResult = await minifyContentV2(codeContent, filePath);
 
       if (!minifyResult.failed) {
         // Apply minification first, then add simple line annotations
@@ -522,12 +663,18 @@ async function processFileContent(
       }
     } else {
       // Full file minification
-      const minifyResult = await minifyContent(finalContent, filePath);
+      const minifyResult = await minifyContentV2(finalContent, filePath);
       finalContent = minifyResult.content;
       minificationFailed = minifyResult.failed;
       minificationType = minifyResult.type;
     }
   }
+
+  const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+    hasResults: true,
+    totalItems: 1,
+    customHints: securityWarnings.length > 0 ? securityWarnings : undefined,
+  });
 
   return createResult({
     data: {
@@ -559,5 +706,6 @@ async function processFileContent(
         securityWarnings,
       }),
     } as GitHubFileContentResponse,
+    hints,
   });
 }
