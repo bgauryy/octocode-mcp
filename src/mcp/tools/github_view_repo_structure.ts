@@ -18,28 +18,12 @@ import { generateSmartHints } from './utils/toolRelationships';
 
 export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
-const DESCRIPTION = `PURPOSE: Explore repository structure for project understanding and research planning
+const DESCRIPTION = `Explore GitHub repository structure with smart filtering and branch validation.
+Output a list of files and folders in a repository at a specific path for smarter research.
 
-Further Research With for more details:
- ${GITHUB_SEARCH_CODE_TOOL_NAME}
- ${GITHUB_GET_FILE_CONTENT_TOOL_NAME}
+Use with ${GITHUB_SEARCH_CODE_TOOL_NAME} and ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} for detailed analysis.
 
-USAGE:
- Understand project organization
- Verify repository access
- Navigate to specific directories
-
-KEY FEATURES:
- Recursive exploration
- Smart filtering of irrelevant files
- Branch/path validation
-
-BEST PRACTICES:
- Start with root path and depth 1
- Verify branch exists
- Use search if path unknown
-
-PHILOSOPHY: Build comprehensive understanding progressively`;
+BEST PRACTICES: Start with depth=1, use search for unknown paths, avoid deep exploration.`;
 
 export function registerViewRepositoryStructureTool(server: McpServer) {
   server.registerTool(
@@ -55,25 +39,21 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
             /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/,
             'Invalid GitHub username/org format'
           )
-          .describe(
-            'Repository owner/organization name (e.g., "facebook", "microsoft"). Do NOT include repository name.'
-          ),
+          .describe('Repository owner or organization name'),
 
         repo: z
           .string()
           .min(1)
           .max(100)
           .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid repository name format')
-          .describe(`Repository name under a organization. `),
+          .describe('Repository name only'),
 
         branch: z
           .string()
           .min(1)
           .max(255)
           .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
-          .describe(
-            'Branch name. Default branch varies between repositories. Tool will automatically try default branch if specified branch is not found, but it is more efficient to verify the correct branch first.'
-          ),
+          .describe('Branch name'),
 
         path: z
           .string()
@@ -82,7 +62,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .refine(path => !path.includes('..'), 'Path traversal not allowed')
           .refine(path => path.length <= 500, 'Path too long')
           .describe(
-            'Directory path within repository. Start with empty path to see actual repository structure first. Do not assume repository structure or nested paths exist. Do not start with slash. Verify path exists before using specific directories.'
+            'Directory path within repository. Start empty for root for exploration'
           ),
 
         depth: z
@@ -93,7 +73,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .optional()
           .default(1)
           .describe(
-            'Depth of directory structure to explore. Default is 1 for fast results. Maximum is 2. Higher values take more time - choose depth > 1 only for deep research needs.'
+            'Directory depth to explore. Default 1 (preferred). Max 2. Use sparingly.'
           ),
 
         includeIgnored: z
@@ -101,16 +81,14 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
           .optional()
           .default(false)
           .describe(
-            'If true, shows all files and folders including configuration files, lock files, hidden directories, etc. Default is false to show only relevant code files and directories. for optimization'
+            'Include config files, lock files, hidden directories. Default false for optimization'
           ),
 
         showMedia: z
           .boolean()
           .optional()
           .default(false)
-          .describe(
-            'If true, shows media files (images, videos, audio, documents). Default is false to hide media files and focus on code structure.'
-          ),
+          .describe('Include media files. Default false for optimization'),
       },
       annotations: {
         title: 'GitHub Repository Explorer',
