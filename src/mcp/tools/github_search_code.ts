@@ -17,8 +17,13 @@ import { minifyContentV2 } from '../../utils/minifier';
 import {
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  GitHubToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import {
+  searchGitHubCodeAPI,
+  GitHubCodeSearchQuery as APIGitHubCodeSearchQuery,
+} from '../../utils/githubAPI';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -114,10 +119,25 @@ export interface GitHubCodeSearchQueryResult {
   queryId: string;
   originalQuery: GitHubCodeSearchQuery;
   result: OptimizedCodeSearchResult;
+  apiResult?: OptimizedCodeSearchResult;
   error?: string;
+  apiError?: string;
 }
 
-export function registerGitHubSearchCodeTool(server: McpServer) {
+export interface ProcessedCodeSearchResult {
+  queryId: string;
+  repository: string;
+  path: string;
+  matches: string[];
+  repositoryInfo: {
+    nameWithOwner: string;
+  };
+}
+
+export function registerGitHubSearchCodeTool(
+  server: McpServer,
+  opts: GitHubToolOptions = { apiType: 'both' }
+) {
   server.registerTool(
     GITHUB_SEARCH_CODE_TOOL_NAME,
     {
@@ -154,7 +174,8 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         try {
           return await searchMultipleGitHubCode(
             args.queries,
-            args.verbose ?? false
+            args.verbose ?? false,
+            opts
           );
         } catch (error) {
           const errorMessage =
@@ -320,10 +341,11 @@ async function transformToOptimizedFormat(
  */
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  opts: GitHubToolOptions = { apiType: 'both' }
 ): Promise<CallToolResult> {
   // Execute all queries and collect results
-  const queryResults = await executeQueriesAndCollectResults(queries);
+  const queryResults = await executeQueriesAndCollectResults(queries, opts);
 
   // Process successful results and extract research context
   const { processedResults, aggregatedContext } =
@@ -340,7 +362,8 @@ async function searchMultipleGitHubCode(
  * Execute all queries and collect raw results with error handling
  */
 async function executeQueriesAndCollectResults(
-  queries: GitHubCodeSearchQuery[]
+  queries: GitHubCodeSearchQuery[],
+  opts: GitHubToolOptions = { apiType: 'both' }
 ): Promise<GitHubCodeSearchQueryResult[]> {
   const results: GitHubCodeSearchQueryResult[] = [];
 
@@ -360,31 +383,112 @@ async function executeQueriesAndCollectResults(
     }
 
     try {
-      const result = await searchGitHubCode(query);
+      // Execute searches based on apiType option
+      let cliResult: PromiseSettledResult<CallToolResult> | null = null;
+      let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-      if (result.isError) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          error: result.content[0].text as string,
-        });
-      } else {
-        const execResult = JSON.parse(result.content[0].text as string);
+      if (opts.apiType === 'gh' || opts.apiType === 'both') {
+        // Execute CLI search
+        cliResult = await Promise.allSettled([searchGitHubCode(query)]).then(
+          results => results[0]
+        );
+      }
+
+      if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+        // Convert query to API format
+        const apiQuery: APIGitHubCodeSearchQuery = {
+          id: query.id,
+          queryTerms: query.queryTerms,
+          language: query.language,
+          owner: query.owner,
+          repo: query.repo,
+          filename: query.filename,
+          extension: query.extension,
+          match: query.match,
+          size: query.size,
+          limit: query.limit,
+          visibility: query.visibility,
+          minify: query.minify,
+          sanitize: query.sanitize,
+        };
+
+        // Execute API search
+        apiResult = await Promise.allSettled([
+          searchGitHubCodeAPI(apiQuery),
+        ]).then(results => results[0]);
+      }
+
+      let processedResult: OptimizedCodeSearchResult = {
+        items: [],
+        total_count: 0,
+      };
+      let error: string | undefined;
+      let processedApiResult: OptimizedCodeSearchResult | undefined;
+      let apiError: string | undefined;
+
+      // Process CLI result
+      if (
+        cliResult &&
+        cliResult.status === 'fulfilled' &&
+        !cliResult.value.isError
+      ) {
+        const execResult = JSON.parse(
+          cliResult.value.content[0].text as string
+        );
         const codeResults: GitHubCodeSearchItem[] = execResult.result;
         const items = Array.isArray(codeResults) ? codeResults : [];
-        const optimizedResult = await transformToOptimizedFormat(
+        processedResult = await transformToOptimizedFormat(
           items,
           query.minify !== false,
           query.sanitize !== false
         );
-
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: optimizedResult,
-        });
+      } else if (
+        cliResult &&
+        cliResult.status === 'fulfilled' &&
+        cliResult.value.isError
+      ) {
+        error = cliResult.value.content[0].text as string;
+      } else if (cliResult && cliResult.status === 'rejected') {
+        error = `CLI search failed: ${cliResult.reason}`;
       }
+
+      // Process API result
+      if (
+        apiResult &&
+        apiResult.status === 'fulfilled' &&
+        !apiResult.value.isError
+      ) {
+        const apiData = JSON.parse(apiResult.value.content[0].text as string);
+        // The API result structure is different - it has a 'data' wrapper
+        const apiResultData = apiData.data || apiData;
+        processedApiResult = {
+          items: apiResultData.items || [],
+          total_count: apiResultData.total_count || 0,
+          repository: apiResultData.repository,
+          securityWarnings: apiResultData.securityWarnings,
+          minified: apiResultData.minified,
+          minificationFailed: apiResultData.minificationFailed,
+          minificationTypes: apiResultData.minificationTypes,
+          _researchContext: apiResultData._researchContext,
+        };
+      } else if (
+        apiResult &&
+        apiResult.status === 'fulfilled' &&
+        apiResult.value.isError
+      ) {
+        apiError = apiResult.value.content[0].text as string;
+      } else if (apiResult && apiResult.status === 'rejected') {
+        apiError = `API search failed: ${apiResult.reason}`;
+      }
+
+      results.push({
+        queryId,
+        originalQuery: query,
+        result: processedResult,
+        apiResult: processedApiResult,
+        error,
+        apiError,
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -406,7 +510,7 @@ async function executeQueriesAndCollectResults(
 async function processQueryResults(
   queryResults: GitHubCodeSearchQueryResult[]
 ) {
-  const processedResults: any[] = [];
+  const processedResults: ProcessedCodeSearchResult[] = [];
   const aggregatedContext = {
     foundPackages: new Set<string>(),
     foundFiles: new Set<string>(),
@@ -414,6 +518,7 @@ async function processQueryResults(
   };
 
   queryResults.forEach(result => {
+    // Process CLI results
     if (!result.error && result.result.items) {
       // Collect research context from results
       if (result.result._researchContext) {
@@ -444,6 +549,38 @@ async function processQueryResults(
         });
       });
     }
+
+    // Process API results
+    if (!result.apiError && result.apiResult?.items) {
+      // Collect research context from API results
+      if (result.apiResult._researchContext) {
+        result.apiResult._researchContext.foundPackages?.forEach(pkg =>
+          aggregatedContext.foundPackages.add(pkg)
+        );
+        result.apiResult._researchContext.foundFiles?.forEach(file =>
+          aggregatedContext.foundFiles.add(file)
+        );
+        if (result.apiResult._researchContext.repositoryContext) {
+          const { owner, repo } =
+            result.apiResult._researchContext.repositoryContext;
+          aggregatedContext.repositoryContexts.add(`${owner}/${repo}`);
+        }
+      }
+
+      // Convert API results to flattened format for response
+      result.apiResult.items.forEach(item => {
+        const matches = item.matches.map(match => match.context);
+        processedResults.push({
+          queryId: `${result.queryId}-api`,
+          repository: item.repository.nameWithOwner,
+          path: item.path,
+          matches: matches,
+          repositoryInfo: {
+            nameWithOwner: item.repository.nameWithOwner,
+          },
+        });
+      });
+    }
   });
 
   return { processedResults, aggregatedContext };
@@ -461,12 +598,17 @@ function generateAllHints(
   }
 ): string[] {
   const totalItems = queryResults.reduce(
-    (sum, r) => sum + (r.error ? 0 : r.result.items.length),
+    (sum, r) =>
+      sum +
+      (r.error ? 0 : r.result.items.length) +
+      (r.apiError ? 0 : r.apiResult?.items.length || 0),
     0
   );
 
   const hasResults = totalItems > 0;
-  const errorMessages = queryResults.filter(r => r.error).map(r => r.error!);
+  const errorMessages = queryResults
+    .filter(r => r.error || r.apiError)
+    .map(r => r.error || r.apiError!);
   const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
 
   // Use the centralized smart hints system from toolRelationships
@@ -489,30 +631,60 @@ function generateAllHints(
  * Create the final response with consistent structure
  */
 function createFinalResponse(
-  processedResults: any[],
+  processedResults: ProcessedCodeSearchResult[],
   hints: string[],
   queryResults: GitHubCodeSearchQueryResult[],
   verbose: boolean
 ): CallToolResult {
+  // Extract API results for separate section
+  const apiResults = queryResults.map(result => ({
+    queryId: result.queryId,
+    data: result.apiResult || { items: [], total_count: 0 },
+    error: result.apiError,
+  }));
+
   let data:
-    | typeof processedResults
-    | { data: typeof processedResults; metadata: object } = processedResults;
+    | { data: typeof processedResults; apiResults: typeof apiResults }
+    | {
+        data: typeof processedResults;
+        apiResults: typeof apiResults;
+        metadata: object;
+      } = {
+    data: processedResults,
+    apiResults,
+  };
 
   // Add metadata only if verbose mode is enabled
   if (verbose) {
     const successfulQueries = queryResults.filter(r => !r.error).length;
     const failedQueries = queryResults.filter(r => r.error).length;
+    const successfulApiQueries = queryResults.filter(
+      r => !r.apiError && r.apiResult
+    ).length;
+    const failedApiQueries = queryResults.filter(r => r.apiError).length;
     const totalQueries = queryResults.length;
 
     data = {
       data: processedResults,
+      apiResults,
       metadata: {
         queries: queryResults,
         summary: {
           totalQueries,
-          successfulQueries,
-          failedQueries,
-          totalCodeItems: processedResults.length,
+          cli: {
+            successfulQueries,
+            failedQueries,
+            totalCodeItems: processedResults.filter(
+              r => !r.queryId.endsWith('-api')
+            ).length,
+          },
+          api: {
+            successfulQueries: successfulApiQueries,
+            failedQueries: failedApiQueries,
+            totalCodeItems: processedResults.filter(r =>
+              r.queryId.endsWith('-api')
+            ).length,
+          },
         },
       },
     };

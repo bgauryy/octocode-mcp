@@ -25,7 +25,10 @@ import {
   GITHUB_SEARCH_COMMITS_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
+  GitHubToolOptions,
 } from './mcp/tools/utils/toolConstants.js';
+
+const API_TYPE: GitHubToolOptions['apiType'] = 'octokit';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
@@ -35,14 +38,19 @@ const SERVER_CONFIG: Implementation = {
 
 function registerAllTools(server: McpServer) {
   const toolRegistrations = [
-    { name: GITHUB_SEARCH_CODE_TOOL_NAME, fn: registerGitHubSearchCodeTool },
     {
-      name: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-      fn: registerFetchGitHubFileContentTool,
+      name: GITHUB_SEARCH_CODE_TOOL_NAME,
+      fn: registerGitHubSearchCodeTool,
+      opts: { apiType: API_TYPE },
     },
     {
       name: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
       fn: registerSearchGitHubReposTool,
+      opts: { apiType: API_TYPE },
+    },
+    {
+      name: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+      fn: registerFetchGitHubFileContentTool,
     },
     {
       name: GITHUB_SEARCH_COMMITS_TOOL_NAME,
@@ -68,7 +76,11 @@ function registerAllTools(server: McpServer) {
 
   for (const tool of toolRegistrations) {
     try {
-      tool.fn(server);
+      if ('opts' in tool && tool.opts) {
+        tool.fn(server, tool.opts);
+      } else {
+        tool.fn(server);
+      }
       successCount++;
     } catch (error) {
       // Log the error but continue with other tools

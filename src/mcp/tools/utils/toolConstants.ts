@@ -1,4 +1,6 @@
-// Tool name constants - centralized to avoid circular dependencies
+export interface GitHubToolOptions {
+  apiType: 'gh' | 'octokit' | 'both';
+}
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';

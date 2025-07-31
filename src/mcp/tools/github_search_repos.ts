@@ -14,8 +14,10 @@ import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 import {
   GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
   PACKAGE_SEARCH_TOOL_NAME,
+  GitHubToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { searchGitHubReposAPI } from '../../utils/githubAPI';
 
 const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
 
@@ -209,26 +211,57 @@ export type GitHubReposSearchQuery = z.infer<
   typeof GitHubReposSearchQuerySchema
 >;
 
+export interface GitHubReposSearchResult {
+  total_count: number;
+  repositories: Array<{
+    name: string;
+    stars: number;
+    description: string;
+    language: string;
+    url: string;
+    forks: number;
+    updatedAt: string;
+    owner: string;
+  }>;
+}
+
 export interface GitHubReposSearchQueryResult {
   queryId: string;
-  result: any;
+  result: GitHubReposSearchResult;
+  apiResult?: GitHubReposSearchResult;
   error?: string;
+  apiError?: string;
 }
 
 export interface GitHubReposResponse {
-  data: any[]; // Repository array
+  data: GitHubReposSearchResult['repositories'];
+  apiResults: Array<{
+    queryId: string;
+    data: GitHubReposSearchResult;
+    error?: string;
+  }>;
   hints: string[];
   metadata?: {
     queries: GitHubReposSearchQueryResult[];
     summary: {
       totalQueries: number;
-      successfulQueries: number;
+      cli: {
+        successfulQueries: number;
+        failedQueries: number;
+      };
+      api: {
+        successfulQueries: number;
+        failedQueries: number;
+      };
       totalRepositories: number;
     };
   };
 }
 
-export function registerSearchGitHubReposTool(server: McpServer) {
+export function registerSearchGitHubReposTool(
+  server: McpServer,
+  opts: GitHubToolOptions = { apiType: 'both' }
+) {
   server.registerTool(
     GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
     {
@@ -265,7 +298,8 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         try {
           return await searchMultipleGitHubRepos(
             args.queries,
-            args.verbose ?? false
+            args.verbose ?? false,
+            opts
           );
         } catch (error) {
           const errorMessage =
@@ -309,11 +343,13 @@ function validateRepositoryQuery(
  * Processes a single query with proper error handling
  * @param query The query to process
  * @param queryId The query identifier
+ * @param opts Tool options for API type configuration
  * @returns Promise resolving to query result
  */
 async function processSingleQuery(
   query: GitHubReposSearchQuery,
-  queryId: string
+  queryId: string,
+  opts: GitHubToolOptions = { apiType: 'both' }
 ): Promise<GitHubReposSearchQueryResult> {
   try {
     // Validate query
@@ -333,37 +369,79 @@ async function processSingleQuery(
       )
     ) as GitHubReposSearchParams;
 
-    // Execute query
-    const result = await searchGitHubRepos(enhancedQuery);
+    // Execute searches based on apiType option
+    let cliResult: PromiseSettledResult<CallToolResult> | null = null;
+    let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-    if (!result.isError) {
-      // Success with original query
-      const execResult = JSON.parse(result.content[0].text as string);
-
-      // Check for empty results
-      if (
-        execResult.total_count === 0 ||
-        (execResult.result && execResult.result.length === 0)
-      ) {
-        return {
-          queryId,
-          result: { total_count: 0, repositories: [] },
-          error: 'No repositories found',
-        };
-      }
-
-      // Return successful result
-      return {
-        queryId,
-        result: execResult,
-      };
+    if (opts.apiType === 'gh' || opts.apiType === 'both') {
+      // Execute CLI search
+      cliResult = await Promise.allSettled([
+        searchGitHubRepos(enhancedQuery),
+      ]).then(results => results[0]);
     }
 
-    // Query failed
+    if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+      // Execute API search
+      apiResult = await Promise.allSettled([
+        searchGitHubReposAPI(enhancedQuery),
+      ]).then(results => results[0]);
+    }
+
+    let processedResult: GitHubReposSearchResult = {
+      total_count: 0,
+      repositories: [],
+    };
+    let error: string | undefined;
+    let processedApiResult: GitHubReposSearchResult | undefined;
+    let apiError: string | undefined;
+
+    // Process CLI result
+    if (
+      cliResult &&
+      cliResult.status === 'fulfilled' &&
+      !cliResult.value.isError
+    ) {
+      const execResult = JSON.parse(cliResult.value.content[0].text as string);
+      processedResult = execResult;
+    } else if (
+      cliResult &&
+      cliResult.status === 'fulfilled' &&
+      cliResult.value.isError
+    ) {
+      error = cliResult.value.content[0].text as string;
+    } else if (cliResult && cliResult.status === 'rejected') {
+      error = `CLI search failed: ${cliResult.reason}`;
+    }
+
+    // Process API result
+    if (
+      apiResult &&
+      apiResult.status === 'fulfilled' &&
+      !apiResult.value.isError
+    ) {
+      const apiData = JSON.parse(apiResult.value.content[0].text as string);
+      // The API result structure is different - it has a 'data' wrapper
+      const apiResultData = apiData.data || apiData;
+      processedApiResult = {
+        total_count: apiResultData.total_count || 0,
+        repositories: apiResultData.repositories || [],
+      };
+    } else if (
+      apiResult &&
+      apiResult.status === 'fulfilled' &&
+      apiResult.value.isError
+    ) {
+      apiError = apiResult.value.content[0].text as string;
+    } else if (apiResult && apiResult.status === 'rejected') {
+      apiError = `API search failed: ${apiResult.reason}`;
+    }
+
     return {
       queryId,
-      result: { total_count: 0, repositories: [] },
-      error: 'Query failed',
+      result: processedResult,
+      apiResult: processedApiResult,
+      error,
+      apiError,
     };
   } catch (error) {
     // Handle any unexpected errors
@@ -378,7 +456,8 @@ async function processSingleQuery(
 
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  opts: GitHubToolOptions = { apiType: 'both' }
 ): Promise<CallToolResult> {
   const results: GitHubReposSearchQueryResult[] = [];
 
@@ -387,20 +466,27 @@ async function searchMultipleGitHubRepos(
     const query = queries[index];
     const queryId = query.id || `query_${index + 1}`;
 
-    const result = await processSingleQuery(query, queryId);
+    const result = await processSingleQuery(query, queryId, opts);
     results.push(result);
   }
 
-  // Collect all repositories from successful queries
-  const allRepositories: any[] = [];
+  // Collect all repositories from successful queries (both CLI and API)
+  const allRepositories: GitHubReposSearchResult['repositories'] = [];
   results.forEach(result => {
+    // Add CLI results
     if (!result.error && result.result.repositories) {
       allRepositories.push(...result.result.repositories);
+    }
+    // Add API results
+    if (!result.apiError && result.apiResult?.repositories) {
+      allRepositories.push(...result.apiResult.repositories);
     }
   });
 
   // Generate hints using centralized system
-  const errorMessages = results.filter(r => r.error).map(r => r.error!);
+  const errorMessages = results
+    .filter(r => r.error || r.apiError)
+    .map(r => r.error || r.apiError!);
   const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
   const hints = generateSmartHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
     hasResults: allRepositories.length > 0,
@@ -411,21 +497,58 @@ async function searchMultipleGitHubRepos(
   // Calculate summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
+  const successfulApiQueries = results.filter(
+    r => !r.apiError && r.apiResult
+  ).length;
   const totalRepositories = allRepositories.length;
 
-  const responseData: any = {
+  // Extract API results for separate section
+  const apiResults = results.map(result => ({
+    queryId: result.queryId,
+    data: result.apiResult || { total_count: 0, repositories: [] },
+    error: result.apiError,
+  }));
+
+  let responseData:
+    | {
+        data: typeof allRepositories;
+        apiResults: typeof apiResults;
+        hints: string[];
+      }
+    | {
+        data: typeof allRepositories;
+        apiResults: typeof apiResults;
+        hints: string[];
+        metadata: object;
+      } = {
     data: allRepositories,
+    apiResults,
     hints,
   };
 
   // Add metadata only if verbose mode is enabled
   if (verbose) {
-    responseData.metadata = {
-      queries: results,
-      summary: {
-        totalQueries,
-        successfulQueries,
-        totalRepositories,
+    const failedQueries = results.filter(r => r.error).length;
+    const failedApiQueries = results.filter(r => r.apiError).length;
+
+    responseData = {
+      data: allRepositories,
+      apiResults,
+      hints,
+      metadata: {
+        queries: results,
+        summary: {
+          totalQueries,
+          cli: {
+            successfulQueries,
+            failedQueries,
+          },
+          api: {
+            successfulQueries: successfulApiQueries,
+            failedQueries: failedApiQueries,
+          },
+          totalRepositories,
+        },
       },
     };
   }
