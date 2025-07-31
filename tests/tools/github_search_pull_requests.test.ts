@@ -54,7 +54,11 @@ describe('GitHub Search Pull Requests Tool', () => {
     });
 
     // Register tool with proper options
-    registerSearchGitHubPullRequestsTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: false, apiType: 'gh' });
+    registerSearchGitHubPullRequestsTool(mockServer.server, {
+      githubAPIType: 'gh',
+      npmEnabled: false,
+      apiType: 'gh',
+    });
   });
 
   afterEach(() => {
@@ -396,7 +400,9 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text as string).toContain('No pull requests found');
+        expect(result.content[0].text as string).toContain(
+          'No pull requests found'
+        );
       });
 
       it('should handle withComments parameter warning', async () => {
@@ -431,7 +437,9 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text as string).toContain('No pull requests found');
+        expect(result.content[0].text as string).toContain(
+          'No pull requests found'
+        );
       });
 
       it('should handle GitHub API rate limiting', async () => {
@@ -447,7 +455,9 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text as string).toContain('No pull requests found');
+        expect(result.content[0].text as string).toContain(
+          'No pull requests found'
+        );
       });
 
       it('should handle malformed JSON responses', async () => {
@@ -463,14 +473,14 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text as string).toContain('No pull requests found');
+        expect(result.content[0].text as string).toContain(
+          'No pull requests found'
+        );
       });
     });
 
     describe('Advanced Features', () => {
       it('should handle repository-specific searches with filters', async () => {
-        console.log('TEST START: should handle repository-specific searches with filters');
-
         const mockResponse = {
           result: [
             {
@@ -495,14 +505,6 @@ describe('GitHub Search Pull Requests Tool', () => {
           state: 'open',
           author: 'contributor',
         });
-
-        console.log('BEFORE ASSERTION: result.isError =', result.isError);
-        if (result.isError) {
-          console.log('ERROR CONTENT:', result.content[0].text);
-        }
-        console.log('DEBUG - Advanced test result:', JSON.stringify(result, null, 2));
-        console.log('DEBUG - mockExecuteGitHubCommand calls:', mockExecuteGitHubCommand.mock.calls);
-        console.log('DEBUG - mockSearchGitHubPullRequestsAPI calls:', mockSearchGitHubPullRequestsAPI.mock.calls);
         expect(result.isError).toBe(false);
         expect(mockExecuteGitHubCommand).toHaveBeenCalledWith(
           'pr',
@@ -550,7 +552,11 @@ describe('GitHub Search Pull Requests Tool', () => {
 
   describe('Basic Functionality', () => {
     it('should handle successful pull request search', async () => {
-      registerSearchGitHubPullRequestsTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: false, apiType: 'gh' });
+      registerSearchGitHubPullRequestsTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: false,
+        apiType: 'gh',
+      });
 
       const mockGitHubResponse = {
         result: [
@@ -595,7 +601,11 @@ describe('GitHub Search Pull Requests Tool', () => {
     });
 
     it('should handle no results found', async () => {
-      registerSearchGitHubPullRequestsTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: false, apiType: 'gh' });
+      registerSearchGitHubPullRequestsTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: false,
+        apiType: 'gh',
+      });
 
       const mockGitHubResponse = {
         result: [],
@@ -616,7 +626,11 @@ describe('GitHub Search Pull Requests Tool', () => {
     });
 
     it('should handle search errors', async () => {
-      registerSearchGitHubPullRequestsTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: false, apiType: 'gh' });
+      registerSearchGitHubPullRequestsTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: false,
+        apiType: 'gh',
+      });
 
       mockExecuteGitHubCommand.mockResolvedValue({
         isError: true,
@@ -628,11 +642,17 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain('No pull requests found');
+      expect(result.content[0].text as string).toContain(
+        'No pull requests found'
+      );
     });
 
     it('should handle getCommitData parameter for repo-specific searches', async () => {
-      registerSearchGitHubPullRequestsTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: false, apiType: 'gh' });
+      registerSearchGitHubPullRequestsTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: false,
+        apiType: 'gh',
+      });
 
       const mockPRListResponse = {
         result: [
@@ -787,7 +807,11 @@ describe('Content Sanitization', () => {
       content: [{ text: JSON.stringify({ error: 'API error', results: [] }) }],
     });
 
-    registerSearchGitHubPullRequestsTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: false, apiType: 'gh' });
+    registerSearchGitHubPullRequestsTool(mockServer.server, {
+      githubAPIType: 'gh',
+      npmEnabled: false,
+      apiType: 'gh',
+    });
   });
 
   afterEach(() => {
@@ -825,36 +849,15 @@ describe('Content Sanitization', () => {
       query: 'token',
     });
 
-    console.log('DEBUG - Sanitization test result:', JSON.stringify(result, null, 2));
-    
-    if (result.isError) {
-      throw new Error(`Test failed with error: ${result.content[0].text}`);
-    }
-    
+    expect(result.isError).toBe(false);
     const response = JSON.parse(result.content[0].text as string);
-    console.log('DEBUG - Parsed response:', JSON.stringify(response, null, 2));
 
     // Title should be sanitized
-    // expect(response.data.results[0].title).not.toContain(
-    //   'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
-    // );
-    // expect(response.data.results[0].title).toContain('[REDACTED-GITHUBTOKENS]');
-    // expect(response.data.results[0].title).toContain('Fix CI with token');
-
-    // Body should be sanitized
-    // expect(response.data.results[0].body).not.toContain(
-    //   'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
-    // );
-    // expect(response.data.results[0].body).toContain('[REDACTED-GITHUBTOKENS]');
-    // expect(response.data.results[0].body).toContain(
-    //   'This PR updates the GitHub token'
-    // );
-
-    // // Check for sanitization warnings
-    // expect(response.data.results[0]._sanitization_warnings).toBeDefined();
-    // expect(
-    //   response.data.results[0]._sanitization_warnings.length
-    // ).toBeGreaterThan(0);
+    expect(response.data.results[0].title).not.toContain(
+      'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
+    );
+    expect(response.data.results[0].title).toContain('[REDACTED-GITHUBTOKENS]');
+    expect(response.data.results[0].title).toContain('Fix CI with token');
   });
 
   it('should sanitize OpenAI keys in PR content', async () => {

@@ -30,7 +30,10 @@ describe('Package Search Tool (NPM & Python)', () => {
     mockServer = createMockMcpServer();
 
     // Register the tool for testing with npmEnabled true
-    registerNpmSearchTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: true });
+    registerNpmSearchTool(mockServer.server, {
+      githubAPIType: 'gh',
+      npmEnabled: true,
+    });
 
     // Clear all mocks
     vi.clearAllMocks();
@@ -43,7 +46,10 @@ describe('Package Search Tool (NPM & Python)', () => {
 
   describe('Tool Registration', () => {
     it('should register the package search tool', () => {
-      registerNpmSearchTool(mockServer.server, { githubAPIType: 'gh', npmEnabled: true });
+      registerNpmSearchTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: true,
+      });
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'packageSearch',
