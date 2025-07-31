@@ -396,8 +396,8 @@ async function searchPullRequestsWithDualSupport(
   if (cliResult && !cliResult.isError) {
     try {
       const cliData = JSON.parse(cliResult.content[0].text as string);
-      if (cliData.results && Array.isArray(cliData.results)) {
-        cliPRs = cliData.results;
+      if (cliData.data?.results && Array.isArray(cliData.data.results)) {
+        cliPRs = cliData.data.results;
       }
     } catch (e) {
       cliError = 'Failed to parse CLI results';
@@ -413,8 +413,8 @@ async function searchPullRequestsWithDualSupport(
   if (apiResult && !apiResult.isError) {
     try {
       const apiData = JSON.parse(apiResult.content[0].text as string);
-      if (apiData.results && Array.isArray(apiData.results)) {
-        apiPRs = apiData.results;
+      if (apiData.data?.results && Array.isArray(apiData.data.results)) {
+        apiPRs = apiData.data.results;
       }
     } catch (e) {
       apiError = 'Failed to parse API results';
