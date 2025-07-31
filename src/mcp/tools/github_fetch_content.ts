@@ -16,7 +16,7 @@ import {
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './utils/toolConstants';
 import { fetchGitHubFileContentAPI } from '../../utils/githubAPI';
 
@@ -171,7 +171,7 @@ export interface FileContentQueryResult {
 
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
     GITHUB_GET_FILE_CONTENT_TOOL_NAME,
@@ -217,7 +217,7 @@ export function registerFetchGitHubFileContentTool(
 
 async function fetchMultipleGitHubFileContents(
   queries: FileContentQuery[],
-  opts: GitHubToolOptions
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   const results: FileContentQueryResult[] = [];
 
@@ -243,17 +243,17 @@ async function fetchMultipleGitHubFileContents(
       let cliResult: PromiseSettledResult<CallToolResult> | null = null;
       let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-      if (opts.apiType === 'gh' || opts.apiType === 'both') {
+      if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
         // Execute CLI fetch
         cliResult = await Promise.allSettled([
           fetchGitHubFileContentCLI(params),
         ]).then(results => results[0]);
       }
 
-      if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+      if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
         // Execute API fetch
         apiResult = await Promise.allSettled([
-          fetchGitHubFileContentAPI(params),
+          fetchGitHubFileContentAPI(params, opts.ghToken),
         ]).then(results => results[0]);
       }
 
@@ -313,7 +313,7 @@ async function fetchMultipleGitHubFileContents(
         };
 
         // Try fallback with CLI if it was the primary method
-        if (opts.apiType === 'gh' || opts.apiType === 'both') {
+        if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
           const fallbackResult =
             await fetchGitHubFileContentCLI(fallbackParams);
           if (!fallbackResult.isError) {
@@ -332,7 +332,7 @@ async function fetchMultipleGitHubFileContents(
         }
 
         // Try fallback with API if it was the primary method
-        if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+        if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
           const fallbackApiResult =
             await fetchGitHubFileContentAPI(fallbackParams);
           if (!fallbackApiResult.isError) {
@@ -818,13 +818,13 @@ async function processFileContent(
  */
 export async function fetchGitHubFileContent(
   params: GithubFetchRequestParams,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<CallToolResult> {
   // For backward compatibility, if no options provided, use CLI
-  if (opts.apiType === 'gh') {
+  if (opts.githubAPIType === 'gh') {
     return fetchGitHubFileContentCLI(params);
-  } else if (opts.apiType === 'octokit') {
-    return fetchGitHubFileContentAPI(params);
+  } else if (opts.githubAPIType === 'octokit') {
+    return fetchGitHubFileContentAPI(params, opts.ghToken);
   } else {
     // For 'both', try CLI first, then API as fallback
     const cliResult = await fetchGitHubFileContentCLI(params);
@@ -833,7 +833,7 @@ export async function fetchGitHubFileContent(
     }
 
     // Try API as fallback
-    const apiResult = await fetchGitHubFileContentAPI(params);
+    const apiResult = await fetchGitHubFileContentAPI(params, opts.ghToken);
     return apiResult;
   }
 }

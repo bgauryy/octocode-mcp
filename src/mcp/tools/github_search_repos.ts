@@ -14,7 +14,7 @@ import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 import {
   GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
   PACKAGE_SEARCH_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubReposAPI } from '../../utils/githubAPI';
@@ -260,7 +260,7 @@ export interface GitHubReposResponse {
 
 export function registerSearchGitHubReposTool(
   server: McpServer,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
     GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
@@ -349,7 +349,7 @@ function validateRepositoryQuery(
 async function processSingleQuery(
   query: GitHubReposSearchQuery,
   queryId: string,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<GitHubReposSearchQueryResult> {
   try {
     // Validate query
@@ -373,17 +373,17 @@ async function processSingleQuery(
     let cliResult: PromiseSettledResult<CallToolResult> | null = null;
     let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-    if (opts.apiType === 'gh' || opts.apiType === 'both') {
+    if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
       // Execute CLI search
       cliResult = await Promise.allSettled([
         searchGitHubRepos(enhancedQuery),
       ]).then(results => results[0]);
     }
 
-    if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+    if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
       // Execute API search
       apiResult = await Promise.allSettled([
-        searchGitHubReposAPI(enhancedQuery),
+        searchGitHubReposAPI(enhancedQuery, opts.ghToken),
       ]).then(results => results[0]);
     }
 
@@ -457,7 +457,7 @@ async function processSingleQuery(
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
   verbose: boolean = false,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<CallToolResult> {
   const results: GitHubReposSearchQueryResult[] = [];
 

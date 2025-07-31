@@ -13,7 +13,7 @@ import {
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
@@ -29,7 +29,7 @@ BEST PRACTICES: Start with depth=1, use search for unknown paths, avoid deep exp
 
 export function registerViewRepositoryStructureTool(
   server: McpServer,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
     GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
@@ -130,7 +130,7 @@ export function registerViewRepositoryStructureTool(
  */
 export async function viewRepositoryStructure(
   params: GitHubRepositoryStructureParams,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-repo-structure', params);
 
@@ -147,7 +147,10 @@ export async function viewRepositoryStructure(
 
       if (opts.apiType === 'octokit' || opts.apiType === 'both') {
         // Execute API search
-        apiResult = await viewGitHubRepositoryStructureAPI(params);
+        apiResult = await viewGitHubRepositoryStructureAPI(
+          params,
+          opts.ghToken
+        );
       }
 
       // Return successful result, preferring CLI if both are available

@@ -27,7 +27,7 @@ import { minifyContentV2 } from './minifier';
 import { optimizeTextMatch } from '../mcp/responses';
 
 // TypeScript-safe conditional authentication
-const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+const defaultToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 
 // TypeScript-safe parameter types using Octokit's built-in types
 type SearchCodeParameters =
@@ -74,14 +74,17 @@ interface GitHubAPIError {
   rateLimitReset?: number;
 }
 
-// Initialize Octokit instance with proper TypeScript configuration
-let octokit: Octokit | null = null;
+// Cache Octokit instances by token
+const octokitInstances = new Map<string, Octokit>();
 
 /**
  * Initialize Octokit with TypeScript-safe authentication and built-in plugins
  */
-function getOctokit(): Octokit {
-  if (!octokit) {
+function getOctokit(token?: string): Octokit {
+  const useToken = token || defaultToken || '';
+  const cacheKey = useToken || 'no-token';
+
+  if (!octokitInstances.has(cacheKey)) {
     // TypeScript-safe configuration
     const options: OctokitOptions = {
       userAgent: 'octocode-mcp/1.0.0',
@@ -112,13 +115,13 @@ function getOctokit(): Octokit {
         doNotRetry: ['400', '401', '403', '404', '422'],
       },
     };
-    if (token) {
-      options.auth = token;
+    if (useToken) {
+      options.auth = useToken;
     }
 
-    octokit = new Octokit(options);
+    octokitInstances.set(cacheKey, new Octokit(options));
   }
-  return octokit;
+  return octokitInstances.get(cacheKey)!;
 }
 
 /**
@@ -526,13 +529,14 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
  * Search GitHub pull requests using Octokit API
  */
 export async function searchGitHubPullRequestsAPI(
-  params: GitHubPullRequestsSearchParams
+  params: GitHubPullRequestsSearchParams,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-prs-api', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
 
       // Build search query
       const searchQuery = buildPullRequestSearchQuery(params);
@@ -644,7 +648,8 @@ export async function searchGitHubPullRequestsAPI(
               const commitData = await fetchPRCommitDataAPI(
                 owner,
                 repo,
-                item.number
+                item.number,
+                token
               );
               if (commitData) {
                 result.commits = commitData;
@@ -879,10 +884,11 @@ function buildPullRequestSearchQuery(
 async function fetchPRCommitDataAPI(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  token?: string
 ) {
   try {
-    const octokit = getOctokit();
+    const octokit = getOctokit(token);
 
     // Get commits in the PR
     const commitsResult = await octokit.rest.pulls.listCommits({
@@ -990,13 +996,14 @@ async function fetchPRCommitDataAPI(
  * Search GitHub issues using Octokit API
  */
 export async function searchGitHubIssuesAPI(
-  params: GitHubIssuesSearchParams
+  params: GitHubIssuesSearchParams,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-issues-api', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
 
       // Build search query
       const searchQuery = buildIssueSearchQuery(params);
@@ -1282,13 +1289,14 @@ function buildIssueSearchQuery(params: GitHubIssuesSearchParams): string {
  * Search GitHub code using Octokit API with proper TypeScript types
  */
 export async function searchGitHubCodeAPI(
-  params: GitHubCodeSearchQuery
+  params: GitHubCodeSearchQuery,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-api-code', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
       const query = buildCodeSearchQuery(params);
 
       if (!query.trim()) {
@@ -1373,13 +1381,14 @@ export async function searchGitHubCodeAPI(
  * Search GitHub repositories using Octokit API with proper TypeScript types
  */
 export async function searchGitHubReposAPI(
-  params: GitHubReposSearchParams
+  params: GitHubReposSearchParams,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-api-repos', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
       const query = buildRepoSearchQuery(params);
 
       if (!query.trim()) {
@@ -1469,13 +1478,14 @@ export async function searchGitHubReposAPI(
  * Fetch GitHub file content using Octokit API with proper TypeScript types
  */
 export async function fetchGitHubFileContentAPI(
-  params: GithubFetchRequestParams
+  params: GithubFetchRequestParams,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-api-file-content', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
       const { owner, repo, filePath, branch } = params;
 
       // Use properly typed parameters
@@ -1841,9 +1851,11 @@ async function processFileContentAPI(
 /**
  * Check GitHub API authentication status with proper typing
  */
-export async function checkGitHubAuthAPI(): Promise<CallToolResult> {
+export async function checkGitHubAuthAPI(
+  token?: string
+): Promise<CallToolResult> {
   try {
-    const octokit = getOctokit();
+    const octokit = getOctokit(token);
     const result = await octokit.rest.users.getAuthenticated();
 
     return createResult({
@@ -1883,13 +1895,14 @@ export async function checkGitHubAuthAPI(): Promise<CallToolResult> {
  * View GitHub repository structure using Octokit API
  */
 export async function viewGitHubRepositoryStructureAPI(
-  params: GitHubRepositoryStructureParams
+  params: GitHubRepositoryStructureParams,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-repo-structure-api', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
       const {
         owner,
         repo,
@@ -2265,13 +2278,14 @@ async function fetchDirectoryContentsRecursivelyAPI(
  * Search GitHub commits using Octokit API
  */
 export async function searchGitHubCommitsAPI(
-  params: GitHubCommitSearchParams
+  params: GitHubCommitSearchParams,
+  token?: string
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-commits-api', params);
 
   return withCache(cacheKey, async () => {
     try {
-      const octokit = getOctokit();
+      const octokit = getOctokit(token);
 
       // Build search query
       const searchQuery = buildCommitSearchQuery(params);
@@ -2338,7 +2352,8 @@ export async function searchGitHubCommitsAPI(
       // Transform to optimized format similar to CLI implementation
       const optimizedResult = await transformCommitsToOptimizedFormatAPI(
         transformedCommits,
-        params
+        params,
+        token
       );
 
       return createResult({
@@ -2448,7 +2463,8 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
  */
 async function transformCommitsToOptimizedFormatAPI(
   items: GitHubCommitSearchItem[],
-  params: GitHubCommitSearchParams
+  params: GitHubCommitSearchParams,
+  token?: string
 ): Promise<OptimizedCommitSearchResult> {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepositoryAPI(items);
@@ -2461,7 +2477,7 @@ async function transformCommitsToOptimizedFormatAPI(
   if (shouldFetchDiff && items.length > 0) {
     // Fetch diff info for each commit (limit to first 10 to avoid rate limits)
     const commitShas = items.slice(0, 10).map(item => item.sha);
-    const octokit = getOctokit();
+    const octokit = getOctokit(token);
 
     const diffPromises = commitShas.map(async (sha: string) => {
       try {

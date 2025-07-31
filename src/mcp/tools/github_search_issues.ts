@@ -22,7 +22,7 @@ import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import {
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubIssuesAPI } from '../../utils/githubAPI';
@@ -38,7 +38,7 @@ PHILOSOPHY: Get quality data from relevant sources`;
 
 export function registerSearchGitHubIssuesTool(
   server: McpServer,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
     GITHUB_SEARCH_ISSUES_TOOL_NAME,
@@ -278,7 +278,7 @@ export function registerSearchGitHubIssuesTool(
  */
 async function searchIssuesWithDualSupport(
   args: GitHubIssuesSearchParams,
-  opts: GitHubToolOptions
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   // Execute searches based on apiType option
   let cliResult: CallToolResult | null = null;
@@ -291,7 +291,7 @@ async function searchIssuesWithDualSupport(
 
   if (opts.apiType === 'octokit' || opts.apiType === 'both') {
     // Execute API search
-    apiResult = await searchGitHubIssuesAPI(args);
+    apiResult = await searchGitHubIssuesAPI(args, opts.ghToken);
   }
 
   // Process CLI result

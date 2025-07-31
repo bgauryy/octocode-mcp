@@ -17,7 +17,7 @@ import { minifyContentV2 } from '../../utils/minifier';
 import {
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import {
@@ -136,7 +136,7 @@ export interface ProcessedCodeSearchResult {
 
 export function registerGitHubSearchCodeTool(
   server: McpServer,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
     GITHUB_SEARCH_CODE_TOOL_NAME,
@@ -342,7 +342,7 @@ async function transformToOptimizedFormat(
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<CallToolResult> {
   // Execute all queries and collect results
   const queryResults = await executeQueriesAndCollectResults(queries, opts);
@@ -363,7 +363,7 @@ async function searchMultipleGitHubCode(
  */
 async function executeQueriesAndCollectResults(
   queries: GitHubCodeSearchQuery[],
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<GitHubCodeSearchQueryResult[]> {
   const results: GitHubCodeSearchQueryResult[] = [];
 
@@ -387,14 +387,14 @@ async function executeQueriesAndCollectResults(
       let cliResult: PromiseSettledResult<CallToolResult> | null = null;
       let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-      if (opts.apiType === 'gh' || opts.apiType === 'both') {
+      if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
         // Execute CLI search
         cliResult = await Promise.allSettled([searchGitHubCode(query)]).then(
           results => results[0]
         );
       }
 
-      if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+      if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
         // Convert query to API format
         const apiQuery: APIGitHubCodeSearchQuery = {
           id: query.id,
@@ -414,7 +414,7 @@ async function executeQueriesAndCollectResults(
 
         // Execute API search
         apiResult = await Promise.allSettled([
-          searchGitHubCodeAPI(apiQuery),
+          searchGitHubCodeAPI(apiQuery, opts.ghToken),
         ]).then(results => results[0]);
       }
 

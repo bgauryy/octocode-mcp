@@ -17,6 +17,7 @@ import {
   registerViewRepositoryStructureTool,
 } from './mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
+import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
 import {
   GITHUB_SEARCH_ISSUES_TOOL_NAME,
@@ -25,10 +26,12 @@ import {
   GITHUB_SEARCH_COMMITS_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './mcp/tools/utils/toolConstants.js';
 
-const API_TYPE: GitHubToolOptions['apiType'] = 'octokit';
+// Check for GitHub token and set API type accordingly
+const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+const GITHUB_API_TYPE: ToolOptions['githubAPIType'] = token ? 'octokit' : 'gh';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
@@ -36,44 +39,69 @@ const SERVER_CONFIG: Implementation = {
   description: PROMPT_SYSTEM_PROMPT,
 };
 
-function registerAllTools(server: McpServer) {
+async function registerAllTools(server: McpServer) {
+  // Check NPM availability during initialization
+  let npmEnabled = false;
+  try {
+    const npmDetails = await getNPMUserDetails();
+    npmEnabled = npmDetails.npmConnected;
+    // eslint-disable-next-line no-console
+    console.log(`NPM status: ${npmEnabled ? 'available' : 'not available'}`);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('Failed to check NPM status:', error);
+    npmEnabled = false;
+  }
+
+  // Unified options for all tools
+  const toolOptions: ToolOptions = {
+    githubAPIType: GITHUB_API_TYPE,
+    npmEnabled,
+    ghToken: token,
+    apiType: GITHUB_API_TYPE, // Backward compatibility
+  };
+
   const toolRegistrations = [
     {
       name: GITHUB_SEARCH_CODE_TOOL_NAME,
       fn: registerGitHubSearchCodeTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
     {
       name: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
       fn: registerSearchGitHubReposTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
     {
       name: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
       fn: registerFetchGitHubFileContentTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
     {
       name: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
       fn: registerViewRepositoryStructureTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
     {
       name: GITHUB_SEARCH_COMMITS_TOOL_NAME,
       fn: registerGitHubSearchCommitsTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
     {
       name: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
       fn: registerSearchGitHubPullRequestsTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
     {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,
-      opts: { apiType: API_TYPE },
+      opts: toolOptions,
     },
-    { name: NPM_PACKAGE_SEARCH_TOOL_NAME, fn: registerNpmSearchTool },
+    {
+      name: NPM_PACKAGE_SEARCH_TOOL_NAME,
+      fn: registerNpmSearchTool,
+      opts: toolOptions,
+    },
   ];
 
   let successCount = 0;
@@ -111,7 +139,7 @@ async function startServer() {
   try {
     const server = new McpServer(SERVER_CONFIG);
 
-    registerAllTools(server);
+    await registerAllTools(server);
 
     const transport = new StdioServerTransport();
 

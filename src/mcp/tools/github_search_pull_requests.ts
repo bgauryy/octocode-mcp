@@ -20,7 +20,7 @@ import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import {
   GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GitHubToolOptions,
+  ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubPullRequestsAPI } from '../../utils/githubAPI';
@@ -33,7 +33,7 @@ PERFORMANCE: getCommitData=true and withComments=true are token expensive`;
 
 export function registerSearchGitHubPullRequestsTool(
   server: McpServer,
-  opts: GitHubToolOptions = { apiType: 'both' }
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
     GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
@@ -378,7 +378,7 @@ export function registerSearchGitHubPullRequestsTool(
  */
 async function searchPullRequestsWithDualSupport(
   args: GitHubPullRequestsSearchParams,
-  opts: GitHubToolOptions
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   // Execute searches based on apiType option
   let cliResult: CallToolResult | null = null;
@@ -391,7 +391,7 @@ async function searchPullRequestsWithDualSupport(
 
   if (opts.apiType === 'octokit' || opts.apiType === 'both') {
     // Execute API search
-    apiResult = await searchGitHubPullRequestsAPI(args);
+    apiResult = await searchGitHubPullRequestsAPI(args, opts.ghToken);
   }
 
   // Process CLI result
