@@ -66,13 +66,13 @@ function registerAllTools(server: McpServer) {
     {
       name: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
       fn: registerSearchGitHubPullRequestsTool,
+      opts: { apiType: API_TYPE },
     },
-    { name: NPM_PACKAGE_SEARCH_TOOL_NAME, fn: registerNpmSearchTool },
-
     {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,
     },
+    { name: NPM_PACKAGE_SEARCH_TOOL_NAME, fn: registerNpmSearchTool },
   ];
 
   let successCount = 0;

@@ -15,6 +15,9 @@ import {
   GitHubCommitSearchParams,
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
+  GitHubPullRequestsSearchParams,
+  GitHubPullRequestItem,
+  GitHubPullRequestsSearchResult,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
@@ -514,6 +517,470 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
   );
 
   return allSameRepo ? firstRepo : null;
+}
+
+/**
+ * Search GitHub pull requests using Octokit API
+ */
+export async function searchGitHubPullRequestsAPI(
+  params: GitHubPullRequestsSearchParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-prs-api', params);
+
+  return withCache(cacheKey, async () => {
+    try {
+      const octokit = getOctokit();
+
+      // Build search query
+      const searchQuery = buildPullRequestSearchQuery(params);
+
+      if (!searchQuery) {
+        return createResult({
+          isError: true,
+          data: {
+            error: 'No valid search parameters provided',
+            results: [],
+            total_count: 0,
+          },
+        });
+      }
+
+      // Execute search using GitHub Search API
+      const searchResult = await octokit.rest.search.issuesAndPullRequests({
+        q: searchQuery,
+        sort:
+          params.sort === 'created'
+            ? 'created'
+            : params.sort === 'updated'
+              ? 'updated'
+              : undefined,
+        order: params.order || 'desc',
+        per_page: Math.min(params.limit || 30, 100),
+      });
+
+      const pullRequests =
+        searchResult.data.items?.filter((item: any) => item.pull_request) || [];
+
+      // Transform pull requests to our expected format
+      const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
+        pullRequests.map(async (item: any) => {
+          // Sanitize title and body content
+          const titleSanitized = ContentSanitizer.sanitizeContent(
+            item.title || ''
+          );
+          const bodySanitized = item.body
+            ? ContentSanitizer.sanitizeContent(item.body)
+            : { content: undefined, warnings: [] };
+
+          // Collect all sanitization warnings
+          const sanitizationWarnings = new Set<string>([
+            ...titleSanitized.warnings,
+            ...bodySanitized.warnings,
+          ]);
+
+          const result: GitHubPullRequestItem = {
+            number: item.number,
+            title: titleSanitized.content,
+            body: bodySanitized.content,
+            state: item.state?.toLowerCase() || 'unknown',
+            author: item.user?.login || '',
+            repository: item.repository_url
+              ? item.repository_url.replace('https://api.github.com/repos/', '')
+              : 'unknown',
+            labels: item.labels?.map((l: any) => l.name) || [],
+            created_at: item.created_at
+              ? new Date(item.created_at).toLocaleDateString('en-GB')
+              : '',
+            updated_at: item.updated_at
+              ? new Date(item.updated_at).toLocaleDateString('en-GB')
+              : '',
+            url: item.html_url,
+            comments: [], // Will be populated if withComments is true
+            reactions: item.reactions?.total_count || 0,
+            draft: item.draft || false,
+          };
+
+          // Add sanitization warnings if any were detected
+          if (sanitizationWarnings.size > 0) {
+            result._sanitization_warnings = Array.from(sanitizationWarnings);
+          }
+
+          // Add optional fields
+          if (item.closed_at) {
+            result.closed_at = new Date(item.closed_at).toLocaleDateString(
+              'en-GB'
+            );
+          }
+
+          // Add pull request specific fields
+          if (item.pull_request) {
+            // Get additional PR details if needed
+            try {
+              const prDetails = await octokit.rest.pulls.get({
+                owner: item.repository_url.split('/')[4],
+                repo: item.repository_url.split('/')[5],
+                pull_number: item.number,
+              });
+
+              if (prDetails.data) {
+                result.head = prDetails.data.head?.ref;
+                result.head_sha = prDetails.data.head?.sha;
+                result.base = prDetails.data.base?.ref;
+                result.base_sha = prDetails.data.base?.sha;
+                result.draft = prDetails.data.draft || false;
+              }
+            } catch (e) {
+              // Continue without additional details if API call fails
+            }
+          }
+
+          // Fetch commit data if requested
+          if (params.getCommitData && result.repository !== 'unknown') {
+            const [owner, repo] = result.repository.split('/');
+            if (owner && repo) {
+              const commitData = await fetchPRCommitDataAPI(
+                owner,
+                repo,
+                item.number
+              );
+              if (commitData) {
+                result.commits = commitData;
+              }
+            }
+          }
+
+          // Fetch comments if requested
+          if (params.withComments) {
+            try {
+              const [owner, repo] = result.repository.split('/');
+              if (owner && repo) {
+                const commentsResult = await octokit.rest.issues.listComments({
+                  owner,
+                  repo,
+                  issue_number: item.number,
+                });
+
+                result.comments = commentsResult.data.map((comment: any) => ({
+                  id: comment.id,
+                  user: comment.user?.login || 'unknown',
+                  body: ContentSanitizer.sanitizeContent(comment.body || '')
+                    .content,
+                  created_at: new Date(comment.created_at).toLocaleDateString(
+                    'en-GB'
+                  ),
+                  updated_at: new Date(comment.updated_at).toLocaleDateString(
+                    'en-GB'
+                  ),
+                }));
+              }
+            } catch (e) {
+              // Continue without comments if API call fails
+            }
+          }
+
+          return result;
+        })
+      );
+
+      const searchResultData: GitHubPullRequestsSearchResult = {
+        results: transformedPRs,
+        total_count: searchResult.data.total_count,
+      };
+
+      return createResult({
+        data: {
+          ...searchResultData,
+          apiSource: true,
+        },
+      });
+    } catch (error: unknown) {
+      const apiError = handleGitHubAPIError(error);
+      return createResult({
+        isError: true,
+        data: {
+          error: `Pull request search failed: ${apiError.error}`,
+          status: apiError.status,
+          rateLimitRemaining: apiError.rateLimitRemaining,
+          rateLimitReset: apiError.rateLimitReset,
+          results: [],
+          total_count: 0,
+        },
+      });
+    }
+  });
+}
+
+/**
+ * Build pull request search query string for GitHub API
+ */
+function buildPullRequestSearchQuery(
+  params: GitHubPullRequestsSearchParams
+): string {
+  const queryParts: string[] = [];
+
+  // Add main query if provided
+  if (params.query && params.query.trim()) {
+    queryParts.push(params.query.trim());
+  }
+
+  // Always add is:pr to ensure we only get pull requests
+  queryParts.push('is:pr');
+
+  // Repository filters
+  if (params.owner && params.repo) {
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+
+    // Create repo combinations
+    owners.forEach(owner => {
+      repos.forEach(repo => {
+        queryParts.push(`repo:${owner}/${repo}`);
+      });
+    });
+  } else if (params.owner) {
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(owner => {
+      queryParts.push(`user:${owner}`);
+    });
+  }
+
+  // State filters
+  if (params.state) {
+    queryParts.push(`is:${params.state}`);
+  }
+  if (params.draft !== undefined) {
+    queryParts.push(params.draft ? 'is:draft' : '-is:draft');
+  }
+  if (params.merged !== undefined) {
+    queryParts.push(params.merged ? 'is:merged' : 'is:unmerged');
+  }
+  if (params.locked !== undefined) {
+    queryParts.push(params.locked ? 'is:locked' : '-is:locked');
+  }
+
+  // User involvement filters
+  if (params.author) {
+    queryParts.push(`author:${params.author}`);
+  }
+  if (params.assignee) {
+    queryParts.push(`assignee:${params.assignee}`);
+  }
+  if (params.mentions) {
+    queryParts.push(`mentions:${params.mentions}`);
+  }
+  if (params.commenter) {
+    queryParts.push(`commenter:${params.commenter}`);
+  }
+  if (params.involves) {
+    queryParts.push(`involves:${params.involves}`);
+  }
+  if (params['reviewed-by']) {
+    queryParts.push(`reviewed-by:${params['reviewed-by']}`);
+  }
+  if (params['review-requested']) {
+    queryParts.push(`review-requested:${params['review-requested']}`);
+  }
+
+  // Branch filters
+  if (params.head) {
+    queryParts.push(`head:${params.head}`);
+  }
+  if (params.base) {
+    queryParts.push(`base:${params.base}`);
+  }
+
+  // Date filters
+  if (params.created) {
+    queryParts.push(`created:${params.created}`);
+  }
+  if (params.updated) {
+    queryParts.push(`updated:${params.updated}`);
+  }
+  if (params['merged-at']) {
+    queryParts.push(`merged:${params['merged-at']}`);
+  }
+  if (params.closed) {
+    queryParts.push(`closed:${params.closed}`);
+  }
+
+  // Engagement filters
+  if (params.comments !== undefined) {
+    queryParts.push(`comments:${params.comments}`);
+  }
+  if (params.reactions !== undefined) {
+    queryParts.push(`reactions:${params.reactions}`);
+  }
+  if (params.interactions !== undefined) {
+    queryParts.push(`interactions:${params.interactions}`);
+  }
+
+  // Review and CI filters
+  if (params.review) {
+    queryParts.push(`review:${params.review}`);
+  }
+  if (params.checks) {
+    queryParts.push(`status:${params.checks}`);
+  }
+
+  // Label filters
+  if (params.label) {
+    const labels = Array.isArray(params.label) ? params.label : [params.label];
+    labels.forEach(label => {
+      queryParts.push(`label:"${label}"`);
+    });
+  }
+
+  // Organization filters
+  if (params.milestone) {
+    queryParts.push(`milestone:"${params.milestone}"`);
+  }
+  if (params['team-mentions']) {
+    queryParts.push(`team:${params['team-mentions']}`);
+  }
+
+  // Boolean "missing" filters
+  if (params['no-assignee']) {
+    queryParts.push('no:assignee');
+  }
+  if (params['no-label']) {
+    queryParts.push('no:label');
+  }
+  if (params['no-milestone']) {
+    queryParts.push('no:milestone');
+  }
+  if (params['no-project']) {
+    queryParts.push('no:project');
+  }
+
+  // Language filter
+  if (params.language) {
+    queryParts.push(`language:${params.language}`);
+  }
+
+  // Visibility filter
+  if (params.visibility) {
+    const visibilities = Array.isArray(params.visibility)
+      ? params.visibility
+      : [params.visibility];
+    visibilities.forEach(vis => {
+      queryParts.push(`is:${vis}`);
+    });
+  }
+
+  return queryParts.join(' ').trim();
+}
+
+/**
+ * Fetch commit data for a pull request using API
+ */
+async function fetchPRCommitDataAPI(
+  owner: string,
+  repo: string,
+  prNumber: number
+) {
+  try {
+    const octokit = getOctokit();
+
+    // Get commits in the PR
+    const commitsResult = await octokit.rest.pulls.listCommits({
+      owner,
+      repo,
+      pull_number: prNumber,
+    });
+
+    const commits = commitsResult.data || [];
+
+    if (commits.length === 0) {
+      return null;
+    }
+
+    // Fetch detailed commit data for each commit (limit to first 10 to avoid rate limits)
+    const commitDetails = await Promise.all(
+      commits.slice(0, 10).map(async (commit: any) => {
+        try {
+          const commitResult = await octokit.rest.repos.getCommit({
+            owner,
+            repo,
+            ref: commit.sha,
+          });
+
+          const result = commitResult.data;
+
+          // Sanitize commit message
+          const messageSanitized = ContentSanitizer.sanitizeContent(
+            commit.commit?.message || ''
+          );
+          const commitWarningsSet = new Set<string>(messageSanitized.warnings);
+
+          return {
+            sha: commit.sha,
+            message: messageSanitized.content,
+            author:
+              commit.author?.login || commit.commit?.author?.name || 'Unknown',
+            url: commit.html_url,
+            authoredDate: commit.commit?.author?.date,
+            diff: result.files
+              ? {
+                  changed_files: result.files.length,
+                  additions: result.stats?.additions || 0,
+                  deletions: result.stats?.deletions || 0,
+                  total_changes: result.stats?.total || 0,
+                  files: result.files.slice(0, 5).map((f: any) => {
+                    const fileObj: any = {
+                      filename: f.filename,
+                      status: f.status,
+                      additions: f.additions,
+                      deletions: f.deletions,
+                      changes: f.changes,
+                    };
+
+                    // Sanitize patch content if present
+                    if (f.patch) {
+                      const rawPatch =
+                        f.patch.substring(0, 1000) +
+                        (f.patch.length > 1000 ? '...' : '');
+                      const patchSanitized =
+                        ContentSanitizer.sanitizeContent(rawPatch);
+                      fileObj.patch = patchSanitized.content;
+
+                      // Collect patch sanitization warnings
+                      if (patchSanitized.warnings.length > 0) {
+                        patchSanitized.warnings.forEach(w =>
+                          commitWarningsSet.add(`[${f.filename}] ${w}`)
+                        );
+                      }
+                    }
+
+                    return fileObj;
+                  }),
+                }
+              : undefined,
+            // Add sanitization warnings if any were detected
+            ...(commitWarningsSet.size > 0 && {
+              _sanitization_warnings: Array.from(commitWarningsSet),
+            }),
+          };
+        } catch (e) {
+          // If we can't fetch commit details, return basic info
+          return {
+            sha: commit.sha,
+            message: commit.commit?.message || '',
+            author:
+              commit.author?.login || commit.commit?.author?.name || 'Unknown',
+            url: commit.html_url,
+            authoredDate: commit.commit?.author?.date,
+          };
+        }
+      })
+    );
+
+    return {
+      total_count: commits.length,
+      commits: commitDetails.filter(Boolean),
+    };
+  } catch (error) {
+    return null;
+  }
 }
 
 /**

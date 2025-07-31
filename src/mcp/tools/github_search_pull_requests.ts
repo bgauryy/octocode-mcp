@@ -18,8 +18,12 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME } from './utils/toolConstants';
+import {
+  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+  GitHubToolOptions,
+} from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { searchGitHubPullRequestsAPI } from '../../utils/githubAPI';
 
 // TODO: summerize body
 
@@ -27,7 +31,10 @@ const DESCRIPTION = `Search GitHub pull requests with comprehensive filtering an
 
 PERFORMANCE: getCommitData=true and withComments=true are token expensive`;
 
-export function registerSearchGitHubPullRequestsTool(server: McpServer) {
+export function registerSearchGitHubPullRequestsTool(
+  server: McpServer,
+  opts: GitHubToolOptions = { apiType: 'both' }
+) {
   server.registerTool(
     GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
     {
@@ -346,7 +353,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         }
 
         try {
-          return await searchGitHubPullRequests(args);
+          return await searchPullRequestsWithDualSupport(args, opts);
         } catch (error) {
           const hints = generateSmartHints(
             GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
@@ -364,6 +371,128 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       }
     )
   );
+}
+
+/**
+ * Search pull requests with dual CLI/API support
+ */
+async function searchPullRequestsWithDualSupport(
+  args: GitHubPullRequestsSearchParams,
+  opts: GitHubToolOptions
+): Promise<CallToolResult> {
+  // Execute searches based on apiType option
+  let cliResult: CallToolResult | null = null;
+  let apiResult: CallToolResult | null = null;
+
+  if (opts.apiType === 'gh' || opts.apiType === 'both') {
+    // Execute CLI search
+    cliResult = await searchGitHubPullRequests(args);
+  }
+
+  if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+    // Execute API search
+    apiResult = await searchGitHubPullRequestsAPI(args);
+  }
+
+  // Process CLI result
+  let cliPRs: GitHubPullRequestItem[] = [];
+  let cliError: string | undefined;
+
+  if (cliResult && !cliResult.isError) {
+    try {
+      const cliData = JSON.parse(cliResult.content[0].text as string);
+      if (cliData.results && Array.isArray(cliData.results)) {
+        cliPRs = cliData.results;
+      }
+    } catch (e) {
+      cliError = 'Failed to parse CLI results';
+    }
+  } else if (cliResult && cliResult.isError) {
+    cliError = cliResult.content[0].text as string;
+  }
+
+  // Process API result
+  let apiPRs: GitHubPullRequestItem[] = [];
+  let apiError: string | undefined;
+
+  if (apiResult && !apiResult.isError) {
+    try {
+      const apiData = JSON.parse(apiResult.content[0].text as string);
+      if (apiData.results && Array.isArray(apiData.results)) {
+        apiPRs = apiData.results;
+      }
+    } catch (e) {
+      apiError = 'Failed to parse API results';
+    }
+  } else if (apiResult && apiResult.isError) {
+    const apiData = JSON.parse(apiResult.content[0].text as string);
+    apiError = apiData.error || 'API search failed';
+  }
+
+  // Determine which result to return
+  const totalCliPRs = cliPRs.length;
+  const totalApiPRs = apiPRs.length;
+  const hasCliResults = totalCliPRs > 0;
+  const hasApiResults = totalApiPRs > 0;
+
+  // Choose the best result
+  let finalResult: GitHubPullRequestsSearchResult;
+  let resultSource: string;
+
+  if (hasCliResults && hasApiResults) {
+    // Both have results, prefer CLI for consistency
+    finalResult = { results: cliPRs, total_count: totalCliPRs };
+    resultSource = 'cli';
+  } else if (hasCliResults) {
+    finalResult = { results: cliPRs, total_count: totalCliPRs };
+    resultSource = 'cli';
+  } else if (hasApiResults) {
+    finalResult = { results: apiPRs, total_count: totalApiPRs };
+    resultSource = 'api';
+  } else {
+    // No results from either
+    const hints = generateSmartHints(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME, {
+      hasResults: false,
+      totalItems: 0,
+      errorMessage: 'No pull requests found',
+      customHints: ['Try broader search terms', 'Check repository access'],
+    });
+
+    return createResult({
+      error: createNoResultsError('pull_requests'),
+      hints,
+    });
+  }
+
+  // Generate smart hints for successful results
+  const hints = generateSmartHints(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME, {
+    hasResults: true,
+    totalItems: finalResult.results.length,
+  });
+
+  // Add source information and dual results if verbose
+  const responseData = {
+    ...finalResult,
+    hints,
+    resultSource,
+    dualResults:
+      opts.apiType === 'both'
+        ? {
+            cli: {
+              pullRequests: totalCliPRs,
+              error: cliError,
+            },
+            api: {
+              pullRequests: totalApiPRs,
+              error: apiError,
+            },
+          }
+        : undefined,
+  };
+
+  return createResult({
+    data: responseData,
+  });
 }
 
 async function searchGitHubPullRequests(
