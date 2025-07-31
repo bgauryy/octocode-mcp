@@ -54,6 +54,11 @@ function registerAllTools(server: McpServer) {
       opts: { apiType: API_TYPE },
     },
     {
+      name: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+      fn: registerViewRepositoryStructureTool,
+      opts: { apiType: API_TYPE },
+    },
+    {
       name: GITHUB_SEARCH_COMMITS_TOOL_NAME,
       fn: registerGitHubSearchCommitsTool,
     },
@@ -62,10 +67,7 @@ function registerAllTools(server: McpServer) {
       fn: registerSearchGitHubPullRequestsTool,
     },
     { name: NPM_PACKAGE_SEARCH_TOOL_NAME, fn: registerNpmSearchTool },
-    {
-      name: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-      fn: registerViewRepositoryStructureTool,
-    },
+
     {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,

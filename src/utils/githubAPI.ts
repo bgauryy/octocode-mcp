@@ -10,6 +10,8 @@ import {
   OptimizedCodeSearchResult,
   GithubFetchRequestParams,
   GitHubFileContentResponse,
+  GitHubRepositoryStructureParams,
+  GitHubApiFileItem,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
@@ -1109,5 +1111,387 @@ export async function checkGitHubAuthAPI(): Promise<CallToolResult> {
       isError: true,
       hints: [`Authentication check failed: ${apiError.error}`],
     });
+  }
+}
+
+/**
+ * View GitHub repository structure using Octokit API
+ */
+export async function viewGitHubRepositoryStructureAPI(
+  params: GitHubRepositoryStructureParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-repo-structure-api', params);
+
+  return withCache(cacheKey, async () => {
+    try {
+      const octokit = getOctokit();
+      const {
+        owner,
+        repo,
+        branch,
+        path = '',
+        depth = 1,
+        includeIgnored = false,
+        showMedia = false,
+      } = params;
+
+      // Clean up path
+      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+
+      // Try to get repository contents
+      let result;
+      let workingBranch = branch;
+      try {
+        result = await octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path: cleanPath || undefined,
+          ref: branch,
+        });
+      } catch (error: unknown) {
+        // Handle branch/path not found by trying fallbacks
+        if (error instanceof RequestError && error.status === 404) {
+          // Try to get repository info first to find default branch
+          let defaultBranch = 'main';
+          try {
+            const repoInfo = await octokit.rest.repos.get({ owner, repo });
+            defaultBranch = repoInfo.data.default_branch || 'main';
+          } catch (repoError) {
+            // Repository doesn't exist or no access
+            const apiError = handleGitHubAPIError(repoError);
+            return createResult({
+              isError: true,
+              data: {
+                error: `Repository "${owner}/${repo}" not found or not accessible: ${apiError.error}`,
+                status: apiError.status,
+              },
+            });
+          }
+
+          // Try with default branch if different from requested
+          if (defaultBranch !== branch) {
+            try {
+              result = await octokit.rest.repos.getContent({
+                owner,
+                repo,
+                path: cleanPath || undefined,
+                ref: defaultBranch,
+              });
+              workingBranch = defaultBranch;
+            } catch (fallbackError) {
+              // Try common branches
+              const commonBranches = ['main', 'master', 'develop'];
+              let foundBranch = null;
+
+              for (const tryBranch of commonBranches) {
+                if (tryBranch === branch || tryBranch === defaultBranch)
+                  continue;
+
+                try {
+                  result = await octokit.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path: cleanPath || undefined,
+                    ref: tryBranch,
+                  });
+                  foundBranch = tryBranch;
+                  workingBranch = tryBranch;
+                  break;
+                } catch {
+                  // Continue trying
+                }
+              }
+
+              if (!foundBranch) {
+                const apiError = handleGitHubAPIError(error);
+                return createResult({
+                  isError: true,
+                  data: {
+                    error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on any common branch`,
+                    status: apiError.status,
+                    triedBranches: [branch, defaultBranch, ...commonBranches],
+                    defaultBranch,
+                  },
+                });
+              }
+            }
+          } else {
+            const apiError = handleGitHubAPIError(error);
+            return createResult({
+              isError: true,
+              data: {
+                error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on branch "${branch}"`,
+                status: apiError.status,
+              },
+            });
+          }
+        } else {
+          const apiError = handleGitHubAPIError(error);
+          return createResult({
+            isError: true,
+            data: {
+              error: `Failed to access repository "${owner}/${repo}": ${apiError.error}`,
+              status: apiError.status,
+              rateLimitRemaining: apiError.rateLimitRemaining,
+              rateLimitReset: apiError.rateLimitReset,
+            },
+          });
+        }
+      }
+
+      // Process the result
+      const items = Array.isArray(result.data) ? result.data : [result.data];
+
+      // Convert Octokit response to our GitHubApiFileItem format
+      const apiItems: GitHubApiFileItem[] = items.map(
+        (item: GitHubApiFileItem) => ({
+          name: item.name,
+          path: item.path,
+          type: item.type as 'file' | 'dir',
+          size: 'size' in item ? item.size : undefined,
+          download_url: 'download_url' in item ? item.download_url : undefined,
+          url: item.url,
+          html_url: item.html_url,
+          git_url: item.git_url,
+          sha: item.sha,
+        })
+      );
+
+      // If depth > 1, recursively fetch subdirectories
+      let allItems = apiItems;
+      if (depth > 1) {
+        const recursiveItems = await fetchDirectoryContentsRecursivelyAPI(
+          octokit,
+          owner,
+          repo,
+          workingBranch,
+          cleanPath,
+          1,
+          depth
+        );
+
+        // Combine and deduplicate
+        const combinedItems = [...apiItems, ...recursiveItems];
+        allItems = combinedItems.filter(
+          (item, index, array) =>
+            array.findIndex(i => i.path === item.path) === index
+        );
+      }
+
+      // Apply filtering if needed
+      let filteredItems = allItems;
+      if (!includeIgnored) {
+        // Simple filtering logic - exclude common ignored patterns
+        filteredItems = allItems.filter(item => {
+          const name = item.name.toLowerCase();
+          const path = item.path.toLowerCase();
+
+          // Skip hidden files and directories
+          if (name.startsWith('.') && !showMedia) return false;
+
+          // Skip common build/dependency directories
+          if (
+            [
+              'node_modules',
+              'dist',
+              'build',
+              '.git',
+              '.vscode',
+              '.idea',
+            ].includes(name)
+          )
+            return false;
+
+          // Skip lock files and config files
+          if (name.includes('lock') || name.endsWith('.lock')) return false;
+
+          // Skip media files unless requested
+          if (!showMedia) {
+            const mediaExtensions = [
+              '.png',
+              '.jpg',
+              '.jpeg',
+              '.gif',
+              '.svg',
+              '.ico',
+              '.webp',
+              '.mp4',
+              '.mov',
+              '.avi',
+            ];
+            if (mediaExtensions.some(ext => path.endsWith(ext))) return false;
+          }
+
+          return true;
+        });
+      }
+
+      // Limit items for performance
+      const itemLimit = Math.min(200, 50 * depth);
+      const limitedItems = filteredItems.slice(0, itemLimit);
+
+      // Sort items: directories first, then by depth, then alphabetically
+      limitedItems.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === 'dir' ? -1 : 1;
+        }
+
+        const aDepth = a.path.split('/').length;
+        const bDepth = b.path.split('/').length;
+
+        if (aDepth !== bDepth) {
+          return aDepth - bDepth;
+        }
+
+        return a.path.localeCompare(b.path);
+      });
+
+      // Create response structure
+      const files = limitedItems
+        .filter(item => item.type === 'file')
+        .map(item => ({
+          name: item.name,
+          path: item.path,
+          size: item.size,
+          depth:
+            item.path.split('/').length -
+            (cleanPath ? cleanPath.split('/').length : 0),
+          url: item.path,
+        }));
+
+      const folders = limitedItems
+        .filter(item => item.type === 'dir')
+        .map(item => ({
+          name: item.name,
+          path: item.path,
+          depth:
+            item.path.split('/').length -
+            (cleanPath ? cleanPath.split('/').length : 0),
+          url: item.path,
+        }));
+
+      return createResult({
+        data: {
+          repository: `${owner}/${repo}`,
+          branch: workingBranch,
+          path: cleanPath || '/',
+          depth: depth,
+          apiSource: true,
+          summary: {
+            totalFiles: files.length,
+            totalFolders: folders.length,
+            truncated: allItems.length > limitedItems.length,
+            filtered: !includeIgnored,
+            originalCount: allItems.length,
+          },
+          files: {
+            count: files.length,
+            files: files,
+          },
+          folders: {
+            count: folders.length,
+            folders: folders,
+          },
+        },
+      });
+    } catch (error: unknown) {
+      const apiError = handleGitHubAPIError(error);
+      return createResult({
+        isError: true,
+        data: {
+          error: `API request failed: ${apiError.error}`,
+          status: apiError.status,
+          rateLimitRemaining: apiError.rateLimitRemaining,
+          rateLimitReset: apiError.rateLimitReset,
+        },
+      });
+    }
+  });
+}
+
+/**
+ * Recursively fetch directory contents using API
+ */
+async function fetchDirectoryContentsRecursivelyAPI(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  branch: string,
+  path: string,
+  currentDepth: number,
+  maxDepth: number,
+  visitedPaths: Set<string> = new Set()
+): Promise<GitHubApiFileItem[]> {
+  // Prevent infinite loops and respect depth limits
+  if (currentDepth > maxDepth || visitedPaths.has(path)) {
+    return [];
+  }
+
+  visitedPaths.add(path);
+
+  try {
+    const result = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path: path || undefined,
+      ref: branch,
+    });
+
+    const items = Array.isArray(result.data) ? result.data : [result.data];
+    const apiItems: GitHubApiFileItem[] = items.map(
+      (item: GitHubApiFileItem) => ({
+        name: item.name,
+        path: item.path,
+        type: item.type as 'file' | 'dir',
+        size: 'size' in item ? item.size : undefined,
+        download_url: 'download_url' in item ? item.download_url : undefined,
+        url: item.url,
+        html_url: item.html_url,
+        git_url: item.git_url,
+        sha: item.sha,
+      })
+    );
+
+    const allItems: GitHubApiFileItem[] = [...apiItems];
+
+    // If we haven't reached max depth, recursively fetch subdirectories
+    if (currentDepth < maxDepth) {
+      const directories = apiItems.filter(item => item.type === 'dir');
+
+      // Limit concurrent requests to avoid rate limits
+      const concurrencyLimit = 3;
+      for (let i = 0; i < directories.length; i += concurrencyLimit) {
+        const batch = directories.slice(i, i + concurrencyLimit);
+
+        const promises = batch.map(async dir => {
+          try {
+            const subItems = await fetchDirectoryContentsRecursivelyAPI(
+              octokit,
+              owner,
+              repo,
+              branch,
+              dir.path,
+              currentDepth + 1,
+              maxDepth,
+              new Set(visitedPaths) // Pass a copy to avoid shared state issues
+            );
+            return subItems;
+          } catch (error) {
+            // Silently fail on individual directory errors
+            return [];
+          }
+        });
+
+        const results = await Promise.all(promises);
+        results.forEach(subItems => {
+          allItems.push(...subItems);
+        });
+      }
+    }
+
+    return allItems;
+  } catch (error) {
+    // Return empty array on error to allow partial results
+    return [];
   }
 }

@@ -13,8 +13,10 @@ import {
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+  GitHubToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
 
 export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
@@ -25,7 +27,10 @@ Use with ${GITHUB_SEARCH_CODE_TOOL_NAME} and ${GITHUB_GET_FILE_CONTENT_TOOL_NAME
 
 BEST PRACTICES: Start with depth=1, use search for unknown paths, avoid deep exploration.`;
 
-export function registerViewRepositoryStructureTool(server: McpServer) {
+export function registerViewRepositoryStructureTool(
+  server: McpServer,
+  opts: GitHubToolOptions = { apiType: 'both' }
+) {
   server.registerTool(
     GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
     {
@@ -100,7 +105,7 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
     },
     async (args: GitHubRepositoryStructureParams): Promise<CallToolResult> => {
       try {
-        const result = await viewRepositoryStructure(args);
+        const result = await viewRepositoryStructure(args, opts);
         return result;
       } catch (error) {
         const errorMessage =
@@ -124,179 +129,54 @@ export function registerViewRepositoryStructureTool(server: McpServer) {
  * Optimized for code analysis workflows with smart defaults and clear errors.
  */
 export async function viewRepositoryStructure(
-  params: GitHubRepositoryStructureParams
+  params: GitHubRepositoryStructureParams,
+  opts: GitHubToolOptions = { apiType: 'both' }
 ): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-repo-structure', params);
 
   return withCache(cacheKey, async () => {
-    const {
-      owner,
-      repo,
-      branch,
-      path = '',
-      depth = 1,
-      includeIgnored = false,
-      showMedia = false,
-    } = params;
-
     try {
-      // Clean up path
-      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+      // Execute searches based on apiType option
+      let cliResult: CallToolResult | null = null;
+      let apiResult: CallToolResult | null = null;
 
-      // Try the requested branch first - handle empty path correctly
-      const apiPath = cleanPath
-        ? `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`
-        : `/repos/${owner}/${repo}/contents?ref=${branch}`;
+      if (opts.apiType === 'gh' || opts.apiType === 'both') {
+        // Execute CLI search
+        cliResult = await viewRepositoryStructureCLI(params);
+      }
 
-      const result = await executeGitHubCommand('api', [apiPath], {
-        cache: false,
+      if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+        // Execute API search
+        apiResult = await viewGitHubRepositoryStructureAPI(params);
+      }
+
+      // Return successful result, preferring CLI if both are available
+      if (cliResult && !cliResult.isError) {
+        return cliResult;
+      } else if (apiResult && !apiResult.isError) {
+        return apiResult;
+      }
+
+      // If both failed, return the CLI error (more detailed) or API error
+      if (cliResult && cliResult.isError) {
+        return cliResult;
+      } else if (apiResult && apiResult.isError) {
+        return apiResult;
+      }
+
+      // Fallback error
+      return createResult({
+        isError: true,
+        hints: [
+          `Failed to access repository "${params.owner}/${params.repo}" via both CLI and API`,
+        ],
       });
-
-      if (!result.isError) {
-        const execResult = JSON.parse(result.content[0].text as string);
-        const apiItems = execResult.result;
-        const items = Array.isArray(apiItems) ? apiItems : [apiItems];
-
-        return await formatRepositoryStructureWithDepth(
-          owner,
-          repo,
-          branch,
-          cleanPath,
-          items,
-          depth,
-          includeIgnored,
-          showMedia
-        );
-      }
-
-      // If initial request failed, start enhanced fallback mechanism
-      const errorMsg = result.content[0].text as string;
-
-      // Check repository existence first
-      const repoCheckResult = await executeGitHubCommand(
-        'api',
-        [`/repos/${owner}/${repo}`],
-        {
-          cache: false,
-        }
-      );
-
-      if (repoCheckResult.isError) {
-        return handleRepositoryNotFound(
-          owner,
-          repo,
-          repoCheckResult.content[0].text as string
-        );
-      }
-
-      // Enhanced fallback strategy for branch/path errors
-      if (errorMsg.includes('404')) {
-        // Get the actual default branch from the repo info we already fetched
-        let defaultBranch = 'main';
-        let repoDefaultBranchFound = false;
-
-        try {
-          const repoData = JSON.parse(
-            repoCheckResult.content[0].text as string
-          );
-          defaultBranch = repoData.default_branch || 'main';
-          repoDefaultBranchFound = true;
-        } catch (e) {
-          // Keep default as 'main' if parsing fails
-        }
-
-        // If we found the actual default branch, try it first
-        if (repoDefaultBranchFound && defaultBranch !== branch) {
-          const defaultBranchPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${defaultBranch}`;
-          const defaultBranchResult = await executeGitHubCommand(
-            'api',
-            [defaultBranchPath],
-            {
-              cache: false,
-            }
-          );
-
-          if (!defaultBranchResult.isError) {
-            const execResult = JSON.parse(
-              defaultBranchResult.content[0].text as string
-            );
-            const apiItems = execResult.result;
-            const items = Array.isArray(apiItems) ? apiItems : [apiItems];
-
-            return await formatRepositoryStructureWithDepth(
-              owner,
-              repo,
-              defaultBranch,
-              cleanPath,
-              items,
-              depth,
-              includeIgnored,
-              showMedia
-            );
-          }
-        }
-
-        // Try additional common branches
-        const commonBranches = ['main', 'master', 'develop'];
-        const triedBranches = [branch];
-
-        if (repoDefaultBranchFound) {
-          triedBranches.push(defaultBranch);
-        }
-
-        for (const tryBranch of commonBranches) {
-          if (triedBranches.includes(tryBranch)) continue;
-
-          const tryBranchPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${tryBranch}`;
-          const tryBranchResult = await executeGitHubCommand(
-            'api',
-            [tryBranchPath],
-            {
-              cache: false,
-            }
-          );
-
-          triedBranches.push(tryBranch);
-
-          if (!tryBranchResult.isError) {
-            const execResult = JSON.parse(
-              tryBranchResult.content[0].text as string
-            );
-            const apiItems = execResult.result;
-            const items = Array.isArray(apiItems) ? apiItems : [apiItems];
-
-            return await formatRepositoryStructureWithDepth(
-              owner,
-              repo,
-              tryBranch,
-              cleanPath,
-              items,
-              depth,
-              includeIgnored,
-              showMedia
-            );
-          }
-        }
-
-        // All branches failed - return helpful error
-        return handlePathNotFound(
-          owner,
-          repo,
-          cleanPath,
-          triedBranches,
-          defaultBranch,
-          repoDefaultBranchFound
-        );
-      }
-
-      // Handle other errors (403, etc.)
-      return handleOtherErrors(owner, repo, errorMsg);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
         hasResults: false,
-        errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMessage}`,
+        errorMessage: `Failed to access repository "${params.owner}/${params.repo}": ${errorMessage}`,
         customHints: [
           'Verify repository name, permissions, and network connection',
         ],
@@ -307,6 +187,188 @@ export async function viewRepositoryStructure(
       });
     }
   });
+}
+
+/**
+ * Views the structure of a GitHub repository using CLI (original implementation)
+ */
+async function viewRepositoryStructureCLI(
+  params: GitHubRepositoryStructureParams
+): Promise<CallToolResult> {
+  const {
+    owner,
+    repo,
+    branch,
+    path = '',
+    depth = 1,
+    includeIgnored = false,
+    showMedia = false,
+  } = params;
+
+  try {
+    // Clean up path
+    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+
+    // Try the requested branch first - handle empty path correctly
+    const apiPath = cleanPath
+      ? `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`
+      : `/repos/${owner}/${repo}/contents?ref=${branch}`;
+
+    const result = await executeGitHubCommand('api', [apiPath], {
+      cache: false,
+    });
+
+    if (!result.isError) {
+      const execResult = JSON.parse(result.content[0].text as string);
+      const apiItems = execResult.result;
+      const items = Array.isArray(apiItems) ? apiItems : [apiItems];
+
+      return await formatRepositoryStructureWithDepth(
+        owner,
+        repo,
+        branch,
+        cleanPath,
+        items,
+        depth,
+        includeIgnored,
+        showMedia
+      );
+    }
+
+    // If initial request failed, start enhanced fallback mechanism
+    const errorMsg = result.content[0].text as string;
+
+    // Check repository existence first
+    const repoCheckResult = await executeGitHubCommand(
+      'api',
+      [`/repos/${owner}/${repo}`],
+      {
+        cache: false,
+      }
+    );
+
+    if (repoCheckResult.isError) {
+      return handleRepositoryNotFound(
+        owner,
+        repo,
+        repoCheckResult.content[0].text as string
+      );
+    }
+
+    // Enhanced fallback strategy for branch/path errors
+    if (errorMsg.includes('404')) {
+      // Get the actual default branch from the repo info we already fetched
+      let defaultBranch = 'main';
+      let repoDefaultBranchFound = false;
+
+      try {
+        const repoData = JSON.parse(repoCheckResult.content[0].text as string);
+        defaultBranch = repoData.default_branch || 'main';
+        repoDefaultBranchFound = true;
+      } catch (e) {
+        // Keep default as 'main' if parsing fails
+      }
+
+      // If we found the actual default branch, try it first
+      if (repoDefaultBranchFound && defaultBranch !== branch) {
+        const defaultBranchPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${defaultBranch}`;
+        const defaultBranchResult = await executeGitHubCommand(
+          'api',
+          [defaultBranchPath],
+          {
+            cache: false,
+          }
+        );
+
+        if (!defaultBranchResult.isError) {
+          const execResult = JSON.parse(
+            defaultBranchResult.content[0].text as string
+          );
+          const apiItems = execResult.result;
+          const items = Array.isArray(apiItems) ? apiItems : [apiItems];
+
+          return await formatRepositoryStructureWithDepth(
+            owner,
+            repo,
+            defaultBranch,
+            cleanPath,
+            items,
+            depth,
+            includeIgnored,
+            showMedia
+          );
+        }
+      }
+
+      // Try additional common branches
+      const commonBranches = ['main', 'master', 'develop'];
+      const triedBranches = [branch];
+
+      if (repoDefaultBranchFound) {
+        triedBranches.push(defaultBranch);
+      }
+
+      for (const tryBranch of commonBranches) {
+        if (triedBranches.includes(tryBranch)) continue;
+
+        const tryBranchPath = `/repos/${owner}/${repo}/contents/${cleanPath}?ref=${tryBranch}`;
+        const tryBranchResult = await executeGitHubCommand(
+          'api',
+          [tryBranchPath],
+          {
+            cache: false,
+          }
+        );
+
+        triedBranches.push(tryBranch);
+
+        if (!tryBranchResult.isError) {
+          const execResult = JSON.parse(
+            tryBranchResult.content[0].text as string
+          );
+          const apiItems = execResult.result;
+          const items = Array.isArray(apiItems) ? apiItems : [apiItems];
+
+          return await formatRepositoryStructureWithDepth(
+            owner,
+            repo,
+            tryBranch,
+            cleanPath,
+            items,
+            depth,
+            includeIgnored,
+            showMedia
+          );
+        }
+      }
+
+      // All branches failed - return helpful error
+      return handlePathNotFound(
+        owner,
+        repo,
+        cleanPath,
+        triedBranches,
+        defaultBranch,
+        repoDefaultBranchFound
+      );
+    }
+
+    // Handle other errors (403, etc.)
+    return handleOtherErrors(owner, repo, errorMsg);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      hasResults: false,
+      errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMessage}`,
+      customHints: [
+        'Verify repository name, permissions, and network connection',
+      ],
+    });
+    return createResult({
+      isError: true,
+      hints,
+    });
+  }
 }
 
 /**
