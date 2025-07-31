@@ -45,11 +45,8 @@ async function registerAllTools(server: McpServer) {
   try {
     const npmDetails = await getNPMUserDetails();
     npmEnabled = npmDetails.npmConnected;
-    // eslint-disable-next-line no-console
-    console.log(`NPM status: ${npmEnabled ? 'available' : 'not available'}`);
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn('Failed to check NPM status:', error);
+  } catch (_error) {
+    // TODO: Use proper logging instead of console
     npmEnabled = false;
   }
 
@@ -117,17 +114,12 @@ async function registerAllTools(server: McpServer) {
       successCount++;
     } catch (error) {
       // Log the error but continue with other tools
-      // eslint-disable-next-line no-console
-      console.error(`Failed to register tool '${tool.name}':`, error);
       failedTools.push(tool.name);
     }
   }
 
   if (failedTools.length > 0) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `Warning: ${failedTools.length} tools failed to register: ${failedTools.join(', ')}`
-    );
+    // TODO: Use proper logging instead of console
   }
 
   if (successCount === 0) {
@@ -168,17 +160,12 @@ async function startServer() {
           // If we reach here, server closed successfully
           process.exit(0);
         } catch (timeoutError) {
-          // eslint-disable-next-line no-console
-          console.error(
-            'Server close timed out, forcing shutdown:',
-            timeoutError
-          );
+          // TODO: Use proper logging instead of console
           // Exit with error code when timeout occurs
           process.exit(1);
         }
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Error during graceful shutdown:', error);
+        // TODO: Use proper logging instead of console
         process.exit(1);
       }
     };
@@ -193,15 +180,11 @@ async function startServer() {
     });
 
     // Handle uncaught errors
-    process.on('uncaughtException', error => {
-      // eslint-disable-next-line no-console
-      console.error('Uncaught exception:', error);
+    process.on('uncaughtException', _error => {
       gracefulShutdown().finally(() => process.exit(1));
     });
 
-    process.on('unhandledRejection', (reason, promise) => {
-      // eslint-disable-next-line no-console
-      console.error('Unhandled rejection at:', promise, 'reason:', reason);
+    process.on('unhandledRejection', (_reason, _promise) => {
       gracefulShutdown().finally(() => process.exit(1));
     });
 

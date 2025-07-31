@@ -93,20 +93,12 @@ function getOctokit(token?: string): Octokit {
       },
       // Built-in throttling configuration
       throttle: {
-        onRateLimit: (retryAfter: number) => {
-          // Use proper logging instead of console
-          // eslint-disable-next-line no-console
-          console.warn(
-            `GitHub API rate limit hit. Retrying after ${retryAfter}s`
-          );
+        onRateLimit: (_retryAfter: number) => {
+          // TODO: Use proper logging instead of console
           return true; // Auto-retry
         },
-        onSecondaryRateLimit: (retryAfter: number) => {
-          // Use proper logging instead of console
-          // eslint-disable-next-line no-console
-          console.warn(
-            `GitHub API secondary rate limit. Retrying after ${retryAfter}s`
-          );
+        onSecondaryRateLimit: (_retryAfter: number) => {
+          // TODO: Use proper logging instead of console
           return true; // Auto-retry
         },
       },
