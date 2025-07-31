@@ -19,7 +19,6 @@ vi.mock('../src/mcp/tools/npm_view_package.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
-import { registerApiStatusCheckTool } from '../src/mcp/tools/api_status_check.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
@@ -40,7 +39,6 @@ import {
   GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
   GITHUB_SEARCH_COMMITS_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  API_STATUS_CHECK_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
 } from '../src/mcp/tools/utils/toolConstants.js';
 
@@ -59,7 +57,6 @@ const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 
 // Mock all tool registration functions
-const mockRegisterApiStatusCheckTool = vi.mocked(registerApiStatusCheckTool);
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
   registerGitHubSearchCodeTool
 );
@@ -120,7 +117,6 @@ describe('Index Module', () => {
       .mockImplementation(() => {});
 
     // Mock all tool registration functions to succeed by default
-    mockRegisterApiStatusCheckTool.mockImplementation(() => {});
     mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
     mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {});
     mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
@@ -170,9 +166,6 @@ describe('Index Module', () => {
       await import('../src/index.js');
 
       // Verify all tool registration functions were called
-      expect(mockRegisterApiStatusCheckTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
         mockMcpServer
       );
@@ -199,9 +192,6 @@ describe('Index Module', () => {
 
     it('should continue registering tools even if some fail', async () => {
       // Make some tool registrations fail
-      mockRegisterApiStatusCheckTool.mockImplementation(() => {
-        throw new Error('Tool registration failed');
-      });
       mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
         throw new Error('Another tool registration failed');
       });
@@ -217,7 +207,6 @@ describe('Index Module', () => {
     it('should throw error if no tools are successfully registered', async () => {
       // Make all tool registrations fail
       const mockFunctions = [
-        mockRegisterApiStatusCheckTool,
         mockRegisterGitHubSearchCodeTool,
         mockRegisterFetchGitHubFileContentTool,
         mockRegisterSearchGitHubReposTool,
@@ -395,7 +384,6 @@ describe('Index Module', () => {
   describe('Tool Names Export Consistency', () => {
     it('should have consistent tool name exports', () => {
       // Verify all expected tool names are defined
-      expect(API_STATUS_CHECK_TOOL_NAME).toBeDefined();
       expect(GITHUB_SEARCH_CODE_TOOL_NAME).toBeDefined();
       expect(GITHUB_GET_FILE_CONTENT_TOOL_NAME).toBeDefined();
       expect(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME).toBeDefined();
@@ -407,7 +395,6 @@ describe('Index Module', () => {
 
       // Verify they are all strings
       const toolNames = [
-        API_STATUS_CHECK_TOOL_NAME,
         GITHUB_SEARCH_CODE_TOOL_NAME,
         GITHUB_GET_FILE_CONTENT_TOOL_NAME,
         GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,

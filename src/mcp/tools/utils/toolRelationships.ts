@@ -1,5 +1,4 @@
 import {
-  API_STATUS_CHECK_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_SEARCH_COMMITS_TOOL_NAME,
@@ -15,7 +14,6 @@ import {
  * Provides strategic suggestions rather than rigid workflows
  */
 export const TOOL_NAMES = {
-  API_STATUS_CHECK: API_STATUS_CHECK_TOOL_NAME,
   GITHUB_FETCH_CONTENT: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
   GITHUB_SEARCH_CODE: GITHUB_SEARCH_CODE_TOOL_NAME,
   GITHUB_SEARCH_COMMITS: GITHUB_SEARCH_COMMITS_TOOL_NAME,
@@ -205,12 +203,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         reason: 'find repositories by topic when content search fails',
         priority: 'medium',
       },
-      {
-        tool: TOOL_NAMES.API_STATUS_CHECK,
-        reason: 'check authentication if no results found',
-        condition: 'no_results',
-        priority: 'low',
-      },
     ],
     nextSteps: [
       {
@@ -340,12 +332,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         reason: 'find the correct repository when structure view fails',
         priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.API_STATUS_CHECK,
-        reason: 'check authentication if access denied',
-        condition: 'access_denied',
-        priority: 'medium',
       },
     ],
     nextSteps: [
@@ -560,31 +546,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         priority: 'low',
       },
     ],
-  },
-
-  [TOOL_NAMES.API_STATUS_CHECK]: {
-    fallbackTools: [],
-    nextSteps: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        reason: 'search accessible repositories after checking authentication',
-        priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.PACKAGE_SEARCH,
-        reason: 'search public packages as alternative',
-        priority: 'high',
-      },
-    ],
-    strategicAlternatives: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        reason: 'search publicly available content after confirming access',
-        priority: 'medium',
-        strategic: true,
-      },
-    ],
-    crossConnections: [],
   },
 };
 

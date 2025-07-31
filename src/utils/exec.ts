@@ -598,3 +598,21 @@ function detectNpmPath(): string | null {
 
   return null;
 }
+
+// Helper function to parse execution results with proper typing
+export function parseExecResult(
+  result: CallToolResult
+): { result?: string } | null {
+  if (!result.isError && result.content?.[0]?.text) {
+    try {
+      const textContent = result.content[0].text;
+      if (typeof textContent === 'string') {
+        const parsed = JSON.parse(textContent);
+        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+      }
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}

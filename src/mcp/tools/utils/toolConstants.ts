@@ -1,6 +1,5 @@
 // Tool name constants - centralized to avoid circular dependencies
 
-export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
 export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
 export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';

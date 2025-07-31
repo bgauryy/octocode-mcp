@@ -3,7 +3,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { clearAllCache } from './utils/cache.js';
-import { registerApiStatusCheckTool } from './mcp/tools/api_status_check.js';
 import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
@@ -25,7 +24,6 @@ import {
   GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
   GITHUB_SEARCH_COMMITS_TOOL_NAME,
   GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  API_STATUS_CHECK_TOOL_NAME,
   GITHUB_SEARCH_CODE_TOOL_NAME,
 } from './mcp/tools/utils/toolConstants.js';
 
@@ -37,7 +35,6 @@ const SERVER_CONFIG: Implementation = {
 
 function registerAllTools(server: McpServer) {
   const toolRegistrations = [
-    { name: API_STATUS_CHECK_TOOL_NAME, fn: registerApiStatusCheckTool },
     { name: GITHUB_SEARCH_CODE_TOOL_NAME, fn: registerGitHubSearchCodeTool },
     {
       name: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
@@ -64,9 +61,6 @@ function registerAllTools(server: McpServer) {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,
     },
-    // NOTE: npm_view_package functionality has been merged into package_search tool
-    // Use packageSearch with npmFetchMetadata=true and npmField/npmMatch parameters instead
-    // { name: NPM_VIEW_PACKAGE_TOOL_NAME, fn: registerNpmViewPackageTool },
   ];
 
   let successCount = 0;
