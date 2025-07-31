@@ -12,6 +12,9 @@ import {
   GitHubFileContentResponse,
   GitHubRepositoryStructureParams,
   GitHubApiFileItem,
+  GitHubCommitSearchParams,
+  GitHubCommitSearchItem,
+  OptimizedCommitSearchResult,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
@@ -1494,4 +1497,353 @@ async function fetchDirectoryContentsRecursivelyAPI(
     // Return empty array on error to allow partial results
     return [];
   }
+}
+
+/**
+ * Search GitHub commits using Octokit API
+ */
+export async function searchGitHubCommitsAPI(
+  params: GitHubCommitSearchParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-commits-api', params);
+
+  return withCache(cacheKey, async () => {
+    try {
+      const octokit = getOctokit();
+
+      // Build search query
+      const searchQuery = buildCommitSearchQuery(params);
+
+      if (!searchQuery) {
+        return createResult({
+          isError: true,
+          data: {
+            error: 'No valid search parameters provided',
+            commits: [],
+            total_count: 0,
+          },
+        });
+      }
+
+      // Execute search using GitHub Search API
+      const searchResult = await octokit.rest.search.commits({
+        q: searchQuery,
+        sort: params.sort || 'committer-date',
+        order: params.order || 'desc',
+        per_page: Math.min(params.limit || 25, 100),
+      });
+
+      const commits = searchResult.data.items || [];
+
+      // Transform commits to our expected format
+      const transformedCommits: GitHubCommitSearchItem[] = commits.map(
+        (item: GitHubCommitSearchItem) => ({
+          sha: item.sha,
+          commit: {
+            message: item.commit?.message,
+            author: {
+              name: item.commit?.author?.name || 'Unknown',
+              email: item.commit?.author?.email || '',
+              date: item.commit?.author?.date || '',
+            },
+            committer: {
+              name: item.commit?.committer?.name || 'Unknown',
+              email: item.commit?.committer?.email || '',
+              date: item.commit?.committer?.date || '',
+            },
+          },
+          author: item.author
+            ? {
+                login: item.author.login,
+                id: item.author.id,
+                //avatar_url: item?.author?.avatar_url,
+                url: item.author.url,
+              }
+            : null,
+          committer: item.committer
+            ? {
+                login: item.committer.login,
+                id: item.committer.id,
+                //  avatar_url: item.committer.avatar_url,
+                url: item.committer.url,
+              }
+            : null,
+          repository: item.repository,
+          url: item.url,
+        })
+      );
+
+      // Transform to optimized format similar to CLI implementation
+      const optimizedResult = await transformCommitsToOptimizedFormatAPI(
+        transformedCommits,
+        params
+      );
+
+      return createResult({
+        data: {
+          ...optimizedResult,
+          apiSource: true,
+          total_count: searchResult.data.total_count,
+        },
+      });
+    } catch (error: unknown) {
+      const apiError = handleGitHubAPIError(error);
+      return createResult({
+        isError: true,
+        data: {
+          error: `Commit search failed: ${apiError.error}`,
+          status: apiError.status,
+          rateLimitRemaining: apiError.rateLimitRemaining,
+          rateLimitReset: apiError.rateLimitReset,
+          commits: [],
+          total_count: 0,
+        },
+      });
+    }
+  });
+}
+
+/**
+ * Build commit search query string for GitHub API
+ */
+function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
+  const queryParts: string[] = [];
+
+  // Handle different query types
+  if (params.exactQuery) {
+    queryParts.push(`"${params.exactQuery}"`);
+  } else if (params.queryTerms && params.queryTerms.length > 0) {
+    queryParts.push(params.queryTerms.join(' '));
+  } else if (params.orTerms && params.orTerms.length > 0) {
+    queryParts.push(params.orTerms.join(' OR '));
+  }
+
+  // Repository filters
+  if (params.owner && params.repo) {
+    queryParts.push(`repo:${params.owner}/${params.repo}`);
+  } else if (params.owner) {
+    queryParts.push(`user:${params.owner}`);
+  }
+
+  // Author filters
+  if (params.author) {
+    queryParts.push(`author:${params.author}`);
+  }
+  if (params['author-name']) {
+    queryParts.push(`author-name:"${params['author-name']}"`);
+  }
+  if (params['author-email']) {
+    queryParts.push(`author-email:${params['author-email']}`);
+  }
+
+  // Committer filters
+  if (params.committer) {
+    queryParts.push(`committer:${params.committer}`);
+  }
+  if (params['committer-name']) {
+    queryParts.push(`committer-name:"${params['committer-name']}"`);
+  }
+  if (params['committer-email']) {
+    queryParts.push(`committer-email:${params['committer-email']}`);
+  }
+
+  // Date filters
+  if (params['author-date']) {
+    queryParts.push(`author-date:${params['author-date']}`);
+  }
+  if (params['committer-date']) {
+    queryParts.push(`committer-date:${params['committer-date']}`);
+  }
+
+  // Hash filters
+  if (params.hash) {
+    queryParts.push(`hash:${params.hash}`);
+  }
+  if (params.parent) {
+    queryParts.push(`parent:${params.parent}`);
+  }
+  if (params.tree) {
+    queryParts.push(`tree:${params.tree}`);
+  }
+
+  // Merge filter
+  if (params.merge === true) {
+    queryParts.push('merge:true');
+  } else if (params.merge === false) {
+    queryParts.push('merge:false');
+  }
+
+  // Visibility filter
+  if (params.visibility) {
+    queryParts.push(`is:${params.visibility}`);
+  }
+
+  return queryParts.join(' ').trim();
+}
+
+/**
+ * Transform commits to optimized format for API results
+ */
+async function transformCommitsToOptimizedFormatAPI(
+  items: GitHubCommitSearchItem[],
+  params: GitHubCommitSearchParams
+): Promise<OptimizedCommitSearchResult> {
+  // Extract repository info if single repo search
+  const singleRepo = extractSingleRepositoryAPI(items);
+
+  // Fetch diff information if requested and this is a repo-specific search
+  const shouldFetchDiff =
+    params.getChangesContent && params.owner && params.repo;
+  const diffData: Map<string, any> = new Map();
+
+  if (shouldFetchDiff && items.length > 0) {
+    // Fetch diff info for each commit (limit to first 10 to avoid rate limits)
+    const commitShas = items.slice(0, 10).map(item => item.sha);
+    const octokit = getOctokit();
+
+    const diffPromises = commitShas.map(async (sha: string) => {
+      try {
+        const commitResult = await octokit.rest.repos.getCommit({
+          owner: params.owner!,
+          repo: params.repo!,
+          ref: sha,
+        });
+        return { sha, commitData: commitResult.data };
+      } catch (e) {
+        // Ignore diff fetch errors
+        return { sha, commitData: null };
+      }
+    });
+
+    const diffResults = await Promise.all(diffPromises);
+    diffResults.forEach(({ sha, commitData }) => {
+      if (commitData) {
+        diffData.set(sha, commitData);
+      }
+    });
+  }
+
+  const optimizedCommits = items
+    .map(item => {
+      // Sanitize commit message
+      const rawMessage = item.commit?.message ?? '';
+      const messageSanitized = ContentSanitizer.sanitizeContent(rawMessage);
+      const warningsCollectorSet = new Set<string>(messageSanitized.warnings);
+
+      const commitObj: any = {
+        sha: item.sha, // Use as branch parameter in github_fetch_content
+        message: messageSanitized.content,
+        author: item.commit?.author?.name ?? item.author?.login ?? 'Unknown',
+        date: item.commit?.author?.date
+          ? new Date(item.commit.author.date).toLocaleDateString('en-GB')
+          : '',
+        repository: singleRepo ? undefined : item.repository?.fullName || '',
+        url: singleRepo
+          ? item.sha
+          : `${item.repository?.fullName || ''}@${item.sha}`,
+      };
+
+      // Add security warnings if any were detected
+      if (warningsCollectorSet.size > 0) {
+        commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
+      }
+
+      // Add diff information if available
+      if (shouldFetchDiff && diffData.has(item.sha)) {
+        const commitData = diffData.get(item.sha);
+        const files = commitData.files || [];
+        commitObj.diff = {
+          changed_files: files.length,
+          additions: commitData.stats?.additions || 0,
+          deletions: commitData.stats?.deletions || 0,
+          total_changes: commitData.stats?.total || 0,
+          files: files
+            .map((f: any) => {
+              const fileObj: any = {
+                filename: f.filename,
+                status: f.status,
+                additions: f.additions,
+                deletions: f.deletions,
+                changes: f.changes,
+              };
+
+              // Sanitize patch content if present
+              if (f.patch) {
+                const rawPatch =
+                  f.patch.substring(0, 1000) +
+                  (f.patch.length > 1000 ? '...' : '');
+                const patchSanitized =
+                  ContentSanitizer.sanitizeContent(rawPatch);
+                fileObj.patch = patchSanitized.content;
+
+                // Collect patch sanitization warnings
+                if (patchSanitized.warnings.length > 0) {
+                  patchSanitized.warnings.forEach(w =>
+                    warningsCollectorSet.add(`[${f.filename}] ${w}`)
+                  );
+                }
+              }
+
+              return fileObj;
+            })
+            .slice(0, 5), // Limit to 5 files per commit
+        };
+
+        // Update warnings if patch sanitization added any
+        if (
+          warningsCollectorSet.size >
+          (commitObj._sanitization_warnings?.length || 0)
+        ) {
+          commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
+        }
+      }
+
+      return commitObj;
+    })
+    .map(commit => {
+      // Remove undefined fields
+      const cleanCommit: Record<string, unknown> = {};
+      Object.entries(commit).forEach(([key, value]) => {
+        if (value !== undefined) {
+          cleanCommit[key] = value;
+        }
+      });
+      return cleanCommit;
+    });
+
+  const result: OptimizedCommitSearchResult = {
+    commits: optimizedCommits as Array<{
+      sha: string;
+      message: string;
+      author: string;
+      date: string;
+      repository?: string;
+      url: string;
+    }>,
+    total_count: items.length,
+  };
+
+  // Add repository info if single repo
+  if (singleRepo) {
+    result.repository = {
+      name: singleRepo.fullName,
+      description: singleRepo.description,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Extract single repository if all results are from same repo (API version)
+ */
+function extractSingleRepositoryAPI(items: GitHubCommitSearchItem[]) {
+  if (items.length === 0) return null;
+
+  const firstRepo = items[0].repository;
+  const allSameRepo = items.every(
+    item => item.repository?.fullName === firstRepo?.fullName
+  );
+
+  return allSameRepo ? firstRepo : null;
 }

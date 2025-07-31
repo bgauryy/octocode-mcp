@@ -61,6 +61,7 @@ function registerAllTools(server: McpServer) {
     {
       name: GITHUB_SEARCH_COMMITS_TOOL_NAME,
       fn: registerGitHubSearchCommitsTool,
+      opts: { apiType: API_TYPE },
     },
     {
       name: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,

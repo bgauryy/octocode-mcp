@@ -23,8 +23,12 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { GITHUB_SEARCH_COMMITS_TOOL_NAME } from './utils/toolConstants';
+import {
+  GITHUB_SEARCH_COMMITS_TOOL_NAME,
+  GitHubToolOptions,
+} from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { searchGitHubCommitsAPI } from '../../utils/githubAPI';
 
 const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 
@@ -39,7 +43,10 @@ Use github_fetch_content for full files
 
 PHILOSOPHY: Build comprehensive understanding progressively`;
 
-export function registerGitHubSearchCommitsTool(server: McpServer) {
+export function registerGitHubSearchCommitsTool(
+  server: McpServer,
+  opts: GitHubToolOptions = { apiType: 'both' }
+) {
   server.registerTool(
     GITHUB_SEARCH_COMMITS_TOOL_NAME,
     {
@@ -212,52 +219,7 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
         }
 
         try {
-          const result = await searchGitHubCommits(args);
-
-          if (result.isError) {
-            return result;
-          }
-
-          const execResult = JSON.parse(result.content[0].text as string);
-          const commits: GitHubCommitSearchItem[] = execResult.result;
-
-          // GitHub CLI returns a direct array
-          const items = Array.isArray(commits) ? commits : [];
-
-          // Handle no results with smart hints
-          if (items.length === 0) {
-            const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
-              hasResults: false,
-              totalItems: 0,
-              errorMessage: createNoResultsError('commits'),
-              customHints: buildCustomHints(args),
-            });
-
-            return createResult({
-              error: createNoResultsError('commits'),
-              hints,
-            });
-          }
-
-          // Transform to optimized format
-          const optimizedResult = await transformCommitsToOptimizedFormat(
-            items,
-            args
-          );
-
-          // Generate smart hints for successful results
-          const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
-            hasResults: true,
-            totalItems: items.length,
-            customHints: buildCustomHints(args),
-          });
-
-          return createResult({
-            data: {
-              ...optimizedResult,
-              hints,
-            },
-          });
+          return await searchCommitsWithDualSupport(args, opts);
         } catch (error) {
           const errorMessage = (error as Error).message || '';
           let finalError: string;
@@ -285,6 +247,138 @@ export function registerGitHubSearchCommitsTool(server: McpServer) {
       }
     )
   );
+}
+
+/**
+ * Search commits with dual CLI/API support
+ */
+async function searchCommitsWithDualSupport(
+  args: GitHubCommitSearchParams,
+  opts: GitHubToolOptions
+): Promise<CallToolResult> {
+  // Execute searches based on apiType option
+  let cliResult: CallToolResult | null = null;
+  let apiResult: CallToolResult | null = null;
+
+  if (opts.apiType === 'gh' || opts.apiType === 'both') {
+    // Execute CLI search
+    cliResult = await searchGitHubCommits(args);
+  }
+
+  if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+    // Execute API search
+    apiResult = await searchGitHubCommitsAPI(args);
+  }
+
+  // Process CLI result
+  let cliCommits: GitHubCommitSearchItem[] = [];
+  let cliOptimizedResult: OptimizedCommitSearchResult | null = null;
+  let cliError: string | undefined;
+
+  if (cliResult && !cliResult.isError) {
+    try {
+      const execResult = JSON.parse(cliResult.content[0].text as string);
+      const commits: GitHubCommitSearchItem[] = execResult.result;
+      cliCommits = Array.isArray(commits) ? commits : [];
+
+      if (cliCommits.length > 0) {
+        cliOptimizedResult = await transformCommitsToOptimizedFormat(
+          cliCommits,
+          args
+        );
+      }
+    } catch (e) {
+      cliError = 'Failed to parse CLI results';
+    }
+  } else if (cliResult && cliResult.isError) {
+    cliError = cliResult.content[0].text as string;
+  }
+
+  // Process API result
+  let apiCommits: GitHubCommitSearchItem[] = [];
+  let apiOptimizedResult: OptimizedCommitSearchResult | null = null;
+  let apiError: string | undefined;
+
+  if (apiResult && !apiResult.isError) {
+    try {
+      const apiData = JSON.parse(apiResult.content[0].text as string);
+      if (apiData.commits && Array.isArray(apiData.commits)) {
+        apiOptimizedResult = apiData as OptimizedCommitSearchResult;
+        apiCommits = apiData.commits;
+      }
+    } catch (e) {
+      apiError = 'Failed to parse API results';
+    }
+  } else if (apiResult && apiResult.isError) {
+    const apiData = JSON.parse(apiResult.content[0].text as string);
+    apiError = apiData.error || 'API search failed';
+  }
+
+  // Determine which result to return
+  const totalCliCommits = cliCommits.length;
+  const totalApiCommits = apiCommits.length;
+  const hasCliResults = totalCliCommits > 0;
+  const hasApiResults = totalApiCommits > 0;
+
+  // Choose the best result
+  let finalResult: OptimizedCommitSearchResult;
+  let resultSource: string;
+
+  if (hasCliResults && hasApiResults) {
+    // Both have results, prefer CLI for consistency
+    finalResult = cliOptimizedResult!;
+    resultSource = 'cli';
+  } else if (hasCliResults) {
+    finalResult = cliOptimizedResult!;
+    resultSource = 'cli';
+  } else if (hasApiResults) {
+    finalResult = apiOptimizedResult!;
+    resultSource = 'api';
+  } else {
+    // No results from either
+    const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+      hasResults: false,
+      totalItems: 0,
+      errorMessage: createNoResultsError('commits'),
+      customHints: buildCustomHints(args),
+    });
+
+    return createResult({
+      error: createNoResultsError('commits'),
+      hints,
+    });
+  }
+
+  // Generate smart hints for successful results
+  const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+    hasResults: true,
+    totalItems: finalResult.commits.length,
+    customHints: buildCustomHints(args),
+  });
+
+  // Add source information and dual results if verbose
+  const responseData = {
+    ...finalResult,
+    hints,
+    resultSource,
+    dualResults:
+      opts.apiType === 'both'
+        ? {
+            cli: {
+              commits: totalCliCommits,
+              error: cliError,
+            },
+            api: {
+              commits: totalApiCommits,
+              error: apiError,
+            },
+          }
+        : undefined,
+  };
+
+  return createResult({
+    data: responseData,
+  });
 }
 
 /**
