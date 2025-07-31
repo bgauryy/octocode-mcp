@@ -113,7 +113,7 @@ export function registerViewRepositoryStructureTool(
         const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
           hasResults: false,
           errorMessage: `Failed to explore repository: ${errorMessage}`,
-          customHints: ['Verify repository exists and is accessible'],
+          customHints: [],
         });
         return createResult({
           isError: true,
@@ -180,9 +180,7 @@ export async function viewRepositoryStructure(
       const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
         hasResults: false,
         errorMessage: `Failed to access repository "${params.owner}/${params.repo}": ${errorMessage}`,
-        customHints: [
-          'Verify repository name, permissions, and network connection',
-        ],
+        customHints: [],
       });
       return createResult({
         isError: true,
@@ -363,9 +361,7 @@ async function viewRepositoryStructureCLI(
     const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
       hasResults: false,
       errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMessage}`,
-      customHints: [
-        'Verify repository name, permissions, and network connection',
-      ],
+      customHints: [],
     });
     return createResult({
       isError: true,
@@ -724,7 +720,7 @@ function handleRepositoryNotFound(
   const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
     hasResults: false,
     errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMsg}`,
-    customHints: ['Verify repository exists and is accessible'],
+    customHints: [],
   });
   return createResult({
     isError: true,
@@ -803,7 +799,7 @@ function handleOtherErrors(
     const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
       hasResults: false,
       errorMessage: `Failed to access "${owner}/${repo}": ${errorMsg}`,
-      customHints: ['Check network connection and repository permissions'],
+      customHints: [],
     });
     return createResult({
       isError: true,

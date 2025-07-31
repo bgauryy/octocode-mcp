@@ -700,9 +700,6 @@ function formatSearchError(errorMessage: string): string {
   if (errorMessage.includes('rate limit') || errorMessage.includes('403')) {
     return 'Rate limit reached. Wait 5-10 minutes. Use 2-3 focused queries with core technical + semantic terms.';
   }
-  if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
-    return "Authentication required: Run 'gh auth login' then retry search";
-  }
   if (errorMessage.includes('timed out') || errorMessage.includes('network')) {
     return 'Network timeout: Check connection, reduce query limit to 10-15, use simpler terms';
   }

@@ -734,6 +734,7 @@ function generateResearchGuidance(
 
 /**
  * Generate formatted hints for LLM with strategic guidance
+ * Optimized to reduce redundancy and limit strategic options
  */
 export function generateToolHints(
   currentTool: ToolName,
@@ -742,64 +743,79 @@ export function generateToolHints(
   const suggestions = getToolSuggestions(currentTool, context);
   const hints: string[] = [];
 
-  // Add research guidance first
-  hints.push(...suggestions.researchGuidance);
+  // Prioritize custom hints from tools over generic hints when they provide specific guidance
+  const hasSpecificCustomHints = suggestions.customHints.some(
+    hint =>
+      hint.includes('Try') ||
+      hint.includes('Use') ||
+      hint.includes('Check') ||
+      hint.includes(':')
+  );
 
-  // Add custom hints from the tool
+  // Add custom hints from the tool first (without CUSTOM: prefix for cleaner output)
   if (suggestions.customHints.length > 0) {
-    hints.push(...suggestions.customHints.map(hint => `CUSTOM: ${hint}`));
+    hints.push(...suggestions.customHints);
   }
 
-  // Add error-specific fallbacks
-  if (context.hasError && suggestions.fallback.length > 0) {
+  // Add centralized error handling hints only if no specific custom hints provided
+  if (context.errorType === 'auth_required' && !hasSpecificCustomHints) {
+    hints.push(`Authentication required: run "gh auth login" then retry`);
+  } else if (context.errorType === 'rate_limit' && !hasSpecificCustomHints) {
+    hints.push(`Rate limited: wait 5-10 minutes or use fewer targeted queries`);
+  }
+
+  // Add strategic guidance - limit to max 2 options to avoid hint fatigue
+  let strategicCount = 0;
+  const maxStrategicHints = 2;
+
+  // Add error-specific fallbacks (highest priority)
+  if (
+    context.hasError &&
+    suggestions.fallback.length > 0 &&
+    strategicCount < maxStrategicHints
+  ) {
     const topFallback = suggestions.fallback[0];
-    hints.push(`FALLBACK: ${topFallback.reason} -> use ${topFallback.tool}`);
+    hints.push(`Try ${topFallback.tool}: ${topFallback.reason}`);
+    strategicCount++;
   }
 
-  // Add success next steps with choices
-  if (context.hasResults && suggestions.nextSteps.length > 0) {
+  // Add success next steps
+  if (
+    context.hasResults &&
+    suggestions.nextSteps.length > 0 &&
+    strategicCount < maxStrategicHints
+  ) {
     const topNext = suggestions.nextSteps[0];
-    hints.push(`NEXT: ${topNext.reason} -> use ${topNext.tool}`);
+    hints.push(`Next: ${topNext.tool} to ${topNext.reason}`);
+    strategicCount++;
+  }
 
-    // Add strategic alternatives as choices
+  // Add one strategic alternative or prerequisite if space allows
+  if (strategicCount < maxStrategicHints) {
     if (suggestions.strategicAlternatives.length > 0) {
       const topStrategy = suggestions.strategicAlternatives[0];
-      hints.push(
-        `ALTERNATIVE: ${topStrategy.reason} -> use ${topStrategy.tool}`
-      );
-    }
-
-    // Add second option if available
-    if (suggestions.nextSteps.length > 1) {
-      const secondNext = suggestions.nextSteps[1];
-      hints.push(`ALSO: ${secondNext.reason} -> use ${secondNext.tool}`);
+      hints.push(`Alternative: ${topStrategy.tool} to ${topStrategy.reason}`);
+      strategicCount++;
+    } else if (suggestions.prerequisites.length > 0) {
+      const topPrereq = suggestions.prerequisites[0];
+      hints.push(`First: ${topPrereq.tool} to ${topPrereq.reason}`);
+      strategicCount++;
     }
   }
 
-  // Add prerequisites if needed
-  if (suggestions.prerequisites.length > 0) {
-    const topPrereq = suggestions.prerequisites[0];
-    hints.push(`FIRST: ${topPrereq.reason} -> use ${topPrereq.tool}`);
+  // Add research guidance only if no specific hints were provided
+  if (hints.length === 0 && suggestions.researchGuidance.length > 0) {
+    hints.push(suggestions.researchGuidance[0]); // Just the most relevant guidance
   }
 
-  // Add cross-connections for broader exploration
-  if (suggestions.crossConnections.length > 0) {
-    const topCross = suggestions.crossConnections[0];
-    hints.push(`EXPLORE: ${topCross.reason} -> use ${topCross.tool}`);
-  }
-
-  // Add context-specific guidance
-  if (context.errorType === 'auth_required') {
-    hints.push(`Authentication required: run "gh auth login" then retry`);
-  } else if (context.errorType === 'rate_limit') {
-    hints.push(`Rate limited: wait 5-10 minutes or use fewer targeted queries`);
-  } else if (context.totalItems && context.totalItems > 50) {
+  // Add contextual performance hints
+  if (context.totalItems && context.totalItems > 50) {
     hints.push(
       `Large result set: consider filtering or using more specific parameters`
     );
   }
 
-  return hints.slice(0, 8); // Allow more hints for better guidance
+  return hints.slice(0, 5); // Reduced from 8 to 5 for cleaner output
 }
 
 /**

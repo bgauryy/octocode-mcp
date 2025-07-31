@@ -345,11 +345,7 @@ export function registerSearchGitHubPullRequestsTool(
         const validationWarnings = validateParameterCombinations(args);
         if (validationWarnings.length > 0) {
           // Log warnings but don't fail - let the user proceed with caveats
-          // eslint-disable-next-line no-console
-          console.warn(
-            'Parameter combination warnings:',
-            validationWarnings.join('; ')
-          );
+          // TODO: Use proper logging instead of console
         }
 
         try {
@@ -360,7 +356,6 @@ export function registerSearchGitHubPullRequestsTool(
             {
               hasResults: false,
               errorMessage: 'Search failed',
-              customHints: ['Check authentication', 'Verify repository access'],
             }
           );
           return createResult({
@@ -455,7 +450,7 @@ async function searchPullRequestsWithDualSupport(
       hasResults: false,
       totalItems: 0,
       errorMessage: 'No pull requests found',
-      customHints: ['Try broader search terms', 'Check repository access'],
+      customHints: ['Try broader search terms'],
     });
 
     return createResult({
