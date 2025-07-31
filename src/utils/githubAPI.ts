@@ -8,6 +8,8 @@ import {
   GitHubReposSearchParams,
   GitHubCodeSearchItem,
   OptimizedCodeSearchResult,
+  GithubFetchRequestParams,
+  GitHubFileContentResponse,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
@@ -22,6 +24,8 @@ type SearchCodeParameters =
 type SearchReposParameters =
   RestEndpointMethodTypes['search']['repos']['parameters'];
 type SearchCodeResponse = RestEndpointMethodTypes['search']['code']['response'];
+type GetContentParameters =
+  RestEndpointMethodTypes['repos']['getContent']['parameters'];
 
 // Define TextMatch type based on GitHub API response structure
 interface TextMatch {
@@ -691,6 +695,379 @@ export async function searchGitHubReposAPI(
         hints,
       });
     }
+  });
+}
+
+/**
+ * Fetch GitHub file content using Octokit API with proper TypeScript types
+ */
+export async function fetchGitHubFileContentAPI(
+  params: GithubFetchRequestParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-api-file-content', params);
+
+  return withCache(cacheKey, async () => {
+    try {
+      const octokit = getOctokit();
+      const { owner, repo, filePath, branch } = params;
+
+      // Use properly typed parameters
+      const contentParams: GetContentParameters = {
+        owner,
+        repo,
+        path: filePath,
+        ...(branch && { ref: branch }),
+      };
+
+      const result = await octokit.rest.repos.getContent(contentParams);
+
+      // Handle the response data
+      const data = result.data;
+
+      // Check if it's a directory (array response)
+      if (Array.isArray(data)) {
+        return createResult({
+          isError: true,
+          hints: [
+            'Path is a directory. Use githubViewRepoStructure to list directory contents',
+          ],
+        });
+      }
+
+      // Check if it's a file with content
+      if ('content' in data && data.type === 'file') {
+        const fileSize = data.size || 0;
+        const MAX_FILE_SIZE = 300 * 1024; // 300KB limit
+
+        // Check file size
+        if (fileSize > MAX_FILE_SIZE) {
+          const fileSizeKB = Math.round(fileSize / 1024);
+          const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
+
+          return createResult({
+            isError: true,
+            hints: [
+              `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+            ],
+          });
+        }
+
+        // Get and decode content
+        if (!data.content) {
+          return createResult({
+            isError: true,
+            hints: ['File is empty - no content to display'],
+          });
+        }
+
+        const base64Content = data.content.replace(/\s/g, ''); // Remove all whitespace
+
+        if (!base64Content) {
+          return createResult({
+            isError: true,
+            hints: ['File is empty - no content to display'],
+          });
+        }
+
+        let decodedContent: string;
+        try {
+          const buffer = Buffer.from(base64Content, 'base64');
+
+          // Simple binary check - look for null bytes
+          if (buffer.indexOf(0) !== -1) {
+            return createResult({
+              isError: true,
+              hints: [
+                'Binary file detected. Cannot display as text - download directly from GitHub',
+              ],
+            });
+          }
+
+          decodedContent = buffer.toString('utf-8');
+        } catch (decodeError) {
+          return createResult({
+            isError: true,
+            hints: [
+              'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+            ],
+          });
+        }
+
+        // Process the content similar to CLI implementation
+        return await processFileContentAPI(
+          decodedContent,
+          owner,
+          repo,
+          branch || data.sha,
+          filePath,
+          params.minified !== false,
+          params.startLine,
+          params.endLine,
+          params.contextLines || 5,
+          params.matchString
+        );
+      }
+
+      // Handle other file types (symlinks, submodules, etc.)
+      return createResult({
+        isError: true,
+        hints: [`Unsupported file type: ${data.type}`],
+      });
+    } catch (error: unknown) {
+      const apiError = handleGitHubAPIError(error);
+      const hints: string[] = [];
+
+      switch (apiError.status) {
+        case 403:
+          if (apiError.rateLimitRemaining === 0) {
+            hints.push(
+              `GitHub API rate limit exceeded. Retry after ${apiError.retryAfter} seconds.`,
+              'Set GITHUB_TOKEN environment variable for higher rate limits.'
+            );
+          } else {
+            hints.push(
+              'Access forbidden. Check repository permissions or authentication.',
+              'Set GITHUB_TOKEN environment variable for private repository access.'
+            );
+          }
+          break;
+        case 401:
+          hints.push(
+            'GitHub authentication required for file access.',
+            'Set GITHUB_TOKEN or GH_TOKEN environment variable.'
+          );
+          break;
+        case 404:
+          hints.push(
+            'File, repository, or branch not found.',
+            'Verify the file path, repository name, and branch exist.'
+          );
+          break;
+        default:
+          hints.push(apiError.error);
+      }
+
+      return createResult({
+        isError: true,
+        hints,
+      });
+    }
+  });
+}
+
+/**
+ * Process file content from API with similar functionality to CLI implementation
+ */
+async function processFileContentAPI(
+  decodedContent: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  filePath: string,
+  minified: boolean,
+  startLine?: number,
+  endLine?: number,
+  contextLines: number = 5,
+  matchString?: string
+): Promise<CallToolResult> {
+  // Sanitize the decoded content for security
+  const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
+  decodedContent = sanitizationResult.content;
+
+  // Add security warnings to the response if any issues were found
+  const securityWarningsSet = new Set<string>();
+  if (sanitizationResult.hasSecrets) {
+    securityWarningsSet.add(
+      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
+    );
+  }
+  if (sanitizationResult.hasPromptInjection) {
+    securityWarningsSet.add(
+      'Potential prompt injection detected and sanitized'
+    );
+  }
+  if (sanitizationResult.isMalicious) {
+    securityWarningsSet.add(
+      'Potentially malicious content detected and sanitized'
+    );
+  }
+  if (sanitizationResult.warnings.length > 0) {
+    sanitizationResult.warnings.forEach(warning =>
+      securityWarningsSet.add(warning)
+    );
+  }
+  const securityWarnings = Array.from(securityWarningsSet);
+
+  // Handle partial file access
+  let finalContent = decodedContent;
+  let actualStartLine: number | undefined;
+  let actualEndLine: number | undefined;
+  let isPartial = false;
+  let hasLineAnnotations = false;
+
+  // Always calculate total lines for metadata
+  const lines = decodedContent.split('\n');
+  const totalLines = lines.length;
+
+  // SMART MATCH FINDER: If matchString is provided, find it and set line range
+  if (matchString) {
+    const matchingLines: number[] = [];
+
+    // Find all lines that contain the match string
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes(matchString)) {
+        matchingLines.push(i + 1); // Convert to 1-based line numbers
+      }
+    }
+
+    if (matchingLines.length === 0) {
+      return createResult({
+        isError: true,
+        hints: [
+          `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+        ],
+      });
+    }
+
+    // Use the first match, with context lines around it
+    const firstMatch = matchingLines[0];
+    const matchStartLine = Math.max(1, firstMatch - contextLines);
+    const matchEndLine = Math.min(totalLines, firstMatch + contextLines);
+
+    // Override any manually provided startLine/endLine when matchString is used
+    startLine = matchStartLine;
+    endLine = matchEndLine;
+
+    // Add info about the match for user context
+    securityWarnings.push(
+      `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
+    );
+  }
+
+  if (startLine !== undefined) {
+    // Validate line numbers
+    if (startLine < 1 || startLine > totalLines) {
+      return createResult({
+        isError: true,
+        hints: [
+          `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+        ],
+      });
+    }
+
+    // Calculate actual range with context
+    const contextStart = Math.max(1, startLine - contextLines);
+    let adjustedEndLine = endLine;
+
+    // Validate and auto-adjust endLine if provided
+    if (endLine !== undefined) {
+      if (endLine < startLine) {
+        return createResult({
+          isError: true,
+          hints: [
+            `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+          ],
+        });
+      }
+
+      // Auto-adjust endLine to file boundaries with helpful message
+      if (endLine > totalLines) {
+        adjustedEndLine = totalLines;
+        securityWarnings.push(
+          `Requested endLine ${endLine} adjusted to ${totalLines} (file end)`
+        );
+      }
+    }
+
+    const contextEnd = adjustedEndLine
+      ? Math.min(totalLines, adjustedEndLine + contextLines)
+      : Math.min(totalLines, startLine + contextLines);
+
+    // Extract the specified range with context from ORIGINAL content
+    const selectedLines = lines.slice(contextStart - 1, contextEnd);
+
+    actualStartLine = contextStart;
+    actualEndLine = contextEnd;
+    isPartial = true;
+
+    // Add line number annotations for partial content
+    const annotatedLines = selectedLines.map((line, index) => {
+      const lineNumber = contextStart + index;
+      const isInTargetRange =
+        lineNumber >= startLine &&
+        (adjustedEndLine === undefined || lineNumber <= adjustedEndLine);
+      const marker = isInTargetRange ? '→' : ' ';
+      return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
+    });
+
+    finalContent = annotatedLines.join('\n');
+    hasLineAnnotations = true;
+  }
+
+  // Apply minification to final content (both partial and full files)
+  let minificationFailed = false;
+  let minificationType = 'none';
+
+  if (minified) {
+    if (hasLineAnnotations) {
+      // For partial content with line annotations, extract code content first
+      const annotatedLines = finalContent.split('\n');
+      const codeLines = annotatedLines.map(line => {
+        // Remove line number annotations but preserve the original line content
+        const match = line.match(/^[→ ]\s*\d+:\s*(.*)$/);
+        return match ? match[1] : line;
+      });
+
+      const codeContent = codeLines.join('\n');
+      const minifyResult = await minifyContentV2(codeContent, filePath);
+
+      if (!minifyResult.failed) {
+        // Apply minification first, then add simple line annotations
+        // Since minified content may be much shorter, use a simplified annotation approach
+        finalContent = `Lines ${actualStartLine}-${actualEndLine} (minified):\n${minifyResult.content}`;
+        minificationType = minifyResult.type;
+      } else {
+        minificationFailed = true;
+      }
+    } else {
+      // Full file minification
+      const minifyResult = await minifyContentV2(finalContent, filePath);
+      finalContent = minifyResult.content;
+      minificationFailed = minifyResult.failed;
+      minificationType = minifyResult.type;
+    }
+  }
+
+  return createResult({
+    data: {
+      filePath,
+      owner,
+      repo,
+      branch,
+      content: finalContent,
+      // Always return total lines for LLM context
+      totalLines,
+      // Original request parameters for LLM context
+      requestedStartLine: startLine,
+      requestedEndLine: endLine,
+      requestedContextLines: contextLines,
+      // Actual content boundaries (only for partial content)
+      ...(isPartial && {
+        startLine: actualStartLine,
+        endLine: actualEndLine,
+        isPartial,
+      }),
+      // Minification metadata
+      ...(minified && {
+        minified: !minificationFailed,
+        minificationFailed: minificationFailed,
+        minificationType: minificationType,
+      }),
+      // Security metadata
+      ...(securityWarnings.length > 0 && {
+        securityWarnings,
+      }),
+    } as GitHubFileContentResponse,
   });
 }
 

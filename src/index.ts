@@ -51,6 +51,7 @@ function registerAllTools(server: McpServer) {
     {
       name: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
       fn: registerFetchGitHubFileContentTool,
+      opts: { apiType: API_TYPE },
     },
     {
       name: GITHUB_SEARCH_COMMITS_TOOL_NAME,
