@@ -18,14 +18,17 @@
 ## 🐳 For Docker Setup - [Docker Guide](./docker/README.Docker.md)
 ## 💬 Join Our Community - [Discord](https://discord.gg/beTNk8at) - Follow this for useful updates and discussions
 
-**The perfect code assistant that can help understand anything.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems.
+**The perfect AI code assistant for understanding anything in any codebase.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems.
 
-Instead of manually browsing repositories, ask questions like:
+🧠 **Powered by Advanced Vibe Coding** - Discover code through natural language descriptions and intelligent context generation. Perfect for AI-assisted development workflows.
+
+**Ask natural questions and let AI guide discovery:**
 - *"How did React implement concurrent rendering?"*
 - *"Show me authentication patterns in Next.js applications"*
 - *"Find examples of how to use this specific API"*
-- *"What's the architecture of this library?"*
-- *"How do I use this MCP tool effectively?"*
+- *"Generate documentation for this architecture pattern"*
+- *"Help me implement similar patterns in my current project"*
+- *"What security vulnerabilities should I watch for in this approach?"*
 
 ## 🌟 Featured On
 
@@ -63,19 +66,30 @@ Dramatically increase development velocity by enabling teams to instantly learn 
 
 ## 🚀 Key Benefits
 
-**Zero-Configuration Setup** - Works with existing GitHub CLI authentication, no personal access tokens needed
+**🔄 Dual GitHub Integration** - Works with both GitHub CLI (`gh`) and API tokens (`GITHUB_TOKEN`) for maximum reliability and flexibility
 
-**Enterprise-Ready Security** - Respects organizational permissions with content sanitization
+**🧠 Vibe Coding Ready** - Perfect for AI-assisted development with intelligent context generation and progressive code discovery
 
-**AI Token Optimization** - Reduces AI costs by through intelligent content processing
+**🛡️ Enterprise-Ready Security** - Automatic secret detection, content sanitization, and organizational permission respect
 
-**Cross-Platform Excellence** - Native Windows PowerShell support with automatic path detection
+**⚡ AI Token Optimization** - Advanced minification and smart processing reduces AI costs by up to 70% while preserving code context
 
-**Universal Access** - Works seamlessly with public, private, and organization repositories
+**🌐 Hosted or Local** - Run locally with GitHub CLI or deploy hosted with GitHub tokens - your choice
+
+**🖥️ Cross-Platform Excellence** - Native Windows PowerShell support with automatic executable detection
+
+**🔓 Universal Access** - Seamlessly works with public, private, and organization repositories
 
 ## Quick Start 🚀
 
-### 1. Install Prerequisites
+### 🎯 Choose Your Setup Method
+
+Octocode MCP supports **two flexible authentication methods** - choose what works best for your setup:
+
+#### **Method 1: GitHub CLI (Recommended for Local Use)**
+Perfect for personal development and local AI assistants.
+
+**1. Install Prerequisites**
 
 **macOS/Linux:**
 ```bash
@@ -95,68 +109,195 @@ winget install OpenJS.NodeJS
 
 # Or using Chocolatey
 choco install powershell-core nodejs github-cli
-
-# Or using Scoop
-scoop install gh nodejs
 ```
 
-### 2. Authenticate
+**2. Authenticate with GitHub**
 ```bash
-# Login to GitHub (opens browser)
+# Login to GitHub (opens browser for OAuth)
 gh auth login
 
-# Login to NPM (for package research)
+# Verify authentication
+gh auth status
+
+# Optional: Login to NPM for package research
 npm login
 ```
 
-### 3. Add to Claude Desktop
+#### **Method 2: GitHub Token (Recommended for Hosted/Production)**
+Ideal for hosted deployments, Docker containers, or when GitHub CLI isn't available.
+
+**1. Create GitHub Token**
+- Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+- Create a **Fine-grained personal access token** or **Classic token**
+- Required scopes: `repo` (for private repos), `public_repo`, `read:org`
+
+**2. Set Environment Variable**
+```bash
+# Set your GitHub token
+export GITHUB_TOKEN="your_token_here"
+# or
+export GH_TOKEN="your_token_here"
+
+# Optional: Set NPM token for package research
+export NPM_TOKEN="your_npm_token"
+```
+
+**3. Add to Claude Desktop**
 ```bash
 # For Claude Desktop users
 claude mcp add octocode npx 'octocode-mcp@latest'
 ```
 
-### Or Add to MCP Configuration Manually
+**Or Add to MCP Configuration Manually**
+
+**With GitHub Token:**
 ```json
 {
   "octocode-mcp": {
+    "command": "npx",
+    "args": ["octocode-mcp"],
+    "env": {
+      "GITHUB_TOKEN": "your_token_here"
+    }
+  }
+}
+```
+
+**With GitHub CLI (No Token Required):**
+```json
+{
+  "octocode": {
     "command": "npx",
     "args": ["octocode-mcp"]
   }
 }
 ```
 
-**That's it!** Octocode automatically works with your organization's private repositories.
+### 🔄 How Dual Authentication Works
+
+**Automatic Detection:** Octocode intelligently chooses the best authentication method:
+- **Token Found** → Uses GitHub API (octokit) for maximum reliability and rate limits
+- **No Token + GitHub CLI** → Uses `gh` commands with your authenticated session  
+- **Fallback Strategy** → If one method fails, automatically tries the other
+
+**Benefits of Each Method:**
+
+| Feature | GitHub CLI (`gh`) | GitHub Token API |
+|---------|-------------------|------------------|
+| **Setup Complexity** | Simple OAuth flow | Token management |
+| **Rate Limits** | 5,000/hour | 5,000/hour (authenticated) |
+| **Private Repos** | ✅ Full access | ✅ Full access |
+| **Organization Repos** | ✅ Based on membership | ✅ Based on token scope |
+| **Hosted Deployment** | ❌ Requires interactive login | ✅ Perfect for containers |
+| **Local Development** | ✅ Seamless experience | ✅ Works great |
+
+**That's it!** Octocode automatically works with your organization's private repositories using either method.
+
+## ✨ What Makes Octocode MCP Unique
+
+### 🔄 **Dual Authentication Reliability**
+The only MCP with intelligent fallback between GitHub CLI and API tokens - ensuring maximum uptime and access across any environment.
+
+### 🧠 **AI-Optimized Design**
+Built specifically for AI assistants with:
+- **Token-efficient responses** (up to 70% reduction in AI costs)
+- **Progressive discovery workflows** that guide exploration
+- **Intelligent context generation** for better AI understanding
+- **Smart hint system** for next-step recommendations
+
+### 🛡️ **Production-Ready Security**
+- **Automatic secret detection** and redaction in all content
+- **Content sanitization** prevents malicious code exposure  
+- **Input validation** across all parameters and commands
+- **Enterprise compliance** with organizational permission respect
+
+### 🎯 **Vibe Coding Excellence**
+Perfect for modern AI-assisted development:
+- **Natural language code discovery** - describe what you need, find implementations
+- **Contextual documentation generation** from live codebases
+- **Pattern recognition** across different projects and languages
+- **Research workflow optimization** from broad discovery to specific implementation
+
+### 🌐 **Universal Compatibility**
+- **Cross-platform native support** (Windows, macOS, Linux)
+- **Multiple deployment options** (local, hosted, containerized)
+- **Organization repository access** with proper permission handling
+- **Package ecosystem bridge** connecting NPM/PyPI to GitHub repositories
 
 ## 🐳 Docker Support
 
-Run Octocode MCP in a Docker container while maintaining full GitHub CLI authentication. Perfect for consistent environments and deployment.
+Run Octocode MCP in a Docker container while maintaining full GitHub authentication. Perfect for consistent environments and deployment.
 
 [**See Docker Setup Guide →**](./docker/README.Docker.md)
 
 ## 🛠️ What You Can Do
 
-### Deep Project Research & Analysis
-- **Issue Search & Analysis**: Understand project challenges, feature requests, and bug patterns
-- **Commit History Research**: Trace feature implementations and bug fixes across time
-- **Pull Request & Code Review Analysis**: Access actual code diffs and understand development workflows
-- **Project Progress Tracking**: Monitor development velocity and team collaboration patterns
+### 🧠 AI-Powered Vibe Coding & Context Generation
+- **Natural Language Code Discovery**: Describe what you're looking for in plain English and let AI find relevant implementations
+- **Intelligent Context Generation**: Automatically generate comprehensive documentation and examples from any codebase
+- **Progressive Code Exploration**: Start with broad concepts and intelligently narrow down to specific implementations
+- **Pattern Recognition**: Discover and understand architectural patterns across different projects and languages
 
-### Core GitHub Research
-- **Repository Discovery**: Find repositories by topic, language, and activity
-- **Code Search**: Find exact patterns and implementations across millions of repositories
-- **Cross-Repository Flow Understanding**: Connect related changes across multiple repositories
-- **Repository Architecture**: Navigate and understand project structures
+### 🔍 Deep Project Research & Analysis
+- **Issue Search & Analysis**: Understand project challenges, feature requests, and bug patterns with AI-assisted insights
+- **Commit History Research**: Trace feature implementations and bug fixes across time with automatic diff analysis
+- **Pull Request & Code Review Analysis**: Access actual code diffs, comments, and understand development workflows
+- **Project Progress Tracking**: Monitor development velocity and team collaboration patterns with intelligent metrics
 
-### Package Ecosystem Tools
-- **NPM Package Discovery**: Analyze Node.js packages with comprehensive metadata
-- **Python Package Integration**: Explore PyPI packages with cross-ecosystem comparison
-- **Package Analysis**: Deep-dive into versions, dependencies, and repository connections
+### 🏗️ Advanced GitHub Research Tools
+- **Repository Discovery**: Find repositories by topic, language, activity, and complex criteria with smart ranking
+- **Semantic Code Search**: Find patterns and implementations using both technical terms and natural language descriptions  
+- **Cross-Repository Flow Understanding**: Connect related changes across multiple repositories with dependency tracking
+- **Repository Architecture**: Navigate and understand project structures with intelligent filtering and exploration
 
-### Advanced Research Capabilities
-- **Code Pattern Discovery**: Identify implementation patterns and best practices
-- **Security & Compliance Research**: Search for security patterns across codebases
-- **Team Collaboration Analysis**: Understand code review processes and team dynamics
-- **Real-time Documentation**: Generate custom docs from live code for any topic
+### 📦 Package Ecosystem Intelligence
+- **NPM Package Discovery**: Analyze Node.js packages with comprehensive metadata, dependency graphs, and repository connections
+- **Python Package Integration**: Explore PyPI packages with cross-ecosystem comparison and compatibility analysis
+- **Package Evolution Tracking**: Monitor how packages change over time and understand their development patterns
+- **Dependency Analysis**: Deep-dive into versions, dependencies, vulnerabilities, and repository connections
+
+### 🔬 Advanced Research & Security Capabilities
+- **Code Pattern Discovery**: Identify implementation patterns, best practices, and anti-patterns across codebases
+- **Security & Compliance Research**: Search for security vulnerabilities, patterns, and compliance issues with automatic secret detection
+- **Team Collaboration Analysis**: Understand code review processes, team dynamics, and contribution patterns
+- **Real-time Documentation**: Generate custom documentation from live code for any topic with AI assistance
+- **Architectural Analysis**: Understand system design decisions and their evolution over time
+
+## 🏗️ Architecture & Deployment Options
+
+### Local Development (Recommended)
+**Perfect for:** Personal projects, local AI assistants, development workflows
+
+- **Authentication:** GitHub CLI OAuth (browser-based, no token management)
+- **Rate Limits:** 5,000 requests/hour per authenticated user
+- **Access:** Full access to your personal and organization repositories
+- **Setup:** Simple `gh auth login` - that's it!
+
+### Hosted/Production Deployment
+**Perfect for:** Team environments, Docker containers, CI/CD, hosted AI services
+
+- **Authentication:** GitHub Personal Access Tokens or GitHub App tokens
+- **Rate Limits:** 5,000 requests/hour (can be higher with GitHub Apps)
+- **Access:** Controlled by token scope and permissions
+- **Setup:** Set `GITHUB_TOKEN` environment variable
+
+### Hybrid Reliability
+Octocode automatically detects your environment and chooses the optimal approach:
+
+```mermaid
+graph TD
+    A[Octocode MCP Start] --> B{GitHub Token Available?}
+    B -->|Yes| C[Use GitHub API]
+    B -->|No| D{GitHub CLI Authenticated?}
+    D -->|Yes| E[Use GitHub CLI]
+    D -->|No| F[Provide Setup Instructions]
+    C --> G[API Request Fails?]
+    G -->|Yes| H[Fallback to CLI]
+    G -->|No| I[Success]
+    E --> J[CLI Request Fails?]
+    J -->|Yes| K[Fallback to API]
+    J -->|No| I
+```
 
 > **📚 For detailed technical architecture, tool specifications, and implementation details, see [Technical Summary](./docs/summary.md)**
 
@@ -183,17 +324,41 @@ The generated `octocode-mcp.dxt` file can be installed in Claude Desktop by simp
 
 ## Best Practices 💡
 
-**Ask Natural Questions:**
+### 🧠 Vibe Coding with AI
+**Let natural language drive your code discovery:**
 - "How does authentication work in this project?"
-- "What libraries implement this pattern?"
-- "Show me NPM packages that solve X problem"
-- "How has this approach evolved over time?"
+- "Show me patterns for handling async errors gracefully"
+- "Find examples of clean architecture in TypeScript projects"
+- "What's the best way to implement real-time features?"
+- "Generate documentation for this API endpoint pattern"
 
-**Let AI Guide Discovery:**
-- Start with broad queries - the system will intelligently narrow down
-- Trust the smart fallbacks - automatic retry with alternatives
-- Build on previous searches - maintain context for deeper exploration
-- Works everywhere - public, private, and organization repositories
+### 🔍 Progressive Discovery Strategy
+**Start broad, then narrow down intelligently:**
+1. **Repository Discovery** → Find relevant projects by topic/language
+2. **Code Pattern Search** → Identify specific implementation approaches  
+3. **Deep Analysis** → Examine commits, PRs, and issues for context
+4. **Context Generation** → Use findings to generate documentation or implementations
+
+### 🤖 AI-Assisted Workflows
+**Let the system guide your exploration:**
+- **Trust Smart Hints** → Follow suggested next steps for deeper insights
+- **Build Context Progressively** → Each search adds to your understanding
+- **Use Fallback Strategies** → Automatic retry with alternatives when searches don't yield results
+- **Cross-Reference Results** → Connect package searches with repository analysis
+
+### 🎯 Targeted Research Techniques
+**For specific use cases:**
+- **Security Research** → Search for vulnerability patterns, then analyze fixes in commit history
+- **Architecture Understanding** → Start with repository structure, then dive into key implementation files
+- **Package Evaluation** → Begin with NPM/PyPI search, then explore source repositories
+- **Feature Implementation** → Find examples in issues/PRs, then examine the actual code changes
+
+### 🌐 Cross-Platform & Team Usage
+**Works everywhere:**
+- **Personal Development** → GitHub CLI for seamless local experience
+- **Team Environments** → GitHub tokens for consistent hosted deployment
+- **Enterprise** → Organization repositories with proper permission respect
+- **CI/CD Integration** → Token-based authentication for automated workflows
 
 ## Troubleshooting 🔧
 
@@ -220,10 +385,22 @@ where.exe npm
 ```
 
 **Common Solutions:**
-- No results? Try broader search terms
-- Private repos not found? Check `gh auth status` for organization membership
-- Windows issues? Install PowerShell 7+ for better security
-- Permission errors? Check executable permissions and PATH configuration
+
+**Authentication Issues:**
+- No results? Try broader search terms or check authentication status
+- Private repos not accessible? Verify `gh auth status` shows organization membership
+- API rate limits? Switch between CLI and token methods: `export GITHUB_TOKEN="your_token"`
+
+**Platform-Specific:**
+- **Windows:** Install PowerShell 7+ for better security and performance
+- **Linux/macOS:** Ensure GitHub CLI is in PATH: `which gh`
+- **Docker:** Use token-based authentication with proper environment variables
+
+**Performance & Results:**
+- **Slow responses?** Check network connectivity and GitHub API status
+- **Permission errors?** Verify executable permissions and PATH configuration
+- **Empty results?** Try alternative search terms or broaden your query scope
+- **Token issues?** Verify token scopes include `repo`, `public_repo`, `read:org`
 
 ## Security & Privacy 🛡️
 
@@ -233,9 +410,11 @@ where.exe npm
 - **🔑 Safe Authentication** - Uses GitHub CLI OAuth, no personal tokens needed
 
 ### Enterprise Security
-- **🛡️ Content Protection** - Input validation and content sanitization
-- **🔐 Secret Detection** - Automatic detection and redaction of sensitive data patterns
-- **⚪ Safe Commands Only** - Pre-approved GitHub CLI and NPM commands only
+- **🛡️ Advanced Content Protection** - Multi-layer input validation and intelligent content sanitization
+- **🔐 Comprehensive Secret Detection** - Automatic detection and redaction of API keys, tokens, credentials, and sensitive patterns
+- **⚪ Safe Commands Only** - Pre-approved GitHub CLI and NPM commands with parameter validation
+- **🧹 Malicious Content Filtering** - Automatic detection and sanitization of potentially harmful code patterns
+- **🔍 Security Pattern Analysis** - Built-in tools for identifying security vulnerabilities and compliance issues
 
 > **📚 For comprehensive security architecture details, see [Technical Summary](./docs/summary.md)**
 
