@@ -71,6 +71,7 @@ function registerAllTools(server: McpServer) {
     {
       name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
       fn: registerSearchGitHubIssuesTool,
+      opts: { apiType: API_TYPE },
     },
     { name: NPM_PACKAGE_SEARCH_TOOL_NAME, fn: registerNpmSearchTool },
   ];

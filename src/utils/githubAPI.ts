@@ -18,6 +18,9 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
   GitHubPullRequestsSearchResult,
+  GitHubIssuesSearchParams,
+  GitHubIssueItem,
+  GitHubIssuesSearchResult,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
@@ -981,6 +984,298 @@ async function fetchPRCommitDataAPI(
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Search GitHub issues using Octokit API
+ */
+export async function searchGitHubIssuesAPI(
+  params: GitHubIssuesSearchParams
+): Promise<CallToolResult> {
+  const cacheKey = generateCacheKey('gh-issues-api', params);
+
+  return withCache(cacheKey, async () => {
+    try {
+      const octokit = getOctokit();
+
+      // Build search query
+      const searchQuery = buildIssueSearchQuery(params);
+
+      if (!searchQuery) {
+        return createResult({
+          isError: true,
+          data: {
+            error: 'No valid search parameters provided',
+            results: [],
+          },
+        });
+      }
+
+      // Execute search using GitHub Search API
+      const searchResult = await octokit.rest.search.issuesAndPullRequests({
+        q: searchQuery,
+        sort:
+          params.sort === 'created'
+            ? 'created'
+            : params.sort === 'updated'
+              ? 'updated'
+              : params.sort === 'comments'
+                ? 'comments'
+                : params.sort === 'reactions'
+                  ? 'reactions'
+                  : undefined,
+        order: params.order || 'desc',
+        per_page: Math.min(params.limit || 25, 100),
+      });
+
+      // Filter out pull requests unless explicitly requested
+      const issues =
+        searchResult.data.items?.filter((item: any) =>
+          params['include-prs'] ? true : !item.pull_request
+        ) || [];
+
+      // Transform issues to our expected format
+      const transformedIssues: GitHubIssueItem[] = await Promise.all(
+        issues.map(async (item: any) => {
+          // Sanitize title and body content
+          const titleSanitized = ContentSanitizer.sanitizeContent(
+            item.title || ''
+          );
+          const bodySanitized = item.body
+            ? ContentSanitizer.sanitizeContent(item.body)
+            : { content: '', warnings: [] };
+
+          // Collect all sanitization warnings
+          const sanitizationWarnings = new Set<string>([
+            ...titleSanitized.warnings,
+            ...bodySanitized.warnings,
+          ]);
+
+          const result: GitHubIssueItem = {
+            number: item.number,
+            title: titleSanitized.content,
+            body: bodySanitized.content,
+            state: item.state?.toLowerCase() || 'unknown',
+            author: {
+              login: item.user?.login || '',
+              id: item.user?.id?.toString(),
+              url: item.user?.html_url,
+              type: item.user?.type,
+              is_bot: item.user?.type === 'Bot',
+            },
+            repository: {
+              name: item.repository_url
+                ? item.repository_url.split('/').pop()
+                : 'unknown',
+              nameWithOwner: item.repository_url
+                ? item.repository_url.replace(
+                    'https://api.github.com/repos/',
+                    ''
+                  )
+                : 'unknown',
+            },
+            labels:
+              item.labels?.map((l: any) => ({
+                name: l.name,
+                color: l.color,
+                description: l.description,
+                id: l.id?.toString(),
+              })) || [],
+            createdAt: item.created_at,
+            updatedAt: item.updated_at,
+            url: item.html_url,
+            commentsCount: item.comments || 0,
+            reactions: item.reactions?.total_count || 0,
+            created_at: item.created_at
+              ? new Date(item.created_at).toLocaleDateString('en-GB')
+              : '',
+            updated_at: item.updated_at
+              ? new Date(item.updated_at).toLocaleDateString('en-GB')
+              : '',
+            assignees:
+              item.assignees?.map((a: any) => ({
+                login: a.login,
+                id: a.id?.toString(),
+                url: a.html_url,
+                type: a.type,
+                is_bot: a.type === 'Bot',
+              })) || [],
+            authorAssociation: item.author_association,
+            isLocked: item.locked || false,
+            isPullRequest: !!item.pull_request,
+            id: item.id?.toString(),
+          };
+
+          // Add optional fields
+          if (item.closed_at) {
+            result.closedAt = item.closed_at;
+            result.closed_at = new Date(item.closed_at).toLocaleDateString(
+              'en-GB'
+            );
+          }
+
+          // Add sanitization warnings if any were detected
+          if (sanitizationWarnings.size > 0) {
+            result._sanitization_warnings = Array.from(sanitizationWarnings);
+          }
+
+          return result;
+        })
+      );
+
+      const searchResultData: GitHubIssuesSearchResult = {
+        results: transformedIssues,
+      };
+
+      return createResult({
+        data: {
+          ...searchResultData,
+          apiSource: true,
+        },
+      });
+    } catch (error: unknown) {
+      const apiError = handleGitHubAPIError(error);
+      return createResult({
+        isError: true,
+        data: {
+          error: `Issue search failed: ${apiError.error}`,
+          status: apiError.status,
+          rateLimitRemaining: apiError.rateLimitRemaining,
+          rateLimitReset: apiError.rateLimitReset,
+          results: [],
+        },
+      });
+    }
+  });
+}
+
+/**
+ * Build issue search query string for GitHub API
+ */
+function buildIssueSearchQuery(params: GitHubIssuesSearchParams): string {
+  const queryParts: string[] = [];
+
+  // Add main query
+  if (params.query && params.query.trim()) {
+    queryParts.push(params.query.trim());
+  }
+
+  // Always add is:issue unless including PRs
+  if (!params['include-prs']) {
+    queryParts.push('is:issue');
+  }
+
+  // Repository filters
+  if (params.owner && params.repo) {
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(owner => {
+      queryParts.push(`repo:${owner}/${params.repo}`);
+    });
+  } else if (params.owner) {
+    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
+    owners.forEach(owner => {
+      queryParts.push(`user:${owner}`);
+    });
+  }
+
+  // State filters
+  if (params.state) {
+    queryParts.push(`is:${params.state}`);
+  }
+  if (params.locked !== undefined) {
+    queryParts.push(params.locked ? 'is:locked' : '-is:locked');
+  }
+
+  // User involvement filters
+  if (params.author) {
+    queryParts.push(`author:${params.author}`);
+  }
+  if (params.assignee) {
+    queryParts.push(`assignee:${params.assignee}`);
+  }
+  if (params.mentions) {
+    queryParts.push(`mentions:${params.mentions}`);
+  }
+  if (params.commenter) {
+    queryParts.push(`commenter:${params.commenter}`);
+  }
+  if (params.involves) {
+    queryParts.push(`involves:${params.involves}`);
+  }
+
+  // Date filters
+  if (params.created) {
+    queryParts.push(`created:${params.created}`);
+  }
+  if (params.updated) {
+    queryParts.push(`updated:${params.updated}`);
+  }
+  if (params.closed) {
+    queryParts.push(`closed:${params.closed}`);
+  }
+
+  // Engagement filters
+  if (params.comments !== undefined) {
+    queryParts.push(`comments:${params.comments}`);
+  }
+  if (params.reactions !== undefined) {
+    queryParts.push(`reactions:${params.reactions}`);
+  }
+  if (params.interactions !== undefined) {
+    queryParts.push(`interactions:${params.interactions}`);
+  }
+
+  // Label filters
+  if (params.label) {
+    const labels = Array.isArray(params.label) ? params.label : [params.label];
+    labels.forEach(label => {
+      queryParts.push(`label:"${label}"`);
+    });
+  }
+
+  // Organization filters
+  if (params.milestone) {
+    queryParts.push(`milestone:"${params.milestone}"`);
+  }
+  if (params['team-mentions']) {
+    queryParts.push(`team:${params['team-mentions']}`);
+  }
+
+  // Boolean "missing" filters
+  if (params['no-assignee']) {
+    queryParts.push('no:assignee');
+  }
+  if (params['no-label']) {
+    queryParts.push('no:label');
+  }
+  if (params['no-milestone']) {
+    queryParts.push('no:milestone');
+  }
+  if (params['no-project']) {
+    queryParts.push('no:project');
+  }
+
+  // Language filter
+  if (params.language) {
+    queryParts.push(`language:${params.language}`);
+  }
+
+  // Visibility filter
+  if (params.visibility) {
+    queryParts.push(`is:${params.visibility}`);
+  }
+
+  // App filter
+  if (params.app) {
+    queryParts.push(`app:${params.app}`);
+  }
+
+  // Archived filter
+  if (params.archived !== undefined) {
+    queryParts.push(params.archived ? 'is:archived' : '-is:archived');
+  }
+
+  return queryParts.join(' ').trim();
 }
 
 /**

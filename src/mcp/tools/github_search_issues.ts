@@ -20,8 +20,12 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { GITHUB_SEARCH_ISSUES_TOOL_NAME } from './utils/toolConstants';
+import {
+  GITHUB_SEARCH_ISSUES_TOOL_NAME,
+  GitHubToolOptions,
+} from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { searchGitHubIssuesAPI } from '../../utils/githubAPI';
 
 const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 
@@ -32,7 +36,10 @@ USAGE:
 
 PHILOSOPHY: Get quality data from relevant sources`;
 
-export function registerSearchGitHubIssuesTool(server: McpServer) {
+export function registerSearchGitHubIssuesTool(
+  server: McpServer,
+  opts: GitHubToolOptions = { apiType: 'both' }
+) {
   server.registerTool(
     GITHUB_SEARCH_ISSUES_TOOL_NAME,
     {
@@ -241,7 +248,7 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         }
 
         try {
-          return await searchGitHubIssues(args);
+          return await searchIssuesWithDualSupport(args, opts);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '';
           if (errorMessage.includes('authentication')) {
@@ -264,6 +271,146 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       }
     )
   );
+}
+
+/**
+ * Search issues with dual CLI/API support
+ */
+async function searchIssuesWithDualSupport(
+  args: GitHubIssuesSearchParams,
+  opts: GitHubToolOptions
+): Promise<CallToolResult> {
+  // Execute searches based on apiType option
+  let cliResult: CallToolResult | null = null;
+  let apiResult: CallToolResult | null = null;
+
+  if (opts.apiType === 'gh' || opts.apiType === 'both') {
+    // Execute CLI search
+    cliResult = await searchGitHubIssues(args);
+  }
+
+  if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+    // Execute API search
+    apiResult = await searchGitHubIssuesAPI(args);
+  }
+
+  // Process CLI result
+  let cliIssues: GitHubIssueItem[] = [];
+  let cliError: string | undefined;
+
+  if (cliResult && !cliResult.isError) {
+    try {
+      const cliData = JSON.parse(cliResult.content[0].text as string);
+      if (cliData.results && Array.isArray(cliData.results)) {
+        cliIssues = cliData.results;
+      }
+    } catch (e) {
+      cliError = 'Failed to parse CLI results';
+    }
+  } else if (cliResult && cliResult.isError) {
+    cliError = cliResult.content[0].text as string;
+  }
+
+  // Process API result
+  let apiIssues: GitHubIssueItem[] = [];
+  let apiError: string | undefined;
+
+  if (apiResult && !apiResult.isError) {
+    try {
+      const apiData = JSON.parse(apiResult.content[0].text as string);
+      if (apiData.results && Array.isArray(apiData.results)) {
+        apiIssues = apiData.results;
+      }
+    } catch (e) {
+      apiError = 'Failed to parse API results';
+    }
+  } else if (apiResult && apiResult.isError) {
+    const apiData = JSON.parse(apiResult.content[0].text as string);
+    apiError = apiData.error || 'API search failed';
+  }
+
+  // Determine which result to return
+  const totalCliIssues = cliIssues.length;
+  const totalApiIssues = apiIssues.length;
+  const hasCliResults = totalCliIssues > 0;
+  const hasApiResults = totalApiIssues > 0;
+
+  // Choose the best result
+  let finalResult: GitHubIssuesSearchResult;
+  let resultSource: string;
+
+  if (hasCliResults && hasApiResults) {
+    // Both have results, prefer CLI for consistency
+    finalResult = { results: cliIssues };
+    resultSource = 'cli';
+  } else if (hasCliResults) {
+    finalResult = { results: cliIssues };
+    resultSource = 'cli';
+  } else if (hasApiResults) {
+    finalResult = { results: apiIssues };
+    resultSource = 'api';
+  } else {
+    // No results from either
+    const customHints = [];
+
+    // Add parameter-specific hints
+    if (args.state === 'closed') {
+      customHints.push('Try state:open or remove state filter');
+    }
+    if (args.author) {
+      customHints.push('Remove author filter for broader search');
+    }
+    if (args.label) {
+      customHints.push('Try broader labels or remove label filter');
+    }
+    if (args.owner && args.repo) {
+      customHints.push('Check repository name spelling');
+    }
+    if (args.created || args.updated) {
+      customHints.push('Expand date range or remove date filters');
+    }
+
+    const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+      hasResults: false,
+      totalItems: 0,
+      customHints,
+    });
+
+    return createResult({
+      error: `No issues found for query: "${args.query}"`,
+      hints,
+    });
+  }
+
+  // Generate smart hints for successful results
+  const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+    hasResults: true,
+    totalItems: finalResult.results.length,
+  });
+
+  // Add source information and dual results if verbose
+  const responseData = {
+    ...finalResult,
+    hints,
+    resultSource,
+    dualResults:
+      opts.apiType === 'both'
+        ? {
+            cli: {
+              issues: totalCliIssues,
+              error: cliError,
+            },
+            api: {
+              issues: totalApiIssues,
+              error: apiError,
+            },
+          }
+        : undefined,
+  };
+
+  return createResult({
+    data: responseData,
+  });
 }
 
 async function searchGitHubIssues(
