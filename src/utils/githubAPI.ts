@@ -1,4 +1,5 @@
 import { Octokit, RequestError } from 'octokit';
+import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -74,44 +75,98 @@ interface GitHubAPIError {
   rateLimitReset?: number;
 }
 
+// Create Octokit class with throttling plugin
+const OctokitWithThrottling = Octokit.plugin(throttling);
+
 // Cache Octokit instances by token
-const octokitInstances = new Map<string, Octokit>();
+const octokitInstances = new Map<
+  string,
+  InstanceType<typeof OctokitWithThrottling>
+>();
 
 /**
- * Initialize Octokit with TypeScript-safe authentication and built-in plugins
+ * Throttle options following GitHub's best practices
+ * Based on patterns from official Octokit.js, Backstage, and other high-quality projects
  */
-function getOctokit(token?: string): Octokit {
+const createThrottleOptions = () => ({
+  onRateLimit: (
+    retryAfter: number,
+    options: any,
+    _octokit: any,
+    retryCount: number
+  ) => {
+    // Log rate limit with detailed context (following Octokit.js pattern)
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Request quota exhausted for request ${options.method} ${options.url}`
+    );
+
+    // Only retry once (following official Octokit.js pattern)
+    if (retryCount === 0) {
+      // eslint-disable-next-line no-console
+      console.info(`Retrying after ${retryAfter} seconds!`);
+      return true;
+    }
+
+    // eslint-disable-next-line no-console
+    console.warn('Rate limit retry limit reached, not retrying');
+    return false;
+  },
+  onSecondaryRateLimit: (
+    retryAfter: number,
+    options: any,
+    _octokit: any,
+    retryCount: number
+  ) => {
+    // Log secondary rate limit (abuse detection pattern)
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Secondary rate limit detected for request ${options.method} ${options.url}`
+    );
+
+    // Following Backstage pattern: retry once for secondary rate limits too
+    if (retryCount === 0) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `Retrying after ${retryAfter} seconds due to secondary rate limit`
+      );
+      return true;
+    }
+
+    // eslint-disable-next-line no-console
+    console.warn('Secondary rate limit retry limit reached, not retrying');
+    return false;
+  },
+});
+
+/**
+ * Initialize Octokit with TypeScript-safe authentication and throttling plugin
+ * Following patterns from Octokit.js, Backstage, and other high-quality implementations
+ */
+function getOctokit(
+  token?: string
+): InstanceType<typeof OctokitWithThrottling> {
   const useToken = token || defaultToken || '';
   const cacheKey = useToken || 'no-token';
 
   if (!octokitInstances.has(cacheKey)) {
-    // TypeScript-safe configuration
-    const options: OctokitOptions = {
+    // TypeScript-safe configuration with throttling plugin
+    const options: OctokitOptions & {
+      throttle: ReturnType<typeof createThrottleOptions>;
+    } = {
       userAgent: 'octocode-mcp/1.0.0',
       request: {
         timeout: 30000, // 30 second timeout
       },
-      // Built-in throttling configuration
-      throttle: {
-        onRateLimit: (_retryAfter: number) => {
-          // TODO: Use proper logging instead of console
-          return true; // Auto-retry
-        },
-        onSecondaryRateLimit: (_retryAfter: number) => {
-          // TODO: Use proper logging instead of console
-          return true; // Auto-retry
-        },
-      },
-      // Built-in retry configuration with exponential backoff
-      retry: {
-        doNotRetry: ['400', '401', '403', '404', '422'],
-      },
+      // Use the separated throttle options for better maintainability
+      throttle: createThrottleOptions(),
     };
+
     if (useToken) {
       options.auth = useToken;
     }
 
-    octokitInstances.set(cacheKey, new Octokit(options));
+    octokitInstances.set(cacheKey, new OctokitWithThrottling(options));
   }
   return octokitInstances.get(cacheKey)!;
 }
@@ -2183,7 +2238,7 @@ export async function viewGitHubRepositoryStructureAPI(
  * Recursively fetch directory contents using API
  */
 async function fetchDirectoryContentsRecursivelyAPI(
-  octokit: Octokit,
+  octokit: InstanceType<typeof OctokitWithThrottling>,
   owner: string,
   repo: string,
   branch: string,

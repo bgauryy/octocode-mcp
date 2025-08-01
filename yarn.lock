@@ -709,7 +709,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@octokit/core@npm:^7.0.2":
+"@octokit/core@npm:^7.0.2, @octokit/core@npm:^7.0.3":
   version: 7.0.3
   resolution: "@octokit/core@npm:7.0.3"
   dependencies:
@@ -3726,6 +3726,8 @@ __metadata:
   dependencies:
     "@anthropic-ai/dxt": "npm:^0.2.1"
     "@modelcontextprotocol/sdk": "npm:^1.16.0"
+    "@octokit/core": "npm:^7.0.3"
+    "@octokit/plugin-throttling": "npm:^11.0.1"
     "@octokit/rest": "npm:^22.0.0"
     "@rollup/plugin-commonjs": "npm:^28.0.3"
     "@rollup/plugin-json": "npm:^6.1.0"
