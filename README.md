@@ -13,15 +13,22 @@
 
 </div>
 
-## 🌐 For More Details - [octocode.ai](https://octocode.ai)
-## 📚 For Technical Details - [Technical Summary](./docs/summary.md)
-## 🐳 For Docker Setup - [Docker Guide](./docker/README.Docker.md)
-## 💬 Discord Channel - [Discord](https://discord.gg/beTNk8at) - Updates and discussions
+## 📋 Quick Links
+- 🌐 **Website**: [octocode.ai](https://octocode.ai)
+- 📚 **Technical Details**: [Technical Summary](./docs/summary.md)
+- 🐳 **Docker Setup**: [Docker Guide](./docker/README.Docker.md)
+- 💬 **Community**: [Discord](https://discord.gg/beTNk8at)
 
-**The perfect AI code assistant for understanding anything in any codebase.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems.
- Discover code through natural language descriptions and intelligent context generation. Perfect for AI-assisted development workflows.
+## 🚀 What is Octocode MCP?
+
+**The perfect AI code assistant for understanding anything in any codebase.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems. 
+
+**🎯 Generate Quality Context from Any Resource** - Octocode automatically extracts and synthesizes comprehensive context from repositories, issues, PRs, commits, and packages to power superior code analysis, generation, and documentation creation. Turn any codebase into actionable intelligence for your AI assistant.
+
+Discover code through natural language descriptions and intelligent context generation. Perfect for AI-assisted development workflows.
 
 **Ask natural questions and let AI guide discovery:**
+- *"Create vite application with three.js and server using express?"*
 - *"How did React implement concurrent rendering?"*
 - *"Show me authentication patterns in Next.js applications"*
 - *"Find examples of how to use this specific API"*
@@ -29,25 +36,37 @@
 - *"Help me implement similar patterns in my current project"*
 - *"What security vulnerabilities should I watch for in this approach?"*
 
+## ✨ Key Features & Benefits
+
+**🔄 Dual GitHub Integration** - Works with both GitHub CLI (`gh`) and API tokens (`GITHUB_TOKEN`) for maximum reliability and flexibility
+
+**🧠 AI-Optimized Design** - Built specifically for AI assistants with:
+- **Quality Context Generation** from any repository, issue, PR, commit, or package
+- **Token-efficient responses** (up to 70% reduction in AI costs)
+- **Progressive discovery workflows** that guide exploration
+- **Intelligent context synthesis** for superior code analysis and generation
+- **Smart hint system** for next-step recommendations
+
+**🛡️ Production-Ready Security** - Automatic secret detection, content sanitization, and organizational permission respect
+
+**🌐 Universal Compatibility** - Cross-platform native support (Windows, macOS, Linux) with multiple deployment options
+
+**🎯 Vibe Coding Excellence** - Perfect for modern AI-assisted development with natural language code discovery
+
 ## 🌟 Featured On
 
-### modelcontextprotocol/servers - Official Community MCP Server 
-[![GitHub stars](https://img.shields.io/github/stars/modelcontextprotocol/servers?style=social)](https://github.com/modelcontextprotocol/servers)
+### Official MCP Server
+[![GitHub stars](https://img.shields.io/github/stars/modelcontextprotocol/servers?style=social)](https://github.com/modelcontextprotocol/servers) **modelcontextprotocol/servers**
 
 ### Community Collections
-#### punkpeye/awesome-mcp-servers
-[![GitHub stars](https://img.shields.io/github/stars/punkpeye/awesome-mcp-servers?style=social)](https://github.com/punkpeye/awesome-mcp-servers)
-
-#### appcypher/awesome-mcp-servers
-[![GitHub stars](https://img.shields.io/github/stars/appcypher/awesome-mcp-servers?style=social)](https://github.com/appcypher/awesome-mcp-servers)
-
-#### Puliczek/awesome-mcp-security
-[![GitHub stars](https://img.shields.io/github/stars/Puliczek/awesome-mcp-security?style=social)](https://github.com/Puliczek/awesome-mcp-security)
+- [![GitHub stars](https://img.shields.io/github/stars/punkpeye/awesome-mcp-servers?style=social)](https://github.com/punkpeye/awesome-mcp-servers) **punkpeye/awesome-mcp-servers**
+- [![GitHub stars](https://img.shields.io/github/stars/appcypher/awesome-mcp-servers?style=social)](https://github.com/appcypher/awesome-mcp-servers) **appcypher/awesome-mcp-servers**
+- [![GitHub stars](https://img.shields.io/github/stars/Puliczek/awesome-mcp-security?style=social)](https://github.com/Puliczek/awesome-mcp-security) **Puliczek/awesome-mcp-security**
 
 ### MCP Directories & Tools
-[![MCP.so](https://img.shields.io/badge/MCP.so-Server%20Directory-green.svg?logo=web)](https://mcp.so/server/octocode/bgauryy)
-[![PulseMCP](https://img.shields.io/badge/PulseMCP-Server%20Registry-red.svg?logo=pulse)](https://www.pulsemcp.com/servers/bgauryy-octocode)
-[![DevTool.io](https://img.shields.io/badge/DevTool.io-Development%20Tool-teal.svg?logo=tools)](https://devtool.io/tool/octocode-mcp)
+- [![MCP.so](https://img.shields.io/badge/MCP.so-Server%20Directory-green.svg?logo=web)](https://mcp.so/server/octocode/bgauryy)
+- [![PulseMCP](https://img.shields.io/badge/PulseMCP-Server%20Registry-red.svg?logo=pulse)](https://www.pulsemcp.com/servers/bgauryy-octocode)
+- [![DevTool.io](https://img.shields.io/badge/DevTool.io-Development%20Tool-teal.svg?logo=tools)](https://devtool.io/tool/octocode-mcp)
 
 ## 🎯 Who Is This For?
 
@@ -63,40 +82,18 @@ Discover security patterns, vulnerabilities, and compliance issues across both p
 ### For Large Organizations
 Dramatically increase development velocity by enabling teams to instantly learn from existing codebases, understand cross-team implementations, and replicate proven patterns—transforming institutional knowledge into actionable development acceleration.
 
-## 🧠 For Beginners & Advanced Vibe Coders
+### For Beginners & Advanced Vibe Coders
+- **Beginners**: Take code from anywhere and understand it deeply. Learn from production codebases, discover proven patterns, and build confidence by seeing how experienced developers solve problems.
+- **Advanced Vibe Coders**: Leverage quality context for superior code generation. Use comprehensive understanding from issues, PRs, and documentation to generate production-ready code that follows established patterns.
 
-### For Beginners
-Take code from anywhere and understand it deeply. Learn from production codebases, discover proven patterns, and build confidence by seeing how experienced developers solve problems. Transform learning into doing with real-world examples.
+## 🚀 Quick Start
 
-### For Advanced Vibe Coders
-Leverage quality context for superior code generation. Use comprehensive understanding from issues, PRs, and documentation to generate production-ready code that follows established patterns and handles real-world scenarios.
-
-## 🚀 Key Benefits
-
-**🔄 Dual GitHub Integration** - Works with both GitHub CLI (`gh`) and API tokens (`GITHUB_TOKEN`) for maximum reliability and flexibility
-
-**🧠 Vibe Coding Ready** - Perfect for AI-assisted development with intelligent context generation and progressive code discovery
-
-**🛡️ Enterprise-Ready Security** - Automatic secret detection, content sanitization, and organizational permission respect
-
-**⚡ AI Token Optimization** - Advanced minification and smart processing reduces AI costs by up to 70% while preserving code context
-
-**🌐 Hosted or Local** - Run locally with GitHub CLI or deploy hosted with GitHub tokens - your choice
-
-**🖥️ Cross-Platform Excellence** - Native Windows PowerShell support with automatic executable detection
-
-**🔓 Universal Access** - Seamlessly works with public, private, and organization repositories
-
-## Quick Start 🚀
-
-### 1️⃣ Local Setup (Developer Machine)
-
-**Prerequisites**
+### Prerequisites
 - **Node.js**: v20 or higher
 - **NPM (Optional)**: For npm package research support
 - **GitHub Authentication**: Token or GitHub CLI
 
-#### Option A: Using GitHub Token (preferred)
+### Option A: Using GitHub Token (Recommended)
 
 **1. Create GitHub Token**
 - Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
@@ -110,7 +107,6 @@ claude mcp add octocode npx 'octocode-mcp@latest'
 ```
 
 **Or Add to MCP Configuration Manually:**
-
 ```json
 "octocode": {
   "command": "npx",
@@ -121,7 +117,7 @@ claude mcp add octocode npx 'octocode-mcp@latest'
 }
 ```
 
-#### Option B: Using GitHub CLI
+### Option B: Using GitHub CLI
 
 **1. Install Prerequisites**
 
@@ -165,6 +161,26 @@ npm login
 }
 ```
 
+## 📦 DXT Extension
+
+This project is available as a **Desktop Extension (DXT)** for easy installation in AI applications like Claude Desktop.
+
+### Quick DXT Setup
+
+```bash
+# Install dependencies
+yarn install
+
+# Build the DXT package
+yarn dxt:pack
+```
+
+The generated `octocode-mcp.dxt` file can be installed in Claude Desktop by simply clicking on it.
+
+**DXT Scripts:**
+- `yarn dxt:validate` - Validate the manifest.json file
+- `yarn dxt:pack` - Build and package the extension
+- `yarn dxt:release` - Full release pipeline (build → pack → sign → verify)
 
 
 ### 🔄 How Dual Authentication Works
@@ -187,50 +203,14 @@ npm login
 
 **That's it!** Octocode automatically works with your organization's private repositories using either method.
 
-## ✨ What Makes Octocode MCP Unique
-
-### 🔄 **Dual Authentication Reliability**
-The only MCP with intelligent fallback between GitHub CLI and API tokens - ensuring maximum uptime and access across any environment.
-
-### 🧠 **AI-Optimized Design**
-Built specifically for AI assistants with:
-- **Token-efficient responses** (up to 70% reduction in AI costs)
-- **Progressive discovery workflows** that guide exploration
-- **Intelligent context generation** for better AI understanding
-- **Smart hint system** for next-step recommendations
-
-### 🛡️ **Production-Ready Security**
-- **Automatic secret detection** and redaction in all content
-- **Content sanitization** prevents malicious code exposure  
-- **Input validation** across all parameters and commands
-- **Enterprise compliance** with organizational permission respect
-
-### 🎯 **Vibe Coding Excellence**
-Perfect for modern AI-assisted development:
-- **Natural language code discovery** - describe what you need, find implementations
-- **Contextual documentation generation** from live codebases
-- **Pattern recognition** across different projects and languages
-- **Research workflow optimization** from broad discovery to specific implementation
-
-### 🌐 **Universal Compatibility**
-- **Cross-platform native support** (Windows, macOS, Linux)
-- **Multiple deployment options** (local, hosted, containerized)
-- **Organization repository access** with proper permission handling
-- **Package ecosystem bridge** connecting NPM/PyPI to GitHub repositories
-
-## 🐳 Docker Support
-
-Run Octocode MCP in a Docker container while maintaining full GitHub authentication. Perfect for consistent environments and deployment.
-
-[**See Docker Setup Guide →**](./docker/README.Docker.md)
-
 ## 🛠️ What You Can Do
 
-### 🧠 AI-Powered Vibe Coding & Context Generation
-- **Natural Language Code Discovery**: Describe what you're looking for in plain English and let AI find relevant implementations
-- **Intelligent Context Generation**: Automatically generate comprehensive documentation and examples from any codebase
-- **Progressive Code Exploration**: Start with broad concepts and intelligently narrow down to specific implementations
-- **Pattern Recognition**: Discover and understand architectural patterns across different projects and languages
+### 🧠 AI-Powered Context Generation & Code Intelligence
+- **Quality Context from Any Resource**: Extract comprehensive context from repositories, issues, PRs, commits, packages, and documentation for superior AI analysis and generation
+- **Natural Language Code Discovery**: Describe what you're looking for in plain English and let AI find relevant implementations with full context
+- **Intelligent Documentation Creation**: Automatically generate comprehensive documentation and examples from any codebase or resource
+- **Progressive Code Exploration**: Start with broad concepts and intelligently narrow down to specific implementations with contextual understanding
+- **Pattern Recognition & Analysis**: Discover and understand architectural patterns across different projects and languages with rich contextual insights
 
 ### 🔍 Deep Project Research & Analysis
 - **Issue Search & Analysis**: Understand project challenges, feature requests, and bug patterns with AI-assisted insights
@@ -254,7 +234,7 @@ Run Octocode MCP in a Docker container while maintaining full GitHub authenticat
 - **Code Pattern Discovery**: Identify implementation patterns, best practices, and anti-patterns across codebases
 - **Security & Compliance Research**: Search for security vulnerabilities, patterns, and compliance issues with automatic secret detection
 - **Team Collaboration Analysis**: Understand code review processes, team dynamics, and contribution patterns
-- **Real-time Documentation**: Generate custom documentation from live code for any topic with AI assistance
+- **Real-time Documentation Generation**: Create custom documentation from any resource (code, issues, PRs, commits) with comprehensive contextual understanding
 - **Architectural Analysis**: Understand system design decisions and their evolution over time
 
 ## 🏗️ Architecture & Deployment Options
@@ -295,43 +275,28 @@ graph TD
 
 > **📚 For detailed technical architecture, tool specifications, and implementation details, see [Technical Summary](./docs/summary.md)**
 
-## DXT Extension 📦
+## 🐳 Docker Support
 
-This project is available as a **Desktop Extension (DXT)** for easy installation in AI applications like Claude Desktop.
+Run Octocode MCP in a Docker container while maintaining full GitHub authentication. Perfect for consistent environments and deployment.
 
-### Quick DXT Setup
+[**See Docker Setup Guide →**](./docker/README.Docker.md)
 
-```bash
-# Install dependencies
-yarn install
+## 💡 Best Practices
 
-# Build the DXT package
-yarn dxt:pack
-```
-
-The generated `octocode-mcp.dxt` file can be installed in Claude Desktop by simply clicking on it.
-
-**DXT Scripts:**
-- `yarn dxt:validate` - Validate the manifest.json file
-- `yarn dxt:pack` - Build and package the extension
-- `yarn dxt:release` - Full release pipeline (build → pack → sign → verify)
-
-## Best Practices 💡
-
-### 🧠 Vibe Coding with AI
-**Let natural language drive your code discovery:**
-- "How does authentication work in this project?"
-- "Show me patterns for handling async errors gracefully"
-- "Find examples of clean architecture in TypeScript projects"
-- "What's the best way to implement real-time features?"
-- "Generate documentation for this API endpoint pattern"
+### 🧠 Quality Context Generation for AI
+**Generate comprehensive context from any resource for superior AI assistance:**
+- "How does authentication work in this project?" → Get full context from code, issues, PRs, and commits
+- "Show me patterns for handling async errors gracefully" → Extract patterns with implementation context and discussions
+- "Find examples of clean architecture in TypeScript projects" → Discover architectures with full contextual understanding
+- "What's the best way to implement real-time features?" → Generate context from multiple resources and implementations
+- "Generate documentation for this API endpoint pattern" → Create docs with comprehensive context from all related resources
 
 ### 🔍 Progressive Discovery Strategy
 **Start broad, then narrow down intelligently:**
 1. **Repository Discovery** → Find relevant projects by topic/language
 2. **Code Pattern Search** → Identify specific implementation approaches  
 3. **Deep Analysis** → Examine commits, PRs, and issues for context
-4. **Context Generation** → Use findings to generate documentation or implementations
+4. **Quality Context Generation** → Synthesize findings into comprehensive context for AI-powered analysis, generation, and documentation
 
 ### 🤖 AI-Assisted Workflows
 **Let the system guide your exploration:**
@@ -354,7 +319,7 @@ The generated `octocode-mcp.dxt` file can be installed in Claude Desktop by simp
 - **Enterprise** → Organization repositories with proper permission respect
 - **CI/CD Integration** → Token-based authentication for automated workflows
 
-## Troubleshooting 🔧
+## 🔧 Troubleshooting
 
 **Cross-Platform Commands:**
 ```bash
@@ -396,7 +361,7 @@ where.exe npm
 - **Empty results?** Try alternative search terms or broaden your query scope
 - **Token issues?** Verify token scopes include `repo`, `public_repo`, `read:org`
 
-## Security & Privacy 🛡️
+## 🛡️ Security & Privacy
 
 ### Enterprise Security
 - **🛡️ Advanced Content Protection** - Multi-layer input validation and intelligent content sanitization
@@ -407,7 +372,7 @@ where.exe npm
 
 > **📚 For comprehensive security architecture details, see [Technical Summary](./docs/summary.md)**
 
-## License 📄
+## 📄 License
 
 MIT License - See [LICENSE](./LICENSE.md) for details.
 
