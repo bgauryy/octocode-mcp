@@ -12,6 +12,7 @@ import type { GithubFetchRequestParams } from '../../types';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { generateSmartHints } from './utils/toolRelationships';
+import { processDualResults } from './utils/resultProcessor';
 import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './utils/toolConstants';
 
 const DESCRIPTION = `
@@ -180,11 +181,6 @@ async function fetchMultipleGitHubFileContents(
     };
 
     try {
-      let processedResult: any = undefined; // Start with undefined, not an error object
-      let error: string | undefined;
-      let processedApiResult: any | undefined;
-      let apiError: string | undefined;
-
       // Try CLI and/or API based on options
       const promises: Promise<any>[] = [];
 
@@ -199,41 +195,23 @@ async function fetchMultipleGitHubFileContents(
       const results = await Promise.allSettled(promises);
       const [cliResult, apiResult] = results;
 
-      // Process CLI result
-      if (
-        cliResult &&
-        cliResult.status === 'fulfilled' &&
-        !cliResult.value.isError
-      ) {
-        const data = JSON.parse(cliResult.value.content[0].text as string);
-        processedResult = data.data || data;
-      } else if (
-        cliResult &&
-        cliResult.status === 'fulfilled' &&
-        cliResult.value.isError
-      ) {
-        error = cliResult.value.content[0].text as string;
-      } else if (cliResult && cliResult.status === 'rejected') {
-        error = `CLI fetch failed: ${cliResult.reason}`;
-      }
+      // Create custom data extractor for file content
+      const fileContentExtractor = (data: any) => {
+        // Handle the special file content structure with fallback
+        return data.data || data;
+      };
 
-      // Process API result
-      if (
-        apiResult &&
-        apiResult.status === 'fulfilled' &&
-        !apiResult.value.isError
-      ) {
-        const apiData = JSON.parse(apiResult.value.content[0].text as string);
-        processedApiResult = apiData.data || apiData;
-      } else if (
-        apiResult &&
-        apiResult.status === 'fulfilled' &&
-        apiResult.value.isError
-      ) {
-        apiError = apiResult.value.content[0].text as string;
-      } else if (apiResult && apiResult.status === 'rejected') {
-        apiError = `API fetch failed: ${apiResult.reason}`;
-      }
+      // Use standardized dual result processing
+      const dualResult = await processDualResults(cliResult, apiResult, {
+        cliDataExtractor: fileContentExtractor,
+        apiDataExtractor: fileContentExtractor,
+        preferredSource: 'cli',
+      });
+
+      const processedResult = dualResult.cli.data;
+      const error = dualResult.cli.error;
+      const processedApiResult = dualResult.api.data;
+      const apiError = dualResult.api.error;
 
       // Check if we have any successful results
       const hasSuccessfulResult =
