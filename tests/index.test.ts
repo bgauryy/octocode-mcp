@@ -216,7 +216,7 @@ describe('Index Module', () => {
         githubAPIType: 'gh', // No token set, so should use 'gh'
         npmEnabled: false,
         ghToken: undefined,
-        apiType: 'gh', // Backward compatibility
+        // Backward compatibility
       };
 
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
@@ -237,7 +237,6 @@ describe('Index Module', () => {
         githubAPIType: 'gh',
         npmEnabled: true,
         ghToken: undefined,
-        apiType: 'gh',
       };
 
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
@@ -255,7 +254,6 @@ describe('Index Module', () => {
         githubAPIType: 'octokit',
         npmEnabled: true,
         ghToken: 'test-token',
-        apiType: 'octokit',
       };
 
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
@@ -273,7 +271,6 @@ describe('Index Module', () => {
         githubAPIType: 'octokit',
         npmEnabled: true,
         ghToken: 'test-gh-token',
-        apiType: 'octokit',
       };
 
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
@@ -291,7 +288,6 @@ describe('Index Module', () => {
         githubAPIType: 'gh',
         npmEnabled: true,
         ghToken: undefined,
-        apiType: 'gh',
       };
 
       // Verify all tool registration functions were called with server and options

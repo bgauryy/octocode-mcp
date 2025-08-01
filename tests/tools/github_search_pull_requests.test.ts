@@ -57,7 +57,6 @@ describe('GitHub Search Pull Requests Tool', () => {
     registerSearchGitHubPullRequestsTool(mockServer.server, {
       githubAPIType: 'gh',
       npmEnabled: false,
-      apiType: 'gh',
     });
   });
 
@@ -551,7 +550,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockGitHubResponse = {
@@ -600,7 +598,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockGitHubResponse = {
@@ -625,7 +622,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       mockExecuteGitHubCommand.mockResolvedValue({
@@ -647,7 +643,6 @@ describe('GitHub Search Pull Requests Tool', () => {
       registerSearchGitHubPullRequestsTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockPRListResponse = {
@@ -818,7 +813,6 @@ describe('Content Sanitization', () => {
     registerSearchGitHubPullRequestsTool(mockServer.server, {
       githubAPIType: 'gh',
       npmEnabled: false,
-      apiType: 'gh',
     });
   });
 

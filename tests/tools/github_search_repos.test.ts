@@ -64,7 +64,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
@@ -90,7 +89,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       expect(mockServer.server.registerTool).toHaveBeenCalledTimes(1);
@@ -107,7 +105,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -130,7 +127,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -153,7 +149,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -176,7 +171,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -199,7 +193,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -222,7 +215,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const result = await mockServer.callTool(
@@ -243,7 +235,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -290,7 +281,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([]);
@@ -314,7 +304,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       // Make sure both CLI and API fail
@@ -346,7 +335,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       // Mock withCache to throw the error directly without wrapping
@@ -376,7 +364,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse1 = createMockRepositoryResponse([
@@ -418,7 +405,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockSuccessResponse = createMockRepositoryResponse([
@@ -451,7 +437,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -482,7 +467,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -1283,7 +1267,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -1315,7 +1298,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockResponse = createMockRepositoryResponse([
@@ -1345,7 +1327,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       // Mock withCache to throw the error directly
@@ -1370,7 +1351,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       // Test with more than 5 queries should be rejected by schema validation
@@ -1397,7 +1377,6 @@ describe('GitHub Search Repositories Tool', () => {
       registerSearchGitHubReposTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       try {

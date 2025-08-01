@@ -455,7 +455,6 @@ async function executeQueriesAndCollectResults(
         queryId,
         originalQuery: query,
         result: dualResult.cli.data || { items: [], total_count: 0 },
-        apiResult: dualResult.api.data,
         error: dualResult.cli.error,
         apiError: dualResult.api.error,
       });

@@ -95,7 +95,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
@@ -111,7 +110,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockItems = [
@@ -145,7 +143,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       // Mock directory contents
@@ -182,7 +179,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockContents = [
@@ -213,7 +209,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockContents = [
@@ -247,7 +242,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockRepoResponse = { result: createMockRepoData('main') };
@@ -291,7 +285,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockRepoResponse = { result: createMockRepoData('main') };
@@ -336,7 +329,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       mockExecuteGitHubCommand
@@ -375,7 +367,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       mockExecuteGitHubCommand
@@ -406,7 +397,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       mockExecuteGitHubCommand
@@ -443,7 +433,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       mockExecuteGitHubCommand.mockRejectedValueOnce(
@@ -471,7 +460,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       // Empty repository returns empty array
@@ -495,7 +483,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockContents = [
@@ -532,7 +519,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const singleFile = createMockFileItem(
@@ -566,7 +552,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockContents = [
@@ -600,7 +585,6 @@ describe('GitHub View Repository Structure Tool', () => {
       registerViewRepositoryStructureTool(mockServer.server, {
         githubAPIType: 'gh',
         npmEnabled: false,
-        apiType: 'gh',
       });
 
       const mockContents = [

@@ -12,6 +12,7 @@ interface SanitizationResult {
 interface ValidationResult {
   sanitizedParams: Record<string, any>;
   isValid: boolean;
+  hasSecrets: boolean; // Add flag to track if secrets were detected
   warnings: string[];
 }
 
@@ -130,7 +131,8 @@ export class ContentSanitizer {
 
     return {
       sanitizedParams,
-      isValid: !hasSecrets, // Valid only if no secrets were detected
+      isValid: true, // Always valid after sanitization
+      hasSecrets: hasSecrets, // Track if secrets were detected for logging
       warnings: Array.from(warnings),
     };
   }

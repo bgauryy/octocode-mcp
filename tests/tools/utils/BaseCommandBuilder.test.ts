@@ -190,6 +190,50 @@ describe('BaseCommandBuilder', () => {
       const result = builder['normalizeArrayParam']('item1,item2');
       expect(result).toEqual(['item1', 'item2']);
     });
+
+    it('should reject command injection attempts', () => {
+      const builder = new TestCommandBuilder();
+
+      // Test various injection patterns
+      const maliciousInputs = [
+        'item1"; rm -rf / #',
+        'item1; evil-command',
+        'item1 | cat /etc/passwd',
+        'item1 & background-command',
+        'item1`whoami`',
+        'item1$HOME',
+        'item1\\n\\r',
+        '--malicious-flag',
+        '-rf',
+      ];
+
+      maliciousInputs.forEach(input => {
+        const result = builder['normalizeArrayParam'](input);
+        expect(result).toEqual([]); // Should filter out malicious content
+      });
+    });
+
+    it('should handle mixed safe and unsafe array items', () => {
+      const builder = new TestCommandBuilder();
+      const result = builder['normalizeArrayParam'](
+        'safe1,--malicious,safe2,evil;command,safe3'
+      );
+      expect(result).toEqual(['safe1', 'safe2', 'safe3']); // Only safe items should remain
+    });
+
+    it('should handle JSON array input securely', () => {
+      const builder = new TestCommandBuilder();
+
+      // Test valid JSON array
+      const validJson = '["item1", "item2", "item3"]';
+      const result1 = builder['normalizeArrayParam'](validJson);
+      expect(result1).toEqual(['item1', 'item2', 'item3']);
+
+      // Test JSON array with malicious content
+      const maliciousJson = '["safe", "--malicious", "safe2"]';
+      const result2 = builder['normalizeArrayParam'](maliciousJson);
+      expect(result2).toEqual(['safe', 'safe2']); // Malicious items filtered out
+    });
   });
 
   describe('Multiple Flags', () => {

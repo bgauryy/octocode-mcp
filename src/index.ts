@@ -55,7 +55,6 @@ async function registerAllTools(server: McpServer) {
     githubAPIType: GITHUB_API_TYPE,
     npmEnabled,
     ghToken: token,
-    apiType: GITHUB_API_TYPE, // Backward compatibility
   };
 
   const toolRegistrations = [
