@@ -29,6 +29,7 @@ import {
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubCommitsAPI } from '../../utils/githubAPI';
+import { processDualResults } from './utils/resultProcessor';
 
 const DESCRIPTION = `PURPOSE: Search commits by message, author, hash, or date for code evolution.
 
@@ -250,7 +251,7 @@ export function registerGitHubSearchCommitsTool(
 }
 
 /**
- * Search commits with dual CLI/API support
+ * Search commits with dual CLI/API support using standardized result processing
  */
 async function searchCommitsWithDualSupport(
   args: GitHubCommitSearchParams,
@@ -270,72 +271,31 @@ async function searchCommitsWithDualSupport(
     apiResult = await searchGitHubCommitsAPI(args, opts.ghToken);
   }
 
-  // Process CLI result
-  let cliCommits: GitHubCommitSearchItem[] = [];
-  let cliOptimizedResult: OptimizedCommitSearchResult | null = null;
-  let cliError: string | undefined;
-
-  if (cliResult && !cliResult.isError) {
-    try {
-      const execResult = JSON.parse(cliResult.content[0].text as string);
-      const commits: GitHubCommitSearchItem[] = execResult.result;
-      cliCommits = Array.isArray(commits) ? commits : [];
-
-      if (cliCommits.length > 0) {
-        cliOptimizedResult = await transformCommitsToOptimizedFormat(
-          cliCommits,
-          args
-        );
-      }
-    } catch (e) {
-      cliError = 'Failed to parse CLI results';
+  // Custom data extractors for commits with transformation
+  const cliCommitsExtractor = async (data: any) => {
+    const commits: GitHubCommitSearchItem[] = Array.isArray(data) ? data : [];
+    if (commits.length > 0) {
+      return await transformCommitsToOptimizedFormat(commits, args);
     }
-  } else if (cliResult && cliResult.isError) {
-    cliError = cliResult.content[0].text as string;
-  }
+    return { commits: [], total_count: 0 };
+  };
 
-  // Process API result
-  let apiCommits: GitHubCommitSearchItem[] = [];
-  let apiOptimizedResult: OptimizedCommitSearchResult | null = null;
-  let apiError: string | undefined;
+  const apiCommitsExtractor = (data: any) => {
+    // API results are already transformed
+    return data.commits && Array.isArray(data.commits)
+      ? (data as OptimizedCommitSearchResult)
+      : { commits: [], total_count: 0 };
+  };
 
-  if (apiResult && !apiResult.isError) {
-    try {
-      const apiData = JSON.parse(apiResult.content[0].text as string);
-      if (apiData.commits && Array.isArray(apiData.commits)) {
-        apiOptimizedResult = apiData as OptimizedCommitSearchResult;
-        apiCommits = apiData.commits;
-      }
-    } catch (e) {
-      apiError = 'Failed to parse API results';
-    }
-  } else if (apiResult && apiResult.isError) {
-    const apiData = JSON.parse(apiResult.content[0].text as string);
-    apiError = apiData.error || 'API search failed';
-  }
+  // Process both results using standardized processor
+  const dualResult = await processDualResults(cliResult, apiResult, {
+    cliDataExtractor: cliCommitsExtractor,
+    apiDataExtractor: apiCommitsExtractor,
+    preferredSource: 'cli',
+  });
 
-  // Determine which result to return
-  const totalCliCommits = cliCommits.length;
-  const totalApiCommits = apiCommits.length;
-  const hasCliResults = totalCliCommits > 0;
-  const hasApiResults = totalApiCommits > 0;
-
-  // Choose the best result
-  let finalResult: OptimizedCommitSearchResult;
-  let resultSource: string;
-
-  if (hasCliResults && hasApiResults) {
-    // Both have results, prefer CLI for consistency
-    finalResult = cliOptimizedResult!;
-    resultSource = 'cli';
-  } else if (hasCliResults) {
-    finalResult = cliOptimizedResult!;
-    resultSource = 'cli';
-  } else if (hasApiResults) {
-    finalResult = apiOptimizedResult!;
-    resultSource = 'api';
-  } else {
-    // No results from either
+  // Handle case where no results were found
+  if (!dualResult.bestResult || !dualResult.bestResult.data) {
     const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
       hasResults: false,
       totalItems: 0,
@@ -349,6 +309,8 @@ async function searchCommitsWithDualSupport(
     });
   }
 
+  const finalResult: OptimizedCommitSearchResult = dualResult.bestResult.data;
+
   // Generate smart hints for successful results
   const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
     hasResults: true,
@@ -360,17 +322,17 @@ async function searchCommitsWithDualSupport(
   const responseData = {
     ...finalResult,
     hints,
-    resultSource,
+    resultSource: dualResult.resultSource,
     dualResults:
-      opts.apiType === 'both'
+      opts.githubAPIType === 'both'
         ? {
             cli: {
-              commits: totalCliCommits,
-              error: cliError,
+              commits: dualResult.cli.data?.commits?.length || 0,
+              error: dualResult.cli.error,
             },
             api: {
-              commits: totalApiCommits,
-              error: apiError,
+              commits: dualResult.api.data?.commits?.length || 0,
+              error: dualResult.api.error,
             },
           }
         : undefined,

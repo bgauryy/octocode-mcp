@@ -26,6 +26,7 @@ import {
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubIssuesAPI } from '../../utils/githubAPI';
+import { processDualResults, dataExtractors } from './utils/resultProcessor';
 
 const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 
@@ -274,7 +275,33 @@ export function registerSearchGitHubIssuesTool(
 }
 
 /**
- * Search issues with dual CLI/API support
+ * Build custom hints based on search parameters for better LLM guidance
+ */
+function buildCustomHints(args: GitHubIssuesSearchParams): string[] {
+  const customHints: string[] = [];
+
+  // Add parameter-specific hints
+  if (args.state === 'closed') {
+    customHints.push('Try state:open or remove state filter');
+  }
+  if (args.author) {
+    customHints.push('Remove author filter for broader search');
+  }
+  if (args.label) {
+    customHints.push('Try broader labels or remove label filter');
+  }
+  if (args.owner && args.repo) {
+    customHints.push('Check repository name spelling');
+  }
+  if (args.created || args.updated) {
+    customHints.push('Expand date range or remove date filters');
+  }
+
+  return customHints;
+}
+
+/**
+ * Search issues with dual CLI/API support using standardized result processing
  */
 async function searchIssuesWithDualSupport(
   args: GitHubIssuesSearchParams,
@@ -294,86 +321,20 @@ async function searchIssuesWithDualSupport(
     apiResult = await searchGitHubIssuesAPI(args, opts.ghToken);
   }
 
-  // Process CLI result
-  let cliIssues: GitHubIssueItem[] = [];
-  let cliError: string | undefined;
+  // Process both results using standardized processor
+  const dualResult = await processDualResults(cliResult, apiResult, {
+    cliDataExtractor: dataExtractors.resultsArray,
+    apiDataExtractor: dataExtractors.resultsArray,
+    preferredSource: 'cli',
+  });
 
-  if (cliResult && !cliResult.isError) {
-    try {
-      const cliData = JSON.parse(cliResult.content[0].text as string);
-      if (cliData.results && Array.isArray(cliData.results)) {
-        cliIssues = cliData.results;
-      }
-    } catch (e) {
-      cliError = 'Failed to parse CLI results';
-    }
-  } else if (cliResult && cliResult.isError) {
-    cliError = cliResult.content[0].text as string;
-  }
-
-  // Process API result
-  let apiIssues: GitHubIssueItem[] = [];
-  let apiError: string | undefined;
-
-  if (apiResult && !apiResult.isError) {
-    try {
-      const apiData = JSON.parse(apiResult.content[0].text as string);
-      if (apiData.results && Array.isArray(apiData.results)) {
-        apiIssues = apiData.results;
-      }
-    } catch (e) {
-      apiError = 'Failed to parse API results';
-    }
-  } else if (apiResult && apiResult.isError) {
-    const apiData = JSON.parse(apiResult.content[0].text as string);
-    apiError = apiData.error || 'API search failed';
-  }
-
-  // Determine which result to return
-  const totalCliIssues = cliIssues.length;
-  const totalApiIssues = apiIssues.length;
-  const hasCliResults = totalCliIssues > 0;
-  const hasApiResults = totalApiIssues > 0;
-
-  // Choose the best result
-  let finalResult: GitHubIssuesSearchResult;
-  let resultSource: string;
-
-  if (hasCliResults && hasApiResults) {
-    // Both have results, prefer CLI for consistency
-    finalResult = { results: cliIssues };
-    resultSource = 'cli';
-  } else if (hasCliResults) {
-    finalResult = { results: cliIssues };
-    resultSource = 'cli';
-  } else if (hasApiResults) {
-    finalResult = { results: apiIssues };
-    resultSource = 'api';
-  } else {
-    // No results from either
-    const customHints = [];
-
-    // Add parameter-specific hints
-    if (args.state === 'closed') {
-      customHints.push('Try state:open or remove state filter');
-    }
-    if (args.author) {
-      customHints.push('Remove author filter for broader search');
-    }
-    if (args.label) {
-      customHints.push('Try broader labels or remove label filter');
-    }
-    if (args.owner && args.repo) {
-      customHints.push('Check repository name spelling');
-    }
-    if (args.created || args.updated) {
-      customHints.push('Expand date range or remove date filters');
-    }
-
+  // Handle case where no results were found
+  if (!dualResult.bestResult || !dualResult.bestResult.data) {
     const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
       hasResults: false,
       totalItems: 0,
-      customHints,
+      errorMessage: `No issues found for query: "${args.query}"`,
+      customHints: buildCustomHints(args),
     });
 
     return createResult({
@@ -382,27 +343,32 @@ async function searchIssuesWithDualSupport(
     });
   }
 
+  const finalResult: GitHubIssuesSearchResult = {
+    results: dualResult.bestResult.data.results || [],
+  };
+
   // Generate smart hints for successful results
   const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
     hasResults: true,
     totalItems: finalResult.results.length,
+    customHints: buildCustomHints(args),
   });
 
   // Add source information and dual results if verbose
   const responseData = {
     ...finalResult,
     hints,
-    resultSource,
+    resultSource: dualResult.resultSource,
     dualResults:
       opts.githubAPIType === 'both'
         ? {
             cli: {
-              issues: totalCliIssues,
-              error: cliError,
+              issues: dualResult.cli.data?.results?.length || 0,
+              error: dualResult.cli.error,
             },
             api: {
-              issues: totalApiIssues,
-              error: apiError,
+              issues: dualResult.api.data?.results?.length || 0,
+              error: dualResult.api.error,
             },
           }
         : undefined,
