@@ -28,7 +28,7 @@ const mockOctokit = vi.hoisted(() => ({
 }));
 
 const mockOctokitWithThrottling = vi.hoisted(() => {
-  const MockClass = vi.fn().mockImplementation(() => mockOctokit);
+  const MockClass = vi.fn().mockImplementation(() => mockOctokit) as any;
   MockClass.plugin = vi.fn().mockReturnValue(MockClass);
   return MockClass;
 });
@@ -46,13 +46,20 @@ const mockOptimizeTextMatch = vi.hoisted(() => vi.fn());
 vi.mock('octokit', () => ({
   Octokit: mockOctokitWithThrottling,
   RequestError: class RequestError extends Error {
+    public status: number;
+    public request: any;
+    public response?: any;
+
     constructor(
       message: string,
-      public status: number,
-      public response?: any
+      statusCode: number,
+      options: { request: any; response?: any }
     ) {
       super(message);
-      this.name = 'RequestError';
+      this.name = 'HttpError';
+      this.status = statusCode;
+      this.request = options.request;
+      this.response = options.response;
     }
   },
 }));
@@ -101,7 +108,7 @@ describe('GitHub API Utils', () => {
 
     // Set up default mock behaviors
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
-    mockWithCache.mockImplementation(async (key, fn) => await fn());
+    mockWithCache.mockImplementation(async (_key, fn) => await fn());
     mockCreateResult.mockImplementation(params => params);
     mockContentSanitizer.sanitizeContent.mockImplementation(content => ({
       content: content, // Return the content as-is for most tests
@@ -178,7 +185,9 @@ describe('GitHub API Utils', () => {
 
     it('should handle authentication failure', async () => {
       const { RequestError } = await import('octokit');
-      const authError = new RequestError('Bad credentials', 401);
+      const authError = new RequestError('Bad credentials', 401, {
+        request: {} as any,
+      });
       mockOctokit.rest.users.getAuthenticated.mockRejectedValue(authError);
 
       await checkGitHubAuthAPI();
@@ -194,7 +203,9 @@ describe('GitHub API Utils', () => {
 
     it('should handle other authentication errors', async () => {
       const { RequestError } = await import('octokit');
-      const serverError = new RequestError('Server error', 500);
+      const serverError = new RequestError('Server error', 500, {
+        request: {} as any,
+      });
       mockOctokit.rest.users.getAuthenticated.mockRejectedValue(serverError);
 
       await checkGitHubAuthAPI();
@@ -297,10 +308,13 @@ describe('GitHub API Utils', () => {
     it('should handle GitHub API rate limit error', async () => {
       const { RequestError } = await import('octokit');
       const rateLimitError = new RequestError('Rate limit exceeded', 403, {
-        headers: {
-          'x-ratelimit-remaining': '0',
-          'x-ratelimit-reset': '1640995200',
-        },
+        request: {} as any,
+        response: {
+          headers: {
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': '1640995200',
+          },
+        } as any,
       });
 
       mockOctokit.rest.search.code.mockRejectedValue(rateLimitError);
@@ -319,7 +333,9 @@ describe('GitHub API Utils', () => {
 
     it('should handle authentication error', async () => {
       const { RequestError } = await import('octokit');
-      const authError = new RequestError('Bad credentials', 401);
+      const authError = new RequestError('Bad credentials', 401, {
+        request: {} as any,
+      });
 
       mockOctokit.rest.search.code.mockRejectedValue(authError);
 
@@ -337,7 +353,9 @@ describe('GitHub API Utils', () => {
 
     it('should handle validation error', async () => {
       const { RequestError } = await import('octokit');
-      const validationError = new RequestError('Validation failed', 422);
+      const validationError = new RequestError('Validation failed', 422, {
+        request: {} as any,
+      });
 
       mockOctokit.rest.search.code.mockRejectedValue(validationError);
 
@@ -465,15 +483,19 @@ describe('GitHub API Utils', () => {
           created: '>2020-01-01',
           updated: '<2023-12-31',
           archived: false,
-          'include-forks': 'false',
+          'include-forks': 'false' as const,
           license: 'mit',
           'good-first-issues': '>5',
           'help-wanted-issues': '>0',
           followers: '>1000',
           'number-topics': '>=3',
-          match: ['name', 'description'],
-          sort: 'stars',
-          order: 'desc',
+          match: ['name', 'description'] as (
+            | 'name'
+            | 'description'
+            | 'readme'
+          )[],
+          sort: 'stars' as const,
+          order: 'desc' as const,
         };
 
         await searchGitHubReposAPI(params);
@@ -493,10 +515,13 @@ describe('GitHub API Utils', () => {
       it('should handle repository search rate limit error', async () => {
         const { RequestError } = await import('octokit');
         const rateLimitError = new RequestError('Rate limit exceeded', 403, {
-          headers: {
-            'x-ratelimit-remaining': '0',
-            'x-ratelimit-reset': '1640995200',
-          },
+          request: {} as any,
+          response: {
+            headers: {
+              'x-ratelimit-remaining': '0',
+              'x-ratelimit-reset': '1640995200',
+            },
+          } as any,
         });
 
         mockOctokit.rest.search.repos.mockRejectedValue(rateLimitError);
@@ -572,6 +597,7 @@ describe('GitHub API Utils', () => {
             repo: 'react',
             filePath: 'src/index.js',
             branch: 'main',
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -614,6 +640,7 @@ describe('GitHub API Utils', () => {
             owner: 'facebook',
             repo: 'react',
             filePath: 'src',
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -644,6 +671,7 @@ describe('GitHub API Utils', () => {
             owner: 'facebook',
             repo: 'react',
             filePath: 'large-file.js',
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -676,6 +704,7 @@ describe('GitHub API Utils', () => {
             owner: 'facebook',
             repo: 'react',
             filePath: 'binary-file.png',
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -710,6 +739,7 @@ describe('GitHub API Utils', () => {
             startLine: 2,
             endLine: 4,
             contextLines: 1,
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -749,6 +779,7 @@ describe('GitHub API Utils', () => {
             filePath: 'src/test.js',
             matchString: 'console.log',
             contextLines: 2,
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -783,6 +814,7 @@ describe('GitHub API Utils', () => {
             repo: 'react',
             filePath: 'src/test.js',
             matchString: 'nonexistent',
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -797,7 +829,9 @@ describe('GitHub API Utils', () => {
 
         it('should handle file not found error', async () => {
           const { RequestError } = await import('octokit');
-          const notFoundError = new RequestError('Not Found', 404);
+          const notFoundError = new RequestError('Not Found', 404, {
+            request: {} as any,
+          });
 
           mockOctokit.rest.repos.getContent.mockRejectedValue(notFoundError);
 
@@ -805,6 +839,7 @@ describe('GitHub API Utils', () => {
             owner: 'facebook',
             repo: 'react',
             filePath: 'nonexistent.js',
+            minified: true,
           };
 
           await fetchGitHubFileContentAPI(params);
@@ -908,7 +943,9 @@ describe('GitHub API Utils', () => {
 
           it('should handle repository not found', async () => {
             const { RequestError } = await import('octokit');
-            const notFoundError = new RequestError('Not Found', 404);
+            const notFoundError = new RequestError('Not Found', 404, {
+              request: {} as any,
+            });
 
             mockOctokit.rest.repos.getContent.mockRejectedValue(notFoundError);
             mockOctokit.rest.repos.get.mockRejectedValue(notFoundError);
@@ -933,7 +970,9 @@ describe('GitHub API Utils', () => {
 
           it('should try fallback branches when main branch not found', async () => {
             const { RequestError } = await import('octokit');
-            const notFoundError = new RequestError('Not Found', 404);
+            const notFoundError = new RequestError('Not Found', 404, {
+              request: {} as any,
+            });
 
             // First call fails (requested branch)
             // Second call fails (default branch)
