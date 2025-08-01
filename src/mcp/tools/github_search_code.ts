@@ -671,6 +671,8 @@ function createFinalResponse(
         queries: queryResults,
         summary: {
           totalQueries,
+          successfulQueries,
+          failedQueries,
           cli: {
             successfulQueries,
             failedQueries,

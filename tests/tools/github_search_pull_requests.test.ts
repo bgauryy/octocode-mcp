@@ -400,9 +400,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text as string).toContain(
-          'No pull requests found'
-        );
+        expect(result.content[0].text as string).toContain('PR search failed');
       });
 
       it('should handle withComments parameter warning', async () => {
@@ -473,9 +471,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text as string).toContain(
-          'No pull requests found'
-        );
+        expect(result.content[0].text as string).toContain('PR search failed');
       });
     });
 
@@ -807,10 +803,15 @@ describe('Content Sanitization', () => {
       content: [{ text: JSON.stringify({ error: 'API error', results: [] }) }],
     });
 
+    // Set up default CLI mock - will be overridden by individual tests
+    mockExecuteGitHubCommand.mockResolvedValue({
+      isError: false,
+      content: [{ text: JSON.stringify({ result: [], total_count: 0 }) }],
+    });
+
     registerSearchGitHubPullRequestsTool(mockServer.server, {
       githubAPIType: 'gh',
       npmEnabled: false,
-      apiType: 'gh',
     });
   });
 

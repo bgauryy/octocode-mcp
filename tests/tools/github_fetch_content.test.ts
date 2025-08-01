@@ -6,10 +6,15 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
+const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/exec.js', () => ({
   executeGitHubCommand: mockExecuteGitHubCommand,
+}));
+
+vi.mock('../../src/utils/githubAPI.js', () => ({
+  fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
 }));
 
 // Import after mocking
@@ -58,11 +63,18 @@ describe('GitHub Fetch Content Tool', () => {
     // Clear all mocks and reset implementation
     vi.clearAllMocks();
     mockExecuteGitHubCommand.mockReset();
+
+    // Default API mock behavior - return error so CLI takes precedence
+    mockFetchGitHubFileContentAPI.mockResolvedValue({
+      isError: true,
+      content: [{ text: JSON.stringify({ error: 'API error' }) }],
+    });
   });
 
   afterEach(() => {
     mockServer.cleanup();
     vi.resetAllMocks();
+    mockFetchGitHubFileContentAPI.mockReset();
   });
 
   describe('Tool Registration', () => {

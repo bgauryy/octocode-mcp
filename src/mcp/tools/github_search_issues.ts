@@ -284,12 +284,12 @@ async function searchIssuesWithDualSupport(
   let cliResult: CallToolResult | null = null;
   let apiResult: CallToolResult | null = null;
 
-  if (opts.apiType === 'gh' || opts.apiType === 'both') {
+  if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
     // Execute CLI search
     cliResult = await searchGitHubIssues(args);
   }
 
-  if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+  if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
     // Execute API search
     apiResult = await searchGitHubIssuesAPI(args, opts.ghToken);
   }
@@ -394,7 +394,7 @@ async function searchIssuesWithDualSupport(
     hints,
     resultSource,
     dualResults:
-      opts.apiType === 'both'
+      opts.githubAPIType === 'both'
         ? {
             cli: {
               issues: totalCliIssues,

@@ -354,6 +354,17 @@ async function fetchMultipleGitHubFileContents(
         }
       }
 
+      // If we have an error but no successful result, update processedResult to include the error
+      if (
+        (error || apiError) &&
+        'error' in processedResult &&
+        processedResult.error === 'No results'
+      ) {
+        // Prioritize specific error messages over generic ones
+        const specificError = error || apiError || 'No results';
+        processedResult = { error: specificError };
+      }
+
       return {
         queryId,
         originalQuery: query,
@@ -412,6 +423,8 @@ async function fetchMultipleGitHubFileContents(
       apiResults,
       summary: {
         totalQueries,
+        successfulQueries,
+        failedQueries: totalQueries - successfulQueries,
         cli: {
           successfulQueries,
           failedQueries: totalQueries - successfulQueries,

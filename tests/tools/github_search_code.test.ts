@@ -7,6 +7,7 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
+const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
 const mockMinifyContentV2 = vi.hoisted(() => vi.fn());
@@ -18,6 +19,10 @@ const mockContentSanitizer = vi.hoisted(() => ({
 // Mock dependencies
 vi.mock('../../src/utils/exec.js', () => ({
   executeGitHubCommand: mockExecuteGitHubCommand,
+}));
+
+vi.mock('../../src/utils/githubAPI.js', () => ({
+  searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
 }));
 
 // Helper function to create mock code search responses
@@ -133,11 +138,18 @@ describe('GitHub Search Code Tool', () => {
 
     // Default GitHub CLI command response - valid JSON structure
     mockExecuteGitHubCommand.mockResolvedValue(createMockCodeSearchResponse());
+
+    // Default API mock behavior - return error so CLI takes precedence
+    mockSearchGitHubCodeAPI.mockResolvedValue({
+      isError: true,
+      content: [{ text: JSON.stringify({ error: 'API error' }) }],
+    });
   });
 
   afterEach(() => {
     mockServer.cleanup();
     vi.resetAllMocks();
+    mockSearchGitHubCodeAPI.mockReset();
   });
 
   describe('Tool Registration', () => {
@@ -344,6 +356,7 @@ describe('GitHub Search Code Tool', () => {
           {
             text: JSON.stringify({
               result: mockCodeResults,
+              total_count: mockCodeResults.length,
               command: 'gh search code',
               type: 'github',
             }),
@@ -361,13 +374,16 @@ describe('GitHub Search Code Tool', () => {
             language: 'javascript',
           },
         ],
+        verbose: true,
       });
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0].text as string);
-      expect(data.data).toHaveLength(1);
-      expect(data.data[0].repository).toBe('facebook/react');
-      expect(data.data[0].repositoryInfo.nameWithOwner).toBe('facebook/react');
+      expect(data.data.data).toHaveLength(1);
+      expect(data.data.data[0].repository).toBe('facebook/react');
+      expect(data.data.data[0].repositoryInfo.nameWithOwner).toBe(
+        'facebook/react'
+      );
     });
 
     it('should handle complex search filters', async () => {
@@ -621,9 +637,12 @@ describe('GitHub Search Code Tool', () => {
       expect(
         response.hints.some(
           (hint: string) =>
-            hint.includes('FALLBACK:') ||
-            hint.includes('ALTERNATIVE:') ||
-            hint.includes('DEBUG MODE:')
+            hint.includes('Try ') ||
+            hint.includes('Alternative: ') ||
+            hint.includes('Next: ') ||
+            hint.includes('DEBUG MODE:') ||
+            hint.includes('EXPLORATION MODE:') ||
+            hint.includes('ANALYSIS MODE:')
         )
       ).toBe(true);
     });
@@ -647,9 +666,12 @@ describe('GitHub Search Code Tool', () => {
       expect(
         response.hints.some(
           (hint: string) =>
-            hint.includes('FALLBACK:') ||
-            hint.includes('ALTERNATIVE:') ||
-            hint.includes('DEBUG MODE:')
+            hint.includes('Try ') ||
+            hint.includes('Alternative: ') ||
+            hint.includes('Next: ') ||
+            hint.includes('DEBUG MODE:') ||
+            hint.includes('EXPLORATION MODE:') ||
+            hint.includes('ANALYSIS MODE:')
         )
       ).toBe(true);
     });
@@ -688,14 +710,13 @@ describe('GitHub Search Code Tool', () => {
       expect(
         response.hints.some(
           (hint: string) =>
-            hint.includes('FALLBACK:') ||
-            hint.includes('ALTERNATIVE:') ||
+            hint.includes('Try ') ||
+            hint.includes('Alternative: ') ||
+            hint.includes('Next: ') ||
             hint.includes('DEBUG MODE:') ||
-            hint.includes('CHOOSE WISELY:') ||
             hint.includes('EXPLORATION MODE:') ||
             hint.includes('ANALYSIS MODE:') ||
-            hint.includes('BLOCKED:') ||
-            hint.includes('NEXT:') ||
+            hint.includes('First: ') ||
             hint.includes('STRATEGIC')
         )
       ).toBe(true);
@@ -762,7 +783,7 @@ describe('GitHub Search Code Tool', () => {
       expect(
         response.hints.some(
           (hint: string) =>
-            hint.includes('FALLBACK:') ||
+            hint.includes('Try ') ||
             hint.includes('Authentication required') ||
             hint.includes('auth')
         )
@@ -792,7 +813,7 @@ describe('GitHub Search Code Tool', () => {
           (hint: string) =>
             hint.includes('Rate limited') ||
             hint.includes('rate limit') ||
-            hint.includes('FALLBACK:')
+            hint.includes('Try ')
         )
       ).toBe(true);
     });
@@ -820,7 +841,7 @@ describe('GitHub Search Code Tool', () => {
           (hint: string) =>
             hint.includes('Authentication required') ||
             hint.includes('auth') ||
-            hint.includes('FALLBACK:')
+            hint.includes('Try ')
         )
       ).toBe(true);
     });
@@ -848,7 +869,7 @@ describe('GitHub Search Code Tool', () => {
           (hint: string) =>
             hint.includes('timeout') ||
             hint.includes('network') ||
-            hint.includes('FALLBACK:')
+            hint.includes('Try ')
         )
       ).toBe(true);
     });
@@ -880,7 +901,7 @@ describe('GitHub Search Code Tool', () => {
           (hint: string) =>
             hint.includes('Unexpected error') ||
             hint.includes('error') ||
-            hint.includes('FALLBACK:')
+            hint.includes('Try ')
         )
       ).toBe(true);
     });
@@ -937,8 +958,8 @@ describe('GitHub Search Code Tool', () => {
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0].text as string);
-      expect(response.data).toHaveLength(1); // Only successful query returns data
-      expect(response.data[0].queryId).toBe('success-query');
+      expect(response.data.data).toHaveLength(1); // Only successful query returns data
+      expect(response.data.data[0].queryId).toBe('success-query');
       expect(response.hints).toBeDefined();
       // Should have strategic hints from the new system
       expect(
@@ -946,7 +967,7 @@ describe('GitHub Search Code Tool', () => {
           (hint: string) =>
             hint.includes('Authentication required') ||
             hint.includes('auth') ||
-            hint.includes('FALLBACK:')
+            hint.includes('Try ')
         )
       ).toBe(true);
     });

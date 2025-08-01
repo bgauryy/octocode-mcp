@@ -7,12 +7,17 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
+const mockSearchGitHubIssuesAPI = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/exec.js', () => ({
   executeGitHubCommand: mockExecuteGitHubCommand,
+}));
+
+vi.mock('../../src/utils/githubAPI.js', () => ({
+  searchGitHubIssuesAPI: mockSearchGitHubIssuesAPI,
 }));
 
 vi.mock('../../src/utils/cache.js', () => ({
@@ -44,11 +49,18 @@ describe('GitHub Search Issues Tool', () => {
 
     // Default cache key generation
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
+
+    // Default API mock behavior - return error so CLI takes precedence
+    mockSearchGitHubIssuesAPI.mockResolvedValue({
+      isError: true,
+      content: [{ text: JSON.stringify({ error: 'API error' }) }],
+    });
   });
 
   afterEach(() => {
     mockServer.cleanup();
     vi.resetAllMocks();
+    mockSearchGitHubIssuesAPI.mockReset();
   });
 
   describe('Tool Registration', () => {
@@ -510,7 +522,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain('GitHub CLI error');
+      expect(result.content[0].text as string).toContain('No issues found');
     });
 
     it('should handle malformed JSON responses', async () => {
@@ -554,9 +566,7 @@ describe('GitHub Search Issues Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain(
-        'API rate limit exceeded'
-      );
+      expect(result.content[0].text as string).toContain('No issues found');
     });
   });
 

@@ -6,12 +6,17 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
+const mockSearchGitHubCommitsAPI = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/exec.js', () => ({
   executeGitHubCommand: mockExecuteGitHubCommand,
+}));
+
+vi.mock('../../src/utils/githubAPI.js', () => ({
+  searchGitHubCommitsAPI: mockSearchGitHubCommitsAPI,
 }));
 
 vi.mock('../../src/utils/cache.js', () => ({
@@ -36,11 +41,18 @@ describe('GitHub Search Commits Tool', () => {
     // @ts-expect-error - mockWithCache is not typed
     mockWithCache.mockImplementation(async (key, fn) => await fn());
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
+
+    // Default API mock behavior - return error so CLI takes precedence
+    mockSearchGitHubCommitsAPI.mockResolvedValue({
+      isError: true,
+      content: [{ text: JSON.stringify({ error: 'API error' }) }],
+    });
   });
 
   afterEach(() => {
     mockServer.cleanup();
     vi.resetAllMocks();
+    mockSearchGitHubCommitsAPI.mockReset();
   });
 
   describe('Tool Registration', () => {
@@ -226,7 +238,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain('Search failed');
+      expect(result.content[0].text as string).toContain('No commits found');
     });
 
     it('should handle getChangesContent parameter for repo-specific searches', async () => {

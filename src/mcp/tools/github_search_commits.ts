@@ -260,12 +260,12 @@ async function searchCommitsWithDualSupport(
   let cliResult: CallToolResult | null = null;
   let apiResult: CallToolResult | null = null;
 
-  if (opts.apiType === 'gh' || opts.apiType === 'both') {
+  if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
     // Execute CLI search
     cliResult = await searchGitHubCommits(args);
   }
 
-  if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+  if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
     // Execute API search
     apiResult = await searchGitHubCommitsAPI(args, opts.ghToken);
   }

@@ -379,12 +379,12 @@ async function searchPullRequestsWithDualSupport(
   let cliResult: CallToolResult | null = null;
   let apiResult: CallToolResult | null = null;
 
-  if (opts.apiType === 'gh' || opts.apiType === 'both') {
+  if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
     // Execute CLI search
     cliResult = await searchGitHubPullRequests(args);
   }
 
-  if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+  if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
     // Execute API search
     apiResult = await searchGitHubPullRequestsAPI(args, opts.ghToken);
   }
@@ -468,10 +468,9 @@ async function searchPullRequestsWithDualSupport(
   // Add source information and dual results if verbose
   const responseData = {
     ...finalResult,
-    hints,
     resultSource,
     dualResults:
-      opts.apiType === 'both'
+      opts.githubAPIType === 'both'
         ? {
             cli: {
               pullRequests: totalCliPRs,
@@ -487,6 +486,7 @@ async function searchPullRequestsWithDualSupport(
 
   return createResult({
     data: responseData,
+    hints,
   });
 }
 
