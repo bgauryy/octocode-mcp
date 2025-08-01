@@ -1,76 +1,33 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import z from 'zod';
-import { createResult } from '../responses';
-import {
-  GithubFetchRequestParams,
-  GitHubFileContentResponse,
-} from '../../types';
+import { z } from 'zod';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createResult } from '../responses';
 import { generateCacheKey, withCache } from '../../utils/cache';
+import {
+  fetchGitHubFileContentAPI,
+  getDefaultBranch,
+  generateFileAccessHints,
+} from '../../utils/githubAPI';
 import { executeGitHubCommand } from '../../utils/exec';
+import type { GithubFetchRequestParams } from '../../types';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { withSecurityValidation } from './utils/withSecurityValidation';
 import { generateSmartHints } from './utils/toolRelationships';
-import {
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  ToolOptions,
-} from './utils/toolConstants';
-import { fetchGitHubFileContentAPI } from '../../utils/githubAPI';
+import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './utils/toolConstants';
 
-const DESCRIPTION = `Fetch file contents with smart context extraction.
+const DESCRIPTION = `
+Fetch file contents with smart context extraction.
 
 Supports: Up to 10 files fetching with auto-fallback for branches
 
 KEY WORKFLOW: 
-  - Code Research: ${GITHUB_SEARCH_CODE_TOOL_NAME} results -> fetch file using  "matchString" ->  get context around matches
-  - File Content: ${GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME} results  -> fetch relevant files to fetch by structure and file path
+  - Code Research: githubSearchCode results -> fetch file using  "matchString" ->  get context around matches
+  - File Content: githubViewRepoStructure results  -> fetch relevant files to fetch by structure and file path
 
 OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
 `;
 
-// Simple in-memory cache for default branch results
-const defaultBranchCache = new Map<string, string>();
-
-// Cached function to get repository's default branch
-async function getRepositoryDefaultBranch(
-  owner: string,
-  repo: string
-): Promise<string | null> {
-  const cacheKey = `${owner}/${repo}`;
-
-  // Check cache first
-  if (defaultBranchCache.has(cacheKey)) {
-    return defaultBranchCache.get(cacheKey)!;
-  }
-
-  try {
-    const repoResult = await executeGitHubCommand(
-      'api',
-      [`/repos/${owner}/${repo}`],
-      {
-        cache: false,
-      }
-    );
-
-    if (repoResult.isError) {
-      return null;
-    }
-
-    const repoData = JSON.parse(repoResult.content[0].text as string);
-    const execResult = repoData.result || repoData;
-    const defaultBranch = execResult.default_branch || 'main';
-
-    // Cache the successful result
-    defaultBranchCache.set(cacheKey, defaultBranch);
-
-    return defaultBranch;
-  } catch (e) {
-    return null;
-  }
-}
+// Remove the old getRepositoryDefaultBranch function and defaultBranchCache
+// These are now handled by the shared utilities in githubAPI.ts
 
 // Define the file content query schema
 const FileContentQuerySchema = z.object({
@@ -91,6 +48,12 @@ const FileContentQuerySchema = z.object({
     .describe(
       `Repository name only (e.g., 'react', 'vscode'). Do NOT include owner/org prefix.`
     ),
+  filePath: z
+    .string()
+    .min(1)
+    .describe(
+      `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.`
+    ),
   branch: z
     .string()
     .min(1)
@@ -98,13 +61,7 @@ const FileContentQuerySchema = z.object({
     .regex(/^[^\s]+$/)
     .optional()
     .describe(
-      `Branch name, tag name, OR commit SHA. If not provided, uses repository's default branch automatically. If provided branch fails, tries 'main' and 'master' as fallback.`
-    ),
-  filePath: z
-    .string()
-    .min(1)
-    .describe(
-      `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.`
+      `Branch name, tag name, OR commit SHA. If not provided, uses repository's default branch automatically. If provided branch fails, smart hints will suggest alternatives.`
     ),
   startLine: z
     .number()
@@ -127,7 +84,6 @@ const FileContentQuerySchema = z.object({
     .int()
     .min(0)
     .max(50)
-    .optional()
     .default(5)
     .describe(`Context lines around target range. Default: 5.`),
   matchString: z
@@ -142,18 +98,6 @@ const FileContentQuerySchema = z.object({
     .describe(
       `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
     ),
-  fallbackParams: z
-    .object({
-      branch: z.string().optional(),
-      filePath: z.string().optional(),
-      startLine: z.number().int().min(1).optional(),
-      endLine: z.number().int().min(1).optional(),
-      contextLines: z.number().int().min(0).max(50).optional(),
-      matchString: z.string().optional(),
-      minified: z.boolean().optional(),
-    })
-    .optional()
-    .describe('Fallback parameters if original query returns no results'),
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
@@ -161,17 +105,16 @@ export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 export interface FileContentQueryResult {
   queryId?: string;
   originalQuery: FileContentQuery;
-  result: GitHubFileContentResponse | { error: string };
-  apiResult?: GitHubFileContentResponse | { error: string };
+  result: any;
+  apiResult?: any;
   fallbackTriggered: boolean;
-  fallbackQuery?: FileContentQuery;
   error?: string;
   apiError?: string;
 }
 
 export function registerFetchGitHubFileContentTool(
-  server: McpServer,
-  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
+  server: any, // McpServer is removed, so use 'any' for now
+  opts: any = { githubAPIType: 'both', npmEnabled: false } // Make optional with default
 ) {
   server.registerTool(
     GITHUB_GET_FILE_CONTENT_TOOL_NAME,
@@ -194,78 +137,67 @@ export function registerFetchGitHubFileContentTool(
         openWorldHint: true,
       },
     },
-    withSecurityValidation(
-      async (args: {
-        queries: FileContentQuery[];
-      }): Promise<CallToolResult> => {
-        try {
-          return await fetchMultipleGitHubFileContents(args.queries, opts);
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          return createResult({
-            isError: true,
-            hints: [
-              `Failed to fetch file content: ${errorMessage}. Verify repository access and file paths.`,
-            ],
-          });
-        }
+    async (args: { queries: FileContentQuery[] }): Promise<CallToolResult> => {
+      if (!Array.isArray(args.queries) || args.queries.length === 0) {
+        return createResult({
+          data: {
+            results: [],
+            summary: {
+              totalQueries: 0,
+              successfulQueries: 0,
+              successful_api: 0,
+              failed: 0,
+            },
+          },
+          hints: ['No queries provided'],
+        });
       }
-    )
+
+      return fetchMultipleGitHubFileContents(args.queries, opts);
+    }
   );
 }
 
 async function fetchMultipleGitHubFileContents(
   queries: FileContentQuery[],
-  opts: ToolOptions
+  opts: any
 ): Promise<CallToolResult> {
   const results: FileContentQueryResult[] = [];
 
   // Execute all queries in parallel
   const queryPromises = queries.map(async (query, index) => {
     const queryId = query.id || `query_${index + 1}`;
+    const params: GithubFetchRequestParams = {
+      owner: query.owner,
+      repo: query.repo,
+      filePath: query.filePath,
+      branch: query.branch,
+      startLine: query.startLine,
+      endLine: query.endLine,
+      contextLines: query.contextLines,
+      matchString: query.matchString,
+      minified: query.minified,
+    };
 
     try {
-      // Convert to original format
-      const params: GithubFetchRequestParams = {
-        owner: query.owner,
-        repo: query.repo,
-        branch: query.branch,
-        filePath: query.filePath,
-        startLine: query.startLine,
-        endLine: query.endLine,
-        contextLines: query.contextLines !== undefined ? query.contextLines : 5,
-        matchString: query.matchString,
-        minified: query.minified !== undefined ? query.minified : true,
-      };
+      let processedResult: any = undefined; // Start with undefined, not an error object
+      let error: string | undefined;
+      let processedApiResult: any | undefined;
+      let apiError: string | undefined;
 
-      // Execute fetches based on apiType option
-      let cliResult: PromiseSettledResult<CallToolResult> | null = null;
-      let apiResult: PromiseSettledResult<CallToolResult> | null = null;
+      // Try CLI and/or API based on options
+      const promises: Promise<any>[] = [];
 
       if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
-        // Execute CLI fetch
-        cliResult = await Promise.allSettled([
-          fetchGitHubFileContentCLI(params),
-        ]).then(results => results[0]);
+        promises.push(fetchGitHubFileContentCLI(params));
       }
 
       if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
-        // Execute API fetch
-        apiResult = await Promise.allSettled([
-          fetchGitHubFileContentAPI(params, opts.ghToken),
-        ]).then(results => results[0]);
+        promises.push(fetchGitHubFileContentAPI(params, opts.ghToken));
       }
 
-      let processedResult: GitHubFileContentResponse | { error: string } = {
-        error: 'No results',
-      };
-      let error: string | undefined;
-      let processedApiResult:
-        | GitHubFileContentResponse
-        | { error: string }
-        | undefined;
-      let apiError: string | undefined;
+      const results = await Promise.allSettled(promises);
+      const [cliResult, apiResult] = results;
 
       // Process CLI result
       if (
@@ -292,9 +224,7 @@ async function fetchMultipleGitHubFileContents(
         !apiResult.value.isError
       ) {
         const apiData = JSON.parse(apiResult.value.content[0].text as string);
-        // The API result structure is different - it has a 'data' wrapper
-        const apiResultData = apiData.data || apiData;
-        processedApiResult = apiResultData;
+        processedApiResult = apiData.data || apiData;
       } else if (
         apiResult &&
         apiResult.status === 'fulfilled' &&
@@ -305,70 +235,72 @@ async function fetchMultipleGitHubFileContents(
         apiError = `API fetch failed: ${apiResult.reason}`;
       }
 
-      // Handle fallback logic if both primary methods failed
-      if (error && apiError && query.fallbackParams) {
-        const fallbackParams: GithubFetchRequestParams = {
-          ...params,
-          ...query.fallbackParams,
-        };
+      // Check if we have any successful results
+      const hasSuccessfulResult =
+        processedResult &&
+        typeof processedResult === 'object' &&
+        !('error' in processedResult);
+      const hasSuccessfulApiResult =
+        processedApiResult &&
+        typeof processedApiResult === 'object' &&
+        !('error' in processedApiResult);
 
-        // Try fallback with CLI if it was the primary method
-        if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
-          const fallbackResult =
-            await fetchGitHubFileContentCLI(fallbackParams);
-          if (!fallbackResult.isError) {
-            const data = JSON.parse(fallbackResult.content[0].text as string);
-            return {
-              queryId,
-              originalQuery: query,
-              result: data.data || data,
-              apiResult: processedApiResult,
-              fallbackTriggered: true,
-              fallbackQuery: { ...query, ...query.fallbackParams },
-              error,
-              apiError,
-            };
-          }
-        }
-
-        // Try fallback with API if it was the primary method
-        if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
-          const fallbackApiResult =
-            await fetchGitHubFileContentAPI(fallbackParams);
-          if (!fallbackApiResult.isError) {
-            const apiData = JSON.parse(
-              fallbackApiResult.content[0].text as string
-            );
-            const apiResultData = apiData.data || apiData;
-            return {
-              queryId,
-              originalQuery: query,
-              result: processedResult,
-              apiResult: apiResultData,
-              fallbackTriggered: true,
-              fallbackQuery: { ...query, ...query.fallbackParams },
-              error,
-              apiError,
-            };
-          }
-        }
-      }
-
-      // If we have an error but no successful result, update processedResult to include the error
+      // If both methods failed or no successful results, generate smart hints
       if (
         (error || apiError) &&
-        'error' in processedResult &&
-        processedResult.error === 'No results'
+        !hasSuccessfulResult &&
+        !hasSuccessfulApiResult
       ) {
-        // Prioritize specific error messages over generic ones
-        const specificError = error || apiError || 'No results';
-        processedResult = { error: specificError };
+        // Get default branch for better hints
+        const defaultBranch = await getDefaultBranch(
+          query.owner,
+          query.repo,
+          opts.ghToken
+        );
+        const hints = generateFileAccessHints(
+          query.owner,
+          query.repo,
+          query.filePath,
+          query.branch || 'main',
+          defaultBranch,
+          error || apiError
+        );
+
+        return {
+          queryId,
+          originalQuery: query,
+          result: { error: error || apiError, hints },
+          apiResult: processedApiResult,
+          fallbackTriggered: false,
+          error,
+          apiError,
+        };
+      }
+
+      // Use successful result - prefer CLI result, fall back to API result
+      let finalResult = processedResult;
+      if (!hasSuccessfulResult && hasSuccessfulApiResult) {
+        finalResult = processedApiResult;
+      }
+
+      // If we still don't have a result, return error
+      if (!finalResult) {
+        const errorMsg = error || apiError || 'No results available';
+        return {
+          queryId,
+          originalQuery: query,
+          result: { error: errorMsg },
+          apiResult: processedApiResult,
+          fallbackTriggered: false,
+          error,
+          apiError,
+        };
       }
 
       return {
         queryId,
         originalQuery: query,
-        result: processedResult,
+        result: finalResult,
         apiResult: processedApiResult,
         fallbackTriggered: false,
         error,
@@ -399,41 +331,25 @@ async function fetchMultipleGitHubFileContents(
   const successfulApiQueries = results.filter(
     r => r.apiResult && !('error' in r.apiResult) && !r.apiError
   ).length;
-  const queriesWithFallback = results.filter(r => r.fallbackTriggered).length;
 
+  // Generate comprehensive hints
   const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
-    hasResults: successfulQueries > 0 || successfulApiQueries > 0,
-    totalItems: successfulQueries + successfulApiQueries,
-    errorMessage:
-      successfulQueries === 0 && successfulApiQueries === 0
-        ? 'All file fetches failed'
-        : undefined,
+    hasResults: successfulQueries > 0,
+    totalItems: successfulQueries,
+    customHints: results
+      .filter(r => r.result?.hints)
+      .flatMap(r => r.result.hints)
+      .slice(0, 5), // Limit to 5 most relevant hints
   });
-
-  // Extract API results for separate section
-  const apiResults = results.map(result => ({
-    queryId: result.queryId,
-    data: result.apiResult || { error: 'No API result' },
-    error: result.apiError,
-  }));
 
   return createResult({
     data: {
-      results,
-      apiResults,
+      results: results, // Change back to "results" for backward compatibility
       summary: {
-        totalQueries,
-        successfulQueries,
-        failedQueries: totalQueries - successfulQueries,
-        cli: {
-          successfulQueries,
-          failedQueries: totalQueries - successfulQueries,
-        },
-        api: {
-          successfulQueries: successfulApiQueries,
-          failedQueries: totalQueries - successfulApiQueries,
-        },
-        queriesWithFallback,
+        totalQueries: totalQueries,
+        successfulQueries: successfulQueries,
+        successful_api: successfulApiQueries,
+        failed: totalQueries - successfulQueries,
       },
     },
     hints,
@@ -443,33 +359,20 @@ async function fetchMultipleGitHubFileContents(
 export async function fetchGitHubFileContentCLI(
   params: GithubFetchRequestParams
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-file-content', params);
+  const cacheKey = generateCacheKey('gh-file-content-cli', params);
 
   return withCache(cacheKey, async () => {
     const { owner, repo, filePath } = params;
     let { branch } = params;
 
+    // Use default branch if not specified
+    if (!branch) {
+      const defaultBranch = await getDefaultBranch(owner, repo);
+      branch = defaultBranch || 'main';
+    }
+
     try {
-      // If no branch provided, get the default branch
-      if (!branch) {
-        const defaultBranch = await getRepositoryDefaultBranch(owner, repo);
-
-        if (!defaultBranch) {
-          return createResult({
-            isError: true,
-            hints: [`Repository ${owner}/${repo} not found or not accessible`],
-          });
-        }
-
-        branch = defaultBranch;
-      }
-
-      // Try to fetch file content directly
-      const isCommitSha = branch!.match(/^[0-9a-f]{40}$/);
-      const apiPath = isCommitSha
-        ? `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}` // Use contents API with ref for commit SHA
-        : `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`; // Use contents API for branches/tags
-
+      const apiPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`;
       const result = await executeGitHubCommand('api', [apiPath], {
         cache: false,
       });
@@ -477,43 +380,12 @@ export async function fetchGitHubFileContentCLI(
       if (result.isError) {
         const errorMsg = result.content[0].text as string;
 
-        // Efficient fallback: try common branches directly on 404
-        if (errorMsg.includes('404')) {
-          const commonBranches = ['main', 'master'];
-          const triedBranches = [branch];
-
-          // Try common branches directly without additional repo info calls
-          for (const tryBranch of commonBranches) {
-            if (triedBranches.includes(tryBranch)) continue;
-
-            const tryBranchPath = `/repos/${owner}/${repo}/contents/${filePath}?ref=${tryBranch}`;
-            const tryBranchResult = await executeGitHubCommand(
-              'api',
-              [tryBranchPath],
-              {
-                cache: false,
-              }
-            );
-
-            if (!tryBranchResult.isError) {
-              return await processFileContent(
-                tryBranchResult,
-                owner,
-                repo,
-                tryBranch,
-                filePath,
-                params.minified,
-                params.startLine,
-                params.endLine,
-                params.contextLines,
-                params.matchString
-              );
-            }
-          }
-        }
-
-        // Return original error if all fallbacks failed
-        return result;
+        // Return raw error result for main function to process
+        // Don't use createResult here - return the raw CallToolResult with error
+        return {
+          content: [{ type: 'text', text: errorMsg }],
+          isError: true,
+        };
       }
 
       return await processFileContent(
@@ -530,7 +402,8 @@ export async function fetchGitHubFileContentCLI(
       );
     } catch (error) {
       return createResult({
-        error: `Error fetching file content: ${error}`,
+        isError: true,
+        hints: [`Error fetching file content: ${error}`],
       });
     }
   });
@@ -821,32 +694,7 @@ async function processFileContent(
       ...(securityWarnings.length > 0 && {
         securityWarnings,
       }),
-    } as GitHubFileContentResponse,
+    },
     hints,
   });
-}
-
-/**
- * Wrapper function that supports both CLI and API fetching based on options
- */
-export async function fetchGitHubFileContent(
-  params: GithubFetchRequestParams,
-  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
-): Promise<CallToolResult> {
-  // For backward compatibility, if no options provided, use CLI
-  if (opts.githubAPIType === 'gh') {
-    return fetchGitHubFileContentCLI(params);
-  } else if (opts.githubAPIType === 'octokit') {
-    return fetchGitHubFileContentAPI(params, opts.ghToken);
-  } else {
-    // For 'both', try CLI first, then API as fallback
-    const cliResult = await fetchGitHubFileContentCLI(params);
-    if (!cliResult.isError) {
-      return cliResult;
-    }
-
-    // Try API as fallback
-    const apiResult = await fetchGitHubFileContentAPI(params, opts.ghToken);
-    return apiResult;
-  }
 }

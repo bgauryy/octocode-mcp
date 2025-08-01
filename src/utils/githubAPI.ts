@@ -2672,3 +2672,87 @@ function extractSingleRepositoryAPI(items: GitHubCommitSearchItem[]) {
 
   return allSameRepo ? firstRepo : null;
 }
+
+// Simple in-memory cache for default branch results
+const defaultBranchCache = new Map<string, string>();
+
+/**
+ * Get repository's default branch with caching
+ * Works for both CLI and API implementations
+ */
+export async function getDefaultBranch(
+  owner: string,
+  repo: string,
+  token?: string
+): Promise<string | null> {
+  const cacheKey = `${owner}/${repo}`;
+
+  // Check cache first
+  if (defaultBranchCache.has(cacheKey)) {
+    return defaultBranchCache.get(cacheKey)!;
+  }
+
+  try {
+    const octokit = getOctokit(token);
+    const repoInfo = await octokit.rest.repos.get({ owner, repo });
+    const defaultBranch = repoInfo.data.default_branch || 'main';
+
+    // Cache the successful result
+    defaultBranchCache.set(cacheKey, defaultBranch);
+    return defaultBranch;
+  } catch (error) {
+    // Fallback: try to infer from common patterns
+    // Don't cache failures to allow retry later
+    return null;
+  }
+}
+
+/**
+ * Generate smart hints for file access issues
+ */
+export function generateFileAccessHints(
+  owner: string,
+  repo: string,
+  filePath: string,
+  branch: string,
+  defaultBranch?: string | null,
+  error?: string
+): string[] {
+  const hints: string[] = [];
+
+  if (error?.includes('404')) {
+    // File or branch not found
+    if (defaultBranch && defaultBranch !== branch) {
+      hints.push(
+        `Try the default branch "${defaultBranch}" instead of "${branch}"`
+      );
+    }
+
+    hints.push(
+      `Use githubViewRepoStructure to verify the file path "${filePath}" exists in ${owner}/${repo}`,
+      `Use githubSearchCode to find similar files if "${filePath}" has changed or moved`
+    );
+
+    // Suggest common branch alternatives
+    const commonBranches = ['main', 'master', 'develop', 'dev'];
+    const suggestedBranches = commonBranches
+      .filter(b => b !== branch && b !== defaultBranch)
+      .slice(0, 2);
+
+    if (suggestedBranches.length > 0) {
+      hints.push(`Try common branches: ${suggestedBranches.join(', ')}`);
+    }
+  } else if (error?.includes('403')) {
+    hints.push(
+      `Repository ${owner}/${repo} may be private - ensure GITHUB_TOKEN is set`,
+      'Check if you have access permissions to this repository'
+    );
+  } else if (error?.includes('rate limit')) {
+    hints.push(
+      'GitHub API rate limit exceeded - wait before retrying',
+      'Set GITHUB_TOKEN environment variable for higher rate limits'
+    );
+  }
+
+  return hints;
+}

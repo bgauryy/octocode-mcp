@@ -7,6 +7,8 @@ import {
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
+const mockGetDefaultBranch = vi.hoisted(() => vi.fn());
+const mockGenerateFileAccessHints = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/exec.js', () => ({
@@ -15,6 +17,8 @@ vi.mock('../../src/utils/exec.js', () => ({
 
 vi.mock('../../src/utils/githubAPI.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
+  getDefaultBranch: mockGetDefaultBranch,
+  generateFileAccessHints: mockGenerateFileAccessHints,
 }));
 
 // Import after mocking
@@ -63,6 +67,17 @@ describe('GitHub Fetch Content Tool', () => {
     // Clear all mocks and reset implementation
     vi.clearAllMocks();
     mockExecuteGitHubCommand.mockReset();
+    mockFetchGitHubFileContentAPI.mockReset();
+    mockGetDefaultBranch.mockReset();
+    mockGenerateFileAccessHints.mockReset();
+
+    // Default mock behaviors
+    mockGetDefaultBranch.mockResolvedValue('main');
+    mockGenerateFileAccessHints.mockReturnValue([
+      'Use githubViewRepoStructure to verify the file path exists',
+      'Use githubSearchCode to find similar files if the path has changed',
+      'Try common branch names: main, master, develop',
+    ]);
 
     // Default API mock behavior - return error so CLI takes precedence
     mockFetchGitHubFileContentAPI.mockResolvedValue({
@@ -75,6 +90,8 @@ describe('GitHub Fetch Content Tool', () => {
     mockServer.cleanup();
     vi.resetAllMocks();
     mockFetchGitHubFileContentAPI.mockReset();
+    mockGetDefaultBranch.mockReset();
+    mockGenerateFileAccessHints.mockReset();
   });
 
   describe('Tool Registration', () => {
@@ -277,25 +294,17 @@ describe('GitHub Fetch Content Tool', () => {
     });
   });
 
-  describe('Fallback Logic', () => {
-    it('should use fallback parameters when original query fails', async () => {
-      registerFetchGitHubFileContentTool(mockServer.server);
+  describe('Smart Hints Logic', () => {
+    it('should provide smart hints when query fails', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: false,
+      });
 
-      const fallbackContent = 'fallback content';
-
-      // First call fails, second call (with fallback) succeeds
-      mockExecuteGitHubCommand
-        .mockResolvedValueOnce(createMockGitHubError('Original path not found'))
-        .mockResolvedValueOnce(
-          createMockGitHubResponse({
-            content: Buffer.from(fallbackContent).toString('base64'),
-            size: fallbackContent.length,
-            name: 'fallback-path.js',
-            path: 'fallback-path.js',
-            type: 'file',
-            encoding: 'base64',
-          })
-        );
+      // Mock the CLI to fail
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubError('404: Not Found - path not found')
+      );
 
       const result = await mockServer.callTool('githubGetFileContent', {
         queries: [
@@ -304,19 +313,105 @@ describe('GitHub Fetch Content Tool', () => {
             repo: 'repo',
             branch: 'nonexistent-branch',
             filePath: 'test.js',
-            fallbackParams: {
-              branch: 'main',
-            },
           },
         ],
       });
 
       expect(result.isError).toBe(false);
       const responseData = JSON.parse(result.content[0].text as string);
-      expect(responseData.data.results[0].result.content).toContain(
-        'fallback content'
+
+      // Should have error with hints
+      expect(responseData.data.results[0].result.error).toBeDefined();
+      expect(responseData.data.results[0].result.hints).toBeDefined();
+      expect(Array.isArray(responseData.data.results[0].result.hints)).toBe(
+        true
       );
-      expect(responseData.data.results[0].fallbackTriggered).toBe(true);
+
+      // Should contain smart hints about the issue
+      const hints = responseData.data.results[0].result.hints;
+      expect(
+        hints.some((hint: string) => hint.includes('githubViewRepoStructure'))
+      ).toBe(true);
+      expect(
+        hints.some((hint: string) => hint.includes('githubSearchCode'))
+      ).toBe(true);
+      expect(responseData.data.results[0].fallbackTriggered).toBe(false);
+    });
+
+    it('should suggest default branch when branch not found', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: false,
+      });
+
+      // Mock the CLI to fail with 404
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubError('404: Not Found')
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'wrong-branch',
+            filePath: 'test.js',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+
+      const hints = responseData.data.results[0].result.hints;
+      expect(hints).toBeDefined();
+      expect(Array.isArray(hints)).toBe(true);
+
+      // Should suggest common branches
+      const hintsText = hints.join(' ');
+      expect(hintsText).toMatch(/main|master|develop/);
+    });
+
+    it('should provide smart hints when both CLI and API fail', async () => {
+      registerFetchGitHubFileContentTool(mockServer.server, {
+        githubAPIType: 'both',
+        npmEnabled: false,
+      });
+
+      // Mock both CLI and API to fail
+      mockExecuteGitHubCommand.mockResolvedValueOnce(
+        createMockGitHubError('404: Not Found - CLI failed')
+      );
+
+      mockFetchGitHubFileContentAPI.mockResolvedValueOnce(
+        createMockGitHubError('404: Not Found - API failed')
+      );
+
+      const result = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'nonexistent-branch',
+            filePath: 'test.js',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseData = JSON.parse(result.content[0].text as string);
+
+      // Should have error with hints
+      expect(responseData.data.results[0].result.error).toBeDefined();
+      expect(responseData.data.results[0].result.hints).toBeDefined();
+      expect(Array.isArray(responseData.data.results[0].result.hints)).toBe(
+        true
+      );
+
+      // Should contain smart hints about the issue
+      const hints = responseData.data.results[0].result.hints;
+      expect(hints.length).toBeGreaterThan(0);
+      expect(responseData.data.results[0].fallbackTriggered).toBe(false);
     });
   });
 
