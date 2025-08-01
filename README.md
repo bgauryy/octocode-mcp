@@ -3,7 +3,7 @@
 **The Perfect AI Code Assistant - Advanced Search & Discovery Across GitHub**
 
 <div>
-  <img src="./assets/logo.png" width="400px">
+  <img src="./assets/logo_white.png" width="400px">
   
   [![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
