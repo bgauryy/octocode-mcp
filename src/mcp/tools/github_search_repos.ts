@@ -17,6 +17,7 @@ import {
   ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { processDualResults, dataExtractors } from './utils/resultProcessor';
 import { searchGitHubReposAPI } from '../../utils/githubAPI';
 
 const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
@@ -387,61 +388,19 @@ async function processSingleQuery(
       ]).then(results => results[0]);
     }
 
-    let processedResult: GitHubReposSearchResult = {
-      total_count: 0,
-      repositories: [],
-    };
-    let error: string | undefined;
-    let processedApiResult: GitHubReposSearchResult | undefined;
-    let apiError: string | undefined;
-
-    // Process CLI result
-    if (
-      cliResult &&
-      cliResult.status === 'fulfilled' &&
-      !cliResult.value.isError
-    ) {
-      const execResult = JSON.parse(cliResult.value.content[0].text as string);
-      processedResult = execResult;
-    } else if (
-      cliResult &&
-      cliResult.status === 'fulfilled' &&
-      cliResult.value.isError
-    ) {
-      error = cliResult.value.content[0].text as string;
-    } else if (cliResult && cliResult.status === 'rejected') {
-      error = `CLI search failed: ${cliResult.reason}`;
-    }
-
-    // Process API result
-    if (
-      apiResult &&
-      apiResult.status === 'fulfilled' &&
-      !apiResult.value.isError
-    ) {
-      const apiData = JSON.parse(apiResult.value.content[0].text as string);
-      // The API result structure is different - it has a 'data' wrapper
-      const apiResultData = apiData.data || apiData;
-      processedApiResult = {
-        total_count: apiResultData.total_count || 0,
-        repositories: apiResultData.repositories || [],
-      };
-    } else if (
-      apiResult &&
-      apiResult.status === 'fulfilled' &&
-      apiResult.value.isError
-    ) {
-      apiError = apiResult.value.content[0].text as string;
-    } else if (apiResult && apiResult.status === 'rejected') {
-      apiError = `API search failed: ${apiResult.reason}`;
-    }
+    // Use standardized dual result processing
+    const dualResult = await processDualResults(cliResult, apiResult, {
+      cliDataExtractor: dataExtractors.repositories,
+      apiDataExtractor: dataExtractors.repositories,
+      preferredSource: 'cli',
+    });
 
     return {
       queryId,
-      result: processedResult,
-      apiResult: processedApiResult,
-      error,
-      apiError,
+      result: dualResult.cli.data || { total_count: 0, repositories: [] },
+      apiResult: dualResult.api.data,
+      error: dualResult.cli.error,
+      apiError: dualResult.api.error,
     };
   } catch (error) {
     // Handle any unexpected errors

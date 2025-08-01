@@ -16,6 +16,7 @@ import {
   ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { processDualResults, dataExtractors } from './utils/resultProcessor';
 import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
 
 export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
@@ -140,12 +141,12 @@ export async function viewRepositoryStructure(
       let cliResult: CallToolResult | null = null;
       let apiResult: CallToolResult | null = null;
 
-      if (opts.apiType === 'gh' || opts.apiType === 'both') {
+      if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
         // Execute CLI search
         cliResult = await viewRepositoryStructureCLI(params);
       }
 
-      if (opts.apiType === 'octokit' || opts.apiType === 'both') {
+      if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
         // Execute API search
         apiResult = await viewGitHubRepositoryStructureAPI(
           params,
@@ -153,26 +154,51 @@ export async function viewRepositoryStructure(
         );
       }
 
-      // Return successful result, preferring CLI if both are available
-      if (cliResult && !cliResult.isError) {
-        return cliResult;
-      } else if (apiResult && !apiResult.isError) {
-        return apiResult;
+      // Use standardized dual result processing
+      const dualResult = await processDualResults(cliResult, apiResult, {
+        cliDataExtractor: dataExtractors.passThrough,
+        apiDataExtractor: dataExtractors.passThrough,
+        preferredSource: 'cli',
+      });
+
+      // Return successful result with standardized structure
+      if (dualResult.bestResult && dualResult.bestResult.data) {
+        const responseData = {
+          ...dualResult.bestResult.data,
+          resultSource: dualResult.resultSource,
+          dualResults:
+            opts.githubAPIType === 'both'
+              ? {
+                  cli: {
+                    data: dualResult.cli.data,
+                    error: dualResult.cli.error,
+                  },
+                  api: {
+                    data: dualResult.api.data,
+                    error: dualResult.api.error,
+                  },
+                }
+              : undefined,
+        };
+
+        return createResult({
+          data: responseData,
+        });
       }
 
-      // If both failed, return the CLI error (more detailed) or API error
-      if (cliResult && cliResult.isError) {
-        return cliResult;
-      } else if (apiResult && apiResult.isError) {
-        return apiResult;
-      }
+      // If both failed, return comprehensive error
+      const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+        hasResults: false,
+        errorMessage: `Failed to access repository "${params.owner}/${params.repo}"`,
+        customHints: [
+          dualResult.cli.error ? `CLI: ${dualResult.cli.error}` : null,
+          dualResult.api.error ? `API: ${dualResult.api.error}` : null,
+        ].filter(Boolean) as string[],
+      });
 
-      // Fallback error
       return createResult({
         isError: true,
-        hints: [
-          `Failed to access repository "${params.owner}/${params.repo}" via both CLI and API`,
-        ],
+        hints,
       });
     } catch (error) {
       const errorMessage =

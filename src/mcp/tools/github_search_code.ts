@@ -20,6 +20,7 @@ import {
   ToolOptions,
 } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { processDualResults } from './utils/resultProcessor';
 import {
   searchGitHubCodeAPI,
   GitHubCodeSearchQuery as APIGitHubCodeSearchQuery,
@@ -418,76 +419,45 @@ async function executeQueriesAndCollectResults(
         ]).then(results => results[0]);
       }
 
-      let processedResult: OptimizedCodeSearchResult = {
-        items: [],
-        total_count: 0,
-      };
-      let error: string | undefined;
-      let processedApiResult: OptimizedCodeSearchResult | undefined;
-      let apiError: string | undefined;
-
-      // Process CLI result
-      if (
-        cliResult &&
-        cliResult.status === 'fulfilled' &&
-        !cliResult.value.isError
-      ) {
-        const execResult = JSON.parse(
-          cliResult.value.content[0].text as string
-        );
-        const codeResults: GitHubCodeSearchItem[] = execResult.result;
+      // Create custom data extractors for this query
+      const cliCodeExtractor = async (data: any) => {
+        const codeResults: GitHubCodeSearchItem[] = data.result || data;
         const items = Array.isArray(codeResults) ? codeResults : [];
-        processedResult = await transformToOptimizedFormat(
+        return await transformToOptimizedFormat(
           items,
           query.minify !== false,
           query.sanitize !== false
         );
-      } else if (
-        cliResult &&
-        cliResult.status === 'fulfilled' &&
-        cliResult.value.isError
-      ) {
-        error = cliResult.value.content[0].text as string;
-      } else if (cliResult && cliResult.status === 'rejected') {
-        error = `CLI search failed: ${cliResult.reason}`;
-      }
+      };
 
-      // Process API result
-      if (
-        apiResult &&
-        apiResult.status === 'fulfilled' &&
-        !apiResult.value.isError
-      ) {
-        const apiData = JSON.parse(apiResult.value.content[0].text as string);
-        // The API result structure is different - it has a 'data' wrapper
-        const apiResultData = apiData.data || apiData;
-        processedApiResult = {
-          items: apiResultData.items || [],
-          total_count: apiResultData.total_count || 0,
-          repository: apiResultData.repository,
-          securityWarnings: apiResultData.securityWarnings,
-          minified: apiResultData.minified,
-          minificationFailed: apiResultData.minificationFailed,
-          minificationTypes: apiResultData.minificationTypes,
-          _researchContext: apiResultData._researchContext,
+      const apiCodeExtractor = (data: any) => {
+        // API results are already transformed
+        return {
+          items: data.items || [],
+          total_count: data.total_count || 0,
+          repository: data.repository,
+          securityWarnings: data.securityWarnings,
+          minified: data.minified,
+          minificationFailed: data.minificationFailed,
+          minificationTypes: data.minificationTypes,
+          _researchContext: data._researchContext,
         };
-      } else if (
-        apiResult &&
-        apiResult.status === 'fulfilled' &&
-        apiResult.value.isError
-      ) {
-        apiError = apiResult.value.content[0].text as string;
-      } else if (apiResult && apiResult.status === 'rejected') {
-        apiError = `API search failed: ${apiResult.reason}`;
-      }
+      };
+
+      // Use standardized dual result processing
+      const dualResult = await processDualResults(cliResult, apiResult, {
+        cliDataExtractor: cliCodeExtractor,
+        apiDataExtractor: apiCodeExtractor,
+        preferredSource: 'cli',
+      });
 
       results.push({
         queryId,
         originalQuery: query,
-        result: processedResult,
-        apiResult: processedApiResult,
-        error,
-        apiError,
+        result: dualResult.cli.data || { items: [], total_count: 0 },
+        apiResult: dualResult.api.data,
+        error: dualResult.cli.error,
+        apiError: dualResult.api.error,
       });
     } catch (error) {
       const errorMessage =

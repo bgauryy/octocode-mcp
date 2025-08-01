@@ -2,8 +2,6 @@ export interface ToolOptions {
   githubAPIType: 'gh' | 'octokit' | 'both';
   npmEnabled: boolean;
   ghToken?: string;
-  // Backward compatibility
-  apiType?: 'gh' | 'octokit' | 'both';
 }
 
 export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
