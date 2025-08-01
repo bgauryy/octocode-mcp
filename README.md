@@ -16,11 +16,10 @@
 ## 🌐 For More Details - [octocode.ai](https://octocode.ai)
 ## 📚 For Technical Details - [Technical Summary](./docs/summary.md)
 ## 🐳 For Docker Setup - [Docker Guide](./docker/README.Docker.md)
-## 💬 Join Our Community - [Discord](https://discord.gg/beTNk8at) - Follow this for useful updates and discussions
+## 💬 Discord Channel - [Discord](https://discord.gg/beTNk8at) - Updates and discussions
 
 **The perfect AI code assistant for understanding anything in any codebase.** Transform your AI assistant into an expert code researcher with instant access to millions of repositories and packages across GitHub and npm ecosystems.
-
-🧠 **Powered by Advanced Vibe Coding** - Discover code through natural language descriptions and intelligent context generation. Perfect for AI-assisted development workflows.
+ Discover code through natural language descriptions and intelligent context generation. Perfect for AI-assisted development workflows.
 
 **Ask natural questions and let AI guide discovery:**
 - *"How did React implement concurrent rendering?"*
@@ -64,6 +63,14 @@ Discover security patterns, vulnerabilities, and compliance issues across both p
 ### For Large Organizations
 Dramatically increase development velocity by enabling teams to instantly learn from existing codebases, understand cross-team implementations, and replicate proven patterns—transforming institutional knowledge into actionable development acceleration.
 
+## 🧠 For Beginners & Advanced Vibe Coders
+
+### For Beginners
+Take code from anywhere and understand it deeply. Learn from production codebases, discover proven patterns, and build confidence by seeing how experienced developers solve problems. Transform learning into doing with real-world examples.
+
+### For Advanced Vibe Coders
+Leverage quality context for superior code generation. Use comprehensive understanding from issues, PRs, and documentation to generate production-ready code that follows established patterns and handles real-world scenarios.
+
 ## 🚀 Key Benefits
 
 **🔄 Dual GitHub Integration** - Works with both GitHub CLI (`gh`) and API tokens (`GITHUB_TOKEN`) for maximum reliability and flexibility
@@ -82,18 +89,45 @@ Dramatically increase development velocity by enabling teams to instantly learn 
 
 ## Quick Start 🚀
 
-### 🎯 Choose Your Setup Method
+### 1️⃣ Local Setup (Developer Machine)
 
-Octocode MCP supports **two flexible authentication methods** - choose what works best for your setup:
+**Prerequisites**
+- **Node.js**: v20 or higher
+- **NPM (Optional)**: For npm package research support
+- **GitHub Authentication**: Token or GitHub CLI
 
-#### **Method 1: GitHub CLI (Recommended for Local Use)**
-Perfect for personal development and local AI assistants.
+#### Option A: Using GitHub Token (preferred)
+
+**1. Create GitHub Token**
+- Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+- Create a **Fine-grained personal access token** or **Classic token**
+- Required scopes: `repo` (for private repos), `public_repo`, `read:org`
+
+**2. Add to Claude Desktop**
+```bash
+# For Claude Desktop users
+claude mcp add octocode npx 'octocode-mcp@latest'
+```
+
+**Or Add to MCP Configuration Manually:**
+
+```json
+"octocode": {
+  "command": "npx",
+  "args": ["octocode-mcp"],
+  "env": {
+    "GITHUB_TOKEN": "ghp_YOUR_TOKEN"
+  }
+}
+```
+
+#### Option B: Using GitHub CLI
 
 **1. Install Prerequisites**
 
 **macOS/Linux:**
 ```bash
-# Install Node.js 18.12+
+# Install Node.js 20+
 brew install node
 
 # Install GitHub CLI
@@ -123,55 +157,15 @@ gh auth status
 npm login
 ```
 
-#### **Method 2: GitHub Token (Recommended for Hosted/Production)**
-Ideal for hosted deployments, Docker containers, or when GitHub CLI isn't available.
-
-**1. Create GitHub Token**
-- Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
-- Create a **Fine-grained personal access token** or **Classic token**
-- Required scopes: `repo` (for private repos), `public_repo`, `read:org`
-
-**2. Set Environment Variable**
-```bash
-# Set your GitHub token
-export GITHUB_TOKEN="your_token_here"
-# or
-export GH_TOKEN="your_token_here"
-
-# Optional: Set NPM token for package research
-export NPM_TOKEN="your_npm_token"
-```
-
-**3. Add to Claude Desktop**
-```bash
-# For Claude Desktop users
-claude mcp add octocode npx 'octocode-mcp@latest'
-```
-
-**Or Add to MCP Configuration Manually**
-
-**With GitHub Token:**
+**3. Update mcp.json (no token needed):**
 ```json
-{
-  "octocode-mcp": {
-    "command": "npx",
-    "args": ["octocode-mcp"],
-    "env": {
-      "GITHUB_TOKEN": "your_token_here"
-    }
-  }
+"octocode": {
+  "command": "npx",
+  "args": ["octocode-mcp"]
 }
 ```
 
-**With GitHub CLI (No Token Required):**
-```json
-{
-  "octocode": {
-    "command": "npx",
-    "args": ["octocode-mcp"]
-  }
-}
-```
+
 
 ### 🔄 How Dual Authentication Works
 
@@ -404,11 +398,6 @@ where.exe npm
 
 ## Security & Privacy 🛡️
 
-### Local-First Architecture
-- **🏠 100% Local** - Runs entirely on your machine
-- **🚫 Zero Data Collection** - No telemetry or data transmission
-- **🔑 Safe Authentication** - Uses GitHub CLI OAuth, no personal tokens needed
-
 ### Enterprise Security
 - **🛡️ Advanced Content Protection** - Multi-layer input validation and intelligent content sanitization
 - **🔐 Comprehensive Secret Detection** - Automatic detection and redaction of API keys, tokens, credentials, and sensitive patterns
@@ -417,12 +406,6 @@ where.exe npm
 - **🔍 Security Pattern Analysis** - Built-in tools for identifying security vulnerabilities and compliance issues
 
 > **📚 For comprehensive security architecture details, see [Technical Summary](./docs/summary.md)**
-
-## Background 💭
-
-This project started as a personal tool while working at Wix, born from the challenge of navigating large codebases and keeping up with rapidly evolving technology landscapes. What began as a side project evolved into **the perfect code assistant that can help understand anything**.
-
-The goal: **make code exploration as intelligent as having a senior developer guide you through any codebase.**
 
 ## License 📄
 
