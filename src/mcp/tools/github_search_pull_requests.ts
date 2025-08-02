@@ -18,8 +18,10 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME } from './utils/toolConstants';
+import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { searchGitHubPullRequestsAPI } from '../../utils/githubAPI';
+import { processDualResults, dataExtractors } from './utils/resultProcessor';
 
 // TODO: summerize body
 
@@ -27,9 +29,12 @@ const DESCRIPTION = `Search GitHub pull requests with comprehensive filtering an
 
 PERFORMANCE: getCommitData=true and withComments=true are token expensive`;
 
-export function registerSearchGitHubPullRequestsTool(server: McpServer) {
+export function registerSearchGitHubPullRequestsTool(
+  server: McpServer,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
+) {
   server.registerTool(
-    GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -293,7 +298,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           (!args.query?.trim() || args.query.length > 256)
         ) {
           const hints = generateSmartHints(
-            GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
             {
               hasResults: false,
               errorMessage:
@@ -317,7 +322,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         if (!args.query?.trim()) {
           if (!hasAnyFilters(args)) {
             const hints = generateSmartHints(
-              GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+              TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
               {
                 hasResults: false,
                 errorMessage: 'No search criteria provided',
@@ -338,22 +343,17 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         const validationWarnings = validateParameterCombinations(args);
         if (validationWarnings.length > 0) {
           // Log warnings but don't fail - let the user proceed with caveats
-          // eslint-disable-next-line no-console
-          console.warn(
-            'Parameter combination warnings:',
-            validationWarnings.join('; ')
-          );
+          // TODO: Use proper logging instead of console
         }
 
         try {
-          return await searchGitHubPullRequests(args);
+          return await searchPullRequestsWithDualSupport(args, opts);
         } catch (error) {
           const hints = generateSmartHints(
-            GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
             {
               hasResults: false,
               errorMessage: 'Search failed',
-              customHints: ['Check authentication', 'Verify repository access'],
             }
           );
           return createResult({
@@ -364,6 +364,118 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       }
     )
   );
+}
+
+/**
+ * Build custom hints based on search parameters for better LLM guidance
+ */
+function buildCustomHints(args: GitHubPullRequestsSearchParams): string[] {
+  const customHints: string[] = [];
+
+  // Add parameter-specific hints
+  if (args.state === 'closed') {
+    customHints.push('Try state:open or remove state filter');
+  }
+  if (args.author) {
+    customHints.push('Remove author filter for broader search');
+  }
+  if (args.label) {
+    customHints.push('Try broader labels or remove label filter');
+  }
+  if (args.owner && args.repo) {
+    customHints.push('Check repository name spelling');
+  }
+  if (args.created || args.updated) {
+    customHints.push('Expand date range or remove date filters');
+  }
+  if (args.draft !== undefined) {
+    customHints.push('Remove draft filter for broader search');
+  }
+
+  return customHints;
+}
+
+/**
+ * Search pull requests with dual CLI/API support using standardized result processing
+ */
+async function searchPullRequestsWithDualSupport(
+  args: GitHubPullRequestsSearchParams,
+  opts: ToolOptions
+): Promise<CallToolResult> {
+  // Execute searches based on apiType option
+  let cliResult: CallToolResult | null = null;
+  let apiResult: CallToolResult | null = null;
+
+  if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
+    // Execute CLI search
+    cliResult = await searchGitHubPullRequests(args);
+  }
+
+  if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
+    // Execute API search
+    apiResult = await searchGitHubPullRequestsAPI(args, opts.ghToken);
+  }
+
+  // Process both results using standardized processor
+  const dualResult = await processDualResults(cliResult, apiResult, {
+    cliDataExtractor: dataExtractors.resultsArray,
+    apiDataExtractor: dataExtractors.resultsArray,
+    preferredSource: 'cli',
+  });
+
+  // Handle case where no results were found
+  if (!dualResult.bestResult || !dualResult.bestResult.data) {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
+      hasResults: false,
+      totalItems: 0,
+      errorMessage: 'No pull requests found',
+      customHints: buildCustomHints(args),
+    });
+
+    return createResult({
+      error: createNoResultsError('pull_requests'),
+      hints,
+    });
+  }
+
+  const finalResult: GitHubPullRequestsSearchResult = {
+    results: dualResult.bestResult.data.results || [],
+    total_count:
+      dualResult.bestResult.data.total_count ||
+      dualResult.bestResult.data.results?.length ||
+      0,
+  };
+
+  // Generate smart hints for successful results
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
+    hasResults: true,
+    totalItems: finalResult.results.length,
+    customHints: buildCustomHints(args),
+  });
+
+  // Add source information and dual results if verbose
+  const responseData = {
+    ...finalResult,
+    resultSource: dualResult.resultSource,
+    dualResults:
+      opts.githubAPIType === 'both'
+        ? {
+            cli: {
+              pullRequests: dualResult.cli.data?.results?.length || 0,
+              error: dualResult.cli.error,
+            },
+            api: {
+              pullRequests: dualResult.api.data?.results?.length || 0,
+              error: dualResult.api.error,
+            },
+          }
+        : undefined,
+  };
+
+  return createResult({
+    data: responseData,
+    hints,
+  });
 }
 
 async function searchGitHubPullRequests(
@@ -401,7 +513,7 @@ async function searchGitHubPullRequests(
           if (repoCheckResult.isError) {
             // Repository doesn't exist
             const hints = generateSmartHints(
-              GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+              TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
               {
                 hasResults: false,
                 errorMessage: 'Repository not found',
@@ -437,7 +549,7 @@ async function searchGitHubPullRequests(
 
               if (branchSuggestion) {
                 const hints = generateSmartHints(
-                  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+                  TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
                   {
                     hasResults: false,
                     errorMessage: 'Branch not found',
@@ -465,7 +577,7 @@ async function searchGitHubPullRequests(
           errorMsg.includes('API rate limit')
         ) {
           const hints = generateSmartHints(
-            GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
             {
               hasResults: false,
               errorMessage: 'Rate limit exceeded',
@@ -525,7 +637,7 @@ async function searchGitHubPullRequests(
         customHints.push('Try --state open or --state closed');
       }
 
-      const hints = generateSmartHints(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME, {
+      const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
         hasResults: false,
         errorMessage: 'No pull requests found',
         customHints,
@@ -724,7 +836,7 @@ async function searchGitHubPullRequests(
     }
 
     // Generate smart hints for successful results
-    const hints = generateSmartHints(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
       hasResults: true,
       totalItems: filteredPRs.length,
       customHints: additionalContext

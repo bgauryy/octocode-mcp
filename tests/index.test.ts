@@ -6,7 +6,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/cache.js');
-vi.mock('../src/mcp/tools/api_status_check.js');
 vi.mock('../src/mcp/tools/github_search_code.js');
 vi.mock('../src/mcp/tools/github_fetch_content.js');
 vi.mock('../src/mcp/tools/github_search_repos.js');
@@ -15,33 +14,22 @@ vi.mock('../src/mcp/tools/github_search_pull_requests.js');
 vi.mock('../src/mcp/tools/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/github_search_issues.js');
-vi.mock('../src/mcp/tools/npm_view_package.js');
+vi.mock('../src/mcp/tools/utils/APIStatus.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
-import { registerApiStatusCheckTool } from '../src/mcp/tools/api_status_check.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
 import { registerGitHubSearchCommitsTool } from '../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
-import {
-  registerNpmSearchTool,
-  NPM_PACKAGE_SEARCH_TOOL_NAME,
-} from '../src/mcp/tools/package_search.js';
-import {
-  registerViewRepositoryStructureTool,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-} from '../src/mcp/tools/github_view_repo_structure.js';
+import { registerNpmSearchTool } from '../src/mcp/tools/package_search.js';
+import { registerViewRepositoryStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from '../src/mcp/tools/github_search_issues.js';
+import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import {
-  GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  API_STATUS_CHECK_TOOL_NAME,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
+  TOOL_NAMES,
+  ToolOptions,
 } from '../src/mcp/tools/utils/toolConstants.js';
 
 // Mock implementations
@@ -57,9 +45,9 @@ const mockTransport = {
 const mockClearAllCache = vi.mocked(clearAllCache);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
+const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 
 // Mock all tool registration functions
-const mockRegisterApiStatusCheckTool = vi.mocked(registerApiStatusCheckTool);
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
   registerGitHubSearchCodeTool
 );
@@ -89,13 +77,25 @@ describe('Index Module', () => {
   let processStdinOnSpy: any;
   let processStdoutUncorkSpy: any;
   let processStderrUncorkSpy: any;
+  let originalGithubToken: string | undefined;
+  let originalGhToken: string | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Store original environment variables
+    originalGithubToken = process.env.GITHUB_TOKEN;
+    originalGhToken = process.env.GH_TOKEN;
+
     // Setup default mock implementations
     mockMcpServerConstructor.mockImplementation(() => mockMcpServer as any);
     mockStdioServerTransport.mockImplementation(() => mockTransport as any);
+
+    // Mock NPM user details
+    mockGetNPMUserDetails.mockResolvedValue({
+      npmConnected: true,
+      registry: 'https://registry.npmjs.org/',
+    });
 
     // Create spies for process methods
     processExitSpy = vi
@@ -120,7 +120,6 @@ describe('Index Module', () => {
       .mockImplementation(() => {});
 
     // Mock all tool registration functions to succeed by default
-    mockRegisterApiStatusCheckTool.mockImplementation(() => {});
     mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
     mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {});
     mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
@@ -135,6 +134,18 @@ describe('Index Module', () => {
   });
 
   afterEach(() => {
+    // Restore original environment variables
+    if (originalGithubToken !== undefined) {
+      process.env.GITHUB_TOKEN = originalGithubToken;
+    } else {
+      delete process.env.GITHUB_TOKEN;
+    }
+    if (originalGhToken !== undefined) {
+      process.env.GH_TOKEN = originalGhToken;
+    } else {
+      delete process.env.GH_TOKEN;
+    }
+
     // Restore all spies
     processExitSpy?.mockRestore();
     processStdinResumeSpy?.mockRestore();
@@ -165,45 +176,148 @@ describe('Index Module', () => {
     });
   });
 
-  describe('Tool Registration', () => {
-    it('should register all tools successfully', async () => {
+  describe('NPM Status Check', () => {
+    it('should check NPM status during initialization', async () => {
       await import('../src/index.js');
 
-      // Verify all tool registration functions were called
-      expect(mockRegisterApiStatusCheckTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
+      expect(mockGetNPMUserDetails).toHaveBeenCalled();
+    });
+
+    it('should handle NPM status check failure gracefully', async () => {
+      mockGetNPMUserDetails.mockRejectedValue(new Error('NPM check failed'));
+
+      await import('../src/index.js');
+
+      // Should still continue with tool registration
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalled();
+    });
+
+    it('should pass correct tool options based on NPM status', async () => {
+      mockGetNPMUserDetails.mockResolvedValue({
+        npmConnected: false,
+        registry: 'https://registry.npmjs.org/',
+      });
+
+      await import('../src/index.js');
+
+      // Check that tools were called with options including npmEnabled: false
+      const expectedOptions: ToolOptions = {
+        githubAPIType: 'gh', // No token set, so should use 'gh'
+        npmEnabled: false,
+        ghToken: undefined,
+        // Backward compatibility
+      };
+
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
+      );
+    });
+  });
+
+  describe('GitHub API Type Detection', () => {
+    it('should use "gh" API type when no token is present', async () => {
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GH_TOKEN;
+
+      await import('../src/index.js');
+
+      const expectedOptions: ToolOptions = {
+        githubAPIType: 'gh',
+        npmEnabled: true,
+        ghToken: undefined,
+      };
+
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
+      );
+    });
+
+    it('should use "octokit" API type when GITHUB_TOKEN is present', async () => {
+      process.env.GITHUB_TOKEN = 'test-token';
+
+      await import('../src/index.js');
+
+      const expectedOptions: ToolOptions = {
+        githubAPIType: 'octokit',
+        npmEnabled: true,
+        ghToken: 'test-token',
+      };
+
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
+      );
+    });
+
+    it('should use "octokit" API type when GH_TOKEN is present', async () => {
+      process.env.GH_TOKEN = 'test-gh-token';
+
+      await import('../src/index.js');
+
+      const expectedOptions: ToolOptions = {
+        githubAPIType: 'octokit',
+        npmEnabled: true,
+        ghToken: 'test-gh-token',
+      };
+
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
+      );
+    });
+  });
+
+  describe('Tool Registration', () => {
+    it('should register all tools successfully with options', async () => {
+      await import('../src/index.js');
+
+      const expectedOptions: ToolOptions = {
+        githubAPIType: 'gh',
+        npmEnabled: true,
+        ghToken: undefined,
+      };
+
+      // Verify all tool registration functions were called with server and options
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
       );
       expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
       );
       expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
       );
       expect(mockRegisterGitHubSearchCommitsTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
       );
       expect(mockRegisterSearchGitHubPullRequestsTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
       );
-      expect(mockRegisterNpmSearchTool).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterNpmSearchTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
+      );
       expect(mockRegisterViewRepositoryStructureTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
       );
       expect(mockRegisterSearchGitHubIssuesTool).toHaveBeenCalledWith(
-        mockMcpServer
+        mockMcpServer,
+        expectedOptions
       );
     });
 
     it('should continue registering tools even if some fail', async () => {
       // Make some tool registrations fail
-      mockRegisterApiStatusCheckTool.mockImplementation(() => {
-        throw new Error('Tool registration failed');
-      });
       mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Another tool registration failed');
+        throw new Error('Tool registration failed');
       });
 
       // Should not throw and should continue with other tools
@@ -217,7 +331,6 @@ describe('Index Module', () => {
     it('should throw error if no tools are successfully registered', async () => {
       // Make all tool registrations fail
       const mockFunctions = [
-        mockRegisterApiStatusCheckTool,
         mockRegisterGitHubSearchCodeTool,
         mockRegisterFetchGitHubFileContentTool,
         mockRegisterSearchGitHubReposTool,
@@ -395,27 +508,23 @@ describe('Index Module', () => {
   describe('Tool Names Export Consistency', () => {
     it('should have consistent tool name exports', () => {
       // Verify all expected tool names are defined
-      expect(API_STATUS_CHECK_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_CODE_TOOL_NAME).toBeDefined();
-      expect(GITHUB_GET_FILE_CONTENT_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_COMMITS_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME).toBeDefined();
-      expect(NPM_PACKAGE_SEARCH_TOOL_NAME).toBeDefined();
-      expect(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_ISSUES_TOOL_NAME).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_COMMITS).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS).toBeDefined();
+      expect(TOOL_NAMES.PACKAGE_SEARCH).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_ISSUES).toBeDefined();
 
       // Verify they are all strings
       const toolNames = [
-        API_STATUS_CHECK_TOOL_NAME,
-        GITHUB_SEARCH_CODE_TOOL_NAME,
-        GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-        GITHUB_SEARCH_COMMITS_TOOL_NAME,
-        GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-        NPM_PACKAGE_SEARCH_TOOL_NAME,
-        GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-        GITHUB_SEARCH_ISSUES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        TOOL_NAMES.PACKAGE_SEARCH,
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        TOOL_NAMES.GITHUB_SEARCH_ISSUES,
       ];
 
       toolNames.forEach(name => {

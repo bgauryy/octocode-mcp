@@ -12,17 +12,23 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 import {
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  PACKAGE_SEARCH_TOOL_NAME,
+  TOOL_NAMES,
+  ToolOptions,
+  ResearchGoalEnum,
 } from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+import {
+  generateSmartHints,
+  getResearchGoalHints,
+} from './utils/toolRelationships';
+import { processDualResults, dataExtractors } from './utils/resultProcessor';
+import { searchGitHubReposAPI } from '../../utils/githubAPI';
 
 const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
 
 Search strategy:
   Use limit=1 on queries as a default (e.g. when searching specific repository)
   Use larget limit for exploratory search (e.g. when searching by topic, language, owner, or keyword)
-  If cannot find repository, consider using ${PACKAGE_SEARCH_TOOL_NAME} tool`;
+  If cannot find repository, consider using ${TOOL_NAMES.PACKAGE_SEARCH} tool`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
@@ -203,34 +209,69 @@ const GitHubReposSearchQuerySchema = z.object({
     .describe(
       'Maximum number of repositories to return (1-100). TOKEN OPTIMIZATION: Use 1 for specific repository searches, 10-20 for exploratory discovery. For multiple specific repositories, create separate queries with limit=1 each.'
     ),
+  researchGoal: z
+    .enum(ResearchGoalEnum)
+    .optional()
+    .describe('Research goal to guide tool behavior and hint generation'),
 });
 
 export type GitHubReposSearchQuery = z.infer<
   typeof GitHubReposSearchQuerySchema
 >;
 
+export interface GitHubReposSearchResult {
+  total_count: number;
+  repositories: Array<{
+    name: string;
+    stars: number;
+    description: string;
+    language: string;
+    url: string;
+    forks: number;
+    updatedAt: string;
+    owner: string;
+  }>;
+}
+
 export interface GitHubReposSearchQueryResult {
   queryId: string;
-  result: any;
+  result: GitHubReposSearchResult;
+  apiResult?: GitHubReposSearchResult;
   error?: string;
+  apiError?: string;
 }
 
 export interface GitHubReposResponse {
-  data: any[]; // Repository array
+  data: GitHubReposSearchResult['repositories'];
+  apiResults: Array<{
+    queryId: string;
+    data: GitHubReposSearchResult;
+    error?: string;
+  }>;
   hints: string[];
   metadata?: {
     queries: GitHubReposSearchQueryResult[];
     summary: {
       totalQueries: number;
-      successfulQueries: number;
+      cli: {
+        successfulQueries: number;
+        failedQueries: number;
+      };
+      api: {
+        successfulQueries: number;
+        failedQueries: number;
+      };
       totalRepositories: number;
     };
   };
 }
 
-export function registerSearchGitHubReposTool(server: McpServer) {
+export function registerSearchGitHubReposTool(
+  server: McpServer,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
+) {
   server.registerTool(
-    GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -265,7 +306,8 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         try {
           return await searchMultipleGitHubRepos(
             args.queries,
-            args.verbose ?? false
+            args.verbose ?? false,
+            opts
           );
         } catch (error) {
           const errorMessage =
@@ -309,11 +351,13 @@ function validateRepositoryQuery(
  * Processes a single query with proper error handling
  * @param query The query to process
  * @param queryId The query identifier
+ * @param opts Tool options for API type configuration
  * @returns Promise resolving to query result
  */
 async function processSingleQuery(
   query: GitHubReposSearchQuery,
-  queryId: string
+  queryId: string,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<GitHubReposSearchQueryResult> {
   try {
     // Validate query
@@ -333,37 +377,37 @@ async function processSingleQuery(
       )
     ) as GitHubReposSearchParams;
 
-    // Execute query
-    const result = await searchGitHubRepos(enhancedQuery);
+    // Execute searches based on apiType option
+    let cliResult: PromiseSettledResult<CallToolResult> | null = null;
+    let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-    if (!result.isError) {
-      // Success with original query
-      const execResult = JSON.parse(result.content[0].text as string);
-
-      // Check for empty results
-      if (
-        execResult.total_count === 0 ||
-        (execResult.result && execResult.result.length === 0)
-      ) {
-        return {
-          queryId,
-          result: { total_count: 0, repositories: [] },
-          error: 'No repositories found',
-        };
-      }
-
-      // Return successful result
-      return {
-        queryId,
-        result: execResult,
-      };
+    if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
+      // Execute CLI search
+      cliResult = await Promise.allSettled([
+        searchGitHubRepos(enhancedQuery),
+      ]).then(results => results[0]);
     }
 
-    // Query failed
+    if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
+      // Execute API search
+      apiResult = await Promise.allSettled([
+        searchGitHubReposAPI(enhancedQuery, opts.ghToken),
+      ]).then(results => results[0]);
+    }
+
+    // Use standardized dual result processing
+    const dualResult = await processDualResults(cliResult, apiResult, {
+      cliDataExtractor: dataExtractors.repositories,
+      apiDataExtractor: dataExtractors.repositories,
+      preferredSource: 'cli',
+    });
+
     return {
       queryId,
-      result: { total_count: 0, repositories: [] },
-      error: 'Query failed',
+      result: dualResult.cli.data || { total_count: 0, repositories: [] },
+      apiResult: dualResult.api.data,
+      error: dualResult.cli.error,
+      apiError: dualResult.api.error,
     };
   } catch (error) {
     // Handle any unexpected errors
@@ -378,7 +422,8 @@ async function processSingleQuery(
 
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<CallToolResult> {
   const results: GitHubReposSearchQueryResult[] = [];
 
@@ -387,45 +432,100 @@ async function searchMultipleGitHubRepos(
     const query = queries[index];
     const queryId = query.id || `query_${index + 1}`;
 
-    const result = await processSingleQuery(query, queryId);
+    const result = await processSingleQuery(query, queryId, opts);
     results.push(result);
   }
 
-  // Collect all repositories from successful queries
-  const allRepositories: any[] = [];
+  // Collect all repositories from successful queries (both CLI and API)
+  const allRepositories: GitHubReposSearchResult['repositories'] = [];
   results.forEach(result => {
+    // Add CLI results
     if (!result.error && result.result.repositories) {
       allRepositories.push(...result.result.repositories);
+    }
+    // Add API results
+    if (!result.apiError && result.apiResult?.repositories) {
+      allRepositories.push(...result.apiResult.repositories);
     }
   });
 
   // Generate hints using centralized system
-  const errorMessages = results.filter(r => r.error).map(r => r.error!);
+  const errorMessages = results
+    .filter(r => r.error || r.apiError)
+    .map(r => r.error || r.apiError!);
   const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
-  const hints = generateSmartHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
     hasResults: allRepositories.length > 0,
     totalItems: allRepositories.length,
     errorMessage,
   });
 
+  // Add research goal hints if we have successful results
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  if (researchGoal && allRepositories.length > 0) {
+    const goalHints = getResearchGoalHints(
+      TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      researchGoal
+    );
+    hints.push(...goalHints);
+  }
+
   // Calculate summary statistics
   const totalQueries = results.length;
   const successfulQueries = results.filter(r => !r.error).length;
+  const successfulApiQueries = results.filter(
+    r => !r.apiError && r.apiResult
+  ).length;
   const totalRepositories = allRepositories.length;
 
-  const responseData: any = {
+  // Extract API results for separate section
+  const apiResults = results.map(result => ({
+    queryId: result.queryId,
+    data: result.apiResult || { total_count: 0, repositories: [] },
+    error: result.apiError,
+  }));
+
+  let responseData:
+    | {
+        data: typeof allRepositories;
+        apiResults: typeof apiResults;
+        hints: string[];
+      }
+    | {
+        data: typeof allRepositories;
+        apiResults: typeof apiResults;
+        hints: string[];
+        metadata: object;
+      } = {
     data: allRepositories,
+    apiResults,
     hints,
   };
 
   // Add metadata only if verbose mode is enabled
   if (verbose) {
-    responseData.metadata = {
-      queries: results,
-      summary: {
-        totalQueries,
-        successfulQueries,
-        totalRepositories,
+    const failedQueries = results.filter(r => r.error).length;
+    const failedApiQueries = results.filter(r => r.apiError).length;
+
+    responseData = {
+      data: allRepositories,
+      apiResults,
+      hints,
+      metadata: {
+        queries: results,
+        summary: {
+          totalQueries,
+          cli: {
+            successfulQueries,
+            failedQueries,
+          },
+          api: {
+            successfulQueries: successfulApiQueries,
+            failedQueries: failedApiQueries,
+          },
+          totalRepositories,
+        },
       },
     };
   }

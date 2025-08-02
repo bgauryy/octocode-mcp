@@ -20,8 +20,10 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { GITHUB_SEARCH_ISSUES_TOOL_NAME } from './utils/toolConstants';
+import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
+import { searchGitHubIssuesAPI } from '../../utils/githubAPI';
+import { processDualResults, dataExtractors } from './utils/resultProcessor';
 
 const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
 
@@ -32,9 +34,12 @@ USAGE:
 
 PHILOSOPHY: Get quality data from relevant sources`;
 
-export function registerSearchGitHubIssuesTool(server: McpServer) {
+export function registerSearchGitHubIssuesTool(
+  server: McpServer,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
+) {
   server.registerTool(
-    GITHUB_SEARCH_ISSUES_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_ISSUES,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -241,7 +246,7 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
         }
 
         try {
-          return await searchGitHubIssues(args);
+          return await searchIssuesWithDualSupport(args, opts);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '';
           if (errorMessage.includes('authentication')) {
@@ -264,6 +269,111 @@ export function registerSearchGitHubIssuesTool(server: McpServer) {
       }
     )
   );
+}
+
+/**
+ * Build custom hints based on search parameters for better LLM guidance
+ */
+function buildCustomHints(args: GitHubIssuesSearchParams): string[] {
+  const customHints: string[] = [];
+
+  // Add parameter-specific hints
+  if (args.state === 'closed') {
+    customHints.push('Try state:open or remove state filter');
+  }
+  if (args.author) {
+    customHints.push('Remove author filter for broader search');
+  }
+  if (args.label) {
+    customHints.push('Try broader labels or remove label filter');
+  }
+  if (args.owner && args.repo) {
+    customHints.push('Check repository name spelling');
+  }
+  if (args.created || args.updated) {
+    customHints.push('Expand date range or remove date filters');
+  }
+
+  return customHints;
+}
+
+/**
+ * Search issues with dual CLI/API support using standardized result processing
+ */
+async function searchIssuesWithDualSupport(
+  args: GitHubIssuesSearchParams,
+  opts: ToolOptions
+): Promise<CallToolResult> {
+  // Execute searches based on apiType option
+  let cliResult: CallToolResult | null = null;
+  let apiResult: CallToolResult | null = null;
+
+  if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
+    // Execute CLI search
+    cliResult = await searchGitHubIssues(args);
+  }
+
+  if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
+    // Execute API search
+    apiResult = await searchGitHubIssuesAPI(args, opts.ghToken);
+  }
+
+  // Process both results using standardized processor
+  const dualResult = await processDualResults(cliResult, apiResult, {
+    cliDataExtractor: dataExtractors.resultsArray,
+    apiDataExtractor: dataExtractors.resultsArray,
+    preferredSource: 'cli',
+  });
+
+  // Handle case where no results were found
+  if (!dualResult.bestResult || !dualResult.bestResult.data) {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
+      hasResults: false,
+      totalItems: 0,
+      errorMessage: `No issues found for query: "${args.query}"`,
+      customHints: buildCustomHints(args),
+    });
+
+    return createResult({
+      error: `No issues found for query: "${args.query}"`,
+      hints,
+    });
+  }
+
+  const finalResult: GitHubIssuesSearchResult = {
+    results: dualResult.bestResult.data.results || [],
+  };
+
+  // Generate smart hints for successful results
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
+    hasResults: true,
+    totalItems: finalResult.results.length,
+    customHints: buildCustomHints(args),
+  });
+
+  // Add source information and dual results if verbose
+  const responseData = {
+    ...finalResult,
+    hints,
+    resultSource: dualResult.resultSource,
+    dualResults:
+      opts.githubAPIType === 'both'
+        ? {
+            cli: {
+              issues: dualResult.cli.data?.results?.length || 0,
+              error: dualResult.cli.error,
+            },
+            api: {
+              issues: dualResult.api.data?.results?.length || 0,
+              error: dualResult.api.error,
+            },
+          }
+        : undefined,
+  };
+
+  return createResult({
+    data: responseData,
+  });
 }
 
 async function searchGitHubIssues(
@@ -457,7 +567,7 @@ async function searchGitHubIssues(
         customHints.push('Expand date range or remove date filters');
       }
 
-      const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+      const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
         hasResults: false,
         totalItems: 0,
         customHints,

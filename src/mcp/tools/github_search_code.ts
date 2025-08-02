@@ -15,10 +15,19 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { minifyContentV2 } from '../../utils/minifier';
 import {
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  TOOL_NAMES,
+  ToolOptions,
+  ResearchGoalEnum,
 } from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+import {
+  generateSmartHints,
+  getResearchGoalHints,
+} from './utils/toolRelationships';
+import { processDualResults } from './utils/resultProcessor';
+import {
+  searchGitHubCodeAPI,
+  GitHubCodeSearchQuery as APIGitHubCodeSearchQuery,
+} from '../../utils/githubAPI';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -27,7 +36,7 @@ SEMANTIC: Natural language terms describing functionality, concepts, business lo
 TECHNICAL: Actual code terms, function names, class names, file patterns
 
 Use bulk queries from different angles. Start narrow, broaden if needed.
-Workflow: Search → Use ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with matchString for context.
+Workflow: Search → Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
 
 Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
@@ -106,6 +115,10 @@ const GitHubCodeSearchQuerySchema = z.object({
     .optional()
     .default(true)
     .describe('Remove secrets and malicious content (default: true)'),
+  researchGoal: z
+    .enum(ResearchGoalEnum)
+    .optional()
+    .describe('Research goal to guide tool behavior and hint generation'),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -114,12 +127,27 @@ export interface GitHubCodeSearchQueryResult {
   queryId: string;
   originalQuery: GitHubCodeSearchQuery;
   result: OptimizedCodeSearchResult;
+  apiResult?: OptimizedCodeSearchResult;
   error?: string;
+  apiError?: string;
 }
 
-export function registerGitHubSearchCodeTool(server: McpServer) {
+export interface ProcessedCodeSearchResult {
+  queryId: string;
+  repository: string;
+  path: string;
+  matches: string[];
+  repositoryInfo: {
+    nameWithOwner: string;
+  };
+}
+
+export function registerGitHubSearchCodeTool(
+  server: McpServer,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
+) {
   server.registerTool(
-    GITHUB_SEARCH_CODE_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -154,7 +182,8 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         try {
           return await searchMultipleGitHubCode(
             args.queries,
-            args.verbose ?? false
+            args.verbose ?? false,
+            opts
           );
         } catch (error) {
           const errorMessage =
@@ -320,10 +349,11 @@ async function transformToOptimizedFormat(
  */
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<CallToolResult> {
   // Execute all queries and collect results
-  const queryResults = await executeQueriesAndCollectResults(queries);
+  const queryResults = await executeQueriesAndCollectResults(queries, opts);
 
   // Process successful results and extract research context
   const { processedResults, aggregatedContext } =
@@ -331,6 +361,16 @@ async function searchMultipleGitHubCode(
 
   // Generate all hints in one place
   const hints = generateAllHints(queryResults, aggregatedContext);
+
+  // Add research goal hints if we have successful results
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  if (researchGoal && processedResults.length > 0) {
+    const goalHints = getResearchGoalHints(
+      TOOL_NAMES.GITHUB_SEARCH_CODE,
+      researchGoal
+    );
+    hints.push(...goalHints);
+  }
 
   // Create final response
   return createFinalResponse(processedResults, hints, queryResults, verbose);
@@ -340,7 +380,8 @@ async function searchMultipleGitHubCode(
  * Execute all queries and collect raw results with error handling
  */
 async function executeQueriesAndCollectResults(
-  queries: GitHubCodeSearchQuery[]
+  queries: GitHubCodeSearchQuery[],
+  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ): Promise<GitHubCodeSearchQueryResult[]> {
   const results: GitHubCodeSearchQueryResult[] = [];
 
@@ -360,31 +401,80 @@ async function executeQueriesAndCollectResults(
     }
 
     try {
-      const result = await searchGitHubCode(query);
+      // Execute searches based on apiType option
+      let cliResult: PromiseSettledResult<CallToolResult> | null = null;
+      let apiResult: PromiseSettledResult<CallToolResult> | null = null;
 
-      if (result.isError) {
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: { items: [], total_count: 0 },
-          error: result.content[0].text as string,
-        });
-      } else {
-        const execResult = JSON.parse(result.content[0].text as string);
-        const codeResults: GitHubCodeSearchItem[] = execResult.result;
+      if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
+        // Execute CLI search
+        cliResult = await Promise.allSettled([searchGitHubCode(query)]).then(
+          results => results[0]
+        );
+      }
+
+      if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
+        // Convert query to API format
+        const apiQuery: APIGitHubCodeSearchQuery = {
+          id: query.id,
+          queryTerms: query.queryTerms,
+          language: query.language,
+          owner: query.owner,
+          repo: query.repo,
+          filename: query.filename,
+          extension: query.extension,
+          match: query.match,
+          size: query.size,
+          limit: query.limit,
+          visibility: query.visibility,
+          minify: query.minify,
+          sanitize: query.sanitize,
+        };
+
+        // Execute API search
+        apiResult = await Promise.allSettled([
+          searchGitHubCodeAPI(apiQuery, opts.ghToken),
+        ]).then(results => results[0]);
+      }
+
+      // Create custom data extractors for this query
+      const cliCodeExtractor = async (data: any) => {
+        const codeResults: GitHubCodeSearchItem[] = data.result || data;
         const items = Array.isArray(codeResults) ? codeResults : [];
-        const optimizedResult = await transformToOptimizedFormat(
+        return await transformToOptimizedFormat(
           items,
           query.minify !== false,
           query.sanitize !== false
         );
+      };
 
-        results.push({
-          queryId,
-          originalQuery: query,
-          result: optimizedResult,
-        });
-      }
+      const apiCodeExtractor = (data: any) => {
+        // API results are already transformed
+        return {
+          items: data.items || [],
+          total_count: data.total_count || 0,
+          repository: data.repository,
+          securityWarnings: data.securityWarnings,
+          minified: data.minified,
+          minificationFailed: data.minificationFailed,
+          minificationTypes: data.minificationTypes,
+          _researchContext: data._researchContext,
+        };
+      };
+
+      // Use standardized dual result processing
+      const dualResult = await processDualResults(cliResult, apiResult, {
+        cliDataExtractor: cliCodeExtractor,
+        apiDataExtractor: apiCodeExtractor,
+        preferredSource: 'cli',
+      });
+
+      results.push({
+        queryId,
+        originalQuery: query,
+        result: dualResult.cli.data || { items: [], total_count: 0 },
+        error: dualResult.cli.error,
+        apiError: dualResult.api.error,
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -406,7 +496,7 @@ async function executeQueriesAndCollectResults(
 async function processQueryResults(
   queryResults: GitHubCodeSearchQueryResult[]
 ) {
-  const processedResults: any[] = [];
+  const processedResults: ProcessedCodeSearchResult[] = [];
   const aggregatedContext = {
     foundPackages: new Set<string>(),
     foundFiles: new Set<string>(),
@@ -414,6 +504,7 @@ async function processQueryResults(
   };
 
   queryResults.forEach(result => {
+    // Process CLI results
     if (!result.error && result.result.items) {
       // Collect research context from results
       if (result.result._researchContext) {
@@ -444,6 +535,38 @@ async function processQueryResults(
         });
       });
     }
+
+    // Process API results
+    if (!result.apiError && result.apiResult?.items) {
+      // Collect research context from API results
+      if (result.apiResult._researchContext) {
+        result.apiResult._researchContext.foundPackages?.forEach(pkg =>
+          aggregatedContext.foundPackages.add(pkg)
+        );
+        result.apiResult._researchContext.foundFiles?.forEach(file =>
+          aggregatedContext.foundFiles.add(file)
+        );
+        if (result.apiResult._researchContext.repositoryContext) {
+          const { owner, repo } =
+            result.apiResult._researchContext.repositoryContext;
+          aggregatedContext.repositoryContexts.add(`${owner}/${repo}`);
+        }
+      }
+
+      // Convert API results to flattened format for response
+      result.apiResult.items.forEach(item => {
+        const matches = item.matches.map(match => match.context);
+        processedResults.push({
+          queryId: `${result.queryId}-api`,
+          repository: item.repository.nameWithOwner,
+          path: item.path,
+          matches: matches,
+          repositoryInfo: {
+            nameWithOwner: item.repository.nameWithOwner,
+          },
+        });
+      });
+    }
   });
 
   return { processedResults, aggregatedContext };
@@ -461,16 +584,21 @@ function generateAllHints(
   }
 ): string[] {
   const totalItems = queryResults.reduce(
-    (sum, r) => sum + (r.error ? 0 : r.result.items.length),
+    (sum, r) =>
+      sum +
+      (r.error ? 0 : r.result.items.length) +
+      (r.apiError ? 0 : r.apiResult?.items.length || 0),
     0
   );
 
   const hasResults = totalItems > 0;
-  const errorMessages = queryResults.filter(r => r.error).map(r => r.error!);
+  const errorMessages = queryResults
+    .filter(r => r.error || r.apiError)
+    .map(r => r.error || r.apiError!);
   const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
 
   // Use the centralized smart hints system from toolRelationships
-  return generateSmartHints(GITHUB_SEARCH_CODE_TOOL_NAME, {
+  return generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_CODE, {
     hasResults,
     totalItems,
     errorMessage,
@@ -489,30 +617,62 @@ function generateAllHints(
  * Create the final response with consistent structure
  */
 function createFinalResponse(
-  processedResults: any[],
+  processedResults: ProcessedCodeSearchResult[],
   hints: string[],
   queryResults: GitHubCodeSearchQueryResult[],
   verbose: boolean
 ): CallToolResult {
+  // Extract API results for separate section
+  const apiResults = queryResults.map(result => ({
+    queryId: result.queryId,
+    data: result.apiResult || { items: [], total_count: 0 },
+    error: result.apiError,
+  }));
+
   let data:
-    | typeof processedResults
-    | { data: typeof processedResults; metadata: object } = processedResults;
+    | { data: typeof processedResults; apiResults: typeof apiResults }
+    | {
+        data: typeof processedResults;
+        apiResults: typeof apiResults;
+        metadata: object;
+      } = {
+    data: processedResults,
+    apiResults,
+  };
 
   // Add metadata only if verbose mode is enabled
   if (verbose) {
     const successfulQueries = queryResults.filter(r => !r.error).length;
     const failedQueries = queryResults.filter(r => r.error).length;
+    const successfulApiQueries = queryResults.filter(
+      r => !r.apiError && r.apiResult
+    ).length;
+    const failedApiQueries = queryResults.filter(r => r.apiError).length;
     const totalQueries = queryResults.length;
 
     data = {
       data: processedResults,
+      apiResults,
       metadata: {
         queries: queryResults,
         summary: {
           totalQueries,
           successfulQueries,
           failedQueries,
-          totalCodeItems: processedResults.length,
+          cli: {
+            successfulQueries,
+            failedQueries,
+            totalCodeItems: processedResults.filter(
+              r => !r.queryId.endsWith('-api')
+            ).length,
+          },
+          api: {
+            successfulQueries: successfulApiQueries,
+            failedQueries: failedApiQueries,
+            totalCodeItems: processedResults.filter(r =>
+              r.queryId.endsWith('-api')
+            ).length,
+          },
         },
       },
     };
@@ -527,9 +687,6 @@ function createFinalResponse(
 function formatSearchError(errorMessage: string): string {
   if (errorMessage.includes('rate limit') || errorMessage.includes('403')) {
     return 'Rate limit reached. Wait 5-10 minutes. Use 2-3 focused queries with core technical + semantic terms.';
-  }
-  if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
-    return "Authentication required: Run 'gh auth login' then retry search";
   }
   if (errorMessage.includes('timed out') || errorMessage.includes('network')) {
     return 'Network timeout: Check connection, reduce query limit to 10-15, use simpler terms';

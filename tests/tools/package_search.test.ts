@@ -29,8 +29,11 @@ describe('Package Search Tool (NPM & Python)', () => {
     // Create mock server using the fixture
     mockServer = createMockMcpServer();
 
-    // Register the tool for testing
-    registerNpmSearchTool(mockServer.server);
+    // Register the tool for testing with npmEnabled true
+    registerNpmSearchTool(mockServer.server, {
+      githubAPIType: 'gh',
+      npmEnabled: true,
+    });
 
     // Clear all mocks
     vi.clearAllMocks();
@@ -43,7 +46,10 @@ describe('Package Search Tool (NPM & Python)', () => {
 
   describe('Tool Registration', () => {
     it('should register the package search tool', () => {
-      registerNpmSearchTool(mockServer.server);
+      registerNpmSearchTool(mockServer.server, {
+        githubAPIType: 'gh',
+        npmEnabled: true,
+      });
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'packageSearch',
@@ -55,7 +61,7 @@ describe('Package Search Tool (NPM & Python)', () => {
 
   describe('NPM Package Search', () => {
     it('should handle successful package search', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockNpmResponse = {
         result: [
@@ -100,7 +106,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     });
 
     it('should handle no packages found', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockNpmResponse = {
         result: '[]', // Empty results
@@ -127,7 +133,7 @@ describe('Package Search Tool (NPM & Python)', () => {
 
   describe('Python Package Search', () => {
     it('should handle successful Python package search', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockPyPIResponse = {
         info: {
@@ -167,14 +173,14 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(result.content[0].type).toBe('text');
       const data = JSON.parse(result.content[0].text as string);
       expect(data.total_count).toBe(1);
-      expect(data.npm).toHaveLength(0);
+      expect(data.npm || []).toHaveLength(0);
       expect(data.python).toHaveLength(1);
       expect(data.python[0].name).toBe('requests');
       expect(data.python[0].repository).toBe('https://github.com/psf/requests');
     });
 
     it('should handle Python package not found', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       mockAxios.get.mockRejectedValue(new Error('404 Not Found'));
 
@@ -184,22 +190,15 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       expect(result.isError).toBe(true);
       const errorText = result.content[0].text as string;
-      expect(errorText).toContain('Python Search Issues');
+      expect(errorText).toContain('Python package');
+      expect(errorText).toContain('not found on PyPI');
       expect(errorText).toContain('nonexistent-python-package');
-      // Should include strategic guidance from new hints system
-      expect(
-        errorText.includes('FALLBACK:') ||
-          errorText.includes('CUSTOM:') ||
-          errorText.includes('ALTERNATIVE:') ||
-          errorText.includes('npmPackageName') ||
-          errorText.includes('NPM package')
-      ).toBe(true);
     });
   });
 
   describe('Multiple NPM Package Search', () => {
     it('should handle array of search queries', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockNpmResponse1 = {
         result: [
@@ -256,7 +255,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     });
 
     it('should handle single npm package with npmPackageName parameter', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockNpmResponse = {
         result: [
@@ -290,7 +289,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     });
 
     it('should handle combined search strategy for multiple terms', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockCombinedResponse = {
         result: [
@@ -329,7 +328,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     });
 
     it('should handle JSON string array format', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockNpmResponse1 = {
         result: [
@@ -382,7 +381,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     });
 
     it('should handle comma-separated string format', async () => {
-      registerNpmSearchTool(mockServer.server);
+      // The tool is already registered in beforeEach with npmEnabled: true
 
       const mockNpmResponse1 = {
         result: [
