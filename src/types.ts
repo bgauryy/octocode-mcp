@@ -3,6 +3,10 @@ export type BaseSearchParams = {
   owner?: string | string[]; // Support both single and multiple owners
   repo?: string;
   limit?: number;
+  // Add pagination control parameters
+  exhaustive?: boolean; // Enable exhaustive pagination to get ALL results
+  maxPages?: number; // Maximum pages to fetch (safety limit)
+  pageSize?: number; // Items per page (default: 100, max: 100)
 };
 
 export type OrderSort = {
@@ -52,90 +56,113 @@ export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
 export interface GitHubCommitSearchParams
   extends Omit<BaseSearchParams, 'query'>,
     OrderSort {
-  exactQuery?: string;
-  queryTerms?: string[];
-  orTerms?: string[];
-  query?: string; // Deprecated - use exactQuery or queryTerms instead
-  author?: string;
-  committer?: string;
-  'author-date'?: string;
-  'committer-date'?: string;
-  'author-email'?: string;
-  'author-name'?: string;
-  'committer-email'?: string;
-  'committer-name'?: string;
-  merge?: boolean;
-  hash?: string;
-  parent?: string;
-  tree?: string;
+  // Query types - use one of these
+  exactQuery?: string; // Exact phrase/word to search for
+  queryTerms?: string[]; // Array of search terms (AND logic)
+  orTerms?: string[]; // Array of search terms (OR logic)
+
+  // Repository filters
+  owner?: string; // Repository owner
+  repo?: string; // Repository name
+
+  // Author filters
+  author?: string; // GitHub username
+  'author-name'?: string; // Full name of author
+  'author-email'?: string; // Email address of author
+
+  // Committer filters
+  committer?: string; // GitHub username
+  'committer-name'?: string; // Full name of committer
+  'committer-email'?: string; // Email address of committer
+
+  // Date filters
+  'author-date'?: string; // When authored
+  'committer-date'?: string; // When committed
+
+  // Hash filters
+  hash?: string; // Commit SHA (full or partial)
+  parent?: string; // Parent commit SHA
+  tree?: string; // Tree SHA
+
+  // Merge filter
+  merge?: boolean; // Only merge commits (true) or exclude them (false)
+
+  // Visibility filter
   visibility?: 'public' | 'private' | 'internal';
-  sort?: 'author-date' | 'committer-date' | 'best-match';
-  getChangesContent?: boolean; // Fetch actual code changes/diffs when analyzing changes (repo-specific searches only)
+
+  // EXPENSIVE OPTIONS - Custom functionality
+  getChangesContent?: boolean; // Fetch diff/patch content for each commit. WARNING: EXTREMELY expensive in tokens.
+
+  // PAGINATION CONTROL - Custom functionality
+  exhaustive?: boolean; // Enable exhaustive pagination to get ALL results
+  maxPages?: number; // Maximum pages to fetch (safety limit)
+  pageSize?: number; // Items per page (default: 100, max: 100)
 }
 
 export interface GitHubPullRequestsSearchParams {
   // CORE SEARCH - Query is optional, you can search with filters only
-  query?: string; // Search query for PR content (optional - you can search using filters only). Examples: "fix bug", "update dependencies", "security patch"
+  query?: string;
 
   // REPOSITORY FILTERS - Direct CLI flag mappings
-  owner?: string | string[]; // Repository owner(s) - single owner or array for multi-owner search (--owner)
-  repo?: string | string[]; // Repository name(s) - single repo or array for multi-repo search (--repo)
-  language?: string; // Programming language filter (--language)
-  archived?: boolean; // Filter by repository archived state (--archived)
+  owner?: string | string[]; // Repository owner/organization name(s) (--owner)
+  repo?: string | string[]; // Repository name(s) (--repo)
+
+  // STATE FILTERS - Direct CLI flag mappings
+  state?: 'open' | 'closed'; // Pull request state (--state)
+  draft?: boolean; // Include draft pull requests (--draft)
+  merged?: boolean; // Include merged pull requests (--merged)
+  locked?: boolean; // Include locked pull requests (--locked)
+
+  // USER INVOLVEMENT FILTERS - Direct CLI flag mappings
+  author?: string; // Pull request author (--author)
+  assignee?: string; // Pull request assignee (--assignee)
+  mentions?: string; // User mentioned in pull request (--mentions)
+  commenter?: string; // User who commented on pull request (--commenter)
+  involves?: string; // User involved in pull request (--involves)
+  'reviewed-by'?: string; // User who reviewed the pull request (--reviewed-by)
+  'review-requested'?: string; // User requested for review (--review-requested)
+
+  // BRANCH FILTERS - Direct CLI flag mappings
+  head?: string; // Head branch name (--head)
+  base?: string; // Base branch name (--base)
+
+  // DATE FILTERS - Direct CLI flag mappings
+  created?: string; // Creation date filter (--created)
+  updated?: string; // Last updated date filter (--updated)
+  'merged-at'?: string; // Merge date filter (--merged)
+  closed?: string; // Close date filter (--closed)
+
+  // ENGAGEMENT FILTERS - Direct CLI flag mappings
+  comments?: number | string; // Number of comments filter (--comments)
+  reactions?: number | string; // Number of reactions filter (--reactions)
+  interactions?: number | string; // Number of interactions filter (--interactions)
+
+  // REVIEW & CI FILTERS - Direct CLI flag mappings
+  review?: 'none' | 'required' | 'approved' | 'changes_requested'; // Review status (--review)
+  checks?: 'pending' | 'success' | 'failure'; // CI/CD check status (--checks)
+
+  // LABEL & ORGANIZATION FILTERS - Direct CLI flag mappings
+  label?: string | string[]; // Label names (--label)
+  milestone?: string; // Milestone name (--milestone)
+  project?: string; // Project board number (--project)
+  'team-mentions'?: string; // Team mentioned (@org/team-name) (--team-mentions)
+
+  // BOOLEAN "MISSING" FILTERS - Direct CLI flag mappings
+  'no-assignee'?: boolean; // Pull requests without assignee (--no-assignee)
+  'no-label'?: boolean; // Pull requests without labels (--no-label)
+  'no-milestone'?: boolean; // Pull requests without milestone (--no-milestone)
+  'no-project'?: boolean; // Pull requests not in projects (--no-project)
+
+  // ADDITIONAL FILTERS - Direct CLI flag mappings
+  language?: string; // Repository language filter (--language)
   visibility?:
     | 'public'
     | 'private'
     | 'internal'
-    | ('public' | 'private' | 'internal')[]; // Repository visibility - single value or array (--visibility)
+    | ('public' | 'private' | 'internal')[]; // Repository visibility (--visibility)
+  app?: string; // GitHub App that created the pull request (--app)
+  archived?: boolean; // Include archived repositories (--archived)
 
-  // USER INVOLVEMENT FILTERS - Direct CLI flag mappings
-  author?: string; // GitHub username of PR author (--author)
-  assignee?: string; // GitHub username of assignee (--assignee)
-  mentions?: string; // PRs mentioning this user (--mentions)
-  commenter?: string; // User who commented on PR (--commenter)
-  involves?: string; // User involved in any way (--involves)
-  'reviewed-by'?: string; // User who reviewed the PR (--reviewed-by)
-  'review-requested'?: string; // User/team requested for review (--review-requested)
-
-  // BASIC STATE FILTERS - Direct CLI flag mappings
-  state?: 'open' | 'closed'; // Filter by state: open or closed (--state)
-  draft?: boolean; // Filter by draft state (--draft)
-  merged?: boolean; // Filter by merged state (--merged)
-  locked?: boolean; // Filter by locked conversation status (--locked)
-
-  // BRANCH FILTERS - Direct CLI flag mappings
-  head?: string; // Filter on head branch name (--head)
-  base?: string; // Filter on base branch name (--base)
-
-  // DATE FILTERS - Direct CLI flag mappings with operator support
-  created?: string; // Filter by created date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--created)
-  updated?: string; // Filter by updated date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--updated)
-  'merged-at'?: string; // Filter by merged date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--merged-at)
-  closed?: string; // Filter by closed date, supports operators: ">2020-01-01", "2020-01-01..2023-12-31" (--closed)
-
-  // ENGAGEMENT FILTERS - Direct CLI flag mappings with operator support
-  comments?: number | string; // Filter by number of comments, supports operators: ">10", ">=5", "<5", "5..10" (--comments)
-  reactions?: number | string; // Filter by number of reactions, supports operators: ">10", ">=5", "<50", "5..50" (--reactions)
-  interactions?: number | string; // Total interactions (reactions + comments), supports operators: ">100", ">=50", "<20", "50..200" (--interactions)
-
-  // REVIEW & CI FILTERS - Direct CLI flag mappings
-  review?: 'none' | 'required' | 'approved' | 'changes_requested'; // Filter by review status (--review)
-  checks?: 'pending' | 'success' | 'failure'; // Filter by checks status (--checks)
-
-  // ORGANIZATION FILTERS - Direct CLI flag mappings
-  app?: string; // Filter by GitHub App author (--app)
-  'team-mentions'?: string; // Filter by team mentions (--team-mentions)
-  label?: string | string[]; // Filter by label, supports multiple labels (--label)
-  milestone?: string; // Milestone title (--milestone)
-  project?: string; // Project board owner/number (--project)
-
-  // BOOLEAN "MISSING" FILTERS - Direct CLI flag mappings
-  'no-assignee'?: boolean; // Filter by missing assignee (--no-assignee)
-  'no-label'?: boolean; // Filter by missing label (--no-label)
-  'no-milestone'?: boolean; // Filter by missing milestone (--no-milestone)
-  'no-project'?: boolean; // Filter by missing project (--no-project)
-
-  // SEARCH SCOPE - Direct CLI flag mappings
   match?: ('title' | 'body' | 'comments')[]; // Restrict search to specific fields (--match)
 
   // RESULT CONTROL - Direct CLI flag mappings
@@ -157,6 +184,11 @@ export interface GitHubPullRequestsSearchParams {
   // EXPENSIVE OPTIONS - Custom functionality
   getCommitData?: boolean; // Set to true to fetch all commits in the PR with their changes. Shows commit messages, authors, and file changes. WARNING: EXTREMELY expensive in tokens - fetches diff/patch content for each commit.
   withComments?: boolean; // Include full comment content in search results. WARNING: EXTREMELY expensive in tokens and should be used with caution. Recommended to not use unless specifically needed.
+
+  // PAGINATION CONTROL - Custom functionality
+  exhaustive?: boolean; // Enable exhaustive pagination to get ALL results
+  maxPages?: number; // Maximum pages to fetch (safety limit)
+  pageSize?: number; // Items per page (default: 100, max: 100)
 }
 
 export interface GitHubReposSearchParams
@@ -189,9 +221,22 @@ export interface GitHubReposSearchParams
   followers?: string | number; // Support both string ranges and numbers
   size?: string; // Format: ">100", "<50", "10..100"
 
+  // ADDITIONAL ENHANCED PARAMETERS
+  pushed?: string; // Last push date filter - Format: ">2020-01-01", "2020-01-01..2023-12-31"
+  template?: boolean; // Filter for template repositories
+  mirror?: boolean; // Filter for mirror repositories
+  sponsor?: boolean; // Filter for repositories that can be sponsored
+  'has-issues'?: boolean; // Filter repositories with issues enabled
+  'has-projects'?: boolean; // Filter repositories with projects enabled
+  'has-wiki'?: boolean; // Filter repositories with wiki enabled
+  'has-pages'?: boolean; // Filter repositories with GitHub Pages enabled
+  'has-downloads'?: boolean; // Filter repositories with downloads enabled
+  'has-discussions'?: boolean; // Filter repositories with discussions enabled
+
   // SORTING AND LIMITS
   limit?: number;
   sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
+  page?: number; // For pagination support
 }
 
 export interface GithubFetchRequestParams {
@@ -291,6 +336,14 @@ export interface GitHubPullRequestItem {
 export interface GitHubPullRequestsSearchResult {
   results: GitHubPullRequestItem[];
   total_count: number;
+  // Add pagination metadata
+  pagination?: {
+    exhaustive: boolean;
+    pages_fetched: number;
+    total_pages_estimated?: number;
+    has_more: boolean;
+    rate_limit_hit?: boolean;
+  };
 }
 
 export interface FileMetadata {
@@ -309,33 +362,6 @@ export interface FileMetadata {
     | 'other';
   language?: string;
   description?: string;
-}
-
-export interface GitHubRepositoryStructureParams {
-  owner: string;
-  repo: string;
-  branch: string;
-  path?: string;
-  depth?: number;
-  includeIgnored?: boolean; // If true, show all files/folders including normally ignored ones
-  showMedia?: boolean; // If true, show media files (images, videos, audio). Default: false
-  researchGoal?: string; // Research goal to guide tool behavior and hint generation
-}
-
-export interface GitHubRepositoryContentsResult {
-  path: string;
-  baseUrl: string;
-  files: Array<{
-    name: string;
-    size: number;
-    url: string;
-  }>;
-  folders: string[];
-  branchFallback?: {
-    requested: string;
-    used: string;
-    message: string;
-  };
 }
 
 export interface GitHubFileContentResponse {
@@ -379,24 +405,6 @@ export interface NpmPackage {
   };
 }
 
-// GitHub API response types
-export interface GitHubApiFileItem {
-  name: string;
-  path: string;
-  sha: string;
-  size: number;
-  type: 'file' | 'dir';
-  url: string;
-  html_url: string;
-  git_url: string;
-  download_url: string | null;
-  _links: {
-    self: string;
-    git: string;
-    html: string;
-  };
-}
-
 // Simplified repository contents result - token efficient
 export interface SimplifiedRepositoryContents {
   repository: string;
@@ -420,32 +428,6 @@ export interface SimplifiedRepositoryContents {
   };
 }
 
-// Optimized GitHub Search Code Types
-export interface GitHubCodeSearchMatch {
-  text: string;
-  indices: [number, number];
-}
-
-export interface GitHubCodeTextMatch {
-  fragment: string;
-  matches: GitHubCodeSearchMatch[];
-}
-
-export interface GitHubCodeSearchItem {
-  path: string;
-  repository: {
-    id: string;
-    nameWithOwner: string;
-    url: string;
-    isFork: boolean;
-    isPrivate: boolean;
-  };
-  sha: string;
-  textMatches: GitHubCodeTextMatch[];
-  url: string;
-}
-
-// Optimized response structure for code search
 export interface OptimizedCodeSearchResult {
   items: Array<{
     path: string;
@@ -469,6 +451,14 @@ export interface OptimizedCodeSearchResult {
   minified?: boolean;
   minificationFailed?: boolean;
   minificationTypes?: string[];
+  // Pagination metadata
+  pagination?: {
+    exhaustive: boolean; // Whether all results were fetched
+    pages_fetched: number; // Number of pages actually fetched
+    total_pages_estimated?: number; // Estimated total pages (if available)
+    has_more: boolean; // Whether more results are available
+    rate_limit_hit?: boolean; // Whether rate limit was encountered
+  };
   // Research context for smart hints and deeper research flows
   _researchContext?: {
     foundPackages: string[];
@@ -552,6 +542,14 @@ export interface OptimizedCommitSearchResult {
     name: string;
     description?: string;
   };
+  // Add pagination metadata
+  pagination?: {
+    exhaustive: boolean;
+    pages_fetched: number;
+    total_pages_estimated?: number;
+    has_more: boolean;
+    rate_limit_hit?: boolean;
+  };
 }
 
 // NPM Package Types - Optimized
@@ -584,37 +582,56 @@ export type CallToolResult = {
 };
 
 export interface GitHubIssuesSearchParams {
-  query: string;
-  owner?: string;
-  repo?: string;
-  app?: string;
-  archived?: boolean;
-  author?: string;
-  assignee?: string;
-  mentions?: string;
-  commenter?: string;
-  comments?: string | number;
-  involves?: string;
-  'include-prs'?: boolean;
-  interactions?: string | number;
-  state?: 'open' | 'closed';
-  label?: string | string[];
-  milestone?: string;
-  project?: string;
-  language?: string;
-  locked?: boolean;
-  match?: 'title' | 'body' | 'comments';
-  'no-assignee'?: boolean;
-  'no-label'?: boolean;
-  'no-milestone'?: boolean;
-  'no-project'?: boolean;
-  reactions?: string | number;
-  'team-mentions'?: string;
-  visibility?: 'public' | 'private' | 'internal';
-  created?: string;
-  updated?: string;
-  closed?: string;
-  limit?: number;
+  // CORE SEARCH
+  query: string; // Search query for issue content
+
+  // REPOSITORY FILTERS
+  owner?: string; // Repository owner/organization name
+  repo?: string; // Repository name
+
+  // STATE FILTERS
+  state?: 'open' | 'closed'; // Issue state
+  locked?: boolean; // Conversation locked status
+
+  // USER INVOLVEMENT FILTERS
+  author?: string; // Issue author
+  assignee?: string; // Issue assignee
+  mentions?: string; // User mentioned in issue
+  commenter?: string; // User who commented on issue
+  involves?: string; // User involved in any way
+
+  // DATE FILTERS
+  created?: string; // Creation date filter
+  updated?: string; // Last updated date filter
+  closed?: string; // Close date filter
+
+  // ENGAGEMENT FILTERS
+  comments?: number | string; // Number of comments filter
+  reactions?: number | string; // Number of reactions filter
+  interactions?: number | string; // Total interactions filter
+
+  // LABEL & ORGANIZATION FILTERS
+  label?: string | string[]; // Label names
+  milestone?: string; // Milestone name
+  'team-mentions'?: string; // Team mentioned (@org/team-name)
+
+  // BOOLEAN "MISSING" FILTERS
+  'no-assignee'?: boolean; // Issues without assignee
+  'no-label'?: boolean; // Issues without labels
+  'no-milestone'?: boolean; // Issues without milestone
+  'no-project'?: boolean; // Issues not in projects
+
+  // ADDITIONAL FILTERS
+  language?: string; // Repository language filter
+  visibility?: 'public' | 'private' | 'internal'; // Repository visibility
+  app?: string; // GitHub App that created the issue
+  archived?: boolean; // Include archived repositories
+
+  // SEARCH SCOPE
+  match?: 'title' | 'body' | 'comments'; // Restrict search to specific fields
+
+  // RESULT CONTROL
+  limit?: number; // Maximum number of results to fetch
   sort?:
     | 'comments'
     | 'created'
@@ -627,8 +644,16 @@ export interface GitHubIssuesSearchParams {
     | 'reactions-tada'
     | 'reactions-thinking_face'
     | 'updated'
-    | 'best-match';
-  order?: 'asc' | 'desc';
+    | 'best-match'; // Sort results
+  order?: 'asc' | 'desc'; // Order of results
+
+  // OPTIONS
+  'include-prs'?: boolean; // Include pull requests in results
+
+  // PAGINATION CONTROL - Custom functionality
+  exhaustive?: boolean; // Enable exhaustive pagination to get ALL results
+  maxPages?: number; // Maximum pages to fetch (safety limit)
+  pageSize?: number; // Items per page (default: 100, max: 100)
 }
 
 export interface GitHubIssueItem {
@@ -680,6 +705,14 @@ export interface GitHubIssueItem {
 
 export interface GitHubIssuesSearchResult {
   results: GitHubIssueItem[];
+  // Add pagination metadata
+  pagination?: {
+    exhaustive: boolean;
+    pages_fetched: number;
+    total_pages_estimated?: number;
+    has_more: boolean;
+    rate_limit_hit?: boolean;
+  };
 }
 
 // Basic issue data structure before fetching full details
@@ -713,42 +746,6 @@ export interface BasicGitHubIssue {
   created_at: string;
   updated_at: string;
   _sanitization_warnings?: string[]; // Optional sanitization warnings
-}
-
-// Bulk GitHub Code Search Types
-export interface GitHubCodeSearchQuery {
-  id?: string; // Optional identifier for the query
-  exactQuery?: string;
-  queryTerms?: string[];
-  owner?: string | string[];
-  repo?: string | string[];
-  language?: string;
-  filename?: string;
-  extension?: string;
-  path?: string;
-  match?: 'file' | 'path';
-  size?: string;
-  limit?: number;
-  visibility?: 'public' | 'private' | 'internal';
-  fallbackParams?: Partial<GitHubCodeSearchQuery>; // Fallback parameters if no results
-}
-
-export interface GitHubBulkCodeSearchParams {
-  queries: GitHubCodeSearchQuery[]; // Up to 5 queries
-}
-
-export interface GitHubBulkCodeSearchResult {
-  results: Array<{
-    queryId?: string;
-    originalQuery: GitHubCodeSearchQuery;
-    result: OptimizedCodeSearchResult;
-    fallbackTriggered: boolean;
-    fallbackQuery?: GitHubCodeSearchQuery;
-    error?: string;
-  }>;
-  totalQueries: number;
-  successfulQueries: number;
-  queriesWithFallback: number;
 }
 
 // Enhanced Package Search Types - Merged npm_view_package functionality

@@ -14,10 +14,22 @@ import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues
 import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
 import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
+import { getGithubCLIToken } from './utils/exec.js';
 
-// Check for GitHub token and set API type accordingly
-const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-const GITHUB_API_TYPE: ToolOptions['githubAPIType'] = token ? 'octokit' : 'gh';
+async function getToken(): Promise<string> {
+  const token =
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    (await getGithubCLIToken());
+
+  if (!token) {
+    throw new Error(
+      'No GitHub token found. Please set GITHUB_TOKEN or GH_TOKEN environment variable or authenticate with GitHub CLI'
+    );
+  }
+
+  return token;
+}
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode-mcp',
@@ -26,6 +38,9 @@ const SERVER_CONFIG: Implementation = {
 };
 
 async function registerAllTools(server: McpServer) {
+  // Get the token first
+  const token = await getToken();
+
   // Check NPM availability during initialization
   let npmEnabled = false;
   try {
@@ -38,7 +53,6 @@ async function registerAllTools(server: McpServer) {
 
   // Unified options for all tools
   const toolOptions: ToolOptions = {
-    githubAPIType: GITHUB_API_TYPE,
     npmEnabled,
     ghToken: token,
   };

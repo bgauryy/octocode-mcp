@@ -117,7 +117,6 @@ interface ToolPattern {
 // Tool registration flow
 async function registerAllTools(server: McpServer) {
   const toolOptions: ToolOptions = {
-    githubAPIType: GITHUB_API_TYPE,
     npmEnabled: npmEnabled,
     ghToken: token,
     apiType: GITHUB_API_TYPE, // Backward compatibility

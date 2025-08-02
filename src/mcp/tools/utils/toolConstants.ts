@@ -1,5 +1,4 @@
 export interface ToolOptions {
-  githubAPIType: 'gh' | 'octokit' | 'both';
   npmEnabled: boolean;
   ghToken?: string;
 }

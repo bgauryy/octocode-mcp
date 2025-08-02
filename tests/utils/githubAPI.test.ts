@@ -276,6 +276,8 @@ describe('GitHub API Utils', () => {
         language: 'typescript',
         owner: 'facebook',
         repo: 'react',
+        minify: true,
+        sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);
@@ -295,7 +297,10 @@ describe('GitHub API Utils', () => {
     });
 
     it('should handle empty search query', async () => {
-      const params = {};
+      const params = {
+        minify: true,
+        sanitize: true,
+      };
 
       await searchGitHubCodeAPI(params);
 
@@ -319,15 +324,24 @@ describe('GitHub API Utils', () => {
 
       mockOctokit.rest.search.code.mockRejectedValue(rateLimitError);
 
-      const params = { queryTerms: ['test'] };
+      const params = {
+        queryTerms: ['test'],
+        minify: true,
+        sanitize: true,
+      };
       await searchGitHubCodeAPI(params);
 
       expect(mockCreateResult).toHaveBeenCalledWith({
         isError: true,
         hints: expect.arrayContaining([
-          expect.stringContaining('GitHub API rate limit exceeded'),
-          'Set GITHUB_TOKEN environment variable for higher rate limits (5000/hour vs 60/hour).',
+          'GitHub API rate limit exceeded',
+          'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
         ]),
+        data: expect.objectContaining({
+          error: 'GitHub API rate limit exceeded',
+          status: 403,
+          type: 'http',
+        }),
       });
     });
 
@@ -339,15 +353,24 @@ describe('GitHub API Utils', () => {
 
       mockOctokit.rest.search.code.mockRejectedValue(authError);
 
-      const params = { queryTerms: ['test'] };
+      const params = {
+        queryTerms: ['test'],
+        minify: true,
+        sanitize: true,
+      };
       await searchGitHubCodeAPI(params);
 
       expect(mockCreateResult).toHaveBeenCalledWith({
         isError: true,
         hints: [
-          'GitHub authentication required for code search.',
-          'Set GITHUB_TOKEN or GH_TOKEN environment variable.',
+          'GitHub authentication required',
+          'Set GITHUB_TOKEN or GH_TOKEN environment variable',
         ],
+        data: expect.objectContaining({
+          error: 'GitHub authentication required',
+          status: 401,
+          type: 'http',
+        }),
       });
     });
 
@@ -359,15 +382,25 @@ describe('GitHub API Utils', () => {
 
       mockOctokit.rest.search.code.mockRejectedValue(validationError);
 
-      const params = { queryTerms: ['test'] };
+      const params = {
+        queryTerms: ['test'],
+        minify: true,
+        sanitize: true,
+      };
       await searchGitHubCodeAPI(params);
 
       expect(mockCreateResult).toHaveBeenCalledWith({
         isError: true,
         hints: [
-          'Search query validation failed. Check search terms and filters.',
+          'Invalid search query or request parameters',
+          'Check search syntax and parameter values',
           'Ensure search query follows GitHub search syntax.',
         ],
+        data: expect.objectContaining({
+          error: 'Invalid search query or request parameters',
+          status: 422,
+          type: 'http',
+        }),
       });
     });
 
@@ -386,12 +419,211 @@ describe('GitHub API Utils', () => {
         path: 'src',
         size: '>1000',
         match: ['file'] as ('file' | 'path')[],
+        minify: true,
+        sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
         q: 'function export language:javascript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 in:file',
+        per_page: 30,
+        page: 1,
+      });
+    });
+
+    it('should handle user vs org distinction', async () => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, items: [] },
+      });
+
+      // Test user qualifier
+      const userParams = {
+        queryTerms: ['function'],
+        user: 'octocat',
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(userParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function user:octocat',
+        per_page: 30,
+        page: 1,
+      });
+
+      // Test org qualifier
+      const orgParams = {
+        queryTerms: ['function'],
+        org: 'github',
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(orgParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function org:github',
+        per_page: 30,
+        page: 1,
+      });
+
+      // Test both user and org
+      const bothParams = {
+        queryTerms: ['function'],
+        user: 'octocat',
+        org: 'github',
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(bothParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function user:octocat org:github',
+        per_page: 30,
+        page: 1,
+      });
+    });
+
+    it('should handle fork qualifier', async () => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, items: [] },
+      });
+
+      // Test fork:true
+      const forkTrueParams = {
+        queryTerms: ['function'],
+        fork: 'true' as const,
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(forkTrueParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function fork:true',
+        per_page: 30,
+        page: 1,
+      });
+
+      // Test fork:false
+      const forkFalseParams = {
+        queryTerms: ['function'],
+        fork: 'false' as const,
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(forkFalseParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function fork:false',
+        per_page: 30,
+        page: 1,
+      });
+
+      // Test fork:only
+      const forkOnlyParams = {
+        queryTerms: ['function'],
+        fork: 'only' as const,
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(forkOnlyParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function fork:only',
+        per_page: 30,
+        page: 1,
+      });
+    });
+
+    it('should handle archived qualifier', async () => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, items: [] },
+      });
+
+      // Test archived:true
+      const archivedTrueParams = {
+        queryTerms: ['function'],
+        archived: true,
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(archivedTrueParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function archived:true',
+        per_page: 30,
+        page: 1,
+      });
+
+      // Test archived:false
+      const archivedFalseParams = {
+        queryTerms: ['function'],
+        archived: false,
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(archivedFalseParams);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function archived:false',
+        per_page: 30,
+        page: 1,
+      });
+    });
+
+    it('should prioritize owner+repo over user/org qualifiers', async () => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, items: [] },
+      });
+
+      // When both owner+repo and user/org are provided, owner+repo should take precedence
+      const params = {
+        queryTerms: ['function'],
+        owner: 'facebook',
+        repo: 'react',
+        user: 'octocat',
+        org: 'github',
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(params);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function repo:facebook/react',
+        per_page: 30,
+        page: 1,
+      });
+    });
+
+    it('should handle all new qualifiers together', async () => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, items: [] },
+      });
+
+      const params = {
+        queryTerms: ['function'],
+        user: 'octocat',
+        org: 'github',
+        fork: 'true' as const,
+        archived: false,
+        language: 'javascript',
+        minify: true,
+        sanitize: true,
+      };
+
+      await searchGitHubCodeAPI(params);
+
+      expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
+        q: 'function language:javascript user:octocat org:github fork:true archived:false',
         per_page: 30,
         page: 1,
       });
@@ -532,9 +764,14 @@ describe('GitHub API Utils', () => {
         expect(mockCreateResult).toHaveBeenCalledWith({
           isError: true,
           hints: expect.arrayContaining([
-            expect.stringContaining('GitHub API rate limit exceeded'),
-            'Set GITHUB_TOKEN environment variable for higher rate limits.',
+            'GitHub API rate limit exceeded',
+            'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
           ]),
+          data: expect.objectContaining({
+            error: 'GitHub API rate limit exceeded',
+            status: 403,
+            type: 'http',
+          }),
         });
       });
 
@@ -847,9 +1084,14 @@ describe('GitHub API Utils', () => {
           expect(mockCreateResult).toHaveBeenCalledWith({
             isError: true,
             hints: [
-              'File, repository, or branch not found.',
+              'Repository, resource, or path not found',
               'Verify the file path, repository name, and branch exist.',
             ],
+            data: expect.objectContaining({
+              error: 'Repository, resource, or path not found',
+              status: 404,
+              type: 'http',
+            }),
           });
         });
 
@@ -1411,6 +1653,7 @@ describe('GitHub API Utils', () => {
                 sort: 'committer-date',
                 order: 'desc',
                 per_page: 25,
+                page: 1,
               });
 
               expect(mockCreateResult).toHaveBeenCalledWith({
@@ -1576,6 +1819,7 @@ describe('GitHub API Utils', () => {
                 sort: 'author-date',
                 order: 'asc',
                 per_page: 25,
+                page: 1,
               });
             });
           });

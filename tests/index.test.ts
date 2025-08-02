@@ -202,7 +202,6 @@ describe('Index Module', () => {
 
       // Check that tools were called with options including npmEnabled: false
       const expectedOptions: ToolOptions = {
-        githubAPIType: 'gh', // No token set, so should use 'gh'
         npmEnabled: false,
         ghToken: undefined,
         // Backward compatibility
@@ -223,7 +222,6 @@ describe('Index Module', () => {
       await import('../src/index.js');
 
       const expectedOptions: ToolOptions = {
-        githubAPIType: 'gh',
         npmEnabled: true,
         ghToken: undefined,
       };
@@ -240,7 +238,6 @@ describe('Index Module', () => {
       await import('../src/index.js');
 
       const expectedOptions: ToolOptions = {
-        githubAPIType: 'octokit',
         npmEnabled: true,
         ghToken: 'test-token',
       };
@@ -257,7 +254,6 @@ describe('Index Module', () => {
       await import('../src/index.js');
 
       const expectedOptions: ToolOptions = {
-        githubAPIType: 'octokit',
         npmEnabled: true,
         ghToken: 'test-gh-token',
       };
@@ -274,7 +270,6 @@ describe('Index Module', () => {
       await import('../src/index.js');
 
       const expectedOptions: ToolOptions = {
-        githubAPIType: 'gh',
         npmEnabled: true,
         ghToken: undefined,
       };

@@ -31,7 +31,6 @@ describe('Package Search Tool (NPM & Python)', () => {
 
     // Register the tool for testing with npmEnabled true
     registerNpmSearchTool(mockServer.server, {
-      githubAPIType: 'gh',
       npmEnabled: true,
     });
 
@@ -47,7 +46,6 @@ describe('Package Search Tool (NPM & Python)', () => {
   describe('Tool Registration', () => {
     it('should register the package search tool', () => {
       registerNpmSearchTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: true,
       });
 

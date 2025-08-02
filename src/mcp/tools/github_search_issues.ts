@@ -1,42 +1,45 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
-import {
-  GitHubIssuesSearchParams,
-  GitHubIssuesSearchResult,
-  GitHubIssueItem,
-  BasicGitHubIssue,
-} from '../../types';
-import { createResult, toDDMMYYYY } from '../responses';
-import { generateCacheKey, withCache } from '../../utils/cache';
+import { GitHubIssuesSearchParams } from '../../types';
+import { createResult } from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { executeGitHubCommand, GhCommand } from '../../utils/exec';
-import {
-  ERROR_MESSAGES,
-  SUGGESTIONS,
-  createAuthenticationError,
-  createRateLimitError,
-  createSearchFailedError,
-} from '../errorMessages';
+import { createSearchFailedError } from '../errorMessages';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
-import { ContentSanitizer } from '../../security/contentSanitizer';
 import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubIssuesAPI } from '../../utils/githubAPI';
-import { processDualResults, dataExtractors } from './utils/resultProcessor';
 
-const DESCRIPTION = `PURPOSE: Search GitHub issues for bugs, features, and discussions.
+const DESCRIPTION = `Search GitHub issues using the GitHub API with comprehensive filtering and analysis.
 
-USAGE:
- Find bug reports and feature requests
- Track issue discussions
- Analyze project problems
+PERFORMANCE: match=body and match=comments are EXTREMELY expensive in tokens as they include full issue content and all comments.
 
-PHILOSOPHY: Get quality data from relevant sources`;
+INTEGRATION WORKFLOW:
+- Repository-specific searches return commit SHAs (head_sha, base_sha) for direct use with github fetch content (branch=SHA)
+- Use issue/PR numbers with github_fetch_content to view specific content
+- Perfect for analyzing bug reports and feature requests
+
+SEARCH STRATEGY FOR BEST RESULTS:
+
+EXACT vs TERMS (Choose ONE):
+- query: Use for exact phrase matching or minimal words for broader coverage
+
+TERM OPTIMIZATION:
+- BEST: Single terms for maximum coverage
+- GOOD: 2-3 minimal terms 
+- AVOID: Long phrases
+
+MULTI-SEARCH STRATEGY:
+- Use separate searches for different aspects
+- Separate searches provide broader coverage than complex queries
+
+Filter Usage:
+- Use filters to narrow scope: state, labels, author, repository
+- Combine filters strategically: owner + repo for repository-specific searches
+- Never use filters on exploratory searches - use to refine results`;
 
 export function registerSearchGitHubIssuesTool(
   server: McpServer,
-  opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
+  opts: ToolOptions = { npmEnabled: false }
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_ISSUES,
@@ -50,10 +53,10 @@ export function registerSearchGitHubIssuesTool(
             'Search terms. Start simple: "error", "crash". Use quotes for exact phrases.'
           ),
         owner: z
-          .union([z.string(), z.array(z.string())])
+          .string()
           .optional()
           .describe(
-            'Repository owner/organization name(s) (e.g., "facebook", ["microsoft", "google"]). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
+            'Repository owner/organization name only (e.g., "facebook", "microsoft"). Do NOT include repository name. Must be used with repo parameter for repository-specific searches.'
           ),
         repo: z
           .string()
@@ -234,363 +237,50 @@ export function registerSearchGitHubIssuesTool(
     withSecurityValidation(
       async (args: GitHubIssuesSearchParams): Promise<CallToolResult> => {
         if (!args.query?.trim()) {
+          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: 'Search query is required',
+            customHints: ['Provide keywords like "bug", "error", "feature"'],
+          });
+
           return createResult({
-            error: `${ERROR_MESSAGES.QUERY_REQUIRED} ${SUGGESTIONS.PROVIDE_KEYWORDS}`,
+            isError: true,
+            error: 'Search query is required and cannot be empty',
+            hints,
           });
         }
 
         if (args.query.length > 256) {
           return createResult({
-            error: ERROR_MESSAGES.QUERY_TOO_LONG,
+            isError: true,
+            error: 'Query too long. Please use a shorter search query.',
           });
         }
 
         try {
-          return await searchIssuesWithDualSupport(args, opts);
+          return await searchGitHubIssuesAPI(args, opts.ghToken);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '';
-          if (errorMessage.includes('authentication')) {
-            return createResult({
-              error: createAuthenticationError(),
-            });
-          }
 
-          if (errorMessage.includes('rate limit')) {
-            return createResult({
-              error: createRateLimitError(false),
-            });
-          }
+          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: `Issue search failed: ${errorMessage}`,
+            customHints: [
+              'Check if repository exists and is accessible',
+              'Verify search parameters are valid',
+              'Try simpler search terms',
+            ],
+          });
 
-          // Generic fallback
           return createResult({
+            isError: true,
             error: createSearchFailedError('issues'),
+            hints,
           });
         }
       }
     )
   );
-}
-
-/**
- * Build custom hints based on search parameters for better LLM guidance
- */
-function buildCustomHints(args: GitHubIssuesSearchParams): string[] {
-  const customHints: string[] = [];
-
-  // Add parameter-specific hints
-  if (args.state === 'closed') {
-    customHints.push('Try state:open or remove state filter');
-  }
-  if (args.author) {
-    customHints.push('Remove author filter for broader search');
-  }
-  if (args.label) {
-    customHints.push('Try broader labels or remove label filter');
-  }
-  if (args.owner && args.repo) {
-    customHints.push('Check repository name spelling');
-  }
-  if (args.created || args.updated) {
-    customHints.push('Expand date range or remove date filters');
-  }
-
-  return customHints;
-}
-
-/**
- * Search issues with dual CLI/API support using standardized result processing
- */
-async function searchIssuesWithDualSupport(
-  args: GitHubIssuesSearchParams,
-  opts: ToolOptions
-): Promise<CallToolResult> {
-  // Execute searches based on apiType option
-  let cliResult: CallToolResult | null = null;
-  let apiResult: CallToolResult | null = null;
-
-  if (opts.githubAPIType === 'gh' || opts.githubAPIType === 'both') {
-    // Execute CLI search
-    cliResult = await searchGitHubIssues(args);
-  }
-
-  if (opts.githubAPIType === 'octokit' || opts.githubAPIType === 'both') {
-    // Execute API search
-    apiResult = await searchGitHubIssuesAPI(args, opts.ghToken);
-  }
-
-  // Process both results using standardized processor
-  const dualResult = await processDualResults(cliResult, apiResult, {
-    cliDataExtractor: dataExtractors.resultsArray,
-    apiDataExtractor: dataExtractors.resultsArray,
-    preferredSource: 'cli',
-  });
-
-  // Handle case where no results were found
-  if (!dualResult.bestResult || !dualResult.bestResult.data) {
-    const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
-      hasResults: false,
-      totalItems: 0,
-      errorMessage: `No issues found for query: "${args.query}"`,
-      customHints: buildCustomHints(args),
-    });
-
-    return createResult({
-      error: `No issues found for query: "${args.query}"`,
-      hints,
-    });
-  }
-
-  const finalResult: GitHubIssuesSearchResult = {
-    results: dualResult.bestResult.data.results || [],
-  };
-
-  // Generate smart hints for successful results
-  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
-    hasResults: true,
-    totalItems: finalResult.results.length,
-    customHints: buildCustomHints(args),
-  });
-
-  // Add source information and dual results if verbose
-  const responseData = {
-    ...finalResult,
-    hints,
-    resultSource: dualResult.resultSource,
-    dualResults:
-      opts.githubAPIType === 'both'
-        ? {
-            cli: {
-              issues: dualResult.cli.data?.results?.length || 0,
-              error: dualResult.cli.error,
-            },
-            api: {
-              issues: dualResult.api.data?.results?.length || 0,
-              error: dualResult.api.error,
-            },
-          }
-        : undefined,
-  };
-
-  return createResult({
-    data: responseData,
-  });
-}
-
-async function searchGitHubIssues(
-  params: GitHubIssuesSearchParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-issues', params);
-
-  return withCache(cacheKey, async () => {
-    const { command, args } = buildGitHubIssuesAPICommand(params);
-    const result = await executeGitHubCommand(command, args, { cache: false });
-
-    if (result.isError) {
-      return result;
-    }
-
-    const execResult = JSON.parse(result.content[0].text as string);
-    const apiResponse = execResult.result;
-    const issues = Array.isArray(apiResponse)
-      ? apiResponse
-      : apiResponse.items || [];
-
-    // First map basic issue data
-    const basicIssues: BasicGitHubIssue[] = issues.map((issue: any) => {
-      // Handle direct JSON format from gh CLI
-      const repoName =
-        issue.repository?.nameWithOwner ||
-        issue.repository?.full_name ||
-        'unknown';
-      const repo = repoName.includes('/') ? repoName.split('/')[1] : repoName;
-
-      // Sanitize issue title
-      const titleSanitized = ContentSanitizer.sanitizeContent(
-        issue.title || ''
-      );
-
-      const basicIssue: BasicGitHubIssue = {
-        number: issue.number,
-        title: titleSanitized.content,
-        state: issue.state,
-        author:
-          typeof issue.author === 'string'
-            ? { login: issue.author }
-            : {
-                login: issue.author?.login || '',
-                id: issue.author?.id,
-                url: issue.author?.url,
-                type: issue.author?.type,
-                is_bot: issue.author?.is_bot,
-              },
-        repository: {
-          name: repo,
-          nameWithOwner: repoName,
-        },
-        labels:
-          issue.labels?.map((l: any) =>
-            typeof l === 'string'
-              ? { name: l }
-              : {
-                  name: l.name,
-                  color: l.color,
-                  description: l.description,
-                  id: l.id,
-                }
-          ) || [],
-        createdAt: issue.createdAt || issue.created_at,
-        updatedAt: issue.updatedAt || issue.updated_at,
-        url: issue.url || issue.html_url,
-        commentsCount: issue.commentsCount ?? issue.comments ?? 0,
-        reactions: issue.reactions?.total_count || 0,
-        // Legacy compatibility fields
-        created_at: toDDMMYYYY(issue.createdAt || issue.created_at),
-        updated_at: toDDMMYYYY(issue.updatedAt || issue.updated_at),
-      };
-
-      // Add sanitization warnings if any were detected for title
-      if (titleSanitized.warnings.length > 0) {
-        basicIssue._sanitization_warnings = titleSanitized.warnings;
-      }
-
-      return basicIssue;
-    });
-
-    // Fetch detailed issue information in parallel
-    const cleanIssues: GitHubIssueItem[] = await Promise.all(
-      basicIssues.map(
-        async (issue: BasicGitHubIssue): Promise<GitHubIssueItem> => {
-          try {
-            const { nameWithOwner } = issue.repository;
-            const [owner, repo] = nameWithOwner.split('/');
-
-            // Fetch issue details using gh issue view
-            const viewResult = await executeGitHubCommand(
-              'api' as GhCommand,
-              [`/repos/${owner}/${repo}/issues/${issue.number}`],
-              { cache: false }
-            );
-
-            if (!viewResult.isError) {
-              const execResult = JSON.parse(
-                viewResult.content[0].text as string
-              );
-              const issueDetails = execResult.result;
-
-              // Sanitize issue body content
-              const bodySanitized = ContentSanitizer.sanitizeContent(
-                issueDetails.body || ''
-              );
-
-              const result: GitHubIssueItem = {
-                ...issue,
-                body: bodySanitized.content,
-                assignees:
-                  issueDetails.assignees?.map((a: any) => ({
-                    login: a.login,
-                    id: a.id?.toString(),
-                    url: a.html_url,
-                    type: a.type,
-                    is_bot: a.type === 'Bot',
-                  })) || [],
-                authorAssociation: issueDetails.author_association,
-                closedAt: issueDetails.closed_at,
-                isLocked: issueDetails.locked,
-                // Update with full author info
-                author: issueDetails.user
-                  ? {
-                      login: issueDetails.user.login,
-                      id: issueDetails.user.id?.toString(),
-                      url: issueDetails.user.html_url,
-                      type: issueDetails.user.type,
-                      is_bot: issueDetails.user.type === 'Bot',
-                    }
-                  : issue.author,
-                // Update labels with full info
-                labels:
-                  issueDetails.labels?.map((l: any) => ({
-                    name: l.name,
-                    color: l.color,
-                    description: l.description,
-                    id: l.id?.toString(),
-                  })) || issue.labels,
-                createdAt: issueDetails.created_at,
-                updatedAt: issueDetails.updated_at,
-                id: issueDetails.id?.toString(),
-                isPullRequest: issueDetails.pull_request !== undefined,
-                commentsCount: issueDetails.comments,
-                closed_at: issueDetails.closed_at
-                  ? toDDMMYYYY(issueDetails.closed_at)
-                  : undefined,
-              };
-
-              // Add sanitization warnings if any were detected (merge with existing title warnings)
-              const allWarningsSet = new Set<string>([
-                ...(issue._sanitization_warnings || []),
-                ...bodySanitized.warnings,
-              ]);
-              if (allWarningsSet.size > 0) {
-                result._sanitization_warnings = Array.from(allWarningsSet);
-              }
-
-              return result;
-            }
-
-            // If fetching details fails, return basic info with empty body
-            return { ...issue, body: '' } as GitHubIssueItem;
-          } catch (error) {
-            // If any error occurs, return basic info with empty body
-            return { ...issue, body: '' } as GitHubIssueItem;
-          }
-        }
-      )
-    );
-
-    // Generate smart research hints for no results
-    if (cleanIssues.length === 0) {
-      const customHints = [];
-
-      // Add parameter-specific hints
-      if (params.state === 'closed') {
-        customHints.push('Try state:open or remove state filter');
-      }
-      if (params.author) {
-        customHints.push('Remove author filter for broader search');
-      }
-      if (params.label) {
-        customHints.push('Try broader labels or remove label filter');
-      }
-      if (params.owner && params.repo) {
-        customHints.push('Check repository name spelling');
-      }
-      if (params.created || params.updated) {
-        customHints.push('Expand date range or remove date filters');
-      }
-
-      const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
-        hasResults: false,
-        totalItems: 0,
-        customHints,
-      });
-
-      return createResult({
-        error: `No issues found for query: "${params.query}"`,
-        hints,
-      });
-    }
-
-    const searchResult: GitHubIssuesSearchResult = {
-      results: cleanIssues,
-    };
-
-    return createResult({ data: searchResult });
-  });
-}
-
-export function buildGitHubIssuesAPICommand(params: GitHubIssuesSearchParams): {
-  command: GhCommand;
-  args: string[];
-} {
-  const builder = new GitHubIssuesSearchBuilder();
-  return { command: 'search', args: builder.build(params) };
 }

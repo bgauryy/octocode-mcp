@@ -13,14 +13,24 @@ export const RESEARCH_GOAL_HINTS: Record<
     [ResearchGoal.CODE_GENERATION]: [
       'Fetch full implementation with fetchContent + matchString for complete context',
       'Search test files to understand usage patterns and API design',
+      'Explore similar repositories for alternative implementation approaches',
+      'Use package search to understand dependency patterns and ecosystem context',
     ],
     [ResearchGoal.DEBUGGING]: [
       'Check commit history to trace when issues were introduced or fixed',
       'Search issues for discussions about similar error patterns',
+      'Look for test files that reproduce the problem',
+      'Examine pull requests that attempted similar fixes',
     ],
     [ResearchGoal.CODE_ANALYSIS]: [
       'Examine imports and dependencies to understand architectural relationships',
       'Look for performance bottlenecks and optimization opportunities',
+    ],
+    [ResearchGoal.DISCOVERY]: [
+      'Start with broad semantic searches to understand domain concepts',
+      'Use repository structure exploration to identify key components',
+      'Follow import/dependency chains to map system relationships',
+      'Search across multiple repositories for pattern recognition',
     ],
     // Skip less common goals to avoid hint fatigue
   },
@@ -78,10 +88,32 @@ export const RESEARCH_GOAL_HINTS: Record<
       'Review version compatibility and breaking changes',
     ],
   },
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {
+    [ResearchGoal.DEBUGGING]: [
+      'Focus on recent issues with similar symptoms or error messages',
+      'Look for closed issues with solutions and workarounds',
+      'Check for ongoing discussions about related problems',
+    ],
+    [ResearchGoal.DISCOVERY]: [
+      'Explore feature requests and roadmap discussions',
+      'Understand community pain points and common use cases',
+      'Find discussions about architecture and design decisions',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
+    [ResearchGoal.CODE_GENERATION]: [
+      'Examine recent PRs for modern implementation patterns',
+      'Study code review discussions for best practices',
+      'Look for feature implementations similar to your needs',
+    ],
+    [ResearchGoal.DEBUGGING]: [
+      'Find PRs that fixed similar issues',
+      'Study the changes made to resolve problems',
+      'Check for regression discussions and fixes',
+    ],
+  },
   // Tools without specific research goal hints (empty objects for completeness)
   [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: {},
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {},
-  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {},
 } as const;
 
 export interface ToolSuggestion {
@@ -181,20 +213,20 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     strategicAlternatives: [
       {
+        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        reason: 'find real-world usage patterns and integration examples',
+        priority: 'high',
+        strategic: true,
+      },
+      {
         tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
         reason: 'investigate problems and community discussions',
         priority: 'medium',
         strategic: true,
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'analyze development history and recent changes',
-        priority: 'low',
-        strategic: true,
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'understand community and project health',
+        tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        reason: 'examine recent updates and migration patterns',
         priority: 'medium',
         strategic: true,
       },
@@ -290,14 +322,15 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         priority: 'medium',
       },
     ],
-    prerequisites: [
+    prerequisites: [], // Removed rigid prerequisite to enable dynamic exploration
+    strategicAlternatives: [
       {
         tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        reason: 'verify paths and understand structure before searching',
-        priority: 'medium',
+        reason:
+          'explore structure when search yields limited context or needs path verification',
+        priority: 'high',
+        strategic: true,
       },
-    ],
-    strategicAlternatives: [
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
         reason: 'trace evolution and understand decisions',

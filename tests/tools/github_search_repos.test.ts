@@ -31,6 +31,8 @@ import {
   buildGitHubReposSearchCommand,
 } from '../../src/mcp/tools/github_search_repos.js';
 import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
+import { GitHubReposSearchParams } from '../../src/types.js';
+import { GitHubReposSearchBuilder } from '../../src/mcp/tools/utils/GitHubCommandBuilder.js';
 
 describe('GitHub Search Repositories Tool', () => {
   let mockServer: MockMcpServer;
@@ -62,7 +64,6 @@ describe('GitHub Search Repositories Tool', () => {
   describe('Tool Registration', () => {
     it('should register the GitHub search repositories tool with correct parameters', () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -87,7 +88,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should register tool with security validation wrapper', () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -103,7 +103,6 @@ describe('GitHub Search Repositories Tool', () => {
   describe('Query Validation', () => {
     it('should accept valid queries with exactQuery', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -125,7 +124,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should accept valid queries with queryTerms', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -147,7 +145,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should accept valid queries with owner filter', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -169,7 +166,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should accept valid queries with language filter', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -191,7 +187,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should accept valid queries with topic filter', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -213,7 +208,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should handle queries without any search parameters gracefully', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -233,7 +227,6 @@ describe('GitHub Search Repositories Tool', () => {
   describe('Single Query Processing', () => {
     it('should process successful single query', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -279,7 +272,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should handle query with no results', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -302,7 +294,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should handle GitHub command execution failure', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -333,7 +324,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should handle unexpected errors in query processing', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -362,7 +352,6 @@ describe('GitHub Search Repositories Tool', () => {
   describe('Multiple Query Processing', () => {
     it('should process multiple successful queries', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -403,7 +392,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should handle mix of successful and failed queries', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -435,7 +423,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should generate auto IDs for queries without explicit IDs', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -465,7 +452,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should process maximum 5 queries', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -698,6 +684,59 @@ describe('GitHub Search Repositories Tool', () => {
       expect(args).toContain('--help-wanted-issues=1..5');
       expect(args).toContain('--include-forks=only');
       expect(args).toContain('--archived=false');
+    });
+  });
+
+  describe('Enhanced Repository Search Parameters', () => {
+    it('should handle new enhanced parameters in query building', () => {
+      const params: GitHubReposSearchParams = {
+        queryTerms: ['test'],
+        template: true,
+        mirror: false,
+        sponsor: true,
+        'has-issues': true,
+        'has-projects': false,
+        'has-wiki': true,
+        'has-pages': false,
+        'has-downloads': true,
+        'has-discussions': false,
+        pushed: '>2023-01-01',
+        page: 2,
+        limit: 50,
+      };
+
+      const builder = new GitHubReposSearchBuilder();
+      const command = builder.build(params).join(' ');
+
+      expect(command).toContain('test');
+      expect(command).toContain('is:template');
+      expect(command).toContain('mirror:false');
+      expect(command).toContain('is:sponsor');
+      expect(command).toContain('has:issues');
+      expect(command).toContain('-has:projects');
+      expect(command).toContain('has:wiki');
+      expect(command).toContain('-has:pages');
+      expect(command).toContain('has:downloads');
+      expect(command).toContain('-has:discussions');
+      expect(command).toContain('pushed:>2023-01-01');
+      expect(command).toContain('--limit=50');
+      expect(command).toContain('--page=2');
+    });
+
+    it('should handle boolean false values correctly', () => {
+      const params: GitHubReposSearchParams = {
+        queryTerms: ['test'],
+        template: false,
+        mirror: false,
+        sponsor: false,
+      };
+
+      const builder = new GitHubReposSearchBuilder();
+      const command = builder.build(params).join(' ');
+
+      expect(command).toContain('-is:template');
+      expect(command).toContain('mirror:false');
+      expect(command).toContain('-is:sponsor');
     });
   });
 
@@ -1265,7 +1304,6 @@ describe('GitHub Search Repositories Tool', () => {
   describe('Verbose Mode', () => {
     it('should include metadata when verbose is true', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -1296,7 +1334,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should not include metadata when verbose is false (default)', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -1325,7 +1362,6 @@ describe('GitHub Search Repositories Tool', () => {
   describe('Error Handling', () => {
     it('should handle tool execution errors gracefully', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -1349,7 +1385,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should validate query array length limits', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
@@ -1375,7 +1410,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     it('should validate empty query array', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
-        githubAPIType: 'gh',
         npmEnabled: false,
       });
 
