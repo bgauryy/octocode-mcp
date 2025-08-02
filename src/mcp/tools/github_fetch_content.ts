@@ -11,9 +11,12 @@ import { executeGitHubCommand } from '../../utils/exec';
 import type { GithubFetchRequestParams } from '../../types';
 import { minifyContentV2 } from '../../utils/minifier';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { generateSmartHints } from './utils/toolRelationships';
+import {
+  generateSmartHints,
+  getResearchGoalHints,
+} from './utils/toolRelationships';
 import { processDualResults } from './utils/resultProcessor';
-import { GITHUB_GET_FILE_CONTENT_TOOL_NAME } from './utils/toolConstants';
+import { TOOL_NAMES, ResearchGoalEnum } from './utils/toolConstants';
 
 const DESCRIPTION = `
 Fetch file contents with smart context extraction.
@@ -99,6 +102,10 @@ const FileContentQuerySchema = z.object({
     .describe(
       `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
     ),
+  researchGoal: z
+    .enum(ResearchGoalEnum)
+    .optional()
+    .describe('Research goal to guide tool behavior and hint generation'),
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
@@ -118,7 +125,7 @@ export function registerFetchGitHubFileContentTool(
   opts: any = { githubAPIType: 'both', npmEnabled: false } // Make optional with default
 ) {
   server.registerTool(
-    GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+    TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -311,7 +318,7 @@ async function fetchMultipleGitHubFileContents(
   ).length;
 
   // Generate comprehensive hints
-  const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
     hasResults: successfulQueries > 0,
     totalItems: successfulQueries,
     customHints: results
@@ -319,6 +326,16 @@ async function fetchMultipleGitHubFileContents(
       .flatMap(r => r.result.hints)
       .slice(0, 5), // Limit to 5 most relevant hints
   });
+
+  // Add research goal hints if we have successful results
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  if (researchGoal && successfulQueries > 0) {
+    const goalHints = getResearchGoalHints(
+      TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      researchGoal
+    );
+    hints.push(...goalHints);
+  }
 
   return createResult({
     data: {
@@ -637,7 +654,7 @@ async function processFileContent(
     }
   }
 
-  const hints = generateSmartHints(GITHUB_GET_FILE_CONTENT_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
     hasResults: true,
     totalItems: 1,
     customHints: securityWarnings.length > 0 ? securityWarnings : undefined,

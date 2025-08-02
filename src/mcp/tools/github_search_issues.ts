@@ -20,10 +20,7 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubIssuesSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import {
-  GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  ToolOptions,
-} from './utils/toolConstants';
+import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubIssuesAPI } from '../../utils/githubAPI';
 import { processDualResults, dataExtractors } from './utils/resultProcessor';
@@ -42,7 +39,7 @@ export function registerSearchGitHubIssuesTool(
   opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
-    GITHUB_SEARCH_ISSUES_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_ISSUES,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -330,7 +327,7 @@ async function searchIssuesWithDualSupport(
 
   // Handle case where no results were found
   if (!dualResult.bestResult || !dualResult.bestResult.data) {
-    const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
       hasResults: false,
       totalItems: 0,
       errorMessage: `No issues found for query: "${args.query}"`,
@@ -348,7 +345,7 @@ async function searchIssuesWithDualSupport(
   };
 
   // Generate smart hints for successful results
-  const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
     hasResults: true,
     totalItems: finalResult.results.length,
     customHints: buildCustomHints(args),
@@ -570,7 +567,7 @@ async function searchGitHubIssues(
         customHints.push('Expand date range or remove date filters');
       }
 
-      const hints = generateSmartHints(GITHUB_SEARCH_ISSUES_TOOL_NAME, {
+      const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
         hasResults: false,
         totalItems: 0,
         customHints,

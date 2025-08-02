@@ -319,6 +319,7 @@ export interface GitHubRepositoryStructureParams {
   depth?: number;
   includeIgnored?: boolean; // If true, show all files/folders including normally ignored ones
   showMedia?: boolean; // If true, show media files (images, videos, audio). Default: false
+  researchGoal?: string; // Research goal to guide tool behavior and hint generation
 }
 
 export interface GitHubRepositoryContentsResult {
@@ -798,6 +799,7 @@ export interface PackageSearchBulkParams {
   searchLimit?: number;
   npmSearchStrategy?: 'individual' | 'combined';
   npmFetchMetadata?: boolean;
+  researchGoal?: string; // Research goal to guide tool behavior and hint generation
 }
 
 // Keep the old interface for backward compatibility (deprecated)

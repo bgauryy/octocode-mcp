@@ -86,7 +86,7 @@ import {
   buildGitHubCliArgs,
   searchGitHubCode,
 } from '../../src/mcp/tools/github_search_code.js';
-import { GITHUB_SEARCH_CODE_TOOL_NAME } from '../../src/mcp/tools/utils/toolConstants.js';
+import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
 
 describe('GitHub Search Code Tool', () => {
   let mockServer: MockMcpServer;
@@ -157,7 +157,7 @@ describe('GitHub Search Code Tool', () => {
       registerGitHubSearchCodeTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        GITHUB_SEARCH_CODE_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
         expect.objectContaining({
           description: expect.stringContaining(
             'PURPOSE: Search code across GitHub repositories'
@@ -219,7 +219,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             queryTerms: ['Button'],
@@ -305,7 +305,7 @@ describe('GitHub Search Code Tool', () => {
           ],
         });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'button-search',
@@ -364,7 +364,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'single-repo-test',
@@ -402,7 +402,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             queryTerms: ['authentication', 'middleware'],
@@ -478,7 +478,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'minify-test',
@@ -542,7 +542,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             queryTerms: ['API_KEY'],
@@ -595,7 +595,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'minify-failure-test',
@@ -620,7 +620,7 @@ describe('GitHub Search Code Tool', () => {
 
   describe('Input Validation', () => {
     it('should reject queries without queryTerms', async () => {
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'test-query',
@@ -648,7 +648,7 @@ describe('GitHub Search Code Tool', () => {
     });
 
     it('should reject empty queryTerms array', async () => {
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'empty-terms-query',
@@ -690,7 +690,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'valid-query',
@@ -737,7 +737,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { id: 'test1', queryTerms: ['test1'] },
           { id: 'test2', queryTerms: ['test2'] },
@@ -766,7 +766,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: 'GitHub CLI error: Authentication required' }],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'cli-error-test',
@@ -796,7 +796,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: 'API rate limit exceeded' }],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'rate-limit-test',
@@ -824,7 +824,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: 'authentication failed' }],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'auth-error-test',
@@ -852,7 +852,7 @@ describe('GitHub Search Code Tool', () => {
         content: [{ text: 'request timed out' }],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'timeout-error-test',
@@ -884,7 +884,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'json-error-test',
@@ -943,7 +943,7 @@ describe('GitHub Search Code Tool', () => {
           content: [{ text: 'Authentication required' }],
         });
 
-      const result = await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             id: 'success-query',
@@ -988,7 +988,7 @@ describe('GitHub Search Code Tool', () => {
         ],
       });
 
-      await mockServer.callTool(GITHUB_SEARCH_CODE_TOOL_NAME, {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             queryTerms: ['test'],

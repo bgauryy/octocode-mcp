@@ -10,21 +10,21 @@ import { generateCacheKey, withCache } from '../../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { filterItems } from './github_view_repo_structure_filters';
 import {
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+  TOOL_NAMES,
   ToolOptions,
+  ResearchGoalEnum,
 } from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+import {
+  generateSmartHints,
+  getResearchGoalHints,
+} from './utils/toolRelationships';
 import { processDualResults, dataExtractors } from './utils/resultProcessor';
 import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
-
-export { GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME };
 
 const DESCRIPTION = `Explore GitHub repository structure with smart filtering and branch validation.
 Output a list of files and folders in a repository at a specific path for smarter research.
 
-Use with ${GITHUB_SEARCH_CODE_TOOL_NAME} and ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} for detailed analysis.
+Use with ${TOOL_NAMES.GITHUB_SEARCH_CODE} and ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for detailed analysis.
 
 BEST PRACTICES: Start with depth=1, use search for unknown paths, avoid deep exploration.`;
 
@@ -33,7 +33,7 @@ export function registerViewRepositoryStructureTool(
   opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
-    GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+    TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -95,6 +95,11 @@ export function registerViewRepositoryStructureTool(
           .optional()
           .default(false)
           .describe('Include media files. Default false for optimization'),
+
+        researchGoal: z
+          .enum(ResearchGoalEnum)
+          .optional()
+          .describe('Research goal to guide tool behavior and hint generation'),
       },
       annotations: {
         title: 'GitHub Repository Explorer',
@@ -107,15 +112,40 @@ export function registerViewRepositoryStructureTool(
     async (args: GitHubRepositoryStructureParams): Promise<CallToolResult> => {
       try {
         const result = await viewRepositoryStructure(args, opts);
+
+        // Add research goal hints if we have successful results and a research goal
+        if (args.researchGoal && result && !result.isError) {
+          const goalHints = getResearchGoalHints(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            args.researchGoal
+          );
+          if (goalHints.length > 0) {
+            // Parse the existing result to add hints
+            const content = result.content[0];
+            if (content.type === 'text') {
+              const data = JSON.parse(content.text);
+              if (!data.hints) data.hints = [];
+              data.hints.push(...goalHints);
+              result.content[0] = {
+                type: 'text',
+                text: JSON.stringify(data, null, 2),
+              };
+            }
+          }
+        }
+
         return result;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
-        const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
-          hasResults: false,
-          errorMessage: `Failed to explore repository: ${errorMessage}`,
-          customHints: [],
-        });
+        const hints = generateSmartHints(
+          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+          {
+            hasResults: false,
+            errorMessage: `Failed to explore repository: ${errorMessage}`,
+            customHints: [],
+          }
+        );
         return createResult({
           isError: true,
           hints,
@@ -187,7 +217,7 @@ export async function viewRepositoryStructure(
       }
 
       // If both failed, return comprehensive error
-      const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
         hasResults: false,
         errorMessage: `Failed to access repository "${params.owner}/${params.repo}"`,
         customHints: [
@@ -203,7 +233,7 @@ export async function viewRepositoryStructure(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+      const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
         hasResults: false,
         errorMessage: `Failed to access repository "${params.owner}/${params.repo}": ${errorMessage}`,
         customHints: [],
@@ -384,7 +414,7 @@ async function viewRepositoryStructureCLI(
     return handleOtherErrors(owner, repo, errorMsg);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMessage}`,
       customHints: [],
@@ -597,7 +627,7 @@ async function formatRepositoryStructureWithDepth(
       url: item.path, // Use path for browsing
     }));
 
-  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
     hasResults: true,
     totalItems: files.length + folders.length,
     customHints:
@@ -684,7 +714,7 @@ function formatRepositoryStructure(
       url: item.path, // Use path for browsing
     }));
 
-  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
     hasResults: true,
     totalItems: files.length + folders.length,
     customHints:
@@ -721,7 +751,7 @@ function handleRepositoryNotFound(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('404')) {
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Repository "${owner}/${repo}" not found`,
       customHints: [
@@ -733,7 +763,7 @@ function handleRepositoryNotFound(
       hints,
     });
   } else if (errorMsg.includes('403')) {
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Repository "${owner}/${repo}" access denied`,
       customHints: ['Repository might be private or archived'],
@@ -743,7 +773,7 @@ function handleRepositoryNotFound(
       hints,
     });
   }
-  const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
     hasResults: false,
     errorMessage: `Failed to access repository "${owner}/${repo}": ${errorMsg}`,
     customHints: [],
@@ -770,7 +800,7 @@ function handlePathNotFound(
     : `\nCould not determine default branch - repository info unavailable`;
 
   if (path) {
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Path "${path}" not found in any branch`,
       customHints: [
@@ -784,7 +814,7 @@ function handlePathNotFound(
       hints,
     });
   } else {
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Repository "${owner}/${repo}" not accessible`,
       customHints: [
@@ -809,7 +839,7 @@ function handleOtherErrors(
   errorMsg: string
 ): CallToolResult {
   if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Access denied to "${owner}/${repo}"`,
       customHints: [
@@ -822,7 +852,7 @@ function handleOtherErrors(
       hints,
     });
   } else {
-    const hints = generateSmartHints(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
       hasResults: false,
       errorMessage: `Failed to access "${owner}/${repo}": ${errorMsg}`,
       customHints: [],

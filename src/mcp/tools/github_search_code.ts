@@ -15,11 +15,14 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { minifyContentV2 } from '../../utils/minifier';
 import {
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+  TOOL_NAMES,
   ToolOptions,
+  ResearchGoalEnum,
 } from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+import {
+  generateSmartHints,
+  getResearchGoalHints,
+} from './utils/toolRelationships';
 import { processDualResults } from './utils/resultProcessor';
 import {
   searchGitHubCodeAPI,
@@ -33,7 +36,7 @@ SEMANTIC: Natural language terms describing functionality, concepts, business lo
 TECHNICAL: Actual code terms, function names, class names, file patterns
 
 Use bulk queries from different angles. Start narrow, broaden if needed.
-Workflow: Search → Use ${GITHUB_GET_FILE_CONTENT_TOOL_NAME} with matchString for context.
+Workflow: Search → Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
 
 Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
@@ -112,6 +115,10 @@ const GitHubCodeSearchQuerySchema = z.object({
     .optional()
     .default(true)
     .describe('Remove secrets and malicious content (default: true)'),
+  researchGoal: z
+    .enum(ResearchGoalEnum)
+    .optional()
+    .describe('Research goal to guide tool behavior and hint generation'),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -140,7 +147,7 @@ export function registerGitHubSearchCodeTool(
   opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
-    GITHUB_SEARCH_CODE_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -354,6 +361,16 @@ async function searchMultipleGitHubCode(
 
   // Generate all hints in one place
   const hints = generateAllHints(queryResults, aggregatedContext);
+
+  // Add research goal hints if we have successful results
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  if (researchGoal && processedResults.length > 0) {
+    const goalHints = getResearchGoalHints(
+      TOOL_NAMES.GITHUB_SEARCH_CODE,
+      researchGoal
+    );
+    hints.push(...goalHints);
+  }
 
   // Create final response
   return createFinalResponse(processedResults, hints, queryResults, verbose);
@@ -581,7 +598,7 @@ function generateAllHints(
   const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
 
   // Use the centralized smart hints system from toolRelationships
-  return generateSmartHints(GITHUB_SEARCH_CODE_TOOL_NAME, {
+  return generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_CODE, {
     hasResults,
     totalItems,
     errorMessage,

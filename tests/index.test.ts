@@ -23,23 +23,12 @@ import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetc
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
 import { registerGitHubSearchCommitsTool } from '../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
-import {
-  registerNpmSearchTool,
-  NPM_PACKAGE_SEARCH_TOOL_NAME,
-} from '../src/mcp/tools/package_search.js';
-import {
-  registerViewRepositoryStructureTool,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-} from '../src/mcp/tools/github_view_repo_structure.js';
+import { registerNpmSearchTool } from '../src/mcp/tools/package_search.js';
+import { registerViewRepositoryStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from '../src/mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import {
-  GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
+  TOOL_NAMES,
   ToolOptions,
 } from '../src/mcp/tools/utils/toolConstants.js';
 
@@ -519,25 +508,23 @@ describe('Index Module', () => {
   describe('Tool Names Export Consistency', () => {
     it('should have consistent tool name exports', () => {
       // Verify all expected tool names are defined
-      expect(GITHUB_SEARCH_CODE_TOOL_NAME).toBeDefined();
-      expect(GITHUB_GET_FILE_CONTENT_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_COMMITS_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME).toBeDefined();
-      expect(NPM_PACKAGE_SEARCH_TOOL_NAME).toBeDefined();
-      expect(GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME).toBeDefined();
-      expect(GITHUB_SEARCH_ISSUES_TOOL_NAME).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_COMMITS).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS).toBeDefined();
+      expect(TOOL_NAMES.PACKAGE_SEARCH).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE).toBeDefined();
+      expect(TOOL_NAMES.GITHUB_SEARCH_ISSUES).toBeDefined();
 
       // Verify they are all strings
       const toolNames = [
-        GITHUB_SEARCH_CODE_TOOL_NAME,
-        GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-        GITHUB_SEARCH_COMMITS_TOOL_NAME,
-        GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-        NPM_PACKAGE_SEARCH_TOOL_NAME,
-        GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-        GITHUB_SEARCH_ISSUES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        TOOL_NAMES.PACKAGE_SEARCH,
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        TOOL_NAMES.GITHUB_SEARCH_ISSUES,
       ];
 
       toolNames.forEach(name => {

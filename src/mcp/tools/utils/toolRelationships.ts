@@ -1,30 +1,88 @@
-import {
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  PACKAGE_SEARCH_TOOL_NAME,
-} from './toolConstants';
+import { TOOL_NAMES, ToolName, ResearchGoal } from './toolConstants';
 
 /**
- * Tool relationship map for flexible cross-tool research guidance
- * Provides strategic suggestions rather than rigid workflows
+ * Smart, efficient research goal hints - only for most common scenarios
+ * Organized by tool and research goal to provide contextual guidance
  */
-export const TOOL_NAMES = {
-  GITHUB_FETCH_CONTENT: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE: GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS: GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_SEARCH_ISSUES: GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_VIEW_REPO_STRUCTURE: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  PACKAGE_SEARCH: PACKAGE_SEARCH_TOOL_NAME,
+export const RESEARCH_GOAL_HINTS: Record<
+  ToolName,
+  Partial<Record<ResearchGoal, string[]>>
+> = {
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: {
+    // Core development goals
+    [ResearchGoal.CODE_GENERATION]: [
+      'Fetch full implementation with fetchContent + matchString for complete context',
+      'Search test files to understand usage patterns and API design',
+    ],
+    [ResearchGoal.DEBUGGING]: [
+      'Check commit history to trace when issues were introduced or fixed',
+      'Search issues for discussions about similar error patterns',
+    ],
+    [ResearchGoal.CODE_ANALYSIS]: [
+      'Examine imports and dependencies to understand architectural relationships',
+      'Look for performance bottlenecks and optimization opportunities',
+    ],
+    // Skip less common goals to avoid hint fatigue
+  },
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
+    [ResearchGoal.DISCOVERY]: [
+      'Examine repository structure and README files for project overview',
+      'Check for similar repositories and projects to understand the ecosystem using topics',
+    ],
+    [ResearchGoal.CODE_GENERATION]: [
+      'Search code within repositories for implementation patterns and examples',
+      'Check configuration files and be aware of versioning and dependencies',
+      'Review documentation and API design decisions',
+    ],
+    [ResearchGoal.CONTEXT_GENERATION]: [
+      'Analyze repository topics and dependencies for ecosystem understanding',
+      'Study project organization and architectural patterns',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_FETCH_CONTENT]: {
+    [ResearchGoal.CODE_GENERATION]: [
+      'Extract patterns, interfaces, and implementation details for reference',
+      'Examine related files in same directory for complete context',
+    ],
+    [ResearchGoal.DOCS_GENERATION]: [
+      'Parse API signatures, comments, and type definitions for documentation',
+      'Look for usage examples and test cases that demonstrate functionality',
+    ],
+    [ResearchGoal.CODE_REVIEW]: [
+      'Analyze code quality, security patterns, and error handling approaches',
+      'Check for best practices and potential improvements',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: {
+    [ResearchGoal.DISCOVERY]: [
+      'Identify key entry points, main modules, and documentation directories',
+      'Map project architecture and understand code organization',
+    ],
+    [ResearchGoal.CODE_GENERATION]: [
+      'Locate similar components and features for implementation patterns',
+      'Find test structure and configuration setup for project templates',
+    ],
+    // Only include most actionable scenarios
+  },
+  [TOOL_NAMES.PACKAGE_SEARCH]: {
+    [ResearchGoal.CODE_GENERATION]: [
+      'Verify package versions and compatibility for your target environment',
+      'Explore package repository for usage examples and integration guides',
+    ],
+    [ResearchGoal.CODE_OPTIMIZATION]: [
+      'Compare bundle sizes and performance characteristics of alternatives',
+      'Look for tree-shakeable imports and lighter package variants',
+    ],
+    [ResearchGoal.DEBUGGING]: [
+      'Check package issues and changelog for known problems and fixes',
+      'Review version compatibility and breaking changes',
+    ],
+  },
+  // Tools without specific research goal hints (empty objects for completeness)
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: {},
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {},
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {},
 } as const;
-
-export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
 
 export interface ToolSuggestion {
   tool: ToolName;
@@ -64,7 +122,18 @@ export interface ToolContext {
   totalItems?: number;
   previousTools?: ToolName[]; // For circular prevention
   customHints?: string[]; // Custom hints from the tool
-  researchGoal?: 'discovery' | 'analysis' | 'debugging' | 'exploration'; // Research intent
+  researchGoal?:
+    | 'discovery'
+    | 'analysis'
+    | 'debugging'
+    | 'exploration'
+    | 'context_generation'
+    | 'code_generation'
+    | 'docs_generation'
+    | 'code_analysis'
+    | 'code_review'
+    | 'code_refactoring'
+    | 'code_optimization'; // Research intent
 }
 
 export interface ToolSuggestionResult {
@@ -757,6 +826,14 @@ export function generateToolHints(
     hints.push(...suggestions.customHints);
   }
 
+  // Add research goal specific hints if available
+  if (context.researchGoal) {
+    const goalHints = getResearchGoalHints(currentTool, context.researchGoal);
+    if (goalHints.length > 0) {
+      hints.push(...goalHints);
+    }
+  }
+
   // Add centralized error handling hints only if no specific custom hints provided
   if (context.errorType === 'auth_required' && !hasSpecificCustomHints) {
     hints.push(`Authentication required: run "gh auth login" then retry`);
@@ -815,7 +892,7 @@ export function generateToolHints(
     );
   }
 
-  return hints.slice(0, 5); // Reduced from 8 to 5 for cleaner output
+  return hints.slice(0, 20);
 }
 
 /**
@@ -828,6 +905,7 @@ export function generateSmartHints(
     totalItems?: number;
     errorMessage?: string;
     customHints?: string[];
+    researchGoal?: string;
   },
   previousTools?: ToolName[]
 ): string[] {
@@ -837,12 +915,14 @@ export function generateSmartHints(
     totalItems: results.totalItems,
     customHints: results.customHints,
     previousTools,
-    // Infer research goal from context
-    researchGoal: results.hasResults
-      ? 'analysis'
-      : results.errorMessage
-        ? 'debugging'
-        : 'exploration',
+    // Use provided research goal or infer from context
+    researchGoal:
+      (results.researchGoal as any) ||
+      (results.hasResults
+        ? 'analysis'
+        : results.errorMessage
+          ? 'debugging'
+          : 'exploration'),
   };
 
   // Detect error type from message
@@ -871,4 +951,57 @@ export function generateSmartResearchHints(
       context?.foundFiles?.length || context?.foundPackages?.length || 0,
     customHints: [],
   });
+}
+
+/**
+ * Get smart, contextual research goal hints for a tool
+ * Only returns hints for common, actionable research scenarios
+ */
+export function getResearchGoalHints(
+  toolName: ToolName,
+  researchGoal?: string
+): string[] {
+  if (!researchGoal) return [];
+
+  // Validate research goal is one we have hints for
+  const validGoals = [
+    'code_generation',
+    'debugging',
+    'code_analysis',
+    'discovery',
+    'context_generation',
+    'docs_generation',
+    'code_review',
+    'code_optimization',
+  ];
+  if (!validGoals.includes(researchGoal)) return [];
+
+  const toolHints = RESEARCH_GOAL_HINTS[toolName];
+  if (!toolHints) return [];
+
+  const goalHints = toolHints[researchGoal as ResearchGoal];
+
+  // Return hints if available, with intelligent fallbacks
+  if (goalHints && goalHints.length > 0) {
+    return goalHints;
+  }
+
+  // Smart fallback: if exact goal not found, try related goals
+  const fallbackMapping: Record<string, string[]> = {
+    code_refactoring: ['code_analysis', 'code_generation'],
+    exploration: ['discovery', 'code_analysis'],
+    analysis: ['code_analysis', 'discovery'],
+  };
+
+  const fallbackGoals = fallbackMapping[researchGoal];
+  if (fallbackGoals) {
+    for (const fallbackGoal of fallbackGoals) {
+      const fallbackHints = toolHints[fallbackGoal as ResearchGoal];
+      if (fallbackHints && fallbackHints.length > 0) {
+        return fallbackHints;
+      }
+    }
+  }
+
+  return [];
 }

@@ -23,10 +23,7 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubCommitsSearchBuilder } from './utils/GitHubCommandBuilder';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import {
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  ToolOptions,
-} from './utils/toolConstants';
+import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
 import { generateSmartHints } from './utils/toolRelationships';
 import { searchGitHubCommitsAPI } from '../../utils/githubAPI';
 import { processDualResults } from './utils/resultProcessor';
@@ -49,7 +46,7 @@ export function registerGitHubSearchCommitsTool(
   opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
-    GITHUB_SEARCH_COMMITS_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_COMMITS,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -233,7 +230,7 @@ export function registerGitHubSearchCommitsTool(
             finalError = createSearchFailedError('commits');
           }
 
-          const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
             hasResults: false,
             totalItems: 0,
             errorMessage: finalError,
@@ -296,7 +293,7 @@ async function searchCommitsWithDualSupport(
 
   // Handle case where no results were found
   if (!dualResult.bestResult || !dualResult.bestResult.data) {
-    const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
       hasResults: false,
       totalItems: 0,
       errorMessage: createNoResultsError('commits'),
@@ -312,7 +309,7 @@ async function searchCommitsWithDualSupport(
   const finalResult: OptimizedCommitSearchResult = dualResult.bestResult.data;
 
   // Generate smart hints for successful results
-  const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
     hasResults: true,
     totalItems: finalResult.commits.length,
     customHints: buildCustomHints(args),
@@ -538,7 +535,7 @@ export async function searchGitHubCommits(
         finalError = createSearchFailedError('commits');
       }
 
-      const hints = generateSmartHints(GITHUB_SEARCH_COMMITS_TOOL_NAME, {
+      const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
         hasResults: false,
         totalItems: 0,
         errorMessage: finalError,

@@ -8,26 +8,12 @@ import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_con
 import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
 import { registerGitHubSearchCommitsTool } from './mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import {
-  NPM_PACKAGE_SEARCH_TOOL_NAME,
-  registerNpmSearchTool,
-} from './mcp/tools/package_search.js';
-import {
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  registerViewRepositoryStructureTool,
-} from './mcp/tools/github_view_repo_structure.js';
+import { registerNpmSearchTool } from './mcp/tools/package_search.js';
+import { registerViewRepositoryStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
-import {
-  GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  ToolOptions,
-} from './mcp/tools/utils/toolConstants.js';
+import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
 
 // Check for GitHub token and set API type accordingly
 const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -59,42 +45,42 @@ async function registerAllTools(server: McpServer) {
 
   const toolRegistrations = [
     {
-      name: GITHUB_SEARCH_CODE_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_SEARCH_CODE,
       fn: registerGitHubSearchCodeTool,
       opts: toolOptions,
     },
     {
-      name: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       fn: registerSearchGitHubReposTool,
       opts: toolOptions,
     },
     {
-      name: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       fn: registerFetchGitHubFileContentTool,
       opts: toolOptions,
     },
     {
-      name: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       fn: registerViewRepositoryStructureTool,
       opts: toolOptions,
     },
     {
-      name: GITHUB_SEARCH_COMMITS_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
       fn: registerGitHubSearchCommitsTool,
       opts: toolOptions,
     },
     {
-      name: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       fn: registerSearchGitHubPullRequestsTool,
       opts: toolOptions,
     },
     {
-      name: GITHUB_SEARCH_ISSUES_TOOL_NAME,
+      name: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
       fn: registerSearchGitHubIssuesTool,
       opts: toolOptions,
     },
     {
-      name: NPM_PACKAGE_SEARCH_TOOL_NAME,
+      name: TOOL_NAMES.PACKAGE_SEARCH,
       fn: registerNpmSearchTool,
       opts: toolOptions,
     },

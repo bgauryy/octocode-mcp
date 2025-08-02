@@ -27,13 +27,16 @@ import { ERROR_MESSAGES } from '../errorMessages';
 import {
   generateSmartHints,
   getToolSuggestions,
+  getResearchGoalHints,
 } from './utils/toolRelationships';
 import { createToolSuggestion } from './utils/validation';
 import { generateCacheKey, withCache } from '../../utils/cache';
-import { PACKAGE_SEARCH_TOOL_NAME, ToolOptions } from './utils/toolConstants';
+import {
+  TOOL_NAMES,
+  ToolOptions,
+  ResearchGoalEnum,
+} from './utils/toolConstants';
 import axios from 'axios';
-
-export { PACKAGE_SEARCH_TOOL_NAME as NPM_PACKAGE_SEARCH_TOOL_NAME };
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
@@ -353,8 +356,14 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
       'DEPRECATED: Use pythonPackages array instead. Python package name to search for.'
     );
 
+  // Research goal for guiding hints
+  inputSchema.researchGoal = z
+    .enum(ResearchGoalEnum)
+    .optional()
+    .describe('Research goal to guide tool behavior and hint generation');
+
   server.registerTool(
-    PACKAGE_SEARCH_TOOL_NAME,
+    TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: baseDescription,
       inputSchema,
@@ -385,7 +394,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
           );
 
           if (hasNpmParams) {
-            const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+            const hints = generateSmartHints(TOOL_NAMES.PACKAGE_SEARCH, {
               hasResults: false,
               errorMessage: 'NPM functionality is not available',
               customHints: [
@@ -419,7 +428,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
               ]
             : ['pythonPackages[]', 'or legacy pythonPackageName'];
 
-          const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+          const hints = generateSmartHints(TOOL_NAMES.PACKAGE_SEARCH, {
             hasResults: false,
             errorMessage: 'No search parameters provided',
             customHints: [`Use ${availableParams.join(', ')}`],
@@ -549,7 +558,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
           normalizedNpmQueries.length === 0 &&
           normalizedPythonQueries.length === 0
         ) {
-          const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+          const hints = generateSmartHints(TOOL_NAMES.PACKAGE_SEARCH, {
             hasResults: false,
             errorMessage:
               'No valid package queries found after processing parameters',
@@ -724,11 +733,20 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
             );
           }
 
-          const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+          const hints = generateSmartHints(TOOL_NAMES.PACKAGE_SEARCH, {
             hasResults: true,
             totalItems: totalCount,
             customHints,
           });
+
+          // Add research goal hints if we have successful results
+          if (args.researchGoal && totalCount > 0) {
+            const goalHints = getResearchGoalHints(
+              TOOL_NAMES.PACKAGE_SEARCH,
+              args.researchGoal
+            );
+            hints.push(...goalHints);
+          }
 
           // Check if enhanced metadata fetching is requested for NPM packages
           if (
@@ -1067,7 +1085,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
 
         const customHints = [...errorDetails, ...fallbackSuggestions];
 
-        const hints = generateSmartHints(PACKAGE_SEARCH_TOOL_NAME, {
+        const hints = generateSmartHints(TOOL_NAMES.PACKAGE_SEARCH, {
           hasResults: false,
           errorMessage: 'No packages found',
           customHints,
@@ -1086,7 +1104,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
           errorMsg.includes('timeout') ||
           errorMsg.includes('ENOTFOUND')
         ) {
-          const { fallback } = getToolSuggestions(PACKAGE_SEARCH_TOOL_NAME, {
+          const { fallback } = getToolSuggestions(TOOL_NAMES.PACKAGE_SEARCH, {
             hasError: true,
           });
 
@@ -1097,7 +1115,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
               ' Check internet connection and npm registry status',
               ' Try fewer search terms to reduce load',
               ' Retry in a few moments',
-              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+              createToolSuggestion(TOOL_NAMES.PACKAGE_SEARCH, fallback),
             ],
           });
         }
@@ -1107,7 +1125,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
           errorMsg.includes('command not found') ||
           errorMsg.includes('npm')
         ) {
-          const { fallback } = getToolSuggestions(PACKAGE_SEARCH_TOOL_NAME, {
+          const { fallback } = getToolSuggestions(TOOL_NAMES.PACKAGE_SEARCH, {
             hasError: true,
           });
 
@@ -1118,7 +1136,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
               ' Verify NPM installation: npm --version',
               ' Update NPM: npm install -g npm@latest',
               ' Check PATH environment variable',
-              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+              createToolSuggestion(TOOL_NAMES.PACKAGE_SEARCH, fallback),
             ],
           });
         }
@@ -1129,7 +1147,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
           errorMsg.includes('403') ||
           errorMsg.includes('401')
         ) {
-          const { fallback } = getToolSuggestions(PACKAGE_SEARCH_TOOL_NAME, {
+          const { fallback } = getToolSuggestions(TOOL_NAMES.PACKAGE_SEARCH, {
             errorType: 'access_denied',
           });
 
@@ -1140,12 +1158,12 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
               ' Check npm login status: npm whoami',
               ' Use public registry search without auth',
               ' Verify npm registry configuration',
-              createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+              createToolSuggestion(TOOL_NAMES.PACKAGE_SEARCH, fallback),
             ],
           });
         }
 
-        const { fallback } = getToolSuggestions(PACKAGE_SEARCH_TOOL_NAME, {
+        const { fallback } = getToolSuggestions(TOOL_NAMES.PACKAGE_SEARCH, {
           hasError: true,
         });
 
@@ -1157,7 +1175,7 @@ INTEGRATION: Essential first step before GitHub repository exploration or while 
             'Troubleshooting steps:',
             ' 1. Check npm status and try again',
             ' 2. Try broader or alternative search terms',
-            createToolSuggestion(PACKAGE_SEARCH_TOOL_NAME, fallback),
+            createToolSuggestion(TOOL_NAMES.PACKAGE_SEARCH, fallback),
           ],
         });
       }

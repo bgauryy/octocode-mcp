@@ -12,11 +12,14 @@ import {
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
 import {
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  PACKAGE_SEARCH_TOOL_NAME,
+  TOOL_NAMES,
   ToolOptions,
+  ResearchGoalEnum,
 } from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+import {
+  generateSmartHints,
+  getResearchGoalHints,
+} from './utils/toolRelationships';
 import { processDualResults, dataExtractors } from './utils/resultProcessor';
 import { searchGitHubReposAPI } from '../../utils/githubAPI';
 
@@ -25,7 +28,7 @@ const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repos
 Search strategy:
   Use limit=1 on queries as a default (e.g. when searching specific repository)
   Use larget limit for exploratory search (e.g. when searching by topic, language, owner, or keyword)
-  If cannot find repository, consider using ${PACKAGE_SEARCH_TOOL_NAME} tool`;
+  If cannot find repository, consider using ${TOOL_NAMES.PACKAGE_SEARCH} tool`;
 
 // Define the repository search query schema for bulk operations
 const GitHubReposSearchQuerySchema = z.object({
@@ -206,6 +209,10 @@ const GitHubReposSearchQuerySchema = z.object({
     .describe(
       'Maximum number of repositories to return (1-100). TOKEN OPTIMIZATION: Use 1 for specific repository searches, 10-20 for exploratory discovery. For multiple specific repositories, create separate queries with limit=1 each.'
     ),
+  researchGoal: z
+    .enum(ResearchGoalEnum)
+    .optional()
+    .describe('Research goal to guide tool behavior and hint generation'),
 });
 
 export type GitHubReposSearchQuery = z.infer<
@@ -264,7 +271,7 @@ export function registerSearchGitHubReposTool(
   opts: ToolOptions = { githubAPIType: 'both', npmEnabled: false }
 ) {
   server.registerTool(
-    GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTION,
       inputSchema: {
@@ -447,11 +454,22 @@ async function searchMultipleGitHubRepos(
     .filter(r => r.error || r.apiError)
     .map(r => r.error || r.apiError!);
   const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
-  const hints = generateSmartHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
+
+  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
     hasResults: allRepositories.length > 0,
     totalItems: allRepositories.length,
     errorMessage,
   });
+
+  // Add research goal hints if we have successful results
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  if (researchGoal && allRepositories.length > 0) {
+    const goalHints = getResearchGoalHints(
+      TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      researchGoal
+    );
+    hints.push(...goalHints);
+  }
 
   // Calculate summary statistics
   const totalQueries = results.length;

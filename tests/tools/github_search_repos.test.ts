@@ -30,7 +30,7 @@ import {
   searchGitHubRepos,
   buildGitHubReposSearchCommand,
 } from '../../src/mcp/tools/github_search_repos.js';
-import { GITHUB_SEARCH_REPOSITORIES_TOOL_NAME } from '../../src/mcp/tools/utils/toolConstants.js';
+import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
 
 describe('GitHub Search Repositories Tool', () => {
   let mockServer: MockMcpServer;
@@ -67,7 +67,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         expect.objectContaining({
           description: expect.stringContaining('Search GitHub repositories'),
           inputSchema: expect.objectContaining({
@@ -114,7 +114,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'react' }],
         }
@@ -136,7 +136,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ queryTerms: ['react', 'hooks'] }],
         }
@@ -158,7 +158,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ owner: 'facebook' }],
         }
@@ -180,7 +180,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ language: 'typescript' }],
         }
@@ -202,7 +202,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ topic: 'machine-learning' }],
         }
@@ -218,7 +218,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ sort: 'stars' }], // Only has sort, no search params
         }
@@ -254,7 +254,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'awesome', id: 'test-query' }],
         }
@@ -288,7 +288,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'nonexistent-repo-xyz' }],
         }
@@ -319,7 +319,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'test' }],
         }
@@ -343,7 +343,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'test' }],
         }
@@ -379,7 +379,7 @@ describe('GitHub Search Repositories Tool', () => {
         .mockResolvedValueOnce(mockResponse2);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
             { exactQuery: 'javascript', id: 'js-query' },
@@ -420,7 +420,7 @@ describe('GitHub Search Repositories Tool', () => {
         .mockResolvedValueOnce(mockFailureResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'success' }, { exactQuery: 'failure' }],
         }
@@ -446,7 +446,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
             { exactQuery: 'test1' },
@@ -480,7 +480,7 @@ describe('GitHub Search Repositories Tool', () => {
       }));
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries,
         }
@@ -1276,7 +1276,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'react' }],
           verbose: true,
@@ -1307,7 +1307,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'react' }],
         }
@@ -1335,7 +1335,7 @@ describe('GitHub Search Repositories Tool', () => {
       });
 
       const result = await mockServer.callTool(
-        GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [{ exactQuery: 'test' }],
         }
@@ -1360,7 +1360,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       try {
         const result = await mockServer.callTool(
-          GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           {
             queries,
           }
@@ -1381,7 +1381,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       try {
         const result = await mockServer.callTool(
-          GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           {
             queries: [],
           }
