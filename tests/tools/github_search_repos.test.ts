@@ -32,7 +32,7 @@ import {
 } from '../../src/mcp/tools/github_search_repos.js';
 import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
 import { GitHubReposSearchParams } from '../../src/types.js';
-import { GitHubReposSearchBuilder } from '../../src/mcp/tools/utils/GitHubCommandBuilder.js';
+// GitHubCommandBuilder was removed - using direct API calls now
 
 describe('GitHub Search Repositories Tool', () => {
   let mockServer: MockMcpServer;
