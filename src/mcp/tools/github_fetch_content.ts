@@ -24,8 +24,13 @@ Fetch file contents with smart context extraction.
 Supports: Up to 10 files fetching with auto-fallback for branches
 
 KEY WORKFLOW: 
-  - Code Research: githubSearchCode results -> fetch file using  "matchString" ->  get context around matches
-  - File Content: githubViewRepoStructure results  -> fetch relevant files to fetch by structure and file path
+  - Code Research: ${TOOL_NAMES.GITHUB_SEARCH_CODE} results -> fetch file using  "matchString" ->  get context around matches
+  - File Content: ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} results  -> fetch relevant files to fetch by structure and file path
+
+IMPORTANT: Always verify file paths before fetching using ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} and ${TOOL_NAMES.GITHUB_SEARCH_CODE}.
+Never assume file locations - verify first to avoid failed queries and ensure dynamic research success.
+Get enough context to understand the file and its purpose
+Try to get similar or related files for better context understanding
 
 OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
 `;
@@ -56,7 +61,9 @@ const FileContentQuerySchema = z.object({
     .string()
     .min(1)
     .describe(
-      `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.`
+      `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.
+      
+      CRITICAL: Always verify file paths using githubViewRepoStructure and githubSearchCode before fetching to ensure accurate research results.`
     ),
   branch: z
     .string()
@@ -251,6 +258,12 @@ async function fetchMultipleGitHubFileContents(
           error || apiError
         );
 
+        // Add critical verification hints for failed file fetches
+        hints.unshift(
+          `CRITICAL: Use githubViewRepoStructure to verify ${query.filePath} exists in ${query.owner}/${query.repo}`,
+          `CRITICAL: Use githubSearchCode to find files by content instead of assuming paths`
+        );
+
         return {
           queryId,
           originalQuery: query,
@@ -335,6 +348,26 @@ async function fetchMultipleGitHubFileContents(
       researchGoal
     );
     hints.push(...goalHints);
+  }
+
+  // Add smart research guidance when ALL queries fail
+  if (successfulQueries === 0 && totalQueries > 0) {
+    const uniqueRepos = Array.from(
+      new Set(queries.map(q => `${q.owner}/${q.repo}`))
+    );
+
+    if (uniqueRepos.length === 1) {
+      const [owner, repo] = uniqueRepos[0].split('/');
+      hints.push(
+        `CRITICAL: Use githubViewRepoStructure to explore ${owner}/${repo} structure and verify file paths`,
+        `CRITICAL: Use githubSearchCode to find files by content in ${owner}/${repo} - do not assume file locations`
+      );
+    } else {
+      hints.push(
+        `CRITICAL: Use githubViewRepoStructure to verify file paths in each repository`,
+        `CRITICAL: Use githubSearchCode to search for files by content - do not assume file locations`
+      );
+    }
   }
 
   return createResult({
@@ -540,7 +573,7 @@ async function processFileContent(
       return createResult({
         isError: true,
         hints: [
-          `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
+          `Match string "${matchString}" not found in file. File may have changed since search was performed.`,
         ],
       });
     }
@@ -566,7 +599,7 @@ async function processFileContent(
       return createResult({
         isError: true,
         hints: [
-          `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
+          `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers 1-${totalLines}.`,
         ],
       });
     }
@@ -581,7 +614,7 @@ async function processFileContent(
         return createResult({
           isError: true,
           hints: [
-            `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
+            `Invalid range: endLine (${endLine}) must be >= startLine (${startLine}).`,
           ],
         });
       }

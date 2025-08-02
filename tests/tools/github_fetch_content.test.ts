@@ -597,7 +597,7 @@ describe('GitHub Fetch Content Tool', () => {
 
       // Should error on invalid range
       expect(fileResult.error).toContain(
-        'Invalid range: endLine (3) must be greater than or equal to startLine (5)'
+        'Invalid range: endLine (3) must be >= startLine (5)'
       );
     });
 

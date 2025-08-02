@@ -369,9 +369,15 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     strategicAlternatives: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'trace history and understand changes over time',
-        priority: 'medium',
+        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        reason: 'explore repository structure to find correct file paths',
+        priority: 'high',
+        strategic: true,
+      },
+      {
+        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        reason: 'search for files by content when exact paths are unknown',
+        priority: 'high',
         strategic: true,
       },
       {
