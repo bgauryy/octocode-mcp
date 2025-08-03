@@ -5,12 +5,14 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
 import { getResearchGoalHints } from './utils/toolRelationships';
-import { searchGitHubCodeAPI } from '../../utils/githubAPI';
+import { searchGitHubCodeAPI, getDefaultBranch } from '../../utils/githubAPI';
 import {
   GitHubCodeSearchQuerySchema,
   GitHubCodeSearchQuery,
   ProcessedCodeSearchResult,
   OptimizedCodeSearchResult,
+  GitHubCodeSearchResponse,
+  GitHubCodeSearchMeta,
 } from './scheme/github_search_code';
 
 // Extended type for API response with research context
@@ -37,16 +39,11 @@ interface AggregatedContext {
   };
 }
 
-const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
+const DESCRIPTION = `Strategic code search across GitHub repositories with intelligent query analysis.
 
-SEARCH STRATEGY:
-SEMANTIC: Natural language terms describing functionality, concepts, business logic
-TECHNICAL: Actual code terms, function names, class names, file patterns
-
-Use bulk queries from different angles. Start narrow, broaden if needed.
-Workflow: Search → Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
-
-Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
+Supports semantic and technical search patterns with progressive refinement capabilities.
+Each query provides complete context including failure analysis and adaptive suggestions.
+Results include both successful matches and actionable insights for query optimization.`;
 
 export function registerGitHubSearchCodeTool(
   server: McpServer,
@@ -108,6 +105,36 @@ export function registerGitHubSearchCodeTool(
 }
 
 /**
+ * Ensures unique queryIds across all queries in a batch using efficient single-pass algorithm
+ *
+ * Performance: O(n) time complexity vs O(n²) worst-case of the previous while-loop approach
+ * Memory: Uses Map for counting vs Set + string concatenation in loops
+ *
+ * @param queries Array of queries that may have duplicate or missing IDs
+ * @returns Array of queries with guaranteed unique IDs
+ */
+export function ensureUniqueQueryIds(
+  queries: Partial<GitHubCodeSearchQuery>[]
+): GitHubCodeSearchQuery[] {
+  const idCounts = new Map<string, number>();
+
+  return queries.map((query, index) => {
+    const baseId = query.id || `query_${index + 1}`;
+    const count = idCounts.get(baseId) || 0;
+    idCounts.set(baseId, count + 1);
+
+    const uniqueId = count === 0 ? baseId : `${baseId}_${count}`;
+
+    return {
+      minify: true,
+      sanitize: true,
+      ...query,
+      id: uniqueId,
+    } as GitHubCodeSearchQuery;
+  });
+}
+
+/**
  * Execute multiple GitHub code search queries using API
  */
 async function searchMultipleGitHubCode(
@@ -130,43 +157,64 @@ async function searchMultipleGitHubCode(
     dataQuality: { hasContent: false, hasMatches: false },
   };
 
+  // Ensure all queries have unique IDs
+  const uniqueQueries = ensureUniqueQueryIds(queries);
+
   // Execute each query
-  for (let index = 0; index < queries.length; index++) {
-    const query = queries[index];
-    const queryId = query.id || `query_${index + 1}`;
+  for (let index = 0; index < uniqueQueries.length; index++) {
+    const query = uniqueQueries[index];
+    const queryId = query.id!; // Now guaranteed to exist and be unique
 
-    // // Validate query - either queryTerms OR other search filters must be provided
-    // const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
-    // const hasOtherFilters =
-    //   query.language ||
-    //   query.owner ||
-    //   query.repo ||
-    //   query.user ||
-    //   query.org ||
-    //   query.filename ||
-    //   query.extension ||
-    //   query.path ||
-    //   query.size;
+    // Add default branch to query if owner and repo are specified
+    let enhancedQuery = query;
+    if (query.owner && query.repo) {
+      // Handle both single string and array formats
+      const owner = Array.isArray(query.owner) ? query.owner[0] : query.owner;
+      const repo = Array.isArray(query.repo) ? query.repo[0] : query.repo;
 
-    // if (!hasQueryTerms && !hasOtherFilters) {
-    //   errors.push({
-    //     queryId,
-    //     error: `Query ${queryId}: Either queryTerms or search filters (language, owner, repo, etc.) must be provided.`,
-    //   });
-    //   continue;
-    // }
+      try {
+        const defaultBranch = await getDefaultBranch(owner, repo, opts.ghToken);
+        if (defaultBranch) {
+          enhancedQuery = { ...query, branch: defaultBranch };
+        }
+      } catch (error) {
+        // Continue with original query if branch detection fails
+        // Silently continue - branch detection is optional
+      }
+    }
 
     try {
-      // Execute API search
-      const result = await searchGitHubCodeAPI(query, opts.ghToken);
+      // Execute API search with enhanced query
+      const result = await searchGitHubCodeAPI(enhancedQuery, opts.ghToken);
 
-      // Check if result is an error with enhanced recovery hints
+      // Check if result is an error - include as failed query data item
       if ('error' in result) {
-        const recoveryHints = generateErrorRecoveryHints(result.error, query);
+        const smartSuggestions = generateSmartQuerySuggestions(
+          result.error,
+          enhancedQuery
+        );
+
+        // Add failed query as a data item with full context
+        processedResults.push({
+          queryId,
+          matches: [],
+          researchGoal: enhancedQuery.researchGoal,
+          failed: true,
+          hints: smartSuggestions.hints,
+          // Only add meta for failed queries or when verbose
+          meta: {
+            queryArgs: enhancedQuery,
+            error: result.error,
+            searchType: smartSuggestions.searchType,
+            suggestions: smartSuggestions.suggestions,
+          },
+        });
+
+        // Still track in errors for global meta
         errors.push({
           queryId,
           error: result.error,
-          recoveryHints,
+          recoveryHints: smartSuggestions.hints,
         });
         continue;
       }
@@ -188,15 +236,15 @@ async function searchMultipleGitHubCode(
         }
       }
 
-      // 5. Process successful results (already processed by githubAPI.ts)
-      if (searchData.items) {
+      // Process successful results or no results
+      if (searchData.items && searchData.items.length > 0) {
         aggregatedContext.successfulQueries++;
         aggregatedContext.dataQuality.hasContent = true;
 
         searchData.items.forEach(item => {
           // Extract and track search patterns for context
-          if (query.queryTerms) {
-            query.queryTerms.forEach(term =>
+          if (enhancedQuery.queryTerms) {
+            enhancedQuery.queryTerms.forEach(term =>
               aggregatedContext.searchPatterns.add(term)
             );
           }
@@ -208,25 +256,73 @@ async function searchMultipleGitHubCode(
             aggregatedContext.dataQuality.hasMatches = true;
           }
 
-          processedResults.push({
+          // For successful results, only include meta if verbose is true
+          const resultData: ProcessedCodeSearchResult = {
             queryId,
             repository: item.repository.nameWithOwner,
             path: item.path,
             matches: matches,
-            repositoryInfo: {
-              nameWithOwner: item.repository.nameWithOwner,
-            },
-          });
+            researchGoal: enhancedQuery.researchGoal,
+          };
+
+          // Only add meta for verbose mode (don't include searchType for success)
+          if (verbose) {
+            resultData.meta = {
+              queryArgs: enhancedQuery,
+            };
+          }
+
+          processedResults.push(resultData);
+        });
+      } else {
+        // Query succeeded but no results found - treat as smart failure
+        const smartSuggestions = generateSmartQuerySuggestions(
+          'No results found',
+          enhancedQuery
+        );
+
+        processedResults.push({
+          queryId,
+          matches: [],
+          researchGoal: enhancedQuery.researchGoal,
+          failed: true,
+          hints: smartSuggestions.hints,
+          // Always add meta for failed queries
+          meta: {
+            queryArgs: enhancedQuery,
+            searchType: 'no_results',
+            suggestions: smartSuggestions.suggestions,
+          },
         });
       }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      const recoveryHints = generateErrorRecoveryHints(errorMessage, query);
+      const smartSuggestions = generateSmartQuerySuggestions(
+        errorMessage,
+        enhancedQuery
+      );
+
+      // Add exception as failed query data item
+      processedResults.push({
+        queryId,
+        matches: [],
+        researchGoal: enhancedQuery.researchGoal,
+        failed: true,
+        hints: smartSuggestions.hints,
+        // Always add meta for failed queries
+        meta: {
+          queryArgs: enhancedQuery,
+          error: errorMessage,
+          searchType: smartSuggestions.searchType,
+          suggestions: smartSuggestions.suggestions,
+        },
+      });
+
       errors.push({
         queryId,
         error: errorMessage,
-        recoveryHints,
+        recoveryHints: smartSuggestions.hints,
       });
     }
   }
@@ -239,86 +335,170 @@ async function searchMultipleGitHubCode(
     queries,
   });
 
-  // Create response
-  interface SearchResponse {
-    data: ProcessedCodeSearchResult[];
-    hints: string[];
-    metadata?: {
-      totalQueries: number;
-      successfulQueries: number;
-      failedQueries: number;
-      errors: Array<{ queryId: string; error: string }>;
-      aggregatedContext: {
-        foundPackages: string[];
-        foundFiles: string[];
-        repositoryContexts: string[];
-      };
-    };
-  }
+  // Create standardized response using generic structure
 
-  const response: SearchResponse = {
-    data: processedResults,
-    hints,
-  };
+  // Extract unique repositories for meta (exclude failed queries without repositories)
+  const repositories = Array.from(
+    new Set(
+      processedResults
+        .map(r => r.repository)
+        .filter((repo): repo is string => repo !== undefined)
+    )
+  ).map(nameWithOwner => ({ nameWithOwner }));
 
-  // Add metadata in verbose mode
-  if (verbose) {
-    response.metadata = {
-      totalQueries: queries.length,
-      successfulQueries: queries.length - errors.length,
-      failedQueries: errors.length,
-      errors: errors,
-      aggregatedContext: {
+  // Build meta object with proper typing
+  const meta: GitHubCodeSearchMeta = {
+    // Base metadata
+    researchGoal: queries[0]?.researchGoal || 'general',
+    totalOperations: queries.length,
+    successfulOperations: queries.length - errors.length,
+    failedOperations: errors.length,
+    ...(errors.length > 0 && {
+      errors: errors.map(e => ({
+        operationId: e.queryId,
+        error: e.error,
+        hints: e.recoveryHints,
+      })),
+    }),
+
+    // GitHub Code Search specific metadata
+    repositories,
+    totalRepositories: repositories.length,
+    ...(verbose && {
+      researchContext: {
         foundPackages: Array.from(aggregatedContext.foundPackages),
         foundFiles: Array.from(aggregatedContext.foundFiles),
         repositoryContexts: Array.from(aggregatedContext.repositoryContexts),
       },
-    };
-  }
+    }),
+  };
+
+  const response: GitHubCodeSearchResponse = {
+    data: processedResults,
+    meta,
+    hints,
+  };
 
   // 9. Return via createResult (cached automatically by directCache)
   return createResult(response);
 }
 
 /**
- * Generate error recovery hints based on error type and query context
+ * Generate smart suggestions and hints for failed queries
  */
-function generateErrorRecoveryHints(
+function generateSmartQuerySuggestions(
   error: string,
   query: GitHubCodeSearchQuery
-): string[] {
+): {
+  hints: string[];
+  searchType: 'no_results' | 'api_error' | 'validation_error';
+  suggestions: {
+    broaderSearch?: string[];
+    semanticAlternatives?: string[];
+    splitQueries?: GitHubCodeSearchQuery[];
+  };
+} {
   const hints: string[] = [];
   const errorLower = error.toLowerCase();
+  let searchType: 'no_results' | 'api_error' | 'validation_error';
+  const suggestions: {
+    broaderSearch?: string[];
+    semanticAlternatives?: string[];
+    splitQueries?: GitHubCodeSearchQuery[];
+  } = {};
 
+  // Determine search type and generate specific suggestions
   if (errorLower.includes('rate limit') || errorLower.includes('403')) {
+    searchType = 'api_error';
     hints.push('Rate limited - wait a few minutes before retrying');
     hints.push('Use more specific search terms to reduce API calls');
     hints.push('Consider adding owner/repo filters to narrow search scope');
   } else if (errorLower.includes('not found') || errorLower.includes('404')) {
+    searchType = 'api_error';
     hints.push('Repository may be private or non-existent');
     hints.push('Check repository name spelling and accessibility');
+
     if (query.owner && query.repo) {
-      hints.push(
-        `Try searching without repo filter: remove repo: "${query.repo}"`
-      );
+      suggestions.broaderSearch = [
+        `Remove repo filter: search across all ${query.owner} repositories`,
+        'Try searching in public repositories only',
+      ];
     }
   } else if (errorLower.includes('timeout') || errorLower.includes('network')) {
+    searchType = 'api_error';
     hints.push('Network issue - retry the same query');
     hints.push('Try reducing query scope with fewer search terms');
   } else if (
     errorLower.includes('validation') ||
     errorLower.includes('invalid')
   ) {
+    searchType = 'validation_error';
     hints.push('Check query syntax and required parameters');
     hints.push('Ensure queryTerms array is not empty if provided');
   } else {
-    hints.push('Try broader search terms if query is too specific');
-    hints.push(
-      'Add owner/repo filters to scope search to specific repositories'
-    );
+    // Assume no results found
+    searchType = 'no_results';
+
+    // Generate broader search suggestions
+    if (query.queryTerms && query.queryTerms.length > 1) {
+      suggestions.broaderSearch = [
+        'Try individual search terms separately',
+        'Use fewer, more general keywords',
+        'Remove specific technical terms',
+      ];
+
+      // Create split queries for each term
+      suggestions.splitQueries = query.queryTerms.map((term, index) => ({
+        ...query,
+        id: `${query.id || 'split'}-${index + 1}`,
+        queryTerms: [term],
+      }));
+    }
+
+    // Generate semantic alternatives based on research goal
+    if (query.researchGoal === 'debugging') {
+      suggestions.semanticAlternatives = [
+        'error handling',
+        'exception',
+        'try catch',
+        'debug',
+        'log',
+        'test failure',
+        'bug fix',
+        'regression',
+      ];
+    } else if (query.researchGoal === 'code_analysis') {
+      suggestions.semanticAlternatives = [
+        'function',
+        'method',
+        'class',
+        'interface',
+        'implementation',
+        'pattern',
+        'architecture',
+        'design',
+      ];
+    } else if (query.researchGoal === 'code_generation') {
+      suggestions.semanticAlternatives = [
+        'example',
+        'template',
+        'boilerplate',
+        'starter',
+        'sample',
+        'tutorial',
+        'guide',
+        'documentation',
+      ];
+    }
+
+    hints.push('No matches found - try these smart strategies:');
+    hints.push('→ Use broader, more general search terms');
+    hints.push('→ Try semantic alternatives related to your research goal');
+    hints.push('→ Remove specific filters and search across more repositories');
+    hints.push('→ Split complex queries into simpler individual searches');
   }
 
-  return hints;
+  return { hints, searchType, suggestions };
 }
 
 /**
@@ -338,46 +518,50 @@ function generateResponseDrivenHints({
   const hints: string[] = [];
   const totalItems = processedResults.length;
   const hasResults = totalItems > 0;
+  const failedQueries = processedResults.filter(r => r.failed).length;
+
+  // Handle failed queries first
+  if (failedQueries > 0) {
+    const failedQueryIds = processedResults
+      .filter(r => r.failed)
+      .map(r => r.queryId)
+      .join(', ');
+    hints.push(
+      `${failedQueries} queries failed (${failedQueryIds}). Check individual query hints for solutions and retry.`
+    );
+  }
 
   // Research hints based on actual response data
   if (hasResults) {
-    // Extract unique repositories for context
-    const repositories = new Set(processedResults.map(r => r.repository));
-    const uniquePaths = new Set(processedResults.map(r => r.path));
+    // Extract unique repositories for context (filter out failed queries)
+    const repositories = new Set(
+      processedResults
+        .map(r => r.repository)
+        .filter((repo): repo is string => repo !== undefined)
+    );
 
     if (repositories.size === 1) {
-      const repo = Array.from(repositories)[0];
       hints.push(
-        `All results from ${repo} - use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for full context`
+        `Use githubGetFileContent with matchString to get complete implementation context and understand the full flow`
       );
     } else if (repositories.size > 1) {
       hints.push(
-        `Found code in ${repositories.size} repositories - consider focusing on specific repo`
+        `Found results across ${repositories.size} repositories. Compare implementations to identify patterns and best practices`
       );
     }
 
-    // File type analysis
-    const fileExtensions = new Set(
-      Array.from(uniquePaths)
-        .map(path => path.split('.').pop()?.toLowerCase())
-        .filter(Boolean)
-    );
-    if (fileExtensions.size > 1) {
-      hints.push(
-        `Multiple file types found: ${Array.from(fileExtensions).join(', ')} - filter by extension if needed`
-      );
-    }
-
-    // Next step recommendations
-    hints.push(
-      `Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} to get full file context around matches`
-    );
+    // Pattern-based insights
     if (aggregatedContext.searchPatterns.size > 0) {
-      const firstPattern = Array.from(aggregatedContext.searchPatterns)[0];
+      const patternCount = aggregatedContext.searchPatterns.size;
       hints.push(
-        `Found "${firstPattern}" patterns - refine search or explore related code`
+        `Found ${patternCount} different patterns. Use githubGetFileContent to examine complete implementations and understand usage contexts`
       );
     }
+
+    // Suggest next research steps
+    hints.push(
+      'Consider searching for related terms, test files, or documentation to get comprehensive understanding'
+    );
   } else if (errors.length > 0) {
     // Error hints with recovery actions
     const firstError = errors[0];
@@ -385,72 +569,19 @@ function generateResponseDrivenHints({
       hints.push(...firstError.recoveryHints);
     }
 
-    // Fallback hints based on query analysis
-    const hasSpecificRepo = queries.some(q => q.owner && q.repo);
-    if (!hasSpecificRepo) {
-      hints.push(
-        'Try adding owner/repo filters to search specific repositories'
-      );
-    }
-
-    const hasComplexQuery = queries.some(
-      q => q.queryTerms && q.queryTerms.length > 2
+    // General recovery strategies
+    hints.push(
+      'Try broader search terms, remove filters, or search different repositories'
     );
-    if (hasComplexQuery) {
-      hints.push('Try simpler search terms - start with 1-2 key terms');
-    }
   } else {
     // No results, no errors - provide efficient LLM guidance
-    const hasFilters = queries.some(
-      q => q.language || q.filename || q.extension || q.owner || q.repo
-    );
-    const hasSpecificTerms = queries.some(
-      q => q.queryTerms && q.queryTerms.length > 1
-    );
-
-    // Primary recovery strategies
-    hints.push('No matches found - try these strategies:');
-
-    if (hasFilters) {
-      hints.push(
-        '✓ Remove filters to broaden search: remove language/extension/owner/repo filters'
-      );
-      hints.push(
-        '✓ Try fewer specific filters - start with just owner/repo or just language'
-      );
-    }
-
-    if (hasSpecificTerms) {
-      hints.push(
-        '✓ Use broader search terms: try single keywords instead of phrases'
-      );
-      hints.push('✓ Search for function names, class names, or core concepts');
-    } else {
-      hints.push(
-        '✓ Add more search terms: include related keywords or synonyms'
-      );
-    }
-
-    // Alternative search strategies
     hints.push(
-      '✓ Try semantic terms: "authentication", "database", "API" instead of exact code'
+      'No matches found. Try broader keywords, different search terms, or remove filters to expand search scope'
     );
-    hints.push(
-      '✓ Search different repositories: popular libraries or framework repos'
-    );
-
-    // Verification steps
-    if (queries.some(q => q.owner && q.repo)) {
-      hints.push('✓ Verify repository exists and is public');
-    } else {
-      hints.push(
-        '✓ Add specific repository: owner: "username", repo: "repository"'
-      );
-    }
   }
 
-  // Context-aware research goal hints
-  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  // Context-aware research goal hints (now required)
+  const researchGoal = queries[0]?.researchGoal; // Get from first query since it's now required
   if (researchGoal && hasResults) {
     const goalHints = getResearchGoalHints(
       TOOL_NAMES.GITHUB_SEARCH_CODE,

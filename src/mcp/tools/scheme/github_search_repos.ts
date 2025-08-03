@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ResearchGoalEnum } from '../utils/toolConstants';
 import { BaseSearchParams, OrderSort } from '../../../types';
+import { GenericToolResponse, BaseToolMeta } from '../../types/genericResponse';
 
 // Define the repository search query schema for bulk operations
 export const GitHubReposSearchQuerySchema = z.object({
@@ -284,3 +285,43 @@ export interface GitHubReposSearchParams
   sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
   page?: number; // For pagination support
 }
+
+/**
+ * Simplified repository result for the standardized response
+ */
+export interface ProcessedRepositoryResult {
+  queryId: string;
+  name: string;
+  stars: number;
+  description: string;
+  language: string;
+  url: string;
+  forks: number;
+  updatedAt: string;
+  owner: string;
+  researchGoal: string;
+}
+
+/**
+ * GitHub Repository Search specific metadata extending the base
+ */
+export interface GitHubReposSearchMeta extends BaseToolMeta {
+  /** Total repositories found across all queries */
+  totalRepositories: number;
+  /** Language distribution in results */
+  languageDistribution?: Record<string, number>;
+  /** Star range statistics */
+  starStatistics?: {
+    min: number;
+    max: number;
+    average: number;
+  };
+}
+
+/**
+ * Standardized GitHub Repository Search response
+ */
+export type GitHubRepositorySearchResponse = GenericToolResponse<
+  ProcessedRepositoryResult,
+  GitHubReposSearchMeta
+>;

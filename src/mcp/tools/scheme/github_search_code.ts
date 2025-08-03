@@ -1,5 +1,6 @@
 import z from 'zod';
 import { ResearchGoalEnum } from '../utils/toolConstants';
+import { GenericToolResponse, BaseToolMeta } from '../../types/genericResponse';
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 
@@ -13,13 +14,50 @@ export interface GitHubCodeSearchQueryResult {
 }
 export interface ProcessedCodeSearchResult {
   queryId: string;
-  repository: string;
-  path: string;
+  repository?: string;
+  path?: string;
   matches: string[];
-  repositoryInfo: {
-    nameWithOwner: string;
+  researchGoal: string;
+  failed?: boolean;
+  hints?: string[];
+  meta?: {
+    queryArgs: GitHubCodeSearchQuery;
+    error?: string;
+    searchType?: 'success' | 'no_results' | 'api_error' | 'validation_error';
+    suggestions?: {
+      broaderSearch?: string[];
+      semanticAlternatives?: string[];
+      splitQueries?: GitHubCodeSearchQuery[];
+    };
   };
 }
+
+/**
+ * GitHub Code Search specific metadata extending the base
+ */
+export interface GitHubCodeSearchMeta extends BaseToolMeta {
+  /** Repository information for the search results */
+  repositories: Array<{
+    nameWithOwner: string;
+    url?: string;
+  }>;
+  /** Total unique repositories found */
+  totalRepositories: number;
+  /** Additional research context when verbose mode is enabled */
+  researchContext?: {
+    foundPackages: string[];
+    foundFiles: string[];
+    repositoryContexts: string[];
+  };
+}
+
+/**
+ * Standardized GitHub Code Search response
+ */
+export type GitHubCodeSearchResponse = GenericToolResponse<
+  ProcessedCodeSearchResult,
+  GitHubCodeSearchMeta
+>;
 
 export interface GitHubCodeSearchItem {
   path: string;
@@ -51,7 +89,7 @@ export const GitHubCodeSearchQuerySchema = z.object({
     .string()
     .optional()
     .describe(
-      'Query description/purpose (e.g., "core-implementation", "documentation-guide", "config-files")'
+      'Query description/purpose (e.g., "core-implementation", "documentation-guide", "config-files", "code-generation", "architectural-review"). If not provided, will be auto-generated as "query_N". Duplicate IDs will be made unique with suffixes.'
     ),
   queryTerms: z
     .array(z.string())
@@ -83,6 +121,12 @@ export const GitHubCodeSearchQuerySchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .describe('Repository name (use with owner for specific repo)'),
+  branch: z
+    .string()
+    .optional()
+    .describe(
+      'Branch name (automatically set to default branch when owner/repo specified)'
+    ),
   filename: z
     .string()
     .optional()
@@ -147,7 +191,6 @@ export const GitHubCodeSearchQuerySchema = z.object({
     .describe('Remove secrets and malicious content (default: true)'),
   researchGoal: z
     .enum(ResearchGoalEnum)
-    .optional()
     .describe('Research goal to guide tool behavior and hint generation'),
 });
 

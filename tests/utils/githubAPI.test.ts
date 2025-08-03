@@ -278,6 +278,7 @@ describe('GitHub API Utils', () => {
         repo: 'react',
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -286,6 +287,9 @@ describe('GitHub API Utils', () => {
         q: 'Button language:typescript repo:facebook/react',
         per_page: 30,
         page: 1,
+        headers: {
+          'Accept': 'application/vnd.github.v3.text-match+json',
+        },
       });
 
       expect(mockCreateResult).toHaveBeenCalledWith({
@@ -300,6 +304,7 @@ describe('GitHub API Utils', () => {
       const params = {
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -328,6 +333,7 @@ describe('GitHub API Utils', () => {
         queryTerms: ['test'],
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
       await searchGitHubCodeAPI(params);
 
@@ -357,6 +363,7 @@ describe('GitHub API Utils', () => {
         queryTerms: ['test'],
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
       await searchGitHubCodeAPI(params);
 
@@ -386,6 +393,7 @@ describe('GitHub API Utils', () => {
         queryTerms: ['test'],
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
       await searchGitHubCodeAPI(params);
 
@@ -421,6 +429,7 @@ describe('GitHub API Utils', () => {
         match: ['file'] as ('file' | 'path')[],
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -443,6 +452,7 @@ describe('GitHub API Utils', () => {
         user: 'octocat',
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(userParams);
@@ -459,6 +469,7 @@ describe('GitHub API Utils', () => {
         org: 'github',
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(orgParams);
@@ -476,6 +487,7 @@ describe('GitHub API Utils', () => {
         org: 'github',
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(bothParams);
@@ -498,6 +510,7 @@ describe('GitHub API Utils', () => {
         fork: 'true' as const,
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
@@ -514,6 +527,7 @@ describe('GitHub API Utils', () => {
         fork: 'false' as const,
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
@@ -530,6 +544,7 @@ describe('GitHub API Utils', () => {
         fork: 'only' as const,
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(forkOnlyParams);
@@ -552,6 +567,7 @@ describe('GitHub API Utils', () => {
         archived: true,
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
@@ -568,6 +584,7 @@ describe('GitHub API Utils', () => {
         archived: false,
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
@@ -593,6 +610,7 @@ describe('GitHub API Utils', () => {
         org: 'github',
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -618,6 +636,7 @@ describe('GitHub API Utils', () => {
         language: 'javascript',
         minify: true,
         sanitize: true,
+        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);

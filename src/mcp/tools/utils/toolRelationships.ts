@@ -11,93 +11,87 @@ export const RESEARCH_GOAL_HINTS: Record<
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: {
     // Core development goals
     [ResearchGoal.CODE_GENERATION]: [
-      'Fetch full implementation with fetchContent + matchString for complete context',
-      'Search test files to understand usage patterns and API design',
-      'Explore similar repositories for alternative implementation approaches',
-      'Use package search to understand dependency patterns and ecosystem context',
+      'Use githubGetFileContent with matchString to get complete implementation context',
+      'Search test files to understand usage patterns and expected behavior',
+      'Explore similar repositories for alternative approaches and best practices',
     ],
     [ResearchGoal.DEBUGGING]: [
-      'Check commit history to trace when issues were introduced or fixed',
-      'Search issues for discussions about similar error patterns',
-      'Look for test files that reproduce the problem',
-      'Examine pull requests that attempted similar fixes',
+      'Search issues and pull requests for similar problems and solutions',
+      'Check commit history to understand when and how issues were resolved',
+      'Look for test files that demonstrate the expected vs actual behavior',
     ],
     [ResearchGoal.CODE_ANALYSIS]: [
-      'Examine imports and dependencies to understand architectural relationships',
-      'Look for performance bottlenecks and optimization opportunities',
+      'Use githubGetFileContent to examine complete file structure and dependencies',
+      'Search for related implementations to understand patterns and architecture',
     ],
     [ResearchGoal.DISCOVERY]: [
-      'Start with broad semantic searches to understand domain concepts',
-      'Use repository structure exploration to identify key components',
-      'Follow import/dependency chains to map system relationships',
-      'Search across multiple repositories for pattern recognition',
+      'Start with broad searches then progressively narrow focus based on findings',
+      'Use multiple search strategies to get comprehensive coverage',
+      'Cross-reference findings across different repositories for validation',
     ],
     // Skip less common goals to avoid hint fatigue
   },
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
     [ResearchGoal.DISCOVERY]: [
-      'Examine repository structure and README files for project overview',
-      'Check for similar repositories and projects to understand the ecosystem using topics',
+      'Examine repository structure and documentation for project understanding',
+      'Use topics and stars to identify popular and relevant projects',
     ],
     [ResearchGoal.CODE_GENERATION]: [
-      'Search code within repositories for implementation patterns and examples',
-      'Check configuration files and be aware of versioning and dependencies',
-      'Review documentation and API design decisions',
+      'Search for repositories with similar functionality for implementation patterns',
+      'Check configuration and documentation for setup and integration guidance',
     ],
     [ResearchGoal.CONTEXT_GENERATION]: [
-      'Analyze repository topics and dependencies for ecosystem understanding',
-      'Study project organization and architectural patterns',
+      'Analyze repository metadata and dependencies for ecosystem understanding',
+      'Study project organization patterns and architectural decisions',
     ],
   },
   [TOOL_NAMES.GITHUB_FETCH_CONTENT]: {
     [ResearchGoal.CODE_GENERATION]: [
-      'Extract patterns, interfaces, and implementation details for reference',
-      'Examine related files in same directory for complete context',
+      'Extract complete patterns and interfaces for implementation reference',
+      'Examine related files in the same directory for full context',
     ],
     [ResearchGoal.DOCS_GENERATION]: [
-      'Parse API signatures, comments, and type definitions for documentation',
+      'Parse function signatures and comments for comprehensive documentation',
       'Look for usage examples and test cases that demonstrate functionality',
     ],
     [ResearchGoal.CODE_REVIEW]: [
-      'Analyze code quality, security patterns, and error handling approaches',
-      'Check for best practices and potential improvements',
+      'Analyze implementation patterns and identify potential improvements',
+      'Check for consistency with project standards and best practices',
     ],
   },
   [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: {
     [ResearchGoal.DISCOVERY]: [
-      'Identify key entry points, main modules, and documentation directories',
-      'Map project architecture and understand code organization',
+      'Identify key directories and entry points for understanding project architecture',
+      'Map project structure to understand code organization and dependencies',
     ],
     [ResearchGoal.CODE_GENERATION]: [
-      'Locate similar components and features for implementation patterns',
-      'Find test structure and configuration setup for project templates',
+      'Locate similar components and patterns for implementation reference',
+      'Find configuration and setup files for project template creation',
     ],
     // Only include most actionable scenarios
   },
   [TOOL_NAMES.PACKAGE_SEARCH]: {
     [ResearchGoal.CODE_GENERATION]: [
-      'Verify package versions and compatibility for your target environment',
-      'Explore package repository for usage examples and integration guides',
+      'Verify package compatibility and find usage examples',
+      'Check package repository for implementation guides and best practices',
     ],
     [ResearchGoal.CODE_OPTIMIZATION]: [
-      'Compare bundle sizes and performance characteristics of alternatives',
-      'Look for tree-shakeable imports and lighter package variants',
+      'Compare alternatives for performance and bundle size considerations',
+      'Look for lightweight variants and tree-shakeable options',
     ],
     [ResearchGoal.DEBUGGING]: [
-      'Check package issues and changelog for known problems and fixes',
-      'Review version compatibility and breaking changes',
+      'Check package issues and changelogs for known problems and solutions',
+      'Review version compatibility and breaking change information',
     ],
   },
   [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {
     [ResearchGoal.DEBUGGING]: [
-      'Focus on recent issues with similar symptoms or error messages',
-      'Look for closed issues with solutions and workarounds',
-      'Check for ongoing discussions about related problems',
+      'Focus on recent issues with similar symptoms for current solutions',
+      'Look for closed issues with verified fixes and workarounds',
     ],
     [ResearchGoal.DISCOVERY]: [
-      'Explore feature requests and roadmap discussions',
-      'Understand community pain points and common use cases',
-      'Find discussions about architecture and design decisions',
+      'Explore feature requests and community discussions for insights',
+      'Understand common use cases and pain points from user feedback',
     ],
   },
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
@@ -842,7 +836,7 @@ function generateResearchGuidance(
 
 /**
  * Generate formatted hints for LLM with strategic guidance
- * Optimized to reduce redundancy and limit strategic options
+ * Optimized to be general, smart, and actionable for LLM follow-up
  */
 export function generateToolHints(
   currentTool: ToolName,
@@ -851,16 +845,7 @@ export function generateToolHints(
   const suggestions = getToolSuggestions(currentTool, context);
   const hints: string[] = [];
 
-  // Prioritize custom hints from tools over generic hints when they provide specific guidance
-  const hasSpecificCustomHints = suggestions.customHints.some(
-    hint =>
-      hint.includes('Try') ||
-      hint.includes('Use') ||
-      hint.includes('Check') ||
-      hint.includes(':')
-  );
-
-  // Add custom hints from the tool first (without CUSTOM: prefix for cleaner output)
+  // Add custom hints from the tool first (these are context-specific)
   if (suggestions.customHints.length > 0) {
     hints.push(...suggestions.customHints);
   }
@@ -873,14 +858,22 @@ export function generateToolHints(
     }
   }
 
-  // Add centralized error handling hints only if no specific custom hints provided
-  if (context.errorType === 'auth_required' && !hasSpecificCustomHints) {
-    hints.push(`Authentication required: run "gh auth login" then retry`);
-  } else if (context.errorType === 'rate_limit' && !hasSpecificCustomHints) {
-    hints.push(`Rate limited: wait 5-10 minutes or use fewer targeted queries`);
+  // Add general error handling hints
+  if (context.errorType === 'auth_required') {
+    hints.push(
+      'Authentication required. Use api_status_check tool to verify GitHub connection.'
+    );
+  } else if (context.errorType === 'rate_limit') {
+    hints.push(
+      'Request limit reached. Wait a few minutes or use more specific search terms.'
+    );
+  } else if (context.errorType === 'no_results') {
+    hints.push(
+      'No results found. Try broader search terms or different keywords.'
+    );
   }
 
-  // Add strategic guidance - limit to max 2 options to avoid hint fatigue
+  // Add strategic next steps (limit to 2 for clarity)
   let strategicCount = 0;
   const maxStrategicHints = 2;
 
@@ -891,7 +884,7 @@ export function generateToolHints(
     strategicCount < maxStrategicHints
   ) {
     const topFallback = suggestions.fallback[0];
-    hints.push(`Try ${topFallback.tool}: ${topFallback.reason}`);
+    hints.push(`Try ${topFallback.tool} to ${topFallback.reason}`);
     strategicCount++;
   }
 
@@ -901,37 +894,21 @@ export function generateToolHints(
     suggestions.nextSteps.length > 0 &&
     strategicCount < maxStrategicHints
   ) {
-    const topNext = suggestions.nextSteps[0];
-    hints.push(`Next: ${topNext.tool} to ${topNext.reason}`);
+    const topNextStep = suggestions.nextSteps[0];
+    hints.push(`Use ${topNextStep.tool} to ${topNextStep.reason}`);
     strategicCount++;
   }
 
-  // Add one strategic alternative or prerequisite if space allows
-  if (strategicCount < maxStrategicHints) {
-    if (suggestions.strategicAlternatives.length > 0) {
-      const topStrategy = suggestions.strategicAlternatives[0];
-      hints.push(`Alternative: ${topStrategy.tool} to ${topStrategy.reason}`);
-      strategicCount++;
-    } else if (suggestions.prerequisites.length > 0) {
-      const topPrereq = suggestions.prerequisites[0];
-      hints.push(`First: ${topPrereq.tool} to ${topPrereq.reason}`);
-      strategicCount++;
-    }
+  // Add strategic alternatives if space allows
+  if (
+    suggestions.strategicAlternatives.length > 0 &&
+    strategicCount < maxStrategicHints
+  ) {
+    const topAlternative = suggestions.strategicAlternatives[0];
+    hints.push(`Consider ${topAlternative.tool} to ${topAlternative.reason}`);
   }
 
-  // Add research guidance only if no specific hints were provided
-  if (hints.length === 0 && suggestions.researchGuidance.length > 0) {
-    hints.push(suggestions.researchGuidance[0]); // Just the most relevant guidance
-  }
-
-  // Add contextual performance hints
-  if (context.totalItems && context.totalItems > 50) {
-    hints.push(
-      `Large result set: consider filtering or using more specific parameters`
-    );
-  }
-
-  return hints.slice(0, 20);
+  return hints;
 }
 
 /**
