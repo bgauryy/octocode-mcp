@@ -19,7 +19,7 @@ import {
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
 } from '../mcp/tools/scheme/package_search';
-import { NpmPackage } from '../types';
+import { NpmPackage, PythonPackage } from '../types';
 import {
   PackageSearchBulkParams,
   NpmPackageQuery,
@@ -91,7 +91,7 @@ export async function searchPackagesAPI(
     // Create concurrent search promises
     const searchPromises: Promise<{
       type: 'npm' | 'python';
-      packages: NpmPackage[];
+      packages: (NpmPackage | PythonPackage)[];
       errors: string[];
     }>[] = [];
 
@@ -171,14 +171,14 @@ export async function searchPackagesAPI(
 
     // Aggregate results by type
     const npmPackages: NpmPackage[] = [];
-    const pythonPackages: NpmPackage[] = [];
+    const pythonPackages: PythonPackage[] = [];
 
     for (const result of searchResults) {
       if (result.type === 'npm') {
-        npmPackages.push(...result.packages);
+        npmPackages.push(...(result.packages as NpmPackage[]));
         errors.npm.push(...result.errors);
       } else {
-        pythonPackages.push(...result.packages);
+        pythonPackages.push(...(result.packages as PythonPackage[]));
         errors.python.push(...result.errors);
       }
     }
@@ -286,7 +286,7 @@ async function searchNpmPackage(
 
 async function searchPythonPackage(
   packageName: string
-): Promise<NpmPackage | null> {
+): Promise<PythonPackage | null> {
   // Normalize package name for PyPI API (lowercase, underscores to hyphens)
   const normalizedName = packageName.toLowerCase().replace(/_/g, '-');
 
@@ -409,9 +409,7 @@ async function searchPythonPackage(
 
 export function parseNpmSearchOutput(output: string): NpmPackage[] {
   try {
-    const wrapper = JSON.parse(output);
-    const commandResult = wrapper.result;
-
+    const parsed = JSON.parse(output);
     let packages: Array<{
       name?: string;
       version?: string;
@@ -422,10 +420,39 @@ export function parseNpmSearchOutput(output: string): NpmPackage[] {
     }> = [];
 
     // Handle different npm search output formats
-    if (Array.isArray(commandResult)) {
-      packages = commandResult;
-    } else if (commandResult?.objects && Array.isArray(commandResult.objects)) {
-      packages = commandResult.objects.map(
+    if (Array.isArray(parsed)) {
+      // Direct array format (npm CLI --json output)
+      packages = parsed;
+    } else if (parsed.result) {
+      // Wrapped format (from executeNpmCommand)
+      const commandResult = parsed.result;
+      if (Array.isArray(commandResult)) {
+        packages = commandResult;
+      } else if (
+        commandResult?.objects &&
+        Array.isArray(commandResult.objects)
+      ) {
+        packages = commandResult.objects.map(
+          (obj: {
+            package?: {
+              name?: string;
+              version?: string;
+              description?: string;
+              keywords?: string[];
+              links?: { repository?: string };
+              repository?: { url?: string };
+            };
+            [key: string]: unknown;
+          }) => obj.package || obj
+        );
+      } else if (
+        commandResult?.results &&
+        Array.isArray(commandResult.results)
+      ) {
+        packages = commandResult.results;
+      }
+    } else if (parsed?.objects && Array.isArray(parsed.objects)) {
+      packages = parsed.objects.map(
         (obj: {
           package?: {
             name?: string;
@@ -438,8 +465,8 @@ export function parseNpmSearchOutput(output: string): NpmPackage[] {
           [key: string]: unknown;
         }) => obj.package || obj
       );
-    } else if (commandResult?.results && Array.isArray(commandResult.results)) {
-      packages = commandResult.results;
+    } else if (parsed?.results && Array.isArray(parsed.results)) {
+      packages = parsed.results;
     }
 
     return packages.map(normalizePackage);
@@ -465,17 +492,27 @@ function normalizePackage(pkg: {
   const keywords = pkg.keywords || [];
   const limitedKeywords = keywords.slice(0, MAX_KEYWORDS);
 
+  // Extract repository URL from NPM CLI format
+  let repositoryUrl = null;
+  if (pkg.links?.repository) {
+    repositoryUrl = pkg.links.repository;
+  } else if (pkg.repository?.url) {
+    repositoryUrl = pkg.repository.url;
+  }
+
   return {
     name: pkg.name || '',
     version: pkg.version || '',
     description: truncatedDescription,
     keywords: limitedKeywords,
-    repository: pkg.links?.repository || pkg.repository?.url || null,
+    repository: repositoryUrl,
   };
 }
 
-function deduplicatePackagesOptimized(packages: NpmPackage[]): NpmPackage[] {
-  const packageMap = new Map<string, NpmPackage>();
+function deduplicatePackagesOptimized<T extends { name: string }>(
+  packages: T[]
+): T[] {
+  const packageMap = new Map<string, T>();
 
   for (const pkg of packages) {
     if (!packageMap.has(pkg.name)) {
@@ -603,7 +640,7 @@ async function fetchNpmMetadata(
 }
 
 function createPythonMetadataResults(
-  packages: NpmPackage[]
+  packages: PythonPackage[]
 ): Record<string, EnhancedPackageMetadata> {
   const results: Record<string, EnhancedPackageMetadata> = {};
 

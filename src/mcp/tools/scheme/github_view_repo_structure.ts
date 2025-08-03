@@ -149,20 +149,12 @@ export interface ProcessedRepositoryStructureResult {
   researchGoal?: string;
   failed?: boolean;
   hints?: string[];
-  meta?: {
-    queryArgs: GitHubRepositoryStructureQuery;
-    error?: string;
-    searchType?:
-      | 'no_access'
-      | 'api_error'
-      | 'validation_error'
-      | 'branch_fallback';
-    suggestions?: {
-      broaderSearch?: string[];
-      alternativeBranches?: string[];
-      relatedRepositories?: string[];
-    };
+  data?: {
+    repository?: string;
+    structure?: GitHubRepositoryStructureResult;
   };
+  error?: string;
+  metadata: Record<string, any>;
 }
 
 export interface GitHubRepositoryStructureMeta extends BaseToolMeta {
@@ -183,12 +175,15 @@ export interface GitHubRepositoryStructureResponse
 
 // Aggregated context for bulk operations
 export interface AggregatedRepositoryContext {
+  totalQueries: number;
+  successfulQueries: number;
+  failedQueries: number;
   foundDirectories: Set<string>;
   foundFileTypes: Set<string>;
   repositoryContexts: Set<string>;
   exploredPaths: Set<string>;
-  successfulQueries: number;
   dataQuality: {
+    hasResults: boolean;
     hasContent: boolean;
     hasStructure: boolean;
   };

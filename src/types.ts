@@ -257,6 +257,14 @@ export interface NpmPackage {
   };
 }
 
+export interface PythonPackage {
+  name: string;
+  version: string;
+  description: string | null;
+  keywords: string[];
+  repository: string | null;
+}
+
 // GitHub Search Code Types
 export interface GitHubCodeSearchItem {
   path: string;

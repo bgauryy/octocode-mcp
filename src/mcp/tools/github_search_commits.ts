@@ -134,26 +134,53 @@ export function registerSearchGitHubCommitsTool(
             ...(args.orTerms || []),
           ];
 
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
-            hasResults: result.commits.length > 0,
-            totalItems: result.commits.length,
-            researchGoal: args.researchGoal,
-            responseContext,
-            queryContext: {
-              owner: args.owner,
-              repo: args.repo,
-              queryTerms: searchTerms,
-            },
-          });
+          const baseHints = generateToolHints(
+            TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+            {
+              hasResults: result.commits.length > 0,
+              totalItems: result.commits.length,
+              researchGoal: args.researchGoal,
+              responseContext,
+              queryContext: {
+                owner: args.owner,
+                repo: args.repo,
+                queryTerms: searchTerms,
+              },
+            }
+          );
+
+          // Build enhanced hints
+          let enhancedHints = baseHints;
+
+          // Add hint about getChangesContent if we have results
+          if (result.commits.length > 0) {
+            const changesHint =
+              args.owner && args.repo
+                ? `You can see code changes of the commit using getChangesContent: true`
+                : `You can see code changes of the commit using getChangesContent: true (requires owner and repo parameters)`;
+            enhancedHints = [changesHint, ...enhancedHints];
+          }
+
+          // Add hint about limited results if total_count > shown commits
+          if ((result.total_count || 0) > (result.commits?.length || 0)) {
+            const limitHint = `Showing ${result.commits?.length || 0} of ${result.total_count} total commits. Increase limit parameter to see more results.`;
+            enhancedHints = [limitHint, ...enhancedHints];
+          }
+
+          const hints = enhancedHints;
 
           return createResult({
             data: {
               data: {
-                ...result,
-                apiSource: true,
+                total_count: result.total_count || 0,
+                incomplete_results: result.incomplete_results || false,
+                commits: result.commits || [],
               },
               meta: {
                 totalResults: result.commits?.length || 0,
+                totalAvailable: result.total_count || 0,
+                showingLimited:
+                  (result.total_count || 0) > (result.commits?.length || 0),
                 researchGoal: args.researchGoal,
               },
               hints,
