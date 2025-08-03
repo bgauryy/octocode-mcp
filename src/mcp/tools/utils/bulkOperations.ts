@@ -27,7 +27,6 @@ export interface BulkQuery {
  */
 export interface ProcessedBulkResult {
   queryId: string;
-  success: boolean;
   data?: any;
   error?: string;
   hints?: string[];
@@ -186,7 +185,7 @@ export function generateBulkHints<
       const noResultsQueries: string[] = [];
       if (results) {
         results.forEach(({ queryId, result }) => {
-          if (result.success && result.metadata?.searchType === 'no_results') {
+          if (!result.error && result.metadata?.searchType === 'no_results') {
             noResultsQueries.push(queryId);
           }
         });
@@ -264,9 +263,8 @@ export function createBulkResponse<
 
   const meta: any = {
     totalOperations: results.length,
-    successfulOperations: results.filter(r => r.result.success !== false)
-      .length,
-    failedOperations: results.filter(r => r.result.success === false).length,
+    successfulOperations: results.filter(r => !r.result.error).length,
+    failedOperations: results.filter(r => !!r.result.error).length,
   };
 
   // Include aggregated context if requested
@@ -368,10 +366,10 @@ export function buildAggregatedContext<
 >(results: R[], contextBuilder: (results: R[]) => C): C {
   const baseContext = {
     totalQueries: results.length,
-    successfulQueries: results.filter(r => r.success).length,
-    failedQueries: results.filter(r => !r.success).length,
+    successfulQueries: results.filter(r => !r.error).length,
+    failedQueries: results.filter(r => !!r.error).length,
     dataQuality: {
-      hasResults: results.some(r => r.success && r.data),
+      hasResults: results.some(r => !r.error && r.data),
     },
   };
 

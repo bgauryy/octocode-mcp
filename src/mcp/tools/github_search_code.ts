@@ -146,7 +146,6 @@ async function searchMultipleGitHubCode(
 
           return {
             queryId: query.id!,
-            success: false,
             error: apiResult.error,
             hints: smartSuggestions.hints,
             metadata: {
@@ -177,7 +176,6 @@ async function searchMultipleGitHubCode(
 
         const result = {
           queryId: query.id!,
-          success: true,
           data: {
             repository,
             files: apiResult.items.map(item => ({
@@ -197,6 +195,7 @@ async function searchMultipleGitHubCode(
         // Add searchType and hints for no results case
         if (hasNoResults) {
           (result.metadata as any).searchType = 'no_results';
+          (result.metadata as any).queryArgs = query;
 
           // Generate specific hints for no results
           const noResultsHints = [
@@ -229,7 +228,6 @@ async function searchMultipleGitHubCode(
 
         return {
           queryId: query.id!,
-          success: false,
           error: errorMessage,
           hints: smartSuggestions.hints,
           metadata: {
@@ -245,7 +243,7 @@ async function searchMultipleGitHubCode(
   );
 
   // Build aggregated context for intelligent hints
-  const successfulCount = results.filter(r => r.result.success).length;
+  const successfulCount = results.filter(r => !r.result.error).length;
   const aggregatedContext: GitHubCodeAggregatedContext = {
     totalQueries: results.length,
     successfulQueries: successfulCount,
@@ -258,19 +256,19 @@ async function searchMultipleGitHubCode(
       hasResults: successfulCount > 0,
       hasContent: results.some(
         r =>
-          r.result.success &&
+          !r.result.error &&
           r.result.data?.files &&
           r.result.data.files.length > 0
       ),
       hasMatches: results.some(
-        r => r.result.success && r.result.metadata?.hasMatches
+        r => !r.result.error && r.result.metadata?.hasMatches
       ),
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (result.success) {
+    if (!result.error) {
       if (result.data?.repository) {
         aggregatedContext.repositoryContexts.add(result.data.repository);
       }
@@ -297,9 +295,12 @@ async function searchMultipleGitHubCode(
     maxHints: 8,
   };
 
-  // Add queryArgs to metadata for failed queries or when verbose is true
+  // Add queryArgs to metadata for failed queries, no results cases, or when verbose is true
   const processedResults = results.map(({ queryId, result }) => {
-    if (!result.success || verbose) {
+    const hasError = !!result.error;
+    const hasNoResults = result.metadata?.searchType === 'no_results';
+
+    if (hasError || hasNoResults || verbose) {
       // Find the original query for this result
       const originalQuery = uniqueQueries.find(q => q.id === queryId);
       if (originalQuery && result.metadata) {
