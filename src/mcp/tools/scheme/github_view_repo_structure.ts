@@ -108,20 +108,17 @@ export interface GitHubRepositoryStructureResult {
     filtered: boolean;
     originalCount: number;
   };
-  files: {
-    count: number;
-    files: Array<{
-      name: string;
+  filesByDepth: Record<
+    number,
+    Array<{
       path: string;
       size?: number;
-      depth: number;
       url: string;
-    }>;
-  };
+    }>
+  >;
   folders: {
     count: number;
     folders: Array<{
-      name: string;
       path: string;
       depth: number;
       url: string;

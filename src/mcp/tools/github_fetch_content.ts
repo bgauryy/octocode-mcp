@@ -118,10 +118,8 @@ async function fetchMultipleGitHubFileContents(
 
       results.push({
         queryId: query.id,
-        originalQuery: query,
+        researchGoal: query.researchGoal,
         result: apiResult,
-        apiResult,
-        fallbackTriggered: false,
       });
     } catch (error) {
       const errorMessage =
@@ -129,79 +127,32 @@ async function fetchMultipleGitHubFileContents(
 
       results.push({
         queryId: query.id!,
-        originalQuery: query,
+        researchGoal: query.researchGoal,
+        originalQuery: query, // Only include on error
         result: { error: errorMessage },
-        fallbackTriggered: false,
         error: errorMessage,
       });
     }
   }
 
-  // Aggregate results for context
-  const totalQueries = results.length;
+  // Generate intelligent hints based on results
   const successfulQueries = results.filter(
     r => !('error' in r.result) && !r.error
   ).length;
 
-  // Build response context for intelligent hints
-  const responseContext = {
-    foundRepositories: Array.from(
-      new Set(
-        results
-          .filter(r => !('error' in r.result))
-          .map(r => `${r.originalQuery.owner}/${r.originalQuery.repo}`)
-      )
-    ),
-    foundFiles: results
-      .filter(r => !('error' in r.result))
-      .map(r => r.originalQuery.filePath),
-    dataQuality: {
-      hasContent: successfulQueries > 0,
-      hasMatches: results.some(
-        r =>
-          !('error' in r.result) &&
-          'content' in r.result &&
-          r.result.content &&
-          r.result.content.length > 0
-      ),
-    },
-  };
-
-  // Generate intelligent hints
-  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
   const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
     hasResults: successfulQueries > 0,
     totalItems: successfulQueries,
-    researchGoal,
-    responseContext,
     customHints: results
       .filter(r => 'error' in r.result && r.result.hints)
       .flatMap(r =>
         'error' in r.result && r.result.hints ? r.result.hints : []
       )
-      .slice(0, 5), // Limit to 5 most relevant hints
+      .slice(0, 3), // Limit to 3 most relevant hints
   });
 
   return createResult({
-    data: {
-      results,
-      meta: {
-        researchGoal: researchGoal || 'analysis',
-        totalOperations: totalQueries,
-        successfulOperations: successfulQueries,
-        failedOperations: totalQueries - successfulQueries,
-        ...(totalQueries - successfulQueries > 0 && {
-          errors: results
-            .filter(r => r.error || 'error' in r.result)
-            .map(r => ({
-              operationId: r.queryId,
-              error:
-                r.error ||
-                ('error' in r.result ? r.result.error : 'Unknown error'),
-            })),
-        }),
-      },
-    },
+    data: results, // Flat array of results
     hints,
   });
 }

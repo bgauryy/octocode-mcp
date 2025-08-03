@@ -4,31 +4,31 @@ import { ensureUniqueQueryIds } from '../../src/mcp/tools/utils/queryUtils.js';
 
 describe('GitHubCodeSearchQuerySchema', () => {
   describe('new qualifiers validation', () => {
-    it('should validate user qualifier', () => {
-      const validUserQuery = {
+    it('should validate owner qualifier', () => {
+      const validOwnerQuery = {
         queryTerms: ['function'],
-        user: 'octocat',
+        owner: 'octocat',
         researchGoal: 'code_analysis' as const,
       };
 
-      const result = GitHubCodeSearchQuerySchema.safeParse(validUserQuery);
+      const result = GitHubCodeSearchQuerySchema.safeParse(validOwnerQuery);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.user).toBe('octocat');
+        expect(result.data.owner).toBe('octocat');
       }
     });
 
-    it('should validate org qualifier', () => {
-      const validOrgQuery = {
+    it('should validate owner qualifier with organization name', () => {
+      const validOrgOwnerQuery = {
         queryTerms: ['function'],
-        org: 'github',
+        owner: 'wix-private',
         researchGoal: 'code_analysis' as const,
       };
 
-      const result = GitHubCodeSearchQuerySchema.safeParse(validOrgQuery);
+      const result = GitHubCodeSearchQuerySchema.safeParse(validOrgOwnerQuery);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.org).toBe('github');
+        expect(result.data.owner).toBe('wix-private');
       }
     });
 
@@ -103,11 +103,10 @@ describe('GitHubCodeSearchQuerySchema', () => {
       }
     });
 
-    it('should validate complex query with all new qualifiers', () => {
+    it('should validate complex query with all qualifiers', () => {
       const complexQuery = {
         queryTerms: ['function', 'export'],
-        user: 'octocat',
-        org: 'github',
+        owner: 'microsoft',
         fork: 'true' as const,
         archived: false,
         path: 'src/',
@@ -118,8 +117,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const result = GitHubCodeSearchQuerySchema.safeParse(complexQuery);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.user).toBe('octocat');
-        expect(result.data.org).toBe('github');
+        expect(result.data.owner).toBe('microsoft');
         expect(result.data.fork).toBe('true');
         expect(result.data.archived).toBe(false);
         expect(result.data.path).toBe('src/');
@@ -127,19 +125,17 @@ describe('GitHubCodeSearchQuerySchema', () => {
       }
     });
 
-    it('should validate array values for user and org', () => {
+    it('should validate array values for owner', () => {
       const arrayQuery = {
         queryTerms: ['function'],
-        user: ['octocat', 'github'],
-        org: ['microsoft', 'google'],
+        owner: ['microsoft', 'wix-private'],
         researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(arrayQuery);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.user).toEqual(['octocat', 'github']);
-        expect(result.data.org).toEqual(['microsoft', 'google']);
+        expect(result.data.owner).toEqual(['microsoft', 'wix-private']);
       }
     });
 

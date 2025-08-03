@@ -24,14 +24,6 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .union([z.string(), z.array(z.string())])
     .optional()
     .describe('Repository name (use with owner for specific repo)'),
-  org: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe('Filter by specific organization account'),
-  user: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe('Filter by specific user account (individual user)'),
 
   // File filters
   language: z

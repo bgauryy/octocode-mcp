@@ -57,12 +57,10 @@ export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 
 export interface FileContentQueryResult {
   queryId?: string;
-  originalQuery: FileContentQuery;
+  researchGoal?: string;
+  originalQuery?: FileContentQuery; // Only included on error or not found
   result: GitHubFileContentResponse | { error: string; hints?: string[] };
-  apiResult?: GitHubFileContentResponse | GitHubFileContentError;
-  fallbackTriggered: boolean;
   error?: string;
-  apiError?: string;
 }
 export interface GitHubFileContentResponse {
   filePath: string;

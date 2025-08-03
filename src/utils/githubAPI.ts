@@ -170,6 +170,24 @@ function getOctokit(
 }
 
 /**
+ * Helper function to intelligently detect if an owner is a user or organization
+ * and return the appropriate search qualifier
+ */
+function getOwnerQualifier(owner: string): string {
+  // Use org: for organization-style names (containing hyphens, underscores, or 'org')
+  // This heuristic covers most common organization naming patterns
+  if (
+    owner.includes('-') ||
+    owner.includes('_') ||
+    owner.toLowerCase().includes('org')
+  ) {
+    return `org:${owner}`;
+  } else {
+    return `user:${owner}`;
+  }
+}
+
+/**
  * Build search query string for GitHub API from parameters
  */
 function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
@@ -188,24 +206,17 @@ function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
     queryParts.push(`language:${params.language}`);
   }
 
-  // Repository filters - prioritize specific repo, then owner, then user/org
+  // Repository filters - prioritize specific repo, then owner
   if (params.owner && params.repo) {
     const owner = Array.isArray(params.owner) ? params.owner[0] : params.owner;
     const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
     queryParts.push(`repo:${owner}/${repo}`);
   } else if (params.owner) {
+    // For owner parameter, intelligently detect user vs organization
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => queryParts.push(`user:${owner}`));
-  } else {
-    // Handle specific user vs org distinction
-    if (params.user) {
-      const users = Array.isArray(params.user) ? params.user : [params.user];
-      users.forEach(user => queryParts.push(`user:${user}`));
-    }
-    if (params.org) {
-      const orgs = Array.isArray(params.org) ? params.org : [params.org];
-      orgs.forEach(org => queryParts.push(`org:${org}`));
-    }
+    owners.forEach(owner => {
+      queryParts.push(getOwnerQualifier(owner));
+    });
   }
 
   if (params.filename) {
@@ -266,7 +277,7 @@ function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
 
   if (params.owner) {
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => queryParts.push(`user:${owner}`));
+    owners.forEach(owner => queryParts.push(getOwnerQualifier(owner)));
   }
 
   if (params.topic) {
@@ -1102,7 +1113,7 @@ function buildPullRequestSearchQuery(
   } else if (params.owner) {
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     owners.forEach(owner => {
-      queryParts.push(`user:${owner}`);
+      queryParts.push(getOwnerQualifier(owner));
     });
   }
 
@@ -1563,7 +1574,7 @@ function buildIssueSearchQuery(params: GitHubIssuesSearchParams): string {
   } else if (params.owner) {
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     owners.forEach(owner => {
-      queryParts.push(`user:${owner}`);
+      queryParts.push(getOwnerQualifier(owner));
     });
   }
 
@@ -2406,11 +2417,10 @@ export async function viewGitHubRepositoryStructureAPI(
       return a.path.localeCompare(b.path);
     });
 
-    // Create response structure
+    // Create response structure organized by depth
     const files = limitedItems
       .filter(item => item.type === 'file')
       .map(item => ({
-        name: item.name,
         path: item.path,
         size: item.size,
         depth:
@@ -2422,13 +2432,29 @@ export async function viewGitHubRepositoryStructureAPI(
     const folders = limitedItems
       .filter(item => item.type === 'dir')
       .map(item => ({
-        name: item.name,
         path: item.path,
         depth:
           item.path.split('/').length -
           (cleanPath ? cleanPath.split('/').length : 0),
         url: item.path,
       }));
+
+    // Organize files by depth levels
+    const filesByDepth: Record<
+      number,
+      Array<{ path: string; size?: number; url: string }>
+    > = {};
+    files.forEach(file => {
+      const fileDepth = file.depth;
+      if (!filesByDepth[fileDepth]) {
+        filesByDepth[fileDepth] = [];
+      }
+      filesByDepth[fileDepth].push({
+        path: file.path,
+        size: file.size,
+        url: file.url,
+      });
+    });
 
     return {
       repository: `${owner}/${repo}`,
@@ -2443,13 +2469,14 @@ export async function viewGitHubRepositoryStructureAPI(
         filtered: !includeIgnored,
         originalCount: allItems.length,
       },
-      files: {
-        count: files.length,
-        files: files,
-      },
+      filesByDepth: filesByDepth,
       folders: {
         count: folders.length,
-        folders: folders,
+        folders: folders.map(folder => ({
+          path: folder.path,
+          depth: folder.depth,
+          url: folder.url,
+        })),
       },
     };
   } catch (error: unknown) {
@@ -2690,7 +2717,7 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
   if (params.owner && params.repo) {
     queryParts.push(`repo:${params.owner}/${params.repo}`);
   } else if (params.owner) {
-    queryParts.push(`user:${params.owner}`);
+    queryParts.push(getOwnerQualifier(params.owner));
   }
 
   // Author filters

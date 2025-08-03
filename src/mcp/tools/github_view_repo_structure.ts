@@ -134,14 +134,17 @@ export function registerViewGitHubRepoStructureTool(
           }
 
           // Success - generate intelligent hints
+          const totalFiles = Object.values(result.filesByDepth || {}).reduce(
+            (acc, files) => acc + files.length,
+            0
+          );
           const responseContext = {
             foundRepository: `${args.owner}/${args.repo}`,
             foundBranch: args.branch,
             exploredPath: args.path || '/',
             dataQuality: {
-              hasContent:
-                (result.files?.count || 0) + (result.folders?.count || 0) > 0,
-              hasFiles: (result.files?.count || 0) > 0,
+              hasContent: totalFiles + (result.folders?.count || 0) > 0,
+              hasFiles: totalFiles > 0,
               hasFolders: (result.folders?.count || 0) > 0,
             },
           };
@@ -150,8 +153,7 @@ export function registerViewGitHubRepoStructureTool(
             TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
             {
               hasResults: responseContext.dataQuality.hasContent,
-              totalItems:
-                (result.files?.count || 0) + (result.folders?.count || 0),
+              totalItems: totalFiles + (result.folders?.count || 0),
               researchGoal: args.researchGoal,
               responseContext,
               queryContext: {
@@ -172,7 +174,7 @@ export function registerViewGitHubRepoStructureTool(
                 branch: args.branch,
                 path: args.path || '/',
                 depth: args.depth || 1,
-                fileCount: result.files?.count || 0,
+                fileCount: totalFiles,
                 folderCount: result.folders?.count || 0,
                 researchGoal: args.researchGoal,
               },
