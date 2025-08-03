@@ -1,19 +1,36 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import z from 'zod';
-import { GitHubCommitSearchParams } from '../../types';
-import { createResult } from '../responses';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createSearchFailedError } from '../errorMessages';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+import { createResult } from '../responses';
 import { searchGitHubCommitsAPI } from '../../utils/githubAPI';
+import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import {
+  GitHubCommitSearchQuery,
+  GitHubCommitSearchQuerySchema,
+} from './scheme/github_search_commits';
+import { generateToolHints } from './utils/hints';
 
-const DESCRIPTION = `Search GitHub commits using the GitHub API with comprehensive filtering and analysis.
+const DESCRIPTION = `
+Search GitHub commits with intelligent filtering and comprehensive analysis.
 
-PERFORMANCE: getChangesContent=true is token expensive`;
+This tool provides powerful commit discovery across GitHub repositories with smart
+filtering capabilities, error recovery, and context-aware suggestions. Perfect for
+understanding code evolution, tracking changes, and analyzing development patterns.
 
-export function registerGitHubSearchCommitsTool(
+Key Features:
+- Comprehensive commit search: Find changes by author, message, date, and more
+- Smart filtering: By repository, author, date ranges, and commit types
+- Error recovery: Intelligent suggestions for failed searches
+- Research optimization: Tailored hints based on your research goals
+
+Best Practices:
+- Use specific keywords related to the changes you're looking for
+- Filter by date ranges for targeted historical analysis
+- Leverage author filters for developer-specific searches
+- Specify research goals (debugging, analysis) for optimal guidance
+`;
+
+export function registerSearchGitHubCommitsTool(
   server: McpServer,
   opts: ToolOptions = { npmEnabled: false }
 ) {
@@ -21,127 +38,9 @@ export function registerGitHubSearchCommitsTool(
     TOOL_NAMES.GITHUB_SEARCH_COMMITS,
     {
       description: DESCRIPTION,
-      inputSchema: {
-        exactQuery: z
-          .string()
-          .optional()
-          .describe(
-            'Exact phrase to search for in commit messages (e.g., "bug fix")'
-          ),
-
-        queryTerms: z
-          .array(z.string())
-          .optional()
-          .describe(
-            'Array of search terms with AND logic (e.g., ["readme", "typo"] finds commits with both words)'
-          ),
-
-        orTerms: z
-          .array(z.string())
-          .optional()
-          .describe(
-            'Array of search terms with OR logic (e.g., ["bug", "fix"] finds commits with either word)'
-          ),
-
-        // Repository filters
-        owner: z
-          .string()
-          .optional()
-          .describe('Repository owner (use with repo param)'),
-        repo: z
-          .string()
-          .optional()
-          .describe('Repository name (use with owner param)'),
-
-        // Author filters
-        author: z
-          .string()
-          .optional()
-          .describe('GitHub username of commit author (e.g., "octocat")'),
-        'author-name': z
-          .string()
-          .optional()
-          .describe('Full name of commit author'),
-        'author-email': z
-          .string()
-          .optional()
-          .describe('Email of commit author'),
-
-        // Committer filters
-        committer: z
-          .string()
-          .optional()
-          .describe('GitHub username of committer (e.g., "monalisa")'),
-        'committer-name': z
-          .string()
-          .optional()
-          .describe('Full name of committer'),
-        'committer-email': z.string().optional().describe('Email of committer'),
-
-        // Date filters
-        'author-date': z
-          .string()
-          .optional()
-          .describe(
-            'Filter by author date (e.g., "<2022-02-01", ">2020-01-01", "2020-01-01..2021-01-01")'
-          ),
-        'committer-date': z
-          .string()
-          .optional()
-          .describe(
-            'Filter by commit date (e.g., "<2022-02-01", ">2020-01-01", "2020-01-01..2021-01-01")'
-          ),
-
-        // Hash filters
-        hash: z
-          .string()
-          .optional()
-          .describe(
-            'Commit SHA (full or partial, including head_sha/base_sha from a PR as returned by github_search_pull_requests)'
-          ),
-        parent: z.string().optional().describe('Parent commit SHA'),
-        tree: z.string().optional().describe('Tree SHA'),
-
-        // State filters
-        merge: z
-          .boolean()
-          .optional()
-          .describe('Only merge commits (true) or exclude them (false)'),
-
-        // Visibility
-        visibility: z
-          .enum(['public', 'private', 'internal'])
-          .optional()
-          .describe('Repository visibility filter'),
-
-        // Pagination and sorting
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(50)
-          .optional()
-          .default(25)
-          .describe('Maximum number of results to fetch'),
-        sort: z
-          .enum(['author-date', 'committer-date'])
-          .optional()
-          .describe('Sort by date field'),
-        order: z
-          .enum(['asc', 'desc'])
-          .optional()
-          .default('desc')
-          .describe('Sort order'),
-        getChangesContent: z
-          .boolean()
-          .optional()
-          .default(false)
-          .describe(
-            'Set to true to fetch actual commit changes (diffs/patches). Works for both public and private repositories, most effective with owner and repo specified. Limited to first 10 commits for rate limiting. WARNING: EXTREMELY expensive in tokens - each commit diff can consume thousands of tokens.'
-          ),
-      },
+      inputSchema: GitHubCommitSearchQuerySchema.shape,
       annotations: {
-        title: 'GitHub Commit Search - API Only',
+        title: 'GitHub Commit Search',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -149,59 +48,62 @@ export function registerGitHubSearchCommitsTool(
       },
     },
     withSecurityValidation(
-      async (args: GitHubCommitSearchParams): Promise<CallToolResult> => {
-        // Validate search parameters
-        const hasExactQuery = !!args.exactQuery;
-        const hasQueryTerms = args.queryTerms && args.queryTerms.length > 0;
-        const hasOrTerms = args.orTerms && args.orTerms.length > 0;
-
-        // Check if any filters are provided
-        const hasFilters = !!(
+      async (args: GitHubCommitSearchQuery): Promise<CallToolResult> => {
+        // Validate that at least one search parameter is provided
+        const hasSearchTerms =
+          args.exactQuery || args.queryTerms?.length || args.orTerms?.length;
+        const hasFilters =
           args.author ||
           args.committer ||
-          args['author-name'] ||
-          args['committer-name'] ||
-          args['author-email'] ||
-          args['committer-email'] ||
           args.hash ||
-          args.parent ||
-          args.tree ||
           args['author-date'] ||
-          args['committer-date'] ||
-          args.merge !== undefined ||
-          args.visibility ||
-          (args.owner && args.repo)
-        );
+          args['committer-date'];
 
-        // Allow search with just filters (no query required)
-        if (!hasExactQuery && !hasQueryTerms && !hasOrTerms && !hasFilters) {
-          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+        if (!hasSearchTerms && !hasFilters) {
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
             hasResults: false,
-            errorMessage: 'No search criteria provided',
+            totalItems: 0,
+            errorMessage: 'Search parameters required',
             customHints: [
-              'Add search query OR filters',
-              'Try specific repo: --owner owner --repo repo',
+              'Provide search terms (exactQuery, queryTerms) or filters (author, hash, dates)',
+              'Example: exactQuery: "fix bug" or author: "username"',
             ],
           });
+
           return createResult({
-            error:
-              'At least one search parameter required: exactQuery, queryTerms, orTerms, or filters (author, committer, hash, date, etc.)',
+            isError: true,
+            error: 'At least one search parameter or filter is required',
             hints,
           });
         }
 
-        if (hasExactQuery && (hasQueryTerms || hasOrTerms)) {
-          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+        if (args.exactQuery && args.exactQuery.length > 256) {
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
             hasResults: false,
-            errorMessage: 'Invalid query combination',
+            errorMessage: 'Query too long',
+            customHints: ['Use shorter, more focused search terms'],
+          });
+
+          return createResult({
+            isError: true,
+            error: 'Query too long. Please use a shorter search query.',
+            hints,
+          });
+        }
+
+        if (args.getChangesContent && (!args.owner || !args.repo)) {
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+            hasResults: false,
+            errorMessage: 'Repository required for changes content',
             customHints: [
-              'Use exactQuery alone',
-              'Or combine queryTerms + orTerms',
+              'Specify both owner and repo when requesting commit changes',
             ],
           });
+
           return createResult({
+            isError: true,
             error:
-              'exactQuery cannot be combined with queryTerms or orTerms. Use exactQuery alone or combine queryTerms + orTerms.',
+              'Both owner and repo are required when getChangesContent is true',
             hints,
           });
         }
@@ -211,10 +113,12 @@ export function registerGitHubSearchCommitsTool(
 
           // Check if result is an error
           if ('error' in result) {
-            const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+            const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
               hasResults: false,
+              totalItems: 0,
               errorMessage: result.error,
               customHints: result.hints || [],
+              researchGoal: args.researchGoal,
             });
             return createResult({
               error: result.error,
@@ -222,26 +126,65 @@ export function registerGitHubSearchCommitsTool(
             });
           }
 
-          // Success - return raw data wrapped for MCP
-          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+          // Success - generate intelligent hints
+          const responseContext = {
+            foundRepositories: result.commits
+              .map(commit => commit.repository?.full_name || 'unknown')
+              .filter((repo, index, arr) => arr.indexOf(repo) === index),
+            dataQuality: {
+              hasContent: result.commits.length > 0,
+              hasMatches: result.commits.some(
+                commit =>
+                  commit.commit?.message && commit.commit.message.length > 0
+              ),
+            },
+          };
+
+          const searchTerms = [
+            ...(args.exactQuery ? [args.exactQuery] : []),
+            ...(args.queryTerms || []),
+            ...(args.orTerms || []),
+          ];
+
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
             hasResults: result.commits.length > 0,
             totalItems: result.commits.length,
+            researchGoal: args.researchGoal,
+            responseContext,
+            queryContext: {
+              owner: args.owner,
+              repo: args.repo,
+              queryTerms: searchTerms,
+            },
           });
 
           return createResult({
             data: {
-              ...result,
-              apiSource: true,
+              data: {
+                ...result,
+                apiSource: true,
+              },
+              meta: {
+                totalResults: result.commits?.length || 0,
+                researchGoal: args.researchGoal,
+              },
+              hints,
             },
-            hints,
           });
         } catch (error) {
-          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error occurred';
+
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
             hasResults: false,
-            errorMessage: 'Search failed',
+            totalItems: 0,
+            errorMessage,
+            researchGoal: args.researchGoal,
           });
+
           return createResult({
-            error: createSearchFailedError('commits'),
+            isError: true,
+            error: `Failed to search commits: ${errorMessage}`,
             hints,
           });
         }

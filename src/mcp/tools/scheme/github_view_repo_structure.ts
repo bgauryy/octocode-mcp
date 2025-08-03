@@ -1,7 +1,53 @@
-import { ResearchGoalEnum } from '../utils/toolConstants';
 import { z } from 'zod';
+import { GenericToolResponse, BaseToolMeta } from '../../types/genericResponse';
+import {
+  extendBaseQuerySchema,
+  GitHubOwnerSchema,
+  GitHubRepoSchema,
+  GitHubBranchSchema,
+} from './baseSchema';
 
-export interface GitHubRepositoryStructureParams {
+export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
+  owner: GitHubOwnerSchema,
+  repo: GitHubRepoSchema,
+  branch: GitHubBranchSchema,
+  path: z
+    .string()
+    .default('')
+    .optional()
+    .describe(
+      'Directory path within repository. Start empty for root exploration'
+    ),
+  depth: z
+    .number()
+    .min(1)
+    .max(2)
+    .default(1)
+    .optional()
+    .describe(
+      'Directory depth to explore. Default 1 (preferred). Max 2. Use sparingly.'
+    ),
+  includeIgnored: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      'Include config files, lock files, hidden directories. Default false for optimization'
+    ),
+  showMedia: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe('Include media files. Default false for optimization'),
+});
+
+export type GitHubViewRepoStructureQuery = z.infer<
+  typeof GitHubViewRepoStructureQuerySchema
+>;
+
+// Single repository structure query (used in bulk operations)
+export interface GitHubRepositoryStructureQuery {
+  id?: string; // Optional identifier for the query
   owner: string;
   repo: string;
   branch: string;
@@ -11,6 +57,10 @@ export interface GitHubRepositoryStructureParams {
   showMedia?: boolean; // If true, show media files (images, videos, audio). Default: false
   researchGoal?: string; // Research goal to guide tool behavior and hint generation
 }
+
+// Legacy interface for backward compatibility
+export interface GitHubRepositoryStructureParams
+  extends GitHubRepositoryStructureQuery {}
 
 export interface GitHubApiFileItem {
   name: string;
@@ -88,68 +138,63 @@ export interface GitHubRepositoryStructureError {
   rateLimitReset?: number;
 }
 
-export const GitHubRepositoryStructureParamsSchema = z.object({
-  owner: z
-    .string()
-    .min(1)
-    .max(150)
-    .regex(
-      /^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/,
-      'Invalid GitHub username/org format'
-    )
-    .describe('Repository owner or organization name'),
+// Bulk operations types
+export interface ProcessedRepositoryStructureResult {
+  queryId: string;
+  repository?: string;
+  branch?: string;
+  path?: string;
+  structure?: GitHubRepositoryStructureResult;
+  researchGoal?: string;
+  failed?: boolean;
+  hints?: string[];
+  meta?: {
+    queryArgs: GitHubRepositoryStructureQuery;
+    error?: string;
+    searchType?:
+      | 'no_access'
+      | 'api_error'
+      | 'validation_error'
+      | 'branch_fallback';
+    suggestions?: {
+      broaderSearch?: string[];
+      alternativeBranches?: string[];
+      relatedRepositories?: string[];
+    };
+  };
+}
 
-  repo: z
-    .string()
-    .min(1)
-    .max(150)
-    .regex(/^[a-zA-Z0-9._-]+$/, 'Invalid repository name format')
-    .describe('Repository name only'),
+export interface GitHubRepositoryStructureMeta extends BaseToolMeta {
+  repositories: Array<{ nameWithOwner: string; branch: string; path: string }>;
+  totalRepositories: number;
+  researchContext?: {
+    foundDirectories: string[];
+    foundFileTypes: string[];
+    repositoryContexts: string[];
+  };
+}
 
-  branch: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(/^[^\s]+$/, 'Branch name cannot contain spaces')
-    .describe('Branch name'),
+export interface GitHubRepositoryStructureResponse
+  extends GenericToolResponse<
+    ProcessedRepositoryStructureResult,
+    GitHubRepositoryStructureMeta
+  > {}
 
-  path: z
-    .string()
-    .optional()
-    .default('')
-    .refine(path => !path.includes('..'), 'Path traversal not allowed')
-    .refine(path => path.length <= 500, 'Path too long')
-    .describe(
-      'Directory path within repository. Start empty for root for exploration'
-    ),
+// Aggregated context for bulk operations
+export interface AggregatedRepositoryContext {
+  foundDirectories: Set<string>;
+  foundFileTypes: Set<string>;
+  repositoryContexts: Set<string>;
+  exploredPaths: Set<string>;
+  successfulQueries: number;
+  dataQuality: {
+    hasContent: boolean;
+    hasStructure: boolean;
+  };
+}
 
-  depth: z
-    .number()
-    .int()
-    .min(1)
-    .max(5)
-    .optional()
-    .default(1)
-    .describe(
-      'Directory depth to explore (higher values increase response time)'
-    ),
-
-  includeIgnored: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Include config files, lock files, hidden directories. Default false for optimization'
-    ),
-
-  showMedia: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe('Include media files. Default false for optimization'),
-
-  researchGoal: z
-    .enum(ResearchGoalEnum)
-    .optional()
-    .describe('Research goal to guide tool behavior and hint generation'),
-});
+// Legacy schema for backward compatibility - now points to the main schema
+export const GitHubRepositoryStructureQuerySchema =
+  GitHubViewRepoStructureQuerySchema;
+export const GitHubRepositoryStructureParamsSchema =
+  GitHubViewRepoStructureQuerySchema;

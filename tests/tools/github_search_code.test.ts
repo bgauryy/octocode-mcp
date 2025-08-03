@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GitHubCodeSearchQuerySchema } from '../../src/mcp/tools/scheme/github_search_code.js';
-import { ensureUniqueQueryIds } from '../../src/mcp/tools/github_search_code.js';
+import { ensureUniqueQueryIds } from '../../src/mcp/tools/utils/queryUtils.js';
 
 describe('GitHubCodeSearchQuerySchema', () => {
   describe('new qualifiers validation', () => {
@@ -242,9 +242,13 @@ describe('GitHubCodeSearchQuerySchema', () => {
         { queryTerms: ['function'], researchGoal: 'code_analysis' as const },
         { queryTerms: ['class'], researchGoal: 'code_analysis' as const },
         { queryTerms: ['interface'], researchGoal: 'code_analysis' as const },
-      ];
+      ] as Array<{
+        queryTerms: string[];
+        researchGoal: 'code_analysis';
+        id?: string;
+      }>;
 
-      const result = ensureUniqueQueryIds(queries);
+      const result = ensureUniqueQueryIds(queries as any);
 
       expect(result).toHaveLength(3);
       expect(result[0].id).toBe('query_1');
@@ -276,7 +280,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         },
       ];
 
-      const result = ensureUniqueQueryIds(queries);
+      const result = ensureUniqueQueryIds(queries as any);
 
       expect(result).toHaveLength(3);
       expect(result[0].id).toBe('test-query');
@@ -305,7 +309,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         { queryTerms: ['type'], researchGoal: 'code_analysis' as const },
       ];
 
-      const result = ensureUniqueQueryIds(queries);
+      const result = ensureUniqueQueryIds(queries as any);
 
       expect(result).toHaveLength(4);
       expect(result[0].id).toBe('custom-id');
@@ -338,7 +342,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         },
       ];
 
-      const result = ensureUniqueQueryIds(queries);
+      const result = ensureUniqueQueryIds(queries as any);
 
       expect(result).toHaveLength(3);
       expect(result[0].id).toBe('unique-1');
@@ -376,7 +380,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         }, // will become other
       ];
 
-      const result = ensureUniqueQueryIds(queries);
+      const result = ensureUniqueQueryIds(queries as any);
 
       expect(result).toHaveLength(5);
       expect(result[0].id).toBe('test');
@@ -416,7 +420,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
       }
 
       const start = performance.now();
-      const result = ensureUniqueQueryIds(queries);
+      const result = ensureUniqueQueryIds(queries as any);
       const end = performance.now();
 
       expect(result).toHaveLength(100);
@@ -451,7 +455,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         },
       ];
 
-      const result = ensureUniqueQueryIds(originalQueries);
+      const result = ensureUniqueQueryIds(originalQueries as any);
 
       // Original queries should be unchanged
       expect(originalQueries[0].id).toBe('test');

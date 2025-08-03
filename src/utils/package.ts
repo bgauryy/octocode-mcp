@@ -372,11 +372,11 @@ async function searchNpmPackage(
   if (!result.isError && result.content?.[0]?.text) {
     return parseNpmSearchOutput(result.content[0].text as string);
   } else {
-    throw new Error(result.content?.[0]?.text || 'Unknown NPM error');
+    throw new Error(String(result.content?.[0]?.text) || 'Unknown NPM error');
   }
 }
 
-export async function searchPythonPackage(
+async function searchPythonPackage(
   packageName: string
 ): Promise<NpmPackage | null> {
   // Normalize package name for PyPI API (lowercase, underscores to hyphens)
@@ -540,7 +540,7 @@ export function parseNpmSearchOutput(output: string): NpmPackage[] {
   }
 }
 
-export function normalizePackage(pkg: {
+function normalizePackage(pkg: {
   name?: string;
   version?: string;
   description?: string;
@@ -566,9 +566,7 @@ export function normalizePackage(pkg: {
   };
 }
 
-export function deduplicatePackagesOptimized(
-  packages: NpmPackage[]
-): NpmPackage[] {
+function deduplicatePackagesOptimized(packages: NpmPackage[]): NpmPackage[] {
   const packageMap = new Map<string, NpmPackage>();
 
   for (const pkg of packages) {
@@ -648,7 +646,7 @@ async function fetchNpmMetadata(
       const optimizedMetadata =
         query?.npmField || query?.npmMatch
           ? packageData
-          : transformToOptimizedFormat(packageData);
+          : transformNPMToOptimizedFormat(packageData);
 
       // Extract git URL (repository URL)
       const gitURL = optimizedMetadata.repository || pkg.repository || '';
@@ -780,7 +778,7 @@ async function viewNpmPackage(
   });
 }
 
-export function transformToOptimizedFormat(
+export function transformNPMToOptimizedFormat(
   packageData: any
 ): OptimizedNpmPackageResult {
   // Extract repository URL and simplify
@@ -790,7 +788,7 @@ export function transformToOptimizedFormat(
 
   // Simplify exports to essential entry points only
   const exports = packageData.exports
-    ? simplifyExports(packageData.exports)
+    ? simplifyNPMExports(packageData.exports)
     : undefined;
 
   // Get version timestamps from time object and limit to last 5
@@ -827,7 +825,7 @@ export function transformToOptimizedFormat(
   return result;
 }
 
-export function simplifyExports(exports: any): {
+function simplifyNPMExports(exports: any): {
   main: string;
   types?: string;
   [key: string]: any;

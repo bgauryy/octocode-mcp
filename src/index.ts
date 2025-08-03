@@ -6,10 +6,10 @@ import { clearAllCache } from './utils/cache.js';
 import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
-import { registerGitHubSearchCommitsTool } from './mcp/tools/github_search_commits.js';
+import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerNpmSearchTool } from './mcp/tools/package_search.js';
-import { registerViewRepositoryStructureTool } from './mcp/tools/github_view_repo_structure.js';
+import { registerPackageSearchTool } from './mcp/tools/package_search.js';
+import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
@@ -75,12 +75,12 @@ async function registerAllTools(server: McpServer) {
     },
     {
       name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      fn: registerViewRepositoryStructureTool,
+      fn: registerViewGitHubRepoStructureTool,
       opts: toolOptions,
     },
     {
       name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-      fn: registerGitHubSearchCommitsTool,
+      fn: registerSearchGitHubCommitsTool,
       opts: toolOptions,
     },
     {
@@ -95,7 +95,7 @@ async function registerAllTools(server: McpServer) {
     },
     {
       name: TOOL_NAMES.PACKAGE_SEARCH,
-      fn: registerNpmSearchTool,
+      fn: registerPackageSearchTool,
       opts: toolOptions,
     },
   ];

@@ -20,7 +20,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 }));
 
 // Import after mocking
-import { registerGitHubSearchCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
+import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
 
 describe('GitHub Search Commits Tool', () => {
   let mockServer: MockMcpServer;
@@ -59,7 +59,7 @@ describe('GitHub Search Commits Tool', () => {
     });
 
     // Register tool with API options
-    registerGitHubSearchCommitsTool(mockServer.server, {
+    registerSearchGitHubCommitsTool(mockServer.server, {
       npmEnabled: false,
     });
   });

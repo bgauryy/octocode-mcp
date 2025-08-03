@@ -20,7 +20,10 @@ export async function getNPMUserDetails(): Promise<{
         ['get', 'registry'],
         { timeout: 3000 }
       );
-      const registryExecResult = parseExecResult(registryResult);
+      const registryExecResult = parseExecResult(
+        String(registryResult.stdout) || '',
+        String(registryResult.stderr) || ''
+      );
       registry =
         typeof registryExecResult?.result === 'string'
           ? registryExecResult.result.trim()

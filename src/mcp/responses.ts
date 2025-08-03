@@ -12,9 +12,9 @@ export function createResult(options: {
 
   // TODO - support only one flow for error and hints (requires refactoring..)
   if (isError) {
-    const dataWithHints = hints ? { data, hints } : data;
+    const errorResponse = hints ? { data, meta: { error: true }, hints } : data;
     return {
-      content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
+      content: [{ type: 'text', text: wrapResponse(errorResponse) }],
       isError: true,
     };
   }
@@ -25,18 +25,40 @@ export function createResult(options: {
         ? error
         : (error as Error).message || 'Unknown error';
 
-    const dataWithHints = hints ? { data: errorMessage, hints } : errorMessage;
+    const errorResponse = hints
+      ? { data: null, meta: { error: errorMessage }, hints }
+      : { data: null, meta: { error: errorMessage }, hints: [] };
 
     return {
-      content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
+      content: [{ type: 'text', text: wrapResponse(errorResponse) }],
       isError: true,
     };
   }
 
-  // Success case - include hints if provided
-  const dataWithHints = hints ? { data, hints } : data;
+  // Success case - ensure standardized format
+  // If data already has the {data, meta, hints} structure, use it as-is
+  if (
+    data &&
+    typeof data === 'object' &&
+    'data' in data &&
+    'meta' in data &&
+    'hints' in data
+  ) {
+    return {
+      content: [{ type: 'text', text: wrapResponse(data) }],
+      isError: false,
+    };
+  }
+
+  // Otherwise, create standardized structure
+  const standardResponse = {
+    data: data || null,
+    meta: {},
+    hints: hints || [],
+  };
+
   return {
-    content: [{ type: 'text', text: wrapResponse(dataWithHints) }],
+    content: [{ type: 'text', text: wrapResponse(standardResponse) }],
     isError: false,
   };
 }

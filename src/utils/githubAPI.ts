@@ -11,23 +11,18 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
   GitHubIssuesSearchParams,
+  GitHubCodeSearchItem,
+  OptimizedCodeSearchResult,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
-import {
-  GitHubCodeSearchItem,
-  GitHubCodeSearchQuery,
-  OptimizedCodeSearchResult,
-} from '../mcp/tools/scheme/github_search_code';
+import { GitHubCodeSearchQuery } from '../mcp/tools/scheme/github_search_code';
 import {
   GitHubFileContentResponse,
   GithubFetchRequestParams,
   GitHubFileContentError,
 } from '../mcp/tools/scheme/github_fetch_content';
-import {
-  GitHubReposSearchParams,
-  GitHubReposSearchResult,
-} from '../mcp/tools/scheme/github_search_repos';
+import { GitHubReposSearchQuery } from '../mcp/tools/scheme/github_search_repos';
 import {
   GitHubRepositoryStructureParams,
   GitHubApiFileItem,
@@ -47,7 +42,7 @@ import {
   GitHubIssueSearchError,
 } from '../mcp/tools/scheme/github_search_issues';
 
-// TypeScript-safe conditional authentication following GitHub CLI patterns
+// TypeScript-safe conditional authentication
 const defaultToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 
 // TypeScript-safe parameter types using Octokit's built-in types
@@ -68,7 +63,7 @@ interface TextMatch {
   }>;
 }
 
-// Enhanced error response type following GitHub CLI patterns
+// Enhanced error response type
 interface GitHubAPIError {
   error: string;
   status?: number;
@@ -79,18 +74,17 @@ interface GitHubAPIError {
   type: 'http' | 'graphql' | 'network' | 'unknown';
 }
 
-// Create Octokit class with throttling plugin following GitHub CLI patterns
+// Create Octokit class with throttling plugin
 const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Cache Octokit instances by token following GitHub CLI patterns
+// Cache Octokit instances by token
 const octokitInstances = new Map<
   string,
   InstanceType<typeof OctokitWithThrottling>
 >();
 
 /**
- * Throttle options following GitHub CLI and official Octokit.js best practices
- * Based on patterns from GitHub CLI, Backstage, and other high-quality projects
+ * Throttle options following official Octokit.js best practices
  */
 const createThrottleOptions = () => ({
   onRateLimit: (
@@ -99,13 +93,13 @@ const createThrottleOptions = () => ({
     _octokit: any,
     retryCount: number
   ) => {
-    // Log rate limit with detailed context (following GitHub CLI pattern)
+    // Log rate limit with detailed context
     // eslint-disable-next-line no-console
     console.warn(
       `GitHub API rate limit exceeded for ${options.method} ${options.url}`
     );
 
-    // Only retry once (following GitHub CLI pattern)
+    // Only retry once
     if (retryCount === 0) {
       // eslint-disable-next-line no-console
       console.info(`Retrying after ${retryAfter} seconds!`);
@@ -128,7 +122,7 @@ const createThrottleOptions = () => ({
       `GitHub API secondary rate limit detected for ${options.method} ${options.url}`
     );
 
-    // Following GitHub CLI pattern: retry once for secondary rate limits too
+    // Retry once for secondary rate limits too
     if (retryCount === 0) {
       // eslint-disable-next-line no-console
       console.info(
@@ -145,7 +139,7 @@ const createThrottleOptions = () => ({
 
 /**
  * Initialize Octokit with TypeScript-safe authentication and throttling plugin
- * Following GitHub CLI patterns for client initialization
+ * GitHub API client initialization
  */
 function getOctokit(
   token?: string
@@ -154,11 +148,11 @@ function getOctokit(
   const cacheKey = useToken || 'no-token';
 
   if (!octokitInstances.has(cacheKey)) {
-    // TypeScript-safe configuration with throttling plugin following GitHub CLI
+    // TypeScript-safe configuration with throttling plugin
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
     } = {
-      userAgent: 'octocode-mcp/1.0.0 (GitHub CLI compatible)',
+      userAgent: 'octocode-mcp/1.0.0',
       request: {
         timeout: 30000, // 30 second timeout
       },
@@ -257,7 +251,7 @@ function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
 /**
  * Build search query string for repository search
  */
-function buildRepoSearchQuery(params: GitHubReposSearchParams): string {
+function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
   const queryParts: string[] = [];
 
   // Add main search terms
@@ -358,7 +352,7 @@ function buildRepoSearchQuery(params: GitHubReposSearchParams): string {
 }
 
 /**
- * Enhanced error handling following GitHub CLI patterns
+ * Enhanced error handling for GitHub API
  * Provides detailed error information with scope suggestions and proper typing
  */
 function handleGitHubAPIError(error: unknown): GitHubAPIError {
@@ -395,7 +389,7 @@ function handleGitHubAPIError(error: unknown): GitHubAPIError {
           };
         }
 
-        // Generate scope suggestions following GitHub CLI pattern
+        // Generate scope suggestions
         let scopesSuggestion = 'Check repository permissions or authentication';
         if (acceptedScopes && tokenScopes) {
           scopesSuggestion = generateScopesSuggestion(
@@ -470,7 +464,7 @@ function handleGitHubAPIError(error: unknown): GitHubAPIError {
 }
 
 /**
- * Generate scope suggestions following GitHub CLI patterns
+ * Generate scope suggestions for GitHub API access
  */
 function generateScopesSuggestion(
   acceptedScopes: string,
@@ -683,7 +677,6 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 
 /**
  * Search GitHub pull requests using Octokit API
- * Implementation based on GitHub CLI source code research
  */
 export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
@@ -692,7 +685,7 @@ export async function searchGitHubPullRequestsAPI(
   try {
     const octokit = getOctokit(token);
 
-    // Decide between search and list based on filters (like GitHub CLI does)
+    // Decide between search and list based on filters
     const shouldUseSearch = shouldUseSearchForPRs(params);
 
     if (
@@ -763,12 +756,12 @@ export async function searchGitHubPullRequestsAPI(
 }
 
 /**
- * Determine if we should use search API vs list API (based on GitHub CLI logic)
+ * Determine if we should use search API vs list API
  */
 function shouldUseSearchForPRs(
   params: GitHubPullRequestsSearchParams
 ): boolean {
-  // Use search if we have complex filters (like GitHub CLI does)
+  // Use search if we have complex filters
   return (
     params.draft !== undefined ||
     params.author !== undefined ||
@@ -1084,7 +1077,7 @@ async function transformPullRequestItemFromREST(
 
 /**
  * Build pull request search query string for GitHub API
- * Based on GitHub CLI's query building logic
+ * GitHub pull request search query building
  */
 function buildPullRequestSearchQuery(
   params: GitHubPullRequestsSearchParams
@@ -1096,7 +1089,7 @@ function buildPullRequestSearchQuery(
     queryParts.push(params.query.trim());
   }
 
-  // Always add is:pr to ensure we only get pull requests (like GitHub CLI)
+  // Always add is:pr to ensure we only get pull requests
   queryParts.push('is:pr');
 
   // Repository filters - handle arrays properly
@@ -1104,7 +1097,7 @@ function buildPullRequestSearchQuery(
     const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
     const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
 
-    // Create repo combinations (like GitHub CLI)
+    // Create repo combinations
     owners.forEach(owner => {
       repos.forEach(repo => {
         queryParts.push(`repo:${owner}/${repo}`);
@@ -1117,7 +1110,7 @@ function buildPullRequestSearchQuery(
     });
   }
 
-  // State filters (following GitHub CLI patterns)
+  // State filters
   if (params.state) {
     queryParts.push(`is:${params.state}`);
   }
@@ -1217,7 +1210,7 @@ function buildPullRequestSearchQuery(
     queryParts.push(`app:${params.app}`);
   }
 
-  // Boolean "missing" filters (like GitHub CLI's "no:" qualifiers)
+  // Boolean "missing" filters
   if (params['no-assignee']) {
     queryParts.push('no:assignee');
   }
@@ -1737,9 +1730,9 @@ export async function searchGitHubCodeAPI(
  * Search GitHub repositories using Octokit API with proper TypeScript types
  */
 export async function searchGitHubReposAPI(
-  params: GitHubReposSearchParams,
+  params: GitHubReposSearchQuery,
   token?: string
-): Promise<GitHubReposSearchResult | GitHubAPIError> {
+): Promise<{ total_count: number; repositories: any[] } | GitHubAPIError> {
   try {
     const octokit = getOctokit(token);
     const query = buildRepoSearchQuery(params);
@@ -2127,37 +2120,35 @@ async function processFileContentAPI(
     }
   }
 
-  return createResult({
-    data: {
-      filePath,
-      owner,
-      repo,
-      branch,
-      content: finalContent,
-      // Always return total lines for LLM context
-      totalLines,
-      // Original request parameters for LLM context
-      requestedStartLine: startLine,
-      requestedEndLine: endLine,
-      requestedContextLines: contextLines,
-      // Actual content boundaries (only for partial content)
-      ...(isPartial && {
-        startLine: actualStartLine,
-        endLine: actualEndLine,
-        isPartial,
-      }),
-      // Minification metadata
-      ...(minified && {
-        minified: !minificationFailed,
-        minificationFailed: minificationFailed,
-        minificationType: minificationType,
-      }),
-      // Security metadata
-      ...(securityWarnings.length > 0 && {
-        securityWarnings,
-      }),
-    } as GitHubFileContentResponse,
-  });
+  return {
+    filePath,
+    owner,
+    repo,
+    branch,
+    content: finalContent,
+    // Always return total lines for LLM context
+    totalLines,
+    // Original request parameters for LLM context
+    requestedStartLine: startLine,
+    requestedEndLine: endLine,
+    requestedContextLines: contextLines,
+    // Actual content boundaries (only for partial content)
+    ...(isPartial && {
+      startLine: actualStartLine,
+      endLine: actualEndLine,
+      isPartial,
+    }),
+    // Minification metadata
+    ...(minified && {
+      minified: !minificationFailed,
+      minificationFailed: minificationFailed,
+      minificationType: minificationType,
+    }),
+    // Security metadata
+    ...(securityWarnings.length > 0 && {
+      securityWarnings,
+    }),
+  } as GitHubFileContentResponse;
 }
 
 /**
@@ -2566,7 +2557,6 @@ async function fetchDirectoryContentsRecursivelyAPI(
 
 /**
  * Search GitHub commits using Octokit API
- * Implementation based on GitHub CLI source code research
  */
 export async function searchGitHubCommitsAPI(
   params: GitHubCommitSearchParams,
@@ -2575,7 +2565,7 @@ export async function searchGitHubCommitsAPI(
   try {
     const octokit = getOctokit(token);
 
-    // Build search query following GitHub CLI patterns
+    // Build search query
     const searchQuery = buildCommitSearchQuery(params);
 
     if (!searchQuery) {
@@ -2589,7 +2579,7 @@ export async function searchGitHubCommitsAPI(
     }
 
     // Execute search using GitHub Search API with proper pagination
-    // GitHub CLI uses max 100 per page and handles pagination internally
+    // Use max 100 per page and handle pagination internally
     const perPage = Math.min(params.limit || 25, 100);
     let allCommits: GitHubCommitSearchItem[] = [];
     let totalCount = 0;
@@ -2613,7 +2603,7 @@ export async function searchGitHubCommitsAPI(
       const commitsToAdd = commits.slice(0, remainingSlots);
       allCommits = allCommits.concat(commitsToAdd);
 
-      // Check if we have more pages (GitHub CLI pagination logic)
+      // Check if we have more pages
       hasNextPage =
         commits.length === perPage && allCommits.length < (params.limit || 25);
       page++;
@@ -2687,12 +2677,12 @@ export async function searchGitHubCommitsAPI(
 
 /**
  * Build commit search query string for GitHub API
- * Following GitHub CLI query building patterns
+ * GitHub commit search query building
  */
 function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
   const queryParts: string[] = [];
 
-  // Handle different query types (GitHub CLI approach)
+  // Handle different query type
   if (params.exactQuery) {
     // Exact phrase search with quotes
     queryParts.push(`"${params.exactQuery}"`);
@@ -2704,14 +2694,14 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
     queryParts.push(params.orTerms.join(' OR '));
   }
 
-  // Repository filters (GitHub CLI patterns)
+  // Repository filters
   if (params.owner && params.repo) {
     queryParts.push(`repo:${params.owner}/${params.repo}`);
   } else if (params.owner) {
     queryParts.push(`user:${params.owner}`);
   }
 
-  // Author filters (exact GitHub CLI mapping)
+  // Author filters
   if (params.author) {
     queryParts.push(`author:${params.author}`);
   }
@@ -2722,7 +2712,7 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
     queryParts.push(`author-email:${params['author-email']}`);
   }
 
-  // Committer filters (exact GitHub CLI mapping)
+  // Committer filters
   if (params.committer) {
     queryParts.push(`committer:${params.committer}`);
   }
@@ -2733,7 +2723,7 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
     queryParts.push(`committer-email:${params['committer-email']}`);
   }
 
-  // Date filters (GitHub CLI format)
+  // Date filters
   if (params['author-date']) {
     queryParts.push(`author-date:${params['author-date']}`);
   }
@@ -2741,7 +2731,7 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
     queryParts.push(`committer-date:${params['committer-date']}`);
   }
 
-  // Hash filters (GitHub CLI mapping)
+  // Hash filters
   if (params.hash) {
     queryParts.push(`hash:${params.hash}`);
   }
@@ -2752,14 +2742,14 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
     queryParts.push(`tree:${params.tree}`);
   }
 
-  // Merge filter (GitHub CLI boolean handling)
+  // Merge filter
   if (params.merge === true) {
     queryParts.push('merge:true');
   } else if (params.merge === false) {
     queryParts.push('merge:false');
   }
 
-  // Visibility filter (GitHub CLI is: qualifier)
+  // Visibility filter
   if (params.visibility) {
     queryParts.push(`is:${params.visibility}`);
   }

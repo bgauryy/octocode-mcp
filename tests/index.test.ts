@@ -22,10 +22,10 @@ import { clearAllCache } from '../src/utils/cache.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
-import { registerGitHubSearchCommitsTool } from '../src/mcp/tools/github_search_commits.js';
+import { registerSearchGitHubCommitsTool } from '../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
-import { registerNpmSearchTool } from '../src/mcp/tools/package_search.js';
-import { registerViewRepositoryStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
+import { registerPackageSearchTool } from '../src/mcp/tools/package_search.js';
+import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from '../src/mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
@@ -61,14 +61,14 @@ const mockRegisterSearchGitHubReposTool = vi.mocked(
   registerSearchGitHubReposTool
 );
 const mockRegisterGitHubSearchCommitsTool = vi.mocked(
-  registerGitHubSearchCommitsTool
+  registerSearchGitHubCommitsTool
 );
 const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
   registerSearchGitHubPullRequestsTool
 );
-const mockRegisterNpmSearchTool = vi.mocked(registerNpmSearchTool);
-const mockRegisterViewRepositoryStructureTool = vi.mocked(
-  registerViewRepositoryStructureTool
+const mockRegisterPackageSearchTool = vi.mocked(registerPackageSearchTool);
+const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
+  registerViewGitHubRepoStructureTool
 );
 const mockRegisterSearchGitHubIssuesTool = vi.mocked(
   registerSearchGitHubIssuesTool
@@ -142,8 +142,8 @@ describe('Index Module', () => {
     mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
     mockRegisterGitHubSearchCommitsTool.mockImplementation(() => {});
     mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
-    mockRegisterNpmSearchTool.mockImplementation(() => {});
-    mockRegisterViewRepositoryStructureTool.mockImplementation(() => {});
+    mockRegisterPackageSearchTool.mockImplementation(() => {});
+    mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
     mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {});
   });
 
@@ -338,11 +338,11 @@ describe('Index Module', () => {
         mockMcpServer,
         expectedOptions
       );
-      expect(mockRegisterNpmSearchTool).toHaveBeenCalledWith(
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(
         mockMcpServer,
         expectedOptions
       );
-      expect(mockRegisterViewRepositoryStructureTool).toHaveBeenCalledWith(
+      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
         mockMcpServer,
         expectedOptions
       );
@@ -383,10 +383,10 @@ describe('Index Module', () => {
       mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {
         throw new Error('Registration failed');
       });
-      mockRegisterNpmSearchTool.mockImplementation(() => {
+      mockRegisterPackageSearchTool.mockImplementation(() => {
         throw new Error('Registration failed');
       });
-      mockRegisterViewRepositoryStructureTool.mockImplementation(() => {
+      mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {
         throw new Error('Registration failed');
       });
       mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {
@@ -472,7 +472,7 @@ describe('Index Module', () => {
 
       // Get the SIGINT handler
       const sigintHandler = processOnSpy.mock.calls.find(
-        call => call[0] === 'SIGINT'
+        (call: any[]) => call[0] === 'SIGINT'
       )?.[1] as Function;
 
       expect(sigintHandler).toBeDefined();
@@ -489,7 +489,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       const sigintHandler = processOnSpy.mock.calls.find(
-        call => call[0] === 'SIGINT'
+        (call: any[]) => call[0] === 'SIGINT'
       )?.[1] as Function;
 
       expect(sigintHandler).toBeDefined();
@@ -514,7 +514,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       const sigintHandler = processOnSpy.mock.calls.find(
-        call => call[0] === 'SIGINT'
+        (call: any[]) => call[0] === 'SIGINT'
       )?.[1] as Function;
 
       expect(sigintHandler).toBeDefined();

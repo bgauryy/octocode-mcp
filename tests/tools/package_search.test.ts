@@ -20,7 +20,7 @@ vi.mock('axios', () => ({
 }));
 
 // Import after mocking
-import { registerNpmSearchTool } from '../../src/mcp/tools/package_search.js';
+import { registerPackageSearchTool } from '../../src/mcp/tools/package_search.js';
 
 describe('Package Search Tool (NPM & Python)', () => {
   let mockServer: MockMcpServer;
@@ -30,7 +30,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     mockServer = createMockMcpServer();
 
     // Register the tool for testing with npmEnabled true
-    registerNpmSearchTool(mockServer.server, {
+    registerPackageSearchTool(mockServer.server, {
       npmEnabled: true,
     });
 
@@ -45,7 +45,7 @@ describe('Package Search Tool (NPM & Python)', () => {
 
   describe('Tool Registration', () => {
     it('should register the package search tool', () => {
-      registerNpmSearchTool(mockServer.server, {
+      registerPackageSearchTool(mockServer.server, {
         npmEnabled: true,
       });
 

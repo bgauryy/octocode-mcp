@@ -299,6 +299,7 @@ describe('GitHub API Utils', () => {
 
     it('should handle empty search query', async () => {
       const params = {
+        queryTerms: [],
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,

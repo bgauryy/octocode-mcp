@@ -5,25 +5,10 @@ export {
   BasicPackageSearchResult,
 } from './mcp/tools/scheme/package_search';
 
-export type BaseSearchParams = {
-  query?: string;
-  owner?: string | string[]; // Support both single and multiple owners
-  repo?: string;
-  limit?: number;
-  // Add pagination control parameters
-  exhaustive?: boolean; // Enable exhaustive pagination to get ALL results
-  maxPages?: number; // Maximum pages to fetch (safety limit)
-  pageSize?: number; // Items per page (default: 100, max: 100)
-};
+export interface GitHubCommitSearchParams {
+  // Research goal for LLM reasoning
+  researchGoal?: string;
 
-export type OrderSort = {
-  sort?: string;
-  order?: 'asc' | 'desc';
-};
-
-export interface GitHubCommitSearchParams
-  extends Omit<BaseSearchParams, 'query'>,
-    OrderSort {
   // Query types - use one of these
   exactQuery?: string; // Exact phrase/word to search for
   queryTerms?: string[]; // Array of search terms (AND logic)
@@ -65,9 +50,19 @@ export interface GitHubCommitSearchParams
   exhaustive?: boolean; // Enable exhaustive pagination to get ALL results
   maxPages?: number; // Maximum pages to fetch (safety limit)
   pageSize?: number; // Items per page (default: 100, max: 100)
+
+  // Base search parameters
+  limit?: number;
+
+  // Sort parameters
+  sort?: string;
+  order?: 'asc' | 'desc';
 }
 
 export interface GitHubPullRequestsSearchParams {
+  // Research goal for LLM reasoning
+  researchGoal?: string;
+
   // CORE SEARCH - Query is optional, you can search with filters only
   query?: string;
 
@@ -263,44 +258,60 @@ export interface NpmPackage {
   };
 }
 
-// Simplified repository contents result - token efficient
-export interface SimplifiedRepositoryContents {
-  repository: string;
-  branch: string;
+// GitHub Search Code Types
+export interface GitHubCodeSearchItem {
   path: string;
-  githubBasePath: string;
-  files: {
-    count: number;
-    files: Array<{
-      name: string;
-      size: number;
-      url: string; // Relative path for fetching
-    }>;
+  repository: {
+    id: string;
+    nameWithOwner: string;
+    url: string;
+    isFork: boolean;
+    isPrivate: boolean;
   };
-  folders: {
-    count: number;
-    folders: Array<{
-      name: string;
-      url: string; // Relative path for browsing
+  sha: string;
+  url: string;
+  textMatches?: Array<{
+    fragment: string;
+    matches: Array<{
+      text: string;
+      indices: [number, number];
     }>;
+  }>;
+}
+
+export interface OptimizedCodeSearchResult {
+  items: Array<{
+    path: string;
+    matches: Array<{
+      context: string;
+      positions: [number, number][];
+    }>;
+    url: string;
+    repository: {
+      nameWithOwner: string;
+      url: string;
+    };
+  }>;
+  total_count: number;
+  repository?: {
+    name: string;
+    url: string;
+  };
+  securityWarnings?: string[];
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationTypes?: string[];
+  _researchContext?: {
+    foundPackages: string[];
+    foundFiles: string[];
+    repositoryContext?: {
+      owner: string;
+      repo: string;
+    };
   };
 }
 
 // GitHub Search Commits Types
-export interface GitHubCommitAuthor {
-  name: string;
-  email: string;
-  date: string;
-  login?: string;
-}
-
-export interface GitHubCommitRepository {
-  name: string;
-  fullName: string;
-  url: string;
-  description?: string;
-}
-
 export interface GitHubCommitSearchItem {
   sha: string;
   commit?: {
@@ -398,6 +409,9 @@ export type CallToolResult = {
 };
 
 export interface GitHubIssuesSearchParams {
+  // Research goal for LLM reasoning
+  researchGoal?: string;
+
   // CORE SEARCH
   query: string; // Search query for issue content
 
@@ -531,39 +545,6 @@ export interface GitHubIssuesSearchResult {
   };
 }
 
-// Basic issue data structure before fetching full details
-export interface BasicGitHubIssue {
-  number: number;
-  title: string;
-  state: 'open' | 'closed';
-  author: {
-    login: string;
-    id?: string;
-    url?: string;
-    type?: string;
-    is_bot?: boolean;
-  };
-  repository: {
-    name: string;
-    nameWithOwner: string;
-  };
-  labels: Array<{
-    name: string;
-    color?: string;
-    description?: string;
-    id?: string;
-  }>;
-  createdAt: string;
-  updatedAt: string;
-  url: string;
-  commentsCount: number;
-  reactions: number;
-  // Legacy compatibility fields
-  created_at: string;
-  updated_at: string;
-  _sanitization_warnings?: string[]; // Optional sanitization warnings
-}
-
 // Enhanced Package Search Types - Merged npm_view_package functionality
 export interface EnhancedPackageMetadata {
   gitURL: string;
@@ -580,13 +561,6 @@ export interface PythonPackageMetadata {
   homepage?: string;
   author?: string;
   license?: string;
-}
-
-export interface EnhancedPackageSearchResult {
-  npm?: Record<string, EnhancedPackageMetadata>;
-  python?: Record<string, EnhancedPackageMetadata>;
-  total_count: number;
-  hints?: string[];
 }
 
 export interface NpmPackageQuery {

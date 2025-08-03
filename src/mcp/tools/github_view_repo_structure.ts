@@ -1,34 +1,36 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
-import {
-  generateSmartHints,
-  getResearchGoalHints,
-} from './utils/toolRelationships';
 import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
+import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
 import {
-  GitHubRepositoryStructureParams,
-  GitHubRepositoryStructureParamsSchema,
+  GitHubViewRepoStructureQuery,
+  GitHubViewRepoStructureQuerySchema,
 } from './scheme/github_view_repo_structure';
+import { generateToolHints } from './utils/hints';
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access.
+const DESCRIPTION = `
+Explore GitHub repository structure and validate repository access with intelligent navigation.
 
-PROJECT UNDERSTANDING:
-- Try to understand more by the structure of the project and the files in the project
-- Identify key directories and file patterns
-- fetch important files for better understanding
+This tool provides comprehensive repository exploration with smart filtering, error recovery,
+and context-aware suggestions. Perfect for understanding project organization, discovering
+key files, and validating repository accessibility.
 
-IMPORTANT:
-- verify default branch (use main or master if can't find default branch)
-- verify path before calling the tool to avoid errors
-- Start with root path to understand actual repository structure and then navigate to specific directories based on research needs
-- Check repository's default branch as it varies between repositories
-- Verify path exists - don't assume repository structure
-- Verify repository existence and accessibility
-- Validate paths before accessing specific files. Use github search code to find correct paths if unsure`;
+Key Features:
+- Comprehensive structure exploration: Navigate directories and understand project layout
+- Smart filtering: Focus on relevant files while excluding noise (build artifacts, etc.)
+- Access validation: Verify repository existence and permissions
+- Research optimization: Tailored hints based on your research goals
 
-export function registerViewRepositoryStructureTool(
+Best Practices:
+- Start with root directory to understand overall project structure
+- Use depth control to balance detail with performance
+- Include ignored files only when needed for complete analysis
+- Specify research goals for optimized navigation suggestions
+`;
+
+export function registerViewGitHubRepoStructureTool(
   server: McpServer,
   opts: ToolOptions = { npmEnabled: false }
 ) {
@@ -36,121 +38,172 @@ export function registerViewRepositoryStructureTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
       description: DESCRIPTION,
-      inputSchema: GitHubRepositoryStructureParamsSchema.shape,
+      inputSchema: GitHubViewRepoStructureQuerySchema.shape,
       annotations: {
-        title: 'GitHub Repository Explorer',
+        title: 'GitHub Repository Structure Explorer',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
       },
     },
-    async (args: GitHubRepositoryStructureParams): Promise<CallToolResult> => {
-      try {
-        const result = await viewRepositoryStructure(args, opts);
-
-        // Add research goal hints if we have successful results and a research goal
-        if (args.researchGoal && result && !result.isError) {
-          const goalHints = getResearchGoalHints(
+    withSecurityValidation(
+      async (args: GitHubViewRepoStructureQuery): Promise<CallToolResult> => {
+        // Validate required parameters
+        if (!args.owner?.trim()) {
+          const hints = generateToolHints(
             TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-            args.researchGoal
-          );
-          if (goalHints.length > 0) {
-            // Parse the existing result to add hints
-            const content = result.content[0];
-            if (content.type === 'text') {
-              const data = JSON.parse(content.text);
-              if (!data.hints) data.hints = [];
-              data.hints.push(...goalHints);
-              result.content[0] = {
-                type: 'text',
-                text: JSON.stringify(data, null, 2),
-              };
+            {
+              hasResults: false,
+              errorMessage: 'Repository owner is required',
+              customHints: [
+                'Provide repository owner (organization or username)',
+                'Example: owner: "facebook" for Facebook repositories',
+              ],
             }
-          }
+          );
+
+          return createResult({
+            isError: true,
+            error: 'Repository owner is required',
+            hints,
+          });
         }
 
-        return result;
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        const hints = generateSmartHints(
-          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-          {
-            hasResults: false,
-            errorMessage: `Failed to explore repository: ${errorMessage}`,
-            customHints: [],
+        if (!args.repo?.trim()) {
+          const hints = generateToolHints(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            {
+              hasResults: false,
+              errorMessage: 'Repository name is required',
+              customHints: [
+                'Provide repository name',
+                'Example: repo: "react" for the React repository',
+              ],
+            }
+          );
+
+          return createResult({
+            isError: true,
+            error: 'Repository name is required',
+            hints,
+          });
+        }
+
+        if (!args.branch?.trim()) {
+          const hints = generateToolHints(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            {
+              hasResults: false,
+              errorMessage: 'Branch name is required',
+              customHints: [
+                'Provide branch name (usually "main" or "master")',
+                'Example: branch: "main"',
+              ],
+            }
+          );
+
+          return createResult({
+            isError: true,
+            error: 'Branch name is required',
+            hints,
+          });
+        }
+
+        try {
+          const result = await viewGitHubRepositoryStructureAPI(
+            args,
+            opts.ghToken
+          );
+
+          // Check if result is an error
+          if ('error' in result) {
+            const hints = generateToolHints(
+              TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+              {
+                hasResults: false,
+                errorMessage: result.error,
+                customHints: [],
+                researchGoal: args.researchGoal,
+              }
+            );
+            return createResult({
+              error: result.error,
+              hints,
+            });
           }
-        );
-        return createResult({
-          isError: true,
-          hints,
-        });
+
+          // Success - generate intelligent hints
+          const responseContext = {
+            foundRepository: `${args.owner}/${args.repo}`,
+            foundBranch: args.branch,
+            exploredPath: args.path || '/',
+            dataQuality: {
+              hasContent:
+                (result.files?.count || 0) + (result.folders?.count || 0) > 0,
+              hasFiles: (result.files?.count || 0) > 0,
+              hasFolders: (result.folders?.count || 0) > 0,
+            },
+          };
+
+          const hints = generateToolHints(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            {
+              hasResults: responseContext.dataQuality.hasContent,
+              totalItems:
+                (result.files?.count || 0) + (result.folders?.count || 0),
+              researchGoal: args.researchGoal,
+              responseContext,
+              queryContext: {
+                owner: args.owner,
+                repo: args.repo,
+              },
+            }
+          );
+
+          return createResult({
+            data: {
+              data: {
+                ...result,
+                apiSource: true,
+              },
+              meta: {
+                repository: `${args.owner}/${args.repo}`,
+                branch: args.branch,
+                path: args.path || '/',
+                depth: args.depth || 1,
+                fileCount: result.files?.count || 0,
+                folderCount: result.folders?.count || 0,
+                researchGoal: args.researchGoal,
+              },
+              hints,
+            },
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error occurred';
+
+          const hints = generateToolHints(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            {
+              hasResults: false,
+              errorMessage,
+              researchGoal: args.researchGoal,
+              customHints: [
+                'Verify repository owner and name are correct',
+                'Check that the branch exists (try "main" or "master")',
+                'Ensure you have access to the repository',
+              ],
+            }
+          );
+
+          return createResult({
+            isError: true,
+            error: `Failed to explore repository structure: ${errorMessage}`,
+            hints,
+          });
+        }
       }
-    }
+    )
   );
-}
-
-/**
- * Views the structure of a GitHub repository at a specific path.
- * Uses GitHub API for reliable access with smart defaults and clear errors.
- */
-export async function viewRepositoryStructure(
-  params: GitHubRepositoryStructureParams,
-  opts: ToolOptions = { npmEnabled: false }
-): Promise<CallToolResult> {
-  try {
-    // Execute API request
-    const result = await viewGitHubRepositoryStructureAPI(params, opts.ghToken);
-
-    // Check if result is an error
-    if ('error' in result) {
-      const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
-        hasResults: false,
-        errorMessage:
-          result.error ||
-          `Failed to access repository "${params.owner}/${params.repo}"`,
-        customHints: result.triedBranches
-          ? [`Tried branches: ${result.triedBranches.join(', ')}`]
-          : [],
-      });
-
-      return createResult({
-        isError: true,
-        hints,
-      });
-    }
-
-    // If successful, add hints and return
-    const data = result;
-
-    // Generate smart hints based on results
-    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
-      hasResults: true,
-      totalItems: (data.files?.count || 0) + (data.folders?.count || 0),
-      customHints: data.summary?.truncated
-        ? ['Results truncated for performance']
-        : [],
-    });
-
-    // Add hints to the response
-    const responseData = { ...data, hints };
-
-    return createResult({
-      data: responseData,
-      hints,
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
-      hasResults: false,
-      errorMessage: `Failed to access repository "${params.owner}/${params.repo}": ${errorMessage}`,
-      customHints: [],
-    });
-
-    return createResult({
-      isError: true,
-      hints,
-    });
-  }
 }

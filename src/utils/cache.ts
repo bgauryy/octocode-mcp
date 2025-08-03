@@ -23,7 +23,7 @@ interface CacheStats {
   lastReset: Date;
 }
 
-let cacheStats: CacheStats = {
+const cacheStats: CacheStats = {
   hits: 0,
   misses: 0,
   sets: 0,
@@ -203,50 +203,6 @@ export async function withCache(
 }
 
 /**
- * Simple direct cache function - just cache and return!
- * @param key - Cache key
- * @param getValue - Function that returns the value to cache
- * @param refresh - Optional: force refresh the cache
- */
-export async function directCache<T>(
-  key: string,
-  getValue: () => Promise<T>,
-  refresh?: boolean
-): Promise<T> {
-  // Force refresh or check cache
-  if (!refresh) {
-    const cached = cache.get<T>(key);
-    if (cached !== undefined) {
-      return cached;
-    }
-  }
-
-  // Get value and cache it
-  const value = await getValue();
-  cache.set(key, value);
-  return value;
-}
-
-/**
- * Clear cache entries by prefix pattern
- */
-export function clearCacheByPrefix(prefixPattern: string): number {
-  const keys = cache.keys();
-  const pattern = new RegExp(`^v\\d+-${prefixPattern}`);
-  let deletedCount = 0;
-
-  for (const key of keys) {
-    if (pattern.test(key)) {
-      cache.del(key);
-      deletedCount++;
-    }
-  }
-
-  cacheStats.totalKeys = cache.keys().length;
-  return deletedCount;
-}
-
-/**
  * Clear all cache entries
  */
 export function clearAllCache(): void {
@@ -273,23 +229,9 @@ export function getCacheStats(): CacheStats & {
 }
 
 /**
- * Reset cache statistics
- */
-export function resetCacheStats(): void {
-  cacheStats = {
-    hits: 0,
-    misses: 0,
-    sets: 0,
-    collisions: 0,
-    totalKeys: cache.keys().length,
-    lastReset: new Date(),
-  };
-}
-
-/**
  * Validate cache key uniqueness and detect potential issues
  */
-export function validateCacheHealth(): {
+function validateCacheHealth(): {
   isHealthy: boolean;
   issues: string[];
   recommendations: string[];

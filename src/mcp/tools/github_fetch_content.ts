@@ -1,39 +1,36 @@
-import { z } from 'zod';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import z from 'zod';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
-import {
-  fetchGitHubFileContentAPI,
-  getDefaultBranch,
-  generateFileAccessHints,
-} from '../../utils/githubAPI';
-import {
-  generateSmartHints,
-  getResearchGoalHints,
-} from './utils/toolRelationships';
-import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
+import { fetchGitHubFileContentAPI } from '../../utils/githubAPI';
+import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
 import {
   FileContentQuery,
-  FileContentQueryResult,
   FileContentQuerySchema,
-  GithubFetchRequestParams,
+  FileContentQueryResult,
 } from './scheme/github_fetch_content';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
+import { ensureUniqueQueryIds } from './utils/queryUtils';
+import { generateToolHints } from './utils/hints';
 
 const DESCRIPTION = `
-Fetch file contents with smart context extraction using GitHub API.
+Fetch file contents from GitHub repositories with intelligent context extraction.
 
-Supports: Up to 10 files fetching with auto-fallback for branches
+This tool retrieves complete file contents with smart context handling, partial
+access capabilities, and research-oriented guidance. Perfect for examining
+implementations, documentation, and configuration files.
 
-KEY WORKFLOW: 
-  - Code Research: ${TOOL_NAMES.GITHUB_SEARCH_CODE} results -> fetch file using  "matchString" ->  get context around matches
-  - File Content: ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} results  -> fetch relevant files to fetch by structure and file path
+Key Features:
+- Complete file retrieval: Get full file contents with proper formatting
+- Partial access: Specify line ranges for targeted content extraction
+- Context extraction: Smart matching with surrounding context
+- Research optimization: Tailored hints based on your research goals
 
-IMPORTANT: Always verify file paths before fetching using ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} and ${TOOL_NAMES.GITHUB_SEARCH_CODE}.
-Never assume file locations - verify first to avoid failed queries and ensure dynamic research success.
-Get enough context to understand the file and its purpose
-Try to get similar or related files for better context understanding
-
-OPTIMIZATION: Use startLine/endLine for partial access, matchString for precise extraction with context lines
+Best Practices:
+- Use line ranges for large files to focus on relevant sections
+- Leverage matchString for finding specific code patterns
+- Combine with repository structure exploration for navigation
+- Specify research goals for optimized next-step suggestions
 `;
 
 export function registerFetchGitHubFileContentTool(
@@ -50,34 +47,60 @@ export function registerFetchGitHubFileContentTool(
           .min(1)
           .max(10)
           .describe(
-            'Array of up to 10 different file fetch queries for parallel execution'
+            'Array of up to 10 file content queries for parallel execution'
           ),
       },
       annotations: {
-        title: 'GitHub File Content - API Only (Optimized)',
+        title: 'GitHub File Content Fetch',
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
       },
     },
-    async (args: { queries: FileContentQuery[] }): Promise<CallToolResult> => {
-      if (!Array.isArray(args.queries) || args.queries.length === 0) {
-        return createResult({
-          data: {
-            results: [],
-            summary: {
-              totalQueries: 0,
-              successfulQueries: 0,
-              failed: 0,
-            },
-          },
-          hints: ['No queries provided'],
-        });
-      }
+    withSecurityValidation(
+      async (args: {
+        queries: FileContentQuery[];
+      }): Promise<CallToolResult> => {
+        if (
+          !args.queries ||
+          !Array.isArray(args.queries) ||
+          args.queries.length === 0
+        ) {
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
+            hasResults: false,
+            errorMessage: 'Queries array is required and cannot be empty',
+            customHints: [
+              'Provide at least one file content query with owner, repo, and filePath',
+            ],
+          });
 
-      return fetchMultipleGitHubFileContents(args.queries, opts);
-    }
+          return createResult({
+            isError: true,
+            error: 'Queries array is required and cannot be empty',
+            hints,
+          });
+        }
+
+        if (args.queries.length > 10) {
+          const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
+            hasResults: false,
+            errorMessage: 'Too many queries provided',
+            customHints: [
+              'Limit to 10 file queries per request for optimal performance',
+            ],
+          });
+
+          return createResult({
+            isError: true,
+            error: 'Maximum 10 file queries allowed per request',
+            hints,
+          });
+        }
+
+        return fetchMultipleGitHubFileContents(args.queries, opts);
+      }
+    )
   );
 }
 
@@ -85,140 +108,98 @@ async function fetchMultipleGitHubFileContents(
   queries: FileContentQuery[],
   opts: ToolOptions
 ): Promise<CallToolResult> {
+  const uniqueQueries = ensureUniqueQueryIds(queries, 'file-content');
   const results: FileContentQueryResult[] = [];
 
-  // Execute all queries in parallel
-  const queryPromises = queries.map(async (query, index) => {
-    const queryId = query.id || `query_${index + 1}`;
-    const params: GithubFetchRequestParams = {
-      owner: query.owner,
-      repo: query.repo,
-      filePath: query.filePath,
-      branch: query.branch,
-      startLine: query.startLine,
-      endLine: query.endLine,
-      contextLines: query.contextLines,
-      matchString: query.matchString,
-      minified: query.minified ?? true,
-    };
-
+  // Execute all queries
+  for (const query of uniqueQueries) {
     try {
-      // Use only API
-      const apiResult = await fetchGitHubFileContentAPI(params, opts.ghToken);
+      const apiResult = await fetchGitHubFileContentAPI(query, opts.ghToken);
 
-      // Check if result is an error
-      if ('error' in apiResult) {
-        // Get default branch for better hints
-        const defaultBranch = await getDefaultBranch(
-          query.owner,
-          query.repo,
-          opts.ghToken
-        );
-        const hints = generateFileAccessHints(
-          query.owner,
-          query.repo,
-          query.filePath,
-          query.branch || 'main',
-          defaultBranch,
-          apiResult.error
-        );
-
-        // Add critical verification hints for failed file fetches
-        hints.unshift(
-          `CRITICAL: Use githubViewRepoStructure to verify ${query.filePath} exists in ${query.owner}/${query.repo}`,
-          `CRITICAL: Use githubSearchCode to find files by content instead of assuming paths`
-        );
-
-        return {
-          queryId,
-          originalQuery: query,
-          result: {
-            error: apiResult.error,
-            hints,
-          },
-          fallbackTriggered: false,
-          error: apiResult.error,
-        };
-      }
-
-      // Use the raw result data directly
-      return {
-        queryId,
+      results.push({
+        queryId: query.id,
         originalQuery: query,
         result: apiResult,
+        apiResult,
         fallbackTriggered: false,
-      };
+      });
     } catch (error) {
-      // Handle any unexpected errors
       const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      return {
-        queryId,
+        error instanceof Error ? error.message : 'Unknown error occurred';
+
+      results.push({
+        queryId: query.id!,
         originalQuery: query,
-        result: { error: `Unexpected error: ${errorMessage}` },
+        result: { error: errorMessage },
         fallbackTriggered: false,
         error: errorMessage,
-      };
+      });
     }
-  });
+  }
 
-  // Wait for all queries to complete
-  const queryResults = await Promise.all(queryPromises);
-  results.push(...queryResults);
-
-  // Calculate summary statistics
+  // Aggregate results for context
   const totalQueries = results.length;
   const successfulQueries = results.filter(
     r => !('error' in r.result) && !r.error
   ).length;
 
-  // Generate comprehensive hints
-  const hints = generateSmartHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
+  // Build response context for intelligent hints
+  const responseContext = {
+    foundRepositories: Array.from(
+      new Set(
+        results
+          .filter(r => !('error' in r.result))
+          .map(r => `${r.originalQuery.owner}/${r.originalQuery.repo}`)
+      )
+    ),
+    foundFiles: results
+      .filter(r => !('error' in r.result))
+      .map(r => r.originalQuery.filePath),
+    dataQuality: {
+      hasContent: successfulQueries > 0,
+      hasMatches: results.some(
+        r =>
+          !('error' in r.result) &&
+          'content' in r.result &&
+          r.result.content &&
+          r.result.content.length > 0
+      ),
+    },
+  };
+
+  // Generate intelligent hints
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
     hasResults: successfulQueries > 0,
     totalItems: successfulQueries,
+    researchGoal,
+    responseContext,
     customHints: results
-      .filter(r => r.result?.hints)
-      .flatMap(r => r.result.hints)
+      .filter(r => 'error' in r.result && r.result.hints)
+      .flatMap(r =>
+        'error' in r.result && r.result.hints ? r.result.hints : []
+      )
       .slice(0, 5), // Limit to 5 most relevant hints
   });
 
-  // Add research goal hints if we have successful results
-  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
-  if (researchGoal && successfulQueries > 0) {
-    const goalHints = getResearchGoalHints(
-      TOOL_NAMES.GITHUB_FETCH_CONTENT,
-      researchGoal
-    );
-    hints.push(...goalHints);
-  }
-
-  // Add smart research guidance when ALL queries fail
-  if (successfulQueries === 0 && totalQueries > 0) {
-    const uniqueRepos = Array.from(
-      new Set(queries.map(q => `${q.owner}/${q.repo}`))
-    );
-
-    if (uniqueRepos.length === 1) {
-      const [owner, repo] = uniqueRepos[0].split('/');
-      hints.push(
-        `CRITICAL: Use githubViewRepoStructure to explore ${owner}/${repo} structure and verify file paths`,
-        `CRITICAL: Use githubSearchCode to find files by content in ${owner}/${repo} - do not assume file locations`
-      );
-    } else {
-      hints.push(
-        `CRITICAL: Use githubViewRepoStructure to verify file paths in each repository`,
-        `CRITICAL: Use githubSearchCode to search for files by content - do not assume file locations`
-      );
-    }
-  }
-
   return createResult({
     data: {
-      results: results,
-      summary: {
-        totalQueries: totalQueries,
-        successfulQueries: successfulQueries,
-        failed: totalQueries - successfulQueries,
+      results,
+      meta: {
+        researchGoal: researchGoal || 'analysis',
+        totalOperations: totalQueries,
+        successfulOperations: successfulQueries,
+        failedOperations: totalQueries - successfulQueries,
+        ...(totalQueries - successfulQueries > 0 && {
+          errors: results
+            .filter(r => r.error || 'error' in r.result)
+            .map(r => ({
+              operationId: r.queryId,
+              error:
+                r.error ||
+                ('error' in r.result ? r.result.error : 'Unknown error'),
+            })),
+        }),
       },
     },
     hints,

@@ -10,7 +10,7 @@ vi.mock('../../src/utils/githubAPI.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
-import { registerViewRepositoryStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;
@@ -18,7 +18,7 @@ describe('GitHub View Repository Structure Tool', () => {
   beforeEach(() => {
     mockServer = createMockMcpServer();
     vi.clearAllMocks();
-    registerViewRepositoryStructureTool(mockServer.server);
+    registerViewGitHubRepoStructureTool(mockServer.server);
 
     mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
       isError: false,

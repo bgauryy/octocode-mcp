@@ -1,41 +1,21 @@
-import { ResearchGoalEnum } from '../utils/toolConstants';
 import { z } from 'zod';
+import {
+  extendBaseQuerySchema,
+  GitHubOwnerSchema,
+  GitHubRepoSchema,
+  GitHubFilePathSchema,
+  GitHubBranchSchema,
+} from './baseSchema';
 
-export const FileContentQuerySchema = z.object({
-  id: z.string().optional().describe('Optional identifier for the query'),
-  owner: z
-    .string()
-    .min(1)
-    .max(150)
-    .regex(/^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/)
-    .describe(
-      `Repository owner/organization name (e.g., 'facebook', 'microsoft'). Do NOT include repository name here.`
-    ),
-  repo: z
-    .string()
-    .min(1)
-    .max(150)
-    .regex(/^[a-zA-Z0-9._-]+$/)
-    .describe(
-      `Repository name only (e.g., 'react', 'vscode'). Do NOT include owner/org prefix.`
-    ),
-  filePath: z
-    .string()
-    .min(1)
-    .describe(
-      `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.
+export const FileContentQuerySchema = extendBaseQuerySchema({
+  owner: GitHubOwnerSchema,
+  repo: GitHubRepoSchema,
+  filePath: GitHubFilePathSchema.describe(
+    `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.
         
         CRITICAL: Always verify file paths using githubViewRepoStructure and githubSearchCode before fetching to ensure accurate research results.`
-    ),
-  branch: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(/^[^\s]+$/)
-    .optional()
-    .describe(
-      `Branch name, tag name, OR commit SHA. Uses default branch if not provided.`
-    ),
+  ),
+  branch: GitHubBranchSchema.optional(),
   startLine: z
     .number()
     .int()
@@ -71,10 +51,6 @@ export const FileContentQuerySchema = z.object({
     .describe(
       `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
     ),
-  researchGoal: z
-    .enum(ResearchGoalEnum)
-    .optional()
-    .describe('Research goal to guide tool behavior and hint generation'),
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;

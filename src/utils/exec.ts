@@ -45,7 +45,7 @@ export function parseExecResult(
   }
 
   return createResult({
-    content: [{ type: 'text', text: stdout }],
+    data: stdout,
   });
 }
 
