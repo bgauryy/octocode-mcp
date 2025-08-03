@@ -5,6 +5,12 @@ This is an **MCP (Model Context Protocol) server** that creates tools for AI ass
 
 ## Core Principles
 
+### Senior Engineering Mindset
+- **Think like a senior software engineer and architect** - consider system-wide implications, maintainability, and long-term consequences
+- **When dealing with code changes** - check full flow with other files and find the best way to implement solution across the entire system
+- **Holistic analysis** - understand how changes ripple through the codebase before implementation
+- **Architecture-first approach** - design the solution, then implement with clean patterns
+
 ### Clean Code & Architecture
 - **Prefer clean, readable code** over clever optimizations
 - **Follow established patterns** - see existing examples in `src/mcp/tools/` 
@@ -142,11 +148,12 @@ describe('ToolName', () => {
 6. **Update documentation**
 
 ### When Modifying Existing Tools
-1. **Check impact** on other tools using `toolRelationships.ts`
-2. **Update schemas** if parameters change
-3. **Maintain backward compatibility** where possible
-4. **Update related tests** intelligently
-5. **Run full test suite** before committing
+1. **Analyze full system impact** - trace through all dependent files and understand complete data flow
+2. **Check impact** on other tools using `toolRelationships.ts`
+3. **Update schemas** if parameters change
+4. **Maintain backward compatibility** where possible
+5. **Update related tests** intelligently
+6. **Run full test suite** before committing
 
 ### When Optimizing Performance
 1. **Profile first** - identify actual bottlenecks
