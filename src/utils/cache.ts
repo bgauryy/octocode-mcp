@@ -1,6 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import NodeCache from 'node-cache';
 import crypto from 'crypto';
+import { logger } from './logger';
 
 const VERSION = 'v1';
 
@@ -34,7 +35,62 @@ const cacheStats: CacheStats = {
 
 // Track cache key prefixes to detect potential collisions
 const keyPrefixRegistry = new Set<string>();
-const keyCollisionMap = new Map<string, string[]>();
+
+/**
+ * LRU Cache for collision tracking to prevent unbounded memory growth
+ */
+class LRUCollisionMap {
+  private cache = new Map<string, string[]>();
+  private maxSize: number;
+
+  constructor(maxSize = 1000) {
+    this.maxSize = maxSize;
+  }
+
+  has(key: string): boolean {
+    return this.cache.has(key);
+  }
+
+  get(key: string): string[] | undefined {
+    const value = this.cache.get(key);
+    if (value !== undefined) {
+      // Move to end (most recently used)
+      this.cache.delete(key);
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  set(key: string, value: string[]): void {
+    // Remove if already exists
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Remove least recently used (first item)
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+
+    // Add as most recently used
+    this.cache.set(key, value);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  entries(): IterableIterator<[string, string[]]> {
+    return this.cache.entries();
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+}
+
+const keyCollisionMap = new LRUCollisionMap(1000); // Limit to 1000 collision tracking entries
 
 // TTL configurations for different cache types (in seconds)
 export const CACHE_TTL_CONFIG = {
@@ -79,23 +135,23 @@ export function generateCacheKey(prefix: string, params: unknown): string {
   // Create a more robust parameter string
   const paramString = createStableParamString(params);
 
-  // Use SHA-256 instead of MD5 for better collision resistance
-  const hash = crypto
-    .createHash('sha256')
-    .update(paramString)
-    .digest('hex')
-    .substring(0, 16);
+  // Use full SHA-256 hash for maximum collision resistance
+  const hash = crypto.createHash('sha256').update(paramString).digest('hex');
 
   const cacheKey = `${VERSION}-${prefix}:${hash}`;
 
-  // Track potential collisions
+  // Track potential collisions (extremely rare with full SHA-256)
   if (keyCollisionMap.has(cacheKey)) {
     const existingParams = keyCollisionMap.get(cacheKey)!;
     if (!existingParams.includes(paramString)) {
       existingParams.push(paramString);
       cacheStats.collisions++;
-      // Note: In production, this should use a proper logging system
-      // console.warn(`Cache key collision detected for prefix "${prefix}". Consider using more specific prefixes.`);
+      // Log collision - should be extremely rare with full SHA-256 hash
+      logger.warn('Cache key collision detected', {
+        prefix,
+        cacheKey,
+        existingCount: existingParams.length,
+      });
     }
   } else {
     keyCollisionMap.set(cacheKey, [paramString]);
@@ -235,6 +291,7 @@ function validateCacheHealth(): {
   isHealthy: boolean;
   issues: string[];
   recommendations: string[];
+  collisionMapSize: number;
 } {
   const issues: string[] = [];
   const recommendations: string[] = [];
@@ -272,10 +329,23 @@ function validateCacheHealth(): {
     recommendations.push('Consider consolidating similar cache prefixes');
   }
 
+  // Check collision map size (should be within limits due to LRU)
+  const collisionMapSize = keyCollisionMap.size();
+  if (collisionMapSize > 900) {
+    // 90% of max size
+    issues.push(
+      `Collision map approaching capacity (${collisionMapSize}/1000)`
+    );
+    recommendations.push(
+      'Monitor collision patterns and consider increasing collision map size if needed'
+    );
+  }
+
   return {
     isHealthy: issues.length === 0,
     issues,
     recommendations,
+    collisionMapSize,
   };
 }
 

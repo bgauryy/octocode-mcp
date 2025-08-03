@@ -13,6 +13,7 @@ import {
   generateSmartSuggestions,
   TOOL_SUGGESTION_CONFIGS,
 } from './utils/smartSuggestions';
+import type { GitHubRepository } from '../../types/github';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
@@ -168,7 +169,7 @@ async function searchMultipleGitHubRepos(
               queryArgs: query,
               error: apiResult.error,
               searchType: smartSuggestions.searchType,
-              suggestions: smartSuggestions.suggestions,
+              suggestions: smartSuggestions,
               researchGoal: query.researchGoal || 'discovery',
             },
           };
@@ -210,7 +211,7 @@ async function searchMultipleGitHubRepos(
             queryArgs: query,
             error: errorMessage,
             searchType: smartSuggestions.searchType,
-            suggestions: smartSuggestions.suggestions,
+            suggestions: smartSuggestions,
             researchGoal: query.researchGoal || 'discovery',
           },
         };
@@ -242,24 +243,26 @@ async function searchMultipleGitHubRepos(
   // Extract context from successful results
   results.forEach(({ result }) => {
     if (!result.error && result.data?.repositories) {
-      result.data.repositories.forEach((repo: any) => {
-        aggregatedContext.foundOwners.add(repo.owner);
+      result.data.repositories.forEach((repo: GitHubRepository) => {
+        aggregatedContext.foundOwners.add(repo.owner.login);
         if (repo.language) {
           aggregatedContext.foundLanguages.add(repo.language);
         }
-        aggregatedContext.totalStars += repo.stars || 0;
+        aggregatedContext.totalStars += repo.stargazers_count || 0;
 
         // Check for popular repositories (>1000 stars)
-        if (repo.stars > 1000) {
+        if (repo.stargazers_count > 1000) {
           aggregatedContext.dataQuality.hasPopularRepos = true;
         }
       });
 
       // Extract search patterns from query terms
       const queryTerms = result.metadata?.queryArgs?.queryTerms || [];
-      queryTerms.forEach((term: any) =>
-        aggregatedContext.searchPatterns.add(term)
-      );
+      if (Array.isArray(queryTerms)) {
+        queryTerms.forEach((term: string) =>
+          aggregatedContext.searchPatterns.add(term)
+        );
+      }
     }
   });
 

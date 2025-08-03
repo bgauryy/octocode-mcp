@@ -4,6 +4,16 @@ import type { OctokitOptions } from '@octokit/core';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../mcp/responses';
+import { logger } from './logger.js';
+import type { GitHubRepository, GitHubCodeSearchItem } from '../types/github';
+
+// Throttling options interface
+interface ThrottleOptions {
+  method: string;
+  url: string;
+  [key: string]: unknown;
+}
+
 import {
   GitHubCommitSearchParams,
   GitHubCommitSearchItem,
@@ -11,7 +21,6 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
   GitHubIssuesSearchParams,
-  GitHubCodeSearchItem,
   OptimizedCodeSearchResult,
 } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
@@ -54,15 +63,6 @@ type SearchCodeResponse = RestEndpointMethodTypes['search']['code']['response'];
 type GetContentParameters =
   RestEndpointMethodTypes['repos']['getContent']['parameters'];
 
-// Define TextMatch type based on GitHub API response structure
-interface TextMatch {
-  fragment: string;
-  matches?: Array<{
-    text: string;
-    indices: [number, number];
-  }>;
-}
-
 // Enhanced error response type
 interface GitHubAPIError {
   error: string;
@@ -89,50 +89,62 @@ const octokitInstances = new Map<
 const createThrottleOptions = () => ({
   onRateLimit: (
     retryAfter: number,
-    options: any,
-    _octokit: any,
+    options: ThrottleOptions,
+    _octokit: Octokit,
     retryCount: number
   ) => {
     // Log rate limit with detailed context
-    // eslint-disable-next-line no-console
-    console.warn(
-      `GitHub API rate limit exceeded for ${options.method} ${options.url}`
-    );
+    logger.warn('GitHub API rate limit exceeded', {
+      method: options.method,
+      url: options.url,
+      retryCount,
+      retryAfter,
+    });
 
     // Only retry once
     if (retryCount === 0) {
-      // eslint-disable-next-line no-console
-      console.info(`Retrying after ${retryAfter} seconds!`);
+      logger.info('Retrying GitHub API request after rate limit', {
+        retryAfter,
+        method: options.method,
+        url: options.url,
+      });
       return true;
     }
 
-    // eslint-disable-next-line no-console
-    console.warn('Rate limit retry limit reached, not retrying');
+    logger.warn('Rate limit retry limit reached, not retrying', {
+      method: options.method,
+      url: options.url,
+    });
     return false;
   },
   onSecondaryRateLimit: (
     retryAfter: number,
-    options: any,
-    _octokit: any,
+    options: ThrottleOptions,
+    _octokit: Octokit,
     retryCount: number
   ) => {
     // Log secondary rate limit (abuse detection pattern)
-    // eslint-disable-next-line no-console
-    console.warn(
-      `GitHub API secondary rate limit detected for ${options.method} ${options.url}`
-    );
+    logger.warn('GitHub API secondary rate limit detected', {
+      method: options.method,
+      url: options.url,
+      retryCount,
+      retryAfter,
+    });
 
     // Retry once for secondary rate limits too
     if (retryCount === 0) {
-      // eslint-disable-next-line no-console
-      console.info(
-        `Retrying after ${retryAfter} seconds due to secondary rate limit`
-      );
+      logger.info('Retrying after secondary rate limit', {
+        retryAfter,
+        method: options.method,
+        url: options.url,
+      });
       return true;
     }
 
-    // eslint-disable-next-line no-console
-    console.warn('Secondary rate limit retry limit reached, not retrying');
+    logger.warn('Secondary rate limit retry limit reached, not retrying', {
+      method: options.method,
+      url: options.url,
+    });
     return false;
   },
 });
@@ -506,18 +518,22 @@ async function convertCodeSearchResult(
 ): Promise<OptimizedCodeSearchResult> {
   const items: GitHubCodeSearchItem[] = octokitResult.data.items.map(
     (item: any) => ({
+      name: item.name,
       path: item.path,
-      repository: {
-        id: item.repository.id.toString(),
-        nameWithOwner: item.repository.full_name,
-        url: item.repository.html_url,
-        isFork: item.repository.fork,
-        isPrivate: item.repository.private,
-      },
       sha: item.sha,
-      url: item.html_url,
+      url: item.url,
+      git_url: item.git_url,
+      html_url: item.html_url,
+      repository: item.repository as GitHubRepository,
+      score: item.score || 0,
+      file_size: item.file_size,
+      language: item.language,
+      last_modified_at: item.last_modified_at,
       textMatches:
-        item.text_matches?.map((match: TextMatch) => ({
+        item.text_matches?.map((match: any) => ({
+          object_url: match.object_url,
+          object_type: match.object_type,
+          property: match.property,
           fragment: match.fragment,
           matches:
             match.matches?.map((m: any) => ({
@@ -621,7 +637,7 @@ async function transformToOptimizedFormat(
         matches: processedMatches,
         url: singleRepo ? item.path : item.url,
         repository: {
-          nameWithOwner: item.repository.nameWithOwner,
+          nameWithOwner: item.repository.full_name,
           url: item.repository.url,
         },
       };
@@ -637,8 +653,8 @@ async function transformToOptimizedFormat(
       foundFiles: Array.from(foundFiles),
       repositoryContext: singleRepo
         ? {
-            owner: singleRepo.nameWithOwner.split('/')[0],
-            repo: singleRepo.nameWithOwner.split('/')[1],
+            owner: singleRepo.full_name.split('/')[0],
+            repo: singleRepo.full_name.split('/')[1],
           }
         : undefined,
     },
@@ -647,7 +663,7 @@ async function transformToOptimizedFormat(
   // Add repository info if single repo
   if (singleRepo) {
     result.repository = {
-      name: singleRepo.nameWithOwner,
+      name: singleRepo.full_name,
       url: singleRepo.url,
     };
   }
@@ -676,7 +692,7 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 
   const firstRepo = items[0].repository;
   const allSameRepo = items.every(
-    item => item.repository.nameWithOwner === firstRepo.nameWithOwner
+    item => item.repository.full_name === firstRepo.full_name
   );
 
   return allSameRepo ? firstRepo : null;
@@ -1739,7 +1755,9 @@ export async function searchGitHubCodeAPI(
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery,
   token?: string
-): Promise<{ total_count: number; repositories: any[] } | GitHubAPIError> {
+): Promise<
+  { total_count: number; repositories: GitHubRepository[] } | GitHubAPIError
+> {
   try {
     const octokit = getOctokit(token);
     const query = buildRepoSearchQuery(params);
@@ -1770,7 +1788,7 @@ export async function searchGitHubReposAPI(
     const result = await octokit.rest.search.repos(searchParams);
 
     // Transform repository results to match CLI format with proper typing
-    const repositories = result.data.items.map((repo: any) => ({
+    const repositories = result.data.items.map((repo: GitHubRepository) => ({
       name: repo.full_name,
       stars: repo.stargazers_count || 0,
       description: repo.description
@@ -1780,7 +1798,7 @@ export async function searchGitHubReposAPI(
         : 'No description',
       language: repo.language || 'Unknown',
       url: repo.html_url,
-      forks: repo.forks_count || 0,
+      forks: repo.forks || 0,
       updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
       owner: repo.owner.login,
     }));

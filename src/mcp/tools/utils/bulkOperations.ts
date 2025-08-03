@@ -13,6 +13,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../responses';
 import { getResearchGoalHints } from './toolRelationships';
 import { ToolName, TOOL_NAMES } from './toolConstants';
+import type { APIResponseMetadata } from '../../../types/github';
 
 /**
  * Base interface for bulk query operations
@@ -27,10 +28,10 @@ export interface BulkQuery {
  */
 export interface ProcessedBulkResult {
   queryId: string;
-  data?: any;
+  data?: unknown;
   error?: string;
   hints?: string[];
-  metadata: Record<string, any>;
+  metadata: APIResponseMetadata;
 }
 
 /**
@@ -51,7 +52,7 @@ export interface AggregatedContext {
   failedQueries: number;
   dataQuality: {
     hasResults: boolean;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -268,7 +269,7 @@ export function createBulkResponse<
   const commonResearchGoal =
     researchGoals.length > 0 ? researchGoals[0] : undefined;
 
-  const meta: any = {
+  const meta: Record<string, unknown> = {
     totalOperations: results.length,
     successfulOperations: results.filter(r => !r.result.error).length,
     failedOperations: results.filter(r => !!r.result.error).length,

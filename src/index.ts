@@ -15,6 +15,7 @@ import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
 import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
 import { getGithubCLIToken } from './utils/exec.js';
+import { logger } from './utils/logger.js';
 
 async function getToken(): Promise<string> {
   const token =
@@ -46,8 +47,10 @@ async function registerAllTools(server: McpServer) {
   try {
     const npmDetails = await getNPMUserDetails();
     npmEnabled = npmDetails.npmConnected;
-  } catch (_error) {
-    // TODO: Use proper logging instead of console
+  } catch (error) {
+    logger.warn('NPM availability check failed, disabling NPM features', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
     npmEnabled = false;
   }
 
@@ -118,7 +121,11 @@ async function registerAllTools(server: McpServer) {
   }
 
   if (failedTools.length > 0) {
-    // TODO: Use proper logging instead of console
+    logger.warn('Some tools failed to register', {
+      failedTools,
+      successCount,
+      totalTools: toolRegistrations.length,
+    });
   }
 
   if (successCount === 0) {
@@ -159,12 +166,18 @@ async function startServer() {
           // If we reach here, server closed successfully
           process.exit(0);
         } catch (timeoutError) {
-          // TODO: Use proper logging instead of console
+          logger.error(
+            'Server shutdown timeout',
+            timeoutError instanceof Error ? timeoutError : undefined
+          );
           // Exit with error code when timeout occurs
           process.exit(1);
         }
       } catch (error) {
-        // TODO: Use proper logging instead of console
+        logger.error(
+          'Error during server shutdown',
+          error instanceof Error ? error : undefined
+        );
         process.exit(1);
       }
     };
