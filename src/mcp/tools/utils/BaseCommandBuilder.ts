@@ -19,20 +19,13 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
   protected abstract initializeCommand(): this;
 
   /**
-   * Add query parameters (exact query or query terms)
+   * Add query parameters (query terms)
    */
-  protected addQuery(
-    params: {
-      exactQuery?: string;
-      queryTerms?: string[];
-      orTerms?: string[];
-    },
-    addQuotesToExactQuery: boolean = true
-  ): this {
-    if (params.exactQuery) {
-      const query = params.exactQuery.trim();
-      this.args.push(addQuotesToExactQuery ? `"${query}"` : query);
-    } else if (params.queryTerms && params.queryTerms.length > 0) {
+  protected addQuery(params: {
+    queryTerms?: string[];
+    orTerms?: string[];
+  }): this {
+    if (params.queryTerms && params.queryTerms.length > 0) {
       const queryParts: string[] = [];
 
       // Add AND terms

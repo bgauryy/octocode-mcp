@@ -7,7 +7,6 @@ import { extendBaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 
 const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   // Query terms (one of these is required)
-  exactQuery: z.string().optional().describe('Single exact phrase/word search'),
   queryTerms: z
     .array(z.string())
     .optional()

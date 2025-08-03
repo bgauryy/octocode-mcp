@@ -188,8 +188,6 @@ export const TextSearchSchema = z.object({
     .array(z.string())
     .optional()
     .describe('Multiple search terms with AND logic'),
-
-  exactQuery: z.string().optional().describe('Exact phrase to search for'),
 });
 
 /**

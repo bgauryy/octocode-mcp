@@ -50,8 +50,7 @@ export function registerSearchGitHubCommitsTool(
     withSecurityValidation(
       async (args: GitHubCommitSearchQuery): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
-        const hasSearchTerms =
-          args.exactQuery || args.queryTerms?.length || args.orTerms?.length;
+        const hasSearchTerms = args.queryTerms?.length || args.orTerms?.length;
         const hasFilters =
           args.author ||
           args.committer ||
@@ -65,28 +64,16 @@ export function registerSearchGitHubCommitsTool(
             totalItems: 0,
             errorMessage: 'Search parameters required',
             customHints: [
-              'Provide search terms (exactQuery, queryTerms) or filters (author, hash, dates)',
-              'Example: exactQuery: "fix bug" or author: "username"',
+              'Provide search terms (queryTerms) or filters (author, hash, dates)',
+              'Example: queryTerms: ["fix", "bug"] or author: "username"',
             ],
           });
 
           return createResult({
+            data: {
+              error: 'At least one search parameter or filter is required',
+            },
             isError: true,
-            error: 'At least one search parameter or filter is required',
-            hints,
-          });
-        }
-
-        if (args.exactQuery && args.exactQuery.length > 256) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
-            hasResults: false,
-            errorMessage: 'Query too long',
-            customHints: ['Use shorter, more focused search terms'],
-          });
-
-          return createResult({
-            isError: true,
-            error: 'Query too long. Please use a shorter search query.',
             hints,
           });
         }
@@ -101,9 +88,11 @@ export function registerSearchGitHubCommitsTool(
           });
 
           return createResult({
+            data: {
+              error:
+                'Both owner and repo are required when getChangesContent is true',
+            },
             isError: true,
-            error:
-              'Both owner and repo are required when getChangesContent is true',
             hints,
           });
         }
@@ -141,7 +130,6 @@ export function registerSearchGitHubCommitsTool(
           };
 
           const searchTerms = [
-            ...(args.exactQuery ? [args.exactQuery] : []),
             ...(args.queryTerms || []),
             ...(args.orTerms || []),
           ];
@@ -183,8 +171,8 @@ export function registerSearchGitHubCommitsTool(
           });
 
           return createResult({
+            data: { error: `Failed to search commits: ${errorMessage}` },
             isError: true,
-            error: `Failed to search commits: ${errorMessage}`,
             hints,
           });
         }

@@ -259,10 +259,6 @@ function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
     queryParts.push(...params.queryTerms);
   }
 
-  if (params.exactQuery) {
-    queryParts.push(`"${params.exactQuery}"`);
-  }
-
   // Add filters as qualifiers
   if (params.language) {
     queryParts.push(`language:${params.language}`);
@@ -1739,8 +1735,7 @@ export async function searchGitHubReposAPI(
 
     if (!query.trim()) {
       return {
-        error:
-          'Search query cannot be empty. Provide queryTerms, exactQuery, or filters.',
+        error: 'Search query cannot be empty. Provide queryTerms or filters.',
         type: 'http',
         status: 400,
       };
@@ -2683,10 +2678,7 @@ function buildCommitSearchQuery(params: GitHubCommitSearchParams): string {
   const queryParts: string[] = [];
 
   // Handle different query type
-  if (params.exactQuery) {
-    // Exact phrase search with quotes
-    queryParts.push(`"${params.exactQuery}"`);
-  } else if (params.queryTerms && params.queryTerms.length > 0) {
+  if (params.queryTerms && params.queryTerms.length > 0) {
     // AND logic - terms are space separated (GitHub default)
     queryParts.push(params.queryTerms.join(' '));
   } else if (params.orTerms && params.orTerms.length > 0) {

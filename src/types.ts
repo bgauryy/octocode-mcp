@@ -10,7 +10,6 @@ export interface GitHubCommitSearchParams {
   researchGoal?: string;
 
   // Query types - use one of these
-  exactQuery?: string; // Exact phrase/word to search for
   queryTerms?: string[]; // Array of search terms (AND logic)
   orTerms?: string[]; // Array of search terms (OR logic)
 

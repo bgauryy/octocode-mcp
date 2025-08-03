@@ -710,7 +710,7 @@ describe('GitHub API Utils', () => {
         expect(mockCreateResult).toHaveBeenCalledWith({
           isError: true,
           hints: [
-            'Search query cannot be empty. Provide queryTerms, exactQuery, or filters.',
+            'Search query cannot be empty. Provide queryTerms or filters.',
           ],
         });
       });
@@ -722,7 +722,6 @@ describe('GitHub API Utils', () => {
 
         const params = {
           queryTerms: ['machine', 'learning'],
-          exactQuery: 'tensorflow',
           language: 'python',
           owner: ['google', 'microsoft'],
           topic: ['ml', 'ai'],
@@ -750,7 +749,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning "tensorflow" language:python user:google user:microsoft topic:ml topic:ai stars:>100 forks:10..50 size:<1000 created:>2020-01-01 pushed:<2023-12-31 archived:false fork:false license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description';
+          'machine learning language:python user:google user:microsoft topic:ml topic:ai stars:>100 forks:10..50 size:<1000 created:>2020-01-01 pushed:<2023-12-31 archived:false fork:false license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,
@@ -1808,7 +1807,7 @@ describe('GitHub API Utils', () => {
               });
 
               const params = {
-                exactQuery: 'security fix',
+                queryTerms: ['security', 'fix'],
                 author: 'security-team',
                 'author-name': 'Security Bot',
                 'author-email': 'security@company.com',

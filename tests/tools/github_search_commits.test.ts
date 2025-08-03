@@ -37,25 +37,40 @@ describe('GitHub Search Commits Tool', () => {
     mockWithCache.mockImplementation(async (key, fn) => await fn());
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
 
-    // Default successful API mock behavior
+    // Default successful API mock behavior - return GitHubCommitSearchResult
     mockSearchGitHubCommitsAPI.mockResolvedValue({
-      isError: false,
-      content: [
+      commits: [
         {
-          text: JSON.stringify({
-            commits: [
-              {
-                sha: 'abc123',
-                message: 'Test commit',
-                author: 'testuser',
-                date: '01/01/23',
-                url: 'abc123',
-              },
-            ],
-            total_count: 1,
-          }),
+          sha: 'abc123',
+          commit: {
+            message: 'Test commit',
+            author: {
+              name: 'testuser',
+              email: 'test@example.com',
+              date: '2023-01-01T00:00:00Z',
+            },
+            committer: {
+              name: 'testuser',
+              email: 'test@example.com',
+              date: '2023-01-01T00:00:00Z',
+            },
+          },
+          author: {
+            login: 'testuser',
+            id: '12345',
+            type: 'User',
+            url: 'https://github.com/testuser',
+          },
+          repository: {
+            name: 'test-repo',
+            fullName: 'test/test-repo',
+            url: 'https://github.com/test/test-repo',
+          },
+          url: 'https://github.com/test/test-repo/commit/abc123',
         },
       ],
+      total_count: 1,
+      incomplete_results: false,
     });
 
     // Register tool with API options
@@ -84,20 +99,23 @@ describe('GitHub Search Commits Tool', () => {
       const result = await mockServer.callTool('githubSearchCommits', {});
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain(
-        'At least one search parameter required'
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.hints).toBeDefined();
+      expect(response.hints).toContain(
+        'Provide search terms (queryTerms) or filters (author, hash, dates)'
       );
     });
 
-    it('should not allow exactQuery with queryTerms', async () => {
+    it('should validate queryTerms array', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'bug fix',
-        queryTerms: ['bug', 'fix'],
+        queryTerms: [],
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain(
-        'exactQuery cannot be combined with queryTerms'
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.hints).toBeDefined();
+      expect(response.hints).toContain(
+        'Provide search terms (queryTerms) or filters (author, hash, dates)'
       );
     });
 
@@ -135,15 +153,15 @@ describe('GitHub Search Commits Tool', () => {
       );
     });
 
-    it('should handle exactQuery (phrase search)', async () => {
+    it('should handle orTerms (OR logic)', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'fix bug in parser',
+        orTerms: ['fix', 'bug', 'parser'],
       });
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
-          exactQuery: 'fix bug in parser',
+          orTerms: ['fix', 'bug', 'parser'],
         }),
         undefined
       );
@@ -153,74 +171,69 @@ describe('GitHub Search Commits Tool', () => {
   describe('Basic Functionality', () => {
     it('should handle successful commit search', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'fix',
+        queryTerms: ['fix'],
       });
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
-          exactQuery: 'fix',
+          queryTerms: ['fix'],
         }),
         undefined
       );
 
       const response = JSON.parse(result.content[0].text as string);
-      expect(response.commits).toHaveLength(1);
-      expect(response.commits[0].message).toBe('Test commit');
+      expect(response.data.data.commits).toHaveLength(1);
+      expect(response.data.data.commits[0].commit.message).toBe('Test commit');
     });
 
     it('should handle no results found', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        isError: false,
-        content: [
-          {
-            text: JSON.stringify({
-              commits: [],
-              total_count: 0,
-            }),
-          },
-        ],
+        commits: [],
+        total_count: 0,
+        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'nonexistent',
+        queryTerms: ['nonexistent'],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0].text as string);
-      expect(response.commits).toHaveLength(0);
+      expect(response.data.data.commits).toHaveLength(0);
     });
 
     it('should handle search errors', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        isError: true,
-        content: [{ text: JSON.stringify({ error: 'API error' }) }],
+        error: 'API error',
+        type: 'http',
+        status: 500,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'test',
+        queryTerms: ['test'],
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain('API error');
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.meta.error).toContain('API error');
     });
 
     it('should handle API exceptions', async () => {
       mockSearchGitHubCommitsAPI.mockRejectedValue(new Error('Network error'));
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'test',
+        queryTerms: ['test'],
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text as string).toContain(
-        'Commit search failed'
-      );
+      const response = JSON.parse(result.content[0].text as string);
+      expect(response.data.error).toContain('Failed to search commits');
     });
 
     it('should handle getChangesContent parameter', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'fix',
+        queryTerms: ['fix'],
         owner: 'owner',
         repo: 'repo',
         getChangesContent: true,
@@ -229,7 +242,7 @@ describe('GitHub Search Commits Tool', () => {
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
-          exactQuery: 'fix',
+          queryTerms: ['fix'],
           owner: 'owner',
           repo: 'repo',
           getChangesContent: true,
@@ -308,95 +321,146 @@ describe('GitHub Search Commits Tool', () => {
   describe('Content Sanitization', () => {
     it('should sanitize GitHub tokens from commit messages', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        isError: false,
-        content: [
+        commits: [
           {
-            text: JSON.stringify({
-              commits: [
-                {
-                  sha: 'abc123',
-                  message: 'Fix auth with token [REDACTED-GITHUBTOKENS]',
-                  author: 'testuser',
-                  date: '01/01/23',
-                  url: 'abc123',
-                },
-              ],
-              total_count: 1,
-            }),
+            sha: 'abc123',
+            commit: {
+              message: 'Fix auth with token [REDACTED-GITHUBTOKENS]',
+              author: {
+                name: 'testuser',
+                email: 'test@example.com',
+                date: '2023-01-01T00:00:00Z',
+              },
+              committer: {
+                name: 'testuser',
+                email: 'test@example.com',
+                date: '2023-01-01T00:00:00Z',
+              },
+            },
+            author: {
+              login: 'testuser',
+              id: '12345',
+              type: 'User',
+              url: 'https://github.com/testuser',
+            },
+            repository: {
+              name: 'test-repo',
+              fullName: 'test/test-repo',
+              url: 'https://github.com/test/test-repo',
+            },
+            url: 'https://github.com/test/test-repo/commit/abc123',
           },
         ],
+        total_count: 1,
+        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'token',
+        queryTerms: ['token'],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0].text as string);
-      expect(response.commits[0].message).not.toContain('ghp_');
-      expect(response.commits[0].message).toContain('[REDACTED-GITHUBTOKENS]');
+      expect(response.data.data.commits[0].commit.message).not.toContain(
+        'ghp_'
+      );
+      expect(response.data.data.commits[0].commit.message).toContain(
+        '[REDACTED-GITHUBTOKENS]'
+      );
     });
 
     it('should sanitize API keys from commit messages', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        isError: false,
-        content: [
+        commits: [
           {
-            text: JSON.stringify({
-              commits: [
-                {
-                  sha: 'def456',
-                  message: 'Update API key: [REDACTED-OPENAIAPIKEY]',
-                  author: 'developer',
-                  date: '02/01/23',
-                  url: 'def456',
-                },
-              ],
-              total_count: 1,
-            }),
+            sha: 'def456',
+            commit: {
+              message: 'Update API key: [REDACTED-OPENAIAPIKEY]',
+              author: {
+                name: 'developer',
+                email: 'dev@example.com',
+                date: '2023-01-02T00:00:00Z',
+              },
+              committer: {
+                name: 'developer',
+                email: 'dev@example.com',
+                date: '2023-01-02T00:00:00Z',
+              },
+            },
+            author: {
+              login: 'developer',
+              id: '67890',
+              type: 'User',
+              url: 'https://github.com/developer',
+            },
+            repository: {
+              name: 'test-repo',
+              fullName: 'test/test-repo',
+              url: 'https://github.com/test/test-repo',
+            },
+            url: 'https://github.com/test/test-repo/commit/def456',
           },
         ],
+        total_count: 1,
+        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'api key',
+        queryTerms: ['api', 'key'],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0].text as string);
-      const commitMessage = response.commits[0].message;
+      const commitMessage = response.data.data.commits[0].commit.message;
       expect(commitMessage).not.toContain('sk-');
       expect(commitMessage).toContain('[REDACTED-OPENAIAPIKEY]');
     });
 
     it('should preserve clean commit content without secrets', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        isError: false,
-        content: [
+        commits: [
           {
-            text: JSON.stringify({
-              commits: [
-                {
-                  sha: 'clean123',
-                  message: 'Add user profile feature',
-                  author: 'developer',
-                  date: '03/01/23',
-                  url: 'clean123',
-                },
-              ],
-              total_count: 1,
-            }),
+            sha: 'clean123',
+            commit: {
+              message: 'Add user profile feature',
+              author: {
+                name: 'developer',
+                email: 'dev@example.com',
+                date: '2023-01-03T00:00:00Z',
+              },
+              committer: {
+                name: 'developer',
+                email: 'dev@example.com',
+                date: '2023-01-03T00:00:00Z',
+              },
+            },
+            author: {
+              login: 'developer',
+              id: '22222',
+              type: 'User',
+              url: 'https://github.com/developer',
+            },
+            repository: {
+              name: 'test-repo',
+              fullName: 'test/test-repo',
+              url: 'https://github.com/test/test-repo',
+            },
+            url: 'https://github.com/test/test-repo/commit/clean123',
           },
         ],
+        total_count: 1,
+        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        exactQuery: 'profile',
+        queryTerms: ['profile'],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0].text as string);
-      expect(response.commits[0].message).toBe('Add user profile feature');
+      expect(response.data.data.commits[0].commit.message).toBe(
+        'Add user profile feature'
+      );
     });
   });
 });

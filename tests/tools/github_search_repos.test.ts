@@ -113,7 +113,7 @@ describe('GitHub Search Repositories Tool', () => {
   });
 
   describe('Query Validation', () => {
-    it('should accept valid queries with exactQuery', async () => {
+    it('should accept valid queries with queryTerms', async () => {
       registerSearchGitHubReposTool(mockServer.server, {
         npmEnabled: false,
       });
@@ -127,7 +127,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ exactQuery: 'react' }],
+          queries: [{ queryTerms: ['react'] }],
         }
       );
 
@@ -261,7 +261,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ exactQuery: 'awesome', id: 'test-query' }],
+          queries: [{ queryTerms: ['awesome'], id: 'test-query' }],
         }
       );
 
@@ -294,7 +294,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ exactQuery: 'nonexistent-repo-xyz' }],
+          queries: [{ queryTerms: ['nonexistent-repo-xyz'] }],
         }
       );
 
@@ -324,7 +324,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ exactQuery: 'test' }],
+          queries: [{ queryTerms: ['test'] }],
         }
       );
 
@@ -347,7 +347,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ exactQuery: 'test' }],
+          queries: [{ queryTerms: ['test'] }],
         }
       );
 
@@ -383,8 +383,8 @@ describe('GitHub Search Repositories Tool', () => {
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
-            { exactQuery: 'javascript', id: 'js-query' },
-            { exactQuery: 'typescript', id: 'ts-query' },
+            { queryTerms: ['javascript'], id: 'js-query' },
+            { queryTerms: ['typescript'], id: 'ts-query' },
           ],
         }
       );
@@ -422,7 +422,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ exactQuery: 'success' }, { exactQuery: 'failure' }],
+          queries: [{ queryTerms: ['success'] }, { queryTerms: ['failure'] }],
         }
       );
 
@@ -448,9 +448,9 @@ describe('GitHub Search Repositories Tool', () => {
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
-            { exactQuery: 'test1' },
-            { exactQuery: 'test2' },
-            { exactQuery: 'test3' },
+            { queryTerms: ['test1'] },
+            { queryTerms: ['test2'] },
+            { queryTerms: ['test3'] },
           ],
         }
       );
@@ -474,7 +474,7 @@ describe('GitHub Search Repositories Tool', () => {
       mockExecuteGitHubCommand.mockResolvedValue(mockResponse);
 
       const queries = Array.from({ length: 5 }, (_, i) => ({
-        exactQuery: `test${i + 1}`,
+        queryTerms: [`test${i + 1}`],
       }));
 
       const result = await mockServer.callTool(

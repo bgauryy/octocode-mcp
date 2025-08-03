@@ -57,9 +57,7 @@ export class NpmPackageSearchBuilder extends NpmCommandBuilder<any> {
     const builder = this.reset().initializeCommand();
 
     // Handle query building for npm search
-    if (params.exactQuery) {
-      this.args.push(params.exactQuery);
-    } else if (params.queryTerms && params.queryTerms.length > 0) {
+    if (params.queryTerms && params.queryTerms.length > 0) {
       // Combine terms for npm search
       const combinedQuery = params.queryTerms.join(' ');
       this.args.push(combinedQuery);

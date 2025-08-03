@@ -2,10 +2,6 @@ import { z } from 'zod';
 import { BaseQuerySchema } from './baseSchema';
 
 export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
-  exactQuery: z
-    .string()
-    .optional()
-    .describe('Exact phrase to search for in commit messages'),
   queryTerms: z
     .array(z.string())
     .optional()

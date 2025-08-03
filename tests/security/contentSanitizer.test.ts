@@ -48,17 +48,16 @@ describe('ContentSanitizer', () => {
 
       it('should handle mixed string and array parameters correctly', () => {
         const params = {
-          exactQuery: 'function useState',
+          queryTerms: ['function', 'useState'],
           owner: ['microsoft', 'facebook'],
           limit: 10,
           extension: 'ts',
-          queryTerms: ['react', 'hooks'],
         };
 
         const result = ContentSanitizer.validateInputParameters(params);
 
         expect(result.isValid).toBe(true);
-        expect(typeof result.sanitizedParams.exactQuery).toBe('string');
+        expect(Array.isArray(result.sanitizedParams.queryTerms)).toBe(true);
         expect(Array.isArray(result.sanitizedParams.owner)).toBe(true);
         expect(typeof result.sanitizedParams.limit).toBe('number');
         expect(typeof result.sanitizedParams.extension).toBe('string');
@@ -68,8 +67,7 @@ describe('ContentSanitizer', () => {
       it('should handle empty arrays correctly', () => {
         const params = {
           owner: [],
-          queryTerms: [],
-          exactQuery: 'test',
+          queryTerms: ['test'],
         };
 
         const result = ContentSanitizer.validateInputParameters(params);
@@ -265,7 +263,7 @@ describe('ContentSanitizer', () => {
     describe('Non-Array Parameter Handling (Regression Tests)', () => {
       it('should still handle string parameters correctly', () => {
         const params = {
-          exactQuery: 'function useState',
+          queryTerms: ['function', 'useState'],
           language: 'typescript',
           extension: 'ts',
           filename: 'hooks.ts',
@@ -274,9 +272,12 @@ describe('ContentSanitizer', () => {
         const result = ContentSanitizer.validateInputParameters(params);
 
         expect(result.isValid).toBe(true);
-        expect(typeof result.sanitizedParams.exactQuery).toBe('string');
+        expect(Array.isArray(result.sanitizedParams.queryTerms)).toBe(true);
         expect(typeof result.sanitizedParams.language).toBe('string');
-        expect(result.sanitizedParams.exactQuery).toBe('function useState');
+        expect(result.sanitizedParams.queryTerms).toEqual([
+          'function',
+          'useState',
+        ]);
         expect(result.sanitizedParams.language).toBe('typescript');
       });
 
@@ -300,7 +301,6 @@ describe('ContentSanitizer', () => {
           owner: null,
           repo: undefined,
           queryTerms: ['useState'],
-          exactQuery: null,
         };
 
         const result = ContentSanitizer.validateInputParameters(params);
@@ -309,7 +309,7 @@ describe('ContentSanitizer', () => {
         expect(result.sanitizedParams.owner).toBeNull();
         expect(result.sanitizedParams.repo).toBeUndefined();
         expect(Array.isArray(result.sanitizedParams.queryTerms)).toBe(true);
-        expect(result.sanitizedParams.exactQuery).toBeNull();
+        expect(result.sanitizedParams.queryTerms).toBeNull();
       });
     });
 
@@ -381,7 +381,7 @@ describe('ContentSanitizer', () => {
   describe('Integration with CLI Command Building', () => {
     it('should produce output that works with GitHub CLI argument building', () => {
       const params = {
-        exactQuery: 'class extends React.Component',
+        queryTerms: ['class', 'extends', 'React.Component'],
         owner: ['microsoft', 'facebook'],
         repo: ['react', 'vue'],
         language: 'javascript',
@@ -395,7 +395,9 @@ describe('ContentSanitizer', () => {
       const args: string[] = ['code'];
 
       // Add exact query
-      args.push(result.sanitizedParams.exactQuery);
+      if (result.sanitizedParams.queryTerms) {
+        args.push(...result.sanitizedParams.queryTerms);
+      }
 
       // Add language
       args.push(`--language=${result.sanitizedParams.language}`);
