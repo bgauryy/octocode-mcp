@@ -287,9 +287,6 @@ describe('GitHub API Utils', () => {
         q: 'Button language:typescript repo:facebook/react',
         per_page: 30,
         page: 1,
-        headers: {
-          'Accept': 'application/vnd.github.v3.text-match+json',
-        },
       });
 
       expect(mockCreateResult).toHaveBeenCalledWith({
