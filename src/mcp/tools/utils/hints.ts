@@ -390,7 +390,13 @@ export const TOOL_NAVIGATION_PATTERNS: Record<
 
       if (files.length > 0) {
         hints.push(
-          'Examine complete file contents to understand implementation details and context'
+          'Use github_fetch_content with specific file paths to get complete file contents and context'
+        );
+        hints.push(
+          'Use github_view_repo_structure to explore repository organization and find related files'
+        );
+        hints.push(
+          'Search by path patterns (e.g., "src/", "test/", "docs/") to find files in specific directories'
         );
         hints.push(
           'Look for related files, tests, and documentation in the same repositories'

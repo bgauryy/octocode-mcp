@@ -159,56 +159,64 @@ async function searchMultipleGitHubCode(
           };
         }
 
-        // Extract matches and repository context
-        const matches = apiResult.items.flatMap(
-          (item: { matches: { context: string }[] }) =>
-            item.matches.map((match: { context: string }) => match.context)
-        );
+        // Extract repository context
         const repository =
           apiResult.repository?.name ||
           (apiResult.items.length > 0
             ? apiResult.items[0].repository.nameWithOwner
             : undefined);
 
-        return {
+        // Count total matches across all files
+        const totalMatches = apiResult.items.reduce(
+          (sum, item) => sum + item.matches.length,
+          0
+        );
+
+        // Check if there are no results
+        const hasNoResults = apiResult.items.length === 0;
+
+        const result = {
           queryId: query.id!,
           success: true,
           data: {
             repository,
-            matches,
             files: apiResult.items.map(item => ({
-              name: item.path.split('/').pop() || item.path,
               path: item.path,
-              repository: {
-                full_name: item.repository.nameWithOwner,
-                html_url: item.repository.url,
-              },
-              html_url: item.url,
-              git_url: item.url,
-              download_url: item.url,
-              score: 1.0,
-              text_matches: item.matches.map(match => ({
-                object_url: item.url,
-                object_type: 'file',
-                property: 'content',
-                fragment: match.context,
-                matches: match.positions.map(([start, end]) => ({
-                  text: match.context.substring(start, end),
-                  indices: [start, end] as [number, number],
-                })),
-              })),
+              text_matches: item.matches.map(match => match.context),
             })),
             totalCount: apiResult.total_count,
           },
           metadata: {
-            queryArgs: query,
-            searchType: 'success',
             researchGoal: query.researchGoal || 'discovery',
             resultCount: apiResult.items.length,
-            hasMatches: matches.length > 0,
+            hasMatches: totalMatches > 0,
             repositories: repository ? [repository] : [],
           },
         };
+
+        // Add searchType and hints for no results case
+        if (hasNoResults) {
+          (result.metadata as any).searchType = 'no_results';
+
+          // Generate specific hints for no results
+          const noResultsHints = [
+            'Try broader search terms or remove specific filters',
+            'Search in a different repository or expand to multiple repositories',
+            'Use repository search first to find relevant projects',
+            'Consider searching for related concepts or alternative implementations',
+          ];
+
+          // Add repository-specific hints if searching in a specific repo
+          if (query.owner && query.repo) {
+            noResultsHints.unshift(
+              `No results found in ${query.owner}/${query.repo} - try searching across all repositories`
+            );
+          }
+
+          (result as any).hints = noResultsHints;
+        }
+
+        return result;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
@@ -251,14 +259,11 @@ async function searchMultipleGitHubCode(
       hasContent: results.some(
         r =>
           r.result.success &&
-          r.result.data?.matches &&
-          r.result.data.matches.length > 0
+          r.result.data?.files &&
+          r.result.data.files.length > 0
       ),
       hasMatches: results.some(
-        r =>
-          r.result.success &&
-          r.result.data?.matches &&
-          r.result.data.matches.length > 0
+        r => r.result.success && r.result.metadata?.hasMatches
       ),
     },
   };
@@ -268,6 +273,13 @@ async function searchMultipleGitHubCode(
     if (result.success) {
       if (result.data?.repository) {
         aggregatedContext.repositoryContexts.add(result.data.repository);
+      }
+
+      // Extract file paths for structure hints
+      if (result.data?.files) {
+        result.data.files.forEach(file => {
+          aggregatedContext.foundFiles.add(file.path);
+        });
       }
 
       // Extract search patterns from query terms
@@ -285,9 +297,21 @@ async function searchMultipleGitHubCode(
     maxHints: 8,
   };
 
+  // Add queryArgs to metadata for failed queries or when verbose is true
+  const processedResults = results.map(({ queryId, result }) => {
+    if (!result.success || verbose) {
+      // Find the original query for this result
+      const originalQuery = uniqueQueries.find(q => q.id === queryId);
+      if (originalQuery && result.metadata) {
+        result.metadata.queryArgs = originalQuery;
+      }
+    }
+    return { queryId, result };
+  });
+
   return createBulkResponse(
     config,
-    results,
+    processedResults,
     aggregatedContext,
     errors,
     uniqueQueries

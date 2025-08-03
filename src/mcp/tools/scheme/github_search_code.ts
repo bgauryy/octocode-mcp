@@ -137,30 +137,11 @@ export interface ProcessedCodeSearchResult {
   success: boolean;
   data?: {
     files?: Array<{
-      name: string;
       path: string;
-      repository: {
-        full_name: string;
-        html_url: string;
-      };
-      html_url: string;
-      git_url: string;
-      download_url: string;
-      score: number;
-      text_matches?: Array<{
-        object_url: string;
-        object_type: string;
-        property: string;
-        fragment: string;
-        matches: Array<{
-          text: string;
-          indices: [number, number];
-        }>;
-      }>;
+      text_matches: string[]; // Array of fragment strings only
     }>;
     totalCount?: number;
     repository?: string;
-    matches?: string[];
   };
   error?: string;
   hints?: string[];

@@ -12,7 +12,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../responses';
 import { getResearchGoalHints } from './toolRelationships';
-import { ToolName } from './toolConstants';
+import { ToolName, TOOL_NAMES } from './toolConstants';
 
 /**
  * Base interface for bulk query operations
@@ -148,11 +148,15 @@ export async function processBulkQueries<
  * @param queries Original queries for research goal extraction
  * @returns Array of smart hints for LLM guidance
  */
-export function generateBulkHints<T extends BulkQuery>(
+export function generateBulkHints<
+  T extends BulkQuery,
+  R extends ProcessedBulkResult,
+>(
   config: BulkResponseConfig,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: T[]
+  queries: T[],
+  results?: Array<{ queryId: string; result: R }>
 ): string[] {
   const hints: string[] = [];
   const { toolName, maxHints = 8 } = config;
@@ -172,19 +176,46 @@ export function generateBulkHints<T extends BulkQuery>(
     }
   }
 
-  // Success-based hints
+  // Success-based hints with detailed query status
   if (hasResults) {
-    // Multi-query insights
-    if (context.successfulQueries > 1) {
-      hints.push(
-        `Found results across ${context.successfulQueries} queries. Compare findings to identify patterns and comprehensive insights.`
-      );
+    // Multi-query insights with specific status
+    if (context.totalQueries > 1) {
+      const failedCount = context.failedQueries + errors.length;
+
+      // Identify queries with no results (successful but empty)
+      const noResultsQueries: string[] = [];
+      if (results) {
+        results.forEach(({ queryId, result }) => {
+          if (result.success && result.metadata?.searchType === 'no_results') {
+            noResultsQueries.push(queryId);
+          }
+        });
+      }
+
+      if (failedCount > 0 || noResultsQueries.length > 0) {
+        let statusMessage = `Found results in ${context.successfulQueries - noResultsQueries.length} of ${context.totalQueries} queries.`;
+        if (noResultsQueries.length > 0) {
+          statusMessage += ` Queries with no results: ${noResultsQueries.join(', ')}.`;
+        }
+        statusMessage += ' Compare successful findings to identify patterns.';
+        hints.push(statusMessage);
+      } else {
+        hints.push(
+          `Found results across all ${context.successfulQueries} queries. Compare findings to identify patterns and comprehensive insights.`
+        );
+      }
     }
 
-    // Next research steps (tool-agnostic)
-    hints.push(
-      'Next: Examine detailed results to understand implementations, patterns, and architectural decisions.'
-    );
+    // Enhanced next research steps with tool-specific recommendations
+    if (toolName === TOOL_NAMES.GITHUB_SEARCH_CODE) {
+      hints.push(
+        'Recommended: Fetch relevant file content using github_fetch_content for detailed context, or explore project structure with github_view_repo_structure.'
+      );
+    } else {
+      hints.push(
+        'Next: Examine detailed results to understand implementations, patterns, and architectural decisions.'
+      );
+    }
   } else if (errors.length === 0) {
     // No results, no errors
     hints.push(
@@ -226,7 +257,7 @@ export function createBulkResponse<
   queries: T[]
 ): CallToolResult {
   // Generate smart hints
-  const hints = generateBulkHints(config, context, errors, queries);
+  const hints = generateBulkHints(config, context, errors, queries, results);
 
   // Build standardized response with {data, meta, hints} format
   const data = results.map(r => r.result);
