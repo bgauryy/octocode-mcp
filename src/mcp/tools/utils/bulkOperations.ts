@@ -14,6 +14,7 @@ import { createResult } from '../../responses';
 import { getResearchGoalHints } from './toolRelationships';
 import { ToolName, TOOL_NAMES } from './toolConstants';
 import type { APIResponseMetadata } from '../../../types/github';
+import { executeWithErrorIsolation } from '../../../utils/promiseUtils';
 
 /**
  * Base interface for bulk query operations
@@ -126,13 +127,25 @@ export async function processBulkQueries<
     }
   });
 
-  // Wait for all queries to complete
-  const queryResults = await Promise.allSettled(queryPromises);
+  // Wait for all queries to complete with error isolation
+  const queryResults = await executeWithErrorIsolation(
+    queryPromises.map(promise => () => promise),
+    {
+      timeout: 60000, // 60 second timeout per query
+      continueOnError: true,
+      onError: (error, index) => {
+        errors.push({
+          queryId: `query-${index}`,
+          error: error.message,
+        });
+      },
+    }
+  );
 
   // Collect successful results
   queryResults.forEach(result => {
-    if (result.status === 'fulfilled' && result.value) {
-      results.push(result.value);
+    if (result.success && result.data) {
+      results.push(result.data);
     }
   });
 

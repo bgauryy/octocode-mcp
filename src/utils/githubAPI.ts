@@ -6,6 +6,8 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../mcp/responses';
 import { logger } from './logger.js';
 import type { GitHubRepository, GitHubCodeSearchItem } from '../types/github';
+// Promise utilities available if needed
+// import { safePromiseAll, processBatch } from './promiseUtils.js';
 
 // Throttling options interface
 interface ThrottleOptions {
@@ -77,11 +79,14 @@ interface GitHubAPIError {
 // Create Octokit class with throttling plugin
 const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Cache Octokit instances by token
+// Cache Octokit instances by token with size limit
 const octokitInstances = new Map<
   string,
   InstanceType<typeof OctokitWithThrottling>
 >();
+
+// Limit Octokit instances to prevent memory leaks
+const MAX_OCTOKIT_INSTANCES = 10;
 
 /**
  * Throttle options following official Octokit.js best practices
@@ -160,6 +165,19 @@ function getOctokit(
   const cacheKey = useToken || 'no-token';
 
   if (!octokitInstances.has(cacheKey)) {
+    // Prevent memory leaks by limiting the number of cached instances
+    if (octokitInstances.size >= MAX_OCTOKIT_INSTANCES) {
+      // Remove the oldest instance (first in Map)
+      const oldestKey = octokitInstances.keys().next().value;
+      if (oldestKey) {
+        octokitInstances.delete(oldestKey);
+        logger.debug('Removed oldest Octokit instance to prevent memory leak', {
+          removedKey: oldestKey.substring(0, 10) + '...',
+          remainingInstances: octokitInstances.size,
+        });
+      }
+    }
+
     // TypeScript-safe configuration with throttling plugin
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
@@ -177,6 +195,11 @@ function getOctokit(
     }
 
     octokitInstances.set(cacheKey, new OctokitWithThrottling(options));
+
+    logger.debug('Created new Octokit instance', {
+      cacheKey: cacheKey.substring(0, 10) + '...',
+      totalInstances: octokitInstances.size,
+    });
   }
   return octokitInstances.get(cacheKey)!;
 }

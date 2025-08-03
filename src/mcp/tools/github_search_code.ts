@@ -150,7 +150,7 @@ async function searchMultipleGitHubCode(
             error: apiResult.error,
             hints: smartSuggestions.hints,
             metadata: {
-              queryArgs: query,
+              queryArgs: { ...query },
               error: apiResult.error,
               searchType: smartSuggestions.searchType,
               suggestions: smartSuggestions.suggestions,
@@ -198,7 +198,7 @@ async function searchMultipleGitHubCode(
         // Add searchType and hints for no results case
         if (hasNoResults) {
           (result.metadata as any).searchType = 'no_results';
-          (result.metadata as any).queryArgs = query;
+          (result.metadata as any).queryArgs = { ...query };
 
           // Generate specific hints for no results
           const noResultsHints = [
@@ -234,7 +234,7 @@ async function searchMultipleGitHubCode(
           error: errorMessage,
           hints: smartSuggestions.hints,
           metadata: {
-            queryArgs: query,
+            queryArgs: { ...query },
             error: errorMessage,
             searchType: smartSuggestions.searchType,
             suggestions: smartSuggestions.suggestions,
@@ -307,7 +307,8 @@ async function searchMultipleGitHubCode(
       // Find the original query for this result
       const originalQuery = uniqueQueries.find(q => q.id === queryId);
       if (originalQuery && result.metadata) {
-        result.metadata.queryArgs = originalQuery;
+        // Ensure we're setting the actual object, not a stringified version
+        result.metadata.queryArgs = { ...originalQuery };
       }
     }
     return { queryId, result };

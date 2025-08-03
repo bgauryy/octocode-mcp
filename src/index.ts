@@ -134,6 +134,9 @@ async function registerAllTools(server: McpServer) {
 }
 
 async function startServer() {
+  let shutdownInProgress = false;
+  let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
+
   try {
     const server = new McpServer(SERVER_CONFIG);
 
@@ -147,62 +150,102 @@ async function startServer() {
     process.stdout.uncork();
     process.stderr.uncork();
 
-    const gracefulShutdown = async () => {
+    const gracefulShutdown = async (signal?: string) => {
+      // Prevent multiple shutdown attempts
+      if (shutdownInProgress) {
+        logger.warn(
+          'Shutdown already in progress, ignoring additional signal',
+          { signal }
+        );
+        return;
+      }
+
+      shutdownInProgress = true;
+      logger.info('Starting graceful shutdown', { signal });
+
       try {
+        // Clear any existing shutdown timeout
+        if (shutdownTimeout) {
+          clearTimeout(shutdownTimeout);
+          shutdownTimeout = null;
+        }
+
+        // Set a new shutdown timeout
+        shutdownTimeout = setTimeout(() => {
+          logger.error('Forced shutdown after timeout');
+          process.exit(1);
+        }, 5000);
+
+        // Clear cache first (fastest operation)
         clearAllCache();
 
-        // Create promises for server close and timeout
-        const closePromise = server.close();
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Server close timeout after 5 seconds')),
-            5000
-          )
-        );
-
+        // Close server with timeout protection
         try {
-          // Race between close and timeout
-          await Promise.race([closePromise, timeoutPromise]);
-          // If we reach here, server closed successfully
-          process.exit(0);
-        } catch (timeoutError) {
+          await server.close();
+          logger.info('Server closed successfully');
+        } catch (closeError) {
           logger.error(
-            'Server shutdown timeout',
-            timeoutError instanceof Error ? timeoutError : undefined
+            'Error closing server',
+            closeError instanceof Error ? closeError : undefined
           );
-          // Exit with error code when timeout occurs
-          process.exit(1);
         }
+
+        // Clear the timeout since we completed successfully
+        if (shutdownTimeout) {
+          clearTimeout(shutdownTimeout);
+          shutdownTimeout = null;
+        }
+
+        logger.info('Graceful shutdown completed');
+        process.exit(0);
       } catch (error) {
         logger.error(
-          'Error during server shutdown',
+          'Error during graceful shutdown',
           error instanceof Error ? error : undefined
         );
+
+        // Clear timeout on error
+        if (shutdownTimeout) {
+          clearTimeout(shutdownTimeout);
+          shutdownTimeout = null;
+        }
+
         process.exit(1);
       }
     };
 
-    // Handle process signals
-    process.on('SIGINT', gracefulShutdown);
-    process.on('SIGTERM', gracefulShutdown);
+    // Handle process signals - only register once
+    process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
     // Handle stdin close (important for MCP)
-    process.stdin.on('close', async () => {
-      await gracefulShutdown();
+    process.stdin.once('close', () => {
+      gracefulShutdown('STDIN_CLOSE');
     });
 
-    // Handle uncaught errors
-    process.on('uncaughtException', _error => {
-      gracefulShutdown().finally(() => process.exit(1));
+    // Handle uncaught errors - prevent multiple handlers
+    process.once('uncaughtException', error => {
+      logger.error('Uncaught exception', error);
+      gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
 
-    process.on('unhandledRejection', (_reason, _promise) => {
-      gracefulShutdown().finally(() => process.exit(1));
+    process.once('unhandledRejection', (reason, _promise) => {
+      logger.error(
+        'Unhandled rejection',
+        reason instanceof Error ? reason : new Error(String(reason))
+      );
+      gracefulShutdown('UNHANDLED_REJECTION');
     });
 
     // Keep process alive
     process.stdin.resume();
+
+    logger.info('MCP Server started successfully');
   } catch (error) {
+    logger.error(
+      'Failed to start server',
+      error instanceof Error ? error : undefined
+    );
     process.exit(1);
   }
 }

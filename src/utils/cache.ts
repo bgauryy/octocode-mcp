@@ -33,8 +33,9 @@ const cacheStats: CacheStats = {
   lastReset: new Date(),
 };
 
-// Track cache key prefixes to detect potential collisions
+// Track cache key prefixes to detect potential collisions - with cleanup
 const keyPrefixRegistry = new Set<string>();
+let prefixRegistryCleanupTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * LRU Cache for collision tracking to prevent unbounded memory growth
@@ -129,29 +130,50 @@ export type CachePrefix = keyof typeof CACHE_TTL_CONFIG | string;
  * Generate a more robust cache key with collision detection
  */
 export function generateCacheKey(prefix: string, params: unknown): string {
-  // Register prefix for collision tracking
+  // Register prefix for collision tracking with periodic cleanup
   keyPrefixRegistry.add(prefix);
+
+  // Schedule cleanup if not already scheduled
+  if (!prefixRegistryCleanupTimer && keyPrefixRegistry.size > 100) {
+    prefixRegistryCleanupTimer = setTimeout(() => {
+      // Keep only the most recent 50 prefixes to prevent unbounded growth
+      if (keyPrefixRegistry.size > 50) {
+        const prefixes = Array.from(keyPrefixRegistry);
+        keyPrefixRegistry.clear();
+        // Keep the last 50 prefixes (most recently used)
+        prefixes.slice(-50).forEach(p => keyPrefixRegistry.add(p));
+      }
+      prefixRegistryCleanupTimer = null;
+    }, 60000); // Cleanup every minute
+  }
 
   // Create a more robust parameter string
   const paramString = createStableParamString(params);
 
-  // Use full SHA-256 hash for maximum collision resistance
-  const hash = crypto.createHash('sha256').update(paramString).digest('hex');
+  // Use SHA-256 but truncate to 32 chars for memory efficiency
+  const hash = crypto
+    .createHash('sha256')
+    .update(paramString)
+    .digest('hex')
+    .substring(0, 32);
 
   const cacheKey = `${VERSION}-${prefix}:${hash}`;
 
-  // Track potential collisions (extremely rare with full SHA-256)
+  // Track potential collisions with bounded storage
   if (keyCollisionMap.has(cacheKey)) {
     const existingParams = keyCollisionMap.get(cacheKey)!;
     if (!existingParams.includes(paramString)) {
-      existingParams.push(paramString);
-      cacheStats.collisions++;
-      // Log collision - should be extremely rare with full SHA-256 hash
-      logger.warn('Cache key collision detected', {
-        prefix,
-        cacheKey,
-        existingCount: existingParams.length,
-      });
+      // Limit collision tracking per key to prevent memory issues
+      if (existingParams.length < 5) {
+        existingParams.push(paramString);
+        cacheStats.collisions++;
+        // Log collision - should be rare with 32-char SHA-256 hash
+        logger.warn('Cache key collision detected', {
+          prefix,
+          cacheKey: cacheKey.substring(0, 20) + '...', // Don't log full key
+          existingCount: existingParams.length,
+        });
+      }
     }
   } else {
     keyCollisionMap.set(cacheKey, [paramString]);
@@ -259,12 +281,25 @@ export async function withCache(
 }
 
 /**
- * Clear all cache entries
+ * Clear all cache entries and cleanup memory
  */
 export function clearAllCache(): void {
   cache.flushAll();
-  cacheStats.totalKeys = 0;
   keyCollisionMap.clear();
+  keyPrefixRegistry.clear();
+
+  // Clear any pending cleanup timer
+  if (prefixRegistryCleanupTimer) {
+    clearTimeout(prefixRegistryCleanupTimer);
+    prefixRegistryCleanupTimer = null;
+  }
+
+  cacheStats.hits = 0;
+  cacheStats.misses = 0;
+  cacheStats.sets = 0;
+  cacheStats.collisions = 0;
+  cacheStats.totalKeys = 0;
+  cacheStats.lastReset = new Date();
 }
 
 /**

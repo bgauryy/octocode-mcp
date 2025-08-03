@@ -3,6 +3,14 @@
  * Replaces console statements with proper logging framework
  */
 
+// Don't log anything by default
+// Log when monitoring will be added
+let enabled = false;
+
+export function enableLogger() {
+  enabled = true;
+}
+
 export enum LogLevel {
   ERROR = 0,
   WARN = 1,
@@ -66,7 +74,7 @@ class Logger {
     context?: LogContext,
     error?: Error
   ): void {
-    if (!this.shouldLog(level)) {
+    if (!enabled || !this.shouldLog(level)) {
       return;
     }
 
