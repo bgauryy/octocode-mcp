@@ -6,7 +6,6 @@ import {
   getDefaultBranch,
   generateFileAccessHints,
 } from '../../utils/githubAPI';
-import type { GithubFetchRequestParams } from '../../types';
 import {
   generateSmartHints,
   getResearchGoalHints,
@@ -16,6 +15,7 @@ import {
   FileContentQuery,
   FileContentQueryResult,
   FileContentQuerySchema,
+  GithubFetchRequestParams,
 } from './scheme/github_fetch_content';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
 
@@ -83,7 +83,7 @@ export function registerFetchGitHubFileContentTool(
 
 async function fetchMultipleGitHubFileContents(
   queries: FileContentQuery[],
-  opts: any
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   const results: FileContentQueryResult[] = [];
 
@@ -106,25 +106,21 @@ async function fetchMultipleGitHubFileContents(
       // Use only API
       const apiResult = await fetchGitHubFileContentAPI(params, opts.ghToken);
 
-      // Check if API call was successful
-      if (apiResult.isError) {
+      // Check if result is an error
+      if ('error' in apiResult) {
         // Get default branch for better hints
         const defaultBranch = await getDefaultBranch(
           query.owner,
           query.repo,
           opts.ghToken
         );
-        const errorText =
-          typeof apiResult.content?.[0]?.text === 'string'
-            ? apiResult.content[0].text
-            : 'API request failed';
         const hints = generateFileAccessHints(
           query.owner,
           query.repo,
           query.filePath,
           query.branch || 'main',
           defaultBranch,
-          errorText
+          apiResult.error
         );
 
         // Add critical verification hints for failed file fetches
@@ -137,35 +133,19 @@ async function fetchMultipleGitHubFileContents(
           queryId,
           originalQuery: query,
           result: {
-            error: errorText,
+            error: apiResult.error,
             hints,
           },
           fallbackTriggered: false,
-          error: errorText,
+          error: apiResult.error,
         };
       }
 
-      // Extract result data
-      const resultData =
-        apiResult.content?.[0]?.text &&
-        typeof apiResult.content[0].text === 'string'
-          ? JSON.parse(apiResult.content[0].text).data
-          : null;
-
-      if (!resultData) {
-        return {
-          queryId,
-          originalQuery: query,
-          result: { error: 'No data returned from API' },
-          fallbackTriggered: false,
-          error: 'No data returned from API',
-        };
-      }
-
+      // Use the raw result data directly
       return {
         queryId,
         originalQuery: query,
-        result: resultData,
+        result: apiResult,
         fallbackTriggered: false,
       };
     } catch (error) {

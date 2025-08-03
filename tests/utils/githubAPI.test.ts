@@ -306,7 +306,7 @@ describe('GitHub API Utils', () => {
 
       expect(mockCreateResult).toHaveBeenCalledWith({
         isError: true,
-        hints: ['Search query cannot be empty. Provide queryTerms.'],
+        hints: ['Search query cannot be empty'],
       });
     });
 

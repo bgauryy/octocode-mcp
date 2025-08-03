@@ -103,42 +103,15 @@ export async function viewRepositoryStructure(
     // Execute API request
     const result = await viewGitHubRepositoryStructureAPI(params, opts.ghToken);
 
-    // If successful, add hints and return
-    if (!result.isError && result.content?.[0]?.type === 'text') {
-      const data = JSON.parse(result.content[0].text);
-
-      // Generate smart hints based on results
-      const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
-        hasResults: true,
-        totalItems: (data.files?.count || 0) + (data.folders?.count || 0),
-        customHints: data.summary?.truncated
-          ? ['Results truncated for performance']
-          : [],
-      });
-
-      // Add hints to the response
-      data.hints = hints;
-
-      return createResult({
-        data,
-        hints,
-      });
-    }
-
-    // If there was an error, enhance it with smart hints
-    if (result.isError) {
-      const errorData =
-        result.content?.[0]?.type === 'text'
-          ? JSON.parse(result.content[0].text)
-          : { error: 'Unknown error' };
-
+    // Check if result is an error
+    if ('error' in result) {
       const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
         hasResults: false,
         errorMessage:
-          errorData.error ||
+          result.error ||
           `Failed to access repository "${params.owner}/${params.repo}"`,
-        customHints: errorData.triedBranches
-          ? [`Tried branches: ${errorData.triedBranches.join(', ')}`]
+        customHints: result.triedBranches
+          ? [`Tried branches: ${result.triedBranches.join(', ')}`]
           : [],
       });
 
@@ -148,7 +121,25 @@ export async function viewRepositoryStructure(
       });
     }
 
-    return result;
+    // If successful, add hints and return
+    const data = result;
+
+    // Generate smart hints based on results
+    const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
+      hasResults: true,
+      totalItems: (data.files?.count || 0) + (data.folders?.count || 0),
+      customHints: data.summary?.truncated
+        ? ['Results truncated for performance']
+        : [],
+    });
+
+    // Add hints to the response
+    const responseData = { ...data, hints };
+
+    return createResult({
+      data: responseData,
+      hints,
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const hints = generateSmartHints(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {

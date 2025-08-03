@@ -294,7 +294,40 @@ export function registerSearchGitHubPullRequestsTool(
         }
 
         try {
-          return await searchGitHubPullRequestsAPI(args, opts.ghToken);
+          const result = await searchGitHubPullRequestsAPI(args, opts.ghToken);
+
+          // Check if result is an error
+          if ('error' in result) {
+            const hints = generateSmartHints(
+              TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+              {
+                hasResults: false,
+                errorMessage: result.error,
+                customHints: result.hints || [],
+              }
+            );
+            return createResult({
+              error: result.error,
+              hints,
+            });
+          }
+
+          // Success - return raw data wrapped for MCP
+          const hints = generateSmartHints(
+            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+            {
+              hasResults: result.pull_requests.length > 0,
+              totalItems: result.pull_requests.length,
+            }
+          );
+
+          return createResult({
+            data: {
+              ...result,
+              apiSource: true,
+            },
+            hints,
+          });
         } catch (error) {
           const hints = generateSmartHints(
             TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,

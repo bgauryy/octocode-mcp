@@ -1,5 +1,4 @@
 import z from 'zod';
-import { OptimizedCodeSearchResult } from '../../../types';
 import { ResearchGoalEnum } from '../utils/toolConstants';
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -164,4 +163,46 @@ export interface GitHubBulkCodeSearchResult {
   totalQueries: number;
   successfulQueries: number;
   queriesWithFallback: number;
+}
+
+export interface OptimizedCodeSearchResult {
+  items: Array<{
+    path: string;
+    matches: Array<{
+      context: string; // Simplified from fragment
+      positions: Array<[number, number]>; // Just indices
+    }>;
+    url: string; // Relative path only
+    repository: {
+      nameWithOwner: string; // owner/repo format
+      url: string; // GitHub repository URL
+    };
+  }>;
+  total_count: number;
+  repository?: {
+    name: string; // owner/repo format
+    url: string; // Shortened
+  };
+  // Security and processing metadata
+  securityWarnings?: string[];
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationTypes?: string[];
+  // Pagination metadata
+  pagination?: {
+    exhaustive: boolean; // Whether all results were fetched
+    pages_fetched: number; // Number of pages actually fetched
+    total_pages_estimated?: number; // Estimated total pages (if available)
+    has_more: boolean; // Whether more results are available
+    rate_limit_hit?: boolean; // Whether rate limit was encountered
+  };
+  // Research context for smart hints and deeper research flows
+  _researchContext?: {
+    foundPackages: string[];
+    foundFiles: string[];
+    repositoryContext?: {
+      owner: string;
+      repo: string;
+    };
+  };
 }

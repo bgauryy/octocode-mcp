@@ -82,9 +82,60 @@ export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 export interface FileContentQueryResult {
   queryId?: string;
   originalQuery: FileContentQuery;
-  result: any;
-  apiResult?: any;
+  result: GitHubFileContentResponse | { error: string; hints?: string[] };
+  apiResult?: GitHubFileContentResponse | GitHubFileContentError;
   fallbackTriggered: boolean;
   error?: string;
   apiError?: string;
+}
+export interface GitHubFileContentResponse {
+  filePath: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  content: string;
+  // Actual content boundaries (with context applied)
+  startLine?: number;
+  endLine?: number;
+  totalLines: number; // Always returned - total lines in the file
+  isPartial?: boolean;
+  // Original request parameters for LLM context
+  requestedStartLine?: number;
+  requestedEndLine?: number;
+  requestedContextLines?: number;
+  minified?: boolean;
+  minificationFailed?: boolean;
+  minificationType?:
+    | 'terser'
+    | 'conservative'
+    | 'aggressive'
+    | 'json'
+    | 'general'
+    | 'markdown'
+    | 'failed'
+    | 'none';
+  // Security metadata
+  securityWarnings?: string[];
+}
+
+export interface GithubFetchRequestParams {
+  owner: string;
+  repo: string;
+  branch?: string;
+  filePath: string;
+  startLine?: number;
+  endLine?: number;
+  contextLines?: number;
+  matchString?: string;
+  minified: boolean;
+}
+
+export interface GitHubFileContentError {
+  error: string;
+  status?: number;
+  hints?: string[];
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
+  scopesSuggestion?: string;
+  type?: 'http' | 'graphql' | 'network' | 'unknown';
 }

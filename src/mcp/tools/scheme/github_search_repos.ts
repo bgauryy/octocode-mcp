@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ResearchGoalEnum } from '../utils/toolConstants';
+import { BaseSearchParams, OrderSort } from '../../../types';
 
 // Define the repository search query schema for bulk operations
 export const GitHubReposSearchQuerySchema = z.object({
@@ -235,4 +236,51 @@ export interface GitHubReposResponse {
       totalRepositories: number;
     };
   };
+}
+export interface GitHubReposSearchParams
+  extends Omit<BaseSearchParams, 'query'>,
+    OrderSort {
+  exactQuery?: string; // Exact phrase/word to search for
+  queryTerms?: string[]; // Array of search terms (AND logic)
+
+  // PRIMARY FILTERS (work alone)
+  language?: string;
+  forks?: string | number; // Support both string ranges and numbers
+  stars?: string | number; // Support both string ranges and numbers
+  topic?: string | string[]; // Support both single and array
+  'number-topics'?: string | number; // Support both string ranges and numbers
+
+  // SECONDARY FILTERS (require query or primary filter)
+  archived?: boolean;
+  created?: string;
+  'include-forks'?: 'false' | 'true' | 'only';
+  license?: string | string[]; // Support both single and array
+  match?:
+    | 'name'
+    | 'description'
+    | 'readme'
+    | ('name' | 'description' | 'readme')[];
+  updated?: string;
+  visibility?: 'public' | 'private' | 'internal';
+  'good-first-issues'?: string | number; // Support both string ranges and numbers
+  'help-wanted-issues'?: string | number; // Support both string ranges and numbers
+  followers?: string | number; // Support both string ranges and numbers
+  size?: string; // Format: ">100", "<50", "10..100"
+
+  // ADDITIONAL ENHANCED PARAMETERS
+  pushed?: string; // Last push date filter - Format: ">2020-01-01", "2020-01-01..2023-12-31"
+  template?: boolean; // Filter for template repositories
+  mirror?: boolean; // Filter for mirror repositories
+  sponsor?: boolean; // Filter for repositories that can be sponsored
+  'has-issues'?: boolean; // Filter repositories with issues enabled
+  'has-projects'?: boolean; // Filter repositories with projects enabled
+  'has-wiki'?: boolean; // Filter repositories with wiki enabled
+  'has-pages'?: boolean; // Filter repositories with GitHub Pages enabled
+  'has-downloads'?: boolean; // Filter repositories with downloads enabled
+  'has-discussions'?: boolean; // Filter repositories with discussions enabled
+
+  // SORTING AND LIMITS
+  limit?: number;
+  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
+  page?: number; // For pagination support
 }

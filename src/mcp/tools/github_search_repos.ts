@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import z from 'zod';
 import { createResult } from '../responses';
-import { GitHubReposSearchParams } from '../../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
 import {
@@ -14,6 +13,7 @@ import {
   GitHubReposSearchQueryResult,
   GitHubReposSearchQuerySchema,
   GitHubReposSearchResult,
+  GitHubReposSearchParams,
 } from './scheme/github_search_repos';
 
 const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
@@ -133,23 +133,20 @@ async function processSingleQuery(
     ) as GitHubReposSearchParams;
 
     // Execute API search using Octokit only
-    const apiResult = await Promise.allSettled([
-      searchGitHubReposAPI(enhancedQuery, opts.ghToken),
-    ]).then(results => results[0]);
+    const result = await searchGitHubReposAPI(enhancedQuery, opts.ghToken);
 
     // Process the API result
-    if (apiResult.status === 'fulfilled') {
-      const result = apiResult.value;
+    if ('error' in result) {
       return {
         queryId,
-        result: result.data || { total_count: 0, repositories: [] },
-        error: result.isError ? result.hints?.join(', ') : undefined,
+        result: { total_count: 0, repositories: [] },
+        error: result.error,
       };
     } else {
       return {
         queryId,
-        result: { total_count: 0, repositories: [] },
-        error: `API error: ${apiResult.reason}`,
+        result: result,
+        error: undefined,
       };
     }
   } catch (error) {
@@ -276,4 +273,144 @@ async function searchMultipleGitHubRepos(
   return createResult({
     data: responseData,
   });
+}
+
+/**
+ * Search GitHub repositories with a single query
+ * Used primarily for testing purposes
+ */
+export async function searchGitHubRepos(
+  params: GitHubReposSearchParams
+): Promise<CallToolResult> {
+  // Convert single query to the bulk format expected by the main function
+  const queries = [params];
+
+  // Call the main bulk search function
+  const result = await searchMultipleGitHubRepos(queries, false, {
+    npmEnabled: false,
+  });
+
+  return result;
+}
+
+/**
+ * Build GitHub CLI search command for repositories
+ * Used primarily for testing purposes
+ */
+export function buildGitHubReposSearchCommand(
+  params: GitHubReposSearchParams
+): {
+  command: string;
+  args: string[];
+} {
+  const args: string[] = ['repos'];
+
+  // Add main query
+  if (params.exactQuery) {
+    args.push(`"${params.exactQuery}"`);
+  } else if (params.queryTerms && params.queryTerms.length > 0) {
+    args.push(...params.queryTerms);
+  }
+
+  // Add filters as CLI flags
+  if (params.language) {
+    args.push(`--language=${params.language}`);
+  }
+
+  if (params.stars) {
+    args.push(`--stars=${params.stars}`);
+  }
+
+  if (params.forks) {
+    args.push(`--forks=${params.forks}`);
+  }
+
+  if (params.owner) {
+    if (Array.isArray(params.owner)) {
+      params.owner.forEach(owner => args.push(`--owner=${owner}`));
+    } else {
+      args.push(`--owner=${params.owner}`);
+    }
+  }
+
+  if (params.topic) {
+    if (Array.isArray(params.topic)) {
+      params.topic.forEach(topic => args.push(`--topic=${topic}`));
+    } else {
+      args.push(`--topic=${params.topic}`);
+    }
+  }
+
+  if (params.license) {
+    if (Array.isArray(params.license)) {
+      params.license.forEach(license => args.push(`--license=${license}`));
+    } else {
+      args.push(`--license=${params.license}`);
+    }
+  }
+
+  if (params.created) {
+    args.push(`--created=${params.created}`);
+  }
+
+  if (params.updated) {
+    args.push(`--updated=${params.updated}`);
+  }
+
+  if (params.size) {
+    args.push(`--size=${params.size}`);
+  }
+
+  if (params.followers) {
+    args.push(`--followers=${params.followers}`);
+  }
+
+  if (params['number-topics']) {
+    args.push(`--number-topics=${params['number-topics']}`);
+  }
+
+  if (params['good-first-issues']) {
+    args.push(`--good-first-issues=${params['good-first-issues']}`);
+  }
+
+  if (params['help-wanted-issues']) {
+    args.push(`--help-wanted-issues=${params['help-wanted-issues']}`);
+  }
+
+  if (params['include-forks']) {
+    args.push(`--include-forks=${params['include-forks']}`);
+  }
+
+  if (params.archived !== undefined) {
+    args.push(`--archived=${params.archived}`);
+  }
+
+  if (params.match) {
+    if (Array.isArray(params.match)) {
+      params.match.forEach(match => args.push(`--match=${match}`));
+    } else {
+      args.push(`--match=${params.match}`);
+    }
+  }
+
+  if (params.visibility) {
+    args.push(`--visibility=${params.visibility}`);
+  }
+
+  if (params.sort) {
+    args.push(`--sort=${params.sort}`);
+  }
+
+  if (params.order) {
+    args.push(`--order=${params.order}`);
+  }
+
+  if (params.limit) {
+    args.push(`--limit=${params.limit}`);
+  }
+
+  return {
+    command: 'search',
+    args,
+  };
 }

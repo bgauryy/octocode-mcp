@@ -45,6 +45,49 @@ export interface GitHubRepositoryContentsResult {
   };
 }
 
+export interface GitHubRepositoryStructureResult {
+  repository: string;
+  branch: string;
+  path: string;
+  depth: number;
+  apiSource: boolean;
+  summary: {
+    totalFiles: number;
+    totalFolders: number;
+    truncated: boolean;
+    filtered: boolean;
+    originalCount: number;
+  };
+  files: {
+    count: number;
+    files: Array<{
+      name: string;
+      path: string;
+      size?: number;
+      depth: number;
+      url: string;
+    }>;
+  };
+  folders: {
+    count: number;
+    folders: Array<{
+      name: string;
+      path: string;
+      depth: number;
+      url: string;
+    }>;
+  };
+}
+
+export interface GitHubRepositoryStructureError {
+  error: string;
+  status?: number;
+  triedBranches?: string[];
+  defaultBranch?: string;
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
+}
+
 export const GitHubRepositoryStructureParamsSchema = z.object({
   owner: z
     .string()

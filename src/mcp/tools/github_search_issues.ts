@@ -259,7 +259,35 @@ export function registerSearchGitHubIssuesTool(
         }
 
         try {
-          return await searchGitHubIssuesAPI(args, opts.ghToken);
+          const result = await searchGitHubIssuesAPI(args, opts.ghToken);
+
+          // Check if result is an error
+          if ('error' in result) {
+            const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
+              hasResults: false,
+              totalItems: 0,
+              errorMessage: result.error,
+              customHints: result.hints || [],
+            });
+            return createResult({
+              error: result.error,
+              hints,
+            });
+          }
+
+          // Success - return raw data wrapped for MCP
+          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
+            hasResults: result.issues.length > 0,
+            totalItems: result.issues.length,
+          });
+
+          return createResult({
+            data: {
+              ...result,
+              apiSource: true,
+            },
+            hints,
+          });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '';
 

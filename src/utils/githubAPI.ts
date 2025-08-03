@@ -4,33 +4,48 @@ import type { OctokitOptions } from '@octokit/core';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../mcp/responses';
-import { generateCacheKey, withCache } from './cache';
 import {
-  GitHubReposSearchParams,
-  OptimizedCodeSearchResult,
-  GithubFetchRequestParams,
-  GitHubFileContentResponse,
   GitHubCommitSearchParams,
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
-  GitHubPullRequestsSearchResult,
   GitHubIssuesSearchParams,
-  GitHubIssueItem,
-  GitHubIssuesSearchResult,
 } from '../types';
-import {
-  GitHubRepositoryStructureParams,
-  GitHubApiFileItem,
-} from '../mcp/tools/scheme/github_view_repo_structure';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContentV2 } from './minifier';
-import { optimizeTextMatch } from '../mcp/responses';
 import {
   GitHubCodeSearchItem,
   GitHubCodeSearchQuery,
+  OptimizedCodeSearchResult,
 } from '../mcp/tools/scheme/github_search_code';
+import {
+  GitHubFileContentResponse,
+  GithubFetchRequestParams,
+  GitHubFileContentError,
+} from '../mcp/tools/scheme/github_fetch_content';
+import {
+  GitHubReposSearchParams,
+  GitHubReposSearchResult,
+} from '../mcp/tools/scheme/github_search_repos';
+import {
+  GitHubRepositoryStructureParams,
+  GitHubApiFileItem,
+  GitHubRepositoryStructureResult,
+  GitHubRepositoryStructureError,
+} from '../mcp/tools/scheme/github_view_repo_structure';
+import {
+  GitHubPullRequestSearchResult,
+  GitHubPullRequestSearchError,
+} from '../mcp/tools/scheme/github_search_pull_requests';
+import {
+  GitHubCommitSearchResult,
+  GitHubCommitSearchError,
+} from '../mcp/tools/scheme/github_search_commits';
+import {
+  GitHubIssueSearchResult,
+  GitHubIssueSearchError,
+} from '../mcp/tools/scheme/github_search_issues';
 
 // TypeScript-safe conditional authentication following GitHub CLI patterns
 const defaultToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -170,6 +185,9 @@ function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   if (params.queryTerms && params.queryTerms.length > 0) {
     queryParts.push(...params.queryTerms);
   }
+
+  // GitHub API allows searches with just filters, so we don't require queryTerms
+  // If no queryTerms provided, we can still search with filters like language:, repo:, etc.
 
   // Add filters as qualifiers
   if (params.language) {
@@ -586,7 +604,7 @@ async function transformToOptimizedFormat(
           }
 
           return {
-            context: optimizeTextMatch(processedFragment, 120),
+            context: processedFragment,
             positions:
               match.matches?.map(m =>
                 Array.isArray(m.indices) && m.indices.length >= 2
@@ -670,95 +688,78 @@ function extractSingleRepository(items: GitHubCodeSearchItem[]) {
 export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-prs-api', params);
+): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+  try {
+    const octokit = getOctokit(token);
 
-  return withCache(cacheKey, async () => {
-    try {
-      const octokit = getOctokit(token);
+    // Decide between search and list based on filters (like GitHub CLI does)
+    const shouldUseSearch = shouldUseSearchForPRs(params);
 
-      // Decide between search and list based on filters (like GitHub CLI does)
-      const shouldUseSearch = shouldUseSearchForPRs(params);
-
-      if (
-        !shouldUseSearch &&
-        params.owner &&
-        params.repo &&
-        !Array.isArray(params.owner) &&
-        !Array.isArray(params.repo)
-      ) {
-        // Use REST API for simple repository-specific searches (like gh pr list)
-        return await searchPullRequestsWithREST(octokit, params, token);
-      }
-
-      // Use Search API for complex queries (like gh search prs)
-      const searchQuery = buildPullRequestSearchQuery(params);
-
-      if (!searchQuery) {
-        return createResult({
-          isError: true,
-          data: {
-            error: 'No valid search parameters provided',
-            results: [],
-            total_count: 0,
-          },
-        });
-      }
-
-      // Execute search using GitHub Search API (issues endpoint filters PRs)
-      const searchResult = await octokit.rest.search.issuesAndPullRequests({
-        q: searchQuery,
-        sort:
-          params.sort === 'created'
-            ? 'created'
-            : params.sort === 'updated'
-              ? 'updated'
-              : params.sort === 'comments'
-                ? 'comments'
-                : params.sort === 'reactions'
-                  ? 'reactions'
-                  : undefined,
-        order: params.order || 'desc',
-        per_page: Math.min(params.limit || 30, 100),
-      });
-
-      const pullRequests =
-        searchResult.data.items?.filter((item: any) => item.pull_request) || [];
-
-      // Transform pull requests to our expected format
-      const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
-        pullRequests.map(async (item: any) => {
-          return await transformPullRequestItem(item, params, octokit, token);
-        })
-      );
-
-      const searchResultData: GitHubPullRequestsSearchResult = {
-        results: transformedPRs,
-        total_count: searchResult.data.total_count,
-      };
-
-      return createResult({
-        data: {
-          ...searchResultData,
-          apiSource: true,
-          searchUsed: true,
-        },
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      return createResult({
-        isError: true,
-        data: {
-          error: `Pull request search failed: ${apiError.error}`,
-          status: apiError.status,
-          rateLimitRemaining: apiError.rateLimitRemaining,
-          rateLimitReset: apiError.rateLimitReset,
-          results: [],
-          total_count: 0,
-        },
-      });
+    if (
+      !shouldUseSearch &&
+      params.owner &&
+      params.repo &&
+      !Array.isArray(params.owner) &&
+      !Array.isArray(params.repo)
+    ) {
+      // Use REST API for simple repository-specific searches (like gh pr list)
+      return await searchPullRequestsWithREST(octokit, params, token);
     }
-  });
+
+    // Use Search API for complex queries (like gh search prs)
+    const searchQuery = buildPullRequestSearchQuery(params);
+
+    if (!searchQuery) {
+      return {
+        error: 'No valid search parameters provided',
+        status: 400,
+        hints: ['Provide search query or filters like owner/repo'],
+      };
+    }
+
+    // Execute search using GitHub Search API (issues endpoint filters PRs)
+    const searchResult = await octokit.rest.search.issuesAndPullRequests({
+      q: searchQuery,
+      sort:
+        params.sort === 'created'
+          ? 'created'
+          : params.sort === 'updated'
+            ? 'updated'
+            : params.sort === 'comments'
+              ? 'comments'
+              : params.sort === 'reactions'
+                ? 'reactions'
+                : undefined,
+      order: params.order || 'desc',
+      per_page: Math.min(params.limit || 30, 100),
+    });
+
+    const pullRequests =
+      searchResult.data.items?.filter((item: any) => item.pull_request) || [];
+
+    // Transform pull requests to our expected format
+    const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
+      pullRequests.map(async (item: any) => {
+        return await transformPullRequestItem(item, params, octokit, token);
+      })
+    );
+
+    return {
+      total_count: searchResult.data.total_count,
+      incomplete_results: searchResult.data.incomplete_results,
+      pull_requests: transformedPRs as any,
+    };
+  } catch (error: unknown) {
+    const apiError = handleGitHubAPIError(error);
+    return {
+      error: `Pull request search failed: ${apiError.error}`,
+      status: apiError.status,
+      rateLimitRemaining: apiError.rateLimitRemaining,
+      rateLimitReset: apiError.rateLimitReset,
+      hints: [`Verify authentication and search parameters`],
+      type: apiError.type,
+    };
+  }
 }
 
 /**
@@ -813,7 +814,7 @@ async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   params: GitHubPullRequestsSearchParams,
   token?: string
-): Promise<CallToolResult> {
+): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
     const owner = params.owner as string;
     const repo = params.repo as string;
@@ -851,27 +852,21 @@ async function searchPullRequestsWithREST(
       })
     );
 
-    return createResult({
-      data: {
-        results: transformedPRs,
-        total_count: transformedPRs.length, // REST API doesn't provide total count
-        apiSource: true,
-        searchUsed: false,
-      },
-    });
+    return {
+      total_count: transformedPRs.length, // REST API doesn't provide total count
+      incomplete_results: false,
+      pull_requests: transformedPRs as any,
+    };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    return createResult({
-      isError: true,
-      data: {
-        error: `Pull request list failed: ${apiError.error}`,
-        status: apiError.status,
-        rateLimitRemaining: apiError.rateLimitRemaining,
-        rateLimitReset: apiError.rateLimitReset,
-        results: [],
-        total_count: 0,
-      },
-    });
+    return {
+      error: `Pull request list failed: ${apiError.error}`,
+      status: apiError.status,
+      rateLimitRemaining: apiError.rateLimitRemaining,
+      rateLimitReset: apiError.rateLimitReset,
+      hints: [`Verify repository access and authentication`],
+      type: apiError.type,
+    };
   }
 }
 
@@ -1379,162 +1374,179 @@ async function fetchPRCommitDataAPI(
 export async function searchGitHubIssuesAPI(
   params: GitHubIssuesSearchParams,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-issues-api', params);
+): Promise<GitHubIssueSearchResult | GitHubIssueSearchError> {
+  try {
+    const octokit = getOctokit(token);
 
-  return withCache(cacheKey, async () => {
-    try {
-      const octokit = getOctokit(token);
+    // Build search query
+    const searchQuery = buildIssueSearchQuery(params);
 
-      // Build search query
-      const searchQuery = buildIssueSearchQuery(params);
-
-      if (!searchQuery) {
-        return createResult({
-          isError: true,
-          data: {
-            error: 'No valid search parameters provided',
-            results: [],
-          },
-        });
-      }
-
-      // Execute search using GitHub Search API
-      const searchResult = await octokit.rest.search.issuesAndPullRequests({
-        q: searchQuery,
-        sort:
-          params.sort === 'created'
-            ? 'created'
-            : params.sort === 'updated'
-              ? 'updated'
-              : params.sort === 'comments'
-                ? 'comments'
-                : params.sort === 'reactions'
-                  ? 'reactions'
-                  : undefined,
-        order: params.order || 'desc',
-        per_page: Math.min(params.limit || 25, 100),
-      });
-
-      // Filter out pull requests unless explicitly requested
-      const issues =
-        searchResult.data.items?.filter((item: any) =>
-          params['include-prs'] ? true : !item.pull_request
-        ) || [];
-
-      // Transform issues to our expected format
-      const transformedIssues: GitHubIssueItem[] = await Promise.all(
-        issues.map(async (item: any) => {
-          // Sanitize title and body content
-          const titleSanitized = ContentSanitizer.sanitizeContent(
-            item.title || ''
-          );
-          const bodySanitized = item.body
-            ? ContentSanitizer.sanitizeContent(item.body)
-            : { content: '', warnings: [] };
-
-          // Collect all sanitization warnings
-          const sanitizationWarnings = new Set<string>([
-            ...titleSanitized.warnings,
-            ...bodySanitized.warnings,
-          ]);
-
-          const result: GitHubIssueItem = {
-            number: item.number,
-            title: titleSanitized.content,
-            body: bodySanitized.content,
-            state: item.state?.toLowerCase() || 'unknown',
-            author: {
-              login: item.user?.login || '',
-              id: item.user?.id?.toString(),
-              url: item.user?.html_url,
-              type: item.user?.type,
-              is_bot: item.user?.type === 'Bot',
-            },
-            repository: {
-              name: item.repository_url
-                ? item.repository_url.split('/').pop()
-                : 'unknown',
-              nameWithOwner: item.repository_url
-                ? item.repository_url.replace(
-                    'https://api.github.com/repos/',
-                    ''
-                  )
-                : 'unknown',
-            },
-            labels:
-              item.labels?.map((l: any) => ({
-                name: l.name,
-                color: l.color,
-                description: l.description,
-                id: l.id?.toString(),
-              })) || [],
-            createdAt: item.created_at,
-            updatedAt: item.updated_at,
-            url: item.html_url,
-            commentsCount: item.comments || 0,
-            reactions: item.reactions?.total_count || 0,
-            created_at: item.created_at
-              ? new Date(item.created_at).toLocaleDateString('en-GB')
-              : '',
-            updated_at: item.updated_at
-              ? new Date(item.updated_at).toLocaleDateString('en-GB')
-              : '',
-            assignees:
-              item.assignees?.map((a: any) => ({
-                login: a.login,
-                id: a.id?.toString(),
-                url: a.html_url,
-                type: a.type,
-                is_bot: a.type === 'Bot',
-              })) || [],
-            authorAssociation: item.author_association,
-            isLocked: item.locked || false,
-            isPullRequest: !!item.pull_request,
-            id: item.id?.toString(),
-          };
-
-          // Add optional fields
-          if (item.closed_at) {
-            result.closedAt = item.closed_at;
-            result.closed_at = new Date(item.closed_at).toLocaleDateString(
-              'en-GB'
-            );
-          }
-
-          // Add sanitization warnings if any were detected
-          if (sanitizationWarnings.size > 0) {
-            result._sanitization_warnings = Array.from(sanitizationWarnings);
-          }
-
-          return result;
-        })
-      );
-
-      const searchResultData: GitHubIssuesSearchResult = {
-        results: transformedIssues,
+    if (!searchQuery) {
+      return {
+        error: 'No valid search parameters provided',
+        hints: [
+          'Add search query OR filters',
+          'Try specific repo: --owner owner --repo repo',
+        ],
       };
-
-      return createResult({
-        data: {
-          ...searchResultData,
-          apiSource: true,
-        },
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      return createResult({
-        isError: true,
-        data: {
-          error: `Issue search failed: ${apiError.error}`,
-          status: apiError.status,
-          rateLimitRemaining: apiError.rateLimitRemaining,
-          rateLimitReset: apiError.rateLimitReset,
-          results: [],
-        },
-      });
     }
-  });
+
+    // Execute search using GitHub Search API
+    const searchResult = await octokit.rest.search.issuesAndPullRequests({
+      q: searchQuery,
+      sort:
+        params.sort === 'created'
+          ? 'created'
+          : params.sort === 'updated'
+            ? 'updated'
+            : params.sort === 'comments'
+              ? 'comments'
+              : params.sort === 'reactions'
+                ? 'reactions'
+                : undefined,
+      order: params.order || 'desc',
+      per_page: Math.min(params.limit || 25, 100),
+    });
+
+    // Filter out pull requests unless explicitly requested
+    const issues =
+      searchResult.data.items?.filter((item: any) =>
+        params['include-prs'] ? true : !item.pull_request
+      ) || [];
+
+    // Transform issues to match our schema format
+    const transformedIssues = issues.map((item: any) => {
+      return {
+        id: item.id,
+        number: item.number,
+        title: item.title || '',
+        url: item.url,
+        html_url: item.html_url,
+        repository_url: item.repository_url,
+        labels_url: item.labels_url,
+        comments_url: item.comments_url,
+        events_url: item.events_url,
+        state: item.state,
+        state_reason: item.state_reason,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        closed_at: item.closed_at,
+        body: item.body,
+        user: {
+          login: item.user?.login || '',
+          id: item.user?.id || 0,
+          avatar_url: item.user?.avatar_url || '',
+          html_url: item.user?.html_url || '',
+          type: item.user?.type || '',
+        },
+        assignee: item.assignee
+          ? {
+              login: item.assignee.login,
+              id: item.assignee.id,
+              avatar_url: item.assignee.avatar_url,
+              html_url: item.assignee.html_url,
+              type: item.assignee.type,
+            }
+          : null,
+        assignees:
+          item.assignees?.map((a: any) => ({
+            login: a.login,
+            id: a.id,
+            avatar_url: a.avatar_url,
+            html_url: a.html_url,
+            type: a.type,
+          })) || [],
+        labels:
+          item.labels?.map((l: any) => ({
+            id: l.id,
+            name: l.name,
+            color: l.color,
+            description: l.description,
+            default: l.default,
+          })) || [],
+        milestone: item.milestone
+          ? {
+              id: item.milestone.id,
+              number: item.milestone.number,
+              title: item.milestone.title,
+              description: item.milestone.description,
+              state: item.milestone.state,
+              created_at: item.milestone.created_at,
+              updated_at: item.milestone.updated_at,
+              due_on: item.milestone.due_on,
+              closed_at: item.milestone.closed_at,
+            }
+          : null,
+        locked: item.locked,
+        active_lock_reason: item.active_lock_reason,
+        comments: item.comments,
+        reactions: {
+          '+1': item.reactions?.['+1'] || 0,
+          '-1': item.reactions?.['-1'] || 0,
+          laugh: item.reactions?.laugh || 0,
+          hooray: item.reactions?.hooray || 0,
+          confused: item.reactions?.confused || 0,
+          heart: item.reactions?.heart || 0,
+          rocket: item.reactions?.rocket || 0,
+          eyes: item.reactions?.eyes || 0,
+          total_count: item.reactions?.total_count || 0,
+          url: item.reactions?.url || '',
+        },
+        repository: item.repository
+          ? {
+              id: item.repository.id,
+              name: item.repository.name,
+              full_name: item.repository.full_name,
+              owner: {
+                login: item.repository.owner.login,
+                id: item.repository.owner.id,
+                type: item.repository.owner.type,
+              },
+              private: item.repository.private,
+              html_url: item.repository.html_url,
+              description: item.repository.description,
+              fork: item.repository.fork,
+              language: item.repository.language,
+              stargazers_count: item.repository.stargazers_count,
+              watchers_count: item.repository.watchers_count,
+              forks_count: item.repository.forks_count,
+              open_issues_count: item.repository.open_issues_count,
+              default_branch: item.repository.default_branch,
+            }
+          : undefined,
+        score: item.score,
+        pull_request: item.pull_request
+          ? {
+              url: item.pull_request.url,
+              html_url: item.pull_request.html_url,
+              diff_url: item.pull_request.diff_url,
+              patch_url: item.pull_request.patch_url,
+              merged_at: item.pull_request.merged_at,
+            }
+          : undefined,
+      };
+    });
+
+    return {
+      total_count: searchResult.data.total_count,
+      incomplete_results: searchResult.data.incomplete_results,
+      issues: transformedIssues as any,
+    };
+  } catch (error: unknown) {
+    const apiError = handleGitHubAPIError(error);
+    return {
+      error: `Issue search failed: ${apiError.error}`,
+      status: apiError.status,
+      hints: [
+        'Check if repository exists and is accessible',
+        'Verify search parameters are valid',
+        'Try simpler search terms',
+      ],
+      rateLimitRemaining: apiError.rateLimitRemaining,
+      rateLimitReset: apiError.rateLimitReset,
+      type: apiError.type || 'unknown',
+    };
+  }
 }
 
 /**
@@ -1672,85 +1684,53 @@ function buildIssueSearchQuery(params: GitHubIssuesSearchParams): string {
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-api-code', params);
+): Promise<OptimizedCodeSearchResult | GitHubAPIError> {
+  try {
+    const octokit = getOctokit(token);
+    const query = buildCodeSearchQuery(params);
 
-  return withCache(cacheKey, async () => {
-    try {
-      const octokit = getOctokit(token);
-      const query = buildCodeSearchQuery(params);
-
-      if (!query.trim()) {
-        return createResult({
-          isError: true,
-          hints: ['Search query cannot be empty. Provide queryTerms.'],
-        });
-      }
-
-      // Use properly typed parameters
-      const searchParams: SearchCodeParameters = {
-        q: query,
-        per_page: Math.min(params.limit || 30, 100),
-        page: 1,
+    if (!query.trim()) {
+      return {
+        error: 'Search query cannot be empty',
+        type: 'http',
+        status: 400,
       };
-
-      // GitHub API code search supports 'indexed' sort and 'asc'/'desc' order
-      // But these are not commonly used, so we'll skip them for now
-
-      const result = await octokit.rest.search.code(searchParams);
-      const optimizedResult = await convertCodeSearchResult(
-        result,
-        params.minify !== false,
-        params.sanitize !== false
-      );
-
-      return createResult({
-        data: {
-          total_count: result.data.total_count,
-          items: optimizedResult.items,
-          repository: optimizedResult.repository,
-          securityWarnings: optimizedResult.securityWarnings,
-          minified: optimizedResult.minified,
-          minificationFailed: optimizedResult.minificationFailed,
-          minificationTypes: optimizedResult.minificationTypes,
-          _researchContext: optimizedResult._researchContext,
-        },
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      const hints: string[] = [apiError.error];
-
-      // Add scope suggestion if available
-      if (apiError.scopesSuggestion) {
-        hints.push(apiError.scopesSuggestion);
-      }
-
-      // Add specific hints based on error type
-      switch (apiError.status) {
-        case 403:
-          if (apiError.rateLimitRemaining === 0) {
-            hints.push(`Retry after ${apiError.retryAfter} seconds.`);
-          }
-          break;
-        case 422:
-          hints.push('Ensure search query follows GitHub search syntax.');
-          break;
-      }
-
-      return createResult({
-        isError: true,
-        hints,
-        data: {
-          error: apiError.error,
-          status: apiError.status,
-          type: apiError.type,
-          scopesSuggestion: apiError.scopesSuggestion,
-          rateLimitRemaining: apiError.rateLimitRemaining,
-          rateLimitReset: apiError.rateLimitReset,
-        },
-      });
     }
-  });
+
+    const searchParams: SearchCodeParameters = {
+      q: query,
+      per_page: Math.min(params.limit || 30, 100),
+      page: 1,
+    };
+
+    // GitHub API code search supports 'indexed' sort and 'asc'/'desc' order
+    // But these are not commonly used, so we'll skip them for now
+
+    const result = await octokit.rest.search.code({
+      ...searchParams,
+      headers: {
+        Accept: 'application/vnd.github.v3.text-match+json',
+      },
+    });
+    const optimizedResult = await convertCodeSearchResult(
+      result,
+      params.minify !== false,
+      params.sanitize !== false
+    );
+
+    return {
+      total_count: result.data.total_count,
+      items: optimizedResult.items,
+      repository: optimizedResult.repository,
+      securityWarnings: optimizedResult.securityWarnings,
+      minified: optimizedResult.minified,
+      minificationFailed: optimizedResult.minificationFailed,
+      minificationTypes: optimizedResult.minificationTypes,
+      _researchContext: optimizedResult._researchContext,
+    };
+  } catch (error: unknown) {
+    return handleGitHubAPIError(error);
+  }
 }
 
 /**
@@ -1759,97 +1739,60 @@ export async function searchGitHubCodeAPI(
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchParams,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-api-repos', params);
+): Promise<GitHubReposSearchResult | GitHubAPIError> {
+  try {
+    const octokit = getOctokit(token);
+    const query = buildRepoSearchQuery(params);
 
-  return withCache(cacheKey, async () => {
-    try {
-      const octokit = getOctokit(token);
-      const query = buildRepoSearchQuery(params);
-
-      if (!query.trim()) {
-        return createResult({
-          isError: true,
-          hints: [
-            'Search query cannot be empty. Provide queryTerms, exactQuery, or filters.',
-          ],
-        });
-      }
-
-      // Use properly typed parameters
-      const searchParams: SearchReposParameters = {
-        q: query,
-        per_page: Math.min(params.limit || 30, 100),
-        page: 1,
+    if (!query.trim()) {
+      return {
+        error:
+          'Search query cannot be empty. Provide queryTerms, exactQuery, or filters.',
+        type: 'http',
+        status: 400,
       };
-
-      // Add sort and order if specified
-      if (params.sort && params.sort !== 'best-match') {
-        searchParams.sort = params.sort as SearchReposParameters['sort'];
-      }
-      if (params.order) {
-        searchParams.order = params.order as SearchReposParameters['order'];
-      }
-
-      const result = await octokit.rest.search.repos(searchParams);
-
-      // Transform repository results to match CLI format with proper typing
-      const repositories = result.data.items.map((repo: any) => ({
-        name: repo.full_name,
-        stars: repo.stargazers_count || 0,
-        description: repo.description
-          ? repo.description.length > 150
-            ? repo.description.substring(0, 150) + '...'
-            : repo.description
-          : 'No description',
-        language: repo.language || 'Unknown',
-        url: repo.html_url,
-        forks: repo.forks_count || 0,
-        updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
-        owner: repo.owner.login,
-      }));
-
-      return createResult({
-        data: {
-          total_count: result.data.total_count,
-          repositories,
-        },
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      const hints: string[] = [apiError.error];
-
-      // Add scope suggestion if available
-      if (apiError.scopesSuggestion) {
-        hints.push(apiError.scopesSuggestion);
-      }
-
-      // Add specific hints based on error type
-      switch (apiError.status) {
-        case 403:
-          if (apiError.rateLimitRemaining === 0) {
-            hints.push(`Retry after ${apiError.retryAfter} seconds.`);
-          }
-          break;
-        case 422:
-          hints.push('Ensure search query follows GitHub search syntax.');
-          break;
-      }
-
-      return createResult({
-        isError: true,
-        hints,
-        data: {
-          error: apiError.error,
-          status: apiError.status,
-          type: apiError.type,
-          scopesSuggestion: apiError.scopesSuggestion,
-          rateLimitRemaining: apiError.rateLimitRemaining,
-          rateLimitReset: apiError.rateLimitReset,
-        },
-      });
     }
-  });
+
+    // Use properly typed parameters
+    const searchParams: SearchReposParameters = {
+      q: query,
+      per_page: Math.min(params.limit || 30, 100),
+      page: 1,
+    };
+
+    // Add sort and order if specified
+    if (params.sort && params.sort !== 'best-match') {
+      searchParams.sort = params.sort as SearchReposParameters['sort'];
+    }
+    if (params.order) {
+      searchParams.order = params.order as SearchReposParameters['order'];
+    }
+
+    const result = await octokit.rest.search.repos(searchParams);
+
+    // Transform repository results to match CLI format with proper typing
+    const repositories = result.data.items.map((repo: any) => ({
+      name: repo.full_name,
+      stars: repo.stargazers_count || 0,
+      description: repo.description
+        ? repo.description.length > 150
+          ? repo.description.substring(0, 150) + '...'
+          : repo.description
+        : 'No description',
+      language: repo.language || 'Unknown',
+      url: repo.html_url,
+      forks: repo.forks_count || 0,
+      updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
+      owner: repo.owner.login,
+    }));
+
+    return {
+      total_count: result.data.total_count,
+      repositories,
+    };
+  } catch (error: unknown) {
+    return handleGitHubAPIError(error);
+  }
 }
 
 /**
@@ -1858,153 +1801,147 @@ export async function searchGitHubReposAPI(
 export async function fetchGitHubFileContentAPI(
   params: GithubFetchRequestParams,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-api-file-content', params);
+): Promise<GitHubFileContentResponse | GitHubFileContentError> {
+  try {
+    const octokit = getOctokit(token);
+    const { owner, repo, filePath, branch } = params;
 
-  return withCache(cacheKey, async () => {
-    try {
-      const octokit = getOctokit(token);
-      const { owner, repo, filePath, branch } = params;
+    // Use properly typed parameters
+    const contentParams: GetContentParameters = {
+      owner,
+      repo,
+      path: filePath,
+      ...(branch && { ref: branch }),
+    };
 
-      // Use properly typed parameters
-      const contentParams: GetContentParameters = {
+    const result = await octokit.rest.repos.getContent(contentParams);
+
+    // Handle the response data
+    const data = result.data;
+
+    // Check if it's a directory (array response)
+    if (Array.isArray(data)) {
+      return {
+        error:
+          'Path is a directory. Use githubViewRepoStructure to list directory contents',
+        hints: [
+          'Path is a directory. Use githubViewRepoStructure to list directory contents',
+        ],
+      };
+    }
+
+    // Check if it's a file with content
+    if ('content' in data && data.type === 'file') {
+      const fileSize = data.size || 0;
+      const MAX_FILE_SIZE = 300 * 1024; // 300KB limit
+
+      // Check file size
+      if (fileSize > MAX_FILE_SIZE) {
+        const fileSizeKB = Math.round(fileSize / 1024);
+        const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
+
+        return {
+          error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+          hints: [
+            `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
+          ],
+        };
+      }
+
+      // Get and decode content
+      if (!data.content) {
+        return {
+          error: 'File is empty - no content to display',
+          hints: ['File is empty - no content to display'],
+        };
+      }
+
+      const base64Content = data.content.replace(/\s/g, ''); // Remove all whitespace
+
+      if (!base64Content) {
+        return {
+          error: 'File is empty - no content to display',
+          hints: ['File is empty - no content to display'],
+        };
+      }
+
+      let decodedContent: string;
+      try {
+        const buffer = Buffer.from(base64Content, 'base64');
+
+        // Simple binary check - look for null bytes
+        if (buffer.indexOf(0) !== -1) {
+          return {
+            error:
+              'Binary file detected. Cannot display as text - download directly from GitHub',
+            hints: [
+              'Binary file detected. Cannot display as text - download directly from GitHub',
+            ],
+          };
+        }
+
+        decodedContent = buffer.toString('utf-8');
+      } catch (decodeError) {
+        return {
+          error:
+            'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+          hints: [
+            'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+          ],
+        };
+      }
+
+      // Process the content similar to CLI implementation
+      return await processFileContentAPI(
+        decodedContent,
         owner,
         repo,
-        path: filePath,
-        ...(branch && { ref: branch }),
-      };
-
-      const result = await octokit.rest.repos.getContent(contentParams);
-
-      // Handle the response data
-      const data = result.data;
-
-      // Check if it's a directory (array response)
-      if (Array.isArray(data)) {
-        return createResult({
-          isError: true,
-          hints: [
-            'Path is a directory. Use githubViewRepoStructure to list directory contents',
-          ],
-        });
-      }
-
-      // Check if it's a file with content
-      if ('content' in data && data.type === 'file') {
-        const fileSize = data.size || 0;
-        const MAX_FILE_SIZE = 300 * 1024; // 300KB limit
-
-        // Check file size
-        if (fileSize > MAX_FILE_SIZE) {
-          const fileSizeKB = Math.round(fileSize / 1024);
-          const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
-
-          return createResult({
-            isError: true,
-            hints: [
-              `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
-            ],
-          });
-        }
-
-        // Get and decode content
-        if (!data.content) {
-          return createResult({
-            isError: true,
-            hints: ['File is empty - no content to display'],
-          });
-        }
-
-        const base64Content = data.content.replace(/\s/g, ''); // Remove all whitespace
-
-        if (!base64Content) {
-          return createResult({
-            isError: true,
-            hints: ['File is empty - no content to display'],
-          });
-        }
-
-        let decodedContent: string;
-        try {
-          const buffer = Buffer.from(base64Content, 'base64');
-
-          // Simple binary check - look for null bytes
-          if (buffer.indexOf(0) !== -1) {
-            return createResult({
-              isError: true,
-              hints: [
-                'Binary file detected. Cannot display as text - download directly from GitHub',
-              ],
-            });
-          }
-
-          decodedContent = buffer.toString('utf-8');
-        } catch (decodeError) {
-          return createResult({
-            isError: true,
-            hints: [
-              'Failed to decode file. Encoding may not be supported (expected UTF-8)',
-            ],
-          });
-        }
-
-        // Process the content similar to CLI implementation
-        return await processFileContentAPI(
-          decodedContent,
-          owner,
-          repo,
-          branch || data.sha,
-          filePath,
-          params.minified !== false,
-          params.startLine,
-          params.endLine,
-          params.contextLines || 5,
-          params.matchString
-        );
-      }
-
-      // Handle other file types (symlinks, submodules, etc.)
-      return createResult({
-        isError: true,
-        hints: [`Unsupported file type: ${data.type}`],
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      const hints: string[] = [apiError.error];
-
-      // Add scope suggestion if available
-      if (apiError.scopesSuggestion) {
-        hints.push(apiError.scopesSuggestion);
-      }
-
-      // Add specific hints based on error type
-      switch (apiError.status) {
-        case 403:
-          if (apiError.rateLimitRemaining === 0) {
-            hints.push(`Retry after ${apiError.retryAfter} seconds.`);
-          }
-          break;
-        case 404:
-          hints.push(
-            'Verify the file path, repository name, and branch exist.'
-          );
-          break;
-      }
-
-      return createResult({
-        isError: true,
-        hints,
-        data: {
-          error: apiError.error,
-          status: apiError.status,
-          type: apiError.type,
-          scopesSuggestion: apiError.scopesSuggestion,
-          rateLimitRemaining: apiError.rateLimitRemaining,
-          rateLimitReset: apiError.rateLimitReset,
-        },
-      });
+        branch || data.sha,
+        filePath,
+        params.minified !== false,
+        params.startLine,
+        params.endLine,
+        params.contextLines || 5,
+        params.matchString
+      );
     }
-  });
+
+    // Handle other file types (symlinks, submodules, etc.)
+    return {
+      error: `Unsupported file type: ${data.type}`,
+      hints: [`Unsupported file type: ${data.type}`],
+    };
+  } catch (error: unknown) {
+    const apiError = handleGitHubAPIError(error);
+    const hints: string[] = [apiError.error];
+
+    // Add scope suggestion if available
+    if (apiError.scopesSuggestion) {
+      hints.push(apiError.scopesSuggestion);
+    }
+
+    // Add specific hints based on error type
+    switch (apiError.status) {
+      case 403:
+        if (apiError.rateLimitRemaining === 0) {
+          hints.push(`Retry after ${apiError.retryAfter} seconds.`);
+        }
+        break;
+      case 404:
+        hints.push('Verify the file path, repository name, and branch exist.');
+        break;
+    }
+
+    return {
+      error: apiError.error,
+      status: apiError.status,
+      type: apiError.type,
+      hints,
+      scopesSuggestion: apiError.scopesSuggestion,
+      rateLimitRemaining: apiError.rateLimitRemaining,
+      rateLimitReset: apiError.rateLimitReset,
+    };
+  }
 }
 
 /**
@@ -2021,7 +1958,7 @@ async function processFileContentAPI(
   endLine?: number,
   contextLines: number = 5,
   matchString?: string
-): Promise<CallToolResult> {
+): Promise<GitHubFileContentResponse | GitHubFileContentError> {
   // Sanitize the decoded content for security
   const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
   decodedContent = sanitizationResult.content;
@@ -2073,12 +2010,12 @@ async function processFileContentAPI(
     }
 
     if (matchingLines.length === 0) {
-      return createResult({
-        isError: true,
+      return {
+        error: `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
         hints: [
           `Match string "${matchString}" not found in file. The file may have changed since the search was performed.`,
         ],
-      });
+      };
     }
 
     // Use the first match, with context lines around it
@@ -2099,12 +2036,12 @@ async function processFileContentAPI(
   if (startLine !== undefined) {
     // Validate line numbers
     if (startLine < 1 || startLine > totalLines) {
-      return createResult({
-        isError: true,
+      return {
+        error: `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
         hints: [
           `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
         ],
-      });
+      };
     }
 
     // Calculate actual range with context
@@ -2114,12 +2051,12 @@ async function processFileContentAPI(
     // Validate and auto-adjust endLine if provided
     if (endLine !== undefined) {
       if (endLine < startLine) {
-        return createResult({
-          isError: true,
+        return {
+          error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
           hints: [
             `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
           ],
-        });
+        };
       }
 
       // Auto-adjust endLine to file boundaries with helpful message
@@ -2272,294 +2209,272 @@ export async function checkGitHubAuthAPI(
 export async function viewGitHubRepositoryStructureAPI(
   params: GitHubRepositoryStructureParams,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-repo-structure-api', params);
+): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
+  try {
+    const octokit = getOctokit(token);
+    const {
+      owner,
+      repo,
+      branch,
+      path = '',
+      depth = 1,
+      includeIgnored = false,
+      showMedia = false,
+    } = params;
 
-  return withCache(cacheKey, async () => {
+    // Clean up path
+    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+
+    // Try to get repository contents
+    let result;
+    let workingBranch = branch;
     try {
-      const octokit = getOctokit(token);
-      const {
+      result = await octokit.rest.repos.getContent({
         owner,
         repo,
-        branch,
-        path = '',
-        depth = 1,
-        includeIgnored = false,
-        showMedia = false,
-      } = params;
+        path: cleanPath || undefined,
+        ref: branch,
+      });
+    } catch (error: unknown) {
+      // Handle branch/path not found by trying fallbacks
+      if (error instanceof RequestError && error.status === 404) {
+        // Try to get repository info first to find default branch
+        let defaultBranch = 'main';
+        try {
+          const repoInfo = await octokit.rest.repos.get({ owner, repo });
+          defaultBranch = repoInfo.data.default_branch || 'main';
+        } catch (repoError) {
+          // Repository doesn't exist or no access
+          const apiError = handleGitHubAPIError(repoError);
+          return {
+            error: `Repository "${owner}/${repo}" not found or not accessible: ${apiError.error}`,
+            status: apiError.status,
+          };
+        }
 
-      // Clean up path
-      const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-
-      // Try to get repository contents
-      let result;
-      let workingBranch = branch;
-      try {
-        result = await octokit.rest.repos.getContent({
-          owner,
-          repo,
-          path: cleanPath || undefined,
-          ref: branch,
-        });
-      } catch (error: unknown) {
-        // Handle branch/path not found by trying fallbacks
-        if (error instanceof RequestError && error.status === 404) {
-          // Try to get repository info first to find default branch
-          let defaultBranch = 'main';
+        // Try with default branch if different from requested
+        if (defaultBranch !== branch) {
           try {
-            const repoInfo = await octokit.rest.repos.get({ owner, repo });
-            defaultBranch = repoInfo.data.default_branch || 'main';
-          } catch (repoError) {
-            // Repository doesn't exist or no access
-            const apiError = handleGitHubAPIError(repoError);
-            return createResult({
-              isError: true,
-              data: {
-                error: `Repository "${owner}/${repo}" not found or not accessible: ${apiError.error}`,
-                status: apiError.status,
-              },
+            result = await octokit.rest.repos.getContent({
+              owner,
+              repo,
+              path: cleanPath || undefined,
+              ref: defaultBranch,
             });
-          }
+            workingBranch = defaultBranch;
+          } catch (fallbackError) {
+            // Try common branches
+            const commonBranches = ['main', 'master', 'develop'];
+            let foundBranch = null;
 
-          // Try with default branch if different from requested
-          if (defaultBranch !== branch) {
-            try {
-              result = await octokit.rest.repos.getContent({
-                owner,
-                repo,
-                path: cleanPath || undefined,
-                ref: defaultBranch,
-              });
-              workingBranch = defaultBranch;
-            } catch (fallbackError) {
-              // Try common branches
-              const commonBranches = ['main', 'master', 'develop'];
-              let foundBranch = null;
+            for (const tryBranch of commonBranches) {
+              if (tryBranch === branch || tryBranch === defaultBranch) continue;
 
-              for (const tryBranch of commonBranches) {
-                if (tryBranch === branch || tryBranch === defaultBranch)
-                  continue;
-
-                try {
-                  result = await octokit.rest.repos.getContent({
-                    owner,
-                    repo,
-                    path: cleanPath || undefined,
-                    ref: tryBranch,
-                  });
-                  foundBranch = tryBranch;
-                  workingBranch = tryBranch;
-                  break;
-                } catch {
-                  // Continue trying
-                }
-              }
-
-              if (!foundBranch) {
-                const apiError = handleGitHubAPIError(error);
-                return createResult({
-                  isError: true,
-                  data: {
-                    error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on any common branch`,
-                    status: apiError.status,
-                    triedBranches: [branch, defaultBranch, ...commonBranches],
-                    defaultBranch,
-                  },
+              try {
+                result = await octokit.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: cleanPath || undefined,
+                  ref: tryBranch,
                 });
+                foundBranch = tryBranch;
+                workingBranch = tryBranch;
+                break;
+              } catch {
+                // Continue trying
               }
             }
-          } else {
-            const apiError = handleGitHubAPIError(error);
-            return createResult({
-              isError: true,
-              data: {
-                error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on branch "${branch}"`,
+
+            if (!foundBranch) {
+              const apiError = handleGitHubAPIError(error);
+              return {
+                error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on any common branch`,
                 status: apiError.status,
-              },
-            });
+                triedBranches: [branch, defaultBranch, ...commonBranches],
+                defaultBranch,
+              };
+            }
           }
         } else {
           const apiError = handleGitHubAPIError(error);
-          return createResult({
-            isError: true,
-            data: {
-              error: `Failed to access repository "${owner}/${repo}": ${apiError.error}`,
-              status: apiError.status,
-              rateLimitRemaining: apiError.rateLimitRemaining,
-              rateLimitReset: apiError.rateLimitReset,
-            },
-          });
+          return {
+            error: `Path "${cleanPath}" not found in repository "${owner}/${repo}" on branch "${branch}"`,
+            status: apiError.status,
+          };
         }
-      }
-
-      // Process the result
-      const items = Array.isArray(result.data) ? result.data : [result.data];
-
-      // Convert Octokit response to our GitHubApiFileItem format
-      const apiItems: GitHubApiFileItem[] = items.map(
-        (item: GitHubApiFileItem) => ({
-          name: item.name,
-          path: item.path,
-          type: item.type as 'file' | 'dir',
-          size: 'size' in item ? item.size : undefined,
-          download_url: 'download_url' in item ? item.download_url : undefined,
-          url: item.url,
-          html_url: item.html_url,
-          git_url: item.git_url,
-          sha: item.sha,
-        })
-      );
-
-      // If depth > 1, recursively fetch subdirectories
-      let allItems = apiItems;
-      if (depth > 1) {
-        const recursiveItems = await fetchDirectoryContentsRecursivelyAPI(
-          octokit,
-          owner,
-          repo,
-          workingBranch,
-          cleanPath,
-          1,
-          depth
-        );
-
-        // Combine and deduplicate
-        const combinedItems = [...apiItems, ...recursiveItems];
-        allItems = combinedItems.filter(
-          (item, index, array) =>
-            array.findIndex(i => i.path === item.path) === index
-        );
-      }
-
-      // Apply filtering if needed
-      let filteredItems = allItems;
-      if (!includeIgnored) {
-        // Simple filtering logic - exclude common ignored patterns
-        filteredItems = allItems.filter(item => {
-          const name = item.name.toLowerCase();
-          const path = item.path.toLowerCase();
-
-          // Skip hidden files and directories
-          if (name.startsWith('.') && !showMedia) return false;
-
-          // Skip common build/dependency directories
-          if (
-            [
-              'node_modules',
-              'dist',
-              'build',
-              '.git',
-              '.vscode',
-              '.idea',
-            ].includes(name)
-          )
-            return false;
-
-          // Skip lock files and config files
-          if (name.includes('lock') || name.endsWith('.lock')) return false;
-
-          // Skip media files unless requested
-          if (!showMedia) {
-            const mediaExtensions = [
-              '.png',
-              '.jpg',
-              '.jpeg',
-              '.gif',
-              '.svg',
-              '.ico',
-              '.webp',
-              '.mp4',
-              '.mov',
-              '.avi',
-            ];
-            if (mediaExtensions.some(ext => path.endsWith(ext))) return false;
-          }
-
-          return true;
-        });
-      }
-
-      // Limit items for performance
-      const itemLimit = Math.min(200, 50 * depth);
-      const limitedItems = filteredItems.slice(0, itemLimit);
-
-      // Sort items: directories first, then by depth, then alphabetically
-      limitedItems.sort((a, b) => {
-        if (a.type !== b.type) {
-          return a.type === 'dir' ? -1 : 1;
-        }
-
-        const aDepth = a.path.split('/').length;
-        const bDepth = b.path.split('/').length;
-
-        if (aDepth !== bDepth) {
-          return aDepth - bDepth;
-        }
-
-        return a.path.localeCompare(b.path);
-      });
-
-      // Create response structure
-      const files = limitedItems
-        .filter(item => item.type === 'file')
-        .map(item => ({
-          name: item.name,
-          path: item.path,
-          size: item.size,
-          depth:
-            item.path.split('/').length -
-            (cleanPath ? cleanPath.split('/').length : 0),
-          url: item.path,
-        }));
-
-      const folders = limitedItems
-        .filter(item => item.type === 'dir')
-        .map(item => ({
-          name: item.name,
-          path: item.path,
-          depth:
-            item.path.split('/').length -
-            (cleanPath ? cleanPath.split('/').length : 0),
-          url: item.path,
-        }));
-
-      return createResult({
-        data: {
-          repository: `${owner}/${repo}`,
-          branch: workingBranch,
-          path: cleanPath || '/',
-          depth: depth,
-          apiSource: true,
-          summary: {
-            totalFiles: files.length,
-            totalFolders: folders.length,
-            truncated: allItems.length > limitedItems.length,
-            filtered: !includeIgnored,
-            originalCount: allItems.length,
-          },
-          files: {
-            count: files.length,
-            files: files,
-          },
-          folders: {
-            count: folders.length,
-            folders: folders,
-          },
-        },
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      return createResult({
-        isError: true,
-        data: {
-          error: `API request failed: ${apiError.error}`,
+      } else {
+        const apiError = handleGitHubAPIError(error);
+        return {
+          error: `Failed to access repository "${owner}/${repo}": ${apiError.error}`,
           status: apiError.status,
           rateLimitRemaining: apiError.rateLimitRemaining,
           rateLimitReset: apiError.rateLimitReset,
-        },
+        };
+      }
+    }
+
+    // Process the result
+    const items = Array.isArray(result.data) ? result.data : [result.data];
+
+    // Convert Octokit response to our GitHubApiFileItem format
+    const apiItems: GitHubApiFileItem[] = items.map(
+      (item: GitHubApiFileItem) => ({
+        name: item.name,
+        path: item.path,
+        type: item.type as 'file' | 'dir',
+        size: 'size' in item ? item.size : undefined,
+        download_url: 'download_url' in item ? item.download_url : undefined,
+        url: item.url,
+        html_url: item.html_url,
+        git_url: item.git_url,
+        sha: item.sha,
+      })
+    );
+
+    // If depth > 1, recursively fetch subdirectories
+    let allItems = apiItems;
+    if (depth > 1) {
+      const recursiveItems = await fetchDirectoryContentsRecursivelyAPI(
+        octokit,
+        owner,
+        repo,
+        workingBranch,
+        cleanPath,
+        1,
+        depth
+      );
+
+      // Combine and deduplicate
+      const combinedItems = [...apiItems, ...recursiveItems];
+      allItems = combinedItems.filter(
+        (item, index, array) =>
+          array.findIndex(i => i.path === item.path) === index
+      );
+    }
+
+    // Apply filtering if needed
+    let filteredItems = allItems;
+    if (!includeIgnored) {
+      // Simple filtering logic - exclude common ignored patterns
+      filteredItems = allItems.filter(item => {
+        const name = item.name.toLowerCase();
+        const path = item.path.toLowerCase();
+
+        // Skip hidden files and directories
+        if (name.startsWith('.') && !showMedia) return false;
+
+        // Skip common build/dependency directories
+        if (
+          [
+            'node_modules',
+            'dist',
+            'build',
+            '.git',
+            '.vscode',
+            '.idea',
+          ].includes(name)
+        )
+          return false;
+
+        // Skip lock files and config files
+        if (name.includes('lock') || name.endsWith('.lock')) return false;
+
+        // Skip media files unless requested
+        if (!showMedia) {
+          const mediaExtensions = [
+            '.png',
+            '.jpg',
+            '.jpeg',
+            '.gif',
+            '.svg',
+            '.ico',
+            '.webp',
+            '.mp4',
+            '.mov',
+            '.avi',
+          ];
+          if (mediaExtensions.some(ext => path.endsWith(ext))) return false;
+        }
+
+        return true;
       });
     }
-  });
+
+    // Limit items for performance
+    const itemLimit = Math.min(200, 50 * depth);
+    const limitedItems = filteredItems.slice(0, itemLimit);
+
+    // Sort items: directories first, then by depth, then alphabetically
+    limitedItems.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'dir' ? -1 : 1;
+      }
+
+      const aDepth = a.path.split('/').length;
+      const bDepth = b.path.split('/').length;
+
+      if (aDepth !== bDepth) {
+        return aDepth - bDepth;
+      }
+
+      return a.path.localeCompare(b.path);
+    });
+
+    // Create response structure
+    const files = limitedItems
+      .filter(item => item.type === 'file')
+      .map(item => ({
+        name: item.name,
+        path: item.path,
+        size: item.size,
+        depth:
+          item.path.split('/').length -
+          (cleanPath ? cleanPath.split('/').length : 0),
+        url: item.path,
+      }));
+
+    const folders = limitedItems
+      .filter(item => item.type === 'dir')
+      .map(item => ({
+        name: item.name,
+        path: item.path,
+        depth:
+          item.path.split('/').length -
+          (cleanPath ? cleanPath.split('/').length : 0),
+        url: item.path,
+      }));
+
+    return {
+      repository: `${owner}/${repo}`,
+      branch: workingBranch,
+      path: cleanPath || '/',
+      depth: depth,
+      apiSource: true,
+      summary: {
+        totalFiles: files.length,
+        totalFolders: folders.length,
+        truncated: allItems.length > limitedItems.length,
+        filtered: !includeIgnored,
+        originalCount: allItems.length,
+      },
+      files: {
+        count: files.length,
+        files: files,
+      },
+      folders: {
+        count: folders.length,
+        folders: folders,
+      },
+    };
+  } catch (error: unknown) {
+    const apiError = handleGitHubAPIError(error);
+    return {
+      error: `API request failed: ${apiError.error}`,
+      status: apiError.status,
+      rateLimitRemaining: apiError.rateLimitRemaining,
+      rateLimitReset: apiError.rateLimitReset,
+    };
+  }
 }
 
 /**
@@ -2656,130 +2571,118 @@ async function fetchDirectoryContentsRecursivelyAPI(
 export async function searchGitHubCommitsAPI(
   params: GitHubCommitSearchParams,
   token?: string
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-commits-api', params);
+): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
+  try {
+    const octokit = getOctokit(token);
 
-  return withCache(cacheKey, async () => {
-    try {
-      const octokit = getOctokit(token);
+    // Build search query following GitHub CLI patterns
+    const searchQuery = buildCommitSearchQuery(params);
 
-      // Build search query following GitHub CLI patterns
-      const searchQuery = buildCommitSearchQuery(params);
-
-      if (!searchQuery) {
-        return createResult({
-          isError: true,
-          data: {
-            error: 'No valid search parameters provided',
-            commits: [],
-            total_count: 0,
-          },
-        });
-      }
-
-      // Execute search using GitHub Search API with proper pagination
-      // GitHub CLI uses max 100 per page and handles pagination internally
-      const perPage = Math.min(params.limit || 25, 100);
-      let allCommits: GitHubCommitSearchItem[] = [];
-      let totalCount = 0;
-      let page = 1;
-      let hasNextPage = true;
-
-      while (hasNextPage && allCommits.length < (params.limit || 25)) {
-        const searchResult = await octokit.rest.search.commits({
-          q: searchQuery,
-          sort: params.sort || 'committer-date',
-          order: params.order || 'desc',
-          per_page: perPage,
-          page: page,
-        });
-
-        const commits = searchResult.data.items || [];
-        totalCount = searchResult.data.total_count || 0;
-
-        // Add commits up to the requested limit
-        const remainingSlots = (params.limit || 25) - allCommits.length;
-        const commitsToAdd = commits.slice(0, remainingSlots);
-        allCommits = allCommits.concat(commitsToAdd);
-
-        // Check if we have more pages (GitHub CLI pagination logic)
-        hasNextPage =
-          commits.length === perPage &&
-          allCommits.length < (params.limit || 25);
-        page++;
-
-        // Safety break to avoid infinite loops
-        if (page > 10) break;
-      }
-
-      // Transform commits to our expected format
-      const transformedCommits: GitHubCommitSearchItem[] = allCommits.map(
-        (item: GitHubCommitSearchItem) => ({
-          sha: item.sha,
-          commit: {
-            message: item.commit?.message || '',
-            author: {
-              name: item.commit?.author?.name || 'Unknown',
-              email: item.commit?.author?.email || '',
-              date: item.commit?.author?.date || '',
-            },
-            committer: {
-              name: item.commit?.committer?.name || 'Unknown',
-              email: item.commit?.committer?.email || '',
-              date: item.commit?.committer?.date || '',
-            },
-          },
-          author: item.author
-            ? {
-                login: item.author.login,
-                id: item.author.id,
-                type: item.author.type || 'User',
-                url: item.author.url,
-              }
-            : undefined,
-          committer: item.committer
-            ? {
-                login: item.committer.login,
-                id: item.committer.id,
-                type: item.committer.type || 'User',
-                url: item.committer.url,
-              }
-            : undefined,
-          repository: item.repository,
-          url: item.url,
-        })
-      );
-
-      // Transform to optimized format similar to CLI implementation
-      const optimizedResult = await transformCommitsToOptimizedFormatAPI(
-        transformedCommits,
-        params,
-        token
-      );
-
-      return createResult({
-        data: {
-          ...optimizedResult,
-          apiSource: true,
-          total_count: totalCount,
-          incomplete_results: totalCount > allCommits.length,
-        },
-      });
-    } catch (error: unknown) {
-      const apiError = handleGitHubAPIError(error);
-      return createResult({
-        isError: true,
-        data: {
-          error: `Commit search failed: ${apiError.error}`,
-          status: apiError.status,
-          rateLimitRemaining: apiError.rateLimitRemaining,
-          rateLimitReset: apiError.rateLimitReset,
-          commits: [],
-          total_count: 0,
-        },
-      });
+    if (!searchQuery) {
+      return {
+        error: 'No valid search parameters provided',
+        status: 400,
+        hints: [
+          'Provide search query or filters like author, committer, hash, or date',
+        ],
+      };
     }
-  });
+
+    // Execute search using GitHub Search API with proper pagination
+    // GitHub CLI uses max 100 per page and handles pagination internally
+    const perPage = Math.min(params.limit || 25, 100);
+    let allCommits: GitHubCommitSearchItem[] = [];
+    let totalCount = 0;
+    let page = 1;
+    let hasNextPage = true;
+
+    while (hasNextPage && allCommits.length < (params.limit || 25)) {
+      const searchResult = await octokit.rest.search.commits({
+        q: searchQuery,
+        sort: params.sort || 'committer-date',
+        order: params.order || 'desc',
+        per_page: perPage,
+        page: page,
+      });
+
+      const commits = searchResult.data.items || [];
+      totalCount = searchResult.data.total_count || 0;
+
+      // Add commits up to the requested limit
+      const remainingSlots = (params.limit || 25) - allCommits.length;
+      const commitsToAdd = commits.slice(0, remainingSlots);
+      allCommits = allCommits.concat(commitsToAdd);
+
+      // Check if we have more pages (GitHub CLI pagination logic)
+      hasNextPage =
+        commits.length === perPage && allCommits.length < (params.limit || 25);
+      page++;
+
+      // Safety break to avoid infinite loops
+      if (page > 10) break;
+    }
+
+    // Transform commits to our expected format
+    const transformedCommits: GitHubCommitSearchItem[] = allCommits.map(
+      (item: GitHubCommitSearchItem) => ({
+        sha: item.sha,
+        commit: {
+          message: item.commit?.message || '',
+          author: {
+            name: item.commit?.author?.name || 'Unknown',
+            email: item.commit?.author?.email || '',
+            date: item.commit?.author?.date || '',
+          },
+          committer: {
+            name: item.commit?.committer?.name || 'Unknown',
+            email: item.commit?.committer?.email || '',
+            date: item.commit?.committer?.date || '',
+          },
+        },
+        author: item.author
+          ? {
+              login: item.author.login,
+              id: item.author.id,
+              type: item.author.type || 'User',
+              url: item.author.url,
+            }
+          : undefined,
+        committer: item.committer
+          ? {
+              login: item.committer.login,
+              id: item.committer.id,
+              type: item.committer.type || 'User',
+              url: item.committer.url,
+            }
+          : undefined,
+        repository: item.repository,
+        url: item.url,
+      })
+    );
+
+    // Transform to optimized format similar to CLI implementation
+    const optimizedResult = await transformCommitsToOptimizedFormatAPI(
+      transformedCommits,
+      params,
+      token
+    );
+
+    return {
+      total_count: totalCount,
+      incomplete_results: totalCount > allCommits.length,
+      commits: optimizedResult.commits as any,
+    };
+  } catch (error: unknown) {
+    const apiError = handleGitHubAPIError(error);
+    return {
+      error: `Commit search failed: ${apiError.error}`,
+      status: apiError.status,
+      rateLimitRemaining: apiError.rateLimitRemaining,
+      rateLimitReset: apiError.rateLimitReset,
+      hints: [`Verify authentication and search parameters`],
+      type: apiError.type,
+    };
+  }
 }
 
 /**

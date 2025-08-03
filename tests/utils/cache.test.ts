@@ -20,6 +20,7 @@ vi.mock('node-cache', () => {
 import {
   generateCacheKey,
   withCache,
+  directCache,
   clearCacheByPrefix,
   clearAllCache,
   getCacheStats,
@@ -982,6 +983,79 @@ describe('Cache Utilities', () => {
 
         vi.clearAllMocks();
       }
+    });
+  });
+
+  describe('directCache', () => {
+    it('should return cached result when available', async () => {
+      const cacheKey = 'test-key';
+      const cachedValue = { data: 'cached' };
+
+      mockCacheInstance.get.mockReturnValue(cachedValue);
+
+      const getValue = vi.fn();
+      const result = await directCache(cacheKey, getValue);
+
+      expect(result).toEqual(cachedValue);
+      expect(mockCacheInstance.get).toHaveBeenCalledWith(cacheKey);
+      expect(getValue).not.toHaveBeenCalled();
+    });
+
+    it('should execute getValue and cache result when not cached', async () => {
+      const cacheKey = 'test-key';
+      const newValue = { data: 'new' };
+
+      mockCacheInstance.get.mockReturnValue(undefined);
+
+      const getValue = vi.fn().mockResolvedValue(newValue);
+      const result = await directCache(cacheKey, getValue);
+
+      expect(result).toEqual(newValue);
+      expect(mockCacheInstance.get).toHaveBeenCalledWith(cacheKey);
+      expect(getValue).toHaveBeenCalled();
+      expect(mockCacheInstance.set).toHaveBeenCalledWith(cacheKey, newValue);
+    });
+
+    it('should force refresh when refresh=true', async () => {
+      const cacheKey = 'test-key';
+      const newValue = { data: 'refreshed' };
+
+      const getValue = vi.fn().mockResolvedValue(newValue);
+      const result = await directCache(cacheKey, getValue, true);
+
+      expect(result).toEqual(newValue);
+      expect(mockCacheInstance.get).not.toHaveBeenCalled();
+      expect(getValue).toHaveBeenCalled();
+      expect(mockCacheInstance.set).toHaveBeenCalledWith(cacheKey, newValue);
+    });
+
+    it('should handle null cached values as valid cache hits', async () => {
+      const cacheKey = 'test-key';
+      const cachedValue = null;
+
+      mockCacheInstance.get.mockReturnValue(cachedValue);
+
+      const getValue = vi.fn();
+      const result = await directCache(cacheKey, getValue);
+
+      expect(result).toEqual(cachedValue);
+      expect(mockCacheInstance.get).toHaveBeenCalledWith(cacheKey);
+      expect(getValue).not.toHaveBeenCalled();
+    });
+
+    it('should work with async operations that throw errors', async () => {
+      const cacheKey = 'test-key';
+      const error = new Error('Operation failed');
+
+      mockCacheInstance.get.mockReturnValue(undefined);
+
+      const getValue = vi.fn().mockRejectedValue(error);
+
+      await expect(directCache(cacheKey, getValue)).rejects.toThrow(
+        'Operation failed'
+      );
+      expect(getValue).toHaveBeenCalled();
+      expect(mockCacheInstance.set).not.toHaveBeenCalled();
     });
   });
 });

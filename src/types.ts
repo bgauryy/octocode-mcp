@@ -1,3 +1,10 @@
+// Re-export schema types
+export {
+  PackageSearchResult,
+  PackageSearchError,
+  BasicPackageSearchResult,
+} from './mcp/tools/scheme/package_search';
+
 export type BaseSearchParams = {
   query?: string;
   owner?: string | string[]; // Support both single and multiple owners
@@ -13,45 +20,6 @@ export type OrderSort = {
   sort?: string;
   order?: 'asc' | 'desc';
 };
-
-export type DateRange = {
-  created?: string;
-  updated?: string;
-  closed?: string;
-};
-
-export type UserInvolvement = {
-  author?: string;
-  assignee?: string;
-  mentions?: string;
-  commenter?: string;
-  involves?: string;
-};
-
-export interface GitHubCodeSearchParams extends Omit<BaseSearchParams, 'repo'> {
-  exactQuery?: string;
-  queryTerms?: string[];
-  owner?: string | string[]; // Override to support array
-  repo?: string | string[];
-  language?: string;
-  filename?: string;
-  extension?: string;
-  path?: string;
-  match?: 'file' | 'path';
-  size?: string;
-  limit?: number;
-  visibility?: 'public' | 'private' | 'internal';
-  minify?: boolean; // Default true
-  sanitize?: boolean; // Default true
-  // Legacy fields for backward compatibility
-  branch?: string;
-  enableQueryOptimization?: boolean;
-  symbol?: string;
-  content?: string;
-  is?: ('archived' | 'fork' | 'vendored' | 'generated')[];
-  user?: string;
-  org?: string;
-}
 
 export interface GitHubCommitSearchParams
   extends Omit<BaseSearchParams, 'query'>,
@@ -190,67 +158,6 @@ export interface GitHubPullRequestsSearchParams {
   maxPages?: number; // Maximum pages to fetch (safety limit)
   pageSize?: number; // Items per page (default: 100, max: 100)
 }
-
-export interface GitHubReposSearchParams
-  extends Omit<BaseSearchParams, 'query'>,
-    OrderSort {
-  exactQuery?: string; // Exact phrase/word to search for
-  queryTerms?: string[]; // Array of search terms (AND logic)
-
-  // PRIMARY FILTERS (work alone)
-  language?: string;
-  forks?: string | number; // Support both string ranges and numbers
-  stars?: string | number; // Support both string ranges and numbers
-  topic?: string | string[]; // Support both single and array
-  'number-topics'?: string | number; // Support both string ranges and numbers
-
-  // SECONDARY FILTERS (require query or primary filter)
-  archived?: boolean;
-  created?: string;
-  'include-forks'?: 'false' | 'true' | 'only';
-  license?: string | string[]; // Support both single and array
-  match?:
-    | 'name'
-    | 'description'
-    | 'readme'
-    | ('name' | 'description' | 'readme')[];
-  updated?: string;
-  visibility?: 'public' | 'private' | 'internal';
-  'good-first-issues'?: string | number; // Support both string ranges and numbers
-  'help-wanted-issues'?: string | number; // Support both string ranges and numbers
-  followers?: string | number; // Support both string ranges and numbers
-  size?: string; // Format: ">100", "<50", "10..100"
-
-  // ADDITIONAL ENHANCED PARAMETERS
-  pushed?: string; // Last push date filter - Format: ">2020-01-01", "2020-01-01..2023-12-31"
-  template?: boolean; // Filter for template repositories
-  mirror?: boolean; // Filter for mirror repositories
-  sponsor?: boolean; // Filter for repositories that can be sponsored
-  'has-issues'?: boolean; // Filter repositories with issues enabled
-  'has-projects'?: boolean; // Filter repositories with projects enabled
-  'has-wiki'?: boolean; // Filter repositories with wiki enabled
-  'has-pages'?: boolean; // Filter repositories with GitHub Pages enabled
-  'has-downloads'?: boolean; // Filter repositories with downloads enabled
-  'has-discussions'?: boolean; // Filter repositories with discussions enabled
-
-  // SORTING AND LIMITS
-  limit?: number;
-  sort?: 'forks' | 'help-wanted-issues' | 'stars' | 'updated' | 'best-match';
-  page?: number; // For pagination support
-}
-
-export interface GithubFetchRequestParams {
-  owner: string;
-  repo: string;
-  branch?: string;
-  filePath: string;
-  startLine?: number;
-  endLine?: number;
-  contextLines?: number;
-  matchString?: string;
-  minified: boolean;
-}
-
 export interface GitHubDiffFile {
   filename: string;
   status: string;
@@ -345,55 +252,6 @@ export interface GitHubPullRequestsSearchResult {
     rate_limit_hit?: boolean;
   };
 }
-
-export interface FileMetadata {
-  name: string;
-  type: 'file' | 'dir';
-  size?: number;
-  extension?: string;
-  category:
-    | 'code'
-    | 'config'
-    | 'docs'
-    | 'assets'
-    | 'data'
-    | 'build'
-    | 'test'
-    | 'other';
-  language?: string;
-  description?: string;
-}
-
-export interface GitHubFileContentResponse {
-  filePath: string;
-  owner: string;
-  repo: string;
-  branch: string;
-  content: string;
-  // Actual content boundaries (with context applied)
-  startLine?: number;
-  endLine?: number;
-  totalLines: number; // Always returned - total lines in the file
-  isPartial?: boolean;
-  // Original request parameters for LLM context
-  requestedStartLine?: number;
-  requestedEndLine?: number;
-  requestedContextLines?: number;
-  minified?: boolean;
-  minificationFailed?: boolean;
-  minificationType?:
-    | 'terser'
-    | 'conservative'
-    | 'aggressive'
-    | 'json'
-    | 'general'
-    | 'markdown'
-    | 'failed'
-    | 'none';
-  // Security metadata
-  securityWarnings?: string[];
-}
-
 export interface NpmPackage {
   name: string;
   version: string;
@@ -425,48 +283,6 @@ export interface SimplifiedRepositoryContents {
       name: string;
       url: string; // Relative path for browsing
     }>;
-  };
-}
-
-export interface OptimizedCodeSearchResult {
-  items: Array<{
-    path: string;
-    matches: Array<{
-      context: string; // Simplified from fragment
-      positions: Array<[number, number]>; // Just indices
-    }>;
-    url: string; // Relative path only
-    repository: {
-      nameWithOwner: string; // owner/repo format
-      url: string; // GitHub repository URL
-    };
-  }>;
-  total_count: number;
-  repository?: {
-    name: string; // owner/repo format
-    url: string; // Shortened
-  };
-  // Security and processing metadata
-  securityWarnings?: string[];
-  minified?: boolean;
-  minificationFailed?: boolean;
-  minificationTypes?: string[];
-  // Pagination metadata
-  pagination?: {
-    exhaustive: boolean; // Whether all results were fetched
-    pages_fetched: number; // Number of pages actually fetched
-    total_pages_estimated?: number; // Estimated total pages (if available)
-    has_more: boolean; // Whether more results are available
-    rate_limit_hit?: boolean; // Whether rate limit was encountered
-  };
-  // Research context for smart hints and deeper research flows
-  _researchContext?: {
-    foundPackages: string[];
-    foundFiles: string[];
-    repositoryContext?: {
-      owner: string;
-      repo: string;
-    };
   };
 }
 

@@ -4,17 +4,14 @@ import { createResult } from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { TOOL_NAMES, ToolOptions } from './utils/toolConstants';
-import {
-  generateSmartHints,
-  getResearchGoalHints,
-} from './utils/toolRelationships';
+import { getResearchGoalHints } from './utils/toolRelationships';
 import { searchGitHubCodeAPI } from '../../utils/githubAPI';
 import {
   GitHubCodeSearchQuerySchema,
   GitHubCodeSearchQuery,
   ProcessedCodeSearchResult,
+  OptimizedCodeSearchResult,
 } from './scheme/github_search_code';
-import { OptimizedCodeSearchResult } from '../../types';
 
 // Extended type for API response with research context
 interface CodeSearchAPIResponse extends OptimizedCodeSearchResult {
@@ -25,6 +22,18 @@ interface CodeSearchAPIResponse extends OptimizedCodeSearchResult {
       owner: string;
       repo: string;
     };
+  };
+}
+
+interface AggregatedContext {
+  foundPackages: Set<string>;
+  foundFiles: Set<string>;
+  repositoryContexts: Set<string>;
+  searchPatterns: Set<string>;
+  successfulQueries: number;
+  dataQuality: {
+    hasContent: boolean;
+    hasMatches: boolean;
   };
 }
 
@@ -107,11 +116,18 @@ async function searchMultipleGitHubCode(
   opts: ToolOptions = { npmEnabled: false }
 ): Promise<CallToolResult> {
   const processedResults: ProcessedCodeSearchResult[] = [];
-  const errors: Array<{ queryId: string; error: string }> = [];
-  const aggregatedContext = {
+  const errors: Array<{
+    queryId: string;
+    error: string;
+    recoveryHints?: string[];
+  }> = [];
+  const aggregatedContext: AggregatedContext = {
     foundPackages: new Set<string>(),
     foundFiles: new Set<string>(),
     repositoryContexts: new Set<string>(),
+    searchPatterns: new Set<string>(),
+    successfulQueries: 0,
+    dataQuality: { hasContent: false, hasMatches: false },
   };
 
   // Execute each query
@@ -119,101 +135,109 @@ async function searchMultipleGitHubCode(
     const query = queries[index];
     const queryId = query.id || `query_${index + 1}`;
 
-    // Validate query
-    if (!query.queryTerms || query.queryTerms.length === 0) {
-      errors.push({
-        queryId,
-        error: `Query ${queryId}: queryTerms parameter is required and must contain at least one search term.`,
-      });
-      continue;
-    }
+    // // Validate query - either queryTerms OR other search filters must be provided
+    // const hasQueryTerms = query.queryTerms && query.queryTerms.length > 0;
+    // const hasOtherFilters =
+    //   query.language ||
+    //   query.owner ||
+    //   query.repo ||
+    //   query.user ||
+    //   query.org ||
+    //   query.filename ||
+    //   query.extension ||
+    //   query.path ||
+    //   query.size;
+
+    // if (!hasQueryTerms && !hasOtherFilters) {
+    //   errors.push({
+    //     queryId,
+    //     error: `Query ${queryId}: Either queryTerms or search filters (language, owner, repo, etc.) must be provided.`,
+    //   });
+    //   continue;
+    // }
 
     try {
       // Execute API search
       const result = await searchGitHubCodeAPI(query, opts.ghToken);
 
-      if (result.isError) {
-        const errorHints = result.hints as string[] | undefined;
+      // Check if result is an error with enhanced recovery hints
+      if ('error' in result) {
+        const recoveryHints = generateErrorRecoveryHints(result.error, query);
         errors.push({
           queryId,
-          error: (errorHints && errorHints[0]) || 'Unknown error occurred',
+          error: result.error,
+          recoveryHints,
         });
         continue;
       }
 
       // Process successful results
-      if (result.data) {
-        const searchData = result.data as CodeSearchAPIResponse;
+      const searchData = result as CodeSearchAPIResponse;
 
-        // Extract research context
-        if (searchData._researchContext) {
-          searchData._researchContext.foundPackages?.forEach((pkg: string) =>
-            aggregatedContext.foundPackages.add(pkg)
-          );
-          searchData._researchContext.foundFiles?.forEach((file: string) =>
-            aggregatedContext.foundFiles.add(file)
-          );
-          if (searchData._researchContext.repositoryContext) {
-            const { owner, repo } =
-              searchData._researchContext.repositoryContext;
-            aggregatedContext.repositoryContexts.add(`${owner}/${repo}`);
+      // Extract research context
+      if (searchData._researchContext) {
+        searchData._researchContext.foundPackages?.forEach((pkg: string) =>
+          aggregatedContext.foundPackages.add(pkg)
+        );
+        searchData._researchContext.foundFiles?.forEach((file: string) =>
+          aggregatedContext.foundFiles.add(file)
+        );
+        if (searchData._researchContext.repositoryContext) {
+          const { owner, repo } = searchData._researchContext.repositoryContext;
+          aggregatedContext.repositoryContexts.add(`${owner}/${repo}`);
+        }
+      }
+
+      // 5. Process successful results (already processed by githubAPI.ts)
+      if (searchData.items) {
+        aggregatedContext.successfulQueries++;
+        aggregatedContext.dataQuality.hasContent = true;
+
+        searchData.items.forEach(item => {
+          // Extract and track search patterns for context
+          if (query.queryTerms) {
+            query.queryTerms.forEach(term =>
+              aggregatedContext.searchPatterns.add(term)
+            );
           }
-        }
 
-        // Convert to flattened format
-        if (searchData.items) {
-          searchData.items.forEach(item => {
-            const matches = item.matches.map(match => match.context);
-            processedResults.push({
-              queryId,
-              repository: item.repository.nameWithOwner,
-              path: item.path,
-              matches: matches,
-              repositoryInfo: {
-                nameWithOwner: item.repository.nameWithOwner,
-              },
-            });
+          // Extract matches (already processed by githubAPI.ts)
+          const matches = item.matches?.map(match => match.context) || [];
+
+          if (matches.length > 0) {
+            aggregatedContext.dataQuality.hasMatches = true;
+          }
+
+          processedResults.push({
+            queryId,
+            repository: item.repository.nameWithOwner,
+            path: item.path,
+            matches: matches,
+            repositoryInfo: {
+              nameWithOwner: item.repository.nameWithOwner,
+            },
           });
-        }
+        });
       }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      const recoveryHints = generateErrorRecoveryHints(errorMessage, query);
       errors.push({
         queryId,
         error: errorMessage,
+        recoveryHints,
       });
     }
   }
 
-  // Generate hints
-  const totalItems = processedResults.length;
-  const hasResults = totalItems > 0;
-  const errorMessage = errors.length > 0 ? errors[0].error : undefined;
-
-  const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_CODE, {
-    hasResults,
-    totalItems,
-    errorMessage,
-    customHints: [
-      ...Array.from(aggregatedContext.foundPackages).map(
-        pkg => `Found package: ${pkg}`
-      ),
-      ...Array.from(aggregatedContext.foundFiles).map(
-        file => `Found file: ${file}`
-      ),
-    ],
+  // 6. Generate Context-Aware Smart Hints based on actual response data
+  const hints = generateResponseDrivenHints({
+    processedResults,
+    errors,
+    aggregatedContext,
+    queries,
   });
-
-  // Add research goal hints if applicable
-  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
-  if (researchGoal && processedResults.length > 0) {
-    const goalHints = getResearchGoalHints(
-      TOOL_NAMES.GITHUB_SEARCH_CODE,
-      researchGoal
-    );
-    hints.push(...goalHints);
-  }
 
   // Create response
   interface SearchResponse {
@@ -252,5 +276,188 @@ async function searchMultipleGitHubCode(
     };
   }
 
+  // 9. Return via createResult (cached automatically by directCache)
   return createResult(response);
+}
+
+/**
+ * Generate error recovery hints based on error type and query context
+ */
+function generateErrorRecoveryHints(
+  error: string,
+  query: GitHubCodeSearchQuery
+): string[] {
+  const hints: string[] = [];
+  const errorLower = error.toLowerCase();
+
+  if (errorLower.includes('rate limit') || errorLower.includes('403')) {
+    hints.push('Rate limited - wait a few minutes before retrying');
+    hints.push('Use more specific search terms to reduce API calls');
+    hints.push('Consider adding owner/repo filters to narrow search scope');
+  } else if (errorLower.includes('not found') || errorLower.includes('404')) {
+    hints.push('Repository may be private or non-existent');
+    hints.push('Check repository name spelling and accessibility');
+    if (query.owner && query.repo) {
+      hints.push(
+        `Try searching without repo filter: remove repo: "${query.repo}"`
+      );
+    }
+  } else if (errorLower.includes('timeout') || errorLower.includes('network')) {
+    hints.push('Network issue - retry the same query');
+    hints.push('Try reducing query scope with fewer search terms');
+  } else if (
+    errorLower.includes('validation') ||
+    errorLower.includes('invalid')
+  ) {
+    hints.push('Check query syntax and required parameters');
+    hints.push('Ensure queryTerms array is not empty if provided');
+  } else {
+    hints.push('Try broader search terms if query is too specific');
+    hints.push(
+      'Add owner/repo filters to scope search to specific repositories'
+    );
+  }
+
+  return hints;
+}
+
+/**
+ * Generate smart hints based on actual response data patterns
+ */
+function generateResponseDrivenHints({
+  processedResults,
+  errors,
+  aggregatedContext,
+  queries,
+}: {
+  processedResults: ProcessedCodeSearchResult[];
+  errors: Array<{ queryId: string; error: string; recoveryHints?: string[] }>;
+  aggregatedContext: AggregatedContext;
+  queries: GitHubCodeSearchQuery[];
+}): string[] {
+  const hints: string[] = [];
+  const totalItems = processedResults.length;
+  const hasResults = totalItems > 0;
+
+  // Research hints based on actual response data
+  if (hasResults) {
+    // Extract unique repositories for context
+    const repositories = new Set(processedResults.map(r => r.repository));
+    const uniquePaths = new Set(processedResults.map(r => r.path));
+
+    if (repositories.size === 1) {
+      const repo = Array.from(repositories)[0];
+      hints.push(
+        `All results from ${repo} - use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for full context`
+      );
+    } else if (repositories.size > 1) {
+      hints.push(
+        `Found code in ${repositories.size} repositories - consider focusing on specific repo`
+      );
+    }
+
+    // File type analysis
+    const fileExtensions = new Set(
+      Array.from(uniquePaths)
+        .map(path => path.split('.').pop()?.toLowerCase())
+        .filter(Boolean)
+    );
+    if (fileExtensions.size > 1) {
+      hints.push(
+        `Multiple file types found: ${Array.from(fileExtensions).join(', ')} - filter by extension if needed`
+      );
+    }
+
+    // Next step recommendations
+    hints.push(
+      `Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} to get full file context around matches`
+    );
+    if (aggregatedContext.searchPatterns.size > 0) {
+      const firstPattern = Array.from(aggregatedContext.searchPatterns)[0];
+      hints.push(
+        `Found "${firstPattern}" patterns - refine search or explore related code`
+      );
+    }
+  } else if (errors.length > 0) {
+    // Error hints with recovery actions
+    const firstError = errors[0];
+    if (firstError.recoveryHints) {
+      hints.push(...firstError.recoveryHints);
+    }
+
+    // Fallback hints based on query analysis
+    const hasSpecificRepo = queries.some(q => q.owner && q.repo);
+    if (!hasSpecificRepo) {
+      hints.push(
+        'Try adding owner/repo filters to search specific repositories'
+      );
+    }
+
+    const hasComplexQuery = queries.some(
+      q => q.queryTerms && q.queryTerms.length > 2
+    );
+    if (hasComplexQuery) {
+      hints.push('Try simpler search terms - start with 1-2 key terms');
+    }
+  } else {
+    // No results, no errors - provide efficient LLM guidance
+    const hasFilters = queries.some(
+      q => q.language || q.filename || q.extension || q.owner || q.repo
+    );
+    const hasSpecificTerms = queries.some(
+      q => q.queryTerms && q.queryTerms.length > 1
+    );
+
+    // Primary recovery strategies
+    hints.push('No matches found - try these strategies:');
+
+    if (hasFilters) {
+      hints.push(
+        '✓ Remove filters to broaden search: remove language/extension/owner/repo filters'
+      );
+      hints.push(
+        '✓ Try fewer specific filters - start with just owner/repo or just language'
+      );
+    }
+
+    if (hasSpecificTerms) {
+      hints.push(
+        '✓ Use broader search terms: try single keywords instead of phrases'
+      );
+      hints.push('✓ Search for function names, class names, or core concepts');
+    } else {
+      hints.push(
+        '✓ Add more search terms: include related keywords or synonyms'
+      );
+    }
+
+    // Alternative search strategies
+    hints.push(
+      '✓ Try semantic terms: "authentication", "database", "API" instead of exact code'
+    );
+    hints.push(
+      '✓ Search different repositories: popular libraries or framework repos'
+    );
+
+    // Verification steps
+    if (queries.some(q => q.owner && q.repo)) {
+      hints.push('✓ Verify repository exists and is public');
+    } else {
+      hints.push(
+        '✓ Add specific repository: owner: "username", repo: "repository"'
+      );
+    }
+  }
+
+  // Context-aware research goal hints
+  const researchGoal = queries.find(q => q.researchGoal)?.researchGoal;
+  if (researchGoal && hasResults) {
+    const goalHints = getResearchGoalHints(
+      TOOL_NAMES.GITHUB_SEARCH_CODE,
+      researchGoal
+    );
+    hints.push(...goalHints);
+  }
+
+  return hints;
 }

@@ -203,6 +203,31 @@ export async function withCache(
 }
 
 /**
+ * Simple direct cache function - just cache and return!
+ * @param key - Cache key
+ * @param getValue - Function that returns the value to cache
+ * @param refresh - Optional: force refresh the cache
+ */
+export async function directCache<T>(
+  key: string,
+  getValue: () => Promise<T>,
+  refresh?: boolean
+): Promise<T> {
+  // Force refresh or check cache
+  if (!refresh) {
+    const cached = cache.get<T>(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+  }
+
+  // Get value and cache it
+  const value = await getValue();
+  cache.set(key, value);
+  return value;
+}
+
+/**
  * Clear cache entries by prefix pattern
  */
 export function clearCacheByPrefix(prefixPattern: string): number {

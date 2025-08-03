@@ -207,7 +207,34 @@ export function registerGitHubSearchCommitsTool(
         }
 
         try {
-          return await searchGitHubCommitsAPI(args, opts.ghToken);
+          const result = await searchGitHubCommitsAPI(args, opts.ghToken);
+
+          // Check if result is an error
+          if ('error' in result) {
+            const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+              hasResults: false,
+              errorMessage: result.error,
+              customHints: result.hints || [],
+            });
+            return createResult({
+              error: result.error,
+              hints,
+            });
+          }
+
+          // Success - return raw data wrapped for MCP
+          const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+            hasResults: result.commits.length > 0,
+            totalItems: result.commits.length,
+          });
+
+          return createResult({
+            data: {
+              ...result,
+              apiSource: true,
+            },
+            hints,
+          });
         } catch (error) {
           const hints = generateSmartHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
             hasResults: false,

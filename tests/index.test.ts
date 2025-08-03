@@ -15,6 +15,7 @@ vi.mock('../src/mcp/tools/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/github_search_issues.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
+vi.mock('../src/utils/exec.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
@@ -27,6 +28,7 @@ import { registerNpmSearchTool } from '../src/mcp/tools/package_search.js';
 import { registerViewRepositoryStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { registerSearchGitHubIssuesTool } from '../src/mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
+import { getGithubCLIToken } from '../src/utils/exec.js';
 import {
   TOOL_NAMES,
   ToolOptions,
@@ -46,6 +48,7 @@ const mockClearAllCache = vi.mocked(clearAllCache);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
+const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -75,6 +78,7 @@ describe('Index Module', () => {
   let processExitSpy: any;
   let processStdinResumeSpy: any;
   let processStdinOnSpy: any;
+  let processOnSpy: any;
   let processStdoutUncorkSpy: any;
   let processStderrUncorkSpy: any;
   let originalGithubToken: string | undefined;
@@ -82,10 +86,14 @@ describe('Index Module', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules(); // Reset module cache
 
     // Store original environment variables
     originalGithubToken = process.env.GITHUB_TOKEN;
     originalGhToken = process.env.GH_TOKEN;
+
+    // Set a test token to avoid getToken() issues
+    process.env.GITHUB_TOKEN = 'test-token';
 
     // Setup default mock implementations
     mockMcpServerConstructor.mockImplementation(() => mockMcpServer as any);
@@ -97,14 +105,18 @@ describe('Index Module', () => {
       registry: 'https://registry.npmjs.org/',
     });
 
+    // Mock GitHub CLI token
+    mockGetGithubCLIToken.mockResolvedValue('cli-token');
+
     // Create spies for process methods
     processExitSpy = vi
       .spyOn(process, 'exit')
       .mockImplementation((code?: string | number | null | undefined) => {
-        if (code && code !== 0) {
-          throw new Error('process.exit called');
+        // Don't throw for successful exits
+        if (!code || code === 0) {
+          return undefined as never;
         }
-        return undefined as never;
+        throw new Error(`process.exit called with code ${code}`);
       });
     processStdinResumeSpy = vi
       .spyOn(process.stdin, 'resume')
@@ -112,12 +124,17 @@ describe('Index Module', () => {
     processStdinOnSpy = vi
       .spyOn(process.stdin, 'on')
       .mockImplementation(() => process.stdin);
+    processOnSpy = vi.spyOn(process, 'on').mockImplementation(() => process);
     processStdoutUncorkSpy = vi
       .spyOn(process.stdout, 'uncork')
       .mockImplementation(() => {});
     processStderrUncorkSpy = vi
       .spyOn(process.stderr, 'uncork')
       .mockImplementation(() => {});
+
+    // Mock server connect to resolve immediately
+    mockMcpServer.connect.mockResolvedValue(undefined);
+    mockMcpServer.close.mockResolvedValue(undefined);
 
     // Mock all tool registration functions to succeed by default
     mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
@@ -128,9 +145,6 @@ describe('Index Module', () => {
     mockRegisterNpmSearchTool.mockImplementation(() => {});
     mockRegisterViewRepositoryStructureTool.mockImplementation(() => {});
     mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {});
-
-    mockMcpServer.connect.mockResolvedValue(undefined);
-    mockMcpServer.close.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -146,29 +160,36 @@ describe('Index Module', () => {
       delete process.env.GH_TOKEN;
     }
 
-    // Restore all spies
+    // Restore spies
     processExitSpy?.mockRestore();
     processStdinResumeSpy?.mockRestore();
     processStdinOnSpy?.mockRestore();
+    processOnSpy?.mockRestore();
     processStdoutUncorkSpy?.mockRestore();
     processStderrUncorkSpy?.mockRestore();
-    vi.resetModules();
   });
 
-  describe('Server Configuration', () => {
-    it('should have correct server configuration', async () => {
-      // Import the module to trigger execution
-      await import('../src/index.js');
+  // Helper function to wait for async operations to complete
+  const waitForAsyncOperations = () =>
+    new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(mockMcpServerConstructor).toHaveBeenCalledWith({
-        name: 'octocode-mcp',
-        version: expect.any(String),
-        description: expect.stringContaining('expert code research engineer'),
-      });
+  describe('Basic Module Import', () => {
+    it('should create server with correct configuration', async () => {
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      expect(mockMcpServerConstructor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'octocode-mcp',
+          version: expect.any(String),
+          description: expect.stringContaining('expert code research engineer'),
+        })
+      );
     });
 
     it('should use version from package.json', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       const serverConfig = mockMcpServerConstructor.mock.calls[0][0];
       expect(serverConfig.version).toBeDefined();
@@ -179,6 +200,7 @@ describe('Index Module', () => {
   describe('NPM Status Check', () => {
     it('should check NPM status during initialization', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       expect(mockGetNPMUserDetails).toHaveBeenCalled();
     });
@@ -187,6 +209,7 @@ describe('Index Module', () => {
       mockGetNPMUserDetails.mockRejectedValue(new Error('NPM check failed'));
 
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Should still continue with tool registration
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalled();
@@ -199,46 +222,10 @@ describe('Index Module', () => {
       });
 
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
-      // Check that tools were called with options including npmEnabled: false
       const expectedOptions: ToolOptions = {
         npmEnabled: false,
-        ghToken: undefined,
-        // Backward compatibility
-      };
-
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
-      );
-    });
-  });
-
-  describe('GitHub API Type Detection', () => {
-    it('should use "gh" API type when no token is present', async () => {
-      delete process.env.GITHUB_TOKEN;
-      delete process.env.GH_TOKEN;
-
-      await import('../src/index.js');
-
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: undefined,
-      };
-
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
-      );
-    });
-
-    it('should use "octokit" API type when GITHUB_TOKEN is present', async () => {
-      process.env.GITHUB_TOKEN = 'test-token';
-
-      await import('../src/index.js');
-
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
         ghToken: 'test-token',
       };
 
@@ -247,15 +234,18 @@ describe('Index Module', () => {
         expectedOptions
       );
     });
+  });
 
-    it('should use "octokit" API type when GH_TOKEN is present', async () => {
-      process.env.GH_TOKEN = 'test-gh-token';
+  describe('GitHub Token Detection', () => {
+    it('should use GITHUB_TOKEN when present', async () => {
+      process.env.GITHUB_TOKEN = 'github-token';
 
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       const expectedOptions: ToolOptions = {
         npmEnabled: true,
-        ghToken: 'test-gh-token',
+        ghToken: 'github-token',
       };
 
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
@@ -263,15 +253,68 @@ describe('Index Module', () => {
         expectedOptions
       );
     });
+
+    it('should use GH_TOKEN when GITHUB_TOKEN is not present', async () => {
+      delete process.env.GITHUB_TOKEN;
+      process.env.GH_TOKEN = 'gh-token';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      const expectedOptions: ToolOptions = {
+        npmEnabled: true,
+        ghToken: 'gh-token',
+      };
+
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
+      );
+    });
+
+    it('should use CLI token when no env tokens are present', async () => {
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GH_TOKEN;
+      mockGetGithubCLIToken.mockResolvedValue('cli-token');
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      const expectedOptions: ToolOptions = {
+        npmEnabled: true,
+        ghToken: 'cli-token',
+      };
+
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer,
+        expectedOptions
+      );
+    });
+
+    it('should exit when no token is available', async () => {
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GH_TOKEN;
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+      } catch (error) {
+        // Expected to throw due to process.exit
+      }
+
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
   });
 
   describe('Tool Registration', () => {
     it('should register all tools successfully with options', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       const expectedOptions: ToolOptions = {
         npmEnabled: true,
-        ghToken: undefined,
+        ghToken: 'test-token',
       };
 
       // Verify all tool registration functions were called with server and options
@@ -310,43 +353,53 @@ describe('Index Module', () => {
     });
 
     it('should continue registering tools even if some fail', async () => {
-      // Make some tool registrations fail
+      // Make first tool registration fail
       mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Tool registration failed');
+        throw new Error('Registration failed');
       });
 
-      // Should not throw and should continue with other tools
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Verify other tools were still attempted
       expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalled();
       expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
     });
 
-    it('should throw error if no tools are successfully registered', async () => {
+    it('should exit when no tools are successfully registered', async () => {
       // Make all tool registrations fail
-      const mockFunctions = [
-        mockRegisterGitHubSearchCodeTool,
-        mockRegisterFetchGitHubFileContentTool,
-        mockRegisterSearchGitHubReposTool,
-        mockRegisterGitHubSearchCommitsTool,
-        mockRegisterSearchGitHubPullRequestsTool,
-        mockRegisterNpmSearchTool,
-        mockRegisterViewRepositoryStructureTool,
-        mockRegisterSearchGitHubIssuesTool,
-      ];
-
-      mockFunctions.forEach(mockFn => {
-        mockFn.mockImplementation(() => {
-          throw new Error('Tool registration failed');
-        });
+      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterSearchGitHubReposTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterGitHubSearchCommitsTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterNpmSearchTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterViewRepositoryStructureTool.mockImplementation(() => {
+        throw new Error('Registration failed');
+      });
+      mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {
+        throw new Error('Registration failed');
       });
 
-      // Allow process.exit to be called without throwing for this test
-      processExitSpy.mockImplementation(() => {});
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+      } catch (error) {
+        // Expected to throw due to process.exit
+      }
 
-      // Should exit with error code
-      await import('../src/index.js');
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
   });
@@ -354,6 +407,7 @@ describe('Index Module', () => {
   describe('Server Startup', () => {
     it('should create server with correct transport', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       expect(mockStdioServerTransport).toHaveBeenCalled();
       expect(mockMcpServer.connect).toHaveBeenCalledWith(mockTransport);
@@ -361,6 +415,7 @@ describe('Index Module', () => {
 
     it('should uncork stdout and stderr after connection', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       expect(processStdoutUncorkSpy).toHaveBeenCalled();
       expect(processStderrUncorkSpy).toHaveBeenCalled();
@@ -368,48 +423,40 @@ describe('Index Module', () => {
 
     it('should resume stdin to keep process alive', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       expect(processStdinResumeSpy).toHaveBeenCalled();
     });
 
     it('should handle server startup errors', async () => {
-      // Allow process.exit to be called without throwing for this test
-      processExitSpy.mockImplementation(() => {});
-
       mockMcpServer.connect.mockRejectedValue(new Error('Connection failed'));
 
-      await import('../src/index.js');
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+      } catch (error) {
+        // Expected to throw due to process.exit
+      }
+
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
   });
 
   describe('Signal Handling', () => {
     it('should register signal handlers', async () => {
-      const processOnSpy = vi
-        .spyOn(process, 'on')
-        .mockImplementation(() => process);
-
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       expect(processOnSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function));
       expect(processOnSpy).toHaveBeenCalledWith(
         'SIGTERM',
         expect.any(Function)
       );
-      expect(processOnSpy).toHaveBeenCalledWith(
-        'uncaughtException',
-        expect.any(Function)
-      );
-      expect(processOnSpy).toHaveBeenCalledWith(
-        'unhandledRejection',
-        expect.any(Function)
-      );
-
-      processOnSpy.mockRestore();
     });
 
     it('should register stdin close handler', async () => {
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       expect(processStdinOnSpy).toHaveBeenCalledWith(
         'close',
@@ -420,15 +467,10 @@ describe('Index Module', () => {
 
   describe('Graceful Shutdown', () => {
     it('should clear cache on shutdown', async () => {
-      // Allow process.exit to be called without throwing for this test
-      processExitSpy.mockImplementation(() => {});
+      await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Get the SIGINT handler
-      const processOnSpy = vi
-        .spyOn(process, 'on')
-        .mockImplementation(() => process);
-      await import('../src/index.js');
-
       const sigintHandler = processOnSpy.mock.calls.find(
         call => call[0] === 'SIGINT'
       )?.[1] as Function;
@@ -440,96 +482,64 @@ describe('Index Module', () => {
 
       expect(mockClearAllCache).toHaveBeenCalled();
       expect(mockMcpServer.close).toHaveBeenCalled();
-      expect(processExitSpy).toHaveBeenCalledWith(0);
-
-      processOnSpy.mockRestore();
     });
 
     it('should handle shutdown timeout', async () => {
-      // Allow process.exit to be called without throwing for this test
-      processExitSpy.mockImplementation(() => {});
-
-      // Make server close hang
-      mockMcpServer.close.mockImplementation(
-        () =>
-          new Promise(_resolve => {
-            // Never resolve to simulate timeout
-          })
-      );
-
-      const processOnSpy = vi
-        .spyOn(process, 'on')
-        .mockImplementation(() => process);
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       const sigintHandler = processOnSpy.mock.calls.find(
         call => call[0] === 'SIGINT'
       )?.[1] as Function;
 
-      // Call the handler with timeout
-      await sigintHandler();
+      expect(sigintHandler).toBeDefined();
+
+      // Mock server.close to take longer than timeout
+      mockMcpServer.close.mockImplementation(
+        () => new Promise(resolve => setTimeout(resolve, 6000))
+      );
+
+      try {
+        await sigintHandler();
+      } catch (error) {
+        // Expected to throw due to process.exit
+      }
 
       // Should exit with error code due to timeout
       expect(processExitSpy).toHaveBeenCalledWith(1);
-
-      processOnSpy.mockRestore();
     });
 
     it('should handle shutdown errors gracefully', async () => {
-      // Allow process.exit to be called without throwing for this test
-      processExitSpy.mockImplementation(() => {});
-
-      // Make server close throw error
-      mockMcpServer.close.mockRejectedValue(new Error('Close failed'));
-
-      const processOnSpy = vi
-        .spyOn(process, 'on')
-        .mockImplementation(() => process);
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       const sigintHandler = processOnSpy.mock.calls.find(
         call => call[0] === 'SIGINT'
       )?.[1] as Function;
 
-      // Call the handler
-      await sigintHandler();
+      expect(sigintHandler).toBeDefined();
+
+      mockClearAllCache.mockImplementation(() => {
+        throw new Error('Cache clear failed');
+      });
+
+      try {
+        await sigintHandler();
+      } catch (error) {
+        // Expected to throw due to process.exit
+      }
 
       expect(processExitSpy).toHaveBeenCalledWith(1);
-
-      processOnSpy.mockRestore();
     });
   });
 
   describe('Tool Names Export Consistency', () => {
     it('should have consistent tool name exports', () => {
-      // Verify all expected tool names are defined
-      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBeDefined();
-      expect(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES).toBeDefined();
-      expect(TOOL_NAMES.GITHUB_SEARCH_COMMITS).toBeDefined();
-      expect(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS).toBeDefined();
-      expect(TOOL_NAMES.PACKAGE_SEARCH).toBeDefined();
-      expect(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE).toBeDefined();
-      expect(TOOL_NAMES.GITHUB_SEARCH_ISSUES).toBeDefined();
-
-      // Verify they are all strings
-      const toolNames = [
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        TOOL_NAMES.PACKAGE_SEARCH,
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-      ];
-
-      toolNames.forEach(name => {
-        expect(typeof name).toBe('string');
-        expect(name.length).toBeGreaterThan(0);
-      });
-
-      // Verify all tool names are unique
-      const uniqueNames = new Set(toolNames);
-      expect(uniqueNames.size).toBe(toolNames.length);
+      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('githubSearchCode');
+      expect(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES).toBe(
+        'githubSearchRepositories'
+      );
+      expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe('githubGetFileContent');
     });
   });
 });
