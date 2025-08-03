@@ -22,7 +22,6 @@ import {
 import { NpmPackage } from '../types';
 import {
   PackageSearchBulkParams,
-  PackageSearchWithMetadataParams,
   NpmPackageQuery,
   PythonPackageQuery,
 } from '../types';
@@ -32,78 +31,18 @@ const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export async function searchPackagesAPI(
-  params: PackageSearchBulkParams & PackageSearchWithMetadataParams,
+  params: PackageSearchBulkParams,
   npmEnabled: boolean = true
 ): Promise<
   PackageSearchResult | PackageSearchError | BasicPackageSearchResult
 > {
   try {
-    // Normalize parameters to bulk format
-    let normalizedNpmQueries: NpmPackageQuery[] = [];
-    let normalizedPythonQueries: PythonPackageQuery[] = [];
-
-    // Detect if using new bulk format or legacy format
-    const isUsingBulkFormat = !!(params.npmPackages || params.pythonPackages);
-    const isUsingLegacyFormat = !!(
-      params.npmPackagesNames ||
-      params.npmPackageName ||
-      params.pythonPackageName
-    );
-
-    if (isUsingBulkFormat) {
-      // Use new bulk format directly
-      normalizedNpmQueries = npmEnabled ? params.npmPackages || [] : [];
-      normalizedPythonQueries = params.pythonPackages || [];
-    } else if (isUsingLegacyFormat) {
-      // Convert legacy format to bulk format
-      if (npmEnabled && params.npmPackageName) {
-        normalizedNpmQueries.push({
-          name: params.npmPackageName,
-          searchLimit: params.searchLimit,
-          npmSearchStrategy: params.npmSearchStrategy,
-          npmFetchMetadata: params.npmFetchMetadata,
-          npmField: params.npmField,
-          npmMatch: params.npmMatch,
-          id: 'legacy-single',
-        });
-      }
-
-      if (npmEnabled && params.npmPackagesNames) {
-        const queries = normalizePackageNames(params.npmPackagesNames);
-
-        // Handle combined vs individual strategy for legacy npmPackagesNames
-        if (params.npmSearchStrategy === 'combined' && queries.length > 1) {
-          normalizedNpmQueries.push({
-            name: queries.join(' '),
-            searchLimit: params.searchLimit,
-            npmSearchStrategy: params.npmSearchStrategy,
-            npmFetchMetadata: params.npmFetchMetadata,
-            npmField: params.npmField,
-            npmMatch: params.npmMatch,
-            id: 'legacy-combined',
-          });
-        } else {
-          queries.forEach((name, index) => {
-            normalizedNpmQueries.push({
-              name,
-              searchLimit: params.searchLimit,
-              npmSearchStrategy: params.npmSearchStrategy,
-              npmFetchMetadata: params.npmFetchMetadata,
-              npmField: params.npmField,
-              npmMatch: params.npmMatch,
-              id: `legacy-multi-${index}`,
-            });
-          });
-        }
-      }
-
-      if (params.pythonPackageName) {
-        normalizedPythonQueries.push({
-          name: params.pythonPackageName,
-          id: 'legacy-python',
-        });
-      }
-    }
+    // Use bulk format directly
+    let normalizedNpmQueries: NpmPackageQuery[] = npmEnabled
+      ? params.npmPackages || []
+      : [];
+    let normalizedPythonQueries: PythonPackageQuery[] =
+      params.pythonPackages || [];
 
     // Apply global defaults
     const globalDefaults = {
@@ -138,8 +77,8 @@ export async function searchPackagesAPI(
           'Ensure package names are not empty strings',
           'Check array format for bulk queries',
           npmEnabled
-            ? 'Verify at least one npmPackages or pythonPackages query is provided'
-            : 'Verify at least one pythonPackages query is provided',
+            ? 'Provide npmPackages or pythonPackages arrays with package objects'
+            : 'Provide pythonPackages array with package objects',
         ],
       };
     }
@@ -320,37 +259,6 @@ export async function searchPackagesAPI(
       ],
     };
   }
-}
-
-function normalizePackageNames(input: string | string[]): string[] {
-  if (Array.isArray(input)) {
-    return input.filter(q => q && q.trim());
-  }
-
-  const inputStr = input as string;
-
-  // Handle JSON array strings like "["react", "vue"]"
-  if (inputStr.startsWith('[') && inputStr.endsWith(']')) {
-    try {
-      const parsed = JSON.parse(inputStr);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(q => q && typeof q === 'string' && q.trim());
-      }
-    } catch (e) {
-      // Fall through to single string handling
-    }
-  }
-
-  // Handle comma-separated strings
-  if (inputStr.includes(',')) {
-    return inputStr
-      .split(',')
-      .map(s => s.trim())
-      .filter(s => s);
-  }
-
-  // Single string
-  return [inputStr];
 }
 
 async function searchNpmPackage(

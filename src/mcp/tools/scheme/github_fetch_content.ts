@@ -44,7 +44,7 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
     .string()
     .optional()
     .describe(
-      `Exact string to find in file. Returns surrounding context with contextLines.`
+      `Exact string to find in file. Returns surrounding context with contextLines. Perfect for locating specific code patterns found in search results text_matches. Content is processed through the same pipeline as code search for consistency.`
     ),
   minified: z
     .boolean()

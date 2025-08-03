@@ -587,17 +587,3 @@ export interface PackageSearchBulkParams {
   npmFetchMetadata?: boolean;
   researchGoal?: string; // Research goal to guide tool behavior and hint generation
 }
-
-// Keep the old interface for backward compatibility (deprecated)
-export interface PackageSearchWithMetadataParams {
-  npmPackagesNames?: string | string[];
-  npmPackageName?: string;
-  pythonPackageName?: string;
-  searchLimit?: number;
-  npmSearchStrategy?: 'individual' | 'combined';
-  // New parameter to control npm metadata fetching
-  npmFetchMetadata?: boolean;
-  // NPM View Package parameters - prefixed with npm
-  npmField?: string;
-  npmMatch?: string | string[];
-}

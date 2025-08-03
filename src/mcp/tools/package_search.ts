@@ -50,25 +50,17 @@ export function registerPackageSearchTool(
     withSecurityValidation(
       async (args: BulkPackageSearchParams): Promise<CallToolResult> => {
         // Validate that at least one type of query is provided
-        const hasQueries = args.queries && args.queries.length > 0;
         const hasNpmQueries = args.npmPackages && args.npmPackages.length > 0;
         const hasPythonQueries =
           args.pythonPackages && args.pythonPackages.length > 0;
-        const hasLegacyNpm = args.npmPackageName || args.npmPackagesNames;
 
-        if (
-          !hasQueries &&
-          !hasNpmQueries &&
-          !hasPythonQueries &&
-          !hasLegacyNpm
-        ) {
+        if (!hasNpmQueries && !hasPythonQueries) {
           const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
             hasResults: false,
             totalItems: 0,
             errorMessage: 'No package queries provided',
             customHints: [
-              'Provide queries array with package search configurations',
-              'Legacy: Use npmPackages or pythonPackages arrays with package names',
+              'Use npmPackages or pythonPackages arrays with package names',
               'Search by functionality: "http client", "database ORM", "testing framework"',
             ],
           });
@@ -80,7 +72,10 @@ export function registerPackageSearchTool(
           });
         }
 
-        if (args.queries && args.queries.length > 10) {
+        const totalQueries =
+          (args.npmPackages?.length || 0) + (args.pythonPackages?.length || 0);
+
+        if (totalQueries > 10) {
           const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
             hasResults: false,
             errorMessage: 'Too many queries provided',

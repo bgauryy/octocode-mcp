@@ -29,15 +29,16 @@ and patterns across GitHub repositories. It supports bulk operations for efficie
 multi-query research and provides smart suggestions for query optimization.
 
 Key Features:
-- Progressive refinement: Start broad, then narrow focus based on findings
-- Multi-repository analysis: Compare implementations across projects
-- Context-aware suggestions: Smart recovery from failed searches
-- Research goal optimization: Tailored hints based on your research intent
+- **Progressive refinement**: Start broad, then narrow focus based on findings
+- **Multi-repository analysis**: Compare implementations across projects
+- **Context-aware suggestions**: Smart recovery from failed searches
+- **Research goal optimization**: Tailored hints based on your research intent
 
 Best Practices:
 - Use specific search terms for targeted results
-- Combine with repository structure exploration for complete understanding
-- Leverage research goals (discovery, code_generation, debugging) for optimal guidance
+- Results show actual code context from files, not just matching terms
+- Combine with ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} for complete understanding
+- Combine with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for complete understanding - fetch text_matches with matchString
 `;
 
 interface GitHubCodeAggregatedContext {
@@ -180,6 +181,8 @@ async function searchMultipleGitHubCode(
             repository,
             files: apiResult.items.map(item => ({
               path: item.path,
+              // text_matches contain actual file content processed through the same
+              // content optimization pipeline as file fetching (sanitization, minification)
               text_matches: item.matches.map(match => match.context),
             })),
             totalCount: apiResult.total_count,

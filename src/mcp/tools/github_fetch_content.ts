@@ -20,15 +20,22 @@ This tool retrieves complete file contents with smart context handling, partial
 access capabilities, and research-oriented guidance. Perfect for examining
 implementations, documentation, and configuration files.
 
+**PRECISION INTEGRATION**: This tool uses the same content processing pipeline 
+as code search results, ensuring consistent precision, security, and optimization.
+Code search text_matches are processed through this same system.
+
 Key Features:
-- Complete file retrieval: Get full file contents with proper formatting
-- Partial access: Specify line ranges for targeted content extraction
-- Context extraction: Smart matching with surrounding context
-- Research optimization: Tailored hints based on your research goals
+- **Content Precision**: Same processing pipeline as code search text_matches
+- **Complete file retrieval**: Get full file contents with proper formatting
+- **Partial access**: Specify line ranges for targeted content extraction
+- **Context extraction**: Smart matching with surrounding context using matchString
+- **Security & Optimization**: Same sanitization and minification as search results
+- **Research optimization**: Tailored hints based on your research goals
 
 Best Practices:
 - Use line ranges for large files to focus on relevant sections
-- Leverage matchString for finding specific code patterns
+- Leverage matchString for finding specific code patterns from search results
+- Results are processed identically to code search text_matches for consistency
 - Combine with repository structure exploration for navigation
 - Specify research goals for optimized next-step suggestions
 `;

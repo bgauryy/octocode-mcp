@@ -1,5 +1,4 @@
 import z from 'zod';
-import { extendBaseQuerySchema } from './baseSchema';
 import { ResearchGoalEnum } from '../utils/toolConstants';
 
 // NPM package field enum for validation
@@ -66,25 +65,8 @@ const PythonPackageQuerySchema = z.object({
     ),
 });
 
-// Main Package Search Query Schema
-export const PackageSearchQuerySchema = extendBaseQuerySchema({
-  // Package queries - at least one must be provided
-  npmPackage: NpmPackageQuerySchema.optional(),
-  pythonPackage: PythonPackageQuerySchema.optional(),
-});
-
-export type PackageSearchQuery = z.infer<typeof PackageSearchQuerySchema>;
-
 // Bulk Package Search Schema - main input schema
 export const BulkPackageSearchSchema = z.object({
-  queries: z
-    .array(PackageSearchQuerySchema)
-    .min(1)
-    .max(10)
-    .describe(
-      'Array of package search queries (max 10). Each query can have individual parameters for customized search behavior.'
-    ),
-
   // Global defaults
   searchLimit: z
     .number()
@@ -118,38 +100,27 @@ export const BulkPackageSearchSchema = z.object({
     .optional()
     .describe('Research goal to guide tool behavior and hint generation'),
 
-  // Legacy compatibility (deprecated)
+  // Package arrays for bulk search
   npmPackages: z
-    .array(z.any())
+    .array(NpmPackageQuerySchema)
+    .max(10)
     .optional()
-    .describe('DEPRECATED: Use queries array instead'),
+    .describe(
+      'Array of NPM package queries (max 10). Each query can have individual parameters for customized search behavior.'
+    ),
   pythonPackages: z
-    .array(z.any())
+    .array(PythonPackageQuerySchema)
+    .max(10)
     .optional()
-    .describe('DEPRECATED: Use queries array instead'),
-  npmPackagesNames: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe('DEPRECATED: Use queries array instead'),
-  npmPackageName: z
-    .string()
-    .optional()
-    .describe('DEPRECATED: Use queries array instead'),
-  pythonPackageName: z
-    .string()
-    .optional()
-    .describe('DEPRECATED: Use queries array instead'),
-  npmField: z
-    .string()
-    .optional()
-    .describe('DEPRECATED: Use queries with per-query npmField instead'),
-  npmMatch: z
-    .any()
-    .optional()
-    .describe('DEPRECATED: Use queries with per-query npmMatch instead'),
+    .describe(
+      'Array of Python package queries (max 10). Each query searches PyPI for the specified package name with individual result limits.'
+    ),
 });
 
 export type BulkPackageSearchParams = z.infer<typeof BulkPackageSearchSchema>;
+export type PackageSearchQuery =
+  | z.infer<typeof NpmPackageQuerySchema>
+  | z.infer<typeof PythonPackageQuerySchema>;
 
 // Package metadata types
 export interface PythonPackageMetadata {
