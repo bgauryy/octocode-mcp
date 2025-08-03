@@ -6,26 +6,34 @@ import { extendBaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 // ============================================================================
 
 const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
-  // Query terms (one of these is required)
+  // Query terms (for name/description search)
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe('Multiple search terms for broader coverage'),
+    .describe(
+      'Search terms for repository names and descriptions (NAME SEARCH type)'
+    ),
 
   // Repository filters
   owner: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
-    .describe('Repository owner/organization name(s)'),
+    .describe(
+      'Repository owner/organization name(s) (OWNER SEARCH type) - find repos from specific organizations/users'
+    ),
   topic: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
-    .describe('Find repositories by technology/subject'),
+    .describe(
+      '**RECOMMENDED**: Find repositories by technology/subject (TOPIC SEARCH type) - most effective for exploratory discovery. Examples: ["react", "typescript"], ["machine-learning"], ["web-framework"]'
+    ),
   language: z
     .string()
     .nullable()
     .optional()
-    .describe('Programming language filter'),
+    .describe(
+      'Programming language filter (LANGUAGE SEARCH type) - filter by specific programming language. Examples: "typescript", "python", "javascript"'
+    ),
   license: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   extendBaseQuerySchema,
+  createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
   GitHubFilePathSchema,
@@ -54,6 +55,14 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
+
+// Bulk schema for multiple file content queries
+export const FileContentBulkQuerySchema = createBulkQuerySchema(
+  FileContentQuerySchema,
+  1,
+  10,
+  'Array of up to 10 file content queries for parallel execution'
+);
 
 export interface FileContentQueryResult {
   queryId?: string;

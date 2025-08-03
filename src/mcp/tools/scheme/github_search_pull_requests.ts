@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseQuerySchema } from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 
 export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   query: z.string().optional().describe('Search query for PR content'),
@@ -171,6 +171,14 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
 export type GitHubPullRequestSearchQuery = z.infer<
   typeof GitHubPullRequestSearchQuerySchema
 >;
+
+// Bulk schema for multiple pull request searches
+export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
+  GitHubPullRequestSearchQuerySchema,
+  1,
+  5,
+  'Array of 1-5 pull request search queries for bulk execution'
+);
 
 export interface GitHubPullRequestSearchResult {
   total_count: number;

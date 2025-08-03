@@ -29,12 +29,22 @@ smart filtering, and context-aware suggestions. It supports bulk operations for
 efficient multi-query research and integrates with other tools for complete workflows.
 
 Key Features:
-- Smart repository discovery: Find projects by topic, language, or functionality
-- Progressive refinement: Start broad, then apply specific filters
-- Multi-criteria analysis: Compare repositories by stars, activity, and quality
-- Research goal optimization: Tailored suggestions based on your research intent
+- **Topic-based discovery**: Use 'topic' field for technology/subject-specific searches (highly recommended for exploratory research)
+- **Name-based search**: Use 'queryTerms' for repository name or description searches
+- **Language filtering**: Filter by programming language for technology-specific exploration
+- **Quality metrics**: Sort by stars, forks, or activity for high-quality results
+- **Progressive refinement**: Start broad, then apply specific filters
+- **Research goal optimization**: Tailored suggestions based on your research intent
+
+Query Types:
+- **TOPIC SEARCH**: Use 'topic' field - most effective for discovering repositories by technology/subject
+- **NAME SEARCH**: Use 'queryTerms' field - search repository names and descriptions
+- **OWNER SEARCH**: Use 'owner' field - find repositories from specific organizations/users
+- **LANGUAGE SEARCH**: Use 'language' field - filter by programming language
+- **HYBRID SEARCH**: Combine multiple filters for precise discovery
 
 Best Practices:
+- **Start with topics** for exploratory research (e.g., topic: ["react", "typescript"])
 - Use descriptive search terms that capture the core functionality
 - Leverage sorting by stars or updated date for quality results
 - Combine with code search and structure exploration for deep analysis
@@ -166,6 +176,8 @@ async function searchMultipleGitHubRepos(
 
         // Extract repository data
         const repositories = apiResult.repositories || [];
+        const hasResults =
+          repositories.length > 0 && (apiResult.total_count || 0) > 0;
 
         return {
           queryId: query.id!,
@@ -174,7 +186,8 @@ async function searchMultipleGitHubRepos(
             total_count: apiResult.total_count,
           },
           metadata: {
-            queryArgs: query,
+            // Only include queryArgs for no-result cases
+            ...(hasResults ? {} : { queryArgs: query }),
             searchType: 'success',
             researchGoal: query.researchGoal || 'discovery',
           },

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseQuerySchema } from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 
 export const GitHubIssueSearchQuerySchema = BaseQuerySchema.extend({
   query: z.string().min(1).describe('Search terms for issues'),
@@ -120,6 +120,14 @@ export const GitHubIssueSearchQuerySchema = BaseQuerySchema.extend({
 export type GitHubIssueSearchQuery = z.infer<
   typeof GitHubIssueSearchQuerySchema
 >;
+
+// Bulk schema for multiple issue searches
+export const GitHubIssueSearchBulkQuerySchema = createBulkQuerySchema(
+  GitHubIssueSearchQuerySchema,
+  1,
+  5,
+  'Array of 1-5 issue search queries for bulk execution'
+);
 
 export interface GitHubIssueSearchResult {
   total_count: number;

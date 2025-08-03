@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseQuerySchema } from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 
 export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
   queryTerms: z
@@ -78,6 +78,14 @@ export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
 export type GitHubCommitSearchQuery = z.infer<
   typeof GitHubCommitSearchQuerySchema
 >;
+
+// Bulk schema for multiple commit searches
+export const GitHubCommitSearchBulkQuerySchema = createBulkQuerySchema(
+  GitHubCommitSearchQuerySchema,
+  1,
+  5,
+  'Array of 1-5 commit search queries for bulk execution'
+);
 
 export interface GitHubCommitSearchResult {
   total_count: number;

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GenericToolResponse, BaseToolMeta } from '../../types/genericResponse';
 import {
   extendBaseQuerySchema,
+  createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
   GitHubBranchSchema,
@@ -44,6 +45,14 @@ export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
 export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema
 >;
+
+// Bulk schema for multiple repository structure queries
+export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
+  GitHubViewRepoStructureQuerySchema,
+  1,
+  5,
+  'Array of 1-5 repository structure queries for bulk execution'
+);
 
 // Single repository structure query (used in bulk operations)
 export interface GitHubRepositoryStructureQuery {
@@ -99,7 +108,6 @@ export interface GitHubRepositoryStructureResult {
   repository: string;
   branch: string;
   path: string;
-  depth: number;
   apiSource: boolean;
   summary: {
     totalFiles: number;
@@ -108,19 +116,15 @@ export interface GitHubRepositoryStructureResult {
     filtered: boolean;
     originalCount: number;
   };
-  filesByDepth: Record<
-    number,
-    Array<{
-      path: string;
-      size?: number;
-      url: string;
-    }>
-  >;
+  files: Array<{
+    path: string;
+    size?: number;
+    url: string;
+  }>;
   folders: {
     count: number;
     folders: Array<{
       path: string;
-      depth: number;
       url: string;
     }>;
   };

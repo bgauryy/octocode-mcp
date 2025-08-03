@@ -16,7 +16,9 @@ export const BaseQuerySchema = z.object({
   researchGoal: z
     .enum(ResearchGoalEnum)
     .optional()
-    .describe('Research goal to guide tool behavior and hint generation'),
+    .describe(
+      'Research goal to guide tool behavior and hint generation for enhanced LLM reasoning and context-aware responses'
+    ),
 });
 
 /**

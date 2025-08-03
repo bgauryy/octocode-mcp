@@ -2417,15 +2417,12 @@ export async function viewGitHubRepositoryStructureAPI(
       return a.path.localeCompare(b.path);
     });
 
-    // Create response structure organized by depth
+    // Create response structure without depth information
     const files = limitedItems
       .filter(item => item.type === 'file')
       .map(item => ({
         path: item.path,
         size: item.size,
-        depth:
-          item.path.split('/').length -
-          (cleanPath ? cleanPath.split('/').length : 0),
         url: item.path,
       }));
 
@@ -2433,34 +2430,13 @@ export async function viewGitHubRepositoryStructureAPI(
       .filter(item => item.type === 'dir')
       .map(item => ({
         path: item.path,
-        depth:
-          item.path.split('/').length -
-          (cleanPath ? cleanPath.split('/').length : 0),
         url: item.path,
       }));
-
-    // Organize files by depth levels
-    const filesByDepth: Record<
-      number,
-      Array<{ path: string; size?: number; url: string }>
-    > = {};
-    files.forEach(file => {
-      const fileDepth = file.depth;
-      if (!filesByDepth[fileDepth]) {
-        filesByDepth[fileDepth] = [];
-      }
-      filesByDepth[fileDepth].push({
-        path: file.path,
-        size: file.size,
-        url: file.url,
-      });
-    });
 
     return {
       repository: `${owner}/${repo}`,
       branch: workingBranch,
       path: cleanPath || '/',
-      depth: depth,
       apiSource: true,
       summary: {
         totalFiles: files.length,
@@ -2469,14 +2445,10 @@ export async function viewGitHubRepositoryStructureAPI(
         filtered: !includeIgnored,
         originalCount: allItems.length,
       },
-      filesByDepth: filesByDepth,
+      files: files,
       folders: {
         count: folders.length,
-        folders: folders.map(folder => ({
-          path: folder.path,
-          depth: folder.depth,
-          url: folder.url,
-        })),
+        folders: folders,
       },
     };
   } catch (error: unknown) {

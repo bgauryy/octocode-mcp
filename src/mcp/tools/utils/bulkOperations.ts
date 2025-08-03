@@ -261,10 +261,18 @@ export function createBulkResponse<
   // Build standardized response with {data, meta, hints} format
   const data = results.map(r => r.result);
 
+  // Extract common researchGoal from queries for LLM context
+  const researchGoals = queries
+    .map(q => q.researchGoal)
+    .filter((goal): goal is string => !!goal);
+  const commonResearchGoal =
+    researchGoals.length > 0 ? researchGoals[0] : undefined;
+
   const meta: any = {
     totalOperations: results.length,
     successfulOperations: results.filter(r => !r.result.error).length,
     failedOperations: results.filter(r => !!r.result.error).length,
+    ...(commonResearchGoal && { researchGoal: commonResearchGoal }),
   };
 
   // Include aggregated context if requested

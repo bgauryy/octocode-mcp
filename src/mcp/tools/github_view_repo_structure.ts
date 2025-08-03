@@ -134,10 +134,7 @@ export function registerViewGitHubRepoStructureTool(
           }
 
           // Success - generate intelligent hints
-          const totalFiles = Object.values(result.filesByDepth || {}).reduce(
-            (acc, files) => acc + files.length,
-            0
-          );
+          const totalFiles = result.files?.length || 0;
           const responseContext = {
             foundRepository: `${args.owner}/${args.repo}`,
             foundBranch: args.branch,
@@ -173,7 +170,6 @@ export function registerViewGitHubRepoStructureTool(
                 repository: `${args.owner}/${args.repo}`,
                 branch: args.branch,
                 path: args.path || '/',
-                depth: args.depth || 1,
                 fileCount: totalFiles,
                 folderCount: result.folders?.count || 0,
                 researchGoal: args.researchGoal,
