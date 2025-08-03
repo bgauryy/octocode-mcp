@@ -191,7 +191,6 @@ export interface EnhancedPackageMetadata {
 // Result types following github_search_code pattern
 export interface ProcessedPackageResult {
   queryId: string;
-  success: boolean;
   packageName: string;
   ecosystem: 'npm' | 'python';
   data?: any;

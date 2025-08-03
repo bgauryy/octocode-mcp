@@ -145,7 +145,6 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
 
 export interface ProcessedRepoSearchResult {
   queryId: string;
-  success: boolean;
   data?: {
     repositories?: any[];
     total_count?: number;

@@ -152,7 +152,6 @@ async function searchMultipleGitHubRepos(
 
           return {
             queryId: query.id!,
-            success: false,
             error: apiResult.error,
             hints: smartSuggestions.hints,
             metadata: {
@@ -170,7 +169,6 @@ async function searchMultipleGitHubRepos(
 
         return {
           queryId: query.id!,
-          success: true,
           data: {
             repositories,
             total_count: apiResult.total_count,
@@ -193,7 +191,6 @@ async function searchMultipleGitHubRepos(
 
         return {
           queryId: query.id!,
-          success: false,
           error: errorMessage,
           hints: smartSuggestions.hints,
           metadata: {
@@ -211,8 +208,8 @@ async function searchMultipleGitHubRepos(
   // Build aggregated context for intelligent hints
   const aggregatedContext: AggregatedRepoContext = {
     totalQueries: results.length,
-    successfulQueries: results.filter(r => r.result.success).length,
-    failedQueries: results.filter(r => !r.result.success).length,
+    successfulQueries: results.filter(r => !r.result.error).length,
+    failedQueries: results.filter(r => !!r.result.error).length,
     foundOwners: new Set<string>(),
     foundLanguages: new Set<string>(),
     foundTopics: new Set<string>(),
@@ -221,7 +218,7 @@ async function searchMultipleGitHubRepos(
     dataQuality: {
       hasResults: results.some(
         r =>
-          r.result.success &&
+          !r.result.error &&
           r.result.data?.repositories &&
           r.result.data.repositories.length > 0
       ),
@@ -231,7 +228,7 @@ async function searchMultipleGitHubRepos(
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (result.success && result.data?.repositories) {
+    if (!result.error && result.data?.repositories) {
       result.data.repositories.forEach((repo: any) => {
         aggregatedContext.foundOwners.add(repo.owner);
         if (repo.language) {
