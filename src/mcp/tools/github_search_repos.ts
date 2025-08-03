@@ -22,35 +22,16 @@ import {
 } from './utils/bulkOperations';
 import { generateToolHints } from './utils/hints';
 
-const DESCRIPTION = `
-Search GitHub repositories with intelligent discovery and analysis capabilities.
-
-This tool provides comprehensive repository discovery with progressive refinement,
-smart filtering, and context-aware suggestions. It supports bulk operations for
-efficient multi-query research and integrates with other tools for complete workflows.
-
-Key Features:
-- **Topic-based discovery**: Use 'topic' field for technology/subject-specific searches (highly recommended for exploratory research)
-- **Name-based search**: Use 'queryTerms' for repository name or description searches
-- **Language filtering**: Filter by programming language for technology-specific exploration
-- **Quality metrics**: Sort by stars, forks, or activity for high-quality results
-- **Progressive refinement**: Start broad, then apply specific filters
-- **Research goal optimization**: Tailored suggestions based on your research intent
-
-Query Types:
-- **TOPIC SEARCH**: Use 'topic' field - most effective for discovering repositories by technology/subject
-- **NAME SEARCH**: Use 'queryTerms' field - search repository names and descriptions
-- **OWNER SEARCH**: Use 'owner' field - find repositories from specific organizations/users
-- **LANGUAGE SEARCH**: Use 'language' field - filter by programming language
-- **HYBRID SEARCH**: Combine multiple filters for precise discovery
+const DESCRIPTION = `Search GitHub repositories with Github API with progressive refinement and quality filtering.
 
 Best Practices:
-- **Start with topics** for exploratory research (e.g., topic: ["react", "typescript"])
+- Start with topics for exploratory research
 - Use descriptive search terms that capture the core functionality
 - Leverage sorting by stars or updated date for quality results
 - Combine with code search and structure exploration for deep analysis
 - Specify research goals for optimized hint generation
-`;
+
+Use topics for technology discovery, queryTerms for name/description search. Sort by stars/activity for quality results.`;
 
 interface AggregatedRepoContext {
   totalQueries: number;
@@ -166,7 +147,7 @@ async function searchMultipleGitHubRepos(
             error: apiResult.error,
             hints: smartSuggestions.hints,
             metadata: {
-              queryArgs: query,
+              queryArgs: { ...query },
               error: apiResult.error,
               searchType: smartSuggestions.searchType,
               suggestions: smartSuggestions,
@@ -188,7 +169,7 @@ async function searchMultipleGitHubRepos(
           },
           metadata: {
             // Only include queryArgs for no-result cases
-            ...(hasResults ? {} : { queryArgs: query }),
+            ...(hasResults ? {} : { queryArgs: { ...query } }),
             searchType: 'success',
             researchGoal: query.researchGoal || 'discovery',
           },
@@ -208,7 +189,7 @@ async function searchMultipleGitHubRepos(
           error: errorMessage,
           hints: smartSuggestions.hints,
           metadata: {
-            queryArgs: query,
+            queryArgs: { ...query },
             error: errorMessage,
             searchType: smartSuggestions.searchType,
             suggestions: smartSuggestions,

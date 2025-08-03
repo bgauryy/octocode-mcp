@@ -12,7 +12,7 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .min(1)
     .max(4)
     .describe(
-      'Search terms with AND logic - ALL terms must appear in same file. Results return actual file content (text_matches) showing real code snippets with context, not just query matches.'
+      'Search terms (AND logic). Returns actual code snippets with context.'
     ),
 
   // Repository filters

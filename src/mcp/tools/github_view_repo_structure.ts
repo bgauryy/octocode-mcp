@@ -139,7 +139,7 @@ async function exploreMultipleRepositoryStructures(
               'Example: owner: "facebook" for Facebook repositories',
             ],
             metadata: {
-              queryArgs: query,
+              queryArgs: { ...query },
               error: 'Repository owner is required',
               searchType: 'validation_error',
             },
@@ -156,7 +156,7 @@ async function exploreMultipleRepositoryStructures(
               'Example: repo: "react" for the React repository',
             ],
             metadata: {
-              queryArgs: query,
+              queryArgs: { ...query },
               error: 'Repository name is required',
               searchType: 'validation_error',
             },
@@ -173,7 +173,7 @@ async function exploreMultipleRepositoryStructures(
               'Example: branch: "main"',
             ],
             metadata: {
-              queryArgs: query,
+              queryArgs: { ...query },
               error: 'Branch name is required',
               searchType: 'validation_error',
             },
@@ -196,7 +196,7 @@ async function exploreMultipleRepositoryStructures(
               'Ensure you have access to the repository',
             ],
             metadata: {
-              queryArgs: query,
+              queryArgs: { ...query },
               error: apiResult.error,
               searchType: 'api_error',
             },
@@ -215,7 +215,7 @@ async function exploreMultipleRepositoryStructures(
           },
           researchGoal: query.researchGoal,
           metadata: {
-            queryArgs: query,
+            queryArgs: { ...query },
             searchType: 'success',
           },
         };
@@ -232,7 +232,7 @@ async function exploreMultipleRepositoryStructures(
             'Ensure you have access to the repository',
           ],
           metadata: {
-            queryArgs: query,
+            queryArgs: { ...query },
             error: `Failed to explore repository structure: ${errorMessage}`,
             searchType: 'api_error',
           },

@@ -10,25 +10,11 @@ import {
 } from './scheme/package_search';
 import { searchPackagesAPI } from '../../utils/package';
 
-const DESCRIPTION = `
-Efficiently discover and analyze packages across NPM and Python ecosystems with metadata and repository links.
+const DESCRIPTION = `Discover NPM and Python packages with metadata and repository links.
 
-This tool provides comprehensive package discovery with intelligent filtering, error recovery,
-and context-aware suggestions. Perfect for finding libraries, analyzing dependencies, and
-exploring alternatives with direct links to source repositories.
-
-Key Features:
-- Multi-ecosystem search: NPM and Python package discovery
-- Repository integration: Direct links to GitHub repositories for deeper analysis
-- Metadata analysis: Versions, dependencies, popularity metrics
-- Research optimization: Tailored hints based on your research goals
-
-Best Practices:
-- Search by functionality rather than exact package names for broader discovery
-- Use repository URLs from results with GitHub tools for code analysis
-- Compare multiple packages to understand trade-offs and alternatives
-- Specify research goals for optimized next-step suggestions
-`;
+Trigger when other tools have a context of a package or a project that needs to be analyzed
+Or when need to get information about npm or python package or a project
+In many cases better to use package search first to get github repository url`;
 
 export function registerPackageSearchTool(
   server: McpServer,

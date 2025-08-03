@@ -299,7 +299,7 @@ export function createFailedQueryResult<T>(
     researchGoal: (query as any)?.researchGoal,
     hints,
     meta: {
-      queryArgs: query,
+      queryArgs: { ...query },
       error: errorContext.message,
       errorType: errorContext.type,
       suggestions,

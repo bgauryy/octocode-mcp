@@ -14,17 +14,13 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe(
-      'Search terms for repository names and descriptions (NAME SEARCH type)'
-    ),
+    .describe('Search terms for repository names/descriptions'),
 
   // Repository filters
   owner: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
-    .describe(
-      'Repository owner/organization name(s) (OWNER SEARCH type) - find repos from specific organizations/users'
-    ),
+    .describe('Repository owner/organization name(s)'),
   topic: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()

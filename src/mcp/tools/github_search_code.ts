@@ -4,6 +4,7 @@ import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubCodeAPI } from '../../utils/githubAPI';
 import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { logger } from '../../utils/logger';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
@@ -21,25 +22,13 @@ import {
 } from './utils/bulkOperations';
 import { generateToolHints } from './utils/hints';
 
-const DESCRIPTION = `
-Search GitHub code with progressive refinement and comprehensive coverage.
+const DESCRIPTION = `Search code across GitHub repositories using Github API with progressive refinement.
 
-This tool uses intelligent query processing to find code implementations, examples, 
-and patterns across GitHub repositories. It supports bulk operations for efficient 
-multi-query research and provides smart suggestions for query optimization.
-
-Key Features:
-- **Progressive refinement**: Start broad, then narrow focus based on findings
-- **Multi-repository analysis**: Compare implementations across projects
-- **Context-aware suggestions**: Smart recovery from failed searches
-- **Research goal optimization**: Tailored hints based on your research intent
-
-Best Practices:
-- Use specific search terms for targeted results
-- Results show actual code context from files, not just matching terms
+BEST PRACTICES:
 - Combine with ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} for complete understanding
 - Combine with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for complete understanding - fetch text_matches with matchString
-`;
+
+Returns actual code snippets with context. Use with repository structure and file content tools for comprehensive analysis.`;
 
 interface GitHubCodeAggregatedContext {
   totalQueries: number;
@@ -78,6 +67,18 @@ export function registerGitHubSearchCodeTool(
         queries: GitHubCodeSearchQuery[];
         verbose?: boolean;
       }): Promise<CallToolResult> => {
+        // Debug logging to see what we receive
+        logger.debug('GitHub search code tool received args', {
+          args: JSON.stringify(args, null, 2),
+          queriesType: typeof args.queries,
+          queriesIsArray: Array.isArray(args.queries),
+          firstQueryType: args.queries?.[0]
+            ? typeof args.queries[0]
+            : 'undefined',
+          firstQueryStringified: args.queries?.[0]
+            ? JSON.stringify(args.queries[0])
+            : 'undefined',
+        });
         if (
           !args.queries ||
           !Array.isArray(args.queries) ||
@@ -202,10 +203,9 @@ async function searchMultipleGitHubCode(
 
           // Generate specific hints for no results
           const noResultsHints = [
-            'Try broader search terms or remove specific filters',
-            'Search in a different repository or expand to multiple repositories',
-            'Use repository search first to find relevant projects',
-            'Consider searching for related concepts or alternative implementations',
+            'Use broader search terms',
+            'Try repository search first',
+            'Consider related concepts',
           ];
 
           // Add repository-specific hints if searching in a specific repo

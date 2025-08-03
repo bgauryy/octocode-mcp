@@ -168,18 +168,17 @@ function generateNoResultsSuggestions<T extends BaseQuery>(
   hints: string[],
   suggestions: SmartSuggestionResponse['suggestions']
 ): void {
-  hints.push('No results found - try these smart strategies:');
+  hints.push('Try broader terms, individual keywords, or remove filters');
 
-  // Generate broader search suggestions
   if (
     config.supportsQueryTerms &&
     query.queryTerms &&
     query.queryTerms.length > 1
   ) {
     suggestions.broaderSearch = [
-      'Try individual search terms separately',
-      'Use fewer, more general keywords',
-      'Remove specific filters to expand scope',
+      'Try individual terms',
+      'Use general keywords',
+      'Remove filters',
     ];
 
     // Create split queries for each term
@@ -203,16 +202,18 @@ function generateNoResultsSuggestions<T extends BaseQuery>(
 
   // Common recovery strategies
   suggestions.alternativeApproaches = [
-    'Use broader, more general search terms',
-    'Try semantic alternatives related to your research goal',
-    'Remove specific filters and search more broadly',
-    'Consider using related tools for different perspectives',
+    'Use broader terms',
+    'Try semantic alternatives',
+    'Remove filters',
+    'Use related tools',
   ];
 
-  hints.push('→ Use broader, more general search terms');
-  hints.push('→ Try semantic alternatives related to your research goal');
-  hints.push('→ Remove specific filters and search across more resources');
-  hints.push('→ Consider alternative research approaches');
+  hints.push(
+    '→ Broader terms',
+    '→ Semantic alternatives',
+    '→ Remove filters',
+    '→ Alternative approaches'
+  );
 }
 
 /**

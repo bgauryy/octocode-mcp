@@ -88,22 +88,16 @@ export const RESEARCH_GUIDANCE_PATTERNS: Record<
         responseContext?.foundRepositories &&
         responseContext.foundRepositories.length > 1
       ) {
-        hints.push(
-          'Compare implementations across multiple repositories to identify common patterns and best practices'
-        );
+        hints.push('Compare implementations across repositories');
       }
       hints.push(
-        'Progressively narrow your search focus based on the most relevant findings'
-      );
-      hints.push(
-        'Cross-reference results with related projects to validate approaches and discover alternatives'
+        'Narrow focus based on findings',
+        'Cross-reference with related projects'
       );
     } else {
       hints.push(
-        'Start with broader search terms and gradually refine based on initial discoveries'
-      );
-      hints.push(
-        'Explore related technologies, frameworks, or problem domains for comprehensive coverage'
+        'Start broad, refine based on discoveries',
+        'Explore related technologies/frameworks'
       );
     }
 
@@ -351,18 +345,11 @@ export const TOOL_NAVIGATION_PATTERNS: Record<
       const repos = context.responseContext?.foundRepositories || [];
 
       if (repos.length === 1) {
-        hints.push(
-          'Explore the repository structure to understand its architecture and organization'
-        );
-        hints.push(
-          'Search within this repository for specific implementations and examples'
-        );
+        hints.push('Explore repository structure', 'Search within this repo');
       } else if (repos.length > 1) {
         hints.push(
-          'Compare repository structures and approaches across multiple projects'
-        );
-        hints.push(
-          'Dive deeper into the most relevant repositories for detailed analysis'
+          'Compare repository approaches',
+          'Focus on most relevant repos'
         );
       }
 
