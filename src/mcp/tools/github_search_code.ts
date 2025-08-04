@@ -10,25 +10,52 @@ import {
   GitHubCodeSearchBulkQuerySchema,
   ProcessedCodeSearchResult,
 } from './scheme/github_search_code';
-import {
-  generateSmartSuggestions,
-  TOOL_SUGGESTION_CONFIGS,
-} from './utils/smartSuggestions';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
 } from './utils/bulkOperations';
-import { generateToolHints } from './utils/hints';
+import {
+  generateToolHints,
+  generateSmartSuggestions,
+  generateResearchSpecificHints,
+  TOOL_SUGGESTION_CONFIGS,
+} from './utils/hints_consolidated';
 
-const DESCRIPTION = `Search code across GitHub repositories using Github API with progressive refinement.
+const DESCRIPTION = `Search code across GitHub repositories with semantic and pattern matching for comprehensive research.
+
+Primary research tool for discovering code patterns, implementations, and documentation.
+Supports semantic search (concept-based) and pattern search (exact matches) with progressive
+refinement capabilities. Use this tool to start research, then dive deeper with other tools.
+
+RESEARCH PHASES:
+- **Discovery**: Broad semantic searches to understand landscape
+- **Analysis**: Pattern-based searches for specific implementations
+- **Validation**: Cross-reference findings with other tools
+
+FEATURES:
+- Semantic search: Find code by concepts and functionality
+- Pattern matching: Exact code pattern and syntax search
+- Progressive refinement: Start broad, then narrow focus
+- Bulk operations: Execute up to 5 search queries simultaneously
+- Content extraction: Returns actual code snippets with context
+- Research optimization: Tailored results based on research goals
+
+STRATEGIC USAGE:
+- **Discovery Phase**: Start with broad semantic searches (queryTerms)
+- **Analysis Phase**: Use exact patterns (exactQuery) for specific implementations
+- **Validation Phase**: Cross-reference with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for complete context
+- **Navigation**: Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to understand project organization
+- **Bulk Strategy**: Leverage multiple queries for comprehensive coverage
 
 BEST PRACTICES:
-- Combine with ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} for complete understanding
-- Combine with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for complete understanding - fetch text_matches with matchString
-
-Returns actual code snippets with context. Use with repository structure and file content tools for comprehensive analysis.`;
+- Start with broad semantic searches, then refine with specific patterns
+- Use queryTerms for concept search, exactQuery for precise patterns
+- Combine with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} to get complete file context
+- Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to understand project organization
+- Leverage bulk operations for comprehensive coverage of research topics
+- Follow hints for optimal tool chaining and deeper research paths`;
 
 interface GitHubCodeAggregatedContext {
   totalQueries: number;
@@ -141,7 +168,7 @@ async function searchMultipleGitHubCode(
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error
           const smartSuggestions = generateSmartSuggestions(
-            TOOL_SUGGESTION_CONFIGS.github_search_code,
+            TOOL_SUGGESTION_CONFIGS.githubSearchCode,
             apiResult.error,
             query
           );
@@ -153,8 +180,7 @@ async function searchMultipleGitHubCode(
             metadata: {
               queryArgs: { ...query },
               error: apiResult.error,
-              searchType: smartSuggestions.searchType,
-              suggestions: smartSuggestions.suggestions,
+              hints: smartSuggestions.hints,
               researchGoal: query.researchGoal || 'discovery',
             },
           };
@@ -224,7 +250,7 @@ async function searchMultipleGitHubCode(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         const smartSuggestions = generateSmartSuggestions(
-          TOOL_SUGGESTION_CONFIGS.github_search_code,
+          TOOL_SUGGESTION_CONFIGS.githubSearchCode,
           errorMessage,
           query
         );
@@ -236,8 +262,7 @@ async function searchMultipleGitHubCode(
           metadata: {
             queryArgs: { ...query },
             error: errorMessage,
-            searchType: smartSuggestions.searchType,
-            suggestions: smartSuggestions.suggestions,
+            hints: smartSuggestions.hints,
             researchGoal: query.researchGoal || 'discovery',
           },
         };
@@ -291,6 +316,24 @@ async function searchMultipleGitHubCode(
     }
   });
 
+  // Generate enhanced hints for research capabilities
+  const researchGoal = uniqueQueries[0]?.researchGoal || 'discovery';
+  const enhancedHints = generateResearchSpecificHints(
+    TOOL_NAMES.GITHUB_SEARCH_CODE,
+    researchGoal as any,
+    {
+      hasResults: successfulCount > 0,
+      totalItems: successfulCount,
+      findings: results.filter(r => !r.result.error).map(r => r.result.data),
+      queryContext: {
+        queryTerms: uniqueQueries[0]?.queryTerms,
+        language: uniqueQueries[0]?.language,
+        owner: uniqueQueries[0]?.owner,
+        repo: uniqueQueries[0]?.repo,
+      },
+    }
+  );
+
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
     includeAggregatedContext: verbose,
@@ -314,11 +357,39 @@ async function searchMultipleGitHubCode(
     return { queryId, result };
   });
 
-  return createBulkResponse(
+  // Create response with enhanced hints
+  const response = createBulkResponse(
     config,
     processedResults,
     aggregatedContext,
     errors,
     uniqueQueries
   );
+
+  // Enhance hints with research-specific guidance
+  if (enhancedHints.length > 0) {
+    // Extract the current hints from the response content
+    const responseText = response.content[0]?.text || '';
+    let responseData;
+    try {
+      responseData = JSON.parse(responseText as string);
+    } catch {
+      // If parsing fails, return response as is
+      return response;
+    }
+
+    // Combine enhanced hints with existing hints
+    const existingHints = responseData.hints || [];
+    const combinedHints = [...enhancedHints, ...existingHints].slice(0, 8);
+
+    // Create new response with enhanced hints
+    return createResult({
+      data: responseData.data,
+      meta: responseData.meta,
+      hints: combinedHints,
+      isError: response.isError,
+    });
+  }
+
+  return response;
 }

@@ -9,10 +9,6 @@ import {
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from './scheme/github_search_repos';
-import {
-  generateSmartSuggestions,
-  TOOL_SUGGESTION_CONFIGS,
-} from './utils/smartSuggestions';
 import type { GitHubRepository } from '../../types/github';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
@@ -20,18 +16,33 @@ import {
   createBulkResponse,
   type BulkResponseConfig,
 } from './utils/bulkOperations';
-import { generateToolHints } from './utils/hints';
+import {
+  generateToolHints,
+  generateSmartSuggestions,
+  TOOL_SUGGESTION_CONFIGS,
+} from './utils/hints_consolidated';
 
-const DESCRIPTION = `Search GitHub repositories with Github API with progressive refinement and quality filtering.
+const DESCRIPTION = `Discover GitHub repositories with intelligent filtering for exploratory research and quality analysis.
 
-Best Practices:
-- Start with topics for exploratory research
-- Use descriptive search terms that capture the core functionality
-- Leverage sorting by stars or updated date for quality results
-- Combine with code search and structure exploration for deep analysis
-- Specify research goals for optimized hint generation
+Finds repositories by topics, functionality, and criteria, automatically prioritizing popular
+and recently updated projects. Perfect for exploratory research, finding implementation examples,
+and discovering high-quality codebases for learning and analysis.
 
-Use topics for technology discovery, queryTerms for name/description search. Sort by stars/activity for quality results.`;
+FEATURES:
+- Exploratory discovery: Find repositories by topics, languages, and functionality
+- Quality filtering: Automatically prioritizes popular (high stars) and recently updated repos
+- Smart sorting: Sort by stars, forks, activity, and update frequency
+- Bulk operations: Search multiple criteria simultaneously (up to 5 queries)
+- Research optimization: Tailored results based on research goals
+- Cross-validation: Combine with other tools for comprehensive analysis
+
+BEST PRACTICES:
+- Use topics for technology discovery: "machine-learning", "web-framework"
+- Leverage stars/forks filters to find popular, well-maintained projects
+- Sort by "updated" to discover active, recently maintained repositories
+- Combine with ${TOOL_NAMES.GITHUB_SEARCH_CODE} for deeper content analysis
+- Use bulk operations to explore multiple related technologies simultaneously
+- Specify research goals for optimized repository selection and ranking`;
 
 interface AggregatedRepoContext {
   totalQueries: number;
@@ -137,7 +148,7 @@ async function searchMultipleGitHubRepos(
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error
           const smartSuggestions = generateSmartSuggestions(
-            TOOL_SUGGESTION_CONFIGS.github_search_repositories,
+            TOOL_SUGGESTION_CONFIGS.githubSearchRepositories,
             apiResult.error,
             query
           );
@@ -149,8 +160,6 @@ async function searchMultipleGitHubRepos(
             metadata: {
               queryArgs: { ...query },
               error: apiResult.error,
-              searchType: smartSuggestions.searchType,
-              suggestions: smartSuggestions,
               researchGoal: query.researchGoal || 'discovery',
             },
           };
@@ -179,7 +188,7 @@ async function searchMultipleGitHubRepos(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         const smartSuggestions = generateSmartSuggestions(
-          TOOL_SUGGESTION_CONFIGS.github_search_repositories,
+          TOOL_SUGGESTION_CONFIGS.githubSearchRepositories,
           errorMessage,
           query
         );
@@ -191,8 +200,6 @@ async function searchMultipleGitHubRepos(
           metadata: {
             queryArgs: { ...query },
             error: errorMessage,
-            searchType: smartSuggestions.searchType,
-            suggestions: smartSuggestions,
             researchGoal: query.researchGoal || 'discovery',
           },
         };

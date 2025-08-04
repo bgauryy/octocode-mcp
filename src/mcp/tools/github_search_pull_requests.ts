@@ -8,27 +8,25 @@ import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchQuerySchema,
 } from './scheme/github_search_pull_requests';
-import { generateToolHints } from './utils/hints';
+import { generateToolHints } from './utils/hints_consolidated';
 
-const DESCRIPTION = `
-Search GitHub pull requests with intelligent filtering and comprehensive analysis.
+const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
 
-This tool provides powerful pull request discovery across GitHub repositories with smart
-filtering capabilities, error recovery, and context-aware suggestions. Perfect for
-understanding code reviews, tracking features, and analyzing development workflows.
+Provides powerful pull request discovery across GitHub repositories with smart filtering capabilities,
+error recovery, and context-aware suggestions. Perfect for understanding code reviews, tracking features,
+and analyzing development workflows.
 
-Key Features:
+FEATURES:
 - Comprehensive PR search: Find pull requests by state, author, labels, and more
 - Smart filtering: By repository, review status, merge state, and activity
 - Error recovery: Intelligent suggestions for failed searches
-- Research optimization: Tailored hints based on your research goals
+- Research optimization: Tailored hints based on research goals
 
-Best Practices:
+BEST PRACTICES:
 - Use specific keywords related to the features or changes you're looking for
 - Filter by state (open/closed) and review status for targeted results
 - Leverage author and assignee filters for people-specific searches
-- Specify research goals (debugging, analysis) for optimal guidance
-`;
+- Specify research goals (debugging, analysis) for optimal guidance`;
 
 export function registerSearchGitHubPullRequestsTool(
   server: McpServer,
@@ -114,17 +112,6 @@ export function registerSearchGitHubPullRequestsTool(
           }
 
           // Success - generate intelligent hints
-          const responseContext = {
-            foundRepositories: result.pull_requests
-              .map(pr => (pr as any).repository?.full_name || 'unknown')
-              .filter((repo, index, arr) => arr.indexOf(repo) === index),
-            dataQuality: {
-              hasContent: result.pull_requests.length > 0,
-              hasMatches: result.pull_requests.some(
-                pr => pr.body && pr.body.length > 0
-              ),
-            },
-          };
 
           const hints = generateToolHints(
             TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
@@ -132,7 +119,7 @@ export function registerSearchGitHubPullRequestsTool(
               hasResults: result.pull_requests.length > 0,
               totalItems: result.pull_requests.length,
               researchGoal: args.researchGoal,
-              responseContext,
+
               queryContext: {
                 owner: Array.isArray(args.owner) ? args.owner[0] : args.owner,
                 repo: Array.isArray(args.repo) ? args.repo[0] : args.repo,

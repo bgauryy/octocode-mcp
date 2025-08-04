@@ -8,27 +8,24 @@ import {
   GitHubIssueSearchQuery,
   GitHubIssueSearchQuerySchema,
 } from './scheme/github_search_issues';
-import { generateToolHints } from './utils/hints';
+import { generateToolHints } from './utils/hints_consolidated';
 
-const DESCRIPTION = `
-Search GitHub issues with intelligent filtering and comprehensive analysis.
+const DESCRIPTION = `Search GitHub issues with intelligent filtering and comprehensive analysis.
 
-This tool provides powerful issue discovery across GitHub repositories with smart
-filtering capabilities, error recovery, and context-aware suggestions. Perfect for
-debugging, research, and understanding project challenges.
+Provides powerful issue discovery across GitHub repositories with smart filtering capabilities,
+error recovery, and context-aware suggestions. Perfect for debugging, research, and understanding project challenges.
 
-Key Features:
+FEATURES:
 - Comprehensive issue search: Find bugs, features, and discussions
 - Smart filtering: By state, labels, assignees, and more
 - Error recovery: Intelligent suggestions for failed searches
-- Research optimization: Tailored hints based on your research goals
+- Research optimization: Tailored hints based on research goals
 
-Best Practices:
+BEST PRACTICES:
 - Use specific keywords related to your problem or interest
 - Filter by repository owner/repo for focused searches
 - Leverage labels and state filters for targeted results
-- Specify research goals (debugging, discovery) for optimal guidance
-`;
+- Specify research goals (debugging, discovery) for optimal guidance`;
 
 export function registerSearchGitHubIssuesTool(
   server: McpServer,
@@ -97,23 +94,12 @@ export function registerSearchGitHubIssuesTool(
           }
 
           // Success - generate intelligent hints
-          const responseContext = {
-            foundRepositories: result.issues
-              .map(issue => issue.repository?.full_name || 'unknown')
-              .filter((repo, index, arr) => arr.indexOf(repo) === index),
-            dataQuality: {
-              hasContent: result.issues.length > 0,
-              hasMatches: result.issues.some(
-                issue => issue.body && issue.body.length > 0
-              ),
-            },
-          };
 
           const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_ISSUES, {
             hasResults: result.issues.length > 0,
             totalItems: result.issues.length,
             researchGoal: args.researchGoal,
-            responseContext,
+
             queryContext: {
               owner: args.owner,
               repo: args.repo,

@@ -180,7 +180,7 @@ describe('Index Module', () => {
           name: 'octocode-mcp',
           version: expect.any(String),
           description: expect.stringContaining(
-            'Expert code research with GitHub API tools'
+            'Expert GitHub code research assistant'
           ),
         })
       );

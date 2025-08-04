@@ -11,34 +11,30 @@ import {
   FileContentQueryResult,
 } from './scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { generateToolHints } from './utils/hints';
+import { generateToolHints } from './utils/hints_consolidated';
 
-const DESCRIPTION = `
-Fetch file contents from GitHub repositories with intelligent context extraction.
+const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
 
-This tool retrieves complete file contents with smart context handling, partial
-access capabilities, and research-oriented guidance. Perfect for examining
-implementations, documentation, and configuration files.
+Retrieves complete file contents with smart context handling, partial access capabilities,
+and research-oriented guidance. Perfect for examining implementations, documentation, and configuration files.
 
-**PRECISION INTEGRATION**: This tool uses the same content processing pipeline 
-as code search results, ensuring consistent precision, security, and optimization.
-Code search text_matches are processed through this same system.
+PRECISION INTEGRATION: Uses same content processing pipeline as code search results,
+ensuring consistent precision, security, and optimization.
 
-Key Features:
-- **Content Precision**: Same processing pipeline as code search text_matches
-- **Complete file retrieval**: Get full file contents with proper formatting
-- **Partial access**: Specify line ranges for targeted content extraction
-- **Context extraction**: Smart matching with surrounding context using matchString
-- **Security & Optimization**: Same sanitization and minification as search results
-- **Research optimization**: Tailored hints based on your research goals
+FEATURES:
+- Content Precision: Same processing pipeline as code search text_matches
+- Complete file retrieval: Full file contents with proper formatting
+- Partial access: Specify line ranges for targeted content extraction
+- Context extraction: Smart matching with surrounding context using matchString
+- Security & Optimization: Same sanitization and minification as search results
+- Research optimization: Tailored hints based on research goals
 
-Best Practices:
+BEST PRACTICES:
 - Use line ranges for large files to focus on relevant sections
 - Leverage matchString for finding specific code patterns from search results
-- Results are processed identically to code search text_matches for consistency
+- Results processed identically to code search text_matches for consistency
 - Combine with repository structure exploration for navigation
-- Specify research goals for optimized next-step suggestions
-`;
+- Specify research goals for optimized next-step suggestions`;
 
 export function registerFetchGitHubFileContentTool(
   server: McpServer,

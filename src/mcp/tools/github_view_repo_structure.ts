@@ -10,7 +10,7 @@ import {
   ProcessedRepositoryStructureResult,
   AggregatedRepositoryContext,
 } from './scheme/github_view_repo_structure';
-import { generateToolHints } from './utils/hints';
+import { generateToolHints } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
@@ -18,28 +18,26 @@ import {
   type BulkResponseConfig,
 } from './utils/bulkOperations';
 
-const DESCRIPTION = `
-Explore GitHub repository structure and validate repository access with intelligent navigation.
+const DESCRIPTION = `Explore GitHub repository structure and validate repository access with intelligent navigation.
 
-This tool provides comprehensive repository exploration with smart filtering, error recovery,
+Provides comprehensive repository exploration with smart filtering, error recovery,
 and context-aware suggestions. Perfect for understanding project organization, discovering
 key files, and validating repository accessibility. Supports bulk operations for efficient
 multi-repository analysis.
 
-Key Features:
-- **Bulk operations**: Explore multiple repositories simultaneously for comparative analysis
-- **Comprehensive structure exploration**: Navigate directories and understand project layout
-- **Smart filtering**: Focus on relevant files while excluding noise (build artifacts, etc.)
-- **Access validation**: Verify repository existence and permissions
-- **Research optimization**: Tailored hints based on your research goals
+FEATURES:
+- Bulk operations: Explore multiple repositories simultaneously for comparative analysis
+- Comprehensive structure exploration: Navigate directories and understand project layout
+- Smart filtering: Focus on relevant files while excluding noise (build artifacts, etc.)
+- Access validation: Verify repository existence and permissions
+- Research optimization: Tailored hints based on research goals
 
-Best Practices:
+BEST PRACTICES:
 - Start with root directory to understand overall project structure
 - Use depth control to balance detail with performance
 - Include ignored files only when needed for complete analysis
 - Specify research goals for optimized navigation suggestions
-- Use bulk operations to compare structures across multiple repositories
-`;
+- Use bulk operations to compare structures across multiple repositories`;
 
 export function registerViewGitHubRepoStructureTool(
   server: McpServer,

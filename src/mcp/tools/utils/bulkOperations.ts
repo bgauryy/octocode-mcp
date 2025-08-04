@@ -11,7 +11,7 @@
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../responses';
-import { getResearchGoalHints } from './toolRelationships';
+// Hints are now provided by the consolidated hints system
 import { ToolName, TOOL_NAMES } from './toolConstants';
 import type { APIResponseMetadata } from '../../../types/github';
 import { executeWithErrorIsolation } from '../../../utils/promiseUtils';
@@ -239,9 +239,34 @@ export function generateBulkHints<
   // Research goal specific hints
   const primaryResearchGoal = queries.find(q => q.researchGoal)?.researchGoal;
   if (primaryResearchGoal && hasResults) {
-    const goalHints = getResearchGoalHints(toolName, primaryResearchGoal);
-    if (goalHints.length > 0) {
-      hints.push(...goalHints.slice(0, 2)); // Limit goal-specific hints
+    if (primaryResearchGoal === 'code_generation') {
+      hints.push(
+        'Focus on implementation patterns and code structure for generation tasks'
+      );
+    } else if (primaryResearchGoal === 'debugging') {
+      hints.push(
+        'Look for error patterns and debugging approaches in the results'
+      );
+    } else if (primaryResearchGoal === 'code_analysis') {
+      hints.push(
+        'Analyze code patterns, conventions, and architectural decisions'
+      );
+    } else if (primaryResearchGoal === 'optimization') {
+      hints.push('Examine performance patterns and optimization strategies');
+    } else {
+      hints.push('Start broad, then narrow focus based on discoveries');
+    }
+  }
+
+  // Add bulk-specific hints for multi-query scenarios
+  if (context.totalQueries > 1) {
+    hints.push(
+      'Compare results across queries to identify patterns and trends'
+    );
+    if (errors.length > 0) {
+      hints.push(
+        'Some queries failed - check individual results for specific error details'
+      );
     }
   }
 
@@ -300,7 +325,9 @@ export function createBulkResponse<
   }
 
   return createResult({
-    data: { data, meta, hints },
+    data,
+    meta,
+    hints,
   });
 }
 
@@ -329,18 +356,12 @@ export function generateErrorRecoveryHints(
     errorLower.includes('enotfound') ||
     context.networkRelated
   ) {
-    hints.push(
-      'Network connectivity issue. Check internet connection and service status.',
-      'Try again in a few moments or use fewer concurrent queries.'
-    );
+    hints.push('Network error. Check connection and retry');
   }
 
   // Rate limiting
   else if (errorLower.includes('rate limit') || errorLower.includes('429')) {
-    hints.push(
-      'Rate limit exceeded. Wait a few minutes before retrying.',
-      'Use more specific search terms to reduce API load.'
-    );
+    hints.push('Rate limit exceeded. Wait 60 seconds before retrying');
   }
 
   // Authentication/permission issues
@@ -351,17 +372,13 @@ export function generateErrorRecoveryHints(
     errorLower.includes('permission')
   ) {
     hints.push(
-      'Authentication or permission issue. Verify credentials and access rights.',
-      'Try with public/accessible resources or check authentication status.'
+      'Authentication required. Check your GitHub token configuration'
     );
   }
 
   // Not found errors
   else if (errorLower.includes('not found') || errorLower.includes('404')) {
-    hints.push(
-      'Resource not found. Verify names, paths, or identifiers are correct.',
-      'Try broader search terms or check for alternative naming conventions.'
-    );
+    hints.push('Resource not found. Verify spelling and accessibility');
   }
 
   // Add context-specific alternatives

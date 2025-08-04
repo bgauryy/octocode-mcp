@@ -3,18 +3,32 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
-import { generateToolHints } from './utils/hints';
+import { generateToolHints } from './utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
 } from './scheme/package_search';
 import { searchPackagesAPI } from '../../utils/package';
 
-const DESCRIPTION = `Discover NPM and Python packages with metadata and repository links.
+const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.
 
-Trigger when other tools have a context of a package or a project that needs to be analyzed
-Or when need to get information about npm or python package or a project
-In many cases better to use package search first to get github repository url`;
+Searches package registries to find packages by functionality, providing rich metadata
+including GitHub repository links, version history, and usage statistics. Essential for package
+research, dependency analysis, and finding optimal solutions for your projects.
+
+FEATURES:
+- Multi-ecosystem search: NPM and Python package discovery in single tool
+- Rich metadata: Repository links, version history, download stats, dependencies
+- Research optimization: Better than GitHub API for package-specific analysis
+- Bulk operations: Search multiple packages simultaneously (up to 10 queries)
+- Repository integration: Direct links to GitHub repos for deeper code analysis
+
+BEST PRACTICES:
+- Search by functionality rather than exact names: "http client", "database ORM"
+- Use package search first when researching libraries or frameworks
+- Combine with GitHub tools for complete package-to-code analysis
+- Specify research goals for optimized metadata extraction
+- Leverage bulk operations to compare multiple package alternatives`;
 
 export function registerPackageSearchTool(
   server: McpServer,
@@ -141,7 +155,7 @@ export function registerPackageSearchTool(
             hasResults: totalPackages > 0,
             totalItems: totalPackages,
             researchGoal: args.researchGoal,
-            responseContext,
+
             customHints:
               responseContext.repositoryLinks.length > 0
                 ? [
