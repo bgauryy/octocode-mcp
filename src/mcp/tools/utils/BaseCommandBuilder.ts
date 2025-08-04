@@ -19,20 +19,13 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
   protected abstract initializeCommand(): this;
 
   /**
-   * Add query parameters (exact query or query terms)
+   * Add query parameters (query terms)
    */
-  protected addQuery(
-    params: {
-      exactQuery?: string;
-      queryTerms?: string[];
-      orTerms?: string[];
-    },
-    addQuotesToExactQuery: boolean = true
-  ): this {
-    if (params.exactQuery) {
-      const query = params.exactQuery.trim();
-      this.args.push(addQuotesToExactQuery ? `"${query}"` : query);
-    } else if (params.queryTerms && params.queryTerms.length > 0) {
+  protected addQuery(params: {
+    queryTerms?: string[];
+    orTerms?: string[];
+  }): this {
+    if (params.queryTerms && params.queryTerms.length > 0) {
       const queryParts: string[] = [];
 
       // Add AND terms
@@ -135,27 +128,68 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
   }
 
   /**
-   * Normalize string or array parameters (handles MCP SDK stringified arrays)
+   * Normalize string or array parameters with secure parsing
+   * Handles MCP SDK stringified arrays safely
    */
   protected normalizeArrayParam(param: string | string[]): string[] {
     if (Array.isArray(param)) {
-      return param;
+      return param.filter(
+        item => typeof item === 'string' && this.isValidArrayItem(item)
+      );
     }
 
     if (typeof param === 'string') {
-      // Handle various stringified array formats
-      if (param.includes('", "')) {
-        return param.split('", "').map(item => item.replace(/^"|"$/g, ''));
-      } else if (param.includes(', ')) {
-        return param.split(', ');
-      } else if (param.includes(',')) {
-        return param.split(',');
-      } else {
-        return [param];
+      // Try JSON parsing first (most secure)
+      try {
+        const parsed = JSON.parse(param);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            item => typeof item === 'string' && this.isValidArrayItem(item)
+          );
+        }
+      } catch {
+        // Not JSON, continue with safe fallback parsing
       }
+
+      // Safe fallback parsing with validation
+      let items: string[];
+      if (param.includes(', ')) {
+        items = param.split(', ');
+      } else if (param.includes(',')) {
+        items = param.split(',');
+      } else {
+        items = [param];
+      }
+
+      // Validate and clean each item (remove quotes and trim)
+      return items
+        .map(item => item.trim().replace(/^["']|["']$/g, '')) // Remove surrounding quotes
+        .filter(item => item.length > 0 && this.isValidArrayItem(item));
     }
 
-    return [String(param)];
+    return [String(param)].filter(item => this.isValidArrayItem(item));
+  }
+
+  /**
+   * Validate array items to prevent injection attacks
+   */
+  private isValidArrayItem(item: string): boolean {
+    // Reject items that look like command injection attempts
+    if (item.includes(';') || item.includes('|') || item.includes('&')) {
+      return false;
+    }
+
+    // Reject items that start with dangerous characters
+    if (item.startsWith('-') && item.length > 1) {
+      return false; // Prevent flag injection
+    }
+
+    // Reject items with suspicious shell metacharacters
+    if (/[`$\\<>]/.test(item)) {
+      return false;
+    }
+
+    return true;
   }
 
   /**

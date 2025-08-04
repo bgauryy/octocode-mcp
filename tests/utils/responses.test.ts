@@ -18,7 +18,12 @@ describe('Response Utilities', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe('text');
-      expect(result.content[0].text).toBe(JSON.stringify(data, null, 2));
+      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(parsedResponse).toEqual({
+        data: { message: 'Hello' },
+        meta: {},
+        hints: [],
+      });
     });
 
     it('should create error result with string message', () => {
@@ -28,7 +33,12 @@ describe('Response Utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe('text');
-      expect(result.content[0].text).toBe(errorMessage);
+      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(parsedResponse).toEqual({
+        data: null,
+        meta: { error: errorMessage },
+        hints: [],
+      });
     });
 
     it('should include suggestions in error result', () => {
@@ -37,7 +47,12 @@ describe('Response Utilities', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Not found');
+      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(parsedResponse).toEqual({
+        data: null,
+        meta: { error: 'Not found' },
+        hints: [],
+      });
     });
 
     it('should handle error object', () => {
@@ -45,7 +60,12 @@ describe('Response Utilities', () => {
       const result = createResult({ error });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe('Test error');
+      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(parsedResponse).toEqual({
+        data: null,
+        meta: { error: 'Test error' },
+        hints: [],
+      });
     });
 
     it('should create success result when no error provided', () => {
@@ -53,7 +73,12 @@ describe('Response Utilities', () => {
       const result = createResult({ data });
 
       expect(result.isError).toBe(false);
-      expect(result.content[0].text).toBe(JSON.stringify(data, null, 2));
+      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(parsedResponse).toEqual({
+        data: { test: 'value' },
+        meta: {},
+        hints: [],
+      });
     });
   });
 

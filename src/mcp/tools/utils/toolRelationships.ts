@@ -1,32 +1,114 @@
-import {
-  API_STATUS_CHECK_TOOL_NAME,
-  GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  PACKAGE_SEARCH_TOOL_NAME,
-} from './toolConstants';
+import { TOOL_NAMES, ToolName, ResearchGoal } from './toolConstants';
 
 /**
- * Tool relationship map for flexible cross-tool research guidance
- * Provides strategic suggestions rather than rigid workflows
+ * Smart, efficient research goal hints - only for most common scenarios
+ * Organized by tool and research goal to provide contextual guidance
  */
-export const TOOL_NAMES = {
-  API_STATUS_CHECK: API_STATUS_CHECK_TOOL_NAME,
-  GITHUB_FETCH_CONTENT: GITHUB_GET_FILE_CONTENT_TOOL_NAME,
-  GITHUB_SEARCH_CODE: GITHUB_SEARCH_CODE_TOOL_NAME,
-  GITHUB_SEARCH_COMMITS: GITHUB_SEARCH_COMMITS_TOOL_NAME,
-  GITHUB_SEARCH_ISSUES: GITHUB_SEARCH_ISSUES_TOOL_NAME,
-  GITHUB_SEARCH_PULL_REQUESTS: GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME,
-  GITHUB_SEARCH_REPOSITORIES: GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  GITHUB_VIEW_REPO_STRUCTURE: GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME,
-  PACKAGE_SEARCH: PACKAGE_SEARCH_TOOL_NAME,
+export const RESEARCH_GOAL_HINTS: Record<
+  ToolName,
+  Partial<Record<ResearchGoal, string[]>>
+> = {
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: {
+    // Core development goals
+    [ResearchGoal.CODE_GENERATION]: [
+      'Use githubGetFileContent with matchString to get complete implementation context',
+      'Search test files to understand usage patterns and expected behavior',
+      'Explore similar repositories for alternative approaches and best practices',
+    ],
+    [ResearchGoal.DEBUGGING]: [
+      'Search issues and pull requests for similar problems and solutions',
+      'Check commit history to understand when and how issues were resolved',
+      'Look for test files that demonstrate the expected vs actual behavior',
+    ],
+    [ResearchGoal.CODE_ANALYSIS]: [
+      'Use githubGetFileContent to examine complete file structure and dependencies',
+      'Search for related implementations to understand patterns and architecture',
+    ],
+    [ResearchGoal.DISCOVERY]: [
+      'Start with broad searches then progressively narrow focus based on findings',
+      'Use multiple search strategies to get comprehensive coverage',
+      'Cross-reference findings across different repositories for validation',
+    ],
+    // Skip less common goals to avoid hint fatigue
+  },
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
+    [ResearchGoal.DISCOVERY]: [
+      'Examine repository structure and documentation for project understanding',
+      'Use topics and stars to identify popular and relevant projects',
+    ],
+    [ResearchGoal.CODE_GENERATION]: [
+      'Search for repositories with similar functionality for implementation patterns',
+      'Check configuration and documentation for setup and integration guidance',
+    ],
+    [ResearchGoal.CONTEXT_GENERATION]: [
+      'Analyze repository metadata and dependencies for ecosystem understanding',
+      'Study project organization patterns and architectural decisions',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_FETCH_CONTENT]: {
+    [ResearchGoal.CODE_GENERATION]: [
+      'Extract complete patterns and interfaces for implementation reference',
+      'Examine related files in the same directory for full context',
+    ],
+    [ResearchGoal.DOCS_GENERATION]: [
+      'Parse function signatures and comments for comprehensive documentation',
+      'Look for usage examples and test cases that demonstrate functionality',
+    ],
+    [ResearchGoal.CODE_REVIEW]: [
+      'Analyze implementation patterns and identify potential improvements',
+      'Check for consistency with project standards and best practices',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: {
+    [ResearchGoal.DISCOVERY]: [
+      'Identify key directories and entry points for understanding project architecture',
+      'Map project structure to understand code organization and dependencies',
+    ],
+    [ResearchGoal.CODE_GENERATION]: [
+      'Locate similar components and patterns for implementation reference',
+      'Find configuration and setup files for project template creation',
+    ],
+    // Only include most actionable scenarios
+  },
+  [TOOL_NAMES.PACKAGE_SEARCH]: {
+    [ResearchGoal.CODE_GENERATION]: [
+      'Verify package compatibility and find usage examples',
+      'Check package repository for implementation guides and best practices',
+    ],
+    [ResearchGoal.CODE_OPTIMIZATION]: [
+      'Compare alternatives for performance and bundle size considerations',
+      'Look for lightweight variants and tree-shakeable options',
+    ],
+    [ResearchGoal.DEBUGGING]: [
+      'Check package issues and changelogs for known problems and solutions',
+      'Review version compatibility and breaking change information',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {
+    [ResearchGoal.DEBUGGING]: [
+      'Focus on recent issues with similar symptoms for current solutions',
+      'Look for closed issues with verified fixes and workarounds',
+    ],
+    [ResearchGoal.DISCOVERY]: [
+      'Explore feature requests and community discussions for insights',
+      'Understand common use cases and pain points from user feedback',
+    ],
+  },
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
+    [ResearchGoal.CODE_GENERATION]: [
+      'Examine recent PRs for modern implementation patterns',
+      'Study code review discussions for best practices',
+      'Look for feature implementations similar to your needs',
+    ],
+    [ResearchGoal.DEBUGGING]: [
+      'Find PRs that fixed similar issues',
+      'Study the changes made to resolve problems',
+      'Check for regression discussions and fixes',
+    ],
+  },
+  // Tools without specific research goal hints (empty objects for completeness)
+  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: {},
 } as const;
-
-export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
 
 export interface ToolSuggestion {
   tool: ToolName;
@@ -66,7 +148,18 @@ export interface ToolContext {
   totalItems?: number;
   previousTools?: ToolName[]; // For circular prevention
   customHints?: string[]; // Custom hints from the tool
-  researchGoal?: 'discovery' | 'analysis' | 'debugging' | 'exploration'; // Research intent
+  researchGoal?:
+    | 'discovery'
+    | 'analysis'
+    | 'debugging'
+    | 'exploration'
+    | 'context_generation'
+    | 'code_generation'
+    | 'docs_generation'
+    | 'code_analysis'
+    | 'code_review'
+    | 'code_refactoring'
+    | 'code_optimization'; // Research intent
 }
 
 export interface ToolSuggestionResult {
@@ -114,20 +207,20 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     strategicAlternatives: [
       {
+        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        reason: 'find real-world usage patterns and integration examples',
+        priority: 'high',
+        strategic: true,
+      },
+      {
         tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
         reason: 'investigate problems and community discussions',
         priority: 'medium',
         strategic: true,
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'analyze development history and recent changes',
-        priority: 'low',
-        strategic: true,
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'understand community and project health',
+        tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        reason: 'examine recent updates and migration patterns',
         priority: 'medium',
         strategic: true,
       },
@@ -205,12 +298,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         reason: 'find repositories by topic when content search fails',
         priority: 'medium',
       },
-      {
-        tool: TOOL_NAMES.API_STATUS_CHECK,
-        reason: 'check authentication if no results found',
-        condition: 'no_results',
-        priority: 'low',
-      },
     ],
     nextSteps: [
       {
@@ -229,14 +316,15 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         priority: 'medium',
       },
     ],
-    prerequisites: [
+    prerequisites: [], // Removed rigid prerequisite to enable dynamic exploration
+    strategicAlternatives: [
       {
         tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        reason: 'verify paths and understand structure before searching',
-        priority: 'medium',
+        reason:
+          'explore structure when search yields limited context or needs path verification',
+        priority: 'high',
+        strategic: true,
       },
-    ],
-    strategicAlternatives: [
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
         reason: 'trace evolution and understand decisions',
@@ -308,9 +396,15 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     strategicAlternatives: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'trace history and understand changes over time',
-        priority: 'medium',
+        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        reason: 'explore repository structure to find correct file paths',
+        priority: 'high',
+        strategic: true,
+      },
+      {
+        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        reason: 'search for files by content when exact paths are unknown',
+        priority: 'high',
         strategic: true,
       },
       {
@@ -340,12 +434,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         reason: 'find the correct repository when structure view fails',
         priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.API_STATUS_CHECK,
-        reason: 'check authentication if access denied',
-        condition: 'access_denied',
-        priority: 'medium',
       },
     ],
     nextSteps: [
@@ -561,31 +649,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
       },
     ],
   },
-
-  [TOOL_NAMES.API_STATUS_CHECK]: {
-    fallbackTools: [],
-    nextSteps: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        reason: 'search accessible repositories after checking authentication',
-        priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.PACKAGE_SEARCH,
-        reason: 'search public packages as alternative',
-        priority: 'high',
-      },
-    ],
-    strategicAlternatives: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        reason: 'search publicly available content after confirming access',
-        priority: 'medium',
-        strategic: true,
-      },
-    ],
-    crossConnections: [],
-  },
 };
 
 /**
@@ -773,6 +836,7 @@ function generateResearchGuidance(
 
 /**
  * Generate formatted hints for LLM with strategic guidance
+ * Optimized to be general, smart, and actionable for LLM follow-up
  */
 export function generateToolHints(
   currentTool: ToolName,
@@ -781,64 +845,70 @@ export function generateToolHints(
   const suggestions = getToolSuggestions(currentTool, context);
   const hints: string[] = [];
 
-  // Add research guidance first
-  hints.push(...suggestions.researchGuidance);
-
-  // Add custom hints from the tool
+  // Add custom hints from the tool first (these are context-specific)
   if (suggestions.customHints.length > 0) {
-    hints.push(...suggestions.customHints.map(hint => `CUSTOM: ${hint}`));
+    hints.push(...suggestions.customHints);
   }
 
-  // Add error-specific fallbacks
-  if (context.hasError && suggestions.fallback.length > 0) {
-    const topFallback = suggestions.fallback[0];
-    hints.push(`FALLBACK: ${topFallback.reason} -> use ${topFallback.tool}`);
-  }
-
-  // Add success next steps with choices
-  if (context.hasResults && suggestions.nextSteps.length > 0) {
-    const topNext = suggestions.nextSteps[0];
-    hints.push(`NEXT: ${topNext.reason} -> use ${topNext.tool}`);
-
-    // Add strategic alternatives as choices
-    if (suggestions.strategicAlternatives.length > 0) {
-      const topStrategy = suggestions.strategicAlternatives[0];
-      hints.push(
-        `ALTERNATIVE: ${topStrategy.reason} -> use ${topStrategy.tool}`
-      );
-    }
-
-    // Add second option if available
-    if (suggestions.nextSteps.length > 1) {
-      const secondNext = suggestions.nextSteps[1];
-      hints.push(`ALSO: ${secondNext.reason} -> use ${secondNext.tool}`);
+  // Add research goal specific hints if available
+  if (context.researchGoal) {
+    const goalHints = getResearchGoalHints(currentTool, context.researchGoal);
+    if (goalHints.length > 0) {
+      hints.push(...goalHints);
     }
   }
 
-  // Add prerequisites if needed
-  if (suggestions.prerequisites.length > 0) {
-    const topPrereq = suggestions.prerequisites[0];
-    hints.push(`FIRST: ${topPrereq.reason} -> use ${topPrereq.tool}`);
-  }
-
-  // Add cross-connections for broader exploration
-  if (suggestions.crossConnections.length > 0) {
-    const topCross = suggestions.crossConnections[0];
-    hints.push(`EXPLORE: ${topCross.reason} -> use ${topCross.tool}`);
-  }
-
-  // Add context-specific guidance
+  // Add general error handling hints
   if (context.errorType === 'auth_required') {
-    hints.push(`Authentication required: run "gh auth login" then retry`);
-  } else if (context.errorType === 'rate_limit') {
-    hints.push(`Rate limited: wait 5-10 minutes or use fewer targeted queries`);
-  } else if (context.totalItems && context.totalItems > 50) {
     hints.push(
-      `Large result set: consider filtering or using more specific parameters`
+      'Authentication required. Use api_status_check tool to verify GitHub connection.'
+    );
+  } else if (context.errorType === 'rate_limit') {
+    hints.push(
+      'Request limit reached. Wait a few minutes or use more specific search terms.'
+    );
+  } else if (context.errorType === 'no_results') {
+    hints.push(
+      'No results found. Try broader search terms or different keywords.'
     );
   }
 
-  return hints.slice(0, 8); // Allow more hints for better guidance
+  // Add strategic next steps (limit to 2 for clarity)
+  let strategicCount = 0;
+  const maxStrategicHints = 2;
+
+  // Add error-specific fallbacks (highest priority)
+  if (
+    context.hasError &&
+    suggestions.fallback.length > 0 &&
+    strategicCount < maxStrategicHints
+  ) {
+    const topFallback = suggestions.fallback[0];
+    hints.push(`Try ${topFallback.tool} to ${topFallback.reason}`);
+    strategicCount++;
+  }
+
+  // Add success next steps
+  if (
+    context.hasResults &&
+    suggestions.nextSteps.length > 0 &&
+    strategicCount < maxStrategicHints
+  ) {
+    const topNextStep = suggestions.nextSteps[0];
+    hints.push(`Use ${topNextStep.tool} to ${topNextStep.reason}`);
+    strategicCount++;
+  }
+
+  // Add strategic alternatives if space allows
+  if (
+    suggestions.strategicAlternatives.length > 0 &&
+    strategicCount < maxStrategicHints
+  ) {
+    const topAlternative = suggestions.strategicAlternatives[0];
+    hints.push(`Consider ${topAlternative.tool} to ${topAlternative.reason}`);
+  }
+
+  return hints;
 }
 
 /**
@@ -851,6 +921,7 @@ export function generateSmartHints(
     totalItems?: number;
     errorMessage?: string;
     customHints?: string[];
+    researchGoal?: string;
   },
   previousTools?: ToolName[]
 ): string[] {
@@ -860,12 +931,14 @@ export function generateSmartHints(
     totalItems: results.totalItems,
     customHints: results.customHints,
     previousTools,
-    // Infer research goal from context
-    researchGoal: results.hasResults
-      ? 'analysis'
-      : results.errorMessage
-        ? 'debugging'
-        : 'exploration',
+    // Use provided research goal or infer from context
+    researchGoal:
+      (results.researchGoal as any) ||
+      (results.hasResults
+        ? 'analysis'
+        : results.errorMessage
+          ? 'debugging'
+          : 'exploration'),
   };
 
   // Detect error type from message
@@ -894,4 +967,57 @@ export function generateSmartResearchHints(
       context?.foundFiles?.length || context?.foundPackages?.length || 0,
     customHints: [],
   });
+}
+
+/**
+ * Get smart, contextual research goal hints for a tool
+ * Only returns hints for common, actionable research scenarios
+ */
+export function getResearchGoalHints(
+  toolName: ToolName,
+  researchGoal?: string
+): string[] {
+  if (!researchGoal) return [];
+
+  // Validate research goal is one we have hints for
+  const validGoals = [
+    'code_generation',
+    'debugging',
+    'code_analysis',
+    'discovery',
+    'context_generation',
+    'docs_generation',
+    'code_review',
+    'code_optimization',
+  ];
+  if (!validGoals.includes(researchGoal)) return [];
+
+  const toolHints = RESEARCH_GOAL_HINTS[toolName];
+  if (!toolHints) return [];
+
+  const goalHints = toolHints[researchGoal as ResearchGoal];
+
+  // Return hints if available, with intelligent fallbacks
+  if (goalHints && goalHints.length > 0) {
+    return goalHints;
+  }
+
+  // Smart fallback: if exact goal not found, try related goals
+  const fallbackMapping: Record<string, string[]> = {
+    code_refactoring: ['code_analysis', 'code_generation'],
+    exploration: ['discovery', 'code_analysis'],
+    analysis: ['code_analysis', 'discovery'],
+  };
+
+  const fallbackGoals = fallbackMapping[researchGoal];
+  if (fallbackGoals) {
+    for (const fallbackGoal of fallbackGoals) {
+      const fallbackHints = toolHints[fallbackGoal as ResearchGoal];
+      if (fallbackHints && fallbackHints.length > 0) {
+        return fallbackHints;
+      }
+    }
+  }
+
+  return [];
 }
