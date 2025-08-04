@@ -2,64 +2,80 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from '../security/mask';
 import { ContentSanitizer } from '../security/contentSanitizer';
 
+/**
+ * Standardized response format for all tool responses
+ */
+export interface ToolResponse {
+  /** Primary data payload (GitHub API responses, packages, file contents, etc.) */
+  data: unknown;
+
+  /** Whether the operation failed (excluded from JSON response) */
+  isError: boolean;
+
+  /** Helpful hints for AI assistants (recovery tips, usage guidance) */
+  hints: string[];
+
+  /** Additional context (total results, error details, research goals) */
+  meta: {
+    [key: string]: unknown;
+  };
+}
+
+/**
+ * Simplified result creation with standardized format
+ */
 export function createResult(options: {
   data?: unknown;
-  error?: unknown | string;
+  error?: string | Error;
   isError?: boolean;
   hints?: string[];
+  meta?: {
+    [key: string]: unknown;
+  };
 }): CallToolResult {
-  const { data, error, isError, hints } = options;
+  const { data, error, isError = false, hints = [], meta = {} } = options;
 
-  // TODO - support only one flow for error and hints (requires refactoring..)
-  if (isError) {
-    const errorResponse = hints ? { data, meta: { error: true }, hints } : data;
-    return {
-      content: [{ type: 'text', text: wrapResponse(errorResponse) }],
-      isError: true,
-    };
-  }
+  // Handle error parameter
+  let finalData = data;
+  let finalIsError = isError;
+  let finalMeta = { ...meta };
 
   if (error) {
-    const errorMessage =
-      typeof error === 'string'
-        ? error
-        : (error as Error).message || 'Unknown error';
+    finalIsError = true;
+    const errorMessage = error instanceof Error ? error.message : error;
 
-    const errorResponse = hints
-      ? { data: null, meta: { error: errorMessage }, hints }
-      : { data: null, meta: { error: errorMessage }, hints: [] };
-
-    return {
-      content: [{ type: 'text', text: wrapResponse(errorResponse) }],
-      isError: true,
-    };
+    // If data is provided, keep it but add error to meta
+    if (data !== undefined) {
+      finalMeta = { ...meta, error: errorMessage };
+    } else {
+      // If no data provided, set data to null and put error in meta
+      finalData = null;
+      finalMeta = { ...meta, error: errorMessage };
+    }
   }
 
-  // Success case - ensure standardized format
-  // If data already has the {data, meta, hints} structure, use it as-is
-  if (
-    data &&
-    typeof data === 'object' &&
-    'data' in data &&
-    'meta' in data &&
-    'hints' in data
-  ) {
-    return {
-      content: [{ type: 'text', text: wrapResponse(data) }],
-      isError: false,
-    };
+  // Special case: if isError is true but no error parameter, set meta.error to true
+  if (finalIsError && !error) {
+    finalMeta = { ...finalMeta, error: true };
   }
 
-  // Otherwise, create standardized structure
-  const standardResponse = {
-    data: data || null,
-    meta: {},
-    hints: hints || [],
+  const response: ToolResponse = {
+    data: finalData || null,
+    isError: finalIsError,
+    hints,
+    meta: finalMeta,
+  };
+
+  // Return response without isError field in the JSON structure
+  const responseForJson = {
+    data: response.data,
+    meta: response.meta,
+    hints: response.hints,
   };
 
   return {
-    content: [{ type: 'text', text: wrapResponse(standardResponse) }],
-    isError: false,
+    content: [{ type: 'text', text: wrapResponse(responseForJson) }],
+    isError: finalIsError,
   };
 }
 

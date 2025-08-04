@@ -69,23 +69,16 @@ export function registerFetchGitHubFileContentTool(
       async (args: {
         queries: FileContentQuery[];
       }): Promise<CallToolResult> => {
-        if (
+        const emptyQueries =
           !args.queries ||
           !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
-            hasResults: false,
-            errorMessage: 'Queries array is required and cannot be empty',
-            customHints: [
-              'Provide at least one file content query with owner, repo, and filePath',
-            ],
-          });
+          args.queries.length === 0;
 
+        if (emptyQueries) {
           return createResult({
             isError: true,
-            error: 'Queries array is required and cannot be empty',
-            hints,
+            data: { error: 'Queries array is required and cannot be empty' },
+            hints: ['Provide at least one file content query'],
           });
         }
 
@@ -100,7 +93,7 @@ export function registerFetchGitHubFileContentTool(
 
           return createResult({
             isError: true,
-            error: 'Maximum 10 file queries allowed per request',
+            data: { error: 'Maximum 10 file queries allowed per request' },
             hints,
           });
         }

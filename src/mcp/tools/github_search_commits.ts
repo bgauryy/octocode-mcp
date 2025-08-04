@@ -178,20 +178,18 @@ export function registerSearchGitHubCommitsTool(
 
           return createResult({
             data: {
-              data: {
-                total_count: result.total_count || 0,
-                incomplete_results: result.incomplete_results || false,
-                commits: result.commits || [],
-              },
-              meta: {
-                totalResults: result.commits?.length || 0,
-                totalAvailable: result.total_count || 0,
-                showingLimited:
-                  (result.total_count || 0) > (result.commits?.length || 0),
-                researchGoal: args.researchGoal,
-              },
-              hints,
+              total_count: result.total_count || 0,
+              incomplete_results: result.incomplete_results || false,
+              commits: result.commits || [],
             },
+            meta: {
+              totalResults: result.commits?.length || 0,
+              totalAvailable: result.total_count || 0,
+              showingLimited:
+                (result.total_count || 0) > (result.commits?.length || 0),
+              researchGoal: args.researchGoal,
+            },
+            hints,
           });
         } catch (error) {
           const errorMessage =

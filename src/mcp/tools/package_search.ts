@@ -153,19 +153,17 @@ export function registerPackageSearchTool(
 
           return createResult({
             data: {
-              data: {
-                ...searchResult,
-                apiSource: true,
-              },
-              meta: {
-                totalPackages,
-                ecosystems: responseContext.foundEcosystems,
-                repositoryCount: responseContext.repositoryLinks.length,
-                hasMetadata: responseContext.dataQuality.hasMetadata,
-                researchGoal: args.researchGoal,
-              },
-              hints,
+              ...searchResult,
+              apiSource: true,
             },
+            meta: {
+              totalPackages,
+              ecosystems: responseContext.foundEcosystems,
+              repositoryCount: responseContext.repositoryLinks.length,
+              hasMetadata: responseContext.dataQuality.hasMetadata,
+              researchGoal: args.researchGoal,
+            },
+            hints,
           });
         } catch (error) {
           const errorMessage =

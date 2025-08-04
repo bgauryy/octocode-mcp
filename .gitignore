@@ -12,3 +12,4 @@ coverage
 
 .env
 .cursor
+.context

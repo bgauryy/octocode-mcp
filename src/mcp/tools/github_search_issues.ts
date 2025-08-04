@@ -123,16 +123,14 @@ export function registerSearchGitHubIssuesTool(
 
           return createResult({
             data: {
-              data: {
-                ...result,
-                apiSource: true,
-              },
-              meta: {
-                totalResults: result.issues?.length || 0,
-                researchGoal: args.researchGoal,
-              },
-              hints,
+              ...result,
+              apiSource: true,
             },
+            meta: {
+              totalResults: result.issues?.length || 0,
+              researchGoal: args.researchGoal,
+            },
+            hints,
           });
         } catch (error) {
           const errorMessage =
