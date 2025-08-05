@@ -1,5 +1,4 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import z from 'zod';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
@@ -7,7 +6,7 @@ import { fetchGitHubFileContentAPI } from '../../utils/githubAPI';
 import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
 import {
   FileContentQuery,
-  FileContentQuerySchema,
+  FileContentBulkQuerySchema,
   FileContentQueryResult,
 } from './scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
@@ -44,15 +43,7 @@ export function registerFetchGitHubFileContentTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
       description: DESCRIPTION,
-      inputSchema: {
-        queries: z
-          .array(FileContentQuerySchema)
-          .min(1)
-          .max(10)
-          .describe(
-            'Array of up to 10 file content queries for parallel execution'
-          ),
-      },
+      inputSchema: FileContentBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub File Content Fetch',
         readOnlyHint: true,

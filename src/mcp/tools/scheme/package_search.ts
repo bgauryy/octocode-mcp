@@ -1,4 +1,4 @@
-import z from 'zod';
+import { z } from 'zod';
 import { ResearchGoalEnum } from '../utils/toolConstants';
 
 // NPM package field enum for validation
