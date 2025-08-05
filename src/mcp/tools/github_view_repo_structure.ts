@@ -41,7 +41,7 @@ BEST PRACTICES:
 
 export function registerViewGitHubRepoStructureTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
@@ -116,7 +116,7 @@ export function registerViewGitHubRepoStructureTool(
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
   verbose: boolean = false,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-structure');
 

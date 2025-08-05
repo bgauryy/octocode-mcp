@@ -324,22 +324,13 @@ export const NumericRangeSchema = z.object({
     ])
     .optional()
     .describe('Star count filter. Format: ">N", "<N", "N..M", or exact number'),
-
-  forks: z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-    ])
-    .optional()
-    .describe('Fork count filter. Format: ">N", "<N", "N..M", or exact number'),
 });
 
 /**
  * Common boolean state filters
  */
 export const StateFilterSchema = z.object({
-  archived: z.boolean().optional().describe('Repository archived state'),
-
+  // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
   locked: z.boolean().optional().describe('Conversation locked status'),
 
   draft: z.boolean().optional().describe('Draft state filter'),

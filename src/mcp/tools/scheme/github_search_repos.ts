@@ -41,10 +41,6 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     .union([z.number().min(0), z.string(), z.null()])
     .optional()
     .describe('Star count filter'),
-  forks: z
-    .union([z.number().min(0), z.string(), z.null()])
-    .optional()
-    .describe('Fork count filter'),
   size: z
     .string()
     .nullable()
@@ -88,12 +84,7 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     .describe('Number of topics filter'),
 
   // Repository characteristics
-  archived: z.boolean().optional().describe('Archive status filter'),
-  'include-forks': z
-    .enum(['false', 'true', 'only'])
-    .nullable()
-    .optional()
-    .describe('Fork inclusion'),
+  // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
   visibility: z
     .enum(['public', 'private', 'internal'])
     .nullable()

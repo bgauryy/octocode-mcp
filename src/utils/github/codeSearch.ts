@@ -13,7 +13,7 @@ import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
 
 /**
- * Search GitHub code using Octokit API with proper TypeScript types
+ * Search GitHub code using Octokit API with optimized performance
  */
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
@@ -34,13 +34,18 @@ export async function searchGitHubCodeAPI(
       };
     }
 
+    // Optimized search parameters with better defaults
     const searchParams: SearchCodeParameters = {
       q: query,
       per_page: Math.min(enhancedParams.limit || 30, 100),
       page: 1,
+      // Always request text matches for better context
+      headers: {
+        Accept: 'application/vnd.github.v3.text-match+json',
+      },
     };
 
-    // NEW: Add sorting parameters for better relevance
+    // Add sorting parameters for better relevance
     if (enhancedParams.sort && enhancedParams.sort !== 'best-match') {
       searchParams.sort = enhancedParams.sort;
     }
@@ -48,12 +53,9 @@ export async function searchGitHubCodeAPI(
       searchParams.order = enhancedParams.order;
     }
 
-    const result = await octokit.rest.search.code({
-      ...searchParams,
-      headers: {
-        Accept: 'application/vnd.github.v3.text-match+json',
-      },
-    });
+    // Direct API call with optimized parameters
+    const result = await octokit.rest.search.code(searchParams);
+
     const optimizedResult = await convertCodeSearchResult(
       result,
       enhancedParams.minify !== false,

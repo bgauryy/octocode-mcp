@@ -59,7 +59,7 @@ interface GitHubCodeAggregatedContext {
 
 export function registerGitHubSearchCodeTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
@@ -138,7 +138,7 @@ export function registerGitHubSearchCodeTool(
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
 

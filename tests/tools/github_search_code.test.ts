@@ -48,63 +48,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       }
     });
 
-    it('should validate fork qualifier with all valid values', () => {
-      const forkValues = ['true', 'false', 'only'] as const;
-
-      for (const forkValue of forkValues) {
-        const query = {
-          queryTerms: ['function'],
-          fork: forkValue,
-          researchGoal: 'code_analysis' as const,
-        };
-
-        const result = GitHubCodeSearchQuerySchema.safeParse(query);
-        expect(result.success).toBe(true);
-        if (result.success) {
-          expect(result.data.fork).toBe(forkValue);
-        }
-      }
-    });
-
-    it('should reject invalid fork qualifier values', () => {
-      const invalidForkQuery = {
-        queryTerms: ['function'],
-        fork: 'invalid',
-        researchGoal: 'code_analysis' as const,
-      };
-
-      const result = GitHubCodeSearchQuerySchema.safeParse(invalidForkQuery);
-      expect(result.success).toBe(false);
-    });
-
-    it('should validate archived qualifier', () => {
-      const archivedTrueQuery = {
-        queryTerms: ['function'],
-        archived: true,
-        researchGoal: 'code_analysis' as const,
-      };
-
-      const archivedFalseQuery = {
-        queryTerms: ['function'],
-        archived: false,
-        researchGoal: 'code_analysis' as const,
-      };
-
-      const trueResult =
-        GitHubCodeSearchQuerySchema.safeParse(archivedTrueQuery);
-      expect(trueResult.success).toBe(true);
-      if (trueResult.success) {
-        expect(trueResult.data.archived).toBe(true);
-      }
-
-      const falseResult =
-        GitHubCodeSearchQuerySchema.safeParse(archivedFalseQuery);
-      expect(falseResult.success).toBe(true);
-      if (falseResult.success) {
-        expect(falseResult.data.archived).toBe(false);
-      }
-    });
-
     it('should validate path qualifier', () => {
       const pathQuery = {
         queryTerms: ['function'],
@@ -129,8 +72,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         filename: 'App.js',
         extension: 'js',
         size: '>100',
-        fork: 'false',
-        archived: false,
         visibility: 'public',
         match: 'file',
         limit: 10,
@@ -147,8 +88,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         expect(result.data.filename).toBe('App.js');
         expect(result.data.extension).toBe('js');
         expect(result.data.size).toBe('>100');
-        expect(result.data.fork).toBe('false');
-        expect(result.data.archived).toBe(false);
         expect(result.data.visibility).toBe('public');
         expect(result.data.match).toBe('file');
         expect(result.data.limit).toBe(10);
@@ -501,8 +440,6 @@ describe('Quality Boosting and Research Goals', () => {
       sort: 'best-match',
       order: 'desc',
       qualityBoost: true,
-      excludeArchived: true,
-      excludeForks: false,
       minify: true,
       sanitize: true,
     });
@@ -510,7 +447,7 @@ describe('Quality Boosting and Research Goals', () => {
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/archived:false/);
+    expect(callArgs.q).toMatch(/is:not-archived/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
     expect(callArgs.order).toBe('desc');
   });
@@ -533,8 +470,6 @@ describe('Quality Boosting and Research Goals', () => {
       sort: 'best-match',
       order: 'desc',
       qualityBoost: true,
-      excludeArchived: true,
-      excludeForks: false,
       minify: true,
       sanitize: true,
     });
@@ -543,7 +478,7 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
-    expect(callArgs.q).toMatch(/archived:false/);
+    expect(callArgs.q).toMatch(/is:not-archived/);
   });
 
   it('should apply code_review research goal correctly', async () => {
@@ -564,8 +499,6 @@ describe('Quality Boosting and Research Goals', () => {
       sort: 'best-match',
       order: 'desc',
       qualityBoost: true,
-      excludeArchived: true,
-      excludeForks: false,
       minify: true,
       sanitize: true,
     });
@@ -574,7 +507,7 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
-    expect(callArgs.q).toMatch(/archived:false/);
+    expect(callArgs.q).toMatch(/is:not-archived/);
   });
 
   it('should disable quality boost when explicitly set to false', async () => {
@@ -594,8 +527,6 @@ describe('Quality Boosting and Research Goals', () => {
       limit: 5,
       sort: 'best-match',
       order: 'desc',
-      excludeArchived: true,
-      excludeForks: false,
       minify: true,
       sanitize: true,
     });
@@ -620,10 +551,7 @@ describe('Quality Boosting and Research Goals', () => {
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
       stars: '>1000',
-      forks: '>100',
       pushed: '>2024-01-01',
-      excludeForks: true,
-      excludeArchived: true,
       limit: 5,
       sort: 'best-match',
       order: 'desc',
@@ -635,9 +563,8 @@ describe('Quality Boosting and Research Goals', () => {
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>1000/);
-    expect(callArgs.q).toMatch(/forks:>100/);
     expect(callArgs.q).toMatch(/pushed:>2024-01-01/);
-    expect(callArgs.q).toMatch(/fork:false/);
-    expect(callArgs.q).toMatch(/archived:false/);
+    expect(callArgs.q).toMatch(/is:not-fork/);
+    expect(callArgs.q).toMatch(/is:not-archived/);
   });
 });

@@ -30,7 +30,7 @@ BEST PRACTICES:
 
 export function registerSearchGitHubCommitsTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_COMMITS,

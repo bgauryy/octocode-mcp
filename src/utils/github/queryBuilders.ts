@@ -44,14 +44,6 @@ export function applyQualityBoost(
     enhancedParams.stars = '>10';
   }
 
-  if (
-    !enhancedParams.excludeArchived &&
-    enhancedParams.archived === undefined
-  ) {
-    // Exclude archived repositories by default for better relevance
-    enhancedParams.excludeArchived = true;
-  }
-
   if (!enhancedParams.pushed && !enhancedParams.owner && !enhancedParams.repo) {
     // For broad searches, require recent activity
     enhancedParams.pushed = '>2022-01-01';
@@ -194,10 +186,6 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
     queryParts.push(`stars:${params.stars}`);
   }
 
-  if (params.forks) {
-    queryParts.push(`forks:${params.forks}`);
-  }
-
   if (params.pushed) {
     queryParts.push(`pushed:${params.pushed}`);
   }
@@ -206,19 +194,9 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
     queryParts.push(`created:${params.created}`);
   }
 
-  // Fork handling - enhanced with quality boost
-  if (params.excludeForks) {
-    queryParts.push('fork:false');
-  } else if (params.fork) {
-    queryParts.push(`fork:${params.fork}`);
-  }
-
-  // Archived handling - enhanced with quality boost
-  if (params.excludeArchived) {
-    queryParts.push('archived:false');
-  } else if (params.archived !== undefined) {
-    queryParts.push(`archived:${params.archived}`);
-  }
+  // Always exclude forks and archived repositories for better quality results
+  queryParts.push('is:not-fork');
+  queryParts.push('is:not-archived');
 
   if (params.match) {
     const matches = Array.isArray(params.match) ? params.match : [params.match];
@@ -265,10 +243,6 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
     queryParts.push(`stars:${params.stars}`);
   }
 
-  if (params.forks) {
-    queryParts.push(`forks:${params.forks}`);
-  }
-
   if (params.size) {
     queryParts.push(`size:${params.size}`);
   }
@@ -281,19 +255,9 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
     queryParts.push(`pushed:${params.updated}`);
   }
 
-  if (params.archived !== undefined) {
-    queryParts.push(`archived:${params.archived}`);
-  }
-
-  if (params['include-forks']) {
-    if (params['include-forks'] === 'only') {
-      queryParts.push('fork:only');
-    } else if (params['include-forks'] === 'true') {
-      queryParts.push('fork:true');
-    } else {
-      queryParts.push('fork:false');
-    }
-  }
+  // Always exclude archived repositories and forks for better quality results
+  queryParts.push('is:not-archived');
+  queryParts.push('is:not-fork');
 
   if (params.license) {
     const licenses = Array.isArray(params.license)
@@ -498,10 +462,8 @@ export function buildPullRequestSearchQuery(
     });
   }
 
-  // Archived filter
-  if (params.archived !== undefined) {
-    queryParts.push(params.archived ? 'archived:true' : 'archived:false');
-  }
+  // Always exclude archived repositories and forks for better quality results
+  queryParts.push('archived:false');
 
   return queryParts.join(' ').trim();
 }
@@ -629,10 +591,8 @@ export function buildIssueSearchQuery(
     queryParts.push(`app:${params.app}`);
   }
 
-  // Archived filter
-  if (params.archived !== undefined) {
-    queryParts.push(params.archived ? 'is:archived' : '-is:archived');
-  }
+  // Always exclude archived repositories for better quality results
+  queryParts.push('-is:archived');
 
   return queryParts.join(' ').trim();
 }
@@ -753,7 +713,7 @@ export function shouldUseSearchForPRs(
     params['no-project'] !== undefined ||
     params.language !== undefined ||
     params.visibility !== undefined ||
-    params.archived !== undefined ||
+    // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
     params.app !== undefined ||
     params.created !== undefined ||
     params.updated !== undefined ||

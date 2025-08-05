@@ -32,7 +32,7 @@ async function getToken(): Promise<string> {
 }
 
 const SERVER_CONFIG: Implementation = {
-  name: 'octocode-mcp',
+  name: 'octocode',
   version,
   description: PROMPT_SYSTEM_PROMPT,
 };
@@ -102,11 +102,7 @@ async function registerAllTools(server: McpServer) {
 
   for (const tool of toolRegistrations) {
     try {
-      if ('opts' in tool && tool.opts) {
-        tool.fn(server, tool.opts);
-      } else {
-        tool.fn(server);
-      }
+      tool.fn(server, tool.opts);
       successCount++;
     } catch (error) {
       // Log the error but continue with other tools

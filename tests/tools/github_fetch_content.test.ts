@@ -18,7 +18,10 @@ describe('GitHub Fetch Content Tool', () => {
   beforeEach(() => {
     mockServer = createMockMcpServer();
     vi.clearAllMocks();
-    registerFetchGitHubFileContentTool(mockServer.server);
+    registerFetchGitHubFileContentTool(mockServer.server, {
+      ghToken: 'test-token',
+      npmEnabled: false,
+    });
   });
 
   afterEach(() => {

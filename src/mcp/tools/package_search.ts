@@ -32,7 +32,7 @@ BEST PRACTICES:
 
 export function registerPackageSearchTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.PACKAGE_SEARCH,

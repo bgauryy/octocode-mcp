@@ -554,7 +554,7 @@ export interface GitHubPullRequestsSearchParams {
   language?: string;
   visibility?: RepositoryVisibility | RepositoryVisibility[];
   app?: string;
-  archived?: boolean;
+  // archived parameter removed - always optimized to exclude archived repositories for better quality
   match?: ('title' | 'body' | 'comments')[];
   limit?: number;
   getCommitData?: boolean;
@@ -600,7 +600,7 @@ export interface GitHubIssuesSearchParams {
   language?: string;
   visibility?: RepositoryVisibility;
   app?: string;
-  archived?: boolean;
+  // archived parameter removed - always optimized to exclude archived repositories for better quality
   match?: 'title' | 'body' | 'comments';
   limit?: number;
   'include-prs'?: boolean;

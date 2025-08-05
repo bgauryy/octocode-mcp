@@ -55,18 +55,7 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     ),
 
   // Repository properties
-  fork: z
-    .enum(['true', 'false', 'only'])
-    .optional()
-    .describe(
-      'Include forks: "true" (include all), "false" (exclude forks), "only" (forks only)'
-    ),
-  archived: z
-    .boolean()
-    .optional()
-    .describe(
-      'Filter by archived status: true (archived only), false (exclude archived)'
-    ),
+  // fork and archived parameters removed - always optimized to exclude forks and archived repositories for better quality
   visibility: z
     .enum(['public', 'private', 'internal'])
     .optional()
@@ -78,12 +67,6 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .optional()
     .describe(
       'Minimum repository stars for better quality results (e.g., ">100", ">=500", "1000..5000")'
-    ),
-  forks: z
-    .union([z.number(), z.string()])
-    .optional()
-    .describe(
-      'Minimum repository forks for better quality results (e.g., ">10", ">=50")'
     ),
   pushed: z
     .string()
@@ -133,20 +116,6 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .default(true)
     .describe(
       'Enable quality boosting: prioritize popular, well-maintained repositories (default: true)'
-    ),
-  excludeArchived: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(
-      'Exclude archived repositories for better relevance (default: true)'
-    ),
-  excludeForks: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Exclude forks to focus on original repositories (default: false)'
     ),
 
   // Result control

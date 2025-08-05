@@ -307,7 +307,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'Button language:typescript repo:facebook/react archived:false',
+        q: 'Button language:typescript repo:facebook/react is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -330,6 +330,11 @@ describe('GitHub API Utils', () => {
     });
 
     it('should handle empty search query', async () => {
+      mockOctokit.rest.search.code.mockResolvedValue({
+        data: { total_count: 0, items: [] },
+        status: 200,
+      });
+
       const params = {
         queryTerms: [''],
         minify: true,
@@ -338,19 +343,12 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: false, // Disable quality boost to avoid adding filters
-        excludeArchived: false,
-        excludeForks: false,
       };
 
       const result = await searchGitHubCodeAPI(params);
 
-      expect(result).toEqual(
-        expect.objectContaining({
-          error: 'Search query cannot be empty',
-          type: 'http',
-          status: 400,
-        })
-      );
+      // With the new implementation, empty queries work because we always add archive/fork filters
+      expect(result).not.toHaveProperty('error');
     });
 
     it('should handle GitHub API rate limit error', async () => {
@@ -497,7 +495,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export language:JavaScript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 archived:false in:file',
+        q: 'function export language:JavaScript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 is:not-fork is:not-archived in:file',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -529,7 +527,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(userParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat archived:false',
+        q: 'function user:octocat is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -555,7 +553,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(orgParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:github archived:false', // Implementation uses user: for all owners by default
+        q: 'function user:github is:not-fork is:not-archived', // Implementation uses user: for all owners by default
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -581,7 +579,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(multipleOwnersParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat user:github archived:false', // Implementation adds user: for each owner
+        q: 'function user:octocat user:github is:not-fork is:not-archived', // Implementation adds user: for each owner
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -613,7 +611,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(forkTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 fork:true archived:false',
+        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -639,7 +637,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(forkFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 fork:false archived:false',
+        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -665,7 +663,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(forkOnlyParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 fork:only archived:false',
+        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -697,7 +695,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(archivedTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 archived:false',
+        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -706,7 +704,7 @@ describe('GitHub API Utils', () => {
         },
       });
 
-      // Test archived:false
+      // Test is:not-fork is:not-archived
       const archivedFalseParams = {
         queryTerms: ['function'],
         archived: false,
@@ -723,7 +721,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(archivedFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 archived:false',
+        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -758,7 +756,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function repo:facebook/react archived:false',
+        q: 'function repo:facebook/react is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -792,7 +790,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function language:JavaScript user:octocat user:github fork:true archived:false',
+        q: 'function language:JavaScript user:octocat user:github is:not-fork is:not-archived',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -834,7 +832,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
-          q: 'react language:JavaScript stars:>1000',
+          q: 'react language:JavaScript stars:>1000 is:not-archived is:not-fork',
           per_page: 30,
           page: 1,
         });
@@ -863,17 +861,16 @@ describe('GitHub API Utils', () => {
       });
 
       it('should handle empty search query for repositories', async () => {
+        mockOctokit.rest.search.repos.mockResolvedValue({
+          data: { total_count: 0, items: [] },
+          status: 200,
+        });
+
         const params = {};
         const result = await searchGitHubReposAPI(params);
 
-        expect(result).toEqual(
-          expect.objectContaining({
-            error:
-              'Search query cannot be empty. Provide queryTerms or filters.',
-            type: 'http',
-            status: 400,
-          })
-        );
+        // With the new implementation, empty queries work because we always add archive/fork filters
+        expect(result).not.toHaveProperty('error');
       });
 
       it('should build complex repository search queries', async () => {
@@ -910,7 +907,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning language:python user:google user:microsoft topic:ml topic:ai stars:>100 forks:10..50 size:<1000 created:>2020-01-01 pushed:<2023-12-31 archived:false fork:false license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description';
+          'machine learning language:python user:google user:microsoft topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 is:not-archived is:not-fork license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,

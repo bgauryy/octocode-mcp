@@ -61,7 +61,7 @@ interface AggregatedRepoContext {
 
 export function registerSearchGitHubReposTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
@@ -133,7 +133,7 @@ export function registerSearchGitHubReposTool(
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
   verbose: boolean = false,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-search');
 

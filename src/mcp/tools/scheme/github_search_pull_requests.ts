@@ -113,7 +113,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('CI checks status'),
 
-  archived: z.boolean().optional().describe('Repository archived state'),
+  // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
 
   language: z.string().optional().describe('Programming language filter'),
 

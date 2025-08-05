@@ -32,7 +32,7 @@ BEST PRACTICES:
 
 export function registerSearchGitHubPullRequestsTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
@@ -178,7 +178,7 @@ export function registerSearchGitHubPullRequestsTool(
 async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
   _verbose: boolean = false,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ): Promise<CallToolResult> {
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {

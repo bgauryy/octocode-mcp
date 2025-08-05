@@ -38,7 +38,7 @@ BEST PRACTICES:
 
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
-  opts: ToolOptions = { npmEnabled: false }
+  opts: ToolOptions
 ) {
   server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,

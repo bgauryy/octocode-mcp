@@ -103,6 +103,7 @@ export function getOctokit(
   token?: string
 ): InstanceType<typeof OctokitWithThrottling> {
   const useToken = token || defaultToken || '';
+
   const cacheKey = useToken || 'no-token';
 
   if (!octokitInstances.has(cacheKey)) {
