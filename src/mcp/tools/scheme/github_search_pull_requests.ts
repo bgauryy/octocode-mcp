@@ -13,6 +13,16 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Repository name - single repo or array'),
 
+  // New parameter for fetching specific PR by number
+  prNumber: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Specific PR number to fetch. When provided with owner/repo, fetches the exact PR instead of searching'
+    ),
+
   state: z
     .enum(['open', 'closed'])
     .optional()
@@ -135,6 +145,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
       'interactions',
       'created',
       'updated',
+      'best-match',
     ])
     .optional()
     .describe('Sort fetched results'),

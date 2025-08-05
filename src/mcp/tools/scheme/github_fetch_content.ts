@@ -82,10 +82,6 @@ export interface GitHubFileContentResponse {
   endLine?: number;
   totalLines: number; // Always returned - total lines in the file
   isPartial?: boolean;
-  // Original request parameters for LLM context
-  requestedStartLine?: number;
-  requestedEndLine?: number;
-  requestedContextLines?: number;
   minified?: boolean;
   minificationFailed?: boolean;
   minificationType?:

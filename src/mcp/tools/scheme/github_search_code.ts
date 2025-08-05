@@ -72,12 +72,81 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .optional()
     .describe('Repository visibility'),
 
-  // Search scope
+  // NEW: Repository quality filters for better relevance
+  stars: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe(
+      'Minimum repository stars for better quality results (e.g., ">100", ">=500", "1000..5000")'
+    ),
+  forks: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe(
+      'Minimum repository forks for better quality results (e.g., ">10", ">=50")'
+    ),
+  pushed: z
+    .string()
+    .regex(
+      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+    )
+    .optional()
+    .describe(
+      'Last pushed date filter for active repositories (e.g., ">2023-01-01", ">=2024-01-01")'
+    ),
+  created: z
+    .string()
+    .regex(
+      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+    )
+    .optional()
+    .describe(
+      'Repository creation date filter (e.g., ">2020-01-01", ">=2018-01-01")'
+    ),
+
+  // NEW: Search scope and relevance controls
   match: z
     .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
     .optional()
     .describe(
       'Search scope: "file" (content search - default), "path" (filename search)'
+    ),
+
+  // NEW: Sort and order for better relevance
+  sort: z
+    .enum(['indexed', 'best-match'])
+    .optional()
+    .default('best-match')
+    .describe(
+      'Sort results: "best-match" (relevance - default), "indexed" (recently indexed)'
+    ),
+  order: z
+    .enum(['asc', 'desc'])
+    .optional()
+    .default('desc')
+    .describe('Sort order: "desc" (default), "asc"'),
+
+  // NEW: Quality boost parameters
+  qualityBoost: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Enable quality boosting: prioritize popular, well-maintained repositories (default: true)'
+    ),
+  excludeArchived: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(
+      'Exclude archived repositories for better relevance (default: true)'
+    ),
+  excludeForks: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Exclude forks to focus on original repositories (default: false)'
     ),
 
   // Result control

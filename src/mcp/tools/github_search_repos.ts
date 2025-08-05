@@ -166,15 +166,17 @@ async function searchMultipleGitHubRepos(
         }
 
         // Extract repository data
-        const repositories = apiResult.repositories || [];
+        const repositories = apiResult.data.repositories || [];
         const hasResults =
-          repositories.length > 0 && (apiResult.total_count || 0) > 0;
+          repositories.length > 0 && (apiResult.data.total_count || 0) > 0;
+
+        const typedRepositories = repositories as unknown as GitHubRepository[];
 
         return {
           queryId: query.id!,
           data: {
-            repositories,
-            total_count: apiResult.total_count,
+            repositories: typedRepositories,
+            total_count: apiResult.data.total_count,
           },
           metadata: {
             // Only include queryArgs for no-result cases

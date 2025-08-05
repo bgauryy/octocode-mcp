@@ -112,10 +112,13 @@ async function fetchMultipleGitHubFileContents(
     try {
       const apiResult = await fetchGitHubFileContentAPI(query, opts.ghToken);
 
+      // Extract the actual result from the GitHubAPIResponse wrapper
+      const result = 'data' in apiResult ? apiResult.data : apiResult;
+
       results.push({
         queryId: query.id,
         researchGoal: query.researchGoal,
-        result: apiResult,
+        result: result,
       });
     } catch (error) {
       const errorMessage =

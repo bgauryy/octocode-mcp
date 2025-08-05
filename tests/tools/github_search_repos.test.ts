@@ -531,19 +531,22 @@ describe('GitHub Search Repositories Tool', () => {
   // Helper function to create mock repository response
   function createMockRepositoryResponse(repos: any[]) {
     return {
-      total_count: repos.length,
-      repositories: repos.map(repo => ({
-        name: repo.name || 'test-repo',
-        full_name: repo.fullName || `owner/${repo.name || 'test-repo'}`,
-        stargazers_count: repo.stars || 0,
-        language: repo.language || 'JavaScript',
-        description: repo.description || 'Test repository',
-        forks_count: repo.forks || 0,
-        updated_at: repo.updatedAt || '2023-12-01T10:00:00Z',
-        owner: repo.owner || { login: 'owner' },
-        html_url:
-          repo.url || `https://github.com/owner/${repo.name || 'test-repo'}`,
-      })),
+      data: {
+        total_count: repos.length,
+        repositories: repos.map(repo => ({
+          name: repo.name || 'test-repo',
+          full_name: repo.fullName || `owner/${repo.name || 'test-repo'}`,
+          stargazers_count: repo.stars || 0,
+          language: repo.language || 'JavaScript',
+          description: repo.description || 'Test repository',
+          forks_count: repo.forks || 0,
+          updated_at: repo.updatedAt || '2023-12-01T10:00:00Z',
+          owner: repo.owner || { login: 'owner' },
+          html_url:
+            repo.url || `https://github.com/owner/${repo.name || 'test-repo'}`,
+        })),
+      },
+      status: 200,
     };
   }
 });

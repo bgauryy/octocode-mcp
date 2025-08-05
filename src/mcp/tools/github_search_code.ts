@@ -22,40 +22,19 @@ import {
   generateResearchSpecificHints,
   TOOL_SUGGESTION_CONFIGS,
 } from './utils/hints_consolidated';
+const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
-const DESCRIPTION = `Search code across GitHub repositories with semantic and pattern matching for comprehensive research.
+SEARCH STRATEGY:
+SEMANTIC: Natural language terms describing functionality, concepts, business logic
+TECHNICAL: Actual code terms, function names, class names, file patterns
 
-Primary research tool for discovering code patterns, implementations, and documentation.
-Supports semantic search (concept-based) and pattern search (exact matches) with progressive
-refinement capabilities. Use this tool to start research, then dive deeper with other tools.
+Use bulk queries from different angles. Start narrow, broaden if needed.
+Workflow:
+   Search → Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
 
-RESEARCH PHASES:
-- **Discovery**: Broad semantic searches to understand landscape
-- **Analysis**: Pattern-based searches for specific implementations
-- **Validation**: Cross-reference findings with other tools
+Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives
 
-FEATURES:
-- Semantic search: Find code by concepts and functionality
-- Pattern matching: Exact code pattern and syntax search
-- Progressive refinement: Start broad, then narrow focus
-- Bulk operations: Execute up to 5 search queries simultaneously
-- Content extraction: Returns actual code snippets with context
-- Research optimization: Tailored results based on research goals
-
-STRATEGIC USAGE:
-- **Discovery Phase**: Start with broad semantic searches (queryTerms)
-- **Analysis Phase**: Use exact patterns (exactQuery) for specific implementations
-- **Validation Phase**: Cross-reference with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} for complete context
-- **Navigation**: Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to understand project organization
-- **Bulk Strategy**: Leverage multiple queries for comprehensive coverage
-
-BEST PRACTICES:
-- Start with broad semantic searches, then refine with specific patterns
-- Use queryTerms for concept search, exactQuery for precise patterns
-- Combine with ${TOOL_NAMES.GITHUB_FETCH_CONTENT} to get complete file context
-- Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to understand project organization
-- Leverage bulk operations for comprehensive coverage of research topics
-- Follow hints for optimal tool chaining and deeper research paths`;
+For detailed search, use bulk queries from different angles and filters.`;
 
 interface GitHubCodeAggregatedContext {
   totalQueries: number;
@@ -188,35 +167,35 @@ async function searchMultipleGitHubCode(
 
         // Extract repository context
         const repository =
-          apiResult.repository?.name ||
-          (apiResult.items.length > 0
-            ? apiResult.items[0].repository.nameWithOwner
+          apiResult.data.repository?.name ||
+          (apiResult.data.items.length > 0
+            ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
 
         // Count total matches across all files
-        const totalMatches = apiResult.items.reduce(
+        const totalMatches = apiResult.data.items.reduce(
           (sum, item) => sum + item.matches.length,
           0
         );
 
         // Check if there are no results
-        const hasNoResults = apiResult.items.length === 0;
+        const hasNoResults = apiResult.data.items.length === 0;
 
         const result = {
           queryId: query.id!,
           data: {
             repository,
-            files: apiResult.items.map(item => ({
+            files: apiResult.data.items.map(item => ({
               path: item.path,
               // text_matches contain actual file content processed through the same
               // content optimization pipeline as file fetching (sanitization, minification)
               text_matches: item.matches.map(match => match.context),
             })),
-            totalCount: apiResult.total_count,
+            totalCount: apiResult.data.total_count,
           },
           metadata: {
             researchGoal: query.researchGoal || 'discovery',
-            resultCount: apiResult.items.length,
+            resultCount: apiResult.data.items.length,
             hasMatches: totalMatches > 0,
             repositories: repository ? [repository] : [],
           },

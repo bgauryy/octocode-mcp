@@ -279,14 +279,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'Button language:typescript repo:facebook/react',
+        q: 'Button language:typescript repo:facebook/react archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -296,18 +302,26 @@ describe('GitHub API Utils', () => {
       const result = await searchGitHubCodeAPI(params);
       expect(result).toEqual(
         expect.objectContaining({
-          total_count: 1,
-          items: expect.any(Array),
+          data: expect.objectContaining({
+            total_count: 1,
+            items: expect.any(Array),
+          }),
+          status: 200,
         })
       );
     });
 
     it('should handle empty search query', async () => {
       const params = {
-        queryTerms: [],
+        queryTerms: [''],
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: false, // Disable quality boost to avoid adding filters
+        excludeArchived: false,
+        excludeForks: false,
       };
 
       const result = await searchGitHubCodeAPI(params);
@@ -340,6 +354,11 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -365,6 +384,11 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -390,6 +414,11 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -420,14 +449,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export language:javascript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 in:file',
+        q: 'function export language:JavaScript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 archived:false in:file',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -446,14 +481,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(userParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat',
+        q: 'function user:octocat archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -466,14 +507,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(orgParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:github', // Implementation uses user: for all owners by default
+        q: 'function user:github archived:false', // Implementation uses user: for all owners by default
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -486,14 +533,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(multipleOwnersParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat user:github', // Implementation adds user: for each owner
+        q: 'function user:octocat user:github archived:false', // Implementation adds user: for each owner
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -512,14 +565,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function fork:true',
+        q: 'function stars:>10 pushed:>2022-01-01 fork:true archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -532,14 +591,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function fork:false',
+        q: 'function stars:>10 pushed:>2022-01-01 fork:false archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -552,14 +617,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(forkOnlyParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function fork:only',
+        q: 'function stars:>10 pushed:>2022-01-01 fork:only archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -578,14 +649,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function archived:true',
+        q: 'function stars:>10 pushed:>2022-01-01 archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -598,14 +675,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function archived:false',
+        q: 'function stars:>10 pushed:>2022-01-01 archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -627,14 +710,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function repo:facebook/react',
+        q: 'function repo:facebook/react archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -655,14 +744,20 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
+        sort: 'best-match' as const,
+        order: 'desc' as const,
+        qualityBoost: true,
+        excludeArchived: true,
+        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function language:javascript user:octocat user:github fork:true archived:false',
+        q: 'function language:JavaScript user:octocat user:github fork:true archived:false',
         per_page: 30,
         page: 1,
+        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -701,7 +796,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
-          q: 'react language:javascript stars:>1000',
+          q: 'react language:JavaScript stars:>1000',
           per_page: 30,
           page: 1,
         });
@@ -709,20 +804,23 @@ describe('GitHub API Utils', () => {
         // The function should return the result directly, not call createResult
         const result = await searchGitHubReposAPI(params);
         expect(result).toEqual({
-          total_count: 1,
-          repositories: [
-            {
-              name: 'facebook/react',
-              stars: 50000,
-              description:
-                'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
-              language: 'JavaScript',
-              url: 'https://github.com/facebook/react',
-              forks: 15000,
-              updatedAt: '01/12/2023',
-              owner: 'facebook',
-            },
-          ],
+          data: {
+            total_count: 1,
+            repositories: [
+              {
+                name: 'facebook/react',
+                stars: 50000,
+                description:
+                  'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
+                language: 'JavaScript',
+                url: 'https://github.com/facebook/react',
+                forks: 15000,
+                updatedAt: '01/12/2023',
+                owner: 'facebook',
+              },
+            ],
+          },
+          status: 200,
         });
       });
 
@@ -840,11 +938,14 @@ describe('GitHub API Utils', () => {
 
         expect(result).toEqual(
           expect.objectContaining({
-            repositories: [
-              expect.objectContaining({
-                description: longDescription.substring(0, 150) + '...',
-              }),
-            ],
+            data: expect.objectContaining({
+              repositories: [
+                expect.objectContaining({
+                  description: longDescription.substring(0, 150) + '...',
+                }),
+              ],
+            }),
+            status: 200,
           })
         );
       });
