@@ -84,16 +84,6 @@ export const RESEARCH_GOAL_HINTS: Record<
       'Review version compatibility and breaking change information',
     ],
   },
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {
-    [ResearchGoal.DEBUGGING]: [
-      'Focus on recent issues with similar symptoms for current solutions',
-      'Look for closed issues with verified fixes and workarounds',
-    ],
-    [ResearchGoal.DISCOVERY]: [
-      'Explore feature requests and community discussions for insights',
-      'Understand common use cases and pain points from user feedback',
-    ],
-  },
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
     [ResearchGoal.CODE_GENERATION]: [
       'Examine recent PRs for modern implementation patterns',
@@ -213,12 +203,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         strategic: true,
       },
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'investigate problems and community discussions',
-        priority: 'medium',
-        strategic: true,
-      },
-      {
         tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         reason: 'examine recent updates and migration patterns',
         priority: 'medium',
@@ -226,11 +210,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
       },
     ],
     crossConnections: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'investigate known problems, roadmaps, and community health',
-        priority: 'medium',
-      },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         reason: 'examine recent improvements and pending features',
@@ -331,19 +310,8 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         priority: 'medium',
         strategic: true,
       },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'find discussions about patterns and problems',
-        priority: 'medium',
-        strategic: true,
-      },
     ],
     crossConnections: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'understand problems and discussions around this code',
-        priority: 'medium',
-      },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
         reason: 'trace evolution and recent changes to this code',
@@ -407,12 +375,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         priority: 'high',
         strategic: true,
       },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'find discussions about content-specific problems',
-        priority: 'low',
-        strategic: true,
-      },
     ],
     crossConnections: [
       {
@@ -455,12 +417,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     strategicAlternatives: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'understand challenges and community feedback',
-        priority: 'medium',
-        strategic: true,
-      },
-      {
         tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
         reason: 'analyze development patterns and activity',
         priority: 'low',
@@ -483,11 +439,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
         reason: 'find repositories first when commit search fails',
         priority: 'high',
       },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'find related discussions and reports',
-        priority: 'medium',
-      },
     ],
     nextSteps: [
       {
@@ -508,12 +459,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     strategicAlternatives: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'find motivation and context for changes',
-        priority: 'high',
-        strategic: true,
-      },
-      {
         tool: TOOL_NAMES.PACKAGE_SEARCH,
         reason: 'analyze dependency changes and updates',
         priority: 'medium',
@@ -522,11 +467,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
     crossConnections: [
       {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'find issues and discussions that motivated these changes',
-        priority: 'high',
-      },
-      {
         tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
         reason: 'understand context and impacted areas',
         priority: 'low',
@@ -534,76 +474,8 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
     ],
   },
 
-  [TOOL_NAMES.GITHUB_SEARCH_ISSUES]: {
-    fallbackTools: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        reason: 'find related solutions when issue search fails',
-        priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        reason: 'find repositories first when issue search fails',
-        priority: 'medium',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        reason: 'find content related to discussions',
-        priority: 'low',
-      },
-    ],
-    nextSteps: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        reason: 'find solutions or implementations for issues',
-        priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'find changes that addressed the issues',
-        priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        reason: 'find content related to the issues',
-        priority: 'medium',
-      },
-    ],
-    strategicAlternatives: [
-      {
-        tool: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        reason: 'examine specific content mentioned in discussions',
-        priority: 'medium',
-        strategic: true,
-      },
-      {
-        tool: TOOL_NAMES.PACKAGE_SEARCH,
-        reason: 'investigate dependencies mentioned in compatibility issues',
-        priority: 'low',
-        strategic: true,
-      },
-    ],
-    crossConnections: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        reason: 'trace commits that resolved or referenced these issues',
-        priority: 'high',
-      },
-      {
-        tool: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        reason: 'understand project context for reported issues',
-        priority: 'low',
-      },
-    ],
-  },
-
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: {
     fallbackTools: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'find related issues and original problem statements',
-        priority: 'high',
-      },
       {
         tool: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
         reason: 'find specific commit IDs for detailed viewing',
@@ -628,12 +500,6 @@ export const TOOL_RELATIONSHIPS: Record<ToolName, ToolRelationship> = {
       },
     ],
     strategicAlternatives: [
-      {
-        tool: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-        reason: 'understand original motivation and problem context',
-        priority: 'high',
-        strategic: true,
-      },
       {
         tool: TOOL_NAMES.PACKAGE_SEARCH,
         reason: 'analyze dependency updates or changes',

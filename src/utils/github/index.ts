@@ -9,19 +9,15 @@ export type {
   GitHubAPISuccess,
   Repository,
   SimpleUser,
-  Issue,
   PullRequest,
   Commit,
   CodeSearchResultItem,
   RepoSearchResultItem,
-  IssueSearchResultItem,
   CommitSearchResultItem,
   SearchCodeParameters,
   SearchCodeResponse,
   SearchReposParameters,
   SearchReposResponse,
-  SearchIssuesParameters,
-  SearchIssuesResponse,
   SearchCommitsParameters,
   SearchCommitsResponse,
   GetContentParameters,
@@ -38,9 +34,7 @@ export type {
   SortOrder,
   SearchCodeSort,
   SearchReposSort,
-  SearchIssuesSort,
   SearchCommitsSort,
-  IssueState,
   PullRequestState,
   RepositoryVisibility,
   ContentType,
@@ -57,7 +51,6 @@ export {
   buildCodeSearchQuery,
   buildRepoSearchQuery,
   buildPullRequestSearchQuery,
-  buildIssueSearchQuery,
   buildCommitSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
@@ -70,7 +63,6 @@ export {
   fetchGitHubPullRequestByNumberAPI,
   transformPullRequestItemFromREST,
 } from './pullRequestSearch';
-export { searchGitHubIssuesAPI } from './issueSearch';
 export { searchGitHubCommitsAPI } from './commitSearch';
 
 // File operations

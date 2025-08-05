@@ -13,7 +13,6 @@ vi.mock('../src/mcp/tools/github_search_commits.js');
 vi.mock('../src/mcp/tools/github_search_pull_requests.js');
 vi.mock('../src/mcp/tools/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
-vi.mock('../src/mcp/tools/github_search_issues.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
 
@@ -26,7 +25,6 @@ import { registerSearchGitHubCommitsTool } from '../src/mcp/tools/github_search_
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from '../src/mcp/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
-import { registerSearchGitHubIssuesTool } from '../src/mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import {
@@ -69,9 +67,6 @@ const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
 const mockRegisterPackageSearchTool = vi.mocked(registerPackageSearchTool);
 const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
   registerViewGitHubRepoStructureTool
-);
-const mockRegisterSearchGitHubIssuesTool = vi.mocked(
-  registerSearchGitHubIssuesTool
 );
 
 describe('Index Module', () => {
@@ -141,7 +136,6 @@ describe('Index Module', () => {
     mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
     mockRegisterPackageSearchTool.mockImplementation(() => {});
     mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -341,10 +335,6 @@ describe('Index Module', () => {
         mockMcpServer,
         expectedOptions
       );
-      expect(mockRegisterSearchGitHubIssuesTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
-      );
     });
 
     it('should continue registering tools even if some fail', async () => {
@@ -382,9 +372,6 @@ describe('Index Module', () => {
         throw new Error('Registration failed');
       });
       mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterSearchGitHubIssuesTool.mockImplementation(() => {
         throw new Error('Registration failed');
       });
 

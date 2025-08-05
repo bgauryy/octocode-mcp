@@ -10,7 +10,6 @@ import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commi
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from './mcp/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
-import { registerSearchGitHubIssuesTool } from './mcp/tools/github_search_issues.js';
 import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
 import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
@@ -89,11 +88,6 @@ async function registerAllTools(server: McpServer) {
     {
       name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       fn: registerSearchGitHubPullRequestsTool,
-      opts: toolOptions,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_ISSUES,
-      fn: registerSearchGitHubIssuesTool,
       opts: toolOptions,
     },
     {

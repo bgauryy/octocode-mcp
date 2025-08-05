@@ -94,7 +94,6 @@ import {
   checkGitHubAuthAPI,
   viewGitHubRepositoryStructureAPI,
   searchGitHubPullRequestsAPI,
-  searchGitHubIssuesAPI,
   searchGitHubCommitsAPI,
 } from '../../src/utils/githubAPI.js';
 
@@ -143,7 +142,6 @@ describe('GitHub API Utils', () => {
       expect(checkGitHubAuthAPI).toBeDefined();
       expect(viewGitHubRepositoryStructureAPI).toBeDefined();
       expect(searchGitHubPullRequestsAPI).toBeDefined();
-      expect(searchGitHubIssuesAPI).toBeDefined();
       expect(searchGitHubCommitsAPI).toBeDefined();
     });
   });
@@ -1553,185 +1551,6 @@ describe('GitHub API Utils', () => {
               sort: undefined,
               order: 'desc',
               per_page: 30,
-            });
-          });
-
-          // REMOVED: GitHub Issues API tests - redundant low-level API tests
-          describe.skip('GitHub Issues API', () => {
-            it('should search GitHub issues successfully', async () => {
-              const mockIssueResponse = {
-                data: {
-                  total_count: 1,
-                  items: [
-                    {
-                      number: 456,
-                      title: 'Bug report: Component not rendering',
-                      body: 'The component fails to render in certain conditions',
-                      state: 'open',
-                      user: {
-                        login: 'reporter',
-                        id: 12345,
-                        html_url: 'https://github.com/reporter',
-                        type: 'User',
-                      },
-                      repository_url:
-                        'https://api.github.com/repos/facebook/react',
-                      labels: [
-                        {
-                          name: 'bug',
-                          color: 'red',
-                          description: 'Bug report',
-                          id: 1,
-                        },
-                        {
-                          name: 'needs-triage',
-                          color: 'yellow',
-                          description: 'Needs triage',
-                          id: 2,
-                        },
-                      ],
-                      created_at: '2023-12-01T10:00:00Z',
-                      updated_at: '2023-12-02T15:30:00Z',
-                      html_url: 'https://github.com/facebook/react/issues/456',
-                      comments: 3,
-                      reactions: { total_count: 8 },
-                      locked: false,
-                      assignees: [
-                        {
-                          login: 'maintainer',
-                          id: 67890,
-                          html_url: 'https://github.com/maintainer',
-                          type: 'User',
-                        },
-                      ],
-                      author_association: 'CONTRIBUTOR',
-                      id: 789012,
-                    },
-                  ],
-                },
-              };
-
-              mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue(
-                mockIssueResponse
-              );
-
-              const params = {
-                query: 'bug report',
-                state: 'open' as const,
-                owner: 'facebook',
-                repo: 'react',
-              };
-
-              await searchGitHubIssuesAPI(params);
-
-              expect(
-                mockOctokit.rest.search.issuesAndPullRequests
-              ).toHaveBeenCalledWith({
-                q: 'bug report is:issue repo:facebook/react is:open',
-                sort: undefined,
-                order: 'desc',
-                per_page: 25,
-              });
-
-              expect(mockCreateResult).toHaveBeenCalledWith({
-                data: expect.objectContaining({
-                  results: expect.arrayContaining([
-                    expect.objectContaining({
-                      number: 456,
-                      title: 'Bug report: Component not rendering',
-                      state: 'open',
-                      author: expect.objectContaining({
-                        login: 'reporter',
-                        id: '12345',
-                        is_bot: false,
-                      }),
-                      repository: expect.objectContaining({
-                        nameWithOwner: 'facebook/react',
-                      }),
-                      labels: expect.arrayContaining([
-                        expect.objectContaining({
-                          name: 'bug',
-                          color: 'red',
-                        }),
-                      ]),
-                      commentsCount: 3,
-                      reactions: 8,
-                      isLocked: false,
-                      isPullRequest: false,
-                    }),
-                  ]),
-                  apiSource: true,
-                }),
-              });
-            });
-
-            it('should handle including pull requests in issue search', async () => {
-              mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
-                data: { total_count: 0, items: [] },
-              });
-
-              const params = {
-                query: 'enhancement',
-                'include-prs': true,
-              };
-
-              await searchGitHubIssuesAPI(params);
-
-              expect(
-                mockOctokit.rest.search.issuesAndPullRequests
-              ).toHaveBeenCalledWith({
-                q: 'enhancement',
-                sort: undefined,
-                order: 'desc',
-                per_page: 25,
-              });
-            });
-
-            it('should build complex issue search queries', async () => {
-              mockOctokit.rest.search.issuesAndPullRequests.mockResolvedValue({
-                data: { total_count: 0, items: [] },
-              });
-
-              const params = {
-                query: 'performance issue',
-                state: 'closed' as const,
-                author: 'contributor',
-                assignee: 'maintainer',
-                mentions: 'reviewer',
-                commenter: 'user',
-                involves: 'team-member',
-                created: '>2023-01-01',
-                updated: '<2023-12-31',
-                closed: '2023-06-01..2023-06-30',
-                comments: '>10',
-                reactions: '>=5',
-                interactions: '>50',
-                label: ['performance', 'needs-investigation'],
-                milestone: 'v3.0',
-                'team-mentions': 'performance-team',
-                'no-assignee': false,
-                'no-label': false,
-                'no-milestone': false,
-                'no-project': true,
-                language: 'javascript',
-                visibility: 'public' as const,
-                app: 'dependabot',
-                archived: false,
-              };
-
-              await searchGitHubIssuesAPI(params);
-
-              const expectedQuery =
-                'performance issue is:issue is:closed author:contributor assignee:maintainer mentions:reviewer commenter:user involves:team-member created:>2023-01-01 updated:<2023-12-31 closed:2023-06-01..2023-06-30 comments:>10 reactions:>=5 interactions:>50 label:"performance" label:"needs-investigation" milestone:"v3.0" team:performance-team no:project language:javascript is:public app:dependabot -is:archived';
-
-              expect(
-                mockOctokit.rest.search.issuesAndPullRequests
-              ).toHaveBeenCalledWith({
-                q: expectedQuery,
-                sort: undefined,
-                order: 'desc',
-                per_page: 25,
-              });
             });
           });
 

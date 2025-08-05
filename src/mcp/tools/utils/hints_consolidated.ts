@@ -75,8 +75,6 @@ const TOOL_NAVIGATION_HINTS = {
   VIEW_STRUCTURE:
     'Use github_view_repo_structure to explore repository organization',
   COMPARE_APPROACHES: 'Compare approaches across multiple repositories',
-  SEARCH_ISSUES:
-    'Search for related issues and pull requests for problem-solving approaches',
   EXAMINE_COMMITS:
     'Examine commit history to see how similar features were implemented',
   PACKAGE_SEARCH:
@@ -299,17 +297,6 @@ function generateToolNavigationHints(
       } else {
         hints.push('Try different package names or explore related packages');
         hints.push('Search for similar functionality in alternative packages');
-      }
-      break;
-
-    case TOOL_NAMES.GITHUB_SEARCH_ISSUES:
-      if (hasResults) {
-        hints.push(TOOL_NAVIGATION_HINTS.SEARCH_ISSUES);
-        hints.push('Look for solutions and workarounds in issue discussions');
-      } else {
-        hints.push(
-          'Try broader search terms or search in related repositories'
-        );
       }
       break;
 

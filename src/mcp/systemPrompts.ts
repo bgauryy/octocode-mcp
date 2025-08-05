@@ -52,7 +52,7 @@ RESEARCH FRAMEWORK:
 TOOL SELECTION STRATEGY:
 - **Primary Tools**: github_search_code, github_search_repos (for discovery)
 - **Secondary Tools**: github_fetch_content, github_view_repo_structure (for analysis)
-- **Validation Tools**: github_search_issues, github_search_commits (for verification)
+- **Validation Tools**: github_search_commits (for verification)
 - **Ecosystem Tools**: package_search (for context)
 
 REASONING APPROACH:
