@@ -33,18 +33,20 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
     .describe(
       `Ending line number (1-based) for partial file access. Use with startLine to fetch only specific sections and save tokens.`
     ),
-  contextLines: z
+  matchString: z
+    .string()
+    .optional()
+    .describe(
+      `Exact string to find in file. Returns surrounding context with matchStringContextLines. Perfect for locating specific code patterns found in search results text_matches. Content is processed through the same pipeline as code search for consistency.`
+    ),
+  matchStringContextLines: z
     .number()
     .int()
     .min(0)
     .max(50)
     .default(5)
-    .describe(`Context lines around target range. Default: 5.`),
-  matchString: z
-    .string()
-    .optional()
     .describe(
-      `Exact string to find in file. Returns surrounding context with contextLines. Perfect for locating specific code patterns found in search results text_matches. Content is processed through the same pipeline as code search for consistency.`
+      `Number of lines to include above and below a matched string. For example, 5 means 5 lines above + the matching line + 5 lines below. Only used when matchString is provided. Default: 5.`
     ),
   minified: z
     .boolean()
@@ -104,8 +106,8 @@ export interface GithubFetchRequestParams {
   filePath: string;
   startLine?: number;
   endLine?: number;
-  contextLines?: number;
   matchString?: string;
+  matchStringContextLines?: number;
   minified: boolean;
 }
 

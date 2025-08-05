@@ -18,11 +18,72 @@ import { ContentSanitizer } from '../../security/contentSanitizer';
 import { minifyContentV2 } from '../minifier';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
+import { generateCacheKey, withCache } from '../cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createResult } from '../../mcp/responses';
 
 /**
- * Fetch GitHub file content using Octokit API with proper TypeScript types
+ * Fetch GitHub file content using Octokit API with proper TypeScript types and caching
  */
 export async function fetchGitHubFileContentAPI(
+  params: GithubFetchRequestParams,
+  token?: string
+): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
+  // Generate cache key based on request parameters
+  const cacheKey = generateCacheKey('gh-api-file-content', {
+    owner: params.owner,
+    repo: params.repo,
+    filePath: params.filePath,
+    branch: params.branch,
+    // Include other parameters that affect the content
+    startLine: params.startLine,
+    endLine: params.endLine,
+    matchString: params.matchString,
+    minified: params.minified,
+    matchStringContextLines: params.matchStringContextLines,
+  });
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const fetchOperation = async (): Promise<CallToolResult> => {
+    const result = await fetchGitHubFileContentAPIInternal(params, token);
+
+    // Convert GitHubAPIResponse to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result.data,
+      });
+    }
+  };
+
+  // Use cache with 1-hour TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, fetchOperation);
+
+  // Convert CallToolResult back to GitHubAPIResponse
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubAPIResponse<GitHubFileContentResponse>;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return {
+      data: parsedData.data as GitHubFileContentResponse,
+      status: 200,
+    };
+  }
+}
+
+/**
+ * Internal implementation of fetchGitHubFileContentAPI without caching
+ */
+async function fetchGitHubFileContentAPIInternal(
   params: GithubFetchRequestParams,
   token?: string
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
@@ -123,7 +184,7 @@ export async function fetchGitHubFileContentAPI(
         params.minified !== false,
         params.startLine,
         params.endLine,
-        params.contextLines || 5,
+        params.matchStringContextLines || 5,
         params.matchString
       );
 
@@ -166,7 +227,7 @@ async function processFileContentAPI(
   minified: boolean,
   startLine?: number,
   endLine?: number,
-  contextLines: number = 5,
+  matchStringContextLines: number = 5,
   matchString?: string
 ): Promise<GitHubFileContentResponse | GitHubFileContentError> {
   // Sanitize the decoded content for security
@@ -202,7 +263,6 @@ async function processFileContentAPI(
   let actualStartLine: number | undefined;
   let actualEndLine: number | undefined;
   let isPartial = false;
-  let hasLineAnnotations = false;
 
   // Always calculate total lines for metadata
   const lines = decodedContent.split('\n');
@@ -230,8 +290,11 @@ async function processFileContentAPI(
 
     // Use the first match, with context lines around it
     const firstMatch = matchingLines[0]!; // Safe because we check length > 0 above
-    const matchStartLine = Math.max(1, firstMatch - contextLines);
-    const matchEndLine = Math.min(totalLines, firstMatch + contextLines);
+    const matchStartLine = Math.max(1, firstMatch - matchStringContextLines);
+    const matchEndLine = Math.min(
+      totalLines,
+      firstMatch + matchStringContextLines
+    );
 
     // Override any manually provided startLine/endLine when matchString is used
     startLine = matchStartLine;
@@ -243,64 +306,42 @@ async function processFileContentAPI(
     );
   }
 
-  if (startLine !== undefined) {
+  if (startLine !== undefined || endLine !== undefined) {
+    // When only endLine is provided, default startLine to 1
+    const effectiveStartLine = startLine || 1;
+
+    // When only startLine is provided, default endLine to end of file
+    const effectiveEndLine = endLine || totalLines;
+
     // Validate line numbers
-    if (startLine < 1 || startLine > totalLines) {
-      return {
-        error: `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
-        hints: [
-          `Invalid startLine ${startLine}. File has ${totalLines} lines. Use line numbers between 1 and ${totalLines}.`,
-        ],
-      };
-    }
+    if (effectiveStartLine < 1 || effectiveStartLine > totalLines) {
+      // Don't throw error - return the whole file content instead
+      finalContent = decodedContent;
+    } else if (effectiveEndLine < effectiveStartLine) {
+      // Invalid range - return the whole file content
+      finalContent = decodedContent;
+    } else {
+      // Valid range - extract the requested lines
+      const adjustedStartLine = Math.max(1, effectiveStartLine);
+      const adjustedEndLine = Math.min(totalLines, effectiveEndLine);
 
-    // Calculate actual range with context
-    const contextStart = Math.max(1, startLine - contextLines);
-    let adjustedEndLine = endLine;
+      // Extract the specified lines (without context, just the exact lines requested)
+      const selectedLines = lines.slice(adjustedStartLine - 1, adjustedEndLine);
 
-    // Validate and auto-adjust endLine if provided
-    if (endLine !== undefined) {
-      if (endLine < startLine) {
-        return {
-          error: `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
-          hints: [
-            `Invalid range: endLine (${endLine}) must be greater than or equal to startLine (${startLine}).`,
-          ],
-        };
-      }
+      actualStartLine = adjustedStartLine;
+      actualEndLine = adjustedEndLine;
+      isPartial = true;
 
-      // Auto-adjust endLine to file boundaries with helpful message
-      if (endLine > totalLines) {
-        adjustedEndLine = totalLines;
+      // Return just the raw content of the selected lines
+      finalContent = selectedLines.join('\n');
+
+      // Add note if we adjusted the bounds
+      if (effectiveEndLine > totalLines) {
         securityWarnings.push(
-          `Requested endLine ${endLine} adjusted to ${totalLines} (file end)`
+          `Requested endLine ${effectiveEndLine} adjusted to ${totalLines} (file end)`
         );
       }
     }
-
-    const contextEnd = adjustedEndLine
-      ? Math.min(totalLines, adjustedEndLine + contextLines)
-      : Math.min(totalLines, startLine + contextLines);
-
-    // Extract the specified range with context from ORIGINAL content
-    const selectedLines = lines.slice(contextStart - 1, contextEnd);
-
-    actualStartLine = contextStart;
-    actualEndLine = contextEnd;
-    isPartial = true;
-
-    // Add line number annotations for partial content
-    const annotatedLines = selectedLines.map((line, index) => {
-      const lineNumber = contextStart + index;
-      const isInTargetRange =
-        lineNumber >= startLine &&
-        (adjustedEndLine === undefined || lineNumber <= adjustedEndLine);
-      const marker = isInTargetRange ? '→' : ' ';
-      return `${marker}${lineNumber.toString().padStart(4)}: ${line}`;
-    });
-
-    finalContent = annotatedLines.join('\n');
-    hasLineAnnotations = true;
   }
 
   // Apply minification to final content (both partial and full files)
@@ -308,33 +349,10 @@ async function processFileContentAPI(
   let minificationType = 'none';
 
   if (minified) {
-    if (hasLineAnnotations) {
-      // For partial content with line annotations, extract code content first
-      const annotatedLines = finalContent.split('\n');
-      const codeLines = annotatedLines.map(line => {
-        // Remove line number annotations but preserve the original line content
-        const match = line.match(/^[→ ]\s*\d+:\s*(.*)$/);
-        return match ? match[1] : line;
-      });
-
-      const codeContent = codeLines.join('\n');
-      const minifyResult = await minifyContentV2(codeContent, filePath);
-
-      if (!minifyResult.failed) {
-        // Apply minification first, then add simple line annotations
-        // Since minified content may be much shorter, use a simplified annotation approach
-        finalContent = `Lines ${actualStartLine}-${actualEndLine} (minified):\n${minifyResult.content}`;
-        minificationType = minifyResult.type;
-      } else {
-        minificationFailed = true;
-      }
-    } else {
-      // Full file minification
-      const minifyResult = await minifyContentV2(finalContent, filePath);
-      finalContent = minifyResult.content;
-      minificationFailed = minifyResult.failed;
-      minificationType = minifyResult.type;
-    }
+    const minifyResult = await minifyContentV2(finalContent, filePath);
+    finalContent = minifyResult.content;
+    minificationFailed = minifyResult.failed;
+    minificationType = minifyResult.type;
   }
 
   return {

@@ -101,7 +101,7 @@ export const CACHE_TTL_CONFIG = {
   'gh-api-issues': 1800, // 30 minutes
   'gh-api-prs': 1800, // 30 minutes
   'gh-commits-api': 3600, // 1 hour
-  'gh-api-file-content': 7200, // 2 hours
+  'gh-api-file-content': 3600, // 1 hour
   'gh-repo-structure-api': 7200, // 2 hours
 
   // GitHub CLI calls - similar to API
