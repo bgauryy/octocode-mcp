@@ -263,7 +263,7 @@ export async function withCache(
       if (!ttl) {
         // Extract prefix from cache key to determine TTL
         const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
-        const prefix = prefixMatch ? prefixMatch[1] : 'default';
+        const prefix = prefixMatch?.[1] ?? 'default';
         ttl = getTTLForPrefix(prefix);
       }
 
@@ -399,7 +399,7 @@ export function getCacheDebugInfo(): {
   // Count keys by prefix
   for (const key of keys) {
     const prefixMatch = key.match(/^v\d+-([^:]+):/);
-    const prefix = prefixMatch ? prefixMatch[1] : 'unknown';
+    const prefix = prefixMatch?.[1] ?? 'unknown';
     keysByPrefix[prefix] = (keysByPrefix[prefix] || 0) + 1;
   }
 

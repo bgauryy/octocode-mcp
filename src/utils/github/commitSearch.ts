@@ -114,10 +114,70 @@ export async function searchGitHubCommitsAPI(
       token
     );
 
+    // Transform optimized commits back to expected GitHub format
+    const formattedCommits = optimizedResult.commits.map(commit => ({
+      sha: commit.sha,
+      node_id: `MDQ6Q29tbWl0${commit.sha}`,
+      url: commit.url,
+      html_url: commit.url,
+      commit: {
+        message: commit.message,
+        author: {
+          name: commit.author,
+          email: '',
+          date: commit.date,
+        },
+        committer: {
+          name: commit.author,
+          email: '',
+          date: commit.date,
+        },
+        tree: {
+          sha: commit.sha,
+          url: commit.url,
+        },
+      },
+      author: undefined,
+      committer: undefined,
+      parents: [],
+      repository: commit.repository
+        ? {
+            id: 0,
+            name: commit.repository.split('/').pop() || '',
+            full_name: commit.repository,
+            owner: {
+              login: commit.repository.split('/')[0] || '',
+              id: 0,
+            },
+            private: false,
+            html_url: `https://github.com/${commit.repository}`,
+          }
+        : undefined,
+      score: 1,
+      files: commit.diff?.files?.map(file => ({
+        ...file,
+        status: file.status as
+          | 'added'
+          | 'removed'
+          | 'modified'
+          | 'renamed'
+          | 'copied'
+          | 'changed'
+          | 'unchanged',
+      })),
+      stats: commit.diff
+        ? {
+            total: commit.diff.total_changes as number,
+            additions: commit.diff.additions as number,
+            deletions: commit.diff.deletions as number,
+          }
+        : undefined,
+    }));
+
     return {
       total_count: totalCount,
       incomplete_results: totalCount > allCommits.length,
-      commits: optimizedResult.commits as any,
+      commits: formattedCommits,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -146,7 +206,7 @@ async function transformCommitsToOptimizedFormatAPI(
   // Fetch diff information if requested and this is a repo-specific search
   const shouldFetchDiff =
     params.getChangesContent && params.owner && params.repo;
-  const diffData: Map<string, any> = new Map();
+  const diffData: Map<string, Record<string, unknown>> = new Map();
 
   if (shouldFetchDiff && items.length > 0) {
     // Fetch diff info for each commit (limit to first 10 to avoid rate limits)
@@ -182,7 +242,7 @@ async function transformCommitsToOptimizedFormatAPI(
       const messageSanitized = ContentSanitizer.sanitizeContent(rawMessage);
       const warningsCollectorSet = new Set<string>(messageSanitized.warnings);
 
-      const commitObj: any = {
+      const commitObj: Record<string, unknown> = {
         sha: item.sha, // Use as branch parameter in github_fetch_content
         message: messageSanitized.content,
         author: item.author?.login ?? item.commit?.author?.name ?? 'Unknown',
@@ -202,16 +262,20 @@ async function transformCommitsToOptimizedFormatAPI(
 
       // Add diff information if available
       if (shouldFetchDiff && diffData.has(item.sha)) {
-        const commitData = diffData.get(item.sha);
-        const files = commitData.files || [];
+        const commitData = diffData.get(item.sha) as Record<string, unknown>;
+        const files =
+          (commitData.files as Array<Record<string, unknown>>) || [];
         commitObj.diff = {
           changed_files: files.length,
-          additions: commitData.stats?.additions || 0,
-          deletions: commitData.stats?.deletions || 0,
-          total_changes: commitData.stats?.total || 0,
+          additions:
+            (commitData.stats as Record<string, unknown>)?.additions || 0,
+          deletions:
+            (commitData.stats as Record<string, unknown>)?.deletions || 0,
+          total_changes:
+            (commitData.stats as Record<string, unknown>)?.total || 0,
           files: files
-            .map((f: any) => {
-              const fileObj: any = {
+            .map((f: Record<string, unknown>) => {
+              const fileObj: Record<string, unknown> = {
                 filename: f.filename,
                 status: f.status,
                 additions: f.additions,
@@ -220,7 +284,7 @@ async function transformCommitsToOptimizedFormatAPI(
               };
 
               // Sanitize patch content if present
-              if (f.patch) {
+              if (f.patch && typeof f.patch === 'string') {
                 const rawPatch =
                   f.patch.substring(0, 1000) +
                   (f.patch.length > 1000 ? '...' : '');
@@ -244,7 +308,9 @@ async function transformCommitsToOptimizedFormatAPI(
         // Update warnings if patch sanitization added any
         if (
           warningsCollectorSet.size >
-          (commitObj._sanitization_warnings?.length || 0)
+          (Array.isArray(commitObj._sanitization_warnings)
+            ? commitObj._sanitization_warnings.length
+            : 0)
         ) {
           commitObj._sanitization_warnings = Array.from(warningsCollectorSet);
         }
@@ -292,9 +358,10 @@ async function transformCommitsToOptimizedFormatAPI(
 function extractSingleRepositoryAPI(items: GitHubCommitSearchItem[]) {
   if (items.length === 0) return null;
 
-  const firstRepo = items[0].repository;
+  const firstRepo = items[0]?.repository;
+  if (!firstRepo) return null;
   const allSameRepo = items.every(
-    item => item.repository?.fullName === firstRepo?.fullName
+    item => item.repository?.fullName === firstRepo.fullName
   );
 
   return allSameRepo ? firstRepo : null;

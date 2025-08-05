@@ -99,7 +99,7 @@ describe('GitHub Search Commits Tool', () => {
       const result = await mockServer.callTool('githubSearchCommits', {});
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toBeDefined();
       expect(response.hints).toContain(
         'Provide search terms (queryTerms) or filters (author, hash, dates)'
@@ -112,7 +112,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toBeDefined();
       expect(response.hints).toContain(
         'Provide search terms (queryTerms) or filters (author, hash, dates)'
@@ -182,7 +182,7 @@ describe('GitHub Search Commits Tool', () => {
         undefined
       );
 
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.commits).toHaveLength(1);
       expect(response.data.commits[0].commit.message).toBe('Test commit');
     });
@@ -199,7 +199,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.commits).toHaveLength(0);
     });
 
@@ -215,7 +215,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.meta.error).toContain('API error');
     });
 
@@ -227,7 +227,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.error).toContain('Failed to search commits');
     });
 
@@ -360,7 +360,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.commits[0].commit.message).not.toContain('ghp_');
       expect(response.data.commits[0].commit.message).toContain(
         '[REDACTED-GITHUBTOKENS]'
@@ -408,7 +408,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       const commitMessage = response.data.commits[0].commit.message;
       expect(commitMessage).not.toContain('sk-');
       expect(commitMessage).toContain('[REDACTED-OPENAIAPIKEY]');
@@ -455,7 +455,7 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.commits[0].commit.message).toBe(
         'Add user profile feature'
       );

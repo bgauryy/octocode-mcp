@@ -98,10 +98,10 @@ export function registerSearchGitHubPullRequestsTool(
         // Validate each query
         for (let i = 0; i < args.queries.length; i++) {
           const query = args.queries[i];
-          const hasQuery = query.query && query.query.trim();
+          const hasQuery = query?.query && query.query.trim();
           const hasFilters =
-            query.owner || query.repo || query.author || query.assignee;
-          const hasPrNumber = query.prNumber && query.owner && query.repo;
+            query?.owner || query?.repo || query?.author || query?.assignee;
+          const hasPrNumber = query?.prNumber && query?.owner && query?.repo;
 
           if (!hasQuery && !hasFilters && !hasPrNumber) {
             const hints = generateToolHints(
@@ -124,7 +124,7 @@ export function registerSearchGitHubPullRequestsTool(
             });
           }
 
-          if (query.query && query.query.length > 256) {
+          if (query?.query && query.query.length > 256) {
             const hints = generateToolHints(
               TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
               {

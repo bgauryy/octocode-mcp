@@ -13,7 +13,6 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../responses';
 // Hints are now provided by the consolidated hints system
 import { ToolName, TOOL_NAMES } from './toolConstants';
-import type { APIResponseMetadata } from '../../../types/github';
 import { executeWithErrorIsolation } from '../../../utils/promiseUtils';
 
 /**
@@ -32,7 +31,7 @@ export interface ProcessedBulkResult {
   data?: unknown;
   error?: string;
   hints?: string[];
-  metadata: APIResponseMetadata;
+  metadata: Record<string, unknown>;
 }
 
 /**
@@ -184,7 +183,11 @@ export function generateBulkHints<
 
     // Add specific recovery hints from first error
     const firstError = errors[0];
-    if (firstError.recoveryHints && firstError.recoveryHints.length > 0) {
+    if (
+      firstError &&
+      firstError.recoveryHints &&
+      firstError.recoveryHints.length > 0
+    ) {
       hints.push(...firstError.recoveryHints.slice(0, 2));
     }
   }

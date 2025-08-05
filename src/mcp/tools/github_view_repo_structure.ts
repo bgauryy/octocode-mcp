@@ -130,7 +130,7 @@ async function exploreMultipleRepositoryStructures(
         if (!query.owner?.trim()) {
           return {
             queryId: query.id!,
-            failed: true,
+            error: 'Repository owner is required',
             hints: [
               'Repository owner is required',
               'Provide repository owner (organization or username)',
@@ -147,7 +147,7 @@ async function exploreMultipleRepositoryStructures(
         if (!query.repo?.trim()) {
           return {
             queryId: query.id!,
-            failed: true,
+            error: 'Repository name is required',
             hints: [
               'Repository name is required',
               'Provide repository name',
@@ -164,7 +164,7 @@ async function exploreMultipleRepositoryStructures(
         if (!query.branch?.trim()) {
           return {
             queryId: query.id!,
-            failed: true,
+            error: 'Branch name is required',
             hints: [
               'Branch name is required',
               'Provide branch name (usually "main" or "master")',
@@ -187,7 +187,7 @@ async function exploreMultipleRepositoryStructures(
         if ('error' in apiResult) {
           return {
             queryId: query.id!,
-            failed: true,
+            error: apiResult.error,
             hints: [
               'Verify repository owner and name are correct',
               'Check that the branch exists (try "main" or "master")',
@@ -204,15 +204,17 @@ async function exploreMultipleRepositoryStructures(
         // Success case
         return {
           queryId: query.id!,
-          repository: `${query.owner}/${query.repo}`,
-          branch: query.branch,
-          path: query.path || '/',
-          structure: {
-            ...apiResult,
-            apiSource: true,
+          data: {
+            repository: `${query.owner}/${query.repo}`,
+            structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
+            totalCount: apiResult.files.length,
           },
-          researchGoal: query.researchGoal,
           metadata: {
+            branch: query.branch,
+            path: query.path || '/',
+            folders: apiResult.folders,
+            summary: apiResult.summary,
+            researchGoal: query.researchGoal,
             queryArgs: { ...query },
             searchType: 'success',
           },
@@ -223,7 +225,7 @@ async function exploreMultipleRepositoryStructures(
 
         return {
           queryId: query.id!,
-          failed: true,
+          error: `Failed to explore repository structure: ${errorMessage}`,
           hints: [
             'Verify repository owner and name are correct',
             'Check that the branch exists (try "main" or "master")',
@@ -240,7 +242,7 @@ async function exploreMultipleRepositoryStructures(
   );
 
   // Build aggregated context for intelligent hints
-  const successfulCount = results.filter(r => !r.result.failed).length;
+  const successfulCount = results.filter(r => !r.result.error).length;
   const failedCount = results.length - successfulCount;
   const aggregatedContext: AggregatedRepositoryContext = {
     totalQueries: results.length,
@@ -254,29 +256,32 @@ async function exploreMultipleRepositoryStructures(
       hasResults: successfulCount > 0,
       hasContent: results.some(
         r =>
-          !r.result.failed &&
-          r.result.structure &&
-          (r.result.structure.files?.length || 0) +
-            (r.result.structure.folders?.count || 0) >
-            0
+          !r.result.error &&
+          Array.isArray(r.result.data?.structure) &&
+          r.result.data.structure.length > 0
       ),
-      hasStructure: results.some(r => !r.result.failed && r.result.structure),
+      hasStructure: results.some(
+        r =>
+          !r.result.error &&
+          Array.isArray(r.result.data?.structure) &&
+          r.result.data.structure.length > 0
+      ),
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.failed && result.structure) {
-      if (result.repository) {
-        aggregatedContext.repositoryContexts.add(result.repository);
+    if (!result.error && result.data?.structure) {
+      if (result.data.repository) {
+        aggregatedContext.repositoryContexts.add(result.data.repository);
       }
-      if (result.path) {
-        aggregatedContext.exploredPaths.add(result.path);
+      if (typeof result.metadata?.path === 'string') {
+        aggregatedContext.exploredPaths.add(result.metadata.path);
       }
 
       // Extract file types and directories
-      if (result.structure.files) {
-        result.structure.files.forEach(file => {
+      if (Array.isArray(result.data?.structure)) {
+        result.data.structure.forEach(file => {
           const extension = file.path.split('.').pop();
           if (extension) {
             aggregatedContext.foundFileTypes.add(extension);
@@ -289,8 +294,11 @@ async function exploreMultipleRepositoryStructures(
         });
       }
 
-      if (result.structure.folders?.folders) {
-        result.structure.folders.folders.forEach(folder => {
+      const foldersMeta = result.metadata?.folders as
+        | { folders?: Array<{ path: string }> }
+        | undefined;
+      if (foldersMeta?.folders) {
+        foldersMeta.folders.forEach(folder => {
           aggregatedContext.foundDirectories.add(folder.path);
         });
       }

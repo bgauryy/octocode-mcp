@@ -54,9 +54,9 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
-      expect(result.content[0].type).toBe('text');
+      expect(result.content[0]?.type).toBe('text');
 
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(Array.isArray(data.data)).toBe(true);
       expect(data.data).toHaveLength(1);
 
@@ -106,11 +106,15 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.data).toHaveLength(2);
 
-      const readmeResult = data.data.find((r: any) => r.queryId === 'readme');
-      const packageResult = data.data.find((r: any) => r.queryId === 'package');
+      const readmeResult = data.data.find(
+        (r: Record<string, unknown>) => r.queryId === 'readme'
+      );
+      const packageResult = data.data.find(
+        (r: Record<string, unknown>) => r.queryId === 'package'
+      );
 
       expect(readmeResult.result.filePath).toBe('README.md');
       expect(packageResult.result.filePath).toBe('package.json');
@@ -140,7 +144,7 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Tool doesn't error, but result contains error
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.data).toHaveLength(1);
 
       const errorResult = data.data[0];
@@ -169,7 +173,7 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.data).toHaveLength(1);
 
       const errorResult = data.data[0];
@@ -187,7 +191,7 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
+      const errorData = JSON.parse(result.content[0]?.text as string);
 
       // The error structure has meta.error as boolean true, and the actual error message in data
       expect(errorData.meta.error).toBe(true);
@@ -212,7 +216,7 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
+      const errorData = JSON.parse(result.content[0]?.text as string);
       expect(errorData.meta.error).toBe(true);
       expect(
         errorData.hints.some((hint: string) =>
@@ -225,7 +229,7 @@ describe('GitHub Fetch Content Tool', () => {
       const result = await mockServer.callTool('githubGetFileContent', {});
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
+      const errorData = JSON.parse(result.content[0]?.text as string);
       expect(errorData.meta.error).toBe(true);
       expect(
         errorData.hints.some((hint: string) =>

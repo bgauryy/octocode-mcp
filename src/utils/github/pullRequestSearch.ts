@@ -2,6 +2,18 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from '../../types/github-openapi';
+
+// Type for commit data structure
+interface CommitData {
+  total_count: number;
+  commits: Array<{
+    sha: string;
+    message: string;
+    author: string;
+    url: string;
+    authoredDate?: string;
+  }>;
+}
 import {
   GitHubPullRequestSearchResult,
   GitHubPullRequestSearchError,
@@ -75,19 +87,70 @@ export async function searchGitHubPullRequestsAPI(
     });
 
     const pullRequests =
-      searchResult.data.items?.filter((item: any) => item.pull_request) || [];
+      searchResult.data.items?.filter(
+        (item: Record<string, unknown>) => item.pull_request
+      ) || [];
 
     // Transform pull requests to our expected format
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
-      pullRequests.map(async (item: any) => {
+      pullRequests.map(async (item: Record<string, unknown>) => {
         return await transformPullRequestItem(item, params, octokit, token);
       })
     );
 
+    // Transform to expected GitHub API format
+    const formattedPRs = transformedPRs.map(pr => ({
+      id: 0, // We don't have this in our format
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      html_url: pr.url,
+      state: pr.state as 'open' | 'closed',
+      draft: pr.draft,
+      merged: pr.state === 'closed' && !!pr.merged_at,
+      created_at: pr.created_at,
+      updated_at: pr.updated_at,
+      closed_at: pr.closed_at,
+      merged_at: pr.merged_at,
+      user: {
+        login: pr.author,
+        id: 0,
+        avatar_url: '',
+        html_url: `https://github.com/${pr.author}`,
+      },
+      head: {
+        ref: pr.head || '',
+        sha: pr.head_sha || '',
+      },
+      base: {
+        ref: pr.base || '',
+        sha: pr.base_sha || '',
+        repo: {
+          id: 0,
+          name: pr.repository.split('/')[1] || '',
+          full_name: pr.repository,
+          owner: {
+            login: pr.repository.split('/')[0] || '',
+            id: 0,
+          },
+          private: false,
+          html_url: `https://github.com/${pr.repository}`,
+          default_branch: 'main',
+        },
+      },
+      body: pr.body,
+      comments: pr.comments?.length || 0,
+      review_comments: 0,
+      commits: pr.commits ? (pr.commits as CommitData).total_count || 0 : 0,
+      additions: 0,
+      deletions: 0,
+      changed_files: 0,
+    }));
+
     return {
       total_count: searchResult.data.total_count,
       incomplete_results: searchResult.data.incomplete_results,
-      pull_requests: transformedPRs as any,
+      pull_requests: formattedPRs,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -115,7 +178,7 @@ async function searchPullRequestsWithREST(
     const repo = params.repo as string;
 
     // Use pulls.list for simple repository searches
-    const listParams: any = {
+    const listParams: Record<string, unknown> = {
       owner,
       repo,
       state: params.state || 'open',
@@ -133,7 +196,7 @@ async function searchPullRequestsWithREST(
 
     // Transform to our expected format
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
-      result.data.map(async (item: any) => {
+      result.data.map(async (item: Record<string, unknown>) => {
         return await transformPullRequestItemFromREST(
           item,
           params,
@@ -143,10 +206,59 @@ async function searchPullRequestsWithREST(
       })
     );
 
+    // Transform to expected GitHub API format
+    const formattedPRs = transformedPRs.map(pr => ({
+      id: 0,
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      html_url: pr.url,
+      state: pr.state as 'open' | 'closed',
+      draft: pr.draft,
+      merged: pr.state === 'closed' && !!pr.merged_at,
+      created_at: pr.created_at,
+      updated_at: pr.updated_at,
+      closed_at: pr.closed_at,
+      merged_at: pr.merged_at,
+      user: {
+        login: pr.author,
+        id: 0,
+        avatar_url: '',
+        html_url: `https://github.com/${pr.author}`,
+      },
+      head: {
+        ref: pr.head || '',
+        sha: pr.head_sha || '',
+      },
+      base: {
+        ref: pr.base || '',
+        sha: pr.base_sha || '',
+        repo: {
+          id: 0,
+          name: pr.repository.split('/')[1] || '',
+          full_name: pr.repository,
+          owner: {
+            login: pr.repository.split('/')[0] || '',
+            id: 0,
+          },
+          private: false,
+          html_url: `https://github.com/${pr.repository}`,
+          default_branch: 'main',
+        },
+      },
+      body: pr.body,
+      comments: pr.comments?.length || 0,
+      review_comments: 0,
+      commits: pr.commits ? (pr.commits as CommitData).total_count || 0 : 0,
+      additions: 0,
+      deletions: 0,
+      changed_files: 0,
+    }));
+
     return {
-      total_count: transformedPRs.length, // REST API doesn't provide total count
+      total_count: formattedPRs.length,
       incomplete_results: false,
-      pull_requests: transformedPRs as any,
+      pull_requests: formattedPRs,
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -165,15 +277,17 @@ async function searchPullRequestsWithREST(
  * Transform pull request item from Search API response
  */
 async function transformPullRequestItem(
-  item: any,
+  item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
   octokit: InstanceType<typeof OctokitWithThrottling>,
   token?: string
 ): Promise<GitHubPullRequestItem> {
   // Sanitize title and body content
-  const titleSanitized = ContentSanitizer.sanitizeContent(item.title || '');
+  const titleSanitized = ContentSanitizer.sanitizeContent(
+    (item.title as string) || ''
+  );
   const bodySanitized = item.body
-    ? ContentSanitizer.sanitizeContent(item.body)
+    ? ContentSanitizer.sanitizeContent(item.body as string)
     : { content: undefined, warnings: [] };
 
   // Collect all sanitization warnings
@@ -183,25 +297,32 @@ async function transformPullRequestItem(
   ]);
 
   const result: GitHubPullRequestItem = {
-    number: item.number,
+    number: item.number as number,
     title: titleSanitized.content,
     body: bodySanitized.content,
-    state: item.state?.toLowerCase() || 'unknown',
-    author: item.user?.login || '',
-    repository: item.repository_url
-      ? item.repository_url.replace('https://api.github.com/repos/', '')
-      : 'unknown',
-    labels: item.labels?.map((l: any) => l.name) || [],
+    state: ((item.state as string)?.toLowerCase() || 'unknown') as
+      | 'open'
+      | 'closed',
+    author: ((item.user as Record<string, unknown>)?.login as string) || '',
+    repository: `${params.owner}/${params.repo}`,
+    labels:
+      (item.labels as Array<Record<string, unknown>>)?.map(
+        (l: Record<string, unknown>) => l.name as string
+      ) || [],
     created_at: item.created_at
-      ? new Date(item.created_at).toLocaleDateString('en-GB')
+      ? new Date(item.created_at as string).toLocaleDateString('en-GB')
       : '',
     updated_at: item.updated_at
-      ? new Date(item.updated_at).toLocaleDateString('en-GB')
+      ? new Date(item.updated_at as string).toLocaleDateString('en-GB')
       : '',
-    url: item.html_url,
+    url: item.html_url as string,
     comments: [], // Will be populated if withComments is true
-    reactions: item.reactions?.total_count || 0,
-    draft: item.draft || false,
+    reactions: 0, // REST API doesn't provide reactions in list
+    draft: (item.draft as boolean) || false,
+    head: (item.head as Record<string, unknown>)?.ref as string,
+    head_sha: (item.head as Record<string, unknown>)?.sha as string,
+    base: (item.base as Record<string, unknown>)?.ref as string,
+    base_sha: (item.base as Record<string, unknown>)?.sha as string,
   };
 
   // Add sanitization warnings if any were detected
@@ -211,7 +332,9 @@ async function transformPullRequestItem(
 
   // Add optional fields
   if (item.closed_at) {
-    result.closed_at = new Date(item.closed_at).toLocaleDateString('en-GB');
+    result.closed_at = new Date(item.closed_at as string).toLocaleDateString(
+      'en-GB'
+    );
   }
 
   // Get additional PR details if needed (head/base SHA, etc.)
@@ -237,11 +360,11 @@ async function transformPullRequestItem(
             const commitData = await fetchPRCommitDataAPI(
               owner,
               repo,
-              item.number,
+              item.number as number,
               token
             );
             if (commitData) {
-              result.commits = commitData;
+              result.commits = commitData as unknown as CommitData;
             }
           }
         }
@@ -262,109 +385,24 @@ async function transformPullRequestItem(
           issue_number: item.number,
         });
 
-        result.comments = commentsResult.data.map((comment: any) => ({
-          id: comment.id,
-          user: comment.user?.login || 'unknown',
-          body: ContentSanitizer.sanitizeContent(comment.body || '').content,
-          created_at: new Date(comment.created_at).toLocaleDateString('en-GB'),
-          updated_at: new Date(comment.updated_at).toLocaleDateString('en-GB'),
-        }));
+        result.comments = commentsResult.data.map(
+          (comment: Record<string, unknown>) => ({
+            id: comment.id as string,
+            user:
+              ((comment.user as Record<string, unknown>)?.login as string) ||
+              'unknown',
+            body: ContentSanitizer.sanitizeContent(
+              (comment.body as string) || ''
+            ).content,
+            created_at: new Date(
+              comment.created_at as string
+            ).toLocaleDateString('en-GB'),
+            updated_at: new Date(
+              comment.updated_at as string
+            ).toLocaleDateString('en-GB'),
+          })
+        );
       }
-    } catch (e) {
-      // Continue without comments if API call fails
-    }
-  }
-
-  return result;
-}
-
-/**
- * Transform pull request item from REST API response
- */
-export async function transformPullRequestItemFromREST(
-  item: any,
-  params: GitHubPullRequestsSearchParams,
-  octokit: InstanceType<typeof OctokitWithThrottling>,
-  token?: string
-): Promise<GitHubPullRequestItem> {
-  // Sanitize title and body content
-  const titleSanitized = ContentSanitizer.sanitizeContent(item.title || '');
-  const bodySanitized = item.body
-    ? ContentSanitizer.sanitizeContent(item.body)
-    : { content: undefined, warnings: [] };
-
-  // Collect all sanitization warnings
-  const sanitizationWarnings = new Set<string>([
-    ...titleSanitized.warnings,
-    ...bodySanitized.warnings,
-  ]);
-
-  const result: GitHubPullRequestItem = {
-    number: item.number,
-    title: titleSanitized.content,
-    body: bodySanitized.content,
-    state: item.state?.toLowerCase() || 'unknown',
-    author: item.user?.login || '',
-    repository: `${params.owner}/${params.repo}`,
-    labels: item.labels?.map((l: any) => l.name) || [],
-    created_at: item.created_at
-      ? new Date(item.created_at).toLocaleDateString('en-GB')
-      : '',
-    updated_at: item.updated_at
-      ? new Date(item.updated_at).toLocaleDateString('en-GB')
-      : '',
-    url: item.html_url,
-    comments: [], // Will be populated if withComments is true
-    reactions: 0, // REST API doesn't provide reactions in list
-    draft: item.draft || false,
-    head: item.head?.ref,
-    head_sha: item.head?.sha,
-    base: item.base?.ref,
-    base_sha: item.base?.sha,
-  };
-
-  // Add sanitization warnings if any were detected
-  if (sanitizationWarnings.size > 0) {
-    result._sanitization_warnings = Array.from(sanitizationWarnings);
-  }
-
-  // Add optional fields
-  if (item.closed_at) {
-    result.closed_at = new Date(item.closed_at).toLocaleDateString('en-GB');
-  }
-  if (item.merged_at) {
-    result.merged_at = new Date(item.merged_at).toLocaleDateString('en-GB');
-  }
-
-  // Fetch commit data if requested
-  if (params.getCommitData) {
-    const commitData = await fetchPRCommitDataAPI(
-      params.owner as string,
-      params.repo as string,
-      item.number,
-      token
-    );
-    if (commitData) {
-      result.commits = commitData;
-    }
-  }
-
-  // Fetch comments if requested
-  if (params.withComments) {
-    try {
-      const commentsResult = await octokit.rest.issues.listComments({
-        owner: params.owner as string,
-        repo: params.repo as string,
-        issue_number: item.number,
-      });
-
-      result.comments = commentsResult.data.map((comment: any) => ({
-        id: comment.id,
-        user: comment.user?.login || 'unknown',
-        body: ContentSanitizer.sanitizeContent(comment.body || '').content,
-        created_at: new Date(comment.created_at).toLocaleDateString('en-GB'),
-        updated_at: new Date(comment.updated_at).toLocaleDateString('en-GB'),
-      }));
     } catch (e) {
       // Continue without comments if API call fails
     }
@@ -381,110 +419,160 @@ async function fetchPRCommitDataAPI(
   repo: string,
   prNumber: number,
   token?: string
-) {
+): Promise<Record<string, unknown> | null> {
   try {
     const octokit = getOctokit(token);
-
-    // Get commits in the PR
-    const commitsResult = await octokit.rest.pulls.listCommits({
+    const result = await octokit.rest.pulls.listCommits({
       owner,
       repo,
       pull_number: prNumber,
     });
 
-    const commits = commitsResult.data || [];
-
-    if (commits.length === 0) {
-      return null;
-    }
-
-    // Fetch detailed commit data for each commit (limit to first 10 to avoid rate limits)
-    const commitDetails = await Promise.all(
-      commits.slice(0, 10).map(async (commit: any) => {
-        try {
-          const commitResult = await octokit.rest.repos.getCommit({
-            owner,
-            repo,
-            ref: commit.sha,
-          });
-
-          const result = commitResult.data;
-
-          // Sanitize commit message from the detailed commit data
-          const messageSanitized = ContentSanitizer.sanitizeContent(
-            result.commit?.message || ''
-          );
-          const commitWarningsSet = new Set<string>(messageSanitized.warnings);
-
-          return {
-            sha: commit.sha,
-            message: messageSanitized.content,
-            author:
-              result.author?.login || result.commit?.author?.name || 'Unknown',
-            url: result.html_url,
-            authoredDate: result.commit?.author?.date,
-            diff: result.files
-              ? {
-                  changed_files: result.files.length,
-                  additions: result.stats?.additions || 0,
-                  deletions: result.stats?.deletions || 0,
-                  total_changes: result.stats?.total || 0,
-                  files: result.files.slice(0, 5).map((f: any) => {
-                    const fileObj: any = {
-                      filename: f.filename,
-                      status: f.status,
-                      additions: f.additions,
-                      deletions: f.deletions,
-                      changes: f.changes,
-                    };
-
-                    // Sanitize patch content if present
-                    if (f.patch) {
-                      const rawPatch =
-                        f.patch.substring(0, 1000) +
-                        (f.patch.length > 1000 ? '...' : '');
-                      const patchSanitized =
-                        ContentSanitizer.sanitizeContent(rawPatch);
-                      fileObj.patch = patchSanitized.content;
-
-                      // Collect patch sanitization warnings
-                      if (patchSanitized.warnings.length > 0) {
-                        patchSanitized.warnings.forEach(w =>
-                          commitWarningsSet.add(`[${f.filename}] ${w}`)
-                        );
-                      }
-                    }
-
-                    return fileObj;
-                  }),
-                }
-              : undefined,
-            // Add sanitization warnings if any were detected
-            ...(commitWarningsSet.size > 0 && {
-              _sanitization_warnings: Array.from(commitWarningsSet),
-            }),
-          };
-        } catch (e) {
-          // If we can't fetch commit details, return basic info from list commits
-          return {
-            sha: commit.sha,
-            message: commit.commit?.message || '',
-            author:
-              commit.author?.login || commit.commit?.author?.name || 'Unknown',
-            url: commit.html_url,
-            authoredDate: commit.commit?.author?.date,
-          };
-        }
-      })
-    );
+    const commits = result.data.map((commit: Record<string, unknown>) => ({
+      sha: commit.sha as string,
+      message:
+        ((commit.commit as Record<string, unknown>)?.message as string) || '',
+      author:
+        ((commit.author as Record<string, unknown>)?.login as string) ||
+        ((
+          (commit.commit as Record<string, unknown>)?.author as Record<
+            string,
+            unknown
+          >
+        )?.name as string) ||
+        'Unknown',
+      url: commit.url as string,
+      authoredDate: (
+        (commit.commit as Record<string, unknown>)?.author as Record<
+          string,
+          unknown
+        >
+      )?.date as string,
+    }));
 
     return {
       total_count: commits.length,
-      commits: commitDetails.filter(Boolean),
+      commits,
     };
   } catch (error) {
+    // Return null if commit data fetch fails
     return null;
   }
+}
+
+/**
+ * Transform pull request item from REST API response
+ */
+export async function transformPullRequestItemFromREST(
+  item: Record<string, unknown>,
+  params: GitHubPullRequestsSearchParams,
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  token?: string
+): Promise<GitHubPullRequestItem> {
+  // Sanitize title and body content
+  const titleSanitized = ContentSanitizer.sanitizeContent(
+    (item.title as string) || ''
+  );
+  const bodySanitized = item.body
+    ? ContentSanitizer.sanitizeContent(item.body as string)
+    : { content: undefined, warnings: [] };
+
+  // Collect all sanitization warnings
+  const sanitizationWarnings = new Set<string>([
+    ...titleSanitized.warnings,
+    ...bodySanitized.warnings,
+  ]);
+
+  const result: GitHubPullRequestItem = {
+    number: item.number as number,
+    title: titleSanitized.content,
+    body: bodySanitized.content,
+    state: ((item.state as string)?.toLowerCase() || 'unknown') as
+      | 'open'
+      | 'closed',
+    author: ((item.user as Record<string, unknown>)?.login as string) || '',
+    repository: `${params.owner}/${params.repo}`,
+    labels:
+      (item.labels as Array<Record<string, unknown>>)?.map(
+        (l: Record<string, unknown>) => l.name as string
+      ) || [],
+    created_at: item.created_at
+      ? new Date(item.created_at as string).toLocaleDateString('en-GB')
+      : '',
+    updated_at: item.updated_at
+      ? new Date(item.updated_at as string).toLocaleDateString('en-GB')
+      : '',
+    url: item.html_url as string,
+    comments: [], // Will be populated if withComments is true
+    reactions: 0, // REST API doesn't provide reactions in list
+    draft: (item.draft as boolean) || false,
+    head: (item.head as Record<string, unknown>)?.ref as string,
+    head_sha: (item.head as Record<string, unknown>)?.sha as string,
+    base: (item.base as Record<string, unknown>)?.ref as string,
+    base_sha: (item.base as Record<string, unknown>)?.sha as string,
+  };
+
+  // Add sanitization warnings if any were detected
+  if (sanitizationWarnings.size > 0) {
+    result._sanitization_warnings = Array.from(sanitizationWarnings);
+  }
+
+  // Add optional fields
+  if (item.closed_at) {
+    result.closed_at = new Date(item.closed_at as string).toLocaleDateString(
+      'en-GB'
+    );
+  }
+  if (item.merged_at) {
+    result.merged_at = new Date(item.merged_at as string).toLocaleDateString(
+      'en-GB'
+    );
+  }
+
+  // Fetch commit data if requested
+  if (params.getCommitData) {
+    const commitData = await fetchPRCommitDataAPI(
+      params.owner as string,
+      params.repo as string,
+      item.number as number,
+      token
+    );
+    if (commitData) {
+      result.commits = commitData as unknown as CommitData;
+    }
+  }
+
+  // Fetch comments if requested
+  if (params.withComments) {
+    try {
+      const commentsResult = await octokit.rest.issues.listComments({
+        owner: params.owner as string,
+        repo: params.repo as string,
+        issue_number: item.number as number,
+      });
+
+      result.comments = commentsResult.data.map(
+        (comment: Record<string, unknown>) => ({
+          id: comment.id as string,
+          user:
+            ((comment.user as Record<string, unknown>)?.login as string) ||
+            'unknown',
+          body: ContentSanitizer.sanitizeContent((comment.body as string) || '')
+            .content,
+          created_at: new Date(comment.created_at as string).toLocaleDateString(
+            'en-GB'
+          ),
+          updated_at: new Date(comment.updated_at as string).toLocaleDateString(
+            'en-GB'
+          ),
+        })
+      );
+    } catch (e) {
+      // Continue without comments if API call fails
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -518,10 +606,61 @@ export async function fetchGitHubPullRequestByNumberAPI(
         token
       );
 
+    // Transform to expected GitHub API format
+    const formattedPR = {
+      id: 0,
+      number: transformedPR.number,
+      title: transformedPR.title,
+      url: transformedPR.url,
+      html_url: transformedPR.url,
+      state: transformedPR.state as 'open' | 'closed',
+      draft: transformedPR.draft,
+      merged: transformedPR.state === 'closed' && !!transformedPR.merged_at,
+      created_at: transformedPR.created_at,
+      updated_at: transformedPR.updated_at,
+      closed_at: transformedPR.closed_at,
+      merged_at: transformedPR.merged_at,
+      user: {
+        login: transformedPR.author,
+        id: 0,
+        avatar_url: '',
+        html_url: `https://github.com/${transformedPR.author}`,
+      },
+      head: {
+        ref: transformedPR.head || '',
+        sha: transformedPR.head_sha || '',
+      },
+      base: {
+        ref: transformedPR.base || '',
+        sha: transformedPR.base_sha || '',
+        repo: {
+          id: 0,
+          name: transformedPR.repository.split('/')[1] || '',
+          full_name: transformedPR.repository,
+          owner: {
+            login: transformedPR.repository.split('/')[0] || '',
+            id: 0,
+          },
+          private: false,
+          html_url: `https://github.com/${transformedPR.repository}`,
+          default_branch: 'main',
+        },
+      },
+      body: transformedPR.body,
+      comments: transformedPR.comments?.length || 0,
+      review_comments: 0,
+      commits: transformedPR.commits
+        ? (transformedPR.commits as CommitData).total_count || 0
+        : 0,
+      additions: 0,
+      deletions: 0,
+      changed_files: 0,
+    };
+
     return {
       total_count: 1,
       incomplete_results: false,
-      pull_requests: [transformedPR] as any,
+      pull_requests: [formattedPR],
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);

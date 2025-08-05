@@ -164,7 +164,7 @@ export interface ProcessedPackageResult {
   queryId: string;
   packageName: string;
   ecosystem: 'npm' | 'python';
-  data?: any;
+  data?: Record<string, unknown>;
   error?: string;
   failed?: boolean;
   hints?: string[];
@@ -183,7 +183,7 @@ export interface PackageSearchMeta {
   suggestions?: {
     broaderSearch?: string[];
     semanticAlternatives?: string[];
-    splitQueries?: any[];
+    splitQueries?: Array<Record<string, unknown>>;
     alternativeApproaches?: string[];
     recoveryActions?: string[];
   };
@@ -254,7 +254,7 @@ export interface PackageSearchError {
 
 export interface BasicPackageSearchResult {
   total_count: number;
-  npm?: any[];
-  python?: any[];
+  npm?: Array<Record<string, unknown>>;
+  python?: Array<Record<string, unknown>>;
   hints?: string[];
 }

@@ -17,8 +17,8 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
-      expect(result.content[0].type).toBe('text');
-      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(result.content[0]!.type).toBe('text');
+      const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: { message: 'Hello' },
         meta: {},
@@ -32,8 +32,8 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
-      expect(result.content[0].type).toBe('text');
-      const parsedResponse = JSON.parse(result.content[0].text as string);
+      expect(result.content[0]!.type).toBe('text');
+      const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: null,
         meta: { error: errorMessage },
@@ -47,7 +47,7 @@ describe('Response Utilities', () => {
       });
 
       expect(result.isError).toBe(true);
-      const parsedResponse = JSON.parse(result.content[0].text as string);
+      const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: null,
         meta: { error: 'Not found' },
@@ -60,7 +60,7 @@ describe('Response Utilities', () => {
       const result = createResult({ error });
 
       expect(result.isError).toBe(true);
-      const parsedResponse = JSON.parse(result.content[0].text as string);
+      const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: null,
         meta: { error: 'Test error' },
@@ -73,7 +73,7 @@ describe('Response Utilities', () => {
       const result = createResult({ data });
 
       expect(result.isError).toBe(false);
-      const parsedResponse = JSON.parse(result.content[0].text as string);
+      const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: { test: 'value' },
         meta: {},

@@ -7,14 +7,14 @@ import { logger } from '../../../utils/logger';
  * Security validation decorator for MCP tools
  * Reduces boilerplate by extracting the common 7-line security validation pattern
  */
-export function withSecurityValidation<T extends Record<string, any>>(
+export function withSecurityValidation<T extends Record<string, unknown>>(
   toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>
 ): (args: unknown) => Promise<CallToolResult> {
   return async (args: unknown): Promise<CallToolResult> => {
     try {
       // Validate and sanitize input parameters for security
       const validation = ContentSanitizer.validateInputParameters(
-        args as Record<string, any>
+        args as Record<string, unknown>
       );
 
       // Check if validation failed due to structural/security issues

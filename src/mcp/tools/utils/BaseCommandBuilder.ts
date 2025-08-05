@@ -43,7 +43,9 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
         });
 
         if (processedOrTerms.length === 1) {
-          queryParts.push(processedOrTerms[0]);
+          if (typeof processedOrTerms[0] === 'string') {
+            queryParts.push(processedOrTerms[0]);
+          }
         } else {
           const orQuery = `(${processedOrTerms.join(' OR ')})`;
           queryParts.push(orQuery);
@@ -61,7 +63,9 @@ export abstract class BaseCommandBuilder<T extends BaseCommandParams> {
       });
 
       if (processedOrTerms.length === 1) {
-        this.args.push(processedOrTerms[0]);
+        if (typeof processedOrTerms[0] === 'string') {
+          this.args.push(processedOrTerms[0]);
+        }
       } else {
         const orQuery = `(${processedOrTerms.join(' OR ')})`;
         this.args.push(orQuery);

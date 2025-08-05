@@ -21,7 +21,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
 
 // Helper function to create standard mock response
-function createMockPRResponse(overrides: any = {}) {
+function createMockPRResponse(overrides: Record<string, unknown> = {}) {
   return {
     total_count: 1,
     incomplete_results: false,
@@ -138,7 +138,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toContain(
         'Provide at least one search query with owner/repo or prNumber'
       );
@@ -148,7 +148,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       const result = await mockServer.callTool('githubSearchPullRequests', {});
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toContain(
         'Provide at least one search query with owner/repo or prNumber'
       );
@@ -183,7 +183,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toContain(
         'Use shorter, more focused search terms'
       );
@@ -195,7 +195,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toContain('Maximum 5 queries allowed per request');
     });
   });
@@ -411,7 +411,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.meta.successfulOperations).toBe(1);
       expect(response.meta.failedOperations).toBe(1);
     });
@@ -430,7 +430,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data.error).toBe('API rate limit exceeded');
     });
 
@@ -444,7 +444,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data.error).toBe('Network error');
     });
   });
@@ -463,7 +463,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
 
       // Check that the token was sanitized
       expect(response.data[0].data.pull_requests[0].body).not.toContain('ghp_');
@@ -485,7 +485,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
 
       // Check that the API key was sanitized
       expect(response.data[0].data.pull_requests[0].body).not.toContain(
@@ -509,7 +509,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
 
       // Check that clean content is preserved
       expect(response.data[0].data.pull_requests[0].body).toBe(
@@ -552,7 +552,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         'test-token'
       );
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data).toEqual(mockResponse);
     });
 
@@ -580,7 +580,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data.error).toBe(mockError.error);
       expect(response.data[0].data.hints).toEqual(
         expect.arrayContaining(mockError.hints)

@@ -27,8 +27,10 @@ describe('MCP Test Fixtures', () => {
 
     it('should register and call tools correctly', async () => {
       // Register a test tool
-      mockServer.server.tool('test_tool', async (args: any) =>
-        createMockResult({ received: args })
+      mockServer.server.tool(
+        'test_tool',
+        async (args: Record<string, unknown>) =>
+          createMockResult({ received: args })
       );
 
       // Call the tool
@@ -64,8 +66,8 @@ describe('MCP Test Fixtures', () => {
 
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
-      expect(result.content[0].type).toBe('text');
-      expect(result.content[0].text).toBe(JSON.stringify(data, null, 2));
+      expect(result.content[0]?.type).toBe('text');
+      expect(result.content[0]?.text).toBe(JSON.stringify(data, null, 2));
     });
 
     it('should create error result with string message', () => {
@@ -74,8 +76,8 @@ describe('MCP Test Fixtures', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
-      expect(result.content[0].type).toBe('text');
-      expect(result.content[0].text).toBe(errorMessage);
+      expect(result.content[0]?.type).toBe('text');
+      expect(result.content[0]?.text).toBe(errorMessage);
     });
   });
 
@@ -107,8 +109,8 @@ describe('MCP Test Fixtures', () => {
     it('should throw error for non-string content', () => {
       const result = {
         isError: false,
-        content: [{ type: 'text', text: 123 as any }],
-      } as any;
+        content: [{ type: 'text', text: 123 as unknown }],
+      } as unknown as Parameters<typeof parseResultJson>[0];
 
       expect(() => parseResultJson(result)).toThrow(
         'Result content is not a string'
@@ -119,7 +121,7 @@ describe('MCP Test Fixtures', () => {
       const result = {
         isError: false,
         content: [{ type: 'text', text: 'invalid json {' }],
-      } as any;
+      } as unknown as Parameters<typeof parseResultJson>[0];
 
       expect(() => parseResultJson(result)).toThrow();
     });

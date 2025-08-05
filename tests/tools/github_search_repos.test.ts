@@ -222,7 +222,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.hints.length).toBeGreaterThan(0);
     });
   });
@@ -257,18 +257,23 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       // With the new bulk search implementation, response.data is an array containing results from all queries
       expect(response.data.length).toBeGreaterThan(0);
 
       // Find the result with repositories
-      const queryResult = response.data.find(
-        (r: any) => r.data?.repositories?.length > 0
-      );
+      const queryResult = response.data.find((r: Record<string, unknown>) => {
+        const repositories = (r.data as Record<string, unknown>)?.repositories;
+        return Array.isArray(repositories) && repositories.length > 0;
+      });
       expect(queryResult).toBeDefined();
 
-      const repo = queryResult.data.repositories.find(
-        (r: any) => r.full_name === 'owner/awesome-repo'
+      const repo = (
+        (queryResult.data as Record<string, unknown>)?.repositories as Array<
+          Record<string, unknown>
+        >
+      )?.find(
+        (r: Record<string, unknown>) => r.full_name === 'owner/awesome-repo'
       );
       expect(repo).toBeDefined();
       expect(repo).toMatchObject({
@@ -300,7 +305,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may have no repositories
       expect(response.data.length).toBeGreaterThan(0);
       const queryResult = response.data[0];
@@ -334,7 +339,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may be an error
       expect(response.data.length).toBeGreaterThan(0);
       const queryResult = response.data[0];
@@ -364,9 +369,9 @@ describe('GitHub Search Repositories Tool', () => {
 
       // The implementation handles errors gracefully - may return error or empty results
       if (result.isError) {
-        expect(result.content[0].text).toContain('Network timeout');
+        expect(result.content[0]?.text).toContain('Network timeout');
       } else {
-        const data = JSON.parse(result.content[0].text as string);
+        const data = JSON.parse(result.content[0]?.text as string);
         expect(data.hints.length).toBeGreaterThan(0);
       }
     });
@@ -401,23 +406,27 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       // With bulk processing, expect 2 query results
       expect(response.data.length).toBeGreaterThanOrEqual(2);
       expect(response.hints.length).toBeGreaterThan(0);
 
       // Look for specific repositories from our mocks in the query results
       const allRepos = response.data.flatMap(
-        (queryResult: any) => queryResult.data?.repositories || []
+        (queryResult: Record<string, unknown>) =>
+          (queryResult.data as Record<string, unknown>)?.repositories || []
       );
       const repo1 = allRepos.find(
-        (r: any) => r.name && r.name.includes('repo1')
+        (r: Record<string, unknown>) =>
+          r.name && (r.name as string).includes('repo1')
       );
       const repo2 = allRepos.find(
-        (r: any) => r.name && r.name.includes('repo2')
+        (r: Record<string, unknown>) =>
+          r.name && (r.name as string).includes('repo2')
       );
       const repo3 = allRepos.find(
-        (r: any) => r.name && r.name.includes('repo3')
+        (r: Record<string, unknown>) =>
+          r.name && (r.name as string).includes('repo3')
       );
       expect(repo1 || repo2 || repo3).toBeDefined();
     });
@@ -447,7 +456,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.data.length).toBeGreaterThan(0); // Successful query results
       expect(data.hints.length).toBeGreaterThan(0);
       expect(data.hints.length).toBeGreaterThan(0);
@@ -476,7 +485,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.data.length).toBeGreaterThan(2); // Repositories from 3 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
       expect(data.hints.length).toBeGreaterThan(0);
@@ -519,7 +528,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0].text as string);
+      const data = JSON.parse(result.content[0]?.text as string);
       expect(data.data.length).toBeGreaterThan(4); // Repositories from 5 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
       expect(data.hints.length).toBeGreaterThan(0);
@@ -529,7 +538,7 @@ describe('GitHub Search Repositories Tool', () => {
   });
 
   // Helper function to create mock repository response
-  function createMockRepositoryResponse(repos: any[]) {
+  function createMockRepositoryResponse(repos: Array<Record<string, unknown>>) {
     return {
       data: {
         total_count: repos.length,

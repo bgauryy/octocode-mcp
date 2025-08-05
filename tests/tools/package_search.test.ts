@@ -93,8 +93,8 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       // Check the result contains the NPM package
       expect(result.content).toBeDefined();
-      expect(result.content[0].type).toBe('text');
-      const response = JSON.parse(result.content[0].text as string);
+      expect(result.content[0]?.type).toBe('text');
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.total_count).toBe(1);
       expect(response.data.npm).toHaveLength(1);
       expect(response.data.python || []).toHaveLength(0);
@@ -124,7 +124,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
+      const errorData = JSON.parse(result.content[0]?.text as string);
       expect(errorData.meta).toHaveProperty('error');
       expect(errorData.hints).toBeDefined();
       expect(errorData.hints.length).toBeGreaterThan(0);
@@ -170,8 +170,8 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       // Check the result contains the Python package
       expect(result.content).toBeDefined();
-      expect(result.content[0].type).toBe('text');
-      const response = JSON.parse(result.content[0].text as string);
+      expect(result.content[0]?.type).toBe('text');
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.total_count).toBe(1);
       expect(response.data.npm || []).toHaveLength(0);
       expect(response.data.python).toHaveLength(1);
@@ -191,7 +191,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0].text as string);
+      const errorData = JSON.parse(result.content[0]?.text as string);
       expect(errorData.meta).toHaveProperty('error');
       expect(errorData.hints).toBeDefined();
       expect(errorData.hints.length).toBeGreaterThan(0);
@@ -248,7 +248,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       expect(mockExecuteNpmCommand).toHaveBeenCalledTimes(2);
 
       // Check both packages are in results
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.total_count).toBe(2);
       expect(response.data.npm).toHaveLength(2);
       expect(response.data.python || []).toHaveLength(0);
@@ -324,7 +324,7 @@ describe('Package Search Tool (NPM & Python)', () => {
         { cache: true }
       );
 
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.npm).toHaveLength(1);
       expect(response.data.npm[0].name).toBe('react-router');
     });
@@ -376,7 +376,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.npm).toHaveLength(2);
       expect(response.data.npm[0].name).toBe('lodash');
       expect(response.data.npm[1].name).toBe('axios');
@@ -429,7 +429,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.npm).toHaveLength(2);
       expect(response.data.npm[0].name).toBe('moment');
       expect(response.data.npm[1].name).toBe('dayjs');
@@ -482,7 +482,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.npm).toHaveLength(2);
       expect(response.data.npm[0].name).toBe('react');
       expect(response.data.npm[1].name).toBe('vue');
@@ -535,7 +535,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.python).toHaveLength(2);
       expect(response.data.python[0].name).toBe('requests');
       expect(response.data.python[1].name).toBe('django');
@@ -579,7 +579,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.npm).toHaveLength(1);
       expect(response.data.python).toHaveLength(1);
       expect(response.data.npm[0].name).toBe('express');
@@ -666,7 +666,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0].text as string);
+      const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data.npm).toBeDefined();
       // For metadata fetching, the structure might be different
       if (response.data.npm.typescript) {
@@ -689,7 +689,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       });
 
       expect(result.isError).toBe(true);
-      const errorText = result.content[0].text as string;
+      const errorText = result.content[0]?.text as string;
       expect(
         errorText.includes('FALLBACK:') ||
           errorText.includes('CUSTOM:') ||

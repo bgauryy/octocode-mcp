@@ -204,8 +204,8 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('test_1');
-      expect(result[1].id).toBe('test_2');
+      expect(result[0]?.id).toBe('test_1');
+      expect(result[1]?.id).toBe('test_2');
     });
 
     it('should handle queries with duplicate ids', () => {
@@ -224,8 +224,8 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('test_1');
-      expect(result[1].id).toBe('test_1_1');
+      expect(result[0]?.id).toBe('test_1');
+      expect(result[1]?.id).toBe('test_1_1');
     });
 
     it('should handle mixed queries with and without ids', () => {
@@ -245,9 +245,9 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(3);
-      expect(result[0].id).toBe('custom_1');
-      expect(result[1].id).toBe('test_2');
-      expect(result[2].id).toBe('custom_1_1');
+      expect(result[0]?.id).toBe('custom_1');
+      expect(result[1]?.id).toBe('test_2');
+      expect(result[2]?.id).toBe('custom_1_1');
     });
   });
 
@@ -274,9 +274,9 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(3);
-      expect(result[0].id).toBe('test_1');
-      expect(result[1].id).toBe('test_2');
-      expect(result[2].id).toBe('test_3');
+      expect(result[0]?.id).toBe('test_1');
+      expect(result[1]?.id).toBe('test_2');
+      expect(result[2]?.id).toBe('test_3');
     });
 
     it('should make duplicate IDs unique by adding suffixes', () => {
@@ -300,9 +300,9 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(3);
-      expect(result[0].id).toBe('test_1');
-      expect(result[1].id).toBe('test_1_1');
-      expect(result[2].id).toBe('test_1_2');
+      expect(result[0]?.id).toBe('test_1');
+      expect(result[1]?.id).toBe('test_1_1');
+      expect(result[2]?.id).toBe('test_1_2');
     });
 
     it('should handle mixed queries with and without IDs', () => {
@@ -330,10 +330,10 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(4);
-      expect(result[0].id).toBe('custom_1');
-      expect(result[1].id).toBe('test_2');
-      expect(result[2].id).toBe('custom_1_1');
-      expect(result[3].id).toBe('test_4');
+      expect(result[0]?.id).toBe('custom_1');
+      expect(result[1]?.id).toBe('test_2');
+      expect(result[2]?.id).toBe('custom_1_1');
+      expect(result[3]?.id).toBe('test_4');
     });
 
     it('should preserve existing unique IDs', () => {
@@ -357,9 +357,9 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(3);
-      expect(result[0].id).toBe('unique_1');
-      expect(result[1].id).toBe('unique_2');
-      expect(result[2].id).toBe('unique_3');
+      expect(result[0]?.id).toBe('unique_1');
+      expect(result[1]?.id).toBe('unique_2');
+      expect(result[2]?.id).toBe('unique_3');
     });
 
     it('should handle complex duplicate patterns', () => {
@@ -393,11 +393,11 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(5);
-      expect(result[0].id).toBe('test_1');
-      expect(result[1].id).toBe('test_1_1');
-      expect(result[2].id).toBe('test_2');
-      expect(result[3].id).toBe('test_1_2');
-      expect(result[4].id).toBe('test_2_1');
+      expect(result[0]?.id).toBe('test_1');
+      expect(result[1]?.id).toBe('test_1_1');
+      expect(result[2]?.id).toBe('test_2');
+      expect(result[3]?.id).toBe('test_1_2');
+      expect(result[4]?.id).toBe('test_2_1');
     });
 
     it('should handle large datasets efficiently', () => {
@@ -412,8 +412,8 @@ describe('GitHubCodeSearchQuerySchema', () => {
 
       const result = ensureUniqueQueryIds(queries, 'test');
       expect(result).toHaveLength(100);
-      expect(result[0].id).toBe('test_1');
-      expect(result[99].id).toBe('test_100');
+      expect(result[0]?.id).toBe('test_1');
+      expect(result[99]?.id).toBe('test_100');
     });
 
     it('should not modify the original query objects', () => {
@@ -439,8 +439,8 @@ describe('GitHubCodeSearchQuerySchema', () => {
       expect(originalQueries[1]).not.toHaveProperty('id');
 
       // Result should have id field
-      expect(result[0]).toHaveProperty('id');
-      expect(result[1]).toHaveProperty('id');
+      expect(result[0]?.id).toBeDefined();
+      expect(result[1]?.id).toBeDefined();
     });
   });
 });
@@ -508,7 +508,7 @@ describe('Quality Boosting and Research Goals', () => {
     });
 
     expect(result).not.toHaveProperty('error');
-    const callArgs = mockOctokit.rest.search.code.mock.calls[0][0];
+    const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/archived:false/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
@@ -540,7 +540,7 @@ describe('Quality Boosting and Research Goals', () => {
     });
 
     expect(result).not.toHaveProperty('error');
-    const callArgs = mockOctokit.rest.search.code.mock.calls[0][0];
+    const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
     expect(callArgs.q).toMatch(/archived:false/);
@@ -571,7 +571,7 @@ describe('Quality Boosting and Research Goals', () => {
     });
 
     expect(result).not.toHaveProperty('error');
-    const callArgs = mockOctokit.rest.search.code.mock.calls[0][0];
+    const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
     expect(callArgs.q).toMatch(/archived:false/);
@@ -601,7 +601,7 @@ describe('Quality Boosting and Research Goals', () => {
     });
 
     expect(result).not.toHaveProperty('error');
-    const callArgs = mockOctokit.rest.search.code.mock.calls[0][0];
+    const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).not.toMatch(/stars:>10/);
     expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
@@ -633,7 +633,7 @@ describe('Quality Boosting and Research Goals', () => {
     });
 
     expect(result).not.toHaveProperty('error');
-    const callArgs = mockOctokit.rest.search.code.mock.calls[0][0];
+    const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>1000/);
     expect(callArgs.q).toMatch(/forks:>100/);
     expect(callArgs.q).toMatch(/pushed:>2024-01-01/);

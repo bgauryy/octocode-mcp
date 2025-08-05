@@ -70,11 +70,17 @@ const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
 );
 
 describe('Index Module', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processExitSpy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processStdinResumeSpy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processStdinOnSpy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processOnSpy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processStdoutUncorkSpy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processStderrUncorkSpy: any;
   let originalGithubToken: string | undefined;
   let originalGhToken: string | undefined;
@@ -91,8 +97,13 @@ describe('Index Module', () => {
     process.env.GITHUB_TOKEN = 'test-token';
 
     // Setup default mock implementations
-    mockMcpServerConstructor.mockImplementation(() => mockMcpServer as any);
-    mockStdioServerTransport.mockImplementation(() => mockTransport as any);
+    mockMcpServerConstructor.mockImplementation(
+      () => mockMcpServer as unknown as InstanceType<typeof McpServer>
+    );
+    mockStdioServerTransport.mockImplementation(
+      () =>
+        mockTransport as unknown as InstanceType<typeof StdioServerTransport>
+    );
 
     // Mock NPM user details
     mockGetNPMUserDetails.mockResolvedValue({
@@ -184,9 +195,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const serverConfig = mockMcpServerConstructor.mock.calls[0][0];
-      expect(serverConfig.version).toBeDefined();
-      expect(typeof serverConfig.version).toBe('string');
+      const serverConfig = mockMcpServerConstructor.mock.calls[0]?.[0];
+      expect(serverConfig?.version).toBeDefined();
+      expect(typeof serverConfig?.version).toBe('string');
     });
   });
 
@@ -394,6 +405,88 @@ describe('Index Module', () => {
       expect(exitCalled).toBe(true);
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
+
+    it('should handle tool registration errors gracefully', async () => {
+      // Mock a tool registration function to throw an error
+      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
+        throw new Error('Tool registration failed');
+      });
+
+      // The module should still load and register other tools
+      await import('../src/index.js');
+
+      // Verify that other tools were still registered
+      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
+    });
+
+    it('should handle multiple tool registration errors', async () => {
+      // Mock multiple tool registration functions to throw errors
+      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
+        throw new Error('Tool 1 registration failed');
+      });
+      mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {
+        throw new Error('Tool 2 registration failed');
+      });
+
+      // The module should still load and register other tools
+      await import('../src/index.js');
+
+      // Verify that other tools were still registered
+      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).toHaveBeenCalled();
+    });
+
+    it('should handle all tool registration errors', async () => {
+      // Mock all tool registration functions to throw errors
+      const mockError = (toolName: string) => () => {
+        throw new Error(`${toolName} registration failed`);
+      };
+
+      mockRegisterGitHubSearchCodeTool.mockImplementation(
+        mockError('GitHubSearchCode')
+      );
+      mockRegisterFetchGitHubFileContentTool.mockImplementation(
+        mockError('FetchGitHubFileContent')
+      );
+      mockRegisterSearchGitHubReposTool.mockImplementation(
+        mockError('SearchGitHubRepos')
+      );
+      mockRegisterGitHubSearchCommitsTool.mockImplementation(
+        mockError('GitHubSearchCommits')
+      );
+      mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
+        mockError('SearchGitHubPullRequests')
+      );
+      mockRegisterPackageSearchTool.mockImplementation(
+        mockError('PackageSearch')
+      );
+      mockRegisterViewGitHubRepoStructureTool.mockImplementation(
+        mockError('ViewGitHubRepoStructure')
+      );
+
+      // When all tools fail, the server should not start
+      let exitCalled = false;
+      processExitSpy.mockImplementation(() => {
+        exitCalled = true;
+        throw new Error('process.exit called with code 1');
+      });
+
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+        // Give extra time for the catch block to execute
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        // Expected - process.exit throws
+      }
+
+      // Verify that the server was created but not connected due to tool registration failure
+      expect(mockMcpServerConstructor).toHaveBeenCalled();
+      expect(mockMcpServer.connect).not.toHaveBeenCalled();
+      expect(exitCalled).toBe(true);
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
   });
 
   describe('Server Startup', () => {
@@ -474,13 +567,13 @@ describe('Index Module', () => {
 
       // Get the SIGINT handler
       const sigintHandler = processOnSpy.mock.calls.find(
-        (call: any[]) => call[0] === 'SIGINT'
+        (call: Array<unknown>) => call[0] === 'SIGINT'
       )?.[1] as Function;
 
       expect(sigintHandler).toBeDefined();
 
       // Mock process.exit to not throw for this test
-      processExitSpy.mockImplementation(() => {});
+      processExitSpy?.mockImplementation(() => {});
 
       // Call the handler
       try {
@@ -498,7 +591,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       const sigintHandler = processOnSpy.mock.calls.find(
-        (call: any[]) => call[0] === 'SIGINT'
+        (call: Array<unknown>) => call[0] === 'SIGINT'
       )?.[1] as Function;
 
       expect(sigintHandler).toBeDefined();
@@ -521,7 +614,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       const sigintHandler = processOnSpy.mock.calls.find(
-        (call: any[]) => call[0] === 'SIGINT'
+        (call: Array<unknown>) => call[0] === 'SIGINT'
       )?.[1] as Function;
 
       expect(sigintHandler).toBeDefined();

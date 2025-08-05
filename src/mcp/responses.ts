@@ -133,14 +133,14 @@ export function toDDMMYYYY(timestamp: string): string {
  */
 export function simplifyRepoUrl(url: string): string {
   const match = url.match(/github\.com\/([^/]+\/[^/]+)/);
-  return match ? match[1] : url;
+  return match?.[1] || url;
 }
 
 /**
  * Extract first line of commit message
  */
 export function getCommitTitle(message: string): string {
-  return message.split('\n')[0].trim();
+  return message.split('\n')[0]?.trim() || '';
 }
 
 /**
@@ -163,7 +163,7 @@ export function simplifyGitHubUrl(url: string): string {
   const match = url.match(
     /github\.com\/[^/]+\/[^/]+\/(?:blob|commit)\/[^/]+\/(.+)$/
   );
-  return match ? match[1] : url;
+  return match?.[1] || url;
 }
 
 /**

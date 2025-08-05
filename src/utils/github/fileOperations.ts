@@ -214,7 +214,7 @@ async function processFileContentAPI(
 
     // Find all lines that contain the match string
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes(matchString)) {
+      if (lines[i]?.includes(matchString)) {
         matchingLines.push(i + 1); // Convert to 1-based line numbers
       }
     }
@@ -229,7 +229,7 @@ async function processFileContentAPI(
     }
 
     // Use the first match, with context lines around it
-    const firstMatch = matchingLines[0];
+    const firstMatch = matchingLines[0]!; // Safe because we check length > 0 above
     const matchStartLine = Math.max(1, firstMatch - contextLines);
     const matchEndLine = Math.min(totalLines, firstMatch + contextLines);
 

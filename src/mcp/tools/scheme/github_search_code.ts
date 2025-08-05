@@ -205,5 +205,5 @@ export interface ProcessedCodeSearchResult {
   };
   error?: string;
   hints?: string[];
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }

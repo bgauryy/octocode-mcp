@@ -112,14 +112,28 @@ export function registerPackageSearchTool(
           }
 
           // Success - generate intelligent hints
-          const npmResults: any[] =
+          const npmResults: Array<Record<string, unknown>> =
             'npmResults' in searchResult
-              ? searchResult.npmResults || []
-              : (searchResult as any).npm || [];
-          const pythonResults: any[] =
+              ? Array.isArray(searchResult.npmResults)
+                ? searchResult.npmResults
+                : []
+              : Array.isArray(
+                    (searchResult as unknown as Record<string, unknown>).npm
+                  )
+                ? ((searchResult as unknown as Record<string, unknown>)
+                    .npm as Array<Record<string, unknown>>)
+                : [];
+          const pythonResults: Array<Record<string, unknown>> =
             'pythonResults' in searchResult
-              ? searchResult.pythonResults || []
-              : (searchResult as any).python || [];
+              ? Array.isArray(searchResult.pythonResults)
+                ? searchResult.pythonResults
+                : []
+              : Array.isArray(
+                    (searchResult as unknown as Record<string, unknown>).python
+                  )
+                ? ((searchResult as unknown as Record<string, unknown>)
+                    .python as Array<Record<string, unknown>>)
+                : [];
           const totalPackages =
             (npmResults?.length || 0) + (pythonResults?.length || 0);
 
@@ -129,24 +143,40 @@ export function registerPackageSearchTool(
               ...(pythonResults && pythonResults.length > 0 ? ['python'] : []),
             ],
             repositoryLinks: [
-              ...(npmResults?.flatMap((pkg: any) =>
-                pkg.repository?.url ? [pkg.repository.url] : []
+              ...(npmResults?.flatMap((pkg: Record<string, unknown>) =>
+                (pkg.repository as Record<string, unknown>)?.url
+                  ? [(pkg.repository as Record<string, unknown>).url as string]
+                  : []
               ) || []),
-              ...(pythonResults?.flatMap((pkg: any) =>
-                pkg.project_urls?.Homepage ? [pkg.project_urls.Homepage] : []
+              ...(pythonResults?.flatMap((pkg: Record<string, unknown>) =>
+                (pkg.project_urls as Record<string, unknown>)?.Homepage
+                  ? [
+                      (pkg.project_urls as Record<string, unknown>)
+                        .Homepage as string,
+                    ]
+                  : []
               ) || []),
             ].slice(0, 5), // Limit to 5 most relevant repositories
             dataQuality: {
               hasContent: totalPackages > 0,
               hasRepositoryLinks:
-                npmResults?.some((pkg: any) => pkg.repository?.url) ||
-                pythonResults?.some((pkg: any) => pkg.project_urls?.Homepage) ||
+                npmResults?.some(
+                  (pkg: Record<string, unknown>) =>
+                    (pkg.repository as Record<string, unknown>)?.url
+                ) ||
+                pythonResults?.some(
+                  (pkg: Record<string, unknown>) =>
+                    (pkg.project_urls as Record<string, unknown>)?.Homepage
+                ) ||
                 false,
               hasMetadata:
                 npmResults?.some(
-                  (pkg: any) => pkg.version || pkg.description
+                  (pkg: Record<string, unknown>) =>
+                    pkg.version || pkg.description
                 ) ||
-                pythonResults?.some((pkg: any) => pkg.version || pkg.summary) ||
+                pythonResults?.some(
+                  (pkg: Record<string, unknown>) => pkg.version || pkg.summary
+                ) ||
                 false,
             },
           };

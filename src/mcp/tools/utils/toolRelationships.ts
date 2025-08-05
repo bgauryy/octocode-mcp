@@ -750,8 +750,10 @@ export function generateToolHints(
     strategicCount < maxStrategicHints
   ) {
     const topFallback = suggestions.fallback[0];
-    hints.push(`Try ${topFallback.tool} to ${topFallback.reason}`);
-    strategicCount++;
+    if (topFallback) {
+      hints.push(`Try ${topFallback.tool} to ${topFallback.reason}`);
+      strategicCount++;
+    }
   }
 
   // Add success next steps
@@ -761,8 +763,10 @@ export function generateToolHints(
     strategicCount < maxStrategicHints
   ) {
     const topNextStep = suggestions.nextSteps[0];
-    hints.push(`Use ${topNextStep.tool} to ${topNextStep.reason}`);
-    strategicCount++;
+    if (topNextStep) {
+      hints.push(`Use ${topNextStep.tool} to ${topNextStep.reason}`);
+      strategicCount++;
+    }
   }
 
   // Add strategic alternatives if space allows
@@ -771,7 +775,9 @@ export function generateToolHints(
     strategicCount < maxStrategicHints
   ) {
     const topAlternative = suggestions.strategicAlternatives[0];
-    hints.push(`Consider ${topAlternative.tool} to ${topAlternative.reason}`);
+    if (topAlternative) {
+      hints.push(`Consider ${topAlternative.tool} to ${topAlternative.reason}`);
+    }
   }
 
   return hints;
@@ -799,7 +805,7 @@ export function generateSmartHints(
     previousTools,
     // Use provided research goal or infer from context
     researchGoal:
-      (results.researchGoal as any) ||
+      (results.researchGoal as ResearchGoal) ||
       (results.hasResults
         ? 'analysis'
         : results.errorMessage
@@ -824,13 +830,15 @@ export function generateSmartHints(
 // Legacy compatibility exports
 export function generateSmartResearchHints(
   currentTool: string,
-  context: any
+  context: Record<string, unknown>
 ): string[] {
   // Convert to new system temporarily for backward compatibility
-  return generateSmartHints(currentTool as any, {
-    hasResults: context?.hasResults,
+  return generateSmartHints(currentTool as ToolName, {
+    hasResults: context?.hasResults as boolean,
     totalItems:
-      context?.foundFiles?.length || context?.foundPackages?.length || 0,
+      (context?.foundFiles as Array<unknown>)?.length ||
+      (context?.foundPackages as Array<unknown>)?.length ||
+      0,
     customHints: [],
   });
 }

@@ -28,7 +28,14 @@ const mockOctokit = vi.hoisted(() => ({
 }));
 
 const mockOctokitWithThrottling = vi.hoisted(() => {
-  const MockClass = vi.fn().mockImplementation(() => mockOctokit) as any;
+  const MockClass = vi
+    .fn()
+    .mockImplementation(() => mockOctokit) as unknown as Record<
+    string,
+    unknown
+  > & {
+    mockImplementation: (fn: () => unknown) => unknown;
+  };
   MockClass.plugin = vi.fn().mockReturnValue(MockClass);
   return MockClass;
 });
@@ -47,13 +54,16 @@ vi.mock('octokit', () => ({
   Octokit: mockOctokitWithThrottling,
   RequestError: class RequestError extends Error {
     public status: number;
-    public request: any;
-    public response?: any;
+    public request: Record<string, unknown>;
+    public response?: Record<string, unknown>;
 
     constructor(
       message: string,
       statusCode: number,
-      options: { request: any; response?: any }
+      options: {
+        request: Record<string, unknown>;
+        response?: Record<string, unknown>;
+      }
     ) {
       super(message);
       this.name = 'HttpError';
@@ -184,7 +194,12 @@ describe('GitHub API Utils', () => {
     it('should handle authentication failure', async () => {
       const { RequestError } = await import('octokit');
       const authError = new RequestError('Bad credentials', 401, {
-        request: {} as any,
+        // @ts-ignore - Test mock, bypass strict typing
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/user',
+          headers: {},
+        } as unknown as Record<string, unknown>,
       });
       mockOctokit.rest.users.getAuthenticated.mockRejectedValue(authError);
 
@@ -202,7 +217,12 @@ describe('GitHub API Utils', () => {
     it('should handle other authentication errors', async () => {
       const { RequestError } = await import('octokit');
       const serverError = new RequestError('Server error', 500, {
-        request: {} as any,
+        // @ts-ignore - Test mock, bypass strict typing
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/user',
+          headers: {},
+        } as unknown as Record<string, unknown>,
       });
       mockOctokit.rest.users.getAuthenticated.mockRejectedValue(serverError);
 
@@ -336,13 +356,23 @@ describe('GitHub API Utils', () => {
     it('should handle GitHub API rate limit error', async () => {
       const { RequestError } = await import('octokit');
       const rateLimitError = new RequestError('Rate limit exceeded', 403, {
-        request: {} as any,
+        // @ts-ignore - Test mock, bypass strict typing
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/search/code',
+          headers: {},
+        } as unknown as Record<string, unknown>,
+        // @ts-ignore - Test mock, bypass strict typing
         response: {
           headers: {
             'x-ratelimit-remaining': '0',
             'x-ratelimit-reset': '1640995200',
           },
-        } as any,
+          status: 403,
+          url: 'https://api.github.com/search/code',
+          data: {},
+          retryCount: 0,
+        } as unknown as Record<string, unknown>,
       });
 
       mockOctokit.rest.search.code.mockRejectedValue(rateLimitError);
@@ -372,7 +402,12 @@ describe('GitHub API Utils', () => {
     it('should handle authentication error', async () => {
       const { RequestError } = await import('octokit');
       const authError = new RequestError('Bad credentials', 401, {
-        request: {} as any,
+        // @ts-ignore - Test mock, bypass strict typing
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/search/code',
+          headers: {},
+        } as unknown as Record<string, unknown>,
       });
 
       mockOctokit.rest.search.code.mockRejectedValue(authError);
@@ -402,7 +437,12 @@ describe('GitHub API Utils', () => {
     it('should handle validation error', async () => {
       const { RequestError } = await import('octokit');
       const validationError = new RequestError('Validation failed', 422, {
-        request: {} as any,
+        // @ts-ignore - Test mock, bypass strict typing
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com/search/code',
+          headers: {},
+        } as unknown as Record<string, unknown>,
       });
 
       mockOctokit.rest.search.code.mockRejectedValue(validationError);
@@ -884,13 +924,23 @@ describe('GitHub API Utils', () => {
       it('should handle repository search rate limit error', async () => {
         const { RequestError } = await import('octokit');
         const rateLimitError = new RequestError('Rate limit exceeded', 403, {
-          request: {} as any,
+          // @ts-ignore - Test mock, bypass strict typing
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com/search/repositories',
+            headers: {},
+          } as unknown as Record<string, unknown>,
+          // @ts-ignore - Test mock, bypass strict typing
           response: {
             headers: {
               'x-ratelimit-remaining': '0',
               'x-ratelimit-reset': '1640995200',
             },
-          } as any,
+            status: 403,
+            url: 'https://api.github.com/search/repositories',
+            data: {},
+            retryCount: 0,
+          } as unknown as Record<string, unknown>,
         });
 
         mockOctokit.rest.search.repos.mockRejectedValue(rateLimitError);
@@ -1203,7 +1253,12 @@ describe('GitHub API Utils', () => {
         it('should handle file not found error', async () => {
           const { RequestError } = await import('octokit');
           const notFoundError = new RequestError('Not Found', 404, {
-            request: {} as any,
+            // @ts-ignore - Test mock, bypass strict typing
+            request: {
+              method: 'GET',
+              url: 'https://api.github.com/repos/facebook/react/contents/nonexistent.js',
+              headers: {},
+            } as unknown as Record<string, unknown>,
           });
 
           mockOctokit.rest.repos.getContent.mockRejectedValue(notFoundError);
@@ -1323,7 +1378,12 @@ describe('GitHub API Utils', () => {
           it('should handle repository not found', async () => {
             const { RequestError } = await import('octokit');
             const notFoundError = new RequestError('Not Found', 404, {
-              request: {} as any,
+              // @ts-ignore - Test mock, bypass strict typing
+              request: {
+                method: 'GET',
+                url: 'https://api.github.com/repos/nonexistent/repo/contents',
+                headers: {},
+              } as unknown as Record<string, unknown>,
             });
 
             mockOctokit.rest.repos.getContent.mockRejectedValue(notFoundError);
@@ -1350,7 +1410,12 @@ describe('GitHub API Utils', () => {
           it('should try fallback branches when main branch not found', async () => {
             const { RequestError } = await import('octokit');
             const notFoundError = new RequestError('Not Found', 404, {
-              request: {} as any,
+              // @ts-ignore - Test mock, bypass strict typing
+              request: {
+                method: 'GET',
+                url: 'https://api.github.com/repos/test/repo/contents',
+                headers: {},
+              } as unknown as Record<string, unknown>,
             });
 
             // First call fails (requested branch)

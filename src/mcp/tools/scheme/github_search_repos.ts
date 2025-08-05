@@ -1,9 +1,6 @@
 import { z } from 'zod';
 import { extendBaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import type {
-  GitHubRepository,
-  APIResponseMetadata,
-} from '../../../types/github';
+import type { Repository } from '../../../types/github-openapi';
 
 // ============================================================================
 // REPOSITORY SEARCH QUERY SCHEMA
@@ -153,10 +150,10 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
 export interface ProcessedRepoSearchResult {
   queryId: string;
   data?: {
-    repositories?: GitHubRepository[];
+    repositories?: Repository[];
     total_count?: number;
   };
   error?: string;
   hints?: string[];
-  metadata: APIResponseMetadata;
+  metadata: Record<string, unknown>;
 }

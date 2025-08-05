@@ -1,27 +1,33 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
-import { createResult } from '../responses';
-import { searchGitHubCodeAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
-import { logger } from '../../utils/logger';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+
+import { createResult } from '../responses.js';
+import {
+  TOOL_NAMES,
+  ToolOptions,
+  ResearchGoal,
+} from './utils/toolConstants.js';
+import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
-  ProcessedCodeSearchResult,
-} from './scheme/github_search_code';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
+} from './scheme/github_search_code.js';
+import { searchGitHubCodeAPI } from '../../utils/githubAPI.js';
+import { generateResearchSpecificHints } from './utils/hints_consolidated.js';
 import {
-  processBulkQueries,
   createBulkResponse,
-  type BulkResponseConfig,
-} from './utils/bulkOperations';
+  BulkResponseConfig,
+  processBulkQueries,
+} from './utils/bulkOperations.js';
 import {
   generateToolHints,
   generateSmartSuggestions,
-  generateResearchSpecificHints,
   TOOL_SUGGESTION_CONFIGS,
 } from './utils/hints_consolidated';
+import { ensureUniqueQueryIds } from './utils/queryUtils';
+import { logger } from '../../utils/logger';
+import { ProcessedCodeSearchResult } from './scheme/github_search_code';
+
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
 SEARCH STRATEGY:
@@ -168,7 +174,8 @@ async function searchMultipleGitHubCode(
         // Extract repository context
         const repository =
           apiResult.data.repository?.name ||
-          (apiResult.data.items.length > 0
+          (apiResult.data.items.length > 0 &&
+          apiResult.data.items[0]?.repository?.nameWithOwner
             ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
 
@@ -203,8 +210,9 @@ async function searchMultipleGitHubCode(
 
         // Add searchType and hints for no results case
         if (hasNoResults) {
-          (result.metadata as any).searchType = 'no_results';
-          (result.metadata as any).queryArgs = { ...query };
+          (result.metadata as Record<string, unknown>).searchType =
+            'no_results';
+          (result.metadata as Record<string, unknown>).queryArgs = { ...query };
 
           // Generate specific hints for no results
           const noResultsHints = [
@@ -220,7 +228,7 @@ async function searchMultipleGitHubCode(
             );
           }
 
-          (result as any).hints = noResultsHints;
+          (result as Record<string, unknown>).hints = noResultsHints;
         }
 
         return result;
@@ -288,7 +296,10 @@ async function searchMultipleGitHubCode(
       }
 
       // Extract search patterns from query terms
-      const queryTerms = result.metadata?.queryArgs?.queryTerms || [];
+      const queryArgs = result.metadata?.queryArgs as
+        | Record<string, unknown>
+        | undefined;
+      const queryTerms = (queryArgs?.queryTerms as string[]) || [];
       queryTerms.forEach((term: string) =>
         aggregatedContext.searchPatterns.add(term)
       );
@@ -299,7 +310,7 @@ async function searchMultipleGitHubCode(
   const researchGoal = uniqueQueries[0]?.researchGoal || 'discovery';
   const enhancedHints = generateResearchSpecificHints(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
-    researchGoal as any,
+    researchGoal as ResearchGoal,
     {
       hasResults: successfulCount > 0,
       totalItems: successfulCount,
@@ -349,7 +360,7 @@ async function searchMultipleGitHubCode(
   if (enhancedHints.length > 0) {
     // Extract the current hints from the response content
     const responseText = response.content[0]?.text || '';
-    let responseData;
+    let responseData: Record<string, unknown>;
     try {
       responseData = JSON.parse(responseText as string);
     } catch {
@@ -358,13 +369,13 @@ async function searchMultipleGitHubCode(
     }
 
     // Combine enhanced hints with existing hints
-    const existingHints = responseData.hints || [];
+    const existingHints = (responseData.hints as string[]) || [];
     const combinedHints = [...enhancedHints, ...existingHints].slice(0, 8);
 
     // Create new response with enhanced hints
     return createResult({
       data: responseData.data,
-      meta: responseData.meta,
+      meta: responseData.meta as Record<string, unknown> | undefined,
       hints: combinedHints,
       isError: response.isError,
     });

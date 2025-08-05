@@ -38,8 +38,12 @@ describe('ContentSanitizer', () => {
         expect(typeof result.sanitizedParams.language).not.toBe('string');
 
         // Verify arrays don't contain comma-separated strings
-        expect(result.sanitizedParams.owner.join(' ')).not.toContain(',');
-        expect(result.sanitizedParams.language.join(' ')).not.toContain(',');
+        expect(
+          (result.sanitizedParams.owner as string[]).join(' ')
+        ).not.toContain(',');
+        expect(
+          (result.sanitizedParams.language as string[]).join(' ')
+        ).not.toContain(',');
 
         // Verify each element is separate
         expect(result.sanitizedParams.owner).toHaveLength(3);
@@ -77,7 +81,7 @@ describe('ContentSanitizer', () => {
         expect(Array.isArray(result.sanitizedParams.queryTerms)).toBe(true);
         expect(result.sanitizedParams.owner).toHaveLength(0);
         expect(result.sanitizedParams.queryTerms).toHaveLength(1);
-        expect(result.sanitizedParams.queryTerms[0]).toBe('test');
+        expect((result.sanitizedParams.queryTerms as string[])[0]).toBe('test');
       });
 
       it('should handle single-element arrays correctly', () => {
@@ -110,12 +114,16 @@ describe('ContentSanitizer', () => {
         expect(result.warnings.length).toBeGreaterThan(0);
 
         // Dangerous characters should be removed from sanitized params
-        expect(result.sanitizedParams.owner[0]).toBe('microsoftrm -rf /');
-        expect(result.sanitizedParams.owner[1]).toBe('facebookwhoami'); // $(whoami) becomes whoami
-        expect(result.sanitizedParams.queryTerms[0]).toBe(
+        expect((result.sanitizedParams.owner as string[])[0]).toBe(
+          'microsoftrm -rf /'
+        );
+        expect((result.sanitizedParams.owner as string[])[1]).toBe(
+          'facebookwhoami'
+        ); // $(whoami) becomes whoami
+        expect((result.sanitizedParams.queryTerms as string[])[0]).toBe(
           'useStatecat /etc/passwd'
         );
-        expect(result.sanitizedParams.queryTerms[1]).toBe(
+        expect((result.sanitizedParams.queryTerms as string[])[1]).toBe(
           'useEffectcurl evil.com'
         );
       });
@@ -162,7 +170,7 @@ describe('ContentSanitizer', () => {
 
         // Should be ready for: owners.forEach(owner => args.push(`--owner=${owner}`))
         const mockCliArgs: string[] = [];
-        result.sanitizedParams.owner.forEach((owner: string) => {
+        (result.sanitizedParams.owner as string[]).forEach((owner: string) => {
           mockCliArgs.push(`--owner=${owner}`);
         });
 
@@ -191,7 +199,7 @@ describe('ContentSanitizer', () => {
 
         // Should be ready for: repos.forEach(repo => args.push(`--repo=${owner}/${repo}`))
         const mockCliArgs: string[] = [];
-        result.sanitizedParams.repo.forEach((repo: string) => {
+        (result.sanitizedParams.repo as string[]).forEach((repo: string) => {
           mockCliArgs.push(`--repo=${result.sanitizedParams.owner}/${repo}`);
         });
 
@@ -311,7 +319,9 @@ describe('ContentSanitizer', () => {
         expect(result.sanitizedParams.repo).toBeUndefined();
         expect(Array.isArray(result.sanitizedParams.queryTerms)).toBe(true);
         expect(result.sanitizedParams.queryTerms).toHaveLength(1);
-        expect(result.sanitizedParams.queryTerms[0]).toBe('useState');
+        expect((result.sanitizedParams.queryTerms as string[])[0]).toBe(
+          'useState'
+        );
       });
     });
 
@@ -360,8 +370,8 @@ describe('ContentSanitizer', () => {
         expect(result.isValid).toBe(true);
         expect(Array.isArray(result.sanitizedParams.owner)).toBe(true);
         expect(result.sanitizedParams.owner).toHaveLength(100);
-        expect(result.sanitizedParams.owner[0]).toBe('org0');
-        expect(result.sanitizedParams.owner[99]).toBe('org99');
+        expect((result.sanitizedParams.owner as string[])[0]).toBe('org0');
+        expect((result.sanitizedParams.owner as string[])[99]).toBe('org99');
       });
 
       it('should handle arrays with extremely long strings', () => {
@@ -373,9 +383,11 @@ describe('ContentSanitizer', () => {
         const result = ContentSanitizer.validateInputParameters(params);
 
         expect(result.isValid).toBe(true);
-        expect(result.sanitizedParams.owner[0]).toBe('microsoft');
-        expect(result.sanitizedParams.owner[1]).toHaveLength(2000); // Full string (no truncation in current implementation)
-        expect(result.sanitizedParams.owner[2]).toBe('facebook');
+        expect((result.sanitizedParams.owner as string[])[0]).toBe('microsoft');
+        expect((result.sanitizedParams.owner as string[])[1]).toHaveLength(
+          2000
+        ); // Full string (no truncation in current implementation)
+        expect((result.sanitizedParams.owner as string[])[2]).toBe('facebook');
       });
     });
   });
@@ -398,15 +410,15 @@ describe('ContentSanitizer', () => {
 
       // Add exact query (join terms as typically done in CLI)
       if (result.sanitizedParams.queryTerms) {
-        args.push(result.sanitizedParams.queryTerms.join(' '));
+        args.push((result.sanitizedParams.queryTerms as string[]).join(' '));
       }
 
       // Add language
       args.push(`--language=${result.sanitizedParams.language}`);
 
       // Add repos with owners
-      result.sanitizedParams.repo.forEach((repo: string) => {
-        result.sanitizedParams.owner.forEach((owner: string) => {
+      (result.sanitizedParams.repo as string[]).forEach((repo: string) => {
+        (result.sanitizedParams.owner as string[]).forEach((owner: string) => {
           args.push(`--repo=${owner}/${repo}`);
         });
       });

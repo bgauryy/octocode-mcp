@@ -40,7 +40,7 @@ export function ensureUniqueQueryIds<T extends { id?: string }>(
  * @param query Query object that may contain null/undefined values
  * @returns Cleaned query object with only valid values
  */
-export function cleanQueryParameters<T extends Record<string, any>>(
+export function cleanQueryParameters<T extends Record<string, unknown>>(
   query: T
 ): T {
   return Object.fromEntries(
@@ -247,7 +247,7 @@ export function parseRepositoryReference(
 ): RepositoryInfo | null {
   // Handle full GitHub URLs
   const urlMatch = reference.match(/github\.com\/([^/]+)\/([^/]+)/);
-  if (urlMatch) {
+  if (urlMatch && urlMatch[1] && urlMatch[2]) {
     return {
       owner: urlMatch[1],
       repo: urlMatch[2],
@@ -257,7 +257,7 @@ export function parseRepositoryReference(
 
   // Handle owner/repo format
   const directMatch = reference.match(/^([^/]+)\/([^/]+)$/);
-  if (directMatch) {
+  if (directMatch && directMatch[1] && directMatch[2]) {
     return {
       owner: directMatch[1],
       repo: directMatch[2],
@@ -280,7 +280,7 @@ export interface FailedQueryResult<T> {
     queryArgs: T;
     error?: string;
     errorType?: ErrorContext['type'];
-    suggestions?: any;
+    suggestions?: Record<string, unknown>;
   };
 }
 
@@ -289,17 +289,15 @@ export function createFailedQueryResult<T>(
   query: T,
   error: string,
   hints: string[],
-  suggestions?: any
+  suggestions?: Record<string, unknown>
 ): FailedQueryResult<T> {
   const errorContext = extractErrorContext(error);
-
   return {
     queryId,
     failed: true,
-    researchGoal: (query as any)?.researchGoal,
     hints,
     meta: {
-      queryArgs: { ...query },
+      queryArgs: query,
       error: errorContext.message,
       errorType: errorContext.type,
       suggestions,

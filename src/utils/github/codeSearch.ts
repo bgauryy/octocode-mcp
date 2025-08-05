@@ -199,10 +199,12 @@ async function transformToOptimizedFormat(
       foundPackages: Array.from(foundPackages),
       foundFiles: Array.from(foundFiles),
       repositoryContext: singleRepo
-        ? {
-            owner: singleRepo.full_name.split('/')[0],
-            repo: singleRepo.full_name.split('/')[1],
-          }
+        ? (() => {
+            const parts = singleRepo.full_name.split('/');
+            return parts.length === 2 && parts[0] && parts[1]
+              ? { owner: parts[0], repo: parts[1] }
+              : undefined;
+          })()
         : undefined,
     },
   };
@@ -237,7 +239,8 @@ async function transformToOptimizedFormat(
 function extractSingleRepository(items: CodeSearchResultItem[]) {
   if (items.length === 0) return null;
 
-  const firstRepo = items[0].repository;
+  const firstRepo = items[0]?.repository;
+  if (!firstRepo) return null;
   const allSameRepo = items.every(
     item => item.repository.full_name === firstRepo.full_name
   );

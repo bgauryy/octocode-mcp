@@ -240,11 +240,15 @@ export async function searchPackagesAPI(
     // Return basic response format
     const basicResult: BasicPackageSearchResult = {
       total_count: totalCount,
-      python: deduplicatedPythonPackages,
+      python: deduplicatedPythonPackages as unknown as Array<
+        Record<string, unknown>
+      >,
     };
 
     if (npmEnabled && deduplicatedNpmPackages.length > 0) {
-      basicResult.npm = deduplicatedNpmPackages;
+      basicResult.npm = deduplicatedNpmPackages as unknown as Array<
+        Record<string, unknown>
+      >;
     }
 
     return basicResult;
@@ -563,7 +567,7 @@ async function fetchNpmMetadata(
       }
 
       // Parse the npm view result
-      const execResult = JSON.parse(metadataResult.content[0].text as string);
+      const execResult = JSON.parse(metadataResult.content[0]?.text as string);
       let packageData;
 
       // Handle different response formats based on field/match parameters
@@ -724,12 +728,14 @@ async function viewNpmPackage(
 }
 
 export function transformNPMToOptimizedFormat(
-  packageData: any
+  packageData: Record<string, unknown>
 ): OptimizedNpmPackageResult {
   // Extract repository URL and simplify
   const repoUrl =
-    packageData.repository?.url || packageData.repositoryGitUrl || '';
-  const repository = repoUrl ? simplifyRepoUrl(repoUrl) : '';
+    (packageData.repository as Record<string, unknown>)?.url ||
+    (packageData.repositoryGitUrl as string) ||
+    '';
+  const repository = repoUrl ? simplifyRepoUrl(repoUrl as string) : '';
 
   // Simplify exports to essential entry points only
   const exports = packageData.exports
@@ -737,28 +743,37 @@ export function transformNPMToOptimizedFormat(
     : undefined;
 
   // Get version timestamps from time object and limit to last 5
-  const timeData = packageData.time || {};
+  const timeData = (packageData.time as Record<string, unknown>) || {};
   const versionList = Array.isArray(packageData.versions)
-    ? packageData.versions
+    ? (packageData.versions as string[])
     : [];
   const recentVersions = versionList.slice(-5).map((version: string) => ({
     version,
-    date: timeData[version] ? toDDMMYYYY(timeData[version]) : 'Unknown',
+    date: timeData[version]
+      ? toDDMMYYYY(timeData[version] as string)
+      : 'Unknown',
   }));
 
   const result: OptimizedNpmPackageResult = {
-    name: packageData.name,
-    version: packageData.version,
-    description: packageData.description || '',
-    license: packageData.license || 'Unknown',
+    name: packageData.name as string,
+    version: packageData.version as string,
+    description: (packageData.description as string) || '',
+    license: (packageData.license as string) || 'Unknown',
     repository,
-    size: humanizeBytes(packageData.dist?.unpackedSize || 0),
-    created: timeData.created ? toDDMMYYYY(timeData.created) : 'Unknown',
-    updated: timeData.modified ? toDDMMYYYY(timeData.modified) : 'Unknown',
+    size: humanizeBytes(
+      ((packageData.dist as Record<string, unknown>)?.unpackedSize as number) ||
+        0
+    ),
+    created: timeData.created
+      ? toDDMMYYYY(timeData.created as string)
+      : 'Unknown',
+    updated: timeData.modified
+      ? toDDMMYYYY(timeData.modified as string)
+      : 'Unknown',
     versions: recentVersions,
     stats: {
       total_versions: versionList.length,
-      weekly_downloads: packageData.weeklyDownloads,
+      weekly_downloads: packageData.weeklyDownloads as number,
     },
   };
 
@@ -770,51 +785,66 @@ export function transformNPMToOptimizedFormat(
   return result;
 }
 
-function simplifyNPMExports(exports: any): {
+function simplifyNPMExports(exports: unknown): {
   main: string;
   types?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 } {
   if (typeof exports === 'string') {
     return { main: exports };
   }
 
-  if (typeof exports === 'object') {
-    const simplified: any = {};
+  if (typeof exports === 'object' && exports !== null) {
+    const exportsObj = exports as Record<string, unknown>;
+    const simplified: Record<string, unknown> = {};
 
     // Extract main entry point
-    if (exports['.']) {
-      const mainExport = exports['.'];
+    if (exportsObj['.']) {
+      const mainExport = exportsObj['.'];
       if (typeof mainExport === 'string') {
         simplified.main = mainExport;
-      } else if (mainExport.default) {
-        simplified.main = mainExport.default;
-      } else if (mainExport.import) {
-        simplified.main = mainExport.import;
+      } else if (typeof mainExport === 'object' && mainExport !== null) {
+        const mainExportObj = mainExport as Record<string, unknown>;
+        if (mainExportObj.default) {
+          simplified.main = mainExportObj.default;
+        } else if (mainExportObj.import) {
+          simplified.main = mainExportObj.import;
+        }
       }
     }
 
     // Extract types if available with safe property access
     if (
-      exports['./types'] ||
-      (exports['.'] && typeof exports['.'] === 'object' && exports['.'].types)
+      exportsObj['./types'] ||
+      (exportsObj['.'] &&
+        typeof exportsObj['.'] === 'object' &&
+        exportsObj['.'] !== null &&
+        (exportsObj['.'] as Record<string, unknown>).types)
     ) {
-      simplified.types = exports['./types'] || (exports['.'] as any).types;
+      simplified.types =
+        exportsObj['./types'] ||
+        (exportsObj['.'] as Record<string, unknown>).types;
     }
 
     // Add a few other important exports (max 3 total)
     let count = 0;
-    for (const [key, value] of Object.entries(exports)) {
+    for (const [key, value] of Object.entries(exportsObj)) {
       if (count >= 3 || key === '.' || key === './types') continue;
       if (key.includes('package.json') || key.includes('node_modules'))
         continue;
 
       simplified[key] =
-        typeof value === 'object' ? (value as any).default || value : value;
+        typeof value === 'object' && value !== null
+          ? (value as Record<string, unknown>).default || value
+          : value;
       count++;
     }
 
-    return simplified;
+    return simplified as {
+      main: string;
+      types?: string;
+      [key: string]: unknown;
+    };
   }
 
   return { main: 'index.js' };

@@ -9,7 +9,7 @@ import {
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from './scheme/github_search_repos';
-import type { GitHubRepository } from '../../types/github';
+import type { Repository } from '../../types/github-openapi';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
@@ -170,7 +170,7 @@ async function searchMultipleGitHubRepos(
         const hasResults =
           repositories.length > 0 && (apiResult.data.total_count || 0) > 0;
 
-        const typedRepositories = repositories as unknown as GitHubRepository[];
+        const typedRepositories = repositories as unknown as Repository[];
 
         return {
           queryId: query.id!,
@@ -233,7 +233,7 @@ async function searchMultipleGitHubRepos(
   // Extract context from successful results
   results.forEach(({ result }) => {
     if (!result.error && result.data?.repositories) {
-      result.data.repositories.forEach((repo: GitHubRepository) => {
+      result.data.repositories.forEach((repo: Repository) => {
         aggregatedContext.foundOwners.add(repo.owner.login);
         if (repo.language) {
           aggregatedContext.foundLanguages.add(repo.language);
@@ -247,7 +247,10 @@ async function searchMultipleGitHubRepos(
       });
 
       // Extract search patterns from query terms
-      const queryTerms = result.metadata?.queryArgs?.queryTerms || [];
+      const queryArgs = result.metadata?.queryArgs as
+        | { queryTerms?: string[] }
+        | undefined;
+      const queryTerms = queryArgs?.queryTerms || [];
       if (Array.isArray(queryTerms)) {
         queryTerms.forEach((term: string) =>
           aggregatedContext.searchPatterns.add(term)

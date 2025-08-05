@@ -438,9 +438,9 @@ export function generateToolHints(
  * Legacy compatibility function for smart suggestions
  */
 export function generateSmartSuggestions(
-  _config: any,
+  _config: Record<string, unknown>,
   error: string,
-  _query: any
+  _query: Record<string, unknown>
 ): { hints: string[] } {
   return {
     hints: generateErrorRecoveryHints(error),
@@ -473,14 +473,14 @@ export const TOOL_SUGGESTION_CONFIGS = {
 export function generateResearchSpecificHints(
   toolName: ToolName,
   researchGoal: ResearchGoal | string,
-  context: any
+  context: Record<string, unknown>
 ): string[] {
   return generateHints({
     toolName,
-    hasResults: context.hasResults,
-    totalItems: context.totalItems,
-    errorMessage: context.errorMessage,
+    hasResults: context.hasResults as boolean,
+    totalItems: context.totalItems as number,
+    errorMessage: context.errorMessage as string,
     researchGoal,
-    queryContext: context.queryContext,
+    queryContext: context.queryContext as HintContext['queryContext'],
   });
 }

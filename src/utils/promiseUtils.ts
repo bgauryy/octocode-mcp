@@ -133,11 +133,15 @@ async function executeWithConcurrencyLimit<T>(
   const executing: Promise<void>[] = [];
 
   for (let i = 0; i < promises.length; i++) {
-    const promise = promises[i].then(result => {
-      results[i] = result;
+    const promise = promises[i]?.then(result => {
+      if (results[i] !== undefined) {
+        results[i] = result;
+      }
     });
 
-    executing.push(promise);
+    if (promise) {
+      executing.push(promise);
+    }
 
     if (executing.length >= concurrency) {
       await Promise.race(executing);
@@ -145,7 +149,7 @@ async function executeWithConcurrencyLimit<T>(
       for (let j = executing.length - 1; j >= 0; j--) {
         if (
           await Promise.race([
-            executing[j].then(() => true),
+            executing[j]?.then(() => true),
             Promise.resolve(false),
           ])
         ) {
@@ -194,7 +198,7 @@ export async function processBatch<TInput, TOutput>(
     .map(r => ({
       index: r.index,
       error: r.error,
-      item: items[r.index],
+      item: items[r.index]!,
     }));
 
   return {

@@ -13,7 +13,7 @@ import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-meth
 // ============================================================================
 
 // Repository types
-export type Repository = components['schemas']['repository'];
+export type Repository = components['schemas']['full-repository'];
 export type RepositorySimple = components['schemas']['repository'];
 
 // User types
@@ -23,12 +23,25 @@ export type PublicUser = components['schemas']['public-user'];
 
 // Issue types
 export type Issue = components['schemas']['issue'];
+export type IssueComment = components['schemas']['issue-comment'];
 
 // Pull Request types
 export type PullRequest = components['schemas']['pull-request'];
+export type PullRequestReview = components['schemas']['pull-request-review'];
+export type PullRequestReviewComment =
+  components['schemas']['pull-request-review-comment'];
 
 // Commit types
 export type Commit = components['schemas']['commit'];
+export type CommitComment = components['schemas']['commit-comment'];
+
+// Workflow types
+export type WorkflowRun = components['schemas']['workflow-run'];
+export type Workflow = components['schemas']['workflow'];
+
+// Check types
+export type CheckRun = components['schemas']['check-run'];
+export type CheckSuite = components['schemas']['check-suite'];
 
 // Content types
 export type ContentFile = components['schemas']['content-file'];
@@ -113,6 +126,28 @@ export type ListIssueCommentsResponse =
 export type GetAuthenticatedUserResponse =
   RestEndpointMethodTypes['users']['getAuthenticated']['response'];
 
+// Workflow API types
+export type ListWorkflowRunsParameters =
+  RestEndpointMethodTypes['actions']['listWorkflowRuns']['parameters'];
+export type ListWorkflowRunsResponse =
+  RestEndpointMethodTypes['actions']['listWorkflowRuns']['response'];
+
+export type GetWorkflowRunParameters =
+  RestEndpointMethodTypes['actions']['getWorkflowRun']['parameters'];
+export type GetWorkflowRunResponse =
+  RestEndpointMethodTypes['actions']['getWorkflowRun']['response'];
+
+// Check API types
+export type ListCheckRunsForRefParameters =
+  RestEndpointMethodTypes['checks']['listForRef']['parameters'];
+export type ListCheckRunsForRefResponse =
+  RestEndpointMethodTypes['checks']['listForRef']['response'];
+
+export type CreateCheckRunParameters =
+  RestEndpointMethodTypes['checks']['create']['parameters'];
+export type CreateCheckRunResponse =
+  RestEndpointMethodTypes['checks']['create']['response'];
+
 // ============================================================================
 // ENUM TYPES
 // ============================================================================
@@ -156,6 +191,35 @@ export type RepositoryVisibility = 'public' | 'private' | 'internal';
 // Content types
 export type ContentType = 'file' | 'dir' | 'symlink' | 'submodule';
 
+// Workflow status types
+export type WorkflowRunStatus =
+  | 'completed'
+  | 'action_required'
+  | 'cancelled'
+  | 'failure'
+  | 'neutral'
+  | 'skipped'
+  | 'stale'
+  | 'success'
+  | 'timed_out'
+  | 'in_progress'
+  | 'queued'
+  | 'waiting';
+
+// Check conclusion types
+export type CheckConclusion =
+  | 'action_required'
+  | 'cancelled'
+  | 'failure'
+  | 'neutral'
+  | 'success'
+  | 'skipped'
+  | 'stale'
+  | 'timed_out';
+
+// Check status types
+export type CheckStatus = 'queued' | 'in_progress' | 'completed';
+
 // ============================================================================
 // UTILITY TYPES
 // ============================================================================
@@ -171,6 +235,26 @@ export type SearchCodeItems = SearchCodeData['items'];
 export type SearchReposItems = SearchReposData['items'];
 export type SearchIssuesItems = SearchIssuesData['items'];
 export type SearchCommitsItems = SearchCommitsData['items'];
+
+// Common utility types
+export type GitHubID = number;
+export type GitHubSHA = string;
+export type GitHubURL = string;
+export type GitHubDate = string;
+
+// Repository reference types
+export type RepositoryReference = {
+  owner: string;
+  repo: string;
+  ref?: string;
+};
+
+// User reference types
+export type UserReference = {
+  login: string;
+  id?: GitHubID;
+  type?: 'User' | 'Organization';
+};
 
 // ============================================================================
 // ENHANCED TYPES FOR OUR USE CASES
@@ -217,52 +301,133 @@ export type GitHubAPIResponse<T> = GitHubAPISuccess<T> | GitHubAPIError;
 /**
  * Type guard to check if an object is a GitHub API error
  */
-export function isGitHubAPIError(obj: any): obj is GitHubAPIError {
-  return obj && typeof obj.error === 'string' && obj.type;
+export function isGitHubAPIError(obj: unknown): obj is GitHubAPIError {
+  return !!(
+    obj &&
+    typeof obj === 'object' &&
+    obj !== null &&
+    'error' in obj &&
+    typeof (obj as Record<string, unknown>).error === 'string' &&
+    'type' in obj
+  );
 }
 
 /**
  * Type guard to check if an object is a GitHub API success response
  */
-export function isGitHubAPISuccess<T>(obj: any): obj is GitHubAPISuccess<T> {
-  return obj && obj.data !== undefined && typeof obj.status === 'number';
+export function isGitHubAPISuccess<T>(
+  obj: unknown
+): obj is GitHubAPISuccess<T> {
+  return !!(
+    obj &&
+    typeof obj === 'object' &&
+    obj !== null &&
+    'data' in obj &&
+    'status' in obj &&
+    typeof (obj as Record<string, unknown>).status === 'number'
+  );
 }
 
 /**
  * Type guard to check if an object is a repository
  */
-export function isRepository(obj: any): obj is Repository {
-  return (
+export function isRepository(obj: unknown): obj is Repository {
+  return !!(
     obj &&
-    typeof obj.id === 'number' &&
-    typeof obj.name === 'string' &&
-    typeof obj.full_name === 'string' &&
-    typeof obj.private === 'boolean'
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    typeof (obj as Record<string, unknown>).id === 'number' &&
+    'name' in obj &&
+    typeof (obj as Record<string, unknown>).name === 'string' &&
+    'full_name' in obj &&
+    typeof (obj as Record<string, unknown>).full_name === 'string' &&
+    'private' in obj &&
+    typeof (obj as Record<string, unknown>).private === 'boolean'
   );
 }
 
 /**
  * Type guard to check if an object is a user
  */
-export function isUser(obj: any): obj is SimpleUser {
-  return (
+export function isUser(obj: unknown): obj is SimpleUser {
+  return !!(
     obj &&
-    typeof obj.login === 'string' &&
-    typeof obj.id === 'number' &&
-    typeof obj.type === 'string'
+    typeof obj === 'object' &&
+    obj !== null &&
+    'login' in obj &&
+    typeof (obj as Record<string, unknown>).login === 'string' &&
+    'id' in obj &&
+    typeof (obj as Record<string, unknown>).id === 'number' &&
+    'type' in obj &&
+    typeof (obj as Record<string, unknown>).type === 'string'
   );
 }
 
 /**
  * Type guard to check if an object is a search result item
  */
-export function isSearchResultItem(obj: any): obj is CodeSearchResultItem {
-  return (
+export function isSearchResultItem(obj: unknown): obj is CodeSearchResultItem {
+  return !!(
     obj &&
-    typeof obj.name === 'string' &&
-    typeof obj.path === 'string' &&
-    typeof obj.sha === 'string' &&
-    obj.repository
+    typeof obj === 'object' &&
+    obj !== null &&
+    'name' in obj &&
+    typeof (obj as Record<string, unknown>).name === 'string' &&
+    'path' in obj &&
+    typeof (obj as Record<string, unknown>).path === 'string' &&
+    'sha' in obj &&
+    typeof (obj as Record<string, unknown>).sha === 'string' &&
+    'repository' in obj
+  );
+}
+
+/**
+ * Type guard to check if an object is a pull request
+ */
+export function isPullRequest(obj: unknown): obj is PullRequest {
+  return !!(
+    obj &&
+    typeof obj === 'object' &&
+    obj !== null &&
+    'number' in obj &&
+    typeof (obj as Record<string, unknown>).number === 'number' &&
+    'title' in obj &&
+    typeof (obj as Record<string, unknown>).title === 'string' &&
+    'state' in obj &&
+    typeof (obj as Record<string, unknown>).state === 'string'
+  );
+}
+
+/**
+ * Type guard to check if an object is a workflow run
+ */
+export function isWorkflowRun(obj: unknown): obj is WorkflowRun {
+  return !!(
+    obj &&
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    typeof (obj as Record<string, unknown>).id === 'number' &&
+    'status' in obj &&
+    typeof (obj as Record<string, unknown>).status === 'string'
+  );
+}
+
+/**
+ * Type guard to check if an object is a check run
+ */
+export function isCheckRun(obj: unknown): obj is CheckRun {
+  return !!(
+    obj &&
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    typeof (obj as Record<string, unknown>).id === 'number' &&
+    'name' in obj &&
+    typeof (obj as Record<string, unknown>).name === 'string' &&
+    'status' in obj &&
+    typeof (obj as Record<string, unknown>).status === 'string'
   );
 }
 
@@ -628,20 +793,3 @@ export interface GitHubPullRequestItem {
   };
   _sanitization_warnings?: string[];
 }
-
-// ============================================================================
-// LEGACY TYPE COMPATIBILITY
-// ============================================================================
-
-// For backward compatibility with existing code
-export type GitHubRepository = Repository;
-export type GitHubOwner = SimpleUser;
-export type GitHubCodeSearchItem = CodeSearchResultItem;
-export type GitHubIssue = Issue;
-export type GitHubPullRequest = PullRequest;
-export type GitHubCommit = Commit;
-export type GitHubFileContent =
-  | ContentFile
-  | ContentDirectory
-  | ContentSymlink
-  | ContentSubmodule;

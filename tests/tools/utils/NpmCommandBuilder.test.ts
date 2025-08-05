@@ -266,7 +266,7 @@ describe('NpmCommandBuilder', () => {
 
         const result = searchBuilder.build({
           query: 'test',
-          searchLimit: '50' as any, // Simulating string input
+          searchLimit: '50' as unknown, // Simulating string input
         });
 
         expect(result).toContain('--searchlimit=50');

@@ -140,22 +140,26 @@ export interface GitHubRepositoryStructureError {
 }
 
 // Bulk operations types
-export interface ProcessedRepositoryStructureResult {
+export interface ProcessedRepoStructureResult {
   queryId: string;
-  repository?: string;
-  branch?: string;
-  path?: string;
-  structure?: GitHubRepositoryStructureResult;
-  researchGoal?: string;
-  failed?: boolean;
-  hints?: string[];
   data?: {
     repository?: string;
-    structure?: GitHubRepositoryStructureResult;
+    structure?: Array<{
+      path: string;
+      type: 'file' | 'dir' | 'symlink' | 'submodule';
+      size?: number;
+      sha?: string;
+    }>;
+    totalCount?: number;
   };
   error?: string;
-  metadata: Record<string, any>;
+  hints?: string[];
+  metadata: Record<string, unknown>;
 }
+
+// Legacy interface for backward compatibility
+export interface ProcessedRepositoryStructureResult
+  extends ProcessedRepoStructureResult {}
 
 export interface GitHubRepositoryStructureMeta extends BaseToolMeta {
   repositories: Array<{ nameWithOwner: string; branch: string; path: string }>;
