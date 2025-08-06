@@ -21,7 +21,7 @@ describe('Cache Security Tests', () => {
       const hashPart = key.split(':')[1];
 
       expect(hashPart).toBeDefined();
-      expect(hashPart.length).toBe(64); // Full SHA-256 hex digest
+      expect(hashPart?.length).toBe(64); // Full SHA-256 hex digest
       expect(hashPart).toMatch(/^[a-f0-9]{64}$/); // Valid hex format
     });
 
@@ -118,7 +118,7 @@ describe('Cache Security Tests', () => {
       // Generate many keys with similar but different inputs
       for (let i = 0; i < 1000; i++) {
         const key = generateCacheKey('entropy', { id: i, data: `test-${i}` });
-        keys.push(key.split(':')[1]); // Extract hash part
+        keys.push(key.split(':')[1]!); // Extract hash part
       }
 
       // Test that hashes are well distributed
@@ -167,7 +167,7 @@ describe('Cache Security Tests', () => {
       };
 
       const key = generateCacheKey('large', largeObject);
-      const hash = key.split(':')[1];
+      const hash = key.split(':')[1]!;
 
       expect(hash.length).toBe(64); // Should still be full 64 chars
     });

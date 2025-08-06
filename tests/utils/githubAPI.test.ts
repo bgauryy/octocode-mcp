@@ -300,14 +300,12 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'Button language:typescript repo:facebook/react is:not-fork is:not-archived',
+        q: 'Button language:typescript repo:facebook/react',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -347,8 +345,11 @@ describe('GitHub API Utils', () => {
 
       const result = await searchGitHubCodeAPI(params);
 
-      // With the new implementation, empty queries work because we always add archive/fork filters
-      expect(result).not.toHaveProperty('error');
+      // Empty queries should return an error since they don't provide meaningful search terms
+      expect(result).toHaveProperty('error');
+      expect((result as { error: string }).error).toBe(
+        'Search query cannot be empty'
+      );
     });
 
     it('should handle GitHub API rate limit error', async () => {
@@ -383,8 +384,6 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -418,8 +417,6 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -453,8 +450,6 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -488,14 +483,12 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export language:JavaScript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 is:not-fork is:not-archived in:file',
+        q: 'function export language:JavaScript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 in:file',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -520,14 +513,12 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(userParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat is:not-fork is:not-archived',
+        q: 'function user:octocat',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -546,14 +537,12 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(orgParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:github is:not-fork is:not-archived', // Implementation uses user: for all owners by default
+        q: 'function user:github', // Implementation uses user: for all owners by default
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -579,7 +568,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(multipleOwnersParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat user:github is:not-fork is:not-archived', // Implementation adds user: for each owner
+        q: 'function user:octocat user:github', // Implementation adds user: for each owner
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -594,24 +583,21 @@ describe('GitHub API Utils', () => {
         data: { total_count: 0, items: [] },
       });
 
-      // Test fork:true
+      // Test with quality boost enabled (adds stars and pushed filters)
       const forkTrueParams = {
         queryTerms: ['function'],
-        fork: 'true' as const,
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
+        q: 'function stars:>10 pushed:>2022-01-01',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -620,24 +606,21 @@ describe('GitHub API Utils', () => {
         },
       });
 
-      // Test fork:false
+      // Test with quality boost disabled
       const forkFalseParams = {
         queryTerms: ['function'],
-        fork: 'false' as const,
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
         sort: 'best-match' as const,
         order: 'desc' as const,
-        qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
+        qualityBoost: false,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
+        q: 'function',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -646,24 +629,23 @@ describe('GitHub API Utils', () => {
         },
       });
 
-      // Test fork:only
+      // Test with explicit stars and pushed filters
       const forkOnlyParams = {
         queryTerms: ['function'],
-        fork: 'only' as const,
+        stars: '>100',
+        pushed: '>2023-01-01',
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
         sort: 'best-match' as const,
         order: 'desc' as const,
-        qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
+        qualityBoost: false,
       };
 
       await searchGitHubCodeAPI(forkOnlyParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
+        q: 'function stars:>100 pushed:>2023-01-01',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -678,24 +660,21 @@ describe('GitHub API Utils', () => {
         data: { total_count: 0, items: [] },
       });
 
-      // Test archived:true
+      // Test with quality boost enabled (adds stars and pushed filters)
       const archivedTrueParams = {
         queryTerms: ['function'],
-        archived: true,
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
+        q: 'function stars:>10 pushed:>2022-01-01',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -704,24 +683,21 @@ describe('GitHub API Utils', () => {
         },
       });
 
-      // Test is:not-fork is:not-archived
+      // Test with quality boost disabled
       const archivedFalseParams = {
         queryTerms: ['function'],
-        archived: false,
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
         sort: 'best-match' as const,
         order: 'desc' as const,
-        qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
+        qualityBoost: false,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>10 pushed:>2022-01-01 is:not-fork is:not-archived',
+        q: 'function',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -741,22 +717,18 @@ describe('GitHub API Utils', () => {
         queryTerms: ['function'],
         owner: 'facebook',
         repo: 'react',
-        user: 'octocat',
-        org: 'github',
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function repo:facebook/react is:not-fork is:not-archived',
+        q: 'function repo:facebook/react',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -774,8 +746,6 @@ describe('GitHub API Utils', () => {
       const params = {
         queryTerms: ['function'],
         owner: ['octocat', 'github'],
-        fork: 'true' as const,
-        archived: false,
         language: 'javascript',
         minify: true,
         sanitize: true,
@@ -783,14 +753,12 @@ describe('GitHub API Utils', () => {
         sort: 'best-match' as const,
         order: 'desc' as const,
         qualityBoost: true,
-        excludeArchived: true,
-        excludeForks: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function language:JavaScript user:octocat user:github is:not-fork is:not-archived',
+        q: 'function language:JavaScript user:octocat user:github',
         per_page: 30,
         page: 1,
         order: 'desc',

@@ -50,7 +50,7 @@ describe('Cache Functionality Regression Tests', () => {
     it('should handle cache TTL correctly', async () => {
       const mockOperation = async () => ({
         isError: false,
-        content: [{ type: 'text', text: 'TTL Test' }],
+        content: [{ type: 'text' as const, text: 'TTL Test' }],
       });
 
       const key = generateCacheKey('ttl-test', { data: 'short-ttl' });
@@ -136,7 +136,7 @@ describe('Cache Functionality Regression Tests', () => {
         callCount++;
         return {
           isError: true,
-          content: [{ type: 'text', text: 'Error occurred' }],
+          content: [{ type: 'text' as const, text: 'Error occurred' }],
         };
       };
 
@@ -210,7 +210,7 @@ describe('Cache Functionality Regression Tests', () => {
     it('should accurately track cache statistics', async () => {
       const operation = async () => ({
         isError: false,
-        content: [{ type: 'text', text: 'stats test' }],
+        content: [{ type: 'text' as const, text: 'stats test' }],
       });
 
       const initialStats = getCacheStats();
@@ -263,7 +263,7 @@ describe('Cache Functionality Regression Tests', () => {
     it('should handle cache clear operations', async () => {
       const operation = async () => ({
         isError: false,
-        content: [{ type: 'text', text: 'clear test' }],
+        content: [{ type: 'text' as const, text: 'clear test' }],
       });
 
       // Generate some cache activity
@@ -340,7 +340,7 @@ describe('Cache Functionality Regression Tests', () => {
     it('should apply correct TTL for different prefixes', async () => {
       const operation = async () => ({
         isError: false,
-        content: [{ type: 'text', text: 'ttl config test' }],
+        content: [{ type: 'text' as const, text: 'ttl config test' }],
       });
 
       // Test a few different prefixes with known TTLs
@@ -364,7 +364,7 @@ describe('Cache Functionality Regression Tests', () => {
     it('should override TTL when explicitly provided', async () => {
       const operation = async () => ({
         isError: false,
-        content: [{ type: 'text', text: 'override ttl' }],
+        content: [{ type: 'text' as const, text: 'override ttl' }],
       });
 
       const key = generateCacheKey('gh-api-code', { override: 'test' });
@@ -389,7 +389,7 @@ describe('Cache Functionality Regression Tests', () => {
       // This test ensures the system doesn't crash on cache errors
       const operation = async () => ({
         isError: false,
-        content: [{ type: 'text', text: 'error handling' }],
+        content: [{ type: 'text' as const, text: 'error handling' }],
       });
 
       const key = generateCacheKey('error-handling', { robust: true });

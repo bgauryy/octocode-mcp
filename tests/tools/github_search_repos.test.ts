@@ -76,7 +76,7 @@ describe('GitHub Search Repositories Tool', () => {
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         expect.objectContaining({
-          description: expect.stringContaining('Discover GitHub repositories'),
+          description: expect.stringContaining('Search GitHub repositories'),
           inputSchema: expect.objectContaining({
             queries: expect.any(Object),
           }),
