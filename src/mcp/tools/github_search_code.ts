@@ -32,8 +32,8 @@ const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strate
 SEARCH STRATEGY:
   SEMANTIC: Natural language terms describing functionality, concepts, business logic
   TECHNICAL: Actual code terms, function names, class names, file patterns
-  Use bulk queries from different angles. Start narrow, broaden if needed.
-    SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
+  Use bulk queries from different angles. Start narrow, broaden if needed
+  SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
   USE STRINGS WITH ONE WORD ONLY FOR EXPLORETORY SEARCH.
     EXAMPLE:
       queryTerms: [

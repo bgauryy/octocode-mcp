@@ -12,7 +12,8 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .min(1)
     .max(4)
     .describe(
-      'Search terms (AND logic in a file). Returns actual code snippets with context'
+      `Search terms (AND logic in a file). Returns actual code snippets with context. Prefer one word only for exploratory search. Use specific code terms for better results (e.g., ["functionName"], ["className"]) rather than semantic words (e.g., ["implementation"])
+      Prefer using several queries in bulk for better research data from different angles`
     ),
 
   // Repository filters
