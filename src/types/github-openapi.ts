@@ -557,8 +557,8 @@ export interface GitHubPullRequestsSearchParams {
   // archived parameter removed - always optimized to exclude archived repositories for better quality
   match?: ('title' | 'body' | 'comments')[];
   limit?: number;
-  getCommitData?: boolean;
   withComments?: boolean;
+  getFileChanges?: boolean;
   exhaustive?: boolean;
   maxPages?: number;
   pageSize?: number;
@@ -773,23 +773,9 @@ export interface GitHubPullRequestItem {
   head_sha?: string;
   base_sha?: string;
   diff?: GitHubPullRequestDiff;
-  commits?: {
+  file_changes?: {
     total_count: number;
-    commits: Array<{
-      sha: string;
-      message: string;
-      author: string;
-      url: string;
-      authoredDate?: string;
-      diff?: {
-        changed_files: number;
-        additions: number;
-        deletions: number;
-        total_changes: number;
-        files: GitHubDiffFile[];
-      };
-      _sanitization_warnings?: string[];
-    }>;
+    files: DiffEntry[]; // Use proper GitHub API type for diff entries
   };
   _sanitization_warnings?: string[];
 }

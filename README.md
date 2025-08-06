@@ -138,6 +138,12 @@ claude mcp add octocode npx 'octocode-mcp@latest'
 }
 ```
 
+**How It Works:**
+- **Token Priority**: `GITHUB_TOKEN` → `GH_TOKEN` → GitHub CLI token (automatic fallback)
+- **API Integration**: All GitHub operations use Octokit API with the retrieved token
+- **CLI Integration**: GitHub CLI is used only for token retrieval, not for operations
+- **Seamless Fallback**: Automatically switches between authentication methods
+
 ### Requirements
 - **Node.js**: v20+
 - **GitHub Authentication**: Token OR GitHub CLI

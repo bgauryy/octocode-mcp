@@ -2,22 +2,14 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from '../../types/github-openapi';
-
-// Type for commit data structure
-interface CommitData {
-  total_count: number;
-  commits: Array<{
-    sha: string;
-    message: string;
-    author: string;
-    url: string;
-    authoredDate?: string;
-  }>;
-}
+import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestSearchResult,
   GitHubPullRequestSearchError,
 } from '../../mcp/tools/scheme/github_search_pull_requests';
+
+// GitHub API types for pull request files
+type DiffEntry = components['schemas']['diff-entry'];
 import { ContentSanitizer } from '../../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -25,11 +17,64 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
+import { generateCacheKey, withCache } from '../cache';
+import { createResult } from '../../mcp/responses';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 /**
- * Search GitHub pull requests using Octokit API
+ * Search GitHub pull requests using Octokit API with caching
  */
 export async function searchGitHubPullRequestsAPI(
+  params: GitHubPullRequestsSearchParams,
+  token?: string
+): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+  // Generate cache key based on search parameters
+  const cacheKey = generateCacheKey('gh-api-prs', {
+    ...params,
+    // Include token hash for user-specific caching if token exists
+    tokenHash: token
+      ? generateCacheKey('token', { token }).slice(-8)
+      : undefined,
+  });
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const searchOperation = async (): Promise<CallToolResult> => {
+    const result = await searchGitHubPullRequestsAPIInternal(params, token);
+
+    // Convert to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result,
+      });
+    }
+  };
+
+  // Use cache with 30-minute TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, searchOperation);
+
+  // Convert CallToolResult back to the expected format
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubPullRequestSearchError;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubPullRequestSearchResult;
+  }
+}
+
+/**
+ * Internal implementation of searchGitHubPullRequestsAPI without caching
+ */
+async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams,
   token?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
@@ -42,12 +87,7 @@ export async function searchGitHubPullRequestsAPI(
       !Array.isArray(params.owner) &&
       !Array.isArray(params.repo)
     ) {
-      return await fetchGitHubPullRequestByNumberAPI(
-        params.owner,
-        params.repo,
-        params.prNumber,
-        token
-      );
+      return await fetchGitHubPullRequestByNumberAPIInternal(params, token);
     }
 
     const octokit = getOctokit(token);
@@ -141,10 +181,14 @@ export async function searchGitHubPullRequestsAPI(
       body: pr.body,
       comments: pr.comments?.length || 0,
       review_comments: 0,
-      commits: pr.commits ? (pr.commits as CommitData).total_count || 0 : 0,
-      additions: 0,
-      deletions: 0,
-      changed_files: 0,
+      commits: 0,
+      additions:
+        pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
+        0,
+      deletions:
+        pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
+        0,
+      changed_files: pr.file_changes?.total_count || 0,
     }));
 
     return {
@@ -249,10 +293,14 @@ async function searchPullRequestsWithREST(
       body: pr.body,
       comments: pr.comments?.length || 0,
       review_comments: 0,
-      commits: pr.commits ? (pr.commits as CommitData).total_count || 0 : 0,
-      additions: 0,
-      deletions: 0,
-      changed_files: 0,
+      commits: 0,
+      additions:
+        pr.file_changes?.files.reduce((sum, file) => sum + file.additions, 0) ||
+        0,
+      deletions:
+        pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
+        0,
+      changed_files: pr.file_changes?.total_count || 0,
     }));
 
     return {
@@ -338,7 +386,7 @@ async function transformPullRequestItem(
   }
 
   // Get additional PR details if needed (head/base SHA, etc.)
-  if (params.getCommitData || item.pull_request) {
+  if (params.getFileChanges || item.pull_request) {
     try {
       const [owner, repo] = result.repository.split('/');
       if (owner && repo) {
@@ -355,16 +403,16 @@ async function transformPullRequestItem(
           result.base_sha = prDetails.data.base?.sha;
           result.draft = prDetails.data.draft || false;
 
-          // Fetch commit data if requested
-          if (params.getCommitData) {
-            const commitData = await fetchPRCommitDataAPI(
+          // Fetch file changes if requested
+          if (params.getFileChanges) {
+            const fileChanges = await fetchPRFileChangesAPI(
               owner,
               repo,
               item.number as number,
               token
             );
-            if (commitData) {
-              result.commits = commitData as unknown as CommitData;
+            if (fileChanges) {
+              result.file_changes = fileChanges;
             }
           }
         }
@@ -412,50 +460,32 @@ async function transformPullRequestItem(
 }
 
 /**
- * Fetch commit data for a pull request using API
+ * Fetch file changes for a pull request using GitHub API
+ * Returns proper GitHub API types for pull request files
  */
-async function fetchPRCommitDataAPI(
+async function fetchPRFileChangesAPI(
   owner: string,
   repo: string,
   prNumber: number,
   token?: string
-): Promise<Record<string, unknown> | null> {
+): Promise<{ total_count: number; files: DiffEntry[] } | null> {
   try {
     const octokit = getOctokit(token);
-    const result = await octokit.rest.pulls.listCommits({
+    const result = await octokit.rest.pulls.listFiles({
       owner,
       repo,
       pull_number: prNumber,
     });
 
-    const commits = result.data.map((commit: Record<string, unknown>) => ({
-      sha: commit.sha as string,
-      message:
-        ((commit.commit as Record<string, unknown>)?.message as string) || '',
-      author:
-        ((commit.author as Record<string, unknown>)?.login as string) ||
-        ((
-          (commit.commit as Record<string, unknown>)?.author as Record<
-            string,
-            unknown
-          >
-        )?.name as string) ||
-        'Unknown',
-      url: commit.url as string,
-      authoredDate: (
-        (commit.commit as Record<string, unknown>)?.author as Record<
-          string,
-          unknown
-        >
-      )?.date as string,
-    }));
+    // result.data is already properly typed as DiffEntry[] from GitHub API
+    const files: DiffEntry[] = result.data;
 
     return {
-      total_count: commits.length,
-      commits,
+      total_count: files.length,
+      files,
     };
   } catch (error) {
-    // Return null if commit data fetch fails
+    // Return null if file changes fetch fails
     return null;
   }
 }
@@ -529,16 +559,16 @@ export async function transformPullRequestItemFromREST(
     );
   }
 
-  // Fetch commit data if requested
-  if (params.getCommitData) {
-    const commitData = await fetchPRCommitDataAPI(
+  // Fetch file changes if requested
+  if (params.getFileChanges) {
+    const fileChanges = await fetchPRFileChangesAPI(
       params.owner as string,
       params.repo as string,
       item.number as number,
       token
     );
-    if (commitData) {
-      result.commits = commitData as unknown as CommitData;
+    if (fileChanges) {
+      result.file_changes = fileChanges;
     }
   }
 
@@ -580,13 +610,73 @@ export async function transformPullRequestItemFromREST(
  * More efficient than search when we know the exact PR number
  */
 export async function fetchGitHubPullRequestByNumberAPI(
-  owner: string,
-  repo: string,
-  prNumber: number,
+  params: GitHubPullRequestsSearchParams,
+  token?: string
+): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+  // Generate cache key for specific PR fetch
+  const cacheKey = generateCacheKey('gh-api-prs', {
+    owner: params.owner,
+    repo: params.repo,
+    prNumber: params.prNumber,
+    getFileChanges: params.getFileChanges,
+    withComments: params.withComments,
+    // Include token hash for user-specific caching if token exists
+    tokenHash: token
+      ? generateCacheKey('token', { token }).slice(-8)
+      : undefined,
+  });
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const fetchOperation = async (): Promise<CallToolResult> => {
+    const result = await fetchGitHubPullRequestByNumberAPIInternal(
+      params,
+      token
+    );
+
+    // Convert to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result,
+      });
+    }
+  };
+
+  // Use cache with 30-minute TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, fetchOperation);
+
+  // Convert CallToolResult back to the expected format
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubPullRequestSearchError;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubPullRequestSearchResult;
+  }
+}
+
+/**
+ * Internal implementation of fetchGitHubPullRequestByNumberAPI without caching
+ */
+async function fetchGitHubPullRequestByNumberAPIInternal(
+  params: GitHubPullRequestsSearchParams,
   token?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
     const octokit = getOctokit(token);
+
+    // Extract values from params
+    const owner = params.owner as string;
+    const repo = params.repo as string;
+    const prNumber = params.prNumber!;
 
     // Use REST API to get specific PR by number
     const result = await octokit.rest.pulls.get({
@@ -599,12 +689,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
 
     // Transform to our expected format
     const transformedPR: GitHubPullRequestItem =
-      await transformPullRequestItemFromREST(
-        pr,
-        { owner, repo, prNumber },
-        octokit,
-        token
-      );
+      await transformPullRequestItemFromREST(pr, params, octokit, token);
 
     // Transform to expected GitHub API format
     const formattedPR = {
@@ -649,12 +734,18 @@ export async function fetchGitHubPullRequestByNumberAPI(
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
       review_comments: 0,
-      commits: transformedPR.commits
-        ? (transformedPR.commits as CommitData).total_count || 0
-        : 0,
-      additions: 0,
-      deletions: 0,
-      changed_files: 0,
+      commits: 0,
+      additions:
+        transformedPR.file_changes?.files.reduce(
+          (sum, file) => sum + file.additions,
+          0
+        ) || 0,
+      deletions:
+        transformedPR.file_changes?.files.reduce(
+          (sum, file) => sum + file.deletions,
+          0
+        ) || 0,
+      changed_files: transformedPR.file_changes?.total_count || 0,
     };
 
     return {
@@ -664,6 +755,10 @@ export async function fetchGitHubPullRequestByNumberAPI(
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
+    const owner = params.owner as string;
+    const repo = params.repo as string;
+    const prNumber = params.prNumber!;
+
     return {
       error: `Failed to fetch pull request #${prNumber}: ${apiError.error}`,
       status: apiError.status,

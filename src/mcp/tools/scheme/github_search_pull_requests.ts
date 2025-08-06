@@ -163,19 +163,19 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Maximum number of results to fetch'),
 
-  getCommitData: z
-    .boolean()
-    .default(false)
-    .optional()
-    .describe(
-      'Set to true to fetch all commits in the PR with their changes. WARNING: EXTREMELY expensive in tokens'
-    ),
   withComments: z
     .boolean()
     .default(false)
     .optional()
     .describe(
       'Include full comment content in search results. WARNING: EXTREMELY expensive in tokens'
+    ),
+  getFileChanges: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      'Include file changes/diffs in the PR. WARNING: EXTREMELY expensive in tokens'
     ),
 });
 

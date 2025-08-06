@@ -8,7 +8,7 @@ import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
 } from './scheme/github_search_pull_requests';
-import { generateToolHints } from './utils/hints_consolidated';
+import { generateHints } from './utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
 
@@ -57,18 +57,16 @@ export function registerSearchGitHubPullRequestsTool(
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-            {
-              hasResults: false,
-              totalItems: 0,
-              errorMessage: 'Queries array is required and cannot be empty',
-              customHints: [
-                'Provide at least one search query with owner/repo or prNumber',
-                'Example: queries: [{owner: "user", repo: "repo", prNumber: 123}]',
-              ],
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: 'Queries array is required and cannot be empty',
+            customHints: [
+              'Provide at least one search query with owner/repo or prNumber',
+              'Example: queries: [{owner: "user", repo: "repo", prNumber: 123}]',
+            ],
+          });
 
           return createResult({
             isError: true,
@@ -78,15 +76,13 @@ export function registerSearchGitHubPullRequestsTool(
         }
 
         if (args.queries.length > 5) {
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-            {
-              hasResults: false,
-              totalItems: 0,
-              errorMessage: 'Too many queries',
-              customHints: ['Maximum 5 queries allowed per request'],
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: 'Too many queries',
+            customHints: ['Maximum 5 queries allowed per request'],
+          });
 
           return createResult({
             isError: true,
@@ -104,18 +100,16 @@ export function registerSearchGitHubPullRequestsTool(
           const hasPrNumber = query?.prNumber && query?.owner && query?.repo;
 
           if (!hasQuery && !hasFilters && !hasPrNumber) {
-            const hints = generateToolHints(
-              TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-              {
-                hasResults: false,
-                totalItems: 0,
-                errorMessage: `Query ${i + 1} has no valid parameters`,
-                customHints: [
-                  'Each query must have: query terms, filters (owner/repo), or prNumber with owner/repo',
-                  `Query ${i + 1} is missing required parameters`,
-                ],
-              }
-            );
+            const hints = generateHints({
+              toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+              hasResults: false,
+              totalItems: 0,
+              errorMessage: `Query ${i + 1} has no valid parameters`,
+              customHints: [
+                'Each query must have: query terms, filters (owner/repo), or prNumber with owner/repo',
+                `Query ${i + 1} is missing required parameters`,
+              ],
+            });
 
             return createResult({
               isError: true,
@@ -125,14 +119,12 @@ export function registerSearchGitHubPullRequestsTool(
           }
 
           if (query?.query && query.query.length > 256) {
-            const hints = generateToolHints(
-              TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-              {
-                hasResults: false,
-                errorMessage: `Query ${i + 1} query too long`,
-                customHints: ['Use shorter, more focused search terms'],
-              }
-            );
+            const hints = generateHints({
+              toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+              hasResults: false,
+              errorMessage: `Query ${i + 1} query too long`,
+              customHints: ['Use shorter, more focused search terms'],
+            });
 
             return createResult({
               isError: true,
@@ -152,14 +144,12 @@ export function registerSearchGitHubPullRequestsTool(
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error occurred';
 
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-            {
-              hasResults: false,
-              totalItems: 0,
-              errorMessage,
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+            hasResults: false,
+            totalItems: 0,
+            errorMessage,
+          });
 
           return createResult({
             isError: true,
@@ -258,7 +248,8 @@ async function searchMultipleGitHubPullRequests(
   );
 
   // Generate hints
-  const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
+  const hints = generateHints({
+    toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     hasResults: successfulResults.some(r => r.metadata.hasResults),
     totalItems: successfulResults.reduce(
       (sum, r) => sum + r.metadata.resultCount,
