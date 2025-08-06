@@ -34,7 +34,7 @@ export function maskSensitiveData(text: string): string {
         matches.push({
           start: match.index,
           end: match.index + match[0].length,
-          accuracy: patternMap[i].matchAccuracy || 'medium',
+          accuracy: patternMap[i]?.matchAccuracy || 'medium',
         });
         break;
       }
@@ -66,11 +66,13 @@ export function maskSensitiveData(text: string): string {
   let result = text;
   for (let i = nonOverlapping.length - 1; i >= 0; i--) {
     const match = nonOverlapping[i];
-    const originalText = text.slice(match.start, match.end);
-    const maskedText = maskEveryTwoChars(originalText);
+    if (match) {
+      const originalText = text.slice(match.start, match.end);
+      const maskedText = maskEveryTwoChars(originalText);
 
-    result =
-      result.slice(0, match.start) + maskedText + result.slice(match.end);
+      result =
+        result.slice(0, match.start) + maskedText + result.slice(match.end);
+    }
   }
 
   return result;

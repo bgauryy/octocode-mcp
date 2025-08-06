@@ -1,11 +1,47 @@
-// Tool name constants - centralized to avoid circular dependencies
+export interface ToolOptions {
+  npmEnabled: boolean;
+  ghToken?: string;
+}
 
-export const API_STATUS_CHECK_TOOL_NAME = 'apiStatusCheck';
-export const GITHUB_GET_FILE_CONTENT_TOOL_NAME = 'githubGetFileContent';
-export const GITHUB_SEARCH_CODE_TOOL_NAME = 'githubSearchCode';
-export const GITHUB_SEARCH_COMMITS_TOOL_NAME = 'githubSearchCommits';
-export const GITHUB_SEARCH_ISSUES_TOOL_NAME = 'githubSearchIssues';
-export const GITHUB_SEARCH_PULL_REQUESTS_TOOL_NAME = 'githubSearchPullRequests';
-export const GITHUB_SEARCH_REPOSITORIES_TOOL_NAME = 'githubSearchRepositories';
-export const GITHUB_VIEW_REPO_STRUCTURE_TOOL_NAME = 'githubViewRepoStructure';
-export const PACKAGE_SEARCH_TOOL_NAME = 'packageSearch';
+// Research goals might help the LLM to understand the user request and the context of the research
+// and add research hints to generate the best research plan and tools to use
+export const enum ResearchGoal {
+  DISCOVERY = 'discovery',
+  ANALYSIS = 'analysis',
+  DEBUGGING = 'debugging',
+  EXPLORATION = 'exploration',
+  CONTEXT_GENERATION = 'context_generation',
+  CODE_GENERATION = 'code_generation',
+  DOCS_GENERATION = 'docs_generation',
+  CODE_ANALYSIS = 'code_analysis',
+  CODE_REVIEW = 'code_review',
+  CODE_REFACTORING = 'code_refactoring',
+  CODE_OPTIMIZATION = 'code_optimization',
+}
+
+// Zod enum for use in schemas
+export const ResearchGoalEnum = [
+  'discovery',
+  'analysis',
+  'debugging',
+  'exploration',
+  'context_generation',
+  'code_generation',
+  'docs_generation',
+  'code_analysis',
+  'code_review',
+  'code_refactoring',
+  'code_optimization',
+] as const;
+
+export const TOOL_NAMES = {
+  GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+  GITHUB_SEARCH_CODE: 'githubSearchCode',
+  GITHUB_SEARCH_COMMITS: 'githubSearchCommits',
+  GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+  GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+  GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+  PACKAGE_SEARCH: 'packageSearch',
+} as const;
+
+export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];

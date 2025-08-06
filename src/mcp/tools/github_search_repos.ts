@@ -1,260 +1,65 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import z from 'zod';
-import { createResult, toDDMMYYYY } from '../responses';
-import { GitHubReposSearchParams } from '../../types';
-import { executeGitHubCommand, GhCommand } from '../../utils/exec';
-import { generateCacheKey, withCache } from '../../utils/cache';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import {
-  createNoResultsError,
-  createSearchFailedError,
-} from '../errorMessages';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { GitHubReposSearchBuilder } from './utils/GitHubCommandBuilder';
+import { createResult } from '../responses';
+import { searchGitHubReposAPI } from '../../utils/githubAPI';
+import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
 import {
-  GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
-  PACKAGE_SEARCH_TOOL_NAME,
-} from './utils/toolConstants';
-import { generateSmartHints } from './utils/toolRelationships';
+  GitHubReposSearchQuery,
+  GitHubReposSearchQuerySchema,
+  ProcessedRepoSearchResult,
+} from './scheme/github_search_repos';
+import type { Repository } from '../../types/github-openapi';
+import { ensureUniqueQueryIds } from './utils/queryUtils';
+import {
+  processBulkQueries,
+  createBulkResponse,
+  type BulkResponseConfig,
+} from './utils/bulkOperations';
+import { generateHints } from './utils/hints_consolidated';
 
-const DESCRIPTION = `Search GitHub repositories - Use bulk queries to find repositories with different search criteria in parallel for optimization
+const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 
-Search strategy:
-  Use limit=1 on queries as a default (e.g. when searching specific repository)
-  Use larget limit for exploratory search (e.g. when searching by topic, language, owner, or keyword)
-  If cannot find repository, consider using ${PACKAGE_SEARCH_TOOL_NAME} tool`;
+KEY FEATURES:
+- Bulk queries: Execute up to 5 searches in parallel for comprehensive discovery
+- Topic search: Find repos by github topics (exploretory and searching for specific topics)
+- Text search: Match specific terms in names/descriptions
+- Quality filters: Stars, forks, activity, update frequency
+- Smart defaults: Excludes archived repos and forks for better results
 
-// Define the repository search query schema for bulk operations
-const GitHubReposSearchQuerySchema = z.object({
-  id: z.string().optional().describe('Optional identifier for the query'),
-  exactQuery: z.string().optional().describe('Single exact phrase/word search'),
-  queryTerms: z
-    .array(z.string())
-    .optional()
-    .describe('Multiple search terms for broader coverage'),
+SEARCH STRATEGIES:
+- for specific repositorry search with limit of 1 and get most relevant repository
+- Exploration: Use bulk search efficiently with several search directions (e.g. terms, topics)
 
-  // CORE FILTERS (GitHub CLI flags) - Allow null values
-  owner: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional()
-    .describe(
-      'Repository owner/organization name(s). Search within specific organizations or users.'
-    ),
-  language: z
-    .union([z.string(), z.null()])
-    .optional()
-    .describe(
-      'Programming language filter. Filters repositories by primary language.'
-    ),
-  stars: z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Star count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
-    ),
-  topic: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional()
-    .describe('Find repositories by technology/subject'),
-  forks: z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Fork count filter. Format: ">N" (more than), "<N" (less than), "N..M" (range).'
-    ),
+TIP: If repo not found, try ${TOOL_NAMES.PACKAGE_SEARCH} for npm/python packages search to get the github repo`;
 
-  // Match CLI parameter name exactly
-  'number-topics': z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Number of topics filter. Format: ">5" (many topics), ">=3" (at least 3), "<10" (few topics), "1..3" (range), "5" (exact).'
-    ),
-
-  // QUALITY & STATE FILTERS
-  license: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional()
-    .describe('License filter. Filter repositories by license type.'),
-  archived: z
-    .union([z.boolean(), z.null()])
-    .optional()
-    .describe(
-      'Archive status filter. false (active repos only), true (archived repos only).'
-    ),
-  'include-forks': z
-    .union([z.enum(['false', 'true', 'only']), z.null()])
-    .optional()
-    .describe(
-      'Fork inclusion. "false" (exclude forks), "true" (include forks), "only" (forks only).'
-    ),
-  visibility: z
-    .union([z.enum(['public', 'private', 'internal']), z.null()])
-    .optional()
-    .describe('Repository visibility.'),
-
-  // DATE & SIZE FILTERS
-  created: z
-    .union([
-      z
-        .string()
-        .regex(
-          /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
-        ),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Repository creation date filter. Format: ">2020-01-01" (after), ">=2020-01-01" (on or after), "<2023-12-31" (before), "<=2023-12-31" (on or before), "2020-01-01..2023-12-31" (range), "2023-01-01" (exact).'
-    ),
-  updated: z
-    .union([
-      z
-        .string()
-        .regex(
-          /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
-        ),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Last updated date filter. Format: ">2024-01-01" (recently updated), ">=2024-01-01" (on or after), "<2022-01-01" (not recently updated), "2023-01-01..2024-12-31" (range).'
-    ),
-  size: z
-    .union([z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/), z.null()])
-    .optional()
-    .describe(
-      'Repository size filter in KB. Format: ">1000" (large projects), ">=500" (medium-large), "<100" (small projects), "<=50" (tiny), "100..1000" (medium range), "500" (exact).'
-    ),
-
-  // COMMUNITY FILTERS - Match CLI parameter names exactly
-  'good-first-issues': z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Good first issues count. Format: ">5" (many beginner issues), "1..10" (some beginner issues).'
-    ),
-  'help-wanted-issues': z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Help wanted issues count. Format: ">10" (many help wanted), "1..5" (some help wanted).'
-    ),
-  followers: z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Repository owner followers count. Format: ">1000" (popular developers), ">=500" (established developers), "<100" (smaller developers), "100..1000" (range).'
-    ),
-
-  // SEARCH SCOPE - Match CLI exactly
-  match: z
-    .union([
-      z.enum(['name', 'description', 'readme']),
-      z.array(z.enum(['name', 'description', 'readme'])),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Search scope. Where to search: name, description, or readme content.'
-    ),
-
-  // SORTING & LIMITS - Match CLI defaults exactly
-  sort: z
-    .union([
-      z.enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match']),
-      z.null(),
-    ])
-    .optional()
-    .describe(
-      'Sort criteria. RECOMMENDED: Use "stars" for token optimization to get most popular/relevant repositories first.'
-    ),
-  order: z
-    .union([z.enum(['asc', 'desc']), z.null()])
-    .optional()
-    .describe('Sort order direction.'),
-  limit: z
-    .union([z.number().int().min(1).max(100), z.null()])
-    .optional()
-    .describe(
-      'Maximum number of repositories to return (1-100). TOKEN OPTIMIZATION: Use 1 for specific repository searches, 10-20 for exploratory discovery. For multiple specific repositories, create separate queries with limit=1 each.'
-    ),
-});
-
-export type GitHubReposSearchQuery = z.infer<
-  typeof GitHubReposSearchQuerySchema
->;
-
-export interface GitHubReposSearchQueryResult {
-  queryId: string;
-  result: any;
-  error?: string;
-}
-
-export interface GitHubReposResponse {
-  data: any[]; // Repository array
-  hints: string[];
-  metadata?: {
-    queries: GitHubReposSearchQueryResult[];
-    summary: {
-      totalQueries: number;
-      successfulQueries: number;
-      totalRepositories: number;
-    };
+interface AggregatedRepoContext {
+  totalQueries: number;
+  successfulQueries: number;
+  failedQueries: number;
+  foundOwners: Set<string>;
+  foundLanguages: Set<string>;
+  foundTopics: Set<string>;
+  searchPatterns: Set<string>;
+  totalStars: number;
+  dataQuality: {
+    hasResults: boolean;
+    hasPopularRepos: boolean;
   };
 }
 
-export function registerSearchGitHubReposTool(server: McpServer) {
+export function registerSearchGitHubReposTool(
+  server: McpServer,
+  opts: ToolOptions
+) {
   server.registerTool(
-    GITHUB_SEARCH_REPOSITORIES_TOOL_NAME,
+    TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTION,
-      inputSchema: {
-        queries: z
-          .array(GitHubReposSearchQuerySchema)
-          .min(1)
-          .max(5)
-          .describe(
-            'Array of up to 5 different search queries for sequential execution. Use several queries to get more results in one tool call'
-          ),
-        verbose: z
-          .boolean()
-          .optional()
-          .default(false)
-          .describe(
-            'Include detailed metadata for debugging. Default: false for cleaner responses'
-          ),
-      },
+      inputSchema: GitHubReposSearchQuerySchema.shape,
       annotations: {
-        title: 'GitHub Repository Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
+        idempotent: true,
+        openWorld: true,
       },
     },
     withSecurityValidation(
@@ -262,239 +67,201 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         queries: GitHubReposSearchQuery[];
         verbose?: boolean;
       }): Promise<CallToolResult> => {
-        try {
-          return await searchMultipleGitHubRepos(
-            args.queries,
-            args.verbose ?? false
-          );
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          return createResult({
-            isError: true,
-            hints: [
-              `Failed to search repositories: ${errorMessage}. Try broader search terms or check repository access.`,
+        if (
+          !args.queries ||
+          !Array.isArray(args.queries) ||
+          args.queries.length === 0
+        ) {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+            hasResults: false,
+            errorMessage: 'Queries array is required and cannot be empty',
+            customHints: [
+              'Provide at least one search query with search terms or filters',
             ],
           });
+
+          return createResult({
+            isError: true,
+            error: 'Queries array is required and cannot be empty',
+            hints,
+          });
         }
+
+        if (args.queries.length > 5) {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+            hasResults: false,
+            errorMessage: 'Too many queries provided',
+            customHints: [
+              'Limit to 5 queries per request for optimal performance',
+            ],
+          });
+
+          return createResult({
+            isError: true,
+            error: 'Maximum 5 queries allowed per request',
+            hints,
+          });
+        }
+
+        return searchMultipleGitHubRepos(
+          args.queries,
+          args.verbose || false,
+          opts
+        );
       }
     )
   );
 }
 
-function validateRepositoryQuery(
-  query: GitHubReposSearchQuery,
-  queryId: string
-): { isValid: boolean; error?: string } {
-  // Just check that we have at least one search parameter
-  const hasAnyParam = !!(
-    query.exactQuery ||
-    (query.queryTerms && query.queryTerms.length > 0) ||
-    query.owner ||
-    query.language ||
-    query.topic
-  );
-
-  if (!hasAnyParam) {
-    return {
-      isValid: false,
-      error: `Query ${queryId}: At least one search parameter required`,
-    };
-  }
-
-  return { isValid: true };
-}
-
-/**
- * Processes a single query with proper error handling
- * @param query The query to process
- * @param queryId The query identifier
- * @returns Promise resolving to query result
- */
-async function processSingleQuery(
-  query: GitHubReposSearchQuery,
-  queryId: string
-): Promise<GitHubReposSearchQueryResult> {
-  try {
-    // Validate query
-    const validation = validateRepositoryQuery(query, queryId);
-    if (!validation.isValid) {
-      return {
-        queryId,
-        result: { total_count: 0, repositories: [] },
-        error: validation.error,
-      };
-    }
-
-    // Use query parameters directly without modification, filter out null values
-    const enhancedQuery: GitHubReposSearchParams = Object.fromEntries(
-      Object.entries(query).filter(
-        ([_, value]) => value !== null && value !== undefined
-      )
-    ) as GitHubReposSearchParams;
-
-    // Execute query
-    const result = await searchGitHubRepos(enhancedQuery);
-
-    if (!result.isError) {
-      // Success with original query
-      const execResult = JSON.parse(result.content[0].text as string);
-
-      // Check for empty results
-      if (
-        execResult.total_count === 0 ||
-        (execResult.result && execResult.result.length === 0)
-      ) {
-        return {
-          queryId,
-          result: { total_count: 0, repositories: [] },
-          error: 'No repositories found',
-        };
-      }
-
-      // Return successful result
-      return {
-        queryId,
-        result: execResult,
-      };
-    }
-
-    // Query failed
-    return {
-      queryId,
-      result: { total_count: 0, repositories: [] },
-      error: 'Query failed',
-    };
-  } catch (error) {
-    // Handle any unexpected errors
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      queryId,
-      result: { total_count: 0, repositories: [] },
-      error: `Unexpected error: ${errorMessage}`,
-    };
-  }
-}
-
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  opts: ToolOptions
 ): Promise<CallToolResult> {
-  const results: GitHubReposSearchQueryResult[] = [];
+  const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-search');
 
-  // Execute queries sequentially (simple and reliable)
-  for (let index = 0; index < queries.length; index++) {
-    const query = queries[index];
-    const queryId = query.id || `query_${index + 1}`;
+  const { results, errors } = await processBulkQueries(
+    uniqueQueries,
+    async (
+      query: GitHubReposSearchQuery
+    ): Promise<ProcessedRepoSearchResult> => {
+      try {
+        const apiResult = await searchGitHubReposAPI(query, opts.ghToken);
 
-    const result = await processSingleQuery(query, queryId);
-    results.push(result);
-  }
+        if ('error' in apiResult) {
+          // Generate hints for this specific query error
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+            hasResults: false,
+            errorMessage: apiResult.error,
+            researchGoal: query.researchGoal,
+          });
 
-  // Collect all repositories from successful queries
-  const allRepositories: any[] = [];
-  results.forEach(result => {
-    if (!result.error && result.result.repositories) {
-      allRepositories.push(...result.result.repositories);
+          return {
+            queryId: query.id!,
+            error: apiResult.error,
+            hints,
+            metadata: {
+              queryArgs: { ...query },
+              error: apiResult.error,
+              researchGoal: query.researchGoal || 'discovery',
+            },
+          };
+        }
+
+        // Extract repository data
+        const repositories = apiResult.data.repositories || [];
+        const hasResults =
+          repositories.length > 0 && (apiResult.data.total_count || 0) > 0;
+
+        const typedRepositories = repositories as unknown as Repository[];
+
+        return {
+          queryId: query.id!,
+          data: {
+            repositories: typedRepositories,
+            total_count: apiResult.data.total_count,
+          },
+          metadata: {
+            // Only include queryArgs for no-result cases
+            ...(hasResults ? {} : { queryArgs: { ...query } }),
+            searchType: 'success',
+            researchGoal: query.researchGoal || 'discovery',
+          },
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error occurred';
+
+        const hints = generateHints({
+          toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+          hasResults: false,
+          errorMessage,
+          researchGoal: query.researchGoal,
+        });
+
+        return {
+          queryId: query.id!,
+          error: errorMessage,
+          hints,
+          metadata: {
+            queryArgs: { ...query },
+            error: errorMessage,
+            researchGoal: query.researchGoal || 'discovery',
+          },
+        };
+      }
     }
-  });
+  );
 
-  // Generate hints using centralized system
-  const errorMessages = results.filter(r => r.error).map(r => r.error!);
-  const errorMessage = errorMessages.length > 0 ? errorMessages[0] : undefined;
-  const hints = generateSmartHints(GITHUB_SEARCH_REPOSITORIES_TOOL_NAME, {
-    hasResults: allRepositories.length > 0,
-    totalItems: allRepositories.length,
-    errorMessage,
-  });
-
-  // Calculate summary statistics
-  const totalQueries = results.length;
-  const successfulQueries = results.filter(r => !r.error).length;
-  const totalRepositories = allRepositories.length;
-
-  const responseData: any = {
-    data: allRepositories,
-    hints,
+  // Build aggregated context for intelligent hints
+  const aggregatedContext: AggregatedRepoContext = {
+    totalQueries: results.length,
+    successfulQueries: results.filter(r => !r.result.error).length,
+    failedQueries: results.filter(r => !!r.result.error).length,
+    foundOwners: new Set<string>(),
+    foundLanguages: new Set<string>(),
+    foundTopics: new Set<string>(),
+    searchPatterns: new Set<string>(),
+    totalStars: 0,
+    dataQuality: {
+      hasResults: results.some(
+        r =>
+          !r.result.error &&
+          r.result.data?.repositories &&
+          r.result.data.repositories.length > 0
+      ),
+      hasPopularRepos: false,
+    },
   };
 
-  // Add metadata only if verbose mode is enabled
-  if (verbose) {
-    responseData.metadata = {
-      queries: results,
-      summary: {
-        totalQueries,
-        successfulQueries,
-        totalRepositories,
-      },
-    };
-  }
+  // Extract context from successful results
+  results.forEach(({ result }) => {
+    if (!result.error && result.data?.repositories) {
+      result.data.repositories.forEach((repo: Repository) => {
+        aggregatedContext.foundOwners.add(repo.owner.login);
+        if (repo.language) {
+          aggregatedContext.foundLanguages.add(repo.language);
+        }
+        aggregatedContext.totalStars += repo.stargazers_count || 0;
 
-  return createResult({
-    data: responseData,
-  });
-}
-
-export async function searchGitHubRepos(
-  params: GitHubReposSearchParams
-): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('gh-repos', params);
-
-  return withCache(cacheKey, async () => {
-    try {
-      const { command, args } = buildGitHubReposSearchCommand(params);
-      const result = await executeGitHubCommand(command, args, {
-        cache: false,
+        // Check for popular repositories (>1000 stars)
+        if (repo.stargazers_count > 1000) {
+          aggregatedContext.dataQuality.hasPopularRepos = true;
+        }
       });
 
-      if (result.isError) {
-        return result;
+      // Extract search patterns from query terms
+      const queryArgs = result.metadata?.queryArgs as
+        | { queryTerms?: string[] }
+        | undefined;
+      const queryTerms = queryArgs?.queryTerms || [];
+      if (Array.isArray(queryTerms)) {
+        queryTerms.forEach((term: string) =>
+          aggregatedContext.searchPatterns.add(term)
+        );
       }
-
-      const execResult = JSON.parse(result.content[0].text as string);
-      const repositories = execResult.result;
-
-      if (!Array.isArray(repositories) || repositories.length === 0) {
-        return createResult({
-          isError: true,
-          hints: [createNoResultsError('repositories')],
-        });
-      }
-
-      // Return simple repository data
-      return createResult({
-        data: {
-          total_count: repositories.length,
-          repositories: repositories.map(repo => ({
-            name: repo.fullName || repo.name,
-            stars: repo.stargazersCount || 0,
-            description:
-              (repo.description || 'No description').length > 150
-                ? repo.description.substring(0, 150) + '...'
-                : repo.description || 'No description',
-            language: repo.language || 'Unknown',
-            url: repo.url,
-            forks: repo.forksCount || 0,
-            updatedAt: toDDMMYYYY(repo.updatedAt),
-            owner: repo.owner?.login || repo.owner,
-          })),
-        },
-      });
-    } catch (error) {
-      return createResult({
-        isError: true,
-        hints: [createSearchFailedError('repositories')],
-      });
     }
   });
+
+  // Hints are now generated automatically by createBulkResponse
+
+  const config: BulkResponseConfig = {
+    toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+    includeAggregatedContext: verbose,
+    includeErrors: true,
+    maxHints: 8,
+  };
+
+  return createBulkResponse(
+    config,
+    results,
+    aggregatedContext,
+    errors,
+    uniqueQueries
+  );
 }
 
-export function buildGitHubReposSearchCommand(
-  params: GitHubReposSearchParams
-): {
-  command: GhCommand;
-  args: string[];
-} {
-  const builder = new GitHubReposSearchBuilder();
-  return { command: 'search', args: builder.build(params) };
-}
+// End of searchMultipleGitHubRepos function

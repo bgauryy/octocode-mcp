@@ -19,7 +19,6 @@ class TestCommandBuilder extends BaseCommandBuilder<BaseCommandParams> {
     return this.reset()
       .initializeCommand()
       .addQuery({
-        exactQuery: params.exactQuery as string,
         queryTerms: params.queryTerms as string[],
         orTerms: params.orTerms as string[],
       })
@@ -42,9 +41,9 @@ describe('BaseCommandBuilder', () => {
   });
 
   describe('Query Building', () => {
-    it('should handle exact query', () => {
-      const result = builder.build({ exactQuery: 'test query' });
-      expect(result).toContain('"test query"');
+    it('should handle query terms with spaces', () => {
+      const result = builder.build({ queryTerms: ['test query'] });
+      expect(result).toContain('test query');
     });
 
     it('should handle query terms (AND logic)', () => {
@@ -190,6 +189,50 @@ describe('BaseCommandBuilder', () => {
       const result = builder['normalizeArrayParam']('item1,item2');
       expect(result).toEqual(['item1', 'item2']);
     });
+
+    it('should reject command injection attempts', () => {
+      const builder = new TestCommandBuilder();
+
+      // Test various injection patterns
+      const maliciousInputs = [
+        'item1"; rm -rf / #',
+        'item1; evil-command',
+        'item1 | cat /etc/passwd',
+        'item1 & background-command',
+        'item1`whoami`',
+        'item1$HOME',
+        'item1\\n\\r',
+        '--malicious-flag',
+        '-rf',
+      ];
+
+      maliciousInputs.forEach(input => {
+        const result = builder['normalizeArrayParam'](input);
+        expect(result).toEqual([]); // Should filter out malicious content
+      });
+    });
+
+    it('should handle mixed safe and unsafe array items', () => {
+      const builder = new TestCommandBuilder();
+      const result = builder['normalizeArrayParam'](
+        'safe1,--malicious,safe2,evil;command,safe3'
+      );
+      expect(result).toEqual(['safe1', 'safe2', 'safe3']); // Only safe items should remain
+    });
+
+    it('should handle JSON array input securely', () => {
+      const builder = new TestCommandBuilder();
+
+      // Test valid JSON array
+      const validJson = '["item1", "item2", "item3"]';
+      const result1 = builder['normalizeArrayParam'](validJson);
+      expect(result1).toEqual(['item1', 'item2', 'item3']);
+
+      // Test JSON array with malicious content
+      const maliciousJson = '["safe", "--malicious", "safe2"]';
+      const result2 = builder['normalizeArrayParam'](maliciousJson);
+      expect(result2).toEqual(['safe', 'safe2']); // Malicious items filtered out
+    });
   });
 
   describe('Multiple Flags', () => {
@@ -278,19 +321,19 @@ describe('BaseCommandBuilder', () => {
     });
 
     it('should allow reuse after reset', () => {
-      const result1 = builder.build({ exactQuery: 'first' });
-      const result2 = builder.build({ exactQuery: 'second' });
+      const result1 = builder.build({ queryTerms: ['first'] });
+      const result2 = builder.build({ queryTerms: ['second'] });
 
-      expect(result1).toContain('"first"');
-      expect(result2).toContain('"second"');
-      expect(result2).not.toContain('"first"');
+      expect(result1).toContain('first');
+      expect(result2).toContain('second');
+      expect(result2).not.toContain('first');
     });
   });
 
   describe('Full Build Integration', () => {
     it('should build complete command with all features', () => {
       const params = {
-        exactQuery: 'react hooks',
+        queryTerms: ['react', 'hooks'],
         owner: 'facebook',
         repo: 'react',
         language: 'javascript',
@@ -300,7 +343,7 @@ describe('BaseCommandBuilder', () => {
       const result = builder.build(params);
 
       expect(result).toContain('test'); // base command
-      expect(result).toContain('"react hooks"'); // exact query
+      expect(result).toContain('react hooks'); // query terms
       expect(result).toContain('--repo=facebook/react'); // owner/repo
       expect(result).toContain('--language=javascript'); // language flag
       expect(result).toContain('--limit=50'); // limit

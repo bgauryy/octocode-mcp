@@ -22,7 +22,8 @@ export default {
       tsconfig: './tsconfig.json',
       sourceMap: false, // Disable source maps in TypeScript compilation
       declaration: false,
-      declarationMap: false
+      declarationMap: false,
+      noEmitOnError: true // Fail build on TypeScript errors
     }),
     json(),
     terser({ // Add aggressive minification

@@ -33,42 +33,33 @@ export abstract class NpmCommandBuilder<
 /**
  * NPM Package Search Command Builder
  */
-export class NpmPackageSearchBuilder extends NpmCommandBuilder<any> {
+export class NpmPackageSearchBuilder extends NpmCommandBuilder<
+  Record<string, unknown>
+> {
   protected initializeCommand(): this {
-    // Only include base command for integration tests
-    if (this.shouldIncludeBaseCommand()) {
-      this.args = ['search'];
-    } else {
-      this.args = [];
-    }
+    // Always start with empty args - the command is handled by executeNpmCommand
+    this.args = [];
     return this;
   }
 
-  private shouldIncludeBaseCommand(): boolean {
-    // Include base command for integration tests but not unit tests
-    const stack = new Error().stack || '';
-    return (
-      stack.includes('CommandBuilder.integration.test.ts') ||
-      !stack.includes('NpmCommandBuilder.test.ts')
-    );
-  }
-
-  build(params: any): string[] {
+  build(params: Record<string, unknown>): string[] {
     const builder = this.reset().initializeCommand();
 
     // Handle query building for npm search
-    if (params.exactQuery) {
-      this.args.push(params.exactQuery);
-    } else if (params.queryTerms && params.queryTerms.length > 0) {
+    if (
+      params.queryTerms &&
+      Array.isArray(params.queryTerms) &&
+      params.queryTerms.length > 0
+    ) {
       // Combine terms for npm search
-      const combinedQuery = params.queryTerms.join(' ');
+      const combinedQuery = (params.queryTerms as string[]).join(' ');
       this.args.push(combinedQuery);
-    } else if (params.query) {
+    } else if (params.query && typeof params.query === 'string') {
       this.args.push(params.query);
     }
 
     return builder
-      .addSearchLimit(params.searchLimit || 20)
+      .addSearchLimit((params.searchLimit as number) || 20)
       .addNpmJsonOutput()
       .getArgs();
   }
@@ -77,42 +68,33 @@ export class NpmPackageSearchBuilder extends NpmCommandBuilder<any> {
 /**
  * NPM Package View Command Builder
  */
-export class NpmPackageViewBuilder extends NpmCommandBuilder<any> {
+export class NpmPackageViewBuilder extends NpmCommandBuilder<
+  Record<string, unknown>
+> {
   protected initializeCommand(): this {
-    // Only include base command for integration tests
-    if (this.shouldIncludeBaseCommand()) {
-      this.args = ['view'];
-    } else {
-      this.args = [];
-    }
+    // Always start with empty args - the command is handled by executeNpmCommand
+    this.args = [];
     return this;
   }
 
-  private shouldIncludeBaseCommand(): boolean {
-    // Include base command for integration tests but not unit tests
-    const stack = new Error().stack || '';
-    return (
-      stack.includes('CommandBuilder.integration.test.ts') ||
-      !stack.includes('NpmCommandBuilder.test.ts')
-    );
-  }
-
-  build(params: any): string[] {
+  build(params: Record<string, unknown>): string[] {
     const builder = this.reset().initializeCommand();
 
     // Add package name (even if empty)
     if (params.packageName !== undefined) {
-      this.args.push(params.packageName);
+      this.args.push(params.packageName as string);
     }
 
     // Add specific field if requested
-    if (params.field) {
+    if (params.field && typeof params.field === 'string') {
       this.args.push(params.field);
     } else if (params.match) {
       // Handle specific fields or multiple fields
       if (Array.isArray(params.match)) {
-        params.match.forEach((field: string) => this.args.push(field));
-      } else {
+        (params.match as string[]).forEach((field: string) =>
+          this.args.push(field)
+        );
+      } else if (typeof params.match === 'string') {
         this.args.push(params.match);
       }
     }

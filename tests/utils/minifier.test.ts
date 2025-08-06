@@ -26,10 +26,10 @@ describe('MinifierV2', () => {
     });
 
     it('should map file extensions to correct strategies', () => {
-      expect(MINIFY_CONFIG.fileTypes.js.strategy).toBe('terser');
-      expect(MINIFY_CONFIG.fileTypes.py.strategy).toBe('conservative');
-      expect(MINIFY_CONFIG.fileTypes.html.strategy).toBe('aggressive');
-      expect(MINIFY_CONFIG.fileTypes.json.strategy).toBe('json');
+      expect(MINIFY_CONFIG.fileTypes.js!.strategy).toBe('terser');
+      expect(MINIFY_CONFIG.fileTypes.py!.strategy).toBe('conservative');
+      expect(MINIFY_CONFIG.fileTypes.html!.strategy).toBe('aggressive');
+      expect(MINIFY_CONFIG.fileTypes.json!.strategy).toBe('json');
     });
   });
 

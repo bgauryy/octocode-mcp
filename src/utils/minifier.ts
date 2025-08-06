@@ -253,12 +253,12 @@ async function minifyWithTerser(
       content: result.code || content,
       failed: false,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Always return original content on failure
     return {
       content: content,
       failed: true,
-      reason: `Terser minification failed: ${error.message}`,
+      reason: `Terser minification failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }
@@ -287,19 +287,22 @@ function removeComments(
     }
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Return original content if comment removal fails
     return content;
   }
 }
 
-function minifyConservative(content: string, config: any): string {
+function minifyConservative(
+  content: string,
+  config: FileTypeMinifyConfig
+): string {
   try {
     let result = content;
 
     // Remove comments if specified
     if (config.comments) {
-      result = removeComments(result, config.comments);
+      result = removeComments(result, config.comments as string | string[]);
     }
 
     // Conservative whitespace handling - preserve line structure and indentation
@@ -309,7 +312,7 @@ function minifyConservative(content: string, config: any): string {
       .trim();
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Return original content if conservative minification fails
     return content;
   }
@@ -336,7 +339,7 @@ async function minifyCSS(
       content: result.styles,
       failed: false,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     try {
       // Fallback to regex-based minification
       let result = content;
@@ -350,7 +353,7 @@ async function minifyCSS(
         content: result,
         failed: false, // Don't mark as failed since we have fallback
       };
-    } catch (fallbackError) {
+    } catch (fallbackError: unknown) {
       // If even fallback fails, return original content
       return {
         content: content,
@@ -380,7 +383,7 @@ async function minifyHTML(
       content: result,
       failed: false,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     try {
       // Fallback to regex-based minification
       let result = content;
@@ -391,7 +394,7 @@ async function minifyHTML(
         content: result,
         failed: false, // Don't mark as failed since we have fallback
       };
-    } catch (fallbackError) {
+    } catch (fallbackError: unknown) {
       // If even fallback fails, return original content
       return {
         content: content,
@@ -402,13 +405,16 @@ async function minifyHTML(
   }
 }
 
-function minifyAggressive(content: string, config: any): string {
+function minifyAggressive(
+  content: string,
+  config: FileTypeMinifyConfig
+): string {
   try {
     let result = content;
 
     // Remove comments if specified
     if (config.comments) {
-      result = removeComments(result, config.comments);
+      result = removeComments(result, config.comments as string | string[]);
     }
 
     // Aggressive whitespace handling
@@ -419,7 +425,7 @@ function minifyAggressive(content: string, config: any): string {
       .trim();
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Return original content if aggressive minification fails
     return content;
   }
@@ -436,14 +442,14 @@ function minifyJson(content: string): {
       content: JSON.stringify(parsed),
       failed: false,
     };
-  } catch (parseError) {
+  } catch (parseError: unknown) {
     try {
       // Fallback to basic whitespace removal
       return {
         content: content.replace(/\s+/g, ' ').trim(),
         failed: false,
       };
-    } catch (fallbackError) {
+    } catch (fallbackError: unknown) {
       // If even fallback fails, return original content
       return {
         content: content,
@@ -468,7 +474,7 @@ function minifyGeneral(content: string): string {
       .trim();
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Return original content if general minification fails
     return content;
   }
@@ -516,7 +522,7 @@ function minifyMarkdown(content: string): string {
     result = result.trim();
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Return original content if markdown minification fails
     return content;
   }
@@ -646,13 +652,13 @@ export async function minifyContentV2(
         };
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Always return original content if anything fails
     return {
       content: content,
       failed: true,
       type: 'failed',
-      reason: `Unexpected minification error: ${error.message}`,
+      reason: `Unexpected minification error: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
 }

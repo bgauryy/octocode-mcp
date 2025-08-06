@@ -6,98 +6,119 @@
 export const ERROR_MESSAGES = {
   // Authentication errors
   AUTHENTICATION_REQUIRED:
-    'GitHub authentication required - run api_status_check tool',
+    'GitHub authentication needed. Run the api_status_check tool to verify connection.',
 
   // Rate limit errors
   RATE_LIMIT_EXCEEDED:
-    'Rate limit exceeded - use specific filters (owner, language) or wait',
-  RATE_LIMIT_SIMPLE: 'Rate limit exceeded - wait or add filters',
+    'Too many requests. Try using specific filters like owner, language, or wait a few minutes.',
+  RATE_LIMIT_SIMPLE:
+    'Request limit reached. Wait a few minutes or use more specific search terms.',
 
   // No results errors
-  NO_RESULTS_FOUND: 'No results found - try simpler query or different filters',
+  NO_RESULTS_FOUND:
+    'No results found. Try broader search terms or different keywords.',
   NO_REPOSITORIES_FOUND:
-    'No repositories found - try simpler query or different filters',
-  NO_COMMITS_FOUND: 'No commits found - try simpler query or different filters',
-  NO_ISSUES_FOUND: 'No issues found - try simpler query or different filters',
+    'No repositories found. Try simpler keywords or remove some filters.',
+  NO_COMMITS_FOUND:
+    'No commits found. Try broader date ranges or different search terms.',
+  NO_ISSUES_FOUND: 'No issues found. Try different keywords or remove filters.',
   NO_PULL_REQUESTS_FOUND:
-    'No pull requests found - try simpler query or different filters',
-  NO_PACKAGES_FOUND: 'No packages found',
+    'No pull requests found. Try broader search terms or different filters.',
+  NO_PACKAGES_FOUND:
+    'No packages found. Try different package names or keywords.',
 
   // Connection/network errors
-  SEARCH_FAILED: 'Search failed - check connection or simplify query',
+  SEARCH_FAILED:
+    'Search failed. Check your connection and try simpler search terms.',
   REPOSITORY_SEARCH_FAILED:
-    'Repository search failed - check connection or query',
-  COMMIT_SEARCH_FAILED: 'Commit search failed',
-  COMMIT_SEARCH_EXECUTION_FAILED: 'Commit search execution failed',
-  ISSUE_SEARCH_FAILED: 'Issue search failed - check auth or simplify query',
-  PR_SEARCH_FAILED: 'PR search failed - check access and query syntax',
-  PACKAGE_SEARCH_FAILED: 'Package search failed - try different keywords',
+    'Repository search failed. Verify the repository exists and is accessible.',
+  COMMIT_SEARCH_FAILED: 'Commit search failed. Try different search criteria.',
+  COMMIT_SEARCH_EXECUTION_FAILED:
+    'Unable to search commits. Try again with different parameters.',
+  ISSUE_SEARCH_FAILED:
+    'Issue search failed. Check repository access and try simpler terms.',
+  PR_SEARCH_FAILED:
+    'Pull request search failed. Verify repository access and search terms.',
+  PACKAGE_SEARCH_FAILED:
+    'Package search failed. Try different package names or keywords.',
 
   // GitHub CLI errors
   CLI_INVALID_RESPONSE:
-    'GitHub CLI invalid response - check "gh version" and update',
+    'GitHub connection issue. Check your internet connection and try again.',
 
   // Timeout errors
   SEARCH_TIMEOUT:
-    'Search timed out - add filters (language, owner) or use specific terms',
+    'Search took too long. Try more specific terms or add filters like language or owner.',
 
   // Query validation errors
-  QUERY_TOO_LONG: 'Query too long (max 256 chars) - simplify search terms',
-  QUERY_REQUIRED: 'Query required - provide search keywords',
+  QUERY_TOO_LONG: 'Search query too long. Use shorter, more specific terms.',
+  QUERY_REQUIRED: 'Search terms required. Provide keywords to search for.',
   EMPTY_QUERY:
-    'Empty query - try "useState", "authentication", or language:python',
+    'Empty search query. Try terms like "useState", "authentication", or "error handling".',
   QUERY_TOO_LONG_1000:
-    'Query too long (max 1000 chars) - use key terms like "error handling"',
+    'Query too long. Use key terms and phrases instead of full sentences.',
 
   // Repository validation errors
   REPO_FORMAT_ERROR:
-    'Repository format error - use "owner/repo" format (e.g., "facebook/react")',
+    'Repository format error. Use "owner/repo" format like "facebook/react".',
   REPO_OR_OWNER_NOT_FOUND:
-    'Repository/owner not found - check spelling, visibility, and permissions',
+    'Repository not found. Check spelling and verify the repository is public.',
 
   // Query syntax errors
   INVALID_QUERY_SYNTAX:
-    'Invalid syntax - Boolean operators not supported, use quotes for phrases',
+    'Invalid search syntax. Use quotes for phrases instead of AND/OR operators.',
   VALIDATION_FAILED:
-    'Invalid syntax - Boolean operators not supported, use quotes for phrases',
+    'Invalid search format. Use quotes for phrases and avoid complex operators.',
 
   // Size/format validation errors
   INVALID_SIZE_FORMAT:
-    'Invalid size format - use >N, <N, or N..M without quotes',
+    'Invalid size format. Use formats like ">100", "<50", or "10..100".',
   INVALID_SEARCH_SCOPE:
-    'Invalid scope - use "file" for content, "path" for filenames',
+    'Invalid search scope. Use "file" to search content or "path" for filenames.',
 
   // API Status check errors
-  API_STATUS_CHECK_FAILED: 'API Status Check Failed',
+  API_STATUS_CHECK_FAILED:
+    'Connection check failed. Verify internet connection and GitHub access.',
 
   // File Content Errors
-  FILE_NOT_FOUND: 'File not found in repository',
-  FILE_TOO_LARGE: 'File too large to fetch',
-  FILE_ACCESS_DENIED: 'Access denied to file',
+  FILE_NOT_FOUND:
+    'File not found in repository. Check the file path and repository.',
+  FILE_TOO_LARGE:
+    'File too large to display. Try viewing smaller sections or download directly.',
+  FILE_ACCESS_DENIED: 'Cannot access file. Check repository permissions.',
   FILE_IS_DIRECTORY:
-    'Path is a directory. Use github_view_repo_structure to list directory contents',
+    'Path is a directory. Use githubViewRepoStructure to explore directory contents.',
   FILE_IS_BINARY:
-    'Binary file detected. Cannot display as text - download directly from GitHub',
-  FILE_IS_EMPTY: 'File is empty - no content to display',
+    'Binary file cannot be displayed as text. Download directly from GitHub if needed.',
+  FILE_IS_EMPTY: 'File is empty - no content to display.',
   FILE_DECODE_FAILED:
-    'Failed to decode file. Encoding may not be supported (expected UTF-8)',
+    'Cannot read file content. File may use unsupported encoding.',
 
   // Repository Structure Errors
-  REPOSITORY_NOT_FOUND: 'Repository not found',
-  REPOSITORY_ACCESS_DENIED: 'Repository access denied',
-  REPOSITORY_PATH_NOT_FOUND: 'Path not found in repository',
-  REPOSITORY_STRUCTURE_INACCESSIBLE: 'Repository structure not accessible',
+  REPOSITORY_NOT_FOUND:
+    'Repository not found. Check repository name and access permissions.',
+  REPOSITORY_ACCESS_DENIED:
+    'Cannot access repository. Verify it exists and is public.',
+  REPOSITORY_PATH_NOT_FOUND:
+    'Path not found in repository. Check the directory or file path.',
+  REPOSITORY_STRUCTURE_INACCESSIBLE:
+    'Cannot explore repository structure. Check access permissions.',
 
   // NPM Errors
-  NPM_PACKAGE_NOT_FOUND: 'Package not found on NPM registry',
-  NPM_CONNECTION_FAILED: 'NPM registry connection failed',
-  NPM_CLI_ERROR: 'NPM CLI issue detected',
-  NPM_PERMISSION_ERROR: 'NPM permission issue',
-  NPM_REGISTRY_ERROR: 'NPM registry error',
+  NPM_PACKAGE_NOT_FOUND:
+    'Package not found on NPM. Check package name spelling.',
+  NPM_CONNECTION_FAILED:
+    'Cannot connect to NPM registry. Check internet connection.',
+  NPM_CLI_ERROR:
+    'NPM tool issue detected. Try again or check NPM installation.',
+  NPM_PERMISSION_ERROR: 'NPM permission issue. Check access rights.',
+  NPM_REGISTRY_ERROR: 'NPM registry error. Try again later.',
 
   // Connection/Network Errors
-  API_CONNECTION_FAILED: 'Failed to connect to API',
-  PATH_NOT_FOUND: 'Path not found in repository',
+  API_CONNECTION_FAILED:
+    'Cannot connect to service. Check internet connection.',
+  PATH_NOT_FOUND:
+    'Path not found in repository. Verify the file or directory path.',
 } as const;
 
 export const SUGGESTIONS = {
