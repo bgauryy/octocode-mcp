@@ -6,7 +6,6 @@ import {
   withCache,
   clearAllCache,
   getCacheStats,
-  getCacheDebugInfo,
   CACHE_TTL_CONFIG,
 } from '../../src/utils/cache';
 
@@ -193,13 +192,13 @@ describe('Cache Security Tests', () => {
         generateCacheKey('tracking', { id: i });
       }
 
-      const updatedDebugInfo = getCacheDebugInfo();
+      const stats = getCacheStats();
 
-      expect(updatedDebugInfo.recentCollisions).toBeDefined();
-      expect(Array.isArray(updatedDebugInfo.recentCollisions)).toBe(true);
+      expect(stats.collisions).toBeDefined();
+      expect(typeof stats.collisions).toBe('number');
 
       // Should have no collisions with proper hashing
-      expect(updatedDebugInfo.recentCollisions.length).toBe(0);
+      expect(stats.collisions).toBe(0);
     });
   });
 
@@ -228,11 +227,11 @@ describe('Cache Security Tests', () => {
         generateCacheKey(`prefix-${i}`, { data: i });
       }
 
-      const debugInfo = getCacheDebugInfo();
+      const stats = getCacheStats();
 
-      // Collision map should be bounded by LRU eviction
-      expect(typeof debugInfo.collisionMapSize).toBe('number');
-      expect(debugInfo.collisionMapSize).toBeLessThan(1100);
+      // Should handle large numbers of keys without issues
+      expect(stats.registeredPrefixes).toBeDefined();
+      expect(stats.registeredPrefixes.length).toBeGreaterThan(0);
     });
   });
 

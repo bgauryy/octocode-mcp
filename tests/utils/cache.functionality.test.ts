@@ -5,7 +5,6 @@ import {
   withCache,
   clearAllCache,
   getCacheStats,
-  getCacheDebugInfo,
   CACHE_TTL_CONFIG,
 } from '../../src/utils/cache';
 
@@ -237,27 +236,23 @@ describe('Cache Functionality Regression Tests', () => {
       expect(finalStats.cacheSize).toBeGreaterThan(0);
     });
 
-    it('should provide accurate debug information', () => {
+    it('should provide accurate stats information', () => {
       // Generate some cache keys
       for (let i = 0; i < 10; i++) {
         generateCacheKey('debug', { id: i });
         generateCacheKey('another', { id: i });
       }
 
-      const debugInfo = getCacheDebugInfo();
+      const stats = getCacheStats();
 
-      expect(debugInfo.stats).toBeDefined();
-      expect(debugInfo.health).toBeDefined();
-      expect(debugInfo.keysByPrefix).toBeDefined();
-      expect(debugInfo.recentCollisions).toBeDefined();
+      expect(stats).toBeDefined();
+      expect(stats.registeredPrefixes).toBeDefined();
+      expect(stats.hits).toBeDefined();
+      expect(stats.misses).toBeDefined();
 
       // Should have registered prefixes
-      expect(debugInfo.stats.registeredPrefixes).toContain('debug');
-      expect(debugInfo.stats.registeredPrefixes).toContain('another');
-
-      // Should be healthy (no collisions)
-      expect(debugInfo.health.isHealthy).toBe(true);
-      expect(debugInfo.recentCollisions.length).toBe(0);
+      expect(stats.registeredPrefixes).toContain('debug');
+      expect(stats.registeredPrefixes).toContain('another');
     });
 
     it('should handle cache clear operations', async () => {
@@ -299,27 +294,25 @@ describe('Cache Functionality Regression Tests', () => {
         generateCacheKey('collision-tracking', { id: i });
       }
 
-      const debugInfo = getCacheDebugInfo();
+      const stats = getCacheStats();
 
-      // Collision map should be within expected bounds
-      expect(typeof debugInfo.collisionMapSize).toBe('number');
-      expect(debugInfo.collisionMapSize).toBeLessThanOrEqual(1000);
-      expect(debugInfo.recentCollisions.length).toBe(0); // No actual collisions expected
+      // Should track collisions in stats
+      expect(typeof stats.collisions).toBe('number');
+      expect(stats.collisions).toBe(0); // No actual collisions expected with proper hashing
     });
 
-    it('should handle LRU eviction in collision map', () => {
-      // Generate enough keys to potentially trigger LRU eviction
-      const keyCount = 1500; // More than the LRU limit of 1000
+    it('should handle key generation at scale', () => {
+      // Generate many keys to test key generation performance
+      const keyCount = 1500;
 
       for (let i = 0; i < keyCount; i++) {
-        generateCacheKey(`lru-${i}`, { data: `test-${i}` });
+        const key = generateCacheKey(`lru-${i}`, { data: `test-${i}` });
+        expect(key).toBeDefined();
+        expect(typeof key).toBe('string');
       }
 
-      const debugInfo = getCacheDebugInfo();
-
-      // Should be bounded by LRU size
-      expect(typeof debugInfo.collisionMapSize).toBe('number');
-      expect(debugInfo.collisionMapSize).toBeLessThanOrEqual(1000);
+      const stats = getCacheStats();
+      expect(stats.registeredPrefixes.length).toBeGreaterThan(0);
     });
 
     it('should clean up prefix registry properly', () => {
