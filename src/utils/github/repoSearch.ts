@@ -8,11 +8,66 @@ import { GitHubReposSearchQuery } from '../../mcp/tools/scheme/github_search_rep
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
+import { generateCacheKey, withCache } from '../cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createResult } from '../../mcp/responses';
 
 /**
- * Search GitHub repositories using Octokit API with proper TypeScript types
+ * Search GitHub repositories using Octokit API with proper TypeScript types and caching
  */
 export async function searchGitHubReposAPI(
+  params: GitHubReposSearchQuery,
+  token?: string
+): Promise<
+  GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
+> {
+  // Generate cache key based on search parameters only (NO TOKEN DATA)
+  const cacheKey = generateCacheKey('gh-api-repos', params);
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const searchOperation = async (): Promise<CallToolResult> => {
+    const result = await searchGitHubReposAPIInternal(params, token);
+
+    // Convert to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result,
+      });
+    }
+  };
+
+  // Use cache with 2-hour TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, searchOperation);
+
+  // Convert CallToolResult back to the expected format
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubAPIResponse<{
+      total_count: number;
+      repositories: Repository[];
+    }>;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubAPIResponse<{
+      total_count: number;
+      repositories: Repository[];
+    }>;
+  }
+}
+
+/**
+ * Internal implementation of searchGitHubReposAPI without caching
+ */
+async function searchGitHubReposAPIInternal(
   params: GitHubReposSearchQuery,
   token?: string
 ): Promise<

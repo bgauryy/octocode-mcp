@@ -28,14 +28,8 @@ export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   token?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
-  // Generate cache key based on search parameters
-  const cacheKey = generateCacheKey('gh-api-prs', {
-    ...params,
-    // Include token hash for user-specific caching if token exists
-    tokenHash: token
-      ? generateCacheKey('token', { token }).slice(-8)
-      : undefined,
-  });
+  // Generate cache key based on search parameters only (NO TOKEN DATA)
+  const cacheKey = generateCacheKey('gh-api-prs', params);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
@@ -613,17 +607,13 @@ export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   token?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
-  // Generate cache key for specific PR fetch
+  // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', {
     owner: params.owner,
     repo: params.repo,
     prNumber: params.prNumber,
     getFileChanges: params.getFileChanges,
     withComments: params.withComments,
-    // Include token hash for user-specific caching if token exists
-    tokenHash: token
-      ? generateCacheKey('token', { token }).slice(-8)
-      : undefined,
   });
 
   // Create a wrapper function that returns CallToolResult for the cache

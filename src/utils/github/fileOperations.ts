@@ -383,9 +383,56 @@ async function processFileContentAPI(
 }
 
 /**
- * View GitHub repository structure using Octokit API
+ * View GitHub repository structure using Octokit API with caching
  */
 export async function viewGitHubRepositoryStructureAPI(
+  params: GitHubRepositoryStructureParams,
+  token?: string
+): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
+  // Generate cache key based on structure parameters only (NO TOKEN DATA)
+  const cacheKey = generateCacheKey('gh-repo-structure-api', params);
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const structureOperation = async (): Promise<CallToolResult> => {
+    const result = await viewGitHubRepositoryStructureAPIInternal(
+      params,
+      token
+    );
+
+    // Convert to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result,
+      });
+    }
+  };
+
+  // Use cache with 2-hour TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, structureOperation);
+
+  // Convert CallToolResult back to the expected format
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubRepositoryStructureError;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubRepositoryStructureResult;
+  }
+}
+
+/**
+ * Internal implementation of viewGitHubRepositoryStructureAPI without caching
+ */
+async function viewGitHubRepositoryStructureAPIInternal(
   params: GitHubRepositoryStructureParams,
   token?: string
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {

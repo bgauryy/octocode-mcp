@@ -11,11 +11,58 @@ import { minifyContentV2 } from '../minifier';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
+import { generateCacheKey, withCache } from '../cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createResult } from '../../mcp/responses';
 
 /**
- * Search GitHub code using Octokit API with optimized performance
+ * Search GitHub code using Octokit API with optimized performance and caching
  */
 export async function searchGitHubCodeAPI(
+  params: GitHubCodeSearchQuery,
+  token?: string
+): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
+  // Generate cache key based on search parameters only (NO TOKEN DATA)
+  const cacheKey = generateCacheKey('gh-api-code', params);
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const searchOperation = async (): Promise<CallToolResult> => {
+    const result = await searchGitHubCodeAPIInternal(params, token);
+
+    // Convert to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result,
+      });
+    }
+  };
+
+  // Use cache with 1-hour TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, searchOperation);
+
+  // Convert CallToolResult back to the expected format
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubAPIResponse<OptimizedCodeSearchResult>;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubAPIResponse<OptimizedCodeSearchResult>;
+  }
+}
+
+/**
+ * Internal implementation of searchGitHubCodeAPI without caching
+ */
+async function searchGitHubCodeAPIInternal(
   params: GitHubCodeSearchQuery,
   token?: string
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {

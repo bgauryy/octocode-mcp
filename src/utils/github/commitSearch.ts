@@ -11,11 +11,58 @@ import { ContentSanitizer } from '../../security/contentSanitizer';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCommitSearchQuery } from './queryBuilders';
+import { generateCacheKey, withCache } from '../cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createResult } from '../../mcp/responses';
 
 /**
- * Search GitHub commits using Octokit API
+ * Search GitHub commits using Octokit API with caching
  */
 export async function searchGitHubCommitsAPI(
+  params: GitHubCommitSearchParams,
+  token?: string
+): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
+  // Generate cache key based on search parameters only (NO TOKEN DATA)
+  const cacheKey = generateCacheKey('gh-commits-api', params);
+
+  // Create a wrapper function that returns CallToolResult for the cache
+  const searchOperation = async (): Promise<CallToolResult> => {
+    const result = await searchGitHubCommitsAPIInternal(params, token);
+
+    // Convert to CallToolResult for caching
+    if ('error' in result) {
+      return createResult({
+        isError: true,
+        data: result,
+      });
+    } else {
+      return createResult({
+        data: result,
+      });
+    }
+  };
+
+  // Use cache with 1-hour TTL (configured in cache.ts)
+  const cachedResult = await withCache(cacheKey, searchOperation);
+
+  // Convert CallToolResult back to the expected format
+  if (cachedResult.isError) {
+    // Extract the actual error data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubCommitSearchError;
+  } else {
+    // Extract the actual success data from the CallToolResult
+    const jsonText = (cachedResult.content[0] as { text: string }).text;
+    const parsedData = JSON.parse(jsonText);
+    return parsedData.data as GitHubCommitSearchResult;
+  }
+}
+
+/**
+ * Internal implementation of searchGitHubCommitsAPI without caching
+ */
+async function searchGitHubCommitsAPIInternal(
   params: GitHubCommitSearchParams,
   token?: string
 ): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
