@@ -66,13 +66,25 @@ jobs:
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           
+          echo "📦 Package: $PACKAGE_NAME"
+          echo "🔢 Base version from package.json: $PACKAGE_VERSION"
+          
+          # Safety check: Ensure we never publish a non-alpha version
+          if [[ "$PACKAGE_VERSION" =~ -alpha\. ]]; then
+            echo "❌ ERROR: package.json version already contains '-alpha' suffix!"
+            echo "❌ This workflow should only work with clean base versions (e.g., '4.0.0')"
+            exit 1
+          fi
+          
           # Get the latest alpha version number for this base version
           LATEST_ALPHA_NUMBER=0
           
           # Check for existing alpha versions and find the highest number
+          echo "🔍 Checking for existing alpha versions of $PACKAGE_VERSION..."
           for i in {1..100}; do
             if npm view "$PACKAGE_NAME@${PACKAGE_VERSION}-alpha.$i" version 2>/dev/null; then
               LATEST_ALPHA_NUMBER=$i
+              echo "   Found: ${PACKAGE_VERSION}-alpha.$i"
             else
               break
             fi
@@ -82,9 +94,10 @@ jobs:
           NEW_ALPHA_NUMBER=$((LATEST_ALPHA_NUMBER + 1))
           ALPHA_VERSION="${PACKAGE_VERSION}-alpha.${NEW_ALPHA_NUMBER}"
           
-          echo "Latest alpha number: $LATEST_ALPHA_NUMBER"
-          echo "New alpha number: $NEW_ALPHA_NUMBER"
-          echo "New alpha version: $ALPHA_VERSION"
+          echo "📊 Latest alpha number: $LATEST_ALPHA_NUMBER"
+          echo "🆕 New alpha number: $NEW_ALPHA_NUMBER"
+          echo "🏷️  New alpha version: $ALPHA_VERSION"
+          echo "⚠️  Will publish ONLY to 'alpha' tag, NOT 'latest'"
           
           echo "should_publish=true" >> $GITHUB_OUTPUT
           echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
@@ -104,14 +117,29 @@ jobs:
       - name: Publish incremental alpha version to npm
         if: steps.check-version.outputs.should_publish == 'true'
         run: |
-          # Temporarily update package.json version to alpha
-          npm version ${{ steps.check-version.outputs.alpha_version }} --no-git-tag-version
+          # Safety verification before publishing
+          ALPHA_VERSION="${{ steps.check-version.outputs.alpha_version }}"
+          if [[ ! "$ALPHA_VERSION" =~ -alpha\. ]]; then
+            echo "❌ CRITICAL ERROR: Version '$ALPHA_VERSION' does not contain '-alpha' suffix!"
+            echo "❌ Refusing to publish - this could pollute the main npm release!"
+            exit 1
+          fi
           
-          # Publish with alpha tag
+          echo "🔒 Safety check passed: Publishing alpha version $ALPHA_VERSION"
+          
+          # Temporarily update package.json version to alpha
+          npm version $ALPHA_VERSION --no-git-tag-version
+          
+          # Publish with alpha tag (NOT latest - ensures no main version pollution)
+          echo "🚀 Publishing to npm with 'alpha' tag (NOT 'latest')..."
           yarn npm publish --access public --tag alpha
           
           # Revert package.json version back to original
           npm version ${{ steps.check-version.outputs.package_version }} --no-git-tag-version
+          
+          echo "✅ Successfully published alpha version $ALPHA_VERSION to npm with 'alpha' tag"
+          echo "⚠️  This version is NOT published to 'latest' - only available via 'alpha' tag"
+          echo "📥 Users can install with: npm install ${{ steps.check-version.outputs.package_name }}@alpha"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
