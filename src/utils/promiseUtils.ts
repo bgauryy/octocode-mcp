@@ -1,5 +1,3 @@
-import { logger } from './logger';
-
 /**
  * Result of a promise operation with error isolation
  */
@@ -107,10 +105,7 @@ async function createIsolatedPromise<T>(
       try {
         onError(errorObj, index);
       } catch (handlerError) {
-        logger.error(
-          'Error in custom error handler',
-          handlerError instanceof Error ? handlerError : undefined
-        );
+        // Error in custom error handler
       }
     }
 
@@ -279,13 +274,6 @@ export async function retryWithBackoff<T>(
         maxDelay
       );
       await new Promise(resolve => setTimeout(resolve, delay));
-
-      logger.debug('Retrying operation', {
-        attempt: attempt + 1,
-        maxRetries,
-        delay,
-        error: lastError.message,
-      });
     }
   }
 

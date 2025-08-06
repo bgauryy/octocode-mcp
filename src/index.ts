@@ -14,7 +14,6 @@ import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
 import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
 import { getGithubCLIToken } from './utils/exec.js';
-import { logger } from './utils/logger.js';
 
 async function getToken(): Promise<string> {
   const token =
@@ -47,9 +46,6 @@ async function registerAllTools(server: McpServer) {
     const npmDetails = await getNPMUserDetails();
     npmEnabled = npmDetails.npmConnected;
   } catch (error) {
-    logger.warn('NPM availability check failed, disabling NPM features', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
     npmEnabled = false;
   }
 
@@ -111,11 +107,7 @@ async function registerAllTools(server: McpServer) {
   }
 
   if (failedTools.length > 0) {
-    logger.warn('Some tools failed to register', {
-      failedTools,
-      successCount,
-      totalTools: toolRegistrations.length,
-    });
+    // Tools failed to register
   }
 
   if (successCount === 0) {
@@ -140,18 +132,13 @@ async function startServer() {
     process.stdout.uncork();
     process.stderr.uncork();
 
-    const gracefulShutdown = async (signal?: string) => {
+    const gracefulShutdown = async (_signal?: string) => {
       // Prevent multiple shutdown attempts
       if (shutdownInProgress) {
-        logger.warn(
-          'Shutdown already in progress, ignoring additional signal',
-          { signal }
-        );
         return;
       }
 
       shutdownInProgress = true;
-      logger.info('Starting graceful shutdown', { signal });
 
       try {
         // Clear any existing shutdown timeout
@@ -162,7 +149,6 @@ async function startServer() {
 
         // Set a new shutdown timeout
         shutdownTimeout = setTimeout(() => {
-          logger.error('Forced shutdown after timeout');
           process.exit(1);
         }, 5000);
 
@@ -172,12 +158,8 @@ async function startServer() {
         // Close server with timeout protection
         try {
           await server.close();
-          logger.info('Server closed successfully');
         } catch (closeError) {
-          logger.error(
-            'Error closing server',
-            closeError instanceof Error ? closeError : undefined
-          );
+          // Error closing server
         }
 
         // Clear the timeout since we completed successfully
@@ -186,13 +168,9 @@ async function startServer() {
           shutdownTimeout = null;
         }
 
-        logger.info('Graceful shutdown completed');
         process.exit(0);
-      } catch (error) {
-        logger.error(
-          'Error during graceful shutdown',
-          error instanceof Error ? error : undefined
-        );
+      } catch (_error) {
+        // Error during graceful shutdown
 
         // Clear timeout on error
         if (shutdownTimeout) {
@@ -214,28 +192,17 @@ async function startServer() {
     });
 
     // Handle uncaught errors - prevent multiple handlers
-    process.once('uncaughtException', error => {
-      logger.error('Uncaught exception', error);
+    process.once('uncaughtException', _error => {
       gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
 
-    process.once('unhandledRejection', (reason, _promise) => {
-      logger.error(
-        'Unhandled rejection',
-        reason instanceof Error ? reason : new Error(String(reason))
-      );
+    process.once('unhandledRejection', (_reason, _promise) => {
       gracefulShutdown('UNHANDLED_REJECTION');
     });
 
     // Keep process alive
     process.stdin.resume();
-
-    logger.info('MCP Server started successfully');
-  } catch (error) {
-    logger.error(
-      'Failed to start server',
-      error instanceof Error ? error : undefined
-    );
+  } catch (_error) {
     process.exit(1);
   }
 }

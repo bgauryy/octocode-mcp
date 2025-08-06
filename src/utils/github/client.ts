@@ -1,18 +1,7 @@
 import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
-import { logger } from '../logger.js';
-import type {
-  GetRepoParameters,
-  GetRepoResponse,
-} from '../../types/github-openapi';
-
-// Throttling options interface
-interface ThrottleOptions {
-  method: string;
-  url: string;
-  [key: string]: unknown;
-}
+import type { GetRepoResponse } from '../../types/github-openapi';
 
 // TypeScript-safe conditional authentication
 const defaultToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -25,8 +14,6 @@ const octokitInstances = new Map<
   string,
   InstanceType<typeof OctokitWithThrottling>
 >();
-
-// Limit Octokit instances to prevent memory leaks
 const MAX_OCTOKIT_INSTANCES = 10;
 
 /**
@@ -34,65 +21,17 @@ const MAX_OCTOKIT_INSTANCES = 10;
  */
 const createThrottleOptions = () => ({
   onRateLimit: (
-    retryAfter: number,
-    options: ThrottleOptions,
+    _retryAfter: number,
+    _options: unknown,
     _octokit: Octokit,
     retryCount: number
-  ) => {
-    // Log rate limit with detailed context
-    logger.warn('GitHub API rate limit exceeded', {
-      method: options.method,
-      url: options.url,
-      retryCount,
-      retryAfter,
-    });
-
-    // Only retry once
-    if (retryCount === 0) {
-      logger.info('Retrying GitHub API request after rate limit', {
-        retryAfter,
-        method: options.method,
-        url: options.url,
-      });
-      return true;
-    }
-
-    logger.warn('Rate limit retry limit reached, not retrying', {
-      method: options.method,
-      url: options.url,
-    });
-    return false;
-  },
+  ) => retryCount === 0,
   onSecondaryRateLimit: (
-    retryAfter: number,
-    options: ThrottleOptions,
+    _retryAfter: number,
+    _options: unknown,
     _octokit: Octokit,
     retryCount: number
-  ) => {
-    // Log secondary rate limit (abuse detection pattern)
-    logger.warn('GitHub API secondary rate limit detected', {
-      method: options.method,
-      url: options.url,
-      retryCount,
-      retryAfter,
-    });
-
-    // Retry once for secondary rate limits too
-    if (retryCount === 0) {
-      logger.info('Retrying after secondary rate limit', {
-        retryAfter,
-        method: options.method,
-        url: options.url,
-      });
-      return true;
-    }
-
-    logger.warn('Secondary rate limit retry limit reached, not retrying', {
-      method: options.method,
-      url: options.url,
-    });
-    return false;
-  },
+  ) => retryCount === 0,
 });
 
 /**
@@ -103,45 +42,27 @@ export function getOctokit(
   token?: string
 ): InstanceType<typeof OctokitWithThrottling> {
   const useToken = token || defaultToken || '';
-
   const cacheKey = useToken || 'no-token';
 
   if (!octokitInstances.has(cacheKey)) {
     // Prevent memory leaks by limiting the number of cached instances
     if (octokitInstances.size >= MAX_OCTOKIT_INSTANCES) {
-      // Remove the oldest instance (first in Map)
       const oldestKey = octokitInstances.keys().next().value;
       if (oldestKey) {
         octokitInstances.delete(oldestKey);
-        logger.debug('Removed oldest Octokit instance to prevent memory leak', {
-          removedKey: oldestKey.substring(0, 10) + '...',
-          remainingInstances: octokitInstances.size,
-        });
       }
     }
 
-    // TypeScript-safe configuration with throttling plugin
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
     } = {
       userAgent: 'octocode-mcp/1.0.0',
-      request: {
-        timeout: 30000, // 30 second timeout
-      },
-      // Use the separated throttle options for better maintainability
+      request: { timeout: 30000 },
       throttle: createThrottleOptions(),
+      ...(useToken && { auth: useToken }),
     };
 
-    if (useToken) {
-      options.auth = useToken;
-    }
-
     octokitInstances.set(cacheKey, new OctokitWithThrottling(options));
-
-    logger.debug('Created new Octokit instance', {
-      cacheKey: cacheKey.substring(0, 10) + '...',
-      totalInstances: octokitInstances.size,
-    });
   }
   return octokitInstances.get(cacheKey)!;
 }
@@ -151,7 +72,6 @@ const defaultBranchCache = new Map<string, string>();
 
 /**
  * Get repository's default branch with caching
- * Works for both CLI and API implementations
  */
 export async function getDefaultBranch(
   owner: string,
@@ -160,23 +80,21 @@ export async function getDefaultBranch(
 ): Promise<string | null> {
   const cacheKey = `${owner}/${repo}`;
 
-  // Check cache first
   if (defaultBranchCache.has(cacheKey)) {
     return defaultBranchCache.get(cacheKey)!;
   }
 
   try {
     const octokit = getOctokit(token);
-    const params: GetRepoParameters = { owner, repo };
-    const repoInfo: GetRepoResponse = await octokit.rest.repos.get(params);
+    const repoInfo: GetRepoResponse = await octokit.rest.repos.get({
+      owner,
+      repo,
+    });
     const defaultBranch = repoInfo.data.default_branch || 'main';
 
-    // Cache the successful result
     defaultBranchCache.set(cacheKey, defaultBranch);
     return defaultBranch;
   } catch (error) {
-    // Fallback: try to infer from common patterns
-    // Don't cache failures to allow retry later
     return null;
   }
 }

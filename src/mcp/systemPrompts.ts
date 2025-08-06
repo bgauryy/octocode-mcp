@@ -21,7 +21,6 @@ OUTPUT:
 - Comprehensive results after research and analysis
 - If you have enough information to answer the question, stop and output the results
 - If you don't have enough information, continue to search and analyze
-- At the beggining add "Octocode MCP Analysis "
 
 TOOL ORCHESTRATION (ReAct Pattern):
 - **REASON**: Analyze research goal and current context

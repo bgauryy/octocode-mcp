@@ -25,7 +25,6 @@ import {
   TOOL_SUGGESTION_CONFIGS,
 } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { logger } from '../../utils/logger';
 import { ProcessedCodeSearchResult } from './scheme/github_search_code';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
@@ -84,18 +83,6 @@ export function registerGitHubSearchCodeTool(
         queries: GitHubCodeSearchQuery[];
         verbose?: boolean;
       }): Promise<CallToolResult> => {
-        // Debug logging to see what we receive
-        logger.debug('GitHub search code tool received args', {
-          args: JSON.stringify(args, null, 2),
-          queriesType: typeof args.queries,
-          queriesIsArray: Array.isArray(args.queries),
-          firstQueryType: args.queries?.[0]
-            ? typeof args.queries[0]
-            : 'undefined',
-          firstQueryStringified: args.queries?.[0]
-            ? JSON.stringify(args.queries[0])
-            : 'undefined',
-        });
         if (
           !args.queries ||
           !Array.isArray(args.queries) ||
