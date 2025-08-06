@@ -4,21 +4,20 @@ import crypto from 'crypto';
 
 const VERSION = 'v1';
 
-// Cache configuration with improved settings
+// Simplified cache configuration
 const cache = new NodeCache({
-  stdTTL: 86400, // Default 24 hour cache (can be overridden per key)
+  stdTTL: 86400, // Default 24 hour cache
   checkperiod: 3600, // Check for expired keys every 1 hour
-  maxKeys: 1000, // Limit cache to 1000 entries to prevent unbounded growth
+  maxKeys: 1000, // Limit cache to 1000 entries
   deleteOnExpire: true, // Automatically delete expired keys
-  useClones: false, // Better performance, but be careful with object mutations
+  useClones: false, // Better performance
 });
 
-// Cache statistics tracking
+// Simple cache statistics tracking
 interface CacheStats {
   hits: number;
   misses: number;
   sets: number;
-  collisions: number;
   totalKeys: number;
   lastReset: Date;
 }
@@ -27,95 +26,9 @@ const cacheStats: CacheStats = {
   hits: 0,
   misses: 0,
   sets: 0,
-  collisions: 0,
   totalKeys: 0,
   lastReset: new Date(),
 };
-
-// Track cache key prefixes to detect potential collisions - with improved cleanup
-const keyPrefixRegistry = new Set<string>();
-let prefixRegistryCleanupTimer: ReturnType<typeof setTimeout> | null = null;
-let cleanupScheduled = false; // Prevent multiple cleanup timers
-
-/**
- * LRU Cache for collision tracking to prevent unbounded memory growth
- * Enhanced with better memory management
- */
-class LRUCollisionMap {
-  private cache = new Map<string, string[]>();
-  private maxSize: number;
-  private maxParamsPerKey: number;
-
-  constructor(maxSize = 1000, maxParamsPerKey = 5) {
-    this.maxSize = maxSize;
-    this.maxParamsPerKey = maxParamsPerKey;
-  }
-
-  has(key: string): boolean {
-    return this.cache.has(key);
-  }
-
-  get(key: string): string[] | undefined {
-    const value = this.cache.get(key);
-    if (value !== undefined) {
-      // Move to end (most recently used)
-      this.cache.delete(key);
-      this.cache.set(key, value);
-    }
-    return value;
-  }
-
-  set(key: string, value: string[]): void {
-    // Remove if already exists
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Remove least recently used (first item)
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-      }
-    }
-
-    // Limit the number of parameters per key to prevent memory bloat
-    const limitedValue = value.slice(-this.maxParamsPerKey);
-
-    // Add as most recently used
-    this.cache.set(key, limitedValue);
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-
-  entries(): IterableIterator<[string, string[]]> {
-    return this.cache.entries();
-  }
-
-  size(): number {
-    return this.cache.size;
-  }
-
-  // New method to clean up old entries
-  cleanup(): void {
-    for (const [, params] of this.cache.entries()) {
-      // If this is collision data older than 1 hour, remove it
-      if (params.length > 1) {
-        // This is collision data - keep it for now but could implement age tracking
-        // For now, just ensure we don't exceed size limits
-        if (this.cache.size > this.maxSize * 0.9) {
-          // Remove oldest entries when approaching limit
-          const firstKey = this.cache.keys().next().value;
-          if (firstKey !== undefined) {
-            this.cache.delete(firstKey);
-          }
-        }
-      }
-    }
-  }
-}
-
-const keyCollisionMap = new LRUCollisionMap(1000, 5); // Limit to 1000 collision tracking entries, max 5 params per key
 
 // TTL configurations for different cache types (in seconds)
 export const CACHE_TTL_CONFIG = {
@@ -151,75 +64,21 @@ export const CACHE_TTL_CONFIG = {
 export type CachePrefix = keyof typeof CACHE_TTL_CONFIG | string;
 
 /**
- * Schedule cleanup with proper timer management
- */
-function schedulePrefixRegistryCleanup(): void {
-  // Prevent multiple cleanup timers
-  if (cleanupScheduled) {
-    return;
-  }
-
-  // Only schedule if we have enough prefixes and no timer is running
-  if (keyPrefixRegistry.size > 50 && !prefixRegistryCleanupTimer) {
-    cleanupScheduled = true;
-    prefixRegistryCleanupTimer = setTimeout(() => {
-      try {
-        // Keep only the most recent 30 prefixes to prevent unbounded growth
-        if (keyPrefixRegistry.size > 30) {
-          const prefixes = Array.from(keyPrefixRegistry);
-          keyPrefixRegistry.clear();
-          // Keep the last 30 prefixes (most recently used)
-          prefixes.slice(-30).forEach(p => keyPrefixRegistry.add(p));
-        }
-      } catch (error) {
-        // Error during prefix registry cleanup
-      } finally {
-        // Always reset timer state
-        prefixRegistryCleanupTimer = null;
-        cleanupScheduled = false;
-      }
-    }, 30000); // Reduced to 30 seconds for more frequent cleanup
-  }
-}
-
-/**
- * Generate a more robust cache key with collision detection and memory leak prevention
+ * Generate a simple, robust cache key
+ * SHA-256 hashes are collision-resistant enough for our use case
  */
 export function generateCacheKey(prefix: string, params: unknown): string {
-  // Register prefix for collision tracking with improved cleanup
-  keyPrefixRegistry.add(prefix);
-
-  // Schedule cleanup with proper management
-  schedulePrefixRegistryCleanup();
-
-  // Create a more robust parameter string with better uniqueness
+  // Create a stable parameter string
   const paramString = createStableParamString(params);
 
-  // Use full SHA-256 hash for security (64 chars) - no truncation to prevent collisions
+  // Use SHA-256 hash for security (64 chars)
   const hash = crypto.createHash('sha256').update(paramString).digest('hex');
 
-  const cacheKey = `${VERSION}-${prefix}:${hash}`;
-
-  // Track potential collisions with bounded storage and memory leak prevention
-  if (keyCollisionMap.has(cacheKey)) {
-    const existingParams = keyCollisionMap.get(cacheKey)!;
-    if (!existingParams.includes(paramString)) {
-      // Add new parameter and let LRU handle size limits
-      const updatedParams = [...existingParams, paramString];
-      keyCollisionMap.set(cacheKey, updatedParams);
-      cacheStats.collisions++;
-
-      // Collision detected - should be extremely rare with full 64-char SHA-256 hash
-    }
-  } else {
-    keyCollisionMap.set(cacheKey, [paramString]);
-  }
-
-  return cacheKey;
+  return `${VERSION}-${prefix}:${hash}`;
 }
 
 /**
- * Create a stable string representation of parameters with improved uniqueness
+ * Create a stable string representation of parameters
  */
 function createStableParamString(params: unknown): string {
   if (params === null) {
@@ -238,7 +97,7 @@ function createStableParamString(params: unknown): string {
     return `[${params.map(createStableParamString).join(',')}]`;
   }
 
-  // Sort keys and create stable representation with better handling of edge cases
+  // Sort keys and create stable representation
   const sortedKeys = Object.keys(params as Record<string, unknown>).sort();
   const sortedEntries = sortedKeys.map(key => {
     const value = (params as Record<string, unknown>)[key];
@@ -317,64 +176,40 @@ export async function withCache(
 }
 
 /**
- * Clear all cache entries and cleanup memory with enhanced cleanup
+ * Clear all cache entries and reset statistics
  */
 export function clearAllCache(): void {
   // Clear main cache
   cache.flushAll();
 
-  // Clear collision tracking with proper cleanup
-  keyCollisionMap.clear();
-
-  // Clear prefix registry
-  keyPrefixRegistry.clear();
-
-  // Clear any pending cleanup timer with proper cleanup
-  if (prefixRegistryCleanupTimer) {
-    clearTimeout(prefixRegistryCleanupTimer);
-    prefixRegistryCleanupTimer = null;
-    cleanupScheduled = false;
-  }
-
   // Reset statistics
   cacheStats.hits = 0;
   cacheStats.misses = 0;
   cacheStats.sets = 0;
-  cacheStats.collisions = 0;
   cacheStats.totalKeys = 0;
   cacheStats.lastReset = new Date();
 }
 
 /**
- * Get cache statistics with memory leak prevention
+ * Get cache statistics
  */
 export function getCacheStats(): CacheStats & {
   hitRate: number;
-  registeredPrefixes: string[];
   cacheSize: number;
 } {
   const total = cacheStats.hits + cacheStats.misses;
   return {
     ...cacheStats,
     hitRate: total > 0 ? (cacheStats.hits / total) * 100 : 0,
-    registeredPrefixes: Array.from(keyPrefixRegistry).sort(),
     cacheSize: cache.keys().length,
   };
 }
 
 /**
- * Perform periodic cleanup to prevent memory leaks
+ * Perform periodic cleanup (simplified - NodeCache handles this automatically)
  */
 export function performPeriodicCleanup(): void {
-  try {
-    // Clean up collision map
-    keyCollisionMap.cleanup();
-
-    // Schedule prefix registry cleanup if needed
-    schedulePrefixRegistryCleanup();
-
-    // Perform cleanup activity
-  } catch (error) {
-    // Error during periodic cache cleanup
-  }
+  // NodeCache automatically handles cleanup with checkperiod
+  // This function is kept for compatibility but does nothing
+  // The cache will automatically clean up expired keys
 }

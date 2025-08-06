@@ -246,13 +246,8 @@ describe('Cache Functionality Regression Tests', () => {
       const stats = getCacheStats();
 
       expect(stats).toBeDefined();
-      expect(stats.registeredPrefixes).toBeDefined();
       expect(stats.hits).toBeDefined();
       expect(stats.misses).toBeDefined();
-
-      // Should have registered prefixes
-      expect(stats.registeredPrefixes).toContain('debug');
-      expect(stats.registeredPrefixes).toContain('another');
     });
 
     it('should handle cache clear operations', async () => {
@@ -279,53 +274,6 @@ describe('Cache Functionality Regression Tests', () => {
       expect(afterClear.hits).toBe(0);
       expect(afterClear.misses).toBe(0);
       expect(afterClear.sets).toBe(0);
-      expect(afterClear.collisions).toBe(0);
-      expect(afterClear.registeredPrefixes).toEqual([]);
-    });
-  });
-
-  describe('Collision Detection and Tracking', () => {
-    it('should maintain collision tracking functionality', () => {
-      // This test ensures collision detection still works even though
-      // collisions should be extremely rare with 64-char hashes
-
-      // Generate many keys to potentially trigger tracking logic
-      for (let i = 0; i < 1000; i++) {
-        generateCacheKey('collision-tracking', { id: i });
-      }
-
-      const stats = getCacheStats();
-
-      // Should track collisions in stats
-      expect(typeof stats.collisions).toBe('number');
-      expect(stats.collisions).toBe(0); // No actual collisions expected with proper hashing
-    });
-
-    it('should handle key generation at scale', () => {
-      // Generate many keys to test key generation performance
-      const keyCount = 1500;
-
-      for (let i = 0; i < keyCount; i++) {
-        const key = generateCacheKey(`lru-${i}`, { data: `test-${i}` });
-        expect(key).toBeDefined();
-        expect(typeof key).toBe('string');
-      }
-
-      const stats = getCacheStats();
-      expect(stats.registeredPrefixes.length).toBeGreaterThan(0);
-    });
-
-    it('should clean up prefix registry properly', () => {
-      // Generate many different prefixes to trigger cleanup
-      for (let i = 0; i < 60; i++) {
-        // Reduced to avoid timeout
-        generateCacheKey(`prefix-${i}`, { data: 'cleanup-test' });
-      }
-
-      const stats = getCacheStats();
-      // Should have registered the prefixes
-      expect(stats.registeredPrefixes.length).toBeGreaterThan(0);
-      expect(stats.registeredPrefixes.length).toBeLessThanOrEqual(60);
     });
   });
 
