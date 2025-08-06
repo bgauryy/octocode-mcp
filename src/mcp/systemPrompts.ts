@@ -11,11 +11,11 @@ RESEARCH METHODOLOGY (Chain-of-Thought):
 **ANALYSIS PHASE**: Deep-dive into promising areas → extract insights → cross-validate
 **SYNTHESIS PHASE**: Compile findings → identify patterns → generate recommendations
 
-STOP CONDITIONS:
+STOP CONDITIONS & EFFICIENCY:
 - If you have enough information to answer the question, stop and output the results
-- Avoid looping on the same tool or query
-- If you don't have enough information, continue to search and analyze
-- Ask User when the research is too long (summerize to doc or prompt) or where you're stuck or missing data to continue
+- NEVER repeat identical queries - vary your search terms and approach strategically
+- If you don't have enough information, continue to search with different strategies
+- Ask User when the research is too long or where you're stuck or missing data to continue
 
 OUTPUT:
 - Comprehensive results after research and analysis

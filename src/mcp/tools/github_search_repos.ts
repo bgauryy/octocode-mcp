@@ -16,11 +16,7 @@ import {
   createBulkResponse,
   type BulkResponseConfig,
 } from './utils/bulkOperations';
-import {
-  generateToolHints,
-  generateSmartSuggestions,
-  TOOL_SUGGESTION_CONFIGS,
-} from './utils/hints_consolidated';
+import { generateHints } from './utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 
@@ -76,16 +72,14 @@ export function registerSearchGitHubReposTool(
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-            {
-              hasResults: false,
-              errorMessage: 'Queries array is required and cannot be empty',
-              customHints: [
-                'Provide at least one search query with search terms or filters',
-              ],
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+            hasResults: false,
+            errorMessage: 'Queries array is required and cannot be empty',
+            customHints: [
+              'Provide at least one search query with search terms or filters',
+            ],
+          });
 
           return createResult({
             isError: true,
@@ -95,16 +89,14 @@ export function registerSearchGitHubReposTool(
         }
 
         if (args.queries.length > 5) {
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-            {
-              hasResults: false,
-              errorMessage: 'Too many queries provided',
-              customHints: [
-                'Limit to 5 queries per request for optimal performance',
-              ],
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+            hasResults: false,
+            errorMessage: 'Too many queries provided',
+            customHints: [
+              'Limit to 5 queries per request for optimal performance',
+            ],
+          });
 
           return createResult({
             isError: true,
@@ -139,17 +131,18 @@ async function searchMultipleGitHubRepos(
         const apiResult = await searchGitHubReposAPI(query, opts.ghToken);
 
         if ('error' in apiResult) {
-          // Generate smart suggestions for this specific query error
-          const smartSuggestions = generateSmartSuggestions(
-            TOOL_SUGGESTION_CONFIGS.githubSearchRepositories,
-            apiResult.error,
-            query
-          );
+          // Generate hints for this specific query error
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+            hasResults: false,
+            errorMessage: apiResult.error,
+            researchGoal: query.researchGoal,
+          });
 
           return {
             queryId: query.id!,
             error: apiResult.error,
-            hints: smartSuggestions.hints,
+            hints,
             metadata: {
               queryArgs: { ...query },
               error: apiResult.error,
@@ -182,16 +175,17 @@ async function searchMultipleGitHubRepos(
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
-        const smartSuggestions = generateSmartSuggestions(
-          TOOL_SUGGESTION_CONFIGS.githubSearchRepositories,
+        const hints = generateHints({
+          toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+          hasResults: false,
           errorMessage,
-          query
-        );
+          researchGoal: query.researchGoal,
+        });
 
         return {
           queryId: query.id!,
           error: errorMessage,
-          hints: smartSuggestions.hints,
+          hints,
           metadata: {
             queryArgs: { ...query },
             error: errorMessage,

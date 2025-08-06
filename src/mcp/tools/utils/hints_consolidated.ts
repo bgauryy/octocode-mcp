@@ -39,6 +39,7 @@ export interface BulkHintContext {
   errorCount: number;
   totalCount: number;
   successCount: number;
+  researchGoal?: ResearchGoal | string;
 }
 
 // ============================================================================
@@ -76,55 +77,83 @@ const ERROR_RECOVERY_HINTS = {
 } as const;
 
 /**
- * Tool navigation hints - Strategic guidance that improves research workflow
+ * Tool navigation hints - Strategic guidance that improves research workflow with smart chaining
+ * Focus on implementation files and quality verification
  */
 const TOOL_NAVIGATION_HINTS = {
   FETCH_CONTENT:
-    'Use github_fetch_content with specific file paths for complete context',
+    'Use github_fetch_content with matchString from search results for precise context extraction',
   VIEW_STRUCTURE:
-    'Use github_view_repo_structure to explore repository organization',
-  COMPARE_APPROACHES: 'Compare approaches across multiple repositories',
-  EXAMINE_COMMITS:
-    'Examine commit history to see how similar features were implemented',
+    'Use github_view_repo_structure first to understand project layout, then target specific files',
+  COMPARE_APPROACHES:
+    'Compare implementations across 3-5 repositories to identify best practices',
   PACKAGE_SEARCH:
-    'Use package search to find related libraries and their source repositories',
-  CROSS_REFERENCE: 'Cross-reference with related projects and technologies',
+    'Start with package search to discover libraries → get repo URLs → analyze implementations',
   LOOK_FOR_DOCS:
-    'Look for documentation and examples to understand intended usage',
+    'Priority: README → docs/ folder → examples/ → verify against actual implementation',
   EXAMINE_TESTS:
-    'Examine test files to understand expected behavior and usage patterns',
+    'Test files reveal real usage: __tests__/, spec/, test/ folders show practical examples',
   ANALYZE_PATTERNS:
-    'Analyze patterns, conventions, and coding standards across codebases',
+    'Look for: naming conventions, file structure, error handling, and configuration patterns',
+  STRATEGIC_CHAINING:
+    'Chain tools: repo search → structure view → code search → content fetch for deep analysis',
+  // Quality-focused research hints
+  IMPLEMENTATION_FIRST:
+    'Focus on implementation files (.ts, .js, .py, .go) for accurate code understanding',
+  VERIFY_DOCS:
+    'Always verify documentation claims against actual implementation code',
+  FIND_ENTRY_POINTS:
+    'Look for main files, index files, and public APIs to understand code structure',
+  DISCOVER_RELATED:
+    'From implementation files, find: imports, exports, tests, and related modules',
+  AVOID_SPECULATION:
+    'Only report what exists in actual code - no assumptions or hallucinations',
+  QUALITY_VERIFICATION:
+    'Cross-reference documentation with implementation to ensure accuracy',
+  IMPLEMENTATION_TRUTH:
+    'Trust implementation over documentation when they conflict',
   // Repository search specific hints
   USE_TOPICS_FOR_EXPLORATION:
-    'Use topics for exploratory discovery by technology/framework (e.g., ["react", "typescript"])',
+    'Topics for ecosystem discovery: ["react", "component-library"] or ["cli", "nodejs"]',
   USE_QUERY_TERMS_FOR_SPECIFIC:
-    'Use queryTerms for specific functionality in names/descriptions (e.g., ["todo app", "authentication"])',
+    'QueryTerms for exact matches: ["authentication system"] or ["file upload handling"]',
+  BULK_QUERIES:
+    'Use multiple queries in one call: broad discovery + specific patterns + error cases',
+  // Commits/PRs guidance
+  COMMITS_PRS_ON_REQUEST:
+    'Use commit/PR search only when explicitly requested - focus on implementation files',
 } as const;
 
 // Progressive refinement hints are now inline in the functions
 
 /**
- * No results hints - Guidance when searches return empty
+ * No results hints - Guidance when searches return empty with smart fallbacks
  */
 const NO_RESULTS_HINTS = {
-  BROADER_TERMS: 'No results found. Try broader search terms',
+  BROADER_TERMS:
+    'No results found. Try broader search terms or related concepts',
   START_WITH_REPOS:
-    'Start with repository search to find relevant projects first',
+    'Start with repository search to find relevant projects, then search within promising repos',
   DIFFERENT_TERMS:
-    'Try different search terms or explore related functionality',
-  ALTERNATIVE_KEYWORDS: 'Consider alternative keywords or related terminology',
-  EXPAND_SCOPE: 'Remove specific filters to expand your search scope',
+    'Try semantic alternatives: "auth" → "authentication", "config" → "configuration"',
+  ALTERNATIVE_KEYWORDS:
+    'Use functional descriptions: "user login" instead of specific library names',
+  EXPAND_SCOPE:
+    'Remove owner/repo/language filters to discover more alternatives',
   WORKING_EXAMPLES:
-    'Search for working examples and reference implementations in popular repositories',
+    'Search for working examples in popular repositories using broader terms',
   OFFICIAL_DOCS:
-    'Look for official documentation, tutorials, or starter templates',
+    'Look for README files, documentation folders, and getting-started guides',
   ERROR_MESSAGES:
-    'Try searching for error messages, symptoms, or related problem descriptions',
+    'Search for error patterns, common issues, and troubleshooting discussions',
   PROJECT_ISSUES:
-    'Look for issues in the main project repository or related dependencies',
+    'Use GitHub issues search to find real-world usage patterns and solutions',
   RELATED_TECH:
-    'Explore related technologies and frameworks for similar functionality',
+    'Explore ecosystem: React → Next.js/Gatsby, Python → FastAPI/Django',
+  PACKAGE_DISCOVERY:
+    'Use package search to find libraries, then explore their GitHub repositories',
+  PROGRESSIVE_SEARCH:
+    'Start with core concepts, then drill down: "testing" → "unit testing" → "jest"',
 } as const;
 
 // ============================================================================
@@ -251,7 +280,7 @@ function generateErrorRecoveryHints(errorMessage: string): string[] {
 // ============================================================================
 
 /**
- * Generate tool-specific navigation hints
+ * Generate tool-specific navigation hints with smart fallbacks and research guidance
  */
 function generateToolNavigationHints(
   toolName: ToolName,
@@ -264,17 +293,20 @@ function generateToolNavigationHints(
     case TOOL_NAMES.GITHUB_SEARCH_CODE:
       if (hasResults) {
         hints.push(TOOL_NAVIGATION_HINTS.FETCH_CONTENT);
-        hints.push(TOOL_NAVIGATION_HINTS.VIEW_STRUCTURE);
-        if (totalItems && totalItems > 10) {
+        hints.push(TOOL_NAVIGATION_HINTS.STRATEGIC_CHAINING);
+        if (totalItems && totalItems > 15) {
           hints.push(
-            'Consider narrowing search with more specific terms or filters'
+            'Refine with owner/repo filters or specific file extensions'
           );
+        } else if (totalItems && totalItems > 5) {
+          hints.push('Consider language or path filters to focus results');
         }
       } else {
-        hints.push(
-          'Start with repository search to find relevant projects first'
-        );
-        hints.push('Try broader search terms or remove specific filters');
+        hints.push(NO_RESULTS_HINTS.START_WITH_REPOS);
+        hints.push(NO_RESULTS_HINTS.PROGRESSIVE_SEARCH);
+        hints.push(NO_RESULTS_HINTS.DIFFERENT_TERMS);
+        hints.push(TOOL_NAVIGATION_HINTS.PACKAGE_SEARCH);
+        hints.push(TOOL_NAVIGATION_HINTS.IMPLEMENTATION_FIRST);
       }
       break;
 
@@ -282,29 +314,35 @@ function generateToolNavigationHints(
       if (hasResults) {
         hints.push(TOOL_NAVIGATION_HINTS.VIEW_STRUCTURE);
         hints.push(TOOL_NAVIGATION_HINTS.COMPARE_APPROACHES);
-        if (totalItems && totalItems > 5) {
+        if (totalItems && totalItems > 10) {
           hints.push(
-            'Explore repository structure and search within promising repos'
+            'Sort by stars and focus on top 3-5 repositories for analysis'
           );
+        } else if (totalItems && totalItems > 3) {
+          hints.push('Explore structure of most popular repositories first');
         }
       } else {
         hints.push(TOOL_NAVIGATION_HINTS.USE_TOPICS_FOR_EXPLORATION);
-        hints.push(TOOL_NAVIGATION_HINTS.USE_QUERY_TERMS_FOR_SPECIFIC);
-        hints.push(TOOL_NAVIGATION_HINTS.PACKAGE_SEARCH);
-        hints.push(NO_RESULTS_HINTS.BROADER_TERMS);
+        hints.push(NO_RESULTS_HINTS.PACKAGE_DISCOVERY);
+        hints.push(NO_RESULTS_HINTS.RELATED_TECH);
+        hints.push(NO_RESULTS_HINTS.ALTERNATIVE_KEYWORDS);
       }
       break;
 
     case TOOL_NAMES.GITHUB_FETCH_CONTENT:
       if (hasResults) {
-        hints.push(TOOL_NAVIGATION_HINTS.LOOK_FOR_DOCS);
-        hints.push(TOOL_NAVIGATION_HINTS.EXAMINE_TESTS);
+        hints.push(TOOL_NAVIGATION_HINTS.DISCOVER_RELATED);
+        hints.push(TOOL_NAVIGATION_HINTS.VERIFY_DOCS);
+        hints.push(TOOL_NAVIGATION_HINTS.FIND_ENTRY_POINTS);
         hints.push(
-          'Look for related files and dependencies for complete context'
+          'Examine imports/exports to understand dependencies and usage'
         );
       } else {
         hints.push(TOOL_NAVIGATION_HINTS.VIEW_STRUCTURE);
-        hints.push('Verify file path and check repository structure');
+        hints.push(
+          'Check branch name (main/master) and verify file path exists'
+        );
+        hints.push(TOOL_NAVIGATION_HINTS.IMPLEMENTATION_FIRST);
       }
       break;
 
@@ -312,50 +350,208 @@ function generateToolNavigationHints(
       if (hasResults) {
         hints.push(TOOL_NAVIGATION_HINTS.FETCH_CONTENT);
         hints.push(TOOL_NAVIGATION_HINTS.ANALYZE_PATTERNS);
+        hints.push(
+          'Focus on src/, lib/, examples/ folders for implementation details'
+        );
       } else {
         hints.push(
-          'Check repository accessibility and try different branch names'
+          'Try different branch names: main, master, develop, or default'
         );
+        hints.push('Verify repository access and spelling of owner/repo names');
       }
       break;
 
     case TOOL_NAMES.PACKAGE_SEARCH:
       if (hasResults) {
         hints.push(
-          'Use repository URLs with GitHub tools for deeper code analysis'
+          'Extract GitHub URLs and use repository tools for source code analysis'
         );
         hints.push(
-          'Compare package metadata to evaluate alternatives and trade-offs'
+          'Compare download stats, dependencies, and maintenance activity'
         );
         hints.push(TOOL_NAVIGATION_HINTS.COMPARE_APPROACHES);
+        hints.push(
+          'Check package documentation and README files for usage examples'
+        );
       } else {
+        hints.push(NO_RESULTS_HINTS.DIFFERENT_TERMS);
         hints.push(ERROR_RECOVERY_HINTS.USE_FUNCTIONAL_TERMS);
-        hints.push(ERROR_RECOVERY_HINTS.SIMPLIFY_PACKAGE_NAMES);
-        hints.push(ERROR_RECOVERY_HINTS.CHECK_NPM_REGISTRY);
-        hints.push(ERROR_RECOVERY_HINTS.CHECK_PYPI_REGISTRY);
+        hints.push(
+          'Try broader categories: "testing", "http", "database", "ui"'
+        );
+        hints.push('Search GitHub repositories directly if package not found');
       }
       break;
 
     case TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS:
       if (hasResults) {
-        hints.push(TOOL_NAVIGATION_HINTS.EXAMINE_COMMITS);
-        hints.push('Review implementation approaches and code changes');
+        hints.push(TOOL_NAVIGATION_HINTS.COMMITS_PRS_ON_REQUEST);
+        hints.push(
+          'Focus on code changes rather than PR discussions for implementation details'
+        );
       } else {
-        hints.push('Try searching for related issues or broader terms');
+        hints.push(
+          'Consider if commit/PR search is necessary for your research goal'
+        );
+        hints.push(TOOL_NAVIGATION_HINTS.IMPLEMENTATION_FIRST);
       }
       break;
 
     case TOOL_NAMES.GITHUB_SEARCH_COMMITS:
       if (hasResults) {
-        hints.push(TOOL_NAVIGATION_HINTS.EXAMINE_COMMITS);
-        hints.push('Look for implementation patterns and coding practices');
+        hints.push(
+          'Use commit SHAs with github_fetch_content to see actual code changes'
+        );
+        hints.push(TOOL_NAVIGATION_HINTS.VERIFY_DOCS);
       } else {
-        hints.push('Try broader date ranges or different search terms');
+        hints.push(TOOL_NAVIGATION_HINTS.COMMITS_PRS_ON_REQUEST);
+        hints.push(
+          'Focus on current implementation rather than change history'
+        );
       }
       break;
   }
 
   return hints;
+}
+
+// ============================================================================
+// RESEARCH GOAL HINTS
+// ============================================================================
+
+/**
+ * Generate research goal specific hints
+ */
+function generateResearchGoalHints(
+  researchGoal: ResearchGoal | string,
+  _toolName: ToolName
+): string[] {
+  const hints: string[] = [];
+
+  switch (researchGoal) {
+    case 'discovery':
+      hints.push('Focus on broad exploration and multiple alternatives');
+      hints.push('Use bulk queries to cover different angles simultaneously');
+      break;
+    case 'debugging':
+      hints.push('Look for error patterns and troubleshooting discussions');
+      hints.push('Search for common issues and their solutions');
+      break;
+    case 'code_generation':
+      hints.push('Search for working examples and implementation templates');
+      hints.push('Look for complete, runnable code samples');
+      break;
+    case 'analysis':
+      hints.push('Deep-dive into patterns and implementation details');
+      hints.push('Compare multiple approaches and identify best practices');
+      break;
+    case 'learning':
+      hints.push('Start with documentation and beginner-friendly examples');
+      hints.push('Look for tutorials and step-by-step guides');
+      break;
+    default:
+      // For custom research goals, provide generic guidance
+      hints.push(
+        `Research focus: ${researchGoal} - tailor your search accordingly`
+      );
+  }
+
+  return hints;
+}
+
+// ============================================================================
+// SMART FILE DISCOVERY LOGIC
+// ============================================================================
+
+/**
+ * Extract implementation file paths from search results or content
+ */
+export function discoverImplementationFiles(content: string): string[] {
+  const implementationFiles: string[] = [];
+
+  // Extract import/require patterns
+  const importRegex = /(?:import.*from|require\(|from)\s*['"]([^'"]+)['"];?/gi;
+  let match;
+  while ((match = importRegex.exec(content)) !== null) {
+    const path = match[1];
+    if (path && (path.startsWith('.') || path.includes('/'))) {
+      implementationFiles.push(path);
+    }
+  }
+
+  // Extract file references in comments or strings
+  const fileRefRegex =
+    /['"]([^'"]*\.(ts|js|py|go|rs|java|cpp|c|h)[^'"]*)['"];?/gi;
+  while ((match = fileRefRegex.exec(content)) !== null) {
+    if (match[1]) {
+      implementationFiles.push(match[1]);
+    }
+  }
+
+  return [...new Set(implementationFiles)];
+}
+
+/**
+ * Discover documentation files from structure or content
+ */
+export function discoverDocumentationFiles(structure: string[]): string[] {
+  const docFiles = structure.filter(
+    file =>
+      file.toLowerCase().match(/\.(md|rst|txt)$/) ||
+      file.toLowerCase().includes('readme') ||
+      file.toLowerCase().includes('docs/') ||
+      file.toLowerCase().includes('documentation')
+  );
+
+  // Prioritize key documentation
+  const priority = [
+    'README.md',
+    'docs/',
+    'CONTRIBUTING.md',
+    'API.md',
+    'USAGE.md',
+  ];
+  return docFiles.sort((a, b) => {
+    const aPriority = priority.findIndex(p => a.includes(p));
+    const bPriority = priority.findIndex(p => b.includes(p));
+    return (
+      (aPriority === -1 ? 999 : aPriority) -
+      (bPriority === -1 ? 999 : bPriority)
+    );
+  });
+}
+
+/**
+ * Find related files based on naming patterns and structure
+ */
+export function discoverRelatedFiles(
+  basePath: string,
+  allFiles: string[]
+): string[] {
+  const baseName =
+    basePath
+      .split('/')
+      .pop()
+      ?.replace(/\.(ts|js|py|go|rs|java)$/, '') || '';
+  const baseDir = basePath.split('/').slice(0, -1).join('/');
+
+  return allFiles
+    .filter(file => {
+      // Same directory files
+      if (file.startsWith(baseDir) && file !== basePath) return true;
+
+      // Test files
+      if (file.includes(baseName) && file.match(/\.(test|spec)\./)) return true;
+
+      // Type definition files
+      if (file.includes(baseName) && file.endsWith('.d.ts')) return true;
+
+      // Similar named files
+      if (file.includes(baseName) && file !== basePath) return true;
+
+      return false;
+    })
+    .slice(0, 10); // Limit to prevent overwhelming
 }
 
 // ============================================================================
@@ -387,10 +583,24 @@ export function generateHints(context: HintContext): string[] {
     )
   );
 
-  // Add no-results guidance if no results and no error
+  // Add smart no-results guidance if no results and no error
   if (!context.hasResults && !context.errorMessage) {
-    hints.push('No results found. Try broader search terms');
-    hints.push('Try different search terms or explore related functionality');
+    hints.push(NO_RESULTS_HINTS.BROADER_TERMS);
+    hints.push(NO_RESULTS_HINTS.START_WITH_REPOS);
+    hints.push(NO_RESULTS_HINTS.PROGRESSIVE_SEARCH);
+    hints.push(TOOL_NAVIGATION_HINTS.IMPLEMENTATION_FIRST);
+
+    // Add context-specific fallback suggestions
+    if (context.queryContext?.language) {
+      hints.push(
+        `Focus on ${context.queryContext.language} implementation files rather than documentation`
+      );
+    }
+    if (context.queryContext?.owner && context.queryContext?.repo) {
+      hints.push(
+        `Use structure view to find main implementation files in ${context.queryContext.owner}/${context.queryContext.repo}`
+      );
+    }
   }
 
   // Deduplicate and limit hints (max 6 for optimal LLM processing)
@@ -401,123 +611,87 @@ export function generateHints(context: HintContext): string[] {
 }
 
 /**
- * Generate hints for bulk operations
+ * Generate hints for bulk operations with smart analysis and fallbacks
  */
 export function generateBulkHints(context: BulkHintContext): string[] {
   const hints: string[] = [];
 
-  if (context.hasResults) {
-    if (context.errorCount > 0) {
-      hints.push(
-        `${context.errorCount} of ${context.totalCount} queries failed`
-      );
-      hints.push('Check individual query results for specific error details');
-    }
-
-    if (context.successCount > 1) {
-      hints.push(
-        'Compare results across queries to identify patterns and trends'
-      );
-      hints.push(TOOL_NAVIGATION_HINTS.COMPARE_APPROACHES);
-    }
-
-    if (context.successCount === 1) {
-      hints.push('Focus on the successful query result for detailed analysis');
-    }
-  } else {
-    hints.push('All queries failed - check common error patterns');
-    hints.push('Try individual queries to isolate specific issues');
+  // Add research goal specific hints if available
+  if (context.researchGoal) {
+    hints.push(
+      ...generateResearchGoalHints(context.researchGoal, context.toolName)
+    );
   }
 
-  // Add tool-specific guidance
+  if (context.hasResults) {
+    // Success analysis with actionable guidance
+    if (context.errorCount > 0) {
+      const successRate = Math.round(
+        (context.successCount / context.totalCount) * 100
+      );
+      hints.push(
+        `${context.successCount}/${context.totalCount} queries succeeded (${successRate}%)`
+      );
+      hints.push(
+        'Review failed queries for pattern adjustments and retry strategies'
+      );
+    }
+
+    if (context.successCount > 3) {
+      hints.push(
+        'Rich dataset available - analyze patterns, compare implementations, identify best practices'
+      );
+      hints.push(TOOL_NAVIGATION_HINTS.COMPARE_APPROACHES);
+    } else if (context.successCount > 1) {
+      hints.push(
+        'Multiple results found - cross-reference approaches and look for common patterns'
+      );
+      hints.push(TOOL_NAVIGATION_HINTS.STRATEGIC_CHAINING);
+    } else if (context.successCount === 1) {
+      hints.push(
+        'Single result found - dive deep and look for related examples in the same repository'
+      );
+      hints.push(
+        'Use repository structure analysis to find similar implementations'
+      );
+    }
+  } else {
+    // Smart failure analysis and recovery
+    hints.push(
+      `All ${context.totalCount} queries returned no results - try broader research strategy`
+    );
+    hints.push(NO_RESULTS_HINTS.START_WITH_REPOS);
+    hints.push(NO_RESULTS_HINTS.PACKAGE_DISCOVERY);
+    hints.push('Break down into smaller, more focused searches');
+  }
+
+  // Add contextual tool-specific guidance
   hints.push(
     ...generateToolNavigationHints(context.toolName, context.hasResults)
   );
 
-  // Deduplicate and limit hints
+  // Intelligent hint prioritization and deduplication
   const uniqueHints = [
     ...new Set(hints.filter(hint => hint && typeof hint === 'string')),
   ];
-  return uniqueHints.slice(0, 6);
-}
 
-// ============================================================================
-// LEGACY COMPATIBILITY FUNCTIONS
-// ============================================================================
+  // Prioritize actionable hints over generic ones
+  const prioritizedHints = uniqueHints.sort((a, b) => {
+    const actionWords = [
+      'use',
+      'try',
+      'search',
+      'explore',
+      'compare',
+      'analyze',
+    ];
+    const aHasAction = actionWords.some(word => a.toLowerCase().includes(word));
+    const bHasAction = actionWords.some(word => b.toLowerCase().includes(word));
 
-/**
- * Legacy compatibility function for existing tool integrations
- */
-export function generateToolHints(
-  toolName: ToolName,
-  options: {
-    hasResults?: boolean;
-    totalItems?: number;
-    errorMessage?: string;
-    customHints?: string[];
-    researchGoal?: ResearchGoal | string;
-    queryContext?: HintContext['queryContext'];
-  }
-): string[] {
-  return generateHints({
-    toolName,
-    hasResults: options.hasResults,
-    totalItems: options.totalItems,
-    errorMessage: options.errorMessage,
-    customHints: options.customHints,
-    researchGoal: options.researchGoal,
-    queryContext: options.queryContext,
+    if (aHasAction && !bHasAction) return -1;
+    if (!aHasAction && bHasAction) return 1;
+    return 0;
   });
-}
 
-/**
- * Legacy compatibility function for smart suggestions
- */
-export function generateSmartSuggestions(
-  _config: Record<string, unknown>,
-  error: string,
-  _query: Record<string, unknown>
-): { hints: string[] } {
-  return {
-    hints: generateErrorRecoveryHints(error),
-  };
-}
-
-/**
- * Legacy compatibility for tool suggestion configs
- */
-export const TOOL_SUGGESTION_CONFIGS = {
-  [TOOL_NAMES.GITHUB_SEARCH_CODE]: {
-    toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    supportsOwnerRepo: true,
-    supportsQueryTerms: true,
-    supportsLanguage: true,
-    defaultSplitStrategy: 'individual_terms' as const,
-  },
-  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
-    toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    supportsOwnerRepo: true,
-    supportsQueryTerms: true, // For specific text matching in names/descriptions
-    supportsTopics: true, // For exploratory discovery by technology/framework
-    supportsLanguage: true,
-    defaultSplitStrategy: 'individual_terms' as const,
-  },
-};
-
-/**
- * Legacy compatibility function for enhanced hints
- */
-export function generateResearchSpecificHints(
-  toolName: ToolName,
-  researchGoal: ResearchGoal | string,
-  context: Record<string, unknown>
-): string[] {
-  return generateHints({
-    toolName,
-    hasResults: context.hasResults as boolean,
-    totalItems: context.totalItems as number,
-    errorMessage: context.errorMessage as string,
-    researchGoal,
-    queryContext: context.queryContext as HintContext['queryContext'],
-  });
+  return prioritizedHints.slice(0, 6);
 }

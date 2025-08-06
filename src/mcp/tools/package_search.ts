@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
-import { generateToolHints } from './utils/hints_consolidated';
+import { generateHints } from './utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
@@ -55,7 +55,8 @@ export function registerPackageSearchTool(
           args.pythonPackages && args.pythonPackages.length > 0;
 
         if (!hasNpmQueries && !hasPythonQueries) {
-          const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.PACKAGE_SEARCH,
             hasResults: false,
             totalItems: 0,
             errorMessage: 'No package queries provided',
@@ -76,7 +77,8 @@ export function registerPackageSearchTool(
           (args.npmPackages?.length || 0) + (args.pythonPackages?.length || 0);
 
         if (totalQueries > 10) {
-          const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.PACKAGE_SEARCH,
             hasResults: false,
             errorMessage: 'Too many queries provided',
             customHints: [
@@ -97,7 +99,8 @@ export function registerPackageSearchTool(
 
           // Handle the result based on its type
           if ('error' in searchResult) {
-            const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
+            const hints = generateHints({
+              toolName: TOOL_NAMES.PACKAGE_SEARCH,
               hasResults: false,
               totalItems: 0,
               errorMessage: searchResult.error,
@@ -181,11 +184,11 @@ export function registerPackageSearchTool(
             },
           };
 
-          const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.PACKAGE_SEARCH,
             hasResults: totalPackages > 0,
             totalItems: totalPackages,
             researchGoal: args.researchGoal,
-
             customHints:
               responseContext.repositoryLinks.length > 0
                 ? [
@@ -213,7 +216,8 @@ export function registerPackageSearchTool(
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error occurred';
 
-          const hints = generateToolHints(TOOL_NAMES.PACKAGE_SEARCH, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.PACKAGE_SEARCH,
             hasResults: false,
             totalItems: 0,
             errorMessage,

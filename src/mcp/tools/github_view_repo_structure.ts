@@ -10,7 +10,7 @@ import {
   ProcessedRepositoryStructureResult,
   AggregatedRepositoryContext,
 } from './scheme/github_view_repo_structure';
-import { generateToolHints } from './utils/hints_consolidated';
+import { generateHints } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
@@ -66,16 +66,14 @@ export function registerViewGitHubRepoStructureTool(
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-            {
-              hasResults: false,
-              errorMessage: 'Queries array is required and cannot be empty',
-              customHints: [
-                'Provide at least one repository structure query with owner, repo, and branch',
-              ],
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            hasResults: false,
+            errorMessage: 'Queries array is required and cannot be empty',
+            customHints: [
+              'Provide at least one repository structure query with owner, repo, and branch',
+            ],
+          });
 
           return createResult({
             isError: true,
@@ -85,16 +83,14 @@ export function registerViewGitHubRepoStructureTool(
         }
 
         if (args.queries.length > 5) {
-          const hints = generateToolHints(
-            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-            {
-              hasResults: false,
-              errorMessage: 'Too many queries provided',
-              customHints: [
-                'Limit to 5 repository structure queries per request for optimal performance',
-              ],
-            }
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+            hasResults: false,
+            errorMessage: 'Too many queries provided',
+            customHints: [
+              'Limit to 5 repository structure queries per request for optimal performance',
+            ],
+          });
 
           return createResult({
             isError: true,

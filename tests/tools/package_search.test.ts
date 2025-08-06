@@ -1400,8 +1400,12 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       // Should include analysis-focused hints
       const hintsText = response.hints.join(' ');
-      expect(hintsText).toContain('Compare package metadata');
-      expect(hintsText).toContain('evaluate alternatives');
+      expect(hintsText).toContain(
+        'Compare download stats, dependencies, and maintenance activity'
+      );
+      expect(hintsText).toContain(
+        'Compare implementations across 3-5 repositories to identify best practices'
+      );
     });
   });
 });

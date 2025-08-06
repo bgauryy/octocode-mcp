@@ -10,7 +10,7 @@ import {
   FileContentQueryResult,
 } from './scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { generateToolHints } from './utils/hints_consolidated';
+import { generateHints } from './utils/hints_consolidated';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
 
@@ -70,7 +70,8 @@ export function registerFetchGitHubFileContentTool(
         }
 
         if (args.queries.length > 10) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
             hasResults: false,
             errorMessage: 'Too many queries provided',
             customHints: [
@@ -130,15 +131,21 @@ async function fetchMultipleGitHubFileContents(
     r => !('error' in r.result) && !r.error
   ).length;
 
-  const hints = generateToolHints(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
+  // Extract common research goal from queries
+  const researchGoals = uniqueQueries
+    .map(q => q.researchGoal)
+    .filter(goal => !!goal);
+  const commonResearchGoal =
+    researchGoals.length > 0 ? researchGoals[0] : undefined;
+
+  const hints = generateHints({
+    toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     hasResults: successfulQueries > 0,
     totalItems: successfulQueries,
-    customHints: results
-      .filter(r => 'error' in r.result && r.result.hints)
-      .flatMap(r =>
-        'error' in r.result && r.result.hints ? r.result.hints : []
-      )
-      .slice(0, 3), // Limit to 3 most relevant hints
+    researchGoal: commonResearchGoal,
+    // Don't try to extract hints from results - they don't exist in error objects
+    // This prevents potential loops and undefined behavior
+    customHints: [],
   });
 
   return createResult({

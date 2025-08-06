@@ -2,28 +2,19 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
-import {
-  TOOL_NAMES,
-  ToolOptions,
-  ResearchGoal,
-} from './utils/toolConstants.js';
+import { TOOL_NAMES, ToolOptions } from './utils/toolConstants.js';
 import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
 } from './scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../../utils/githubAPI.js';
-import { generateResearchSpecificHints } from './utils/hints_consolidated.js';
 import {
   createBulkResponse,
   BulkResponseConfig,
   processBulkQueries,
 } from './utils/bulkOperations.js';
-import {
-  generateToolHints,
-  generateSmartSuggestions,
-  TOOL_SUGGESTION_CONFIGS,
-} from './utils/hints_consolidated';
+import { generateHints, generateBulkHints } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { ProcessedCodeSearchResult } from './scheme/github_search_code';
 
@@ -88,7 +79,8 @@ export function registerGitHubSearchCodeTool(
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
             errorMessage: 'Queries array is required and cannot be empty',
             customHints: ['Provide at least one search query with queryTerms'],
@@ -102,7 +94,8 @@ export function registerGitHubSearchCodeTool(
         }
 
         if (args.queries.length > 5) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
             errorMessage: 'Too many queries provided',
             customHints: [
@@ -144,20 +137,21 @@ async function searchMultipleGitHubCode(
 
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error
-          const smartSuggestions = generateSmartSuggestions(
-            TOOL_SUGGESTION_CONFIGS.githubSearchCode,
-            apiResult.error,
-            query
-          );
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+            hasResults: false,
+            errorMessage: apiResult.error,
+            researchGoal: query.researchGoal,
+          });
 
           return {
             queryId: query.id!,
             error: apiResult.error,
-            hints: smartSuggestions.hints,
+            hints: hints,
             metadata: {
               queryArgs: { ...query },
               error: apiResult.error,
-              hints: smartSuggestions.hints,
+              hints: hints,
               researchGoal: query.researchGoal || 'discovery',
             },
           };
@@ -228,20 +222,21 @@ async function searchMultipleGitHubCode(
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
-        const smartSuggestions = generateSmartSuggestions(
-          TOOL_SUGGESTION_CONFIGS.githubSearchCode,
-          errorMessage,
-          query
-        );
+        const hints = generateHints({
+          toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+          hasResults: false,
+          errorMessage: errorMessage,
+          researchGoal: query.researchGoal,
+        });
 
         return {
           queryId: query.id!,
           error: errorMessage,
-          hints: smartSuggestions.hints,
+          hints: hints,
           metadata: {
             queryArgs: { ...query },
             error: errorMessage,
-            hints: smartSuggestions.hints,
+            hints: hints,
             researchGoal: query.researchGoal || 'discovery',
           },
         };
@@ -299,22 +294,13 @@ async function searchMultipleGitHubCode(
   });
 
   // Generate enhanced hints for research capabilities
-  const researchGoal = uniqueQueries[0]?.researchGoal || 'discovery';
-  const enhancedHints = generateResearchSpecificHints(
-    TOOL_NAMES.GITHUB_SEARCH_CODE,
-    researchGoal as ResearchGoal,
-    {
-      hasResults: successfulCount > 0,
-      totalItems: successfulCount,
-      findings: results.filter(r => !r.result.error).map(r => r.result.data),
-      queryContext: {
-        queryTerms: uniqueQueries[0]?.queryTerms,
-        language: uniqueQueries[0]?.language,
-        owner: uniqueQueries[0]?.owner,
-        repo: uniqueQueries[0]?.repo,
-      },
-    }
-  );
+  const enhancedHints = generateBulkHints({
+    toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+    hasResults: successfulCount > 0,
+    errorCount: results.length - successfulCount,
+    totalCount: uniqueQueries.length,
+    successCount: successfulCount,
+  });
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,

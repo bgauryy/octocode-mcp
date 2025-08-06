@@ -6,9 +6,6 @@ import { describe, it, expect } from 'vitest';
 import {
   generateHints,
   generateBulkHints,
-  generateToolHints,
-  generateSmartSuggestions,
-  generateResearchSpecificHints,
 } from '../../../src/mcp/tools/utils/hints_consolidated';
 import { TOOL_NAMES } from '../../../src/mcp/tools/utils/toolConstants';
 
@@ -84,12 +81,14 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Use github_fetch_content with specific file paths for complete context'
+        'Use github_fetch_content with matchString from search results for precise context extraction'
       );
       expect(hints).toContain(
-        'Use github_view_repo_structure to explore repository organization'
+        'Chain tools: repo search → structure view → code search → content fetch for deep analysis'
       );
-      expect(hints.some(h => h.includes('Consider narrowing'))).toBe(true); // High result count
+      expect(
+        hints.some(h => h.includes('Consider language or path filters'))
+      ).toBe(true); // High result count
       expect(hints.length).toBeLessThanOrEqual(6);
     });
 
@@ -101,13 +100,13 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Use github_view_repo_structure to explore repository organization'
+        'Use github_view_repo_structure first to understand project layout, then target specific files'
       );
       expect(hints).toContain(
-        'Compare approaches across multiple repositories'
+        'Compare implementations across 3-5 repositories to identify best practices'
       );
       expect(hints).toContain(
-        'Explore repository structure and search within promising repos'
+        'Explore structure of most popular repositories first'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -119,13 +118,13 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Look for documentation and examples to understand intended usage'
+        'From implementation files, find: imports, exports, tests, and related modules'
       );
       expect(hints).toContain(
-        'Examine test files to understand expected behavior and usage patterns'
+        'Always verify documentation claims against actual implementation code'
       );
       expect(hints).toContain(
-        'Look for related files and dependencies for complete context'
+        'Look for main files, index files, and public APIs to understand code structure'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -137,10 +136,10 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Use github_fetch_content with specific file paths for complete context'
+        'Use github_fetch_content with matchString from search results for precise context extraction'
       );
       expect(hints).toContain(
-        'Analyze patterns, conventions, and coding standards across codebases'
+        'Look for: naming conventions, file structure, error handling, and configuration patterns'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -154,14 +153,16 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Start with repository search to find relevant projects first'
+        'Start with repository search to find relevant projects, then search within promising repos'
       );
       expect(hints).toContain(
-        'Try broader search terms or remove specific filters'
+        'Start with core concepts, then drill down: "testing" → "unit testing" → "jest"'
       );
-      expect(hints).toContain('No results found. Try broader search terms');
       expect(hints).toContain(
-        'Try different search terms or explore related functionality'
+        'No results found. Try broader search terms or related concepts'
+      );
+      expect(hints).toContain(
+        'Try semantic alternatives: "auth" → "authentication", "config" → "configuration"'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -173,9 +174,11 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Use package search to find related libraries and their source repositories'
+        'Topics for ecosystem discovery: ["react", "component-library"] or ["cli", "nodejs"]'
       );
-      expect(hints).toContain('No results found. Try broader search terms');
+      expect(hints).toContain(
+        'No results found. Try broader search terms or related concepts'
+      );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
   });
@@ -190,15 +193,15 @@ describe('Consolidated Hints System', () => {
         successCount: 3,
       });
 
-      expect(hints).toContain('2 of 5 queries failed');
+      expect(hints).toContain('3/5 queries succeeded (60%)');
       expect(hints).toContain(
-        'Check individual query results for specific error details'
+        'Review failed queries for pattern adjustments and retry strategies'
       );
       expect(hints).toContain(
-        'Compare results across queries to identify patterns and trends'
+        'Multiple results found - cross-reference approaches and look for common patterns'
       );
       expect(hints).toContain(
-        'Compare approaches across multiple repositories'
+        'Compare implementations across 3-5 repositories to identify best practices'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -213,11 +216,9 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'All queries failed - check common error patterns'
+        'All 3 queries returned no results - try broader research strategy'
       );
-      expect(hints).toContain(
-        'Try individual queries to isolate specific issues'
-      );
+      expect(hints).toContain('Break down into smaller, more focused searches');
       expect(hints.length).toBeLessThanOrEqual(6);
     });
 
@@ -231,7 +232,7 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Focus on the successful query result for detailed analysis'
+        'Single result found - dive deep and look for related examples in the same repository'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -274,47 +275,6 @@ describe('Consolidated Hints System', () => {
       expect(hints).toContain('Custom hint 5');
       expect(hints).toContain('Custom hint 6');
       expect(hints.length).toBe(6);
-    });
-  });
-
-  describe('Legacy Compatibility', () => {
-    it('should work with generateToolHints legacy function', () => {
-      const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_CODE, {
-        hasResults: true,
-        totalItems: 10,
-      });
-
-      expect(hints).toContain(
-        'Use github_fetch_content with specific file paths for complete context'
-      );
-      expect(hints).toContain(
-        'Use github_view_repo_structure to explore repository organization'
-      );
-      expect(hints.length).toBeLessThanOrEqual(6);
-    });
-
-    it('should work with generateSmartSuggestions legacy function', () => {
-      const result = generateSmartSuggestions({}, 'Rate limit exceeded', {});
-
-      expect(result.hints).toContain(
-        'Rate limit exceeded. Wait 60 seconds before retrying'
-      );
-      expect(result.hints).toContain(
-        'Use more specific search terms to reduce API calls'
-      );
-    });
-
-    it('should work with generateResearchSpecificHints legacy function', () => {
-      const hints = generateResearchSpecificHints(
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        'discovery',
-        { hasResults: true, totalItems: 5 }
-      );
-
-      expect(hints).toContain(
-        'Use github_fetch_content with specific file paths for complete context'
-      );
-      expect(hints.length).toBeLessThanOrEqual(6);
     });
   });
 

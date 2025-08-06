@@ -12,7 +12,8 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../responses';
 // Hints are now provided by the consolidated hints system
-import { ToolName, TOOL_NAMES } from './toolConstants';
+import { ToolName } from './toolConstants';
+import { generateBulkHints, BulkHintContext } from './hints_consolidated';
 import { executeWithErrorIsolation } from '../../../utils/promiseUtils';
 
 /**
@@ -152,129 +153,29 @@ export async function processBulkQueries<
 }
 
 /**
- * Generate smart, context-aware hints for bulk operations
- *
- * @param config Configuration for hint generation
- * @param context Aggregated context from bulk operation
- * @param errors Array of errors from failed queries
- * @param queries Original queries for research goal extraction
- * @returns Array of smart hints for LLM guidance
+ * Create bulk hints context for the consolidated hints system
  */
-export function generateBulkHints<
-  T extends BulkQuery,
-  R extends ProcessedBulkResult,
->(
+function createBulkHintsContext<T extends BulkQuery>(
   config: BulkResponseConfig,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: T[],
-  results?: Array<{ queryId: string; result: R }>
-): string[] {
-  const hints: string[] = [];
-  const { toolName, maxHints = 8 } = config;
-  const hasResults = context.dataQuality.hasResults;
+  queries: T[]
+): BulkHintContext {
+  // Extract common researchGoal from queries
+  const researchGoals = queries
+    .map(q => q.researchGoal)
+    .filter((goal): goal is string => !!goal);
+  const commonResearchGoal =
+    researchGoals.length > 0 ? researchGoals[0] : undefined;
 
-  // Error handling hints (highest priority)
-  if (errors.length > 0) {
-    const failedQueryIds = errors.map(e => e.queryId).join(', ');
-    hints.push(
-      `Some queries failed (${failedQueryIds}). Check individual query hints for solutions.`
-    );
-
-    // Add specific recovery hints from first error
-    const firstError = errors[0];
-    if (
-      firstError &&
-      firstError.recoveryHints &&
-      firstError.recoveryHints.length > 0
-    ) {
-      hints.push(...firstError.recoveryHints.slice(0, 2));
-    }
-  }
-
-  // Success-based hints with detailed query status
-  if (hasResults) {
-    // Multi-query insights with specific status
-    if (context.totalQueries > 1) {
-      const failedCount = context.failedQueries + errors.length;
-
-      // Identify queries with no results (successful but empty)
-      const noResultsQueries: string[] = [];
-      if (results) {
-        results.forEach(({ queryId, result }) => {
-          if (!result.error && result.metadata?.searchType === 'no_results') {
-            noResultsQueries.push(queryId);
-          }
-        });
-      }
-
-      if (failedCount > 0 || noResultsQueries.length > 0) {
-        let statusMessage = `Found results in ${context.successfulQueries - noResultsQueries.length} of ${context.totalQueries} queries.`;
-        if (noResultsQueries.length > 0) {
-          statusMessage += ` Queries with no results: ${noResultsQueries.join(', ')}.`;
-        }
-        statusMessage += ' Compare successful findings to identify patterns.';
-        hints.push(statusMessage);
-      } else {
-        hints.push(
-          `Found results across all ${context.successfulQueries} queries. Compare findings to identify patterns and comprehensive insights.`
-        );
-      }
-    }
-
-    // Enhanced next research steps with tool-specific recommendations
-    if (toolName === TOOL_NAMES.GITHUB_SEARCH_CODE) {
-      hints.push(
-        'Recommended: Fetch relevant file content using github_fetch_content for detailed context, or explore project structure with github_view_repo_structure.'
-      );
-    } else {
-      hints.push(
-        'Next: Examine detailed results to understand implementations, patterns, and architectural decisions.'
-      );
-    }
-  } else if (errors.length === 0) {
-    // No results, no errors
-    hints.push(
-      'No results found. Try broader search terms, different keywords, or alternative research approaches.'
-    );
-  }
-
-  // Research goal specific hints
-  const primaryResearchGoal = queries.find(q => q.researchGoal)?.researchGoal;
-  if (primaryResearchGoal && hasResults) {
-    if (primaryResearchGoal === 'code_generation') {
-      hints.push(
-        'Focus on implementation patterns and code structure for generation tasks'
-      );
-    } else if (primaryResearchGoal === 'debugging') {
-      hints.push(
-        'Look for error patterns and debugging approaches in the results'
-      );
-    } else if (primaryResearchGoal === 'code_analysis') {
-      hints.push(
-        'Analyze code patterns, conventions, and architectural decisions'
-      );
-    } else if (primaryResearchGoal === 'optimization') {
-      hints.push('Examine performance patterns and optimization strategies');
-    } else {
-      hints.push('Start broad, then narrow focus based on discoveries');
-    }
-  }
-
-  // Add bulk-specific hints for multi-query scenarios
-  if (context.totalQueries > 1) {
-    hints.push(
-      'Compare results across queries to identify patterns and trends'
-    );
-    if (errors.length > 0) {
-      hints.push(
-        'Some queries failed - check individual results for specific error details'
-      );
-    }
-  }
-
-  // Trim to max hints to avoid overwhelming LLM
-  return hints.slice(0, maxHints);
+  return {
+    toolName: config.toolName,
+    hasResults: context.dataQuality.hasResults,
+    errorCount: errors.length,
+    totalCount: context.totalQueries,
+    successCount: context.successfulQueries,
+    researchGoal: commonResearchGoal,
+  };
 }
 
 /**
@@ -297,8 +198,9 @@ export function createBulkResponse<
   errors: QueryError[],
   queries: T[]
 ): CallToolResult {
-  // Generate smart hints
-  const hints = generateBulkHints(config, context, errors, queries, results);
+  // Generate smart hints using consolidated hints system
+  const hintContext = createBulkHintsContext(config, context, errors, queries);
+  const hints = generateBulkHints(hintContext);
 
   // Build standardized response with {data, meta, hints} format
   const data = results.map(r => r.result);

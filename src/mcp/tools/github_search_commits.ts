@@ -8,7 +8,7 @@ import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
 } from './scheme/github_search_commits';
-import { generateToolHints } from './utils/hints_consolidated';
+import { generateHints } from './utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
 
@@ -64,7 +64,8 @@ export function registerSearchGitHubCommitsTool(
           args['committer-date'];
 
         if (!hasSearchTerms && !hasFilters) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: false,
             totalItems: 0,
             errorMessage: 'Search parameters required',
@@ -84,7 +85,8 @@ export function registerSearchGitHubCommitsTool(
         }
 
         if (args.getChangesContent && (!args.owner || !args.repo)) {
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: false,
             errorMessage: 'Repository required for changes content',
             customHints: [
@@ -107,7 +109,8 @@ export function registerSearchGitHubCommitsTool(
 
           // Check if result is an error
           if ('error' in result) {
-            const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+            const hints = generateHints({
+              toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
               hasResults: false,
               totalItems: 0,
               errorMessage: result.error,
@@ -127,20 +130,17 @@ export function registerSearchGitHubCommitsTool(
             ...(args.orTerms || []),
           ];
 
-          const baseHints = generateToolHints(
-            TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-            {
-              hasResults: result.commits.length > 0,
-              totalItems: result.commits.length,
-              researchGoal: args.researchGoal,
-
-              queryContext: {
-                owner: args.owner,
-                repo: args.repo,
-                queryTerms: searchTerms,
-              },
-            }
-          );
+          const baseHints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+            hasResults: result.commits.length > 0,
+            totalItems: result.commits.length,
+            researchGoal: args.researchGoal,
+            queryContext: {
+              owner: args.owner,
+              repo: args.repo,
+              queryTerms: searchTerms,
+            },
+          });
 
           // Build enhanced hints
           let enhancedHints = baseHints;
@@ -181,7 +181,8 @@ export function registerSearchGitHubCommitsTool(
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error occurred';
 
-          const hints = generateToolHints(TOOL_NAMES.GITHUB_SEARCH_COMMITS, {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: false,
             totalItems: 0,
             errorMessage,
