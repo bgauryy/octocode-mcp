@@ -11,7 +11,9 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe('Search terms for repository names/descriptions'),
+    .describe(
+      'Search terms for repo names/descriptions (e.g., ["todo app"], ["authentication"])'
+    ),
 
   // Repository filters
   owner: z
@@ -22,15 +24,13 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
     .describe(
-      '**RECOMMENDED**: Find repositories by technology/subject (TOPIC SEARCH type) - most effective for exploratory discovery. Examples: ["react", "typescript"], ["machine-learning"], ["web-framework"]'
+      'Find repos by topic/technology (e.g., ["react", "typescript"], ["machine-learning"])'
     ),
   language: z
     .string()
     .nullable()
     .optional()
-    .describe(
-      'Programming language filter (LANGUAGE SEARCH type) - filter by specific programming language. Examples: "typescript", "python", "javascript"'
-    ),
+    .describe('Programming language filter (e.g., "typescript", "python")'),
   license: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
@@ -53,7 +53,7 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     )
     .optional()
     .describe(
-      'Creation date filter. Format: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "2020-01-01..2023-12-31"'
+      'Created date filter (e.g., ">2020-01-01", "2020-01-01..2023-12-31")'
     ),
   updated: z
     .string()
@@ -62,7 +62,7 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     )
     .optional()
     .describe(
-      'Last updated date filter. Format: ">2024-01-01", ">=2024-01-01", "<2022-01-01", "2023-01-01..2024-12-31"'
+      'Updated date filter (e.g., ">2024-01-01", "2023-01-01..2024-12-31")'
     ),
 
   // Community and contribution filters

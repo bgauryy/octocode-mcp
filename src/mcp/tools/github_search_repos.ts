@@ -22,27 +22,20 @@ import {
   TOOL_SUGGESTION_CONFIGS,
 } from './utils/hints_consolidated';
 
-const DESCRIPTION = `Discover GitHub repositories with intelligent filtering for exploratory research and quality analysis.
+const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 
-Finds repositories by topics, functionality, and criteria, automatically prioritizing popular
-and recently updated projects. Perfect for exploratory research, finding implementation examples,
-and discovering high-quality codebases for learning and analysis.
+KEY FEATURES:
+- Bulk queries: Execute up to 5 searches in parallel for comprehensive discovery
+- Topic search: Find repos by github topics (exploretory and searching for specific topics)
+- Text search: Match specific terms in names/descriptions
+- Quality filters: Stars, forks, activity, update frequency
+- Smart defaults: Excludes archived repos and forks for better results
 
-FEATURES:
-- Exploratory discovery: Find repositories by topics, languages, and functionality
-- Quality filtering: Automatically prioritizes popular (high stars) and recently updated repos
-- Smart sorting: Sort by stars, forks, activity, and update frequency
-- Bulk operations: Search multiple criteria simultaneously (up to 5 queries)
-- Research optimization: Tailored results based on research goals
-- Cross-validation: Combine with other tools for comprehensive analysis
+SEARCH STRATEGIES:
+- for specific repositorry search with limit of 1 and get most relevant repository
+- Exploration: Use bulk search efficiently with several search directions (e.g. terms, topics)
 
-BEST PRACTICES:
-- Use topics for technology discovery: "machine-learning", "web-framework"
-- Leverage stars/forks filters to find popular, well-maintained projects
-- Sort by "updated" to discover active, recently maintained repositories
-- Combine with ${TOOL_NAMES.GITHUB_SEARCH_CODE} for deeper content analysis
-- Use bulk operations to explore multiple related technologies simultaneously
-- Specify research goals for optimized repository selection and ranking`;
+TIP: If repo not found, try ${TOOL_NAMES.PACKAGE_SEARCH} for npm/python packages search to get the github repo`;
 
 interface AggregatedRepoContext {
   totalQueries: number;

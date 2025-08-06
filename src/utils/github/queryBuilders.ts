@@ -218,7 +218,8 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
 export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
   const queryParts: string[] = [];
 
-  // Add main search terms
+  // Add queryTerms for specific text matching in repository names and descriptions
+  // This is used for targeted searches like "todo app", "authentication", etc.
   if (params.queryTerms && params.queryTerms.length > 0) {
     queryParts.push(...params.queryTerms);
   }
@@ -234,6 +235,8 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
     owners.forEach(owner => queryParts.push(getOwnerQualifier(owner)));
   }
 
+  // Add topics for exploratory discovery by technology/framework/domain
+  // This is used for broad technology searches like "react", "typescript", "machine-learning"
   if (params.topic) {
     const topics = Array.isArray(params.topic) ? params.topic : [params.topic];
     topics.forEach(topic => queryParts.push(`topic:${topic}`));

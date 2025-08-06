@@ -86,6 +86,11 @@ const TOOL_NAVIGATION_HINTS = {
     'Examine test files to understand expected behavior and usage patterns',
   ANALYZE_PATTERNS:
     'Analyze patterns, conventions, and coding standards across codebases',
+  // Repository search specific hints
+  USE_TOPICS_FOR_EXPLORATION:
+    'Use topics for exploratory discovery by technology/framework (e.g., ["react", "typescript"])',
+  USE_QUERY_TERMS_FOR_SPECIFIC:
+    'Use queryTerms for specific functionality in names/descriptions (e.g., ["todo app", "authentication"])',
 } as const;
 
 // Progressive refinement hints are now inline in the functions
@@ -259,6 +264,8 @@ function generateToolNavigationHints(
           );
         }
       } else {
+        hints.push(TOOL_NAVIGATION_HINTS.USE_TOPICS_FOR_EXPLORATION);
+        hints.push(TOOL_NAVIGATION_HINTS.USE_QUERY_TERMS_FOR_SPECIFIC);
         hints.push(TOOL_NAVIGATION_HINTS.PACKAGE_SEARCH);
         hints.push(NO_RESULTS_HINTS.BROADER_TERMS);
       }
@@ -461,7 +468,8 @@ export const TOOL_SUGGESTION_CONFIGS = {
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: {
     toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     supportsOwnerRepo: true,
-    supportsQueryTerms: true,
+    supportsQueryTerms: true, // For specific text matching in names/descriptions
+    supportsTopics: true, // For exploratory discovery by technology/framework
     supportsLanguage: true,
     defaultSplitStrategy: 'individual_terms' as const,
   },
