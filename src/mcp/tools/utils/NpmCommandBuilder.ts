@@ -37,22 +37,9 @@ export class NpmPackageSearchBuilder extends NpmCommandBuilder<
   Record<string, unknown>
 > {
   protected initializeCommand(): this {
-    // Only include base command for integration tests
-    if (this.shouldIncludeBaseCommand()) {
-      this.args = ['search'];
-    } else {
-      this.args = [];
-    }
+    // Always start with empty args - the command is handled by executeNpmCommand
+    this.args = [];
     return this;
-  }
-
-  private shouldIncludeBaseCommand(): boolean {
-    // Include base command for integration tests but not unit tests
-    const stack = new Error().stack || '';
-    return (
-      stack.includes('CommandBuilder.integration.test.ts') ||
-      !stack.includes('NpmCommandBuilder.test.ts')
-    );
   }
 
   build(params: Record<string, unknown>): string[] {
@@ -85,22 +72,9 @@ export class NpmPackageViewBuilder extends NpmCommandBuilder<
   Record<string, unknown>
 > {
   protected initializeCommand(): this {
-    // Only include base command for integration tests
-    if (this.shouldIncludeBaseCommand()) {
-      this.args = ['view'];
-    } else {
-      this.args = [];
-    }
+    // Always start with empty args - the command is handled by executeNpmCommand
+    this.args = [];
     return this;
-  }
-
-  private shouldIncludeBaseCommand(): boolean {
-    // Include base command for integration tests but not unit tests
-    const stack = new Error().stack || '';
-    return (
-      stack.includes('CommandBuilder.integration.test.ts') ||
-      !stack.includes('NpmCommandBuilder.test.ts')
-    );
   }
 
   build(params: Record<string, unknown>): string[] {

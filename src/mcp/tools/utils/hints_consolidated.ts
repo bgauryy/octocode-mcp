@@ -64,6 +64,15 @@ const ERROR_RECOVERY_HINTS = {
   PUBLIC_REPOS: 'Search in public repositories if private access is denied',
   BROADER_TERMS: 'Try broader search terms to expand your search scope',
   SEMANTIC_ALTERNATIVES: 'Use semantic alternatives or related terminology',
+  // Package search specific
+  PACKAGE_NOT_FOUND: 'Package not found. Try alternative names or spellings',
+  CHECK_NPM_REGISTRY:
+    'For NPM: Check package availability on https://npmjs.com',
+  CHECK_PYPI_REGISTRY: 'For Python: Check exact spelling on https://pypi.org',
+  USE_FUNCTIONAL_TERMS:
+    'Try broader functional terms: "testing" instead of "jest-unit-test"',
+  SIMPLIFY_PACKAGE_NAMES:
+    'Use single keywords: "http" instead of "http-client-library"',
 } as const;
 
 /**
@@ -133,6 +142,7 @@ function extractErrorContext(errorMessage: string): {
     | 'validation'
     | 'not_found'
     | 'access_denied'
+    | 'package_not_found'
     | 'unknown';
   isRecoverable: boolean;
 } {
@@ -164,6 +174,12 @@ function extractErrorContext(errorMessage: string): {
   }
   if (error.includes('not found') || error.includes('404')) {
     return { type: 'not_found', isRecoverable: true };
+  }
+  if (
+    error.includes('package') &&
+    (error.includes('not found') || error.includes('no packages found'))
+  ) {
+    return { type: 'package_not_found', isRecoverable: true };
   }
   if (
     error.includes('access denied') ||
@@ -212,6 +228,14 @@ function generateErrorRecoveryHints(errorMessage: string): string[] {
     case 'access_denied':
       hints.push(ERROR_RECOVERY_HINTS.ACCESS_DENIED);
       hints.push(ERROR_RECOVERY_HINTS.PUBLIC_REPOS);
+      break;
+
+    case 'package_not_found':
+      hints.push(ERROR_RECOVERY_HINTS.PACKAGE_NOT_FOUND);
+      hints.push(ERROR_RECOVERY_HINTS.USE_FUNCTIONAL_TERMS);
+      hints.push(ERROR_RECOVERY_HINTS.SIMPLIFY_PACKAGE_NAMES);
+      hints.push(ERROR_RECOVERY_HINTS.CHECK_NPM_REGISTRY);
+      hints.push(ERROR_RECOVERY_HINTS.CHECK_PYPI_REGISTRY);
       break;
 
     default:
@@ -298,12 +322,17 @@ function generateToolNavigationHints(
     case TOOL_NAMES.PACKAGE_SEARCH:
       if (hasResults) {
         hints.push(
-          'Explore source repositories of relevant packages for implementation details'
+          'Use repository URLs with GitHub tools for deeper code analysis'
+        );
+        hints.push(
+          'Compare package metadata to evaluate alternatives and trade-offs'
         );
         hints.push(TOOL_NAVIGATION_HINTS.COMPARE_APPROACHES);
       } else {
-        hints.push('Try different package names or explore related packages');
-        hints.push('Search for similar functionality in alternative packages');
+        hints.push(ERROR_RECOVERY_HINTS.USE_FUNCTIONAL_TERMS);
+        hints.push(ERROR_RECOVERY_HINTS.SIMPLIFY_PACKAGE_NAMES);
+        hints.push(ERROR_RECOVERY_HINTS.CHECK_NPM_REGISTRY);
+        hints.push(ERROR_RECOVERY_HINTS.CHECK_PYPI_REGISTRY);
       }
       break;
 

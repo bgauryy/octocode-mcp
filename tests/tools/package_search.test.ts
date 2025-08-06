@@ -699,4 +699,709 @@ describe('Package Search Tool (NPM & Python)', () => {
       ).toBe(true);
     });
   });
+
+  describe('Error Handling - Individual Query Failures', () => {
+    it('should handle NPM package query failure with graceful degradation', async () => {
+      // Mock successful response for first package
+      const mockNpmResponse1 = {
+        result: [
+          {
+            name: 'react',
+            version: '18.2.0',
+            description: 'React library',
+            keywords: ['react'],
+            links: { repository: 'https://github.com/facebook/react' },
+          },
+        ],
+        command: 'npm search react --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      // Mock empty response for second package (simulating failure)
+      const mockNpmResponse2 = {
+        result: [],
+        command:
+          'npm search xyz123nonexistentpackage456 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      // Mock successful response for third package
+      const mockNpmResponse3 = {
+        result: [
+          {
+            name: 'express',
+            version: '4.18.2',
+            description: 'Fast web framework',
+            keywords: ['express', 'framework'],
+            links: { repository: 'https://github.com/expressjs/express' },
+          },
+        ],
+        command: 'npm search express --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse1) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse2) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse3) }],
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'react' },
+          { name: 'xyz123nonexistentpackage456' },
+          { name: 'express' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      // Should return only successful packages
+      expect(response.data.total_count).toBe(2);
+      expect(response.data.npm).toHaveLength(2);
+      expect(response.data.npm[0].name).toBe('react');
+      expect(response.data.npm[1].name).toBe('express');
+
+      // Failed package should not appear in results
+      const failedPackageNames = response.data.npm.map(
+        (pkg: Record<string, unknown>) => pkg.name as string
+      );
+      expect(failedPackageNames).not.toContain('xyz123nonexistentpackage456');
+    });
+
+    it('should handle Python package query failure with graceful degradation', async () => {
+      // Mock successful response for first package
+      mockAxios.get
+        .mockResolvedValueOnce({
+          data: {
+            info: {
+              name: 'requests',
+              version: '2.31.0',
+              summary: 'Python HTTP for Humans.',
+              project_urls: {
+                Source: 'https://github.com/psf/requests',
+              },
+            },
+          },
+        })
+        .mockRejectedValueOnce(new Error('404 Not Found')) // Second package fails
+        .mockResolvedValueOnce({
+          data: {
+            info: {
+              name: 'pandas',
+              version: '2.0.0',
+              summary: 'Data analysis library',
+              project_urls: {
+                Repository: 'https://github.com/pandas-dev/pandas',
+              },
+            },
+          },
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [
+          { name: 'requests' },
+          { name: 'nonexistentpythonpackage123' },
+          { name: 'pandas' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      // Should return only successful packages
+      expect(response.data.total_count).toBe(2);
+      expect(response.data.python).toHaveLength(2);
+      expect(response.data.python[0].name).toBe('requests');
+      expect(response.data.python[1].name).toBe('pandas');
+
+      // Failed package should not appear in results
+      const failedPackageNames = response.data.python.map(
+        (pkg: Record<string, unknown>) => pkg.name as string
+      );
+      expect(failedPackageNames).not.toContain('nonexistentpythonpackage123');
+    });
+
+    it('should handle mixed ecosystem failures independently', async () => {
+      // Mock NPM responses - one success, one failure
+      const mockNpmResponse1 = {
+        result: [
+          {
+            name: 'react',
+            version: '18.2.0',
+            description: 'React library',
+            links: { repository: 'https://github.com/facebook/react' },
+          },
+        ],
+        command: 'npm search react --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      const mockNpmResponse2 = {
+        result: [],
+        command:
+          'npm search xyz123nonexistentpackage456 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse1) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse2) }],
+        });
+
+      // Mock Python responses - one success, one failure
+      mockAxios.get
+        .mockResolvedValueOnce({
+          data: {
+            info: {
+              name: 'requests',
+              version: '2.31.0',
+              summary: 'Python HTTP library',
+              project_urls: {
+                Source: 'https://github.com/psf/requests',
+              },
+            },
+          },
+        })
+        .mockRejectedValueOnce(new Error('404 Not Found'));
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'react' },
+          { name: 'xyz123nonexistentpackage456' },
+        ],
+        pythonPackages: [
+          { name: 'requests' },
+          { name: 'nonexistentpythonpackage123' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      // Should return successful packages from both ecosystems
+      expect(response.data.total_count).toBe(2);
+      expect(response.data.npm).toHaveLength(1);
+      expect(response.data.python).toHaveLength(1);
+      expect(response.meta.ecosystems).toEqual(['npm', 'python']);
+
+      expect(response.data.npm[0].name).toBe('react');
+      expect(response.data.python[0].name).toBe('requests');
+    });
+  });
+
+  describe('Error Handling - Complete Failure Scenarios', () => {
+    it('should handle all NPM packages failing', async () => {
+      // Mock empty responses for all NPM packages
+      const mockNpmResponse1 = {
+        result: [],
+        command:
+          'npm search xyz123nonexistentpackage456 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      const mockNpmResponse2 = {
+        result: [],
+        command:
+          'npm search abc789nonexistentpackage789 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse1) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse2) }],
+        });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'xyz123nonexistentpackage456' },
+          { name: 'abc789nonexistentpackage789' },
+        ],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+      expect(response.hints.length).toBeGreaterThan(0);
+
+      // Should include specific error messages
+      const hintsText = response.hints.join(' ');
+      expect(hintsText).toContain('NPM package');
+      expect(hintsText).toContain('not found');
+    });
+
+    it('should handle all Python packages failing', async () => {
+      // Mock failures for all Python packages
+      mockAxios.get
+        .mockRejectedValueOnce(new Error('404 Not Found'))
+        .mockRejectedValueOnce(new Error('404 Not Found'));
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [
+          { name: 'nonexistentpythonpackage123' },
+          { name: 'anothernonexistentpythonpackage456' },
+        ],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+      expect(response.hints.length).toBeGreaterThan(0);
+
+      // Should include specific error messages
+      const hintsText = response.hints.join(' ');
+      expect(hintsText).toContain('Python package');
+      expect(hintsText).toContain('not found on PyPI');
+    });
+
+    it('should handle all packages failing across both ecosystems', async () => {
+      // Mock NPM failures
+      const mockNpmResponse1 = {
+        result: [],
+        command:
+          'npm search xyz123nonexistentpackage456 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      const mockNpmResponse2 = {
+        result: [],
+        command:
+          'npm search abc789nonexistentpackage789 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse1) }],
+        })
+        .mockResolvedValueOnce({
+          isError: false,
+          content: [{ text: JSON.stringify(mockNpmResponse2) }],
+        });
+
+      // Mock Python failures
+      mockAxios.get
+        .mockRejectedValueOnce(new Error('404 Not Found'))
+        .mockRejectedValueOnce(new Error('404 Not Found'));
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'xyz123nonexistentpackage456' },
+          { name: 'abc789nonexistentpackage789' },
+        ],
+        pythonPackages: [
+          { name: 'nonexistentpythonpackage123' },
+          { name: 'anothernonexistentpythonpackage456' },
+        ],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+      expect(response.hints.length).toBeGreaterThan(0);
+
+      // Should include errors from both ecosystems
+      const hintsText = response.hints.join(' ');
+      expect(hintsText).toContain('NPM Search Issues:');
+      expect(hintsText).toContain('Python Search Issues:');
+      expect(hintsText).toContain('not found');
+    });
+  });
+
+  describe('Error Handling - Edge Cases', () => {
+    it('should handle empty package names gracefully', async () => {
+      // Mock successful response for valid package
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'react',
+            version: '18.2.0',
+            description: 'React library',
+            links: { repository: 'https://github.com/facebook/react' },
+          },
+        ],
+        command: 'npm search react --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'react' },
+          { name: '' }, // Empty name
+          { name: 'express' },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      // Should only return the valid package
+      expect(response.data.total_count).toBe(1);
+      expect(response.data.npm).toHaveLength(1);
+      expect(response.data.npm[0].name).toBe('react');
+    });
+
+    it('should handle special characters in package names', async () => {
+      // Mock response for package with special characters
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'wide-align',
+            version: '1.1.5',
+            description: 'Wide character alignment',
+            links: { repository: 'https://github.com/iarna/wide-align' },
+          },
+        ],
+        command:
+          'npm search "package-with-special-chars-!@#$%^&*()" --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'package-with-special-chars-!@#$%^&*()' }],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      // Should handle special characters gracefully
+      expect(response.data.total_count).toBe(1);
+      expect(response.data.npm).toHaveLength(1);
+    });
+
+    it('should handle very long package names', async () => {
+      const longPackageName =
+        'this-is-a-very-long-package-name-that-probably-does-not-exist-in-the-npm-registry-and-should-cause-an-error';
+
+      // Mock empty response for very long package name
+      const mockNpmResponse = {
+        result: [],
+        command: `npm search "${longPackageName}" --searchlimit=1 --json`,
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: longPackageName }],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+    });
+
+    it('should handle URL-like package names', async () => {
+      // Mock response for URL-like package name
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'braces',
+            version: '3.0.3',
+            description: 'Brace expansion library',
+            links: { repository: 'https://github.com/micromatch/braces' },
+          },
+        ],
+        command: 'npm search "http://malicious-url.com" --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'http://malicious-url.com' }],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      // Should handle URL-like names gracefully
+      expect(response.data.total_count).toBe(1);
+      expect(response.data.npm).toHaveLength(1);
+    });
+
+    it('should handle Python package name variations', async () => {
+      // Mock successful response for PIL (Python Imaging Library)
+      mockAxios.get.mockResolvedValueOnce({
+        data: {
+          info: {
+            name: 'PIL',
+            version: '1.1.6',
+            summary: 'Python Imaging Library',
+            project_urls: {
+              Homepage: 'http://www.pythonware.com/products/pil/',
+            },
+          },
+        },
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [
+          { name: 'PIL' }, // Original name
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.data.total_count).toBe(1);
+      expect(response.data.python).toHaveLength(1);
+      expect(response.data.python[0].name).toBe('PIL');
+    });
+
+    it('should handle Python package with alternative names', async () => {
+      // Mock successful response for pillow (modern PIL fork)
+      mockAxios.get.mockResolvedValueOnce({
+        data: {
+          info: {
+            name: 'pillow',
+            version: '11.3.0',
+            summary: 'Python Imaging Library (Fork)',
+            keywords: ['Imaging'],
+            project_urls: {
+              Homepage: 'https://github.com/python-pillow/Pillow',
+            },
+          },
+        },
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [
+          { name: 'pillow' }, // Modern fork name
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.data.total_count).toBe(1);
+      expect(response.data.python).toHaveLength(1);
+      expect(response.data.python[0].name).toBe('pillow');
+    });
+  });
+
+  describe('Error Handling - Schema Validation', () => {
+    it('should handle empty arrays', async () => {
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [],
+        pythonPackages: [],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe(
+        'At least one package search query is required'
+      );
+      expect(response.hints).toBeDefined();
+      expect(response.hints.length).toBeGreaterThan(0);
+    });
+
+    it('should handle missing package arrays', async () => {
+      const result = await mockServer.callTool('packageSearch', {
+        // No npmPackages or pythonPackages provided
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe(
+        'At least one package search query is required'
+      );
+    });
+
+    it('should handle malformed package objects', async () => {
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [
+          { name: 'react' },
+          { invalidField: 'invalid' }, // Missing required 'name' field
+        ],
+      });
+
+      // This should fail schema validation
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('Error Handling - Network and System Failures', () => {
+    it('should handle NPM command execution errors', async () => {
+      mockExecuteNpmCommand.mockRejectedValueOnce(new Error('Network timeout'));
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'react' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+
+      // Should include network-related hints
+      const hintsText = response.hints.join(' ');
+      expect(hintsText).toContain('NPM search failed for');
+      expect(hintsText).toContain('Network timeout');
+    });
+
+    it('should handle PyPI API errors', async () => {
+      mockAxios.get.mockRejectedValueOnce(new Error('PyPI API unavailable'));
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [{ name: 'requests' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+    });
+
+    it('should handle malformed NPM response', async () => {
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: 'invalid json response' }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'react' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+    });
+
+    it('should handle malformed PyPI response', async () => {
+      mockAxios.get.mockResolvedValueOnce({
+        data: { invalid: 'response structure' },
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        pythonPackages: [{ name: 'requests' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+    });
+  });
+
+  describe('Error Handling - Research Goal Integration', () => {
+    it('should provide debugging-focused hints when research goal is debugging', async () => {
+      // Mock all packages failing
+      const mockNpmResponse = {
+        result: [],
+        command:
+          'npm search xyz123nonexistentpackage456 --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'xyz123nonexistentpackage456' }],
+        researchGoal: 'debugging',
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.meta.error).toBe('No packages found');
+      expect(response.hints).toBeDefined();
+      expect(response.hints.length).toBeGreaterThan(0);
+
+      // Should include debugging-specific hints
+      const hintsText = response.hints.join(' ');
+      expect(hintsText).toContain('NPM package');
+      expect(hintsText).toContain('not found');
+      expect(hintsText).toContain('Use simpler terms');
+    });
+
+    it('should provide analysis-focused hints when research goal is analysis', async () => {
+      // Mock successful response
+      const mockNpmResponse = {
+        result: [
+          {
+            name: 'react',
+            version: '18.2.0',
+            description: 'React library',
+            links: { repository: 'https://github.com/facebook/react' },
+          },
+        ],
+        command: 'npm search react --searchlimit=1 --json',
+        type: 'npm',
+      };
+
+      mockExecuteNpmCommand.mockResolvedValueOnce({
+        isError: false,
+        content: [{ text: JSON.stringify(mockNpmResponse) }],
+      });
+
+      const result = await mockServer.callTool('packageSearch', {
+        npmPackages: [{ name: 'react' }],
+        researchGoal: 'analysis',
+      });
+
+      expect(result.isError).toBe(false);
+      const response = JSON.parse(result.content[0]?.text as string);
+
+      expect(response.hints).toBeDefined();
+      expect(response.hints.length).toBeGreaterThan(0);
+
+      // Should include analysis-focused hints
+      const hintsText = response.hints.join(' ');
+      expect(hintsText).toContain('Compare package metadata');
+      expect(hintsText).toContain('evaluate alternatives');
+    });
+  });
 });

@@ -270,19 +270,34 @@ async function searchNpmPackage(
   searchLimit: number
 ): Promise<NpmPackage[]> {
   const builder = new NpmPackageSearchBuilder();
-  const fullArgs = builder.build({ query, searchLimit });
+  const args = builder.build({ query, searchLimit });
 
-  // Check if builder included base command
-  const hasBaseCommand = fullArgs[0] === 'search';
-  const command = hasBaseCommand ? fullArgs[0] : 'search';
-  const args = hasBaseCommand ? fullArgs.slice(1) : fullArgs;
-
-  const result = await executeNpmCommand(command as 'search', args, {
+  const result = await executeNpmCommand('search', args, {
     cache: true,
   });
 
   if (!result.isError && result.content?.[0]?.text) {
-    return parseNpmSearchOutput(result.content[0].text as string);
+    const responseText = result.content[0].text as string;
+
+    try {
+      // Try to parse as wrapped response first
+      const maybeWrapped = JSON.parse(responseText);
+
+      // Check if this looks like a wrapped response (has data field)
+      if (
+        maybeWrapped &&
+        typeof maybeWrapped === 'object' &&
+        'data' in maybeWrapped
+      ) {
+        // This is a wrapped response, extract the npm output
+        return parseNpmSearchOutput(maybeWrapped.data || '');
+      } else {
+        // This is direct npm output (test mocks)
+        return parseNpmSearchOutput(responseText);
+      }
+    } catch (parseError) {
+      throw new Error('Failed to parse npm search response');
+    }
   } else {
     throw new Error(String(result.content?.[0]?.text) || 'Unknown NPM error');
   }
@@ -702,11 +717,7 @@ async function viewNpmPackage(
         args = builder.build({ packageName });
       }
 
-      const hasBaseCommand = args[0] === 'view';
-      const command = hasBaseCommand ? args[0] : 'view';
-      const commandArgs = hasBaseCommand ? args.slice(1) : args;
-
-      const result = await executeNpmCommand(command as 'view', commandArgs, {
+      const result = await executeNpmCommand('view', args, {
         cache: false,
       });
       return result;
