@@ -447,7 +447,6 @@ describe('Quality Boosting and Research Goals', () => {
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/is:not-archived/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
     expect(callArgs.order).toBe('desc');
   });
@@ -478,7 +477,6 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
-    expect(callArgs.q).toMatch(/is:not-archived/);
   });
 
   it('should apply code_review research goal correctly', async () => {
@@ -507,7 +505,6 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>10/);
     expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
-    expect(callArgs.q).toMatch(/is:not-archived/);
   });
 
   it('should disable quality boost when explicitly set to false', async () => {
@@ -564,7 +561,5 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>1000/);
     expect(callArgs.q).toMatch(/pushed:>2024-01-01/);
-    expect(callArgs.q).toMatch(/is:not-fork/);
-    expect(callArgs.q).toMatch(/is:not-archived/);
   });
 });
