@@ -118,7 +118,10 @@ describe('GitHub API Utils', () => {
     // Set up default mock behaviors
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
     mockWithCache.mockImplementation(async (_key, fn) => await fn());
-    mockCreateResult.mockImplementation(params => params);
+    mockCreateResult.mockImplementation(params => ({
+      content: [{ type: 'text', text: JSON.stringify(params) }],
+      isError: params.isError || false,
+    }));
     mockContentSanitizer.sanitizeContent.mockImplementation(content => ({
       content: content, // Return the content as-is for most tests
       warnings: [],
