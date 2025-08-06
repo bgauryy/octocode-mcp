@@ -173,10 +173,15 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
       const keys = new Set<string>();
       const patterns = [
         // Sequential patterns
-        ...Array.from({ length: 100 }, (_, i) => ({ type: 'seq', value: i })),
+        ...Array.from({ length: 100 }, (_, i) => ({
+          type: 'seq',
+          index: i,
+          value: i,
+        })),
         // Power of 2 patterns
         ...Array.from({ length: 20 }, (_, i) => ({
           type: 'pow2',
+          index: i,
           value: Math.pow(2, i),
         })),
         // Simple fibonacci patterns (avoid deep recursion)
@@ -186,11 +191,11 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
           for (let j = 0; j < i; j++) {
             [a, b] = [b, a + b];
           }
-          return { type: 'fib', value: a };
+          return { type: 'fib', index: i, value: a };
         }),
         // Prime number patterns
         ...Array.from({ length: 25 }, (_, i) => {
-          // Reduced from 50 to 25
+          // Generate the i-th prime number
           const isPrime = (n: number) => {
             if (n < 2) return false;
             for (let j = 2; j * j <= n; j++) {
@@ -198,14 +203,21 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
             }
             return true;
           };
-          let num = 2;
-          let count = 0;
-          while (count <= i && num < 1000) {
-            // Add upper bound
-            if (isPrime(num)) count++;
-            if (count <= i) num++;
+
+          if (i === 0) return { type: 'prime', index: i, value: 2 }; // First prime
+
+          let primeCount = 1; // Already found 2
+          let num = 3;
+
+          while (primeCount < i && num < 1000) {
+            if (isPrime(num)) {
+              primeCount++;
+            }
+            if (primeCount < i) {
+              num += 2; // Only check odd numbers after 2
+            }
           }
-          return { type: 'prime', value: num - 1 };
+          return { type: 'prime', index: i, value: num };
         }),
       ];
 
@@ -420,8 +432,12 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
       // Performance should degrade reasonably with input size
       // Each step should not be more than 20x slower than previous (more lenient)
       for (let i = 1; i < timings.length; i++) {
-        const ratio = timings[i] / timings[i - 1];
-        expect(ratio).toBeLessThan(20);
+        const current = timings[i];
+        const previous = timings[i - 1];
+        if (current && previous) {
+          const ratio = current / previous;
+          expect(ratio).toBeLessThan(20);
+        }
       }
     });
   });

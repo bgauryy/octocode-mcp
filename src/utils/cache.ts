@@ -147,7 +147,7 @@ export function generateCacheKey(prefix: string, params: unknown): string {
     }, 60000); // Cleanup every minute
   }
 
-  // Create a more robust parameter string
+  // Create a more robust parameter string with better uniqueness
   const paramString = createStableParamString(params);
 
   // Use full SHA-256 hash for security (64 chars) - no truncation to prevent collisions
@@ -179,11 +179,15 @@ export function generateCacheKey(prefix: string, params: unknown): string {
 }
 
 /**
- * Create a stable string representation of parameters
+ * Create a stable string representation of parameters with improved uniqueness
  */
 function createStableParamString(params: unknown): string {
-  if (params === null || params === undefined) {
+  if (params === null) {
     return 'null';
+  }
+
+  if (params === undefined) {
+    return 'undefined';
   }
 
   if (typeof params !== 'object') {
@@ -194,7 +198,7 @@ function createStableParamString(params: unknown): string {
     return `[${params.map(createStableParamString).join(',')}]`;
   }
 
-  // Sort keys and create stable representation
+  // Sort keys and create stable representation with better handling of edge cases
   const sortedKeys = Object.keys(params as Record<string, unknown>).sort();
   const sortedEntries = sortedKeys.map(key => {
     const value = (params as Record<string, unknown>)[key];
@@ -388,6 +392,7 @@ export function getCacheDebugInfo(): {
   health: ReturnType<typeof validateCacheHealth>;
   keysByPrefix: Record<string, number>;
   recentCollisions: Array<{ key: string; count: number }>;
+  collisionMapSize: number; // For backward compatibility
 } {
   const keys = cache.keys();
   const keysByPrefix: Record<string, number> = {};
@@ -406,10 +411,13 @@ export function getCacheDebugInfo(): {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
+  const health = validateCacheHealth();
+
   return {
     stats: getCacheStats(),
-    health: validateCacheHealth(),
+    health,
     keysByPrefix,
     recentCollisions,
+    collisionMapSize: health.collisionMapSize, // For backward compatibility
   };
 }
