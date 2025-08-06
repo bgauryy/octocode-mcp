@@ -150,12 +150,8 @@ export function generateCacheKey(prefix: string, params: unknown): string {
   // Create a more robust parameter string
   const paramString = createStableParamString(params);
 
-  // Use SHA-256 but truncate to 32 chars for memory efficiency
-  const hash = crypto
-    .createHash('sha256')
-    .update(paramString)
-    .digest('hex')
-    .substring(0, 32);
+  // Use full SHA-256 hash for security (64 chars) - no truncation to prevent collisions
+  const hash = crypto.createHash('sha256').update(paramString).digest('hex');
 
   const cacheKey = `${VERSION}-${prefix}:${hash}`;
 
@@ -167,7 +163,7 @@ export function generateCacheKey(prefix: string, params: unknown): string {
       if (existingParams.length < 5) {
         existingParams.push(paramString);
         cacheStats.collisions++;
-        // Log collision - should be rare with 32-char SHA-256 hash
+        // Log collision - should be extremely rare with full 64-char SHA-256 hash
         logger.warn('Cache key collision detected', {
           prefix,
           cacheKey: cacheKey.substring(0, 20) + '...', // Don't log full key
