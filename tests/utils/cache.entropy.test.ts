@@ -117,7 +117,7 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
         const hash = key.split(':')[1];
         if (hash) {
           for (const char of hash) {
-            hexCounts[char]++;
+            hexCounts[char] = (hexCounts[char] ?? 0) + 1;
           }
         }
       }
