@@ -37,6 +37,8 @@ jobs:
     outputs:
       published: ${{ steps.check-version.outputs.should_publish }}
       package_version: ${{ steps.check-version.outputs.package_version }}
+      alpha_version: ${{ steps.check-version.outputs.alpha_version }}
+      alpha_number: ${{ steps.check-version.outputs.alpha_number }}
       package_name: ${{ steps.check-version.outputs.package_name }}
     steps:
       - name: Checkout repository
@@ -64,16 +66,30 @@ jobs:
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           
-          # Check if this version is already published
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
-            echo "Version $PACKAGE_VERSION is already published"
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-          else
-            echo "Version $PACKAGE_VERSION is not published yet"
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-          fi
+          # Get the latest alpha version number for this base version
+          LATEST_ALPHA_NUMBER=0
           
+          # Check for existing alpha versions and find the highest number
+          for i in {1..100}; do
+            if npm view "$PACKAGE_NAME@${PACKAGE_VERSION}-alpha.$i" version 2>/dev/null; then
+              LATEST_ALPHA_NUMBER=$i
+            else
+              break
+            fi
+          done
+          
+          # Increment the alpha number
+          NEW_ALPHA_NUMBER=$((LATEST_ALPHA_NUMBER + 1))
+          ALPHA_VERSION="${PACKAGE_VERSION}-alpha.${NEW_ALPHA_NUMBER}"
+          
+          echo "Latest alpha number: $LATEST_ALPHA_NUMBER"
+          echo "New alpha number: $NEW_ALPHA_NUMBER"
+          echo "New alpha version: $ALPHA_VERSION"
+          
+          echo "should_publish=true" >> $GITHUB_OUTPUT
           echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "alpha_version=$ALPHA_VERSION" >> $GITHUB_OUTPUT
+          echo "alpha_number=$NEW_ALPHA_NUMBER" >> $GITHUB_OUTPUT
           echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
 
       - name: Setup npmrc for automation
@@ -85,16 +101,20 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish to npm
+      - name: Publish incremental alpha version to npm
         if: steps.check-version.outputs.should_publish == 'true'
-        run: yarn npm publish --access public
+        run: |
+          # Temporarily update package.json version to alpha
+          npm version ${{ steps.check-version.outputs.alpha_version }} --no-git-tag-version
+          
+          # Publish with alpha tag
+          yarn npm publish --access public --tag alpha
+          
+          # Revert package.json version back to original
+          npm version ${{ steps.check-version.outputs.package_version }} --no-git-tag-version
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Skip publishing
-        if: steps.check-version.outputs.should_publish == 'false'
-        run: echo "Skipping publish - version ${{ steps.check-version.outputs.package_version }} already exists on npm"
 
   notify-discord:
     needs: [verify, publish]
@@ -117,13 +137,9 @@ jobs:
             COLOR=15158332  # Red
             DESCRIPTION="Build or publish failed"
           elif [ "${{ needs.publish.outputs.published }}" == "true" ]; then
-            STATUS="🚀 **Published**"
+            STATUS="🚀 **Alpha Published**"
             COLOR=3066993   # Green
-            DESCRIPTION="Successfully published version ${{ needs.publish.outputs.package_version }} to npm"
-          elif [ "${{ needs.publish.outputs.published }}" == "false" ]; then
-            STATUS="⏭️ **Skipped**"
-            COLOR=15844367  # Yellow
-            DESCRIPTION="Version ${{ needs.publish.outputs.package_version }} already exists on npm"
+            DESCRIPTION="Successfully published alpha version ${{ needs.publish.outputs.alpha_version }} (alpha.${{ needs.publish.outputs.alpha_number }}) to npm"
           else
             STATUS="✅ **Success**"
             COLOR=3066993   # Green
@@ -143,10 +159,10 @@ jobs:
           # Create JSON payload
           PAYLOAD=$(cat <<EOF
           {
-            "username": "NPM Publisher",
+            "username": "NPM Alpha Publisher",
             "avatar_url": "https://raw.githubusercontent.com/npm/logos/master/npm%20logo/npm-logo-red.png",
             "embeds": [{
-              "title": "📦 ${{ needs.publish.outputs.package_name || 'octocode-mcp' }}",
+              "title": "📦 ${{ needs.publish.outputs.package_name || 'octocode-mcp' }} (Alpha ${{ needs.publish.outputs.alpha_number }})",
               "description": "$DESCRIPTION",
               "color": $COLOR,
               "fields": [
@@ -156,7 +172,17 @@ jobs:
                   "inline": true
                 },
                 {
-                  "name": "Version",
+                  "name": "Alpha Version",
+                  "value": "\`${{ needs.publish.outputs.alpha_version }}\`",
+                  "inline": true
+                },
+                {
+                  "name": "Alpha Number",
+                  "value": "\`${{ needs.publish.outputs.alpha_number }}\`",
+                  "inline": true
+                },
+                {
+                  "name": "Base Version",
                   "value": "\`${{ needs.publish.outputs.package_version }}\`",
                   "inline": true
                 },
