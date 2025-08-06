@@ -183,6 +183,8 @@ async function searchGitHubPullRequestsAPIInternal(
         pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
         0,
       changed_files: pr.file_changes?.total_count || 0,
+      // Include file_changes if it was requested and fetched
+      ...(pr.file_changes && { file_changes: pr.file_changes }),
     }));
 
     return {
@@ -295,6 +297,8 @@ async function searchPullRequestsWithREST(
         pr.file_changes?.files.reduce((sum, file) => sum + file.deletions, 0) ||
         0,
       changed_files: pr.file_changes?.total_count || 0,
+      // Include file_changes if it was requested and fetched
+      ...(pr.file_changes && { file_changes: pr.file_changes }),
     }));
 
     return {
@@ -736,6 +740,10 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
           0
         ) || 0,
       changed_files: transformedPR.file_changes?.total_count || 0,
+      // Include file_changes if it was requested and fetched
+      ...(transformedPR.file_changes && {
+        file_changes: transformedPR.file_changes,
+      }),
     };
 
     return {
