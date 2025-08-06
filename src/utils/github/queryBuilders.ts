@@ -194,9 +194,8 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
     queryParts.push(`created:${params.created}`);
   }
 
-  // Always exclude forks and archived repositories for better quality results
-  queryParts.push('is:not-fork');
-  queryParts.push('is:not-archived');
+  // Note: GitHub code search API doesn't support is:fork or archived filters
+  // These are only valid for repository search, not code search
 
   if (params.match) {
     const matches = Array.isArray(params.match) ? params.match : [params.match];
