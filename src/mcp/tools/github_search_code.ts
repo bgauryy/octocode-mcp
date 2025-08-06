@@ -31,16 +31,21 @@ import { ProcessedCodeSearchResult } from './scheme/github_search_code';
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
 SEARCH STRATEGY:
-SEMANTIC: Natural language terms describing functionality, concepts, business logic
-TECHNICAL: Actual code terms, function names, class names, file patterns
+  SEMANTIC: Natural language terms describing functionality, concepts, business logic
+  TECHNICAL: Actual code terms, function names, class names, file patterns
+  Use bulk queries from different angles. Start narrow, broaden if needed.
+    SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
+  USE STRINGS WITH ONE WORD ONLY FOR EXPLORETORY SEARCH.
+    EXAMPLE:
+      queryTerms: [
+          term1,
+          term2
+        ]
+FOR MORE CONTEXT AFTER GOOD FINDINGS:
+      Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
+      Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to find the repository structure for relevant files after search
 
-Use bulk queries from different angles. Start narrow, broaden if needed.
-Workflow:
-   Search → Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
-
-Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives
-
-For detailed search, use bulk queries from different angles and filters.`;
+Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
 interface GitHubCodeAggregatedContext {
   totalQueries: number;

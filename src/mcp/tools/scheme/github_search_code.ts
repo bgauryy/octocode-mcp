@@ -12,7 +12,7 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .min(1)
     .max(4)
     .describe(
-      'Search terms (AND logic). Returns actual code snippets with context.'
+      'Search terms (AND logic in a file). Returns actual code snippets with context'
     ),
 
   // Repository filters
