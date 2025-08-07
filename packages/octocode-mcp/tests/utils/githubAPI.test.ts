@@ -6,8 +6,8 @@ const mockOctokit = vi.hoisted(() => ({
     search: {
       code: vi.fn(),
       repos: vi.fn(),
-      issuesAndPullRequests: vi.fn(),
       commits: vi.fn(),
+      issuesAndPullRequests: vi.fn(),
     },
     repos: {
       getContent: vi.fn(),
@@ -17,12 +17,6 @@ const mockOctokit = vi.hoisted(() => ({
     pulls: {
       get: vi.fn(),
       listCommits: vi.fn(),
-    },
-    issues: {
-      listComments: vi.fn(),
-    },
-    users: {
-      getAuthenticated: vi.fn(),
     },
   },
 }));
@@ -101,7 +95,6 @@ import {
   searchGitHubCodeAPI,
   searchGitHubReposAPI,
   fetchGitHubFileContentAPI,
-  checkGitHubAuthAPI,
   viewGitHubRepositoryStructureAPI,
   searchGitHubPullRequestsAPI,
   searchGitHubCommitsAPI,
@@ -152,106 +145,9 @@ describe('GitHub API Utils', () => {
       expect(searchGitHubCodeAPI).toBeDefined();
       expect(searchGitHubReposAPI).toBeDefined();
       expect(fetchGitHubFileContentAPI).toBeDefined();
-      expect(checkGitHubAuthAPI).toBeDefined();
       expect(viewGitHubRepositoryStructureAPI).toBeDefined();
       expect(searchGitHubPullRequestsAPI).toBeDefined();
       expect(searchGitHubCommitsAPI).toBeDefined();
-    });
-  });
-
-  describe('Authentication Check', () => {
-    it('should check GitHub authentication successfully', async () => {
-      const mockUserData = {
-        data: {
-          login: 'testuser',
-          name: 'Test User',
-          type: 'User',
-        },
-        headers: {
-          'x-ratelimit-remaining': '4999',
-          'x-ratelimit-limit': '5000',
-          'x-ratelimit-reset': '1640995200',
-        },
-      };
-
-      mockOctokit.rest.users.getAuthenticated.mockResolvedValue(mockUserData);
-
-      await checkGitHubAuthAPI();
-
-      expect(mockOctokit.rest.users.getAuthenticated).toHaveBeenCalled();
-      expect(mockCreateResult).toHaveBeenCalledWith({
-        data: {
-          authenticated: true,
-          user: 'testuser',
-          name: 'Test User',
-          type: 'User',
-          rateLimit: {
-            remaining: '4999',
-            limit: '5000',
-            reset: '1640995200',
-          },
-        },
-      });
-    });
-
-    it('should handle authentication failure', async () => {
-      const { RequestError } = await import('octokit');
-      const authError = new RequestError('Bad credentials', 401, {
-        // @ts-ignore - Test mock, bypass strict typing
-        request: {
-          method: 'GET',
-          url: 'https://api.github.com/user',
-          headers: {},
-        } as unknown as Record<string, unknown>,
-      });
-      mockOctokit.rest.users.getAuthenticated.mockRejectedValue(authError);
-
-      await checkGitHubAuthAPI();
-
-      expect(mockCreateResult).toHaveBeenCalledWith({
-        data: {
-          authenticated: false,
-          message: 'No valid authentication found',
-          hint: 'Set GITHUB_TOKEN or GH_TOKEN environment variable',
-        },
-      });
-    });
-
-    it('should handle other authentication errors', async () => {
-      const { RequestError } = await import('octokit');
-      const serverError = new RequestError('Server error', 500, {
-        // @ts-ignore - Test mock, bypass strict typing
-        request: {
-          method: 'GET',
-          url: 'https://api.github.com/user',
-          headers: {},
-        } as unknown as Record<string, unknown>,
-      });
-      mockOctokit.rest.users.getAuthenticated.mockRejectedValue(serverError);
-
-      await checkGitHubAuthAPI();
-
-      expect(mockCreateResult).toHaveBeenCalledWith({
-        isError: true,
-        hints: ['Authentication check failed: Server error'],
-      });
-    });
-
-    it('should use custom token when provided', async () => {
-      const mockUserData = {
-        data: { login: 'testuser', name: 'Test User', type: 'User' },
-        headers: {},
-      };
-      mockOctokit.rest.users.getAuthenticated.mockResolvedValue(mockUserData);
-
-      await checkGitHubAuthAPI('custom-token');
-
-      // Verify Octokit was created with custom token
-      expect(mockOctokitWithThrottling).toHaveBeenCalledWith(
-        expect.objectContaining({
-          auth: 'custom-token',
-        })
-      );
     });
   });
 

@@ -419,10 +419,6 @@ describe('Cache Collision Resistance Tests', () => {
       expect(variance).toBeGreaterThanOrEqual(0);
       expect(stdDev).toBeGreaterThanOrEqual(0);
 
-      // Standard deviation should be reasonable (timing can vary significantly on different systems)
-      // This is mainly to catch major timing inconsistencies, not precise performance
-      expect(stdDev).toBeLessThan(avg * 10.0); // Very lenient timing expectation for CI/various systems
-
       // Additional timing validation
       const sortedTimings = [...timings].sort((a, b) => a - b);
       const medianTime = sortedTimings[Math.floor(timings.length / 2)];

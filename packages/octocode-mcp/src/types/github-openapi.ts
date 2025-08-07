@@ -16,15 +16,6 @@ import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-meth
 export type Repository = components['schemas']['full-repository'];
 export type RepositorySimple = components['schemas']['repository'];
 
-// User types
-export type SimpleUser = components['schemas']['simple-user'];
-export type PrivateUser = components['schemas']['private-user'];
-export type PublicUser = components['schemas']['public-user'];
-
-// Issue types
-export type Issue = components['schemas']['issue'];
-export type IssueComment = components['schemas']['issue-comment'];
-
 // Pull Request types
 export type PullRequest = components['schemas']['pull-request'];
 export type PullRequestReview = components['schemas']['pull-request-review'];
@@ -54,8 +45,6 @@ export type CodeSearchResultItem =
   components['schemas']['code-search-result-item'];
 export type RepoSearchResultItem =
   components['schemas']['repo-search-result-item'];
-export type IssueSearchResultItem =
-  components['schemas']['issue-search-result-item'];
 export type CommitSearchResultItem =
   components['schemas']['commit-search-result-item'];
 
@@ -73,11 +62,6 @@ export type SearchReposParameters =
   RestEndpointMethodTypes['search']['repos']['parameters'];
 export type SearchReposResponse =
   RestEndpointMethodTypes['search']['repos']['response'];
-
-export type SearchIssuesParameters =
-  RestEndpointMethodTypes['search']['issuesAndPullRequests']['parameters'];
-export type SearchIssuesResponse =
-  RestEndpointMethodTypes['search']['issuesAndPullRequests']['response'];
 
 export type SearchCommitsParameters =
   RestEndpointMethodTypes['search']['commits']['parameters'];
@@ -116,16 +100,6 @@ export type ListPullRequestCommitsParameters =
 export type ListPullRequestCommitsResponse =
   RestEndpointMethodTypes['pulls']['listCommits']['response'];
 
-// Issues API types
-export type ListIssueCommentsParameters =
-  RestEndpointMethodTypes['issues']['listComments']['parameters'];
-export type ListIssueCommentsResponse =
-  RestEndpointMethodTypes['issues']['listComments']['response'];
-
-// Users API types
-export type GetAuthenticatedUserResponse =
-  RestEndpointMethodTypes['users']['getAuthenticated']['response'];
-
 // Workflow API types
 export type ListWorkflowRunsParameters =
   RestEndpointMethodTypes['actions']['listWorkflowRuns']['parameters'];
@@ -162,25 +136,8 @@ export type SearchReposSort =
   | 'forks'
   | 'help-wanted-issues'
   | 'updated';
-export type SearchIssuesSort =
-  | 'comments'
-  | 'reactions'
-  | 'reactions-+1'
-  | 'reactions--1'
-  | 'reactions-smile'
-  | 'reactions-thinking_face'
-  | 'reactions-heart'
-  | 'reactions-tada'
-  | 'interactions'
-  | 'author-date'
-  | 'committer-date'
-  | 'created'
-  | 'updated'
-  | 'best-match';
-export type SearchCommitsSort = 'author-date' | 'committer-date';
 
-// Issue states
-export type IssueState = 'open' | 'closed' | 'all';
+export type SearchCommitsSort = 'author-date' | 'committer-date';
 
 // Pull request states
 export type PullRequestState = 'open' | 'closed' | 'all';
@@ -227,13 +184,11 @@ export type CheckStatus = 'queued' | 'in_progress' | 'completed';
 // Extract response data types
 export type SearchCodeData = SearchCodeResponse['data'];
 export type SearchReposData = SearchReposResponse['data'];
-export type SearchIssuesData = SearchIssuesResponse['data'];
 export type SearchCommitsData = SearchCommitsResponse['data'];
 
 // Extract items from search responses
 export type SearchCodeItems = SearchCodeData['items'];
 export type SearchReposItems = SearchReposData['items'];
-export type SearchIssuesItems = SearchIssuesData['items'];
 export type SearchCommitsItems = SearchCommitsData['items'];
 
 // Common utility types
@@ -247,13 +202,6 @@ export type RepositoryReference = {
   owner: string;
   repo: string;
   ref?: string;
-};
-
-// User reference types
-export type UserReference = {
-  login: string;
-  id?: GitHubID;
-  type?: 'User' | 'Organization';
 };
 
 // ============================================================================
@@ -344,23 +292,6 @@ export function isRepository(obj: unknown): obj is Repository {
     typeof (obj as Record<string, unknown>).full_name === 'string' &&
     'private' in obj &&
     typeof (obj as Record<string, unknown>).private === 'boolean'
-  );
-}
-
-/**
- * Type guard to check if an object is a user
- */
-export function isUser(obj: unknown): obj is SimpleUser {
-  return !!(
-    obj &&
-    typeof obj === 'object' &&
-    obj !== null &&
-    'login' in obj &&
-    typeof (obj as Record<string, unknown>).login === 'string' &&
-    'id' in obj &&
-    typeof (obj as Record<string, unknown>).id === 'number' &&
-    'type' in obj &&
-    typeof (obj as Record<string, unknown>).type === 'string'
   );
 }
 
@@ -456,17 +387,6 @@ export interface SearchReposOptions {
   pushed?: string;
 }
 
-export interface SearchIssuesOptions {
-  state?: IssueState;
-  sort?: SearchIssuesSort;
-  order?: SortOrder;
-  per_page?: number;
-  page?: number;
-  labels?: string[];
-  assignee?: string;
-  author?: string;
-}
-
 // ============================================================================
 // EXTENDED TYPES FOR CUSTOM PARAMETERS
 // ============================================================================
@@ -510,7 +430,19 @@ export interface GitHubCommitSearchParams {
 export interface GitHubPullRequestsSearchParams {
   // Base search parameters
   q?: string;
-  sort?: SearchIssuesSort;
+  sort?:
+    | 'comments'
+    | 'reactions'
+    | 'reactions-+1'
+    | 'reactions--1'
+    | 'reactions-smile'
+    | 'reactions-thinking_face'
+    | 'reactions-heart'
+    | 'reactions-tada'
+    | 'interactions'
+    | 'created'
+    | 'updated'
+    | 'best-match';
   order?: SortOrder;
   per_page?: number;
   page?: number;
@@ -559,51 +491,6 @@ export interface GitHubPullRequestsSearchParams {
   limit?: number;
   withComments?: boolean;
   getFileChanges?: boolean;
-  exhaustive?: boolean;
-  maxPages?: number;
-  pageSize?: number;
-}
-
-export interface GitHubIssuesSearchParams {
-  // Base search parameters
-  q?: string;
-  sort?: SearchIssuesSort;
-  order?: SortOrder;
-  per_page?: number;
-  page?: number;
-
-  // Our custom fields
-  researchGoal?: string;
-  query: string;
-  owner?: string;
-  repo?: string;
-  state?: 'open' | 'closed';
-  locked?: boolean;
-  author?: string;
-  assignee?: string;
-  mentions?: string;
-  commenter?: string;
-  involves?: string;
-  created?: string;
-  updated?: string;
-  closed?: string;
-  comments?: number | string;
-  reactions?: number | string;
-  interactions?: number | string;
-  label?: string | string[];
-  milestone?: string;
-  'team-mentions'?: string;
-  'no-assignee'?: boolean;
-  'no-label'?: boolean;
-  'no-milestone'?: boolean;
-  'no-project'?: boolean;
-  language?: string;
-  visibility?: RepositoryVisibility;
-  app?: string;
-  // archived parameter removed - always optimized to exclude archived repositories for better quality
-  match?: 'title' | 'body' | 'comments';
-  limit?: number;
-  'include-prs'?: boolean;
   exhaustive?: boolean;
   maxPages?: number;
   pageSize?: number;
