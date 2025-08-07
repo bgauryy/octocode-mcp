@@ -33,7 +33,7 @@ async function getToken(): Promise<string> {
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode',
-  version: '4.0.3',
+  version: '4.0.5',
   description: PROMPT_SYSTEM_PROMPT,
 };
 
