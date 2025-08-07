@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "4.0.3",
+  "version": "4.0.4",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis, code discovery, and npm package exploration. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub and npm ecosystems.",
   "keywords": [
     "mcp",
@@ -32,7 +32,9 @@
   "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "bin": "./dist/index.js",
+  "bin": {
+    "octocode-mcp": "./dist/index.js"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
     "@octokit/core": "^7.0.3",
@@ -89,5 +91,10 @@
     "test:ui": "vitest --ui",
     "test:watch": "vitest --watch"
   },
-  "type": "module"
+  "type": "module",
+  "mcp": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["octocode-mcp"]
+  }
 }
