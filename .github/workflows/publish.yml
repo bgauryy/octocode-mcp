@@ -211,8 +211,8 @@ jobs:
           
           echo "🔒 Safety check passed: Publishing alpha version $ALPHA_VERSION"
           
-          # Temporarily update package.json version to alpha
-          yarn version --new-version $ALPHA_VERSION --no-git-tag-version
+          # Temporarily update package.json version to alpha (Yarn v4 doesn't create git tags automatically)
+          yarn version $ALPHA_VERSION
           
           # Debug: Show how Yarn resolves workspace dependencies
           echo "🔍 Yarn workspace dependency resolution:"
@@ -226,7 +226,7 @@ jobs:
           yarn npm publish --access public --tag alpha
           
           # Revert package.json version back to original
-          yarn version --new-version $PACKAGE_VERSION --no-git-tag-version
+          yarn version $PACKAGE_VERSION
           
           echo "✅ Successfully published $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag"
           echo "⚠️  This version is NOT published to 'latest' - only available via 'alpha' tag"
