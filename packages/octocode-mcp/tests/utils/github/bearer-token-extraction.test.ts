@@ -18,6 +18,11 @@ describe('Bearer Token Extraction - Case Sensitive', () => {
       expect(result).toBe('ghp_xxxxxxxxxxxxxxxxxxxx'); // Should remain unchanged
     });
 
+    it('should extract token with abcdefg', () => {
+      const result = extractBearerToken('BEARER abcdefg');
+      expect(result).toBe('abcdefg'); // Should remain unchanged
+    });
+
     it('should NOT extract token after "BeaRer " (mixed case)', () => {
       const result = extractBearerToken('BeaRer ghp_xxxxxxxxxxxxxxxxxxxx');
       expect(result).toBe('ghp_xxxxxxxxxxxxxxxxxxxx'); // Should remain unchanged
