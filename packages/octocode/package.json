@@ -16,17 +16,21 @@
   ],
   "author": "Guy Bary <bgauryy@gmail.com>",
   "homepage": "https://octocode.ai",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bgauryy/octocode-mcp.git"
-  },
-  "bugs": {
-    "url": "https://github.com/bgauryy/octocode-mcp/issues"
-  },
+  "repository": "bgauryy/octocode-mcp.git",
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.2",
+    "@types/node": "^22.15.29",
+    "rollup": "^4.41.1",
+    "rollup-plugin-dts": "^6.0.0",
+    "tslib": "^2.8.1",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -39,26 +43,17 @@
     "src",
     "README.md"
   ],
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "scripts": {
     "build": "rollup -c",
     "build:dev": "rollup -c --environment NODE_ENV:development",
     "build:watch": "rollup -c --watch",
-    "test": "echo 'No tests for documentation package'",
+    "clean": "rm -rf dist",
+    "format": "prettier --write src/**/*.ts",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "format": "prettier --write src/**/*.ts",
-    "clean": "rm -rf dist"
+    "test": "echo 'No tests for documentation package'"
   },
-  "devDependencies": {
-    "@rollup/plugin-node-resolve": "^15.0.0",
-    "@rollup/plugin-typescript": "^11.0.0",
-    "@types/node": "^20.0.0",
-    "rollup": "^4.0.0",
-    "rollup-plugin-dts": "^6.0.0",
-    "tslib": "^2.6.0",
-    "typescript": "^5.0.0"
-  },
-  "engines": {
-    "node": ">=16.0.0"
-  }
+  "types": "dist/index.d.ts"
 }

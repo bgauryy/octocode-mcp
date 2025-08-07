@@ -1,0 +1,44 @@
+{
+  "$schema": "https://unpkg.com/syncpack@latest/dist/schema.json",
+  "source": [
+    "package.json",
+    "packages/*/package.json"
+  ],
+  "semverGroups": [
+    {
+      "label": "Use caret ranges for all dependencies",
+      "dependencyTypes": ["prod", "dev", "peer"],
+      "range": "^"
+    }
+  ],
+  "versionGroups": [
+    {
+      "label": "Align workspace dependencies",
+      "dependencies": ["**"],
+      "dependencyTypes": ["dev", "prod"],
+      "policy": "sameRange"
+    }
+  ],
+  "sortFirst": [
+    "name",
+    "version",
+    "description",
+    "keywords",
+    "author",
+    "homepage",
+    "repository",
+    "bugs",
+    "license"
+  ],
+  "sortAz": [
+    "contributors",
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+    "scripts"
+  ],
+  "formatBugs": true,
+  "formatRepository": true,
+  "indent": "  "
+}
