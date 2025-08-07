@@ -85,3 +85,25 @@ export async function getDefaultBranch(
     return null;
   }
 }
+
+/**
+ * Extract token from Authorization header
+ */
+export function extractBearerToken(tokenInput: string): string | null {
+  if (!tokenInput) return '';
+
+  // Start by trimming the entire input
+  let token = tokenInput.trim();
+
+  // Remove "Bearer " prefix (case-insensitive) - get next word after Bearer
+  token = token.replace(/^bearer\s+/i, '');
+
+  // Remove "token " prefix (case insensitive)
+  token = token.replace(/^token\s+/i, '');
+
+  // Handle template format {{token}} - extract the actual token
+  token = token.replace(/^\{\{(.+)\}\}$/, '$1');
+
+  // Final trim to clean up any remaining whitespace
+  return token.trim();
+}

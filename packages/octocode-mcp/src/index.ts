@@ -14,12 +14,14 @@ import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';
 import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
 import { getGithubCLIToken } from './utils/exec.js';
+import { extractBearerToken } from './utils/github/client.js';
 
 async function getToken(): Promise<string> {
   const token =
     process.env.GITHUB_TOKEN ||
     process.env.GH_TOKEN ||
-    (await getGithubCLIToken());
+    (await getGithubCLIToken()) ||
+    extractBearerToken(process.env.Authorization ?? '');
 
   if (!token) {
     throw new Error(
