@@ -25,7 +25,8 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "assets"
   ],
   "scripts": {
     "build": "rollup -c",
