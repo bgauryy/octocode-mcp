@@ -529,7 +529,7 @@ function minifyMarkdown(content: string): string {
 }
 
 // Main minification functions
-export async function minifyContentV2(
+export async function minifyContent(
   content: string,
   filePath: string
 ): Promise<{
@@ -568,7 +568,7 @@ export async function minifyContentV2(
           content: result.content,
           failed: result.failed,
           type: result.failed ? 'failed' : 'terser',
-          reason: result.reason,
+          ...(result.reason && { reason: result.reason }),
         };
       }
 
@@ -578,7 +578,7 @@ export async function minifyContentV2(
           content: result.content,
           failed: result.failed,
           type: result.failed ? 'failed' : 'json',
-          reason: result.reason,
+          ...(result.reason && { reason: result.reason }),
         };
       }
 
@@ -619,7 +619,7 @@ export async function minifyContentV2(
             content: result.content,
             failed: result.failed,
             type: result.failed ? 'failed' : 'aggressive',
-            reason: result.reason,
+            ...(result.reason && { reason: result.reason }),
           };
         }
 
@@ -629,7 +629,7 @@ export async function minifyContentV2(
             content: result.content,
             failed: result.failed,
             type: result.failed ? 'failed' : 'aggressive',
-            reason: result.reason,
+            ...(result.reason && { reason: result.reason }),
           };
         }
 

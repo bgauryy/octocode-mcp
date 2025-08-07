@@ -15,7 +15,7 @@ import {
   GitHubRepositoryStructureError,
 } from '../../mcp/tools/scheme/github_view_repo_structure';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { minifyContentV2 } from '../minifier';
+import { minifyContent } from '@octocode/mcp-utils';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withCache } from '../cache';
@@ -349,7 +349,7 @@ async function processFileContentAPI(
   let minificationType = 'none';
 
   if (minified) {
-    const minifyResult = await minifyContentV2(finalContent, filePath);
+    const minifyResult = await minifyContent(finalContent, filePath);
     finalContent = minifyResult.content;
     minificationFailed = minifyResult.failed;
     minificationType = minifyResult.type;

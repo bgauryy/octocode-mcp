@@ -7,7 +7,7 @@ import type {
 } from '../../types/github-openapi';
 import { GitHubCodeSearchQuery } from '../../mcp/tools/scheme/github_search_code';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { minifyContentV2 } from '../minifier';
+import { minifyContent } from '@octocode/mcp-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
@@ -203,7 +203,7 @@ async function transformToOptimizedFormat(
 
           // Apply minification if enabled
           if (minify) {
-            const minifyResult = await minifyContentV2(
+            const minifyResult = await minifyContent(
               processedFragment || '',
               item.path
             );

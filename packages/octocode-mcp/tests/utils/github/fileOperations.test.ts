@@ -12,7 +12,7 @@ const mockContentSanitizer = vi.hoisted(() => ({
     secretsDetected: [],
   }),
 }));
-const mockMinifyContentV2 = vi.hoisted(() =>
+const mockminifyContent = vi.hoisted(() =>
   vi.fn().mockResolvedValue({
     content: 'minified content',
     failed: false,
@@ -33,8 +33,8 @@ vi.mock('../../../src/security/contentSanitizer.js', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 
-vi.mock('../../../src/utils/minifier.js', () => ({
-  minifyContentV2: mockMinifyContentV2,
+vi.mock('@octocode/mcp-utils', () => ({
+  minifyContent: mockminifyContent,
 }));
 
 vi.mock('../../../src/utils/cache.js', () => ({
@@ -112,7 +112,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     );
 
     // Reset minifier mock
-    mockMinifyContentV2.mockResolvedValue({
+    mockminifyContent.mockResolvedValue({
       content: 'minified content',
       failed: false,
       type: 'general',
@@ -170,7 +170,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(mockMinifyContentV2).toHaveBeenCalledWith(
+      expect(mockminifyContent).toHaveBeenCalledWith(
         'line 1\nline 2\nline 3\nline 4\nline 5',
         'test.txt'
       );
@@ -192,7 +192,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(mockMinifyContentV2).not.toHaveBeenCalled();
+      expect(mockminifyContent).not.toHaveBeenCalled();
       expect(result.status).toBe(200);
       if ('data' in result) {
         expect(result.data.content).toBe(
@@ -520,7 +520,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(mockMinifyContentV2).toHaveBeenCalledWith(
+      expect(mockminifyContent).toHaveBeenCalledWith(
         'line 5\nline 6\nline 7\nline 8',
         'test.txt'
       );
@@ -544,7 +544,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(mockMinifyContentV2).toHaveBeenCalledWith(
+      expect(mockminifyContent).toHaveBeenCalledWith(
         'line 14\nline 15\nline 16',
         'test.txt'
       );

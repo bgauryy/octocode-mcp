@@ -46,7 +46,7 @@ const mockCreateResult = vi.hoisted(() => vi.fn());
 const mockContentSanitizer = vi.hoisted(() => ({
   sanitizeContent: vi.fn(),
 }));
-const mockMinifyContentV2 = vi.hoisted(() => vi.fn());
+const mockminifyContent = vi.hoisted(() => vi.fn());
 const mockOptimizeTextMatch = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
@@ -92,8 +92,8 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 
-vi.mock('../../src/utils/minifier.js', () => ({
-  minifyContentV2: mockMinifyContentV2,
+vi.mock('@octocode/mcp-utils', () => ({
+  minifyContent: mockminifyContent,
 }));
 
 // Import after mocking
@@ -130,7 +130,7 @@ describe('GitHub API Utils', () => {
       isMalicious: false,
       secretsDetected: [],
     }));
-    mockMinifyContentV2.mockResolvedValue({
+    mockminifyContent.mockResolvedValue({
       content: 'minified content',
       failed: false,
       type: 'javascript',
