@@ -1,6 +1,6 @@
 {
   "name": "octocode-mcp",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis, code discovery, and npm package exploration. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub and npm ecosystems.",
   "keywords": [
     "mcp",
@@ -29,11 +29,14 @@
   ],
   "author": "Guy Bary <bgauryy@gmail.com>",
   "homepage": "https://octocode.ai",
-  "repository": "bgauryy/octocode-mcp.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git"
+  },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "bin": {
-    "octocode-mcp": "./dist/index.js"
+    "octocode-mcp": "dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
@@ -44,7 +47,7 @@
     "axios": "^1.10.0",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
-    "octocode-utils": "workspace:^",
+    "octocode-utils": "^1.0.0",
     "octokit": "^5.0.3",
     "zod": "^3.25.26"
   },
@@ -85,6 +88,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
     "lint": "eslint src/**/*.ts tests/**/*.ts",
     "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
+    "prepack": "yarn build",
     "prepublishOnly": "yarn lint && yarn test && rollup -c",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
@@ -95,6 +99,8 @@
   "mcp": {
     "type": "stdio",
     "command": "npx",
-    "args": ["octocode-mcp"]
+    "args": [
+      "octocode-mcp"
+    ]
   }
 }
