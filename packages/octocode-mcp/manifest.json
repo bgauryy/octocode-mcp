@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "octocode-mcp",
   "display_name": "Octocode MCP Extension",
-  "version": "4.0.1",
+  "version": "4.0.3",
   "description": "GitHub code search and npm package exploration MCP server",
   "long_description": "A comprehensive MCP server that provides GitHub code search, repository exploration, commit history, pull requests, issues, and npm package search capabilities. This extension enables AI assistants to efficiently search and analyze code across GitHub repositories and npm packages with advanced filtering and content retrieval features.",
   "author": {
