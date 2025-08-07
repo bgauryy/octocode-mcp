@@ -1,7 +1,7 @@
-const typescript = require('@rollup/plugin-typescript');
-const { nodeResolve } = require('@rollup/plugin-node-resolve');
-const dts = require('rollup-plugin-dts').default;
-const { readFileSync } = require('fs');
+import typescript from '@rollup/plugin-typescript';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
+import dts from 'rollup-plugin-dts';
+import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
 
@@ -10,7 +10,7 @@ const external = [
   ...Object.keys(pkg.peerDependencies || {}),
 ];
 
-module.exports = [
+export default [
   // JavaScript build
   {
     input: 'src/index.ts',
