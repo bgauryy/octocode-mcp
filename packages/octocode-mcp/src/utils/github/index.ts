@@ -8,7 +8,6 @@ export type {
   GitHubAPIResponse,
   GitHubAPISuccess,
   Repository,
-  SimpleUser,
   PullRequest,
   Commit,
   CodeSearchResultItem,
@@ -28,9 +27,6 @@ export type {
   GetPullRequestResponse,
   ListPullRequestsParameters,
   ListPullRequestsResponse,
-  ListIssueCommentsParameters,
-  ListIssueCommentsResponse,
-  GetAuthenticatedUserResponse,
   SortOrder,
   SearchCodeSort,
   SearchReposSort,
@@ -41,7 +37,6 @@ export type {
   isGitHubAPIError,
   isGitHubAPISuccess,
   isRepository,
-  isUser,
   isSearchResultItem,
 } from '../../types/github-openapi';
 
@@ -70,6 +65,3 @@ export {
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
 } from './fileOperations';
-
-// Authentication
-export { checkGitHubAuthAPI } from './auth';

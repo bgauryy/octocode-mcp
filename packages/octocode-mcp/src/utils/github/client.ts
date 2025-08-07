@@ -9,12 +9,8 @@ const defaultToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Cache Octokit instances by token with size limit
-const octokitInstances = new Map<
-  string,
-  InstanceType<typeof OctokitWithThrottling>
->();
-const MAX_OCTOKIT_INSTANCES = 10;
+// Single Octokit instance since we only use one token
+let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
 
 /**
  * Throttle options following official Octokit.js best practices
@@ -41,17 +37,8 @@ const createThrottleOptions = () => ({
 export function getOctokit(
   token?: string
 ): InstanceType<typeof OctokitWithThrottling> {
-  const useToken = token || defaultToken || '';
-  const cacheKey = useToken || 'no-token';
-
-  if (!octokitInstances.has(cacheKey)) {
-    // Prevent memory leaks by limiting the number of cached instances
-    if (octokitInstances.size >= MAX_OCTOKIT_INSTANCES) {
-      const oldestKey = octokitInstances.keys().next().value;
-      if (oldestKey) {
-        octokitInstances.delete(oldestKey);
-      }
-    }
+  if (!octokitInstance) {
+    const useToken = token || defaultToken || '';
 
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
@@ -62,9 +49,9 @@ export function getOctokit(
       ...(useToken && { auth: useToken }),
     };
 
-    octokitInstances.set(cacheKey, new OctokitWithThrottling(options));
+    octokitInstance = new OctokitWithThrottling(options);
   }
-  return octokitInstances.get(cacheKey)!;
+  return octokitInstance;
 }
 
 // Simple in-memory cache for default branch results
@@ -97,4 +84,26 @@ export async function getDefaultBranch(
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Extract token from Authorization header
+ */
+export function extractBearerToken(tokenInput: string): string | null {
+  if (!tokenInput) return '';
+
+  // Start by trimming the entire input
+  let token = tokenInput.trim();
+
+  // Remove "Bearer " prefix (case-insensitive) - get next word after Bearer
+  token = token.replace(/^bearer\s+/i, '');
+
+  // Remove "token " prefix (case insensitive)
+  token = token.replace(/^token\s+/i, '');
+
+  // Handle template format {{token}} - extract the actual token
+  token = token.replace(/^\{\{(.+)\}\}$/, '$1');
+
+  // Final trim to clean up any remaining whitespace
+  return token.trim();
 }

@@ -2,6 +2,17 @@
 
 Transform your code research and development workflow with AI-powered GitHub intelligence.
 
+<div align="center">
+  <a href="https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/TOOL_SCHEMAS.md" 
+  style="font-size: 1.2em; font-weight: bold; text-decoration: none;">
+    📋 View Tool Schemas → Master Advanced Querying
+  </a>
+  <br>
+  <em style="font-size: 0.9em; color: #666; margin-top: 8px; display: block;">
+    Understanding tool schemas unlocks precise parameter control, bulk operations, and advanced filtering for dramatically better query results
+  </em>
+</div>
+
 
 ## 🚀 Core Capabilities
 

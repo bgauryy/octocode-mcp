@@ -16,49 +16,21 @@
   ],
   "author": "Guy Bary <bgauryy@gmail.com>",
   "homepage": "https://octocode.ai",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bgauryy/octocode-mcp.git"
-  },
-  "bugs": {
-    "url": "https://github.com/bgauryy/octocode-mcp/issues"
-  },
+  "repository": "bgauryy/octocode-mcp.git",
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "src",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "rollup -c",
-    "build:dev": "rollup -c --environment NODE_ENV:development",
-    "build:watch": "rollup -c --watch",
-    "test": "echo 'No tests for documentation package'",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
-    "format": "prettier --write src/**/*.ts",
-    "clean": "rm -rf dist"
-  },
-  "devDependencies": {
-    "@rollup/plugin-node-resolve": "^15.0.0",
-    "@rollup/plugin-typescript": "^11.0.0",
-    "@types/node": "^20.0.0",
-    "rollup": "^4.0.0",
-    "rollup-plugin-dts": "^6.0.0",
-    "tslib": "^2.6.0",
-    "typescript": "^5.0.0"
-  },
+
   "engines": {
     "node": ">=16.0.0"
+  },
+  "files": [
+    "README.md",
+    "assets"
+  ],
+  "scripts": {
+    "build": "echo '📚 Documentation package - no build required'",
+    "lint": "echo '📚 Documentation package - no linting required'",
+    "lint:fix": "echo '📚 Documentation package - no linting required'",
+    "test": "echo '📚 Documentation package - no tests required'"
   }
 }

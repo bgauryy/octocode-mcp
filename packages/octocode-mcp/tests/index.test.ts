@@ -114,12 +114,12 @@ describe('Index Module', () => {
     // Mock GitHub CLI token
     mockGetGithubCLIToken.mockResolvedValue('cli-token');
 
-    // Create spies for process methods
+    // Create spies for process methods - use a safer mock that doesn't throw by default
     processExitSpy = vi
       .spyOn(process, 'exit')
-      .mockImplementation((code?: string | number | null | undefined) => {
-        // Throw an error to simulate process exit for testing
-        throw new Error(`process.exit called with code ${code}`);
+      .mockImplementation((_code?: string | number | null | undefined) => {
+        // Don't throw by default - let individual tests override if needed
+        return undefined as never;
       });
     processStdinResumeSpy = vi
       .spyOn(process.stdin, 'resume')
@@ -300,10 +300,33 @@ describe('Index Module', () => {
       delete process.env.GH_TOKEN;
       mockGetGithubCLIToken.mockResolvedValue(null);
 
-      await import('../src/index.js');
-      await waitForAsyncOperations();
+      // Override the mock to track the exit call without throwing
+      let exitCalled = false;
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
 
-      expect(processExitSpy).toHaveBeenCalledWith(1);
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+        // Give extra time for async operations
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        // Ignore any errors from module loading
+      }
+
+      expect(exitCalled).toBe(true);
+      expect(exitCode).toBe(1);
     });
   });
 
@@ -386,12 +409,21 @@ describe('Index Module', () => {
         throw new Error('Registration failed');
       });
 
-      // Import the module and wait for the async operations to complete
+      // Track the exit call without throwing
       let exitCalled = false;
-      processExitSpy.mockImplementation(() => {
-        exitCalled = true;
-        throw new Error('process.exit called with code 1');
-      });
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
 
       try {
         await import('../src/index.js');
@@ -399,11 +431,11 @@ describe('Index Module', () => {
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
-        // Expected - process.exit throws
+        // Ignore any errors from module loading
       }
 
       expect(exitCalled).toBe(true);
-      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(exitCode).toBe(1);
     });
 
     it('should handle tool registration errors gracefully', async () => {
@@ -465,12 +497,21 @@ describe('Index Module', () => {
         mockError('ViewGitHubRepoStructure')
       );
 
-      // When all tools fail, the server should not start
+      // Track the exit call without throwing
       let exitCalled = false;
-      processExitSpy.mockImplementation(() => {
-        exitCalled = true;
-        throw new Error('process.exit called with code 1');
-      });
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
 
       try {
         await import('../src/index.js');
@@ -478,14 +519,14 @@ describe('Index Module', () => {
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
-        // Expected - process.exit throws
+        // Ignore any errors from module loading
       }
 
       // Verify that the server was created but not connected due to tool registration failure
       expect(mockMcpServerConstructor).toHaveBeenCalled();
       expect(mockMcpServer.connect).not.toHaveBeenCalled();
       expect(exitCalled).toBe(true);
-      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(exitCode).toBe(1);
     });
   });
 
@@ -516,12 +557,21 @@ describe('Index Module', () => {
     it('should handle server startup errors', async () => {
       mockMcpServer.connect.mockRejectedValue(new Error('Connection failed'));
 
-      // Import the module and wait for the async operations to complete
+      // Track the exit call without throwing
       let exitCalled = false;
-      processExitSpy.mockImplementation(() => {
-        exitCalled = true;
-        throw new Error('process.exit called with code 1');
-      });
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
 
       try {
         await import('../src/index.js');
@@ -529,11 +579,11 @@ describe('Index Module', () => {
         // Give extra time for the catch block to execute
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
-        // Expected - process.exit throws
+        // Ignore any errors from module loading
       }
 
       expect(exitCalled).toBe(true);
-      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(exitCode).toBe(1);
     });
   });
 
@@ -596,18 +646,40 @@ describe('Index Module', () => {
 
       expect(sigintHandler).toBeDefined();
 
-      // Mock server.close to take longer than timeout
+      // Mock server.close to take longer than timeout (5s timeout in code)
       mockMcpServer.close.mockImplementation(
         () => new Promise(resolve => setTimeout(resolve, 6000))
       );
 
-      await expect(async () => {
-        await sigintHandler();
-      }).rejects.toThrow('process.exit called with code 1');
+      // Track process.exit calls without throwing in async contexts
+      let exitCalled = false;
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
+
+      // Start the shutdown handler (don't await it since it will timeout)
+      const shutdownPromise = sigintHandler();
+
+      // Wait for the timeout to trigger (5s timeout + some buffer)
+      await new Promise(resolve => setTimeout(resolve, 5200));
 
       // Should exit with error code due to timeout
-      expect(processExitSpy).toHaveBeenCalledWith(1);
-    });
+      expect(exitCalled).toBe(true);
+      expect(exitCode).toBe(1);
+
+      // Clean up the hanging promise
+      shutdownPromise.catch(() => {});
+    }, 8000); // Reduce timeout since we're only waiting ~5.2s
 
     it('should handle shutdown errors gracefully', async () => {
       await import('../src/index.js');
@@ -623,13 +695,30 @@ describe('Index Module', () => {
         throw new Error('Cache clear failed');
       });
 
+      // Track process.exit calls without throwing
+      let exitCalled = false;
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
+
       try {
         await sigintHandler();
       } catch (error) {
-        // Expected to throw due to process.exit
+        // Ignore any errors from the handler
       }
 
-      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(exitCalled).toBe(true);
+      expect(exitCode).toBe(1);
     });
   });
 

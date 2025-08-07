@@ -26,7 +26,6 @@ export {
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
   // Authentication
-  checkGitHubAuthAPI,
 } from './github';
 
 // Re-export OpenAPI types for backward compatibility
@@ -38,11 +37,6 @@ export type {
   GitHubAPISuccess,
   Repository,
   RepositorySimple,
-  SimpleUser,
-  PrivateUser,
-  PublicUser,
-  Issue,
-  IssueComment,
   PullRequest,
   PullRequestReview,
   PullRequestReviewComment,
@@ -69,9 +63,6 @@ export type {
   GetPullRequestResponse,
   ListPullRequestsParameters,
   ListPullRequestsResponse,
-  ListIssueCommentsParameters,
-  ListIssueCommentsResponse,
-  GetAuthenticatedUserResponse,
   ListWorkflowRunsParameters,
   ListWorkflowRunsResponse,
   GetWorkflowRunParameters,
@@ -95,11 +86,9 @@ export type {
   GitHubURL,
   GitHubDate,
   RepositoryReference,
-  UserReference,
   isGitHubAPIError,
   isGitHubAPISuccess,
   isRepository,
-  isUser,
   isSearchResultItem,
   isPullRequest,
   isWorkflowRun,

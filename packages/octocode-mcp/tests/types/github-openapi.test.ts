@@ -3,7 +3,6 @@ import {
   isGitHubAPIError,
   isGitHubAPISuccess,
   isRepository,
-  isUser,
   isSearchResultItem,
   isPullRequest,
   isWorkflowRun,
@@ -11,15 +10,14 @@ import {
   type GitHubAPIError,
   type GitHubAPISuccess,
   type Repository,
-  type SimpleUser,
   type CodeSearchResultItem,
   type PullRequest,
   type WorkflowRun,
   type CheckRun,
 } from '../../src/types/github-openapi';
 
-// Helper function to create complete user objects
-function createUser(login: string, id: number): SimpleUser {
+// Helper function to create minimal user objects for repository owners
+function createUser(login: string, id: number) {
   return {
     login,
     id,
@@ -58,7 +56,7 @@ function createMinimalRepository(
   id: number,
   name: string,
   fullName: string,
-  owner: SimpleUser
+  owner: ReturnType<typeof createUser>
 ) {
   const repo = createRepository(id, name, fullName, owner);
   // Ensure all required properties for minimal-repository are present
@@ -85,7 +83,7 @@ function createRepository(
   id: number,
   name: string,
   fullName: string,
-  owner: SimpleUser
+  owner: ReturnType<typeof createUser>
 ): Repository {
   return {
     id,
@@ -299,23 +297,6 @@ describe('GitHub OpenAPI Types', () => {
       expect(isRepository(undefined)).toBe(false);
       expect(isRepository('string')).toBe(false);
       expect(isRepository(123)).toBe(false);
-    });
-  });
-
-  describe('isUser', () => {
-    it('should return true for valid user object', () => {
-      const user = createUser('testuser', 123);
-
-      expect(isUser(user)).toBe(true);
-    });
-
-    it('should return false for non-user objects', () => {
-      expect(isUser({ login: 'test' })).toBe(false);
-      expect(isUser({ id: 123 })).toBe(false);
-      expect(isUser(null)).toBe(false);
-      expect(isUser(undefined)).toBe(false);
-      expect(isUser('string')).toBe(false);
-      expect(isUser(123)).toBe(false);
     });
   });
 

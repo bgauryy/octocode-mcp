@@ -208,6 +208,9 @@ gh auth login
 
 # Option B: Set environment variable
 export GITHUB_TOKEN="your_github_token"
+
+# Option C: Authorization header format
+export Authorization="Bearer your_github_token"
 ```
 
 #### 3. **Start Using**
@@ -267,6 +270,19 @@ Configure GitHub access for enhanced capabilities:
 }
 ```
 
+**Option 1b: Authorization Header Format**
+```json
+{
+  "octocode": {
+    "command": "npx",
+    "args": ["octocode-mcp"],
+    "env": {
+      "Authorization": "Bearer your_github_token"
+    }
+  }
+}
+```
+
 **Option 2: GitHub CLI (Automatic)**
 Using [GitHub CLI](https://cli.github.com/) provides seamless authentication after running `gh auth login`:
 
@@ -278,6 +294,15 @@ Using [GitHub CLI](https://cli.github.com/) provides seamless authentication aft
   }
 }
 ```
+
+### Authentication Fallback Chain
+
+Octocode uses a smart authentication fallback system that tries multiple methods in order:
+
+1. **`GITHUB_TOKEN`** - Direct GitHub token environment variable
+2. **`GH_TOKEN`** - Alternative GitHub token environment variable  
+3. **GitHub CLI** - Automatically detected from `gh auth login`
+4. **`Authorization`** - Bearer token from Authorization header format (`Bearer {{token}}`)
 
 
 

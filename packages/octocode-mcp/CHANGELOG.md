@@ -5,6 +5,24 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.2] - 2025-01-XX - Enhanced Authentication Support
+
+### 🔐 ENHANCED: Bearer Token Authentication
+
+#### Added
+- **Bearer Token Environment Variable Support**: Enhanced authentication system with `process.env.Authorization` support
+  - Direct bearer token authentication from environment variables
+  - Streamlined authentication flow for CI/CD and automated environments
+  - Enhanced security with environment-based token management
+  - Backward compatibility maintained with existing authentication methods
+
+#### Technical Improvements
+- **Environment Variable Integration**: Automatic detection and usage of `Authorization` environment variable
+- **Authentication Flexibility**: Multiple authentication paths for different deployment scenarios
+- **Security Enhancement**: Improved token handling and validation
+
+---
+
 ## [4.0.0] - 2025-01-XX - GitHub API Integration & Universal Bulk Operations
 
 ### 🚀 MAJOR ENHANCEMENT: GitHub API Integration & Universal Bulk Operations

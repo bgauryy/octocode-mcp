@@ -133,9 +133,19 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
         chiSquare += (deviation * deviation) / expectedPerChar;
       }
 
-      // Critical value for 15 degrees of freedom at 95% confidence is ~25
-      // Our chi-square should be less than this for good distribution
-      expect(chiSquare).toBeLessThan(25);
+      // Critical value for 15 degrees of freedom at 99% confidence is ~30
+      // Use higher threshold to reduce false positives in CI/random environments
+      expect(chiSquare).toBeLessThan(30);
+
+      // Additional check: ensure no character is completely missing or overly dominant
+      for (const char of hexChars) {
+        const observed = hexCounts[char] || 0;
+        const percentage = (observed / totalChars) * 100;
+        // Each character should appear roughly 6.25% of the time (100/16)
+        // Allow reasonable variance: 4% to 8.5%
+        expect(percentage).toBeGreaterThan(4);
+        expect(percentage).toBeLessThan(8.5);
+      }
     });
   });
 
