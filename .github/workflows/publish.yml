@@ -54,6 +54,9 @@ jobs:
         run: |
           echo "🔍 Discovering publishable packages in packages/ directory..."
           
+          # Ensure jq is available
+          which jq || (echo "Installing jq..." && sudo apt-get update && sudo apt-get install -y jq)
+          
           PACKAGES="[]"
           PACKAGE_COUNT=0
           
@@ -77,9 +80,15 @@ jobs:
                 
                 echo "✅ Found publishable package: $PACKAGE_NAME@$PACKAGE_VERSION in $PACKAGE_PATH"
                 
-                # Add to packages array
-                PACKAGES=$(echo "$PACKAGES" | jq --arg name "$PACKAGE_NAME" --arg version "$PACKAGE_VERSION" --arg path "$PACKAGE_PATH" '. + [{name: $name, version: $version, path: $path}]')
-                PACKAGE_COUNT=$((PACKAGE_COUNT + 1))
+                # Add to packages array with error handling
+                NEW_PACKAGES=$(echo "$PACKAGES" | jq --arg name "$PACKAGE_NAME" --arg version "$PACKAGE_VERSION" --arg path "$PACKAGE_PATH" '. + [{name: $name, version: $version, path: $path}]')
+                if [ $? -eq 0 ]; then
+                  PACKAGES="$NEW_PACKAGES"
+                  PACKAGE_COUNT=$((PACKAGE_COUNT + 1))
+                else
+                  echo "❌ Error adding package $PACKAGE_NAME to JSON array"
+                  exit 1
+                fi
               else
                 PACKAGE_NAME=$(node -p "require('./${package_dir}package.json').name")
                 echo "⏭️  Skipping private package: $PACKAGE_NAME in ${package_dir%/}"
@@ -88,10 +97,18 @@ jobs:
           done
           
           echo "📊 Total publishable packages found: $PACKAGE_COUNT"
-          echo "📦 Packages to publish: $(echo "$PACKAGES" | jq -c '.[].name')"
           
-          # Output for matrix strategy
-          echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+          # Display package names safely
+          if [ "$PACKAGE_COUNT" -gt 0 ]; then
+            echo "📦 Packages to publish: $(echo "$PACKAGES" | jq -c '.[].name')"
+          else
+            echo "📦 No publishable packages found"
+          fi
+          
+          # Output for matrix strategy - properly escape JSON for GitHub Actions
+          echo "packages<<EOF" >> $GITHUB_OUTPUT
+          echo "$PACKAGES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "package-count=$PACKAGE_COUNT" >> $GITHUB_OUTPUT
 
   publish-packages:
