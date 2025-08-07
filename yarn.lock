@@ -643,9 +643,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@octocode/mcp-utils@workspace:^, @octocode/mcp-utils@workspace:packages/octocode-mcp-utils":
+"@octocode/utils@workspace:^, @octocode/utils@workspace:packages/octocode-utils":
   version: 0.0.0-use.local
-  resolution: "@octocode/mcp-utils@workspace:packages/octocode-mcp-utils"
+  resolution: "@octocode/utils@workspace:packages/octocode-utils"
   dependencies:
     "@rollup/plugin-node-resolve": "npm:^15.0.0"
     "@rollup/plugin-typescript": "npm:^11.0.0"
@@ -4300,7 +4300,7 @@ __metadata:
   dependencies:
     "@anthropic-ai/dxt": "npm:^0.2.1"
     "@modelcontextprotocol/sdk": "npm:^1.16.0"
-    "@octocode/mcp-utils": "workspace:^"
+    "@octocode/utils": "workspace:^"
     "@octokit/core": "npm:^7.0.3"
     "@octokit/openapi-types": "npm:^25.1.0"
     "@octokit/plugin-throttling": "npm:^11.0.1"
@@ -4339,6 +4339,12 @@ __metadata:
     typescript: "npm:^5.8.3"
     vitest: "npm:^2.1.5"
     wsrun: "npm:^5.2.4"
+  languageName: unknown
+  linkType: soft
+
+"octocode@workspace:packages/octocode":
+  version: 0.0.0-use.local
+  resolution: "octocode@workspace:packages/octocode"
   languageName: unknown
   linkType: soft
 

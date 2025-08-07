@@ -1,5 +1,5 @@
 /**
- * @octocode/mcp-utils - Shared utilities for Octocode MCP packages
+ * @@octocode/utils - Shared utilities for Octocode MCP packages
  */
 
 export { jsonToLLMString } from './jsonToLLMString';

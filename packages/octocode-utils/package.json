@@ -1,5 +1,5 @@
 {
-  "name": "@octocode/mcp-utils",
+  "name": "@octocode/utils",
   "version": "1.0.0",
   "description": "Shared utilities for Octocode MCP packages",
   "main": "dist/index.js",

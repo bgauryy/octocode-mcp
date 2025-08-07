@@ -44,7 +44,7 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
-    "@octocode/mcp-utils": "workspace:^",
+    "@octocode/utils": "workspace:^",
     "@octokit/core": "^7.0.3",
     "@octokit/plugin-throttling": "^11.0.1",
     "@octokit/rest": "^22.0.0",
