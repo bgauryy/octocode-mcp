@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Publish Multi-Package Alpha to npm
 
 on:
   push:
@@ -28,18 +28,79 @@ jobs:
       - name: Run tests
         run: yarn test
 
-      - name: Build package
+      - name: Build packages
         run: yarn build
 
-  publish:
+  discover-packages:
     needs: verify
     runs-on: ubuntu-latest
     outputs:
-      published: ${{ steps.check-version.outputs.should_publish }}
-      package_version: ${{ steps.check-version.outputs.package_version }}
-      alpha_version: ${{ steps.check-version.outputs.alpha_version }}
-      alpha_number: ${{ steps.check-version.outputs.alpha_number }}
-      package_name: ${{ steps.check-version.outputs.package_name }}
+      packages: ${{ steps.find-packages.outputs.packages }}
+      package-count: ${{ steps.find-packages.outputs.package-count }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Find publishable packages
+        id: find-packages
+        run: |
+          echo "🔍 Discovering publishable packages in packages/ directory..."
+          
+          PACKAGES="[]"
+          PACKAGE_COUNT=0
+          
+          # Find all package.json files in packages/ subdirectories
+          for package_dir in packages/*/; do
+            if [ -f "${package_dir}package.json" ]; then
+              # Check if package is not private
+              IS_PRIVATE=$(node -p "
+                try { 
+                  const pkg = require('./${package_dir}package.json'); 
+                  pkg.private === true ? 'true' : 'false';
+                } catch(e) { 
+                  'true'; 
+                }
+              ")
+              
+              if [ "$IS_PRIVATE" = "false" ]; then
+                PACKAGE_NAME=$(node -p "require('./${package_dir}package.json').name")
+                PACKAGE_VERSION=$(node -p "require('./${package_dir}package.json').version")
+                PACKAGE_PATH=${package_dir%/}  # Remove trailing slash
+                
+                echo "✅ Found publishable package: $PACKAGE_NAME@$PACKAGE_VERSION in $PACKAGE_PATH"
+                
+                # Add to packages array
+                PACKAGES=$(echo "$PACKAGES" | jq --arg name "$PACKAGE_NAME" --arg version "$PACKAGE_VERSION" --arg path "$PACKAGE_PATH" '. + [{name: $name, version: $version, path: $path}]')
+                PACKAGE_COUNT=$((PACKAGE_COUNT + 1))
+              else
+                PACKAGE_NAME=$(node -p "require('./${package_dir}package.json').name")
+                echo "⏭️  Skipping private package: $PACKAGE_NAME in ${package_dir%/}"
+              fi
+            fi
+          done
+          
+          echo "📊 Total publishable packages found: $PACKAGE_COUNT"
+          echo "📦 Packages to publish: $(echo "$PACKAGES" | jq -c '.[].name')"
+          
+          # Output for matrix strategy
+          echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+          echo "package-count=$PACKAGE_COUNT" >> $GITHUB_OUTPUT
+
+  publish-packages:
+    needs: [verify, discover-packages]
+    runs-on: ubuntu-latest
+    if: fromJson(needs.discover-packages.outputs.package-count) > 0
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.discover-packages.outputs.packages) }}
+      fail-fast: false  # Continue publishing other packages even if one fails
+    outputs:
+      results: ${{ steps.collect-results.outputs.results }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,17 +118,21 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Build package
+      - name: Build packages
         run: yarn build
 
-      - name: Check if version should be published
-        id: check-version
+      - name: Check and publish alpha version for ${{ matrix.package.name }}
+        id: publish-package
         run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_NAME="${{ matrix.package.name }}"
+          PACKAGE_VERSION="${{ matrix.package.version }}"
+          PACKAGE_PATH="${{ matrix.package.path }}"
           
-          echo "📦 Package: $PACKAGE_NAME"
-          echo "🔢 Base version from package.json: $PACKAGE_VERSION"
+          echo "🚀 Processing package: $PACKAGE_NAME@$PACKAGE_VERSION"
+          echo "📁 Package path: $PACKAGE_PATH"
+          
+          # Change to package directory
+          cd "$PACKAGE_PATH"
           
           # Safety check: Ensure we never publish a non-alpha version
           if [[ "$PACKAGE_VERSION" =~ -alpha\. ]]; then
@@ -80,7 +145,7 @@ jobs:
           LATEST_ALPHA_NUMBER=0
           
           # Check for existing alpha versions and find the highest number
-          echo "🔍 Checking for existing alpha versions of $PACKAGE_VERSION..."
+          echo "🔍 Checking for existing alpha versions of $PACKAGE_VERSION for $PACKAGE_NAME..."
           for i in {1..100}; do
             if npm view "$PACKAGE_NAME@${PACKAGE_VERSION}-alpha.$i" version 2>/dev/null; then
               LATEST_ALPHA_NUMBER=$i
@@ -99,26 +164,12 @@ jobs:
           echo "🏷️  New alpha version: $ALPHA_VERSION"
           echo "⚠️  Will publish ONLY to 'alpha' tag, NOT 'latest'"
           
-          echo "should_publish=true" >> $GITHUB_OUTPUT
-          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
-          echo "alpha_version=$ALPHA_VERSION" >> $GITHUB_OUTPUT
-          echo "alpha_number=$NEW_ALPHA_NUMBER" >> $GITHUB_OUTPUT
-          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
-
-      - name: Setup npmrc for automation
-        if: steps.check-version.outputs.should_publish == 'true'
-        run: |
+          # Setup npmrc for this package
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
           echo "always-auth=true" >> .npmrc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish incremental alpha version to npm
-        if: steps.check-version.outputs.should_publish == 'true'
-        run: |
+          
           # Safety verification before publishing
-          ALPHA_VERSION="${{ steps.check-version.outputs.alpha_version }}"
           if [[ ! "$ALPHA_VERSION" =~ -alpha\. ]]; then
             echo "❌ CRITICAL ERROR: Version '$ALPHA_VERSION' does not contain '-alpha' suffix!"
             echo "❌ Refusing to publish - this could pollute the main npm release!"
@@ -131,21 +182,41 @@ jobs:
           npm version $ALPHA_VERSION --no-git-tag-version
           
           # Publish with alpha tag (NOT latest - ensures no main version pollution)
-          echo "🚀 Publishing to npm with 'alpha' tag (NOT 'latest')..."
-          yarn npm publish --access public --tag alpha
+          echo "🚀 Publishing $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag (NOT 'latest')..."
+          
+          # Use different publish commands based on package manager setup
+          if [ -f "yarn.lock" ]; then
+            yarn npm publish --access public --tag alpha
+          else
+            npm publish --access public --tag alpha
+          fi
           
           # Revert package.json version back to original
-          npm version ${{ steps.check-version.outputs.package_version }} --no-git-tag-version
+          npm version $PACKAGE_VERSION --no-git-tag-version
           
-          echo "✅ Successfully published alpha version $ALPHA_VERSION to npm with 'alpha' tag"
+          echo "✅ Successfully published $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag"
           echo "⚠️  This version is NOT published to 'latest' - only available via 'alpha' tag"
-          echo "📥 Users can install with: npm install ${{ steps.check-version.outputs.package_name }}@alpha"
+          echo "📥 Users can install with: npm install $PACKAGE_NAME@alpha"
+          
+          # Set outputs for notification
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "alpha_version=$ALPHA_VERSION" >> $GITHUB_OUTPUT
+          echo "alpha_number=$NEW_ALPHA_NUMBER" >> $GITHUB_OUTPUT
+          echo "published=true" >> $GITHUB_OUTPUT
+          
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Collect results
+        id: collect-results
+        run: |
+          # This step helps aggregate results for the notification job
+          echo "results={\"name\": \"${{ steps.publish-package.outputs.package_name }}\", \"version\": \"${{ steps.publish-package.outputs.alpha_version }}\", \"published\": \"${{ steps.publish-package.outputs.published }}\"}" >> $GITHUB_OUTPUT
+
   notify-discord:
-    needs: [verify, publish]
+    needs: [verify, discover-packages, publish-packages]
     runs-on: ubuntu-latest
     if: always() # Run even if previous jobs fail
     steps:
@@ -159,19 +230,31 @@ jobs:
             echo "ℹ️ DISCORD_WEBHOOK not configured, skipping notification"
             exit 0
           fi
-          # Determine status and color
-          if [ "${{ needs.verify.result }}" == "failure" ] || [ "${{ needs.publish.result }}" == "failure" ]; then
+
+          # Determine overall status and color
+          VERIFY_RESULT="${{ needs.verify.result }}"
+          DISCOVER_RESULT="${{ needs.discover-packages.result }}"
+          PUBLISH_RESULT="${{ needs.publish-packages.result }}"
+          PACKAGE_COUNT="${{ needs.discover-packages.outputs.package-count || '0' }}"
+          
+          if [ "$VERIFY_RESULT" == "failure" ] || [ "$DISCOVER_RESULT" == "failure" ] || [ "$PUBLISH_RESULT" == "failure" ]; then
             STATUS="❌ **Failed**"
             COLOR=15158332  # Red
-            DESCRIPTION="Build or publish failed"
-          elif [ "${{ needs.publish.outputs.published }}" == "true" ]; then
-            STATUS="🚀 **Alpha Published**"
+            if [ "$VERIFY_RESULT" == "failure" ]; then
+              DESCRIPTION="Build or test verification failed"
+            elif [ "$DISCOVER_RESULT" == "failure" ]; then
+              DESCRIPTION="Package discovery failed"
+            else
+              DESCRIPTION="Package publishing failed"
+            fi
+          elif [ "$PACKAGE_COUNT" -gt "0" ]; then
+            STATUS="🚀 **Multi-Package Alpha Published**"
             COLOR=3066993   # Green
-            DESCRIPTION="Successfully published alpha version ${{ needs.publish.outputs.alpha_version }} (alpha.${{ needs.publish.outputs.alpha_number }}) to npm"
+            DESCRIPTION="Successfully published $PACKAGE_COUNT alpha packages to npm"
           else
             STATUS="✅ **Success**"
             COLOR=3066993   # Green
-            DESCRIPTION="Build completed successfully"
+            DESCRIPTION="Build completed successfully (no publishable packages found)"
           fi
 
           # Get commit info
@@ -184,62 +267,55 @@ jobs:
           COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr '\n' ' ' | tr '\r' ' ')
           AUTHOR_ESCAPED=$(echo "$AUTHOR" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
           
+          # Create base fields
+          BASE_FIELDS='[
+            {
+              "name": "Status",
+              "value": "'$STATUS'",
+              "inline": true
+            },
+            {
+              "name": "Packages Found",
+              "value": "'$PACKAGE_COUNT'",
+              "inline": true
+            },
+            {
+              "name": "Author",
+              "value": "'$AUTHOR_ESCAPED'",
+              "inline": true
+            },
+            {
+              "name": "Commit",
+              "value": "[`'$SHORT_SHA'`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})",
+              "inline": true
+            },
+            {
+              "name": "Branch",
+              "value": "`${{ github.ref_name }}`",
+              "inline": true
+            },
+            {
+              "name": "Repository",
+              "value": "[View on GitHub](https://github.com/${{ github.repository }})",
+              "inline": true
+            },
+            {
+              "name": "Commit Message",
+              "value": "'$COMMIT_MSG_ESCAPED'",
+              "inline": false
+            }
+          ]'
+
           # Create JSON payload
           PAYLOAD=$(cat <<EOF
           {
-            "username": "NPM Alpha Publisher",
+            "username": "NPM Multi-Package Alpha Publisher",
             "avatar_url": "https://raw.githubusercontent.com/npm/logos/master/npm%20logo/npm-logo-red.png",
             "embeds": [{
-              "title": "📦 ${{ needs.publish.outputs.package_name || 'octocode-mcp' }} (Alpha ${{ needs.publish.outputs.alpha_number }})",
+              "title": "📦 Octocode Multi-Package Alpha Release",
               "description": "$DESCRIPTION",
               "color": $COLOR,
-              "fields": [
-                {
-                  "name": "Status",
-                  "value": "$STATUS",
-                  "inline": true
-                },
-                {
-                  "name": "Alpha Version",
-                  "value": "\`${{ needs.publish.outputs.alpha_version }}\`",
-                  "inline": true
-                },
-                {
-                  "name": "Alpha Number",
-                  "value": "\`${{ needs.publish.outputs.alpha_number }}\`",
-                  "inline": true
-                },
-                {
-                  "name": "Base Version",
-                  "value": "\`${{ needs.publish.outputs.package_version }}\`",
-                  "inline": true
-                },
-                {
-                  "name": "Author",
-                  "value": "$AUTHOR_ESCAPED",
-                  "inline": true
-                },
-                {
-                  "name": "Commit",
-                  "value": "[\`$SHORT_SHA\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})",
-                  "inline": true
-                },
-                {
-                  "name": "Commit Message",
-                  "value": "$COMMIT_MSG_ESCAPED",
-                  "inline": false
-                },
-                {
-                  "name": "Branch",
-                  "value": "\`${{ github.ref_name }}\`",
-                  "inline": true
-                },
-                {
-                  "name": "Repository",
-                  "value": "[View on GitHub](https://github.com/${{ github.repository }})",
-                  "inline": true
-                }
-              ],
+              "fields": $BASE_FIELDS,
               "footer": {
                 "text": "GitHub Actions • $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
               }
