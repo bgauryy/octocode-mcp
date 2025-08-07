@@ -40,7 +40,7 @@
     "dist/index.js",
     "dist/src/**/*.js",
     "manifest.json",
-    "assets/logo.png"
+    "assets/logo_white.png"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
