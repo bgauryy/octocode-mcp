@@ -3840,14 +3840,6 @@ __metadata:
 "octocode@workspace:packages/octocode":
   version: 0.0.0-use.local
   resolution: "octocode@workspace:packages/octocode"
-  dependencies:
-    "@rollup/plugin-node-resolve": "npm:^16.0.1"
-    "@rollup/plugin-typescript": "npm:^12.1.2"
-    "@types/node": "npm:^22.15.29"
-    rollup: "npm:^4.41.1"
-    rollup-plugin-dts: "npm:^6.0.0"
-    tslib: "npm:^2.8.1"
-    typescript: "npm:^5.8.3"
   languageName: unknown
   linkType: soft
 

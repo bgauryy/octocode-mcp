@@ -19,7 +19,6 @@
   "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-
   "engines": {
     "node": ">=16.0.0"
   },
