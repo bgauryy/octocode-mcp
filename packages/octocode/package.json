@@ -25,8 +25,39 @@
   },
   "license": "MIT",
   "private": true,
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "scripts": {
-    "test": "echo 'No tests for documentation package'"
+    "build": "rollup -c",
+    "build:dev": "rollup -c --environment NODE_ENV:development",
+    "build:watch": "rollup -c --watch",
+    "test": "echo 'No tests for documentation package'",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@types/node": "^20.0.0",
+    "rollup": "^4.0.0",
+    "rollup-plugin-dts": "^6.0.0",
+    "tslib": "^2.6.0",
+    "typescript": "^5.0.0"
   },
   "engines": {
     "node": ">=16.0.0"
