@@ -11,7 +11,6 @@ import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_
 import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
-import { version } from '../package.json';
 import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
 import { getGithubCLIToken } from './utils/exec.js';
 import { extractBearerToken } from './utils/github/client.js';
@@ -34,7 +33,7 @@ async function getToken(): Promise<string> {
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode',
-  version,
+  version: '4.0.3',
   description: PROMPT_SYSTEM_PROMPT,
 };
 

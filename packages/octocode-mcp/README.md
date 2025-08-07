@@ -10,12 +10,12 @@
 </div>
 
 <div align="center">
-  <img src="./assets/logo_white.png" width="400px" alt="Octocode Logo">
+  <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
 </div>
 
 <div align="center">
   
-  [![Version](https://img.shields.io/badge/version-4.0.2-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-4.0.3-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
 
