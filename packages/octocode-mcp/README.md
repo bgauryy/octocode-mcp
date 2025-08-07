@@ -64,10 +64,11 @@ Built on the **Model Context Protocol (MCP)**, Octocode provides AI assistants w
 - **AI Assistant** (Claude Desktop, or any MCP-compatible assistant)
 
 ### Authentication Options
-Octocode supports flexible GitHub authentication:
+Octocode supports flexible GitHub authentication with smart fallback:
 
 1. **[GitHub CLI](https://cli.github.com/)** (Recommended for local development) - Run `gh auth login` for seamless authentication
 2. **[Personal Access Token](https://github.com/settings/tokens)** (Recommended for Windows & hosted environments) - Set `GITHUB_TOKEN` or `GH_TOKEN` environment variable
+3. **Authorization Header** (For API integrations) - Set `Authorization` environment variable with `Bearer {{token}}` format
 
 ### Performance Optimizations
 - **NPM Integration**: Automatically enhances package research when NPM is available
@@ -131,7 +132,34 @@ Octocode supports flexible GitHub authentication:
        }
      }
    }
+   ```
+
+---
+
+#### **Option 3: Authorization Header Format**
+*Best for API integrations and templated configurations*
+
+```json
+{
+  "octocode": {
+    "command": "npx",
+    "args": ["octocode-mcp"],
+    "env": {
+      "Authorization": "Bearer your_github_token_here"
+    }
+  }
+}
 ```
+> 💡 **Note:** Supports template formats like `Bearer {{GH_TOKEN}}` for dynamic token injection.
+
+### Authentication Fallback Chain
+
+Octocode uses an intelligent authentication system that tries multiple methods in priority order:
+
+1. **`GITHUB_TOKEN`** - Primary GitHub token environment variable
+2. **`GH_TOKEN`** - Alternative GitHub token environment variable  
+3. **GitHub CLI Token** - Automatically extracted from `gh auth login` session
+4. **`Authorization` Header** - Extracts token from Bearer format (`Bearer {{token}}`), supporting template variables
 
 
 
