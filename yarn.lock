@@ -823,24 +823,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rollup/plugin-node-resolve@npm:^15.0.0":
-  version: 15.3.1
-  resolution: "@rollup/plugin-node-resolve@npm:15.3.1"
-  dependencies:
-    "@rollup/pluginutils": "npm:^5.0.1"
-    "@types/resolve": "npm:1.20.2"
-    deepmerge: "npm:^4.2.2"
-    is-module: "npm:^1.0.0"
-    resolve: "npm:^1.22.1"
-  peerDependencies:
-    rollup: ^2.78.0||^3.0.0||^4.0.0
-  peerDependenciesMeta:
-    rollup:
-      optional: true
-  checksum: 10c0/ecf3abe890fc98ad665fdbfb1ea245253e0d1f2bc6d9f4e8f496f212c76a2ce7cd4b9bc0abd21e6bcaa16f72d1c67cc6b322ea12a6ec68e8a8834df8242a5ecd
-  languageName: node
-  linkType: hard
-
 "@rollup/plugin-node-resolve@npm:^16.0.1":
   version: 16.0.1
   resolution: "@rollup/plugin-node-resolve@npm:16.0.1"
@@ -856,25 +838,6 @@ __metadata:
     rollup:
       optional: true
   checksum: 10c0/54d33282321492fafec29b49c66dd1efd90c72a24f9d1569dcb57a72ab8de8a782810f39fdb917b96ec6a598c18f3416588b419bf7af331793a010de1fe28c60
-  languageName: node
-  linkType: hard
-
-"@rollup/plugin-typescript@npm:^11.0.0":
-  version: 11.1.6
-  resolution: "@rollup/plugin-typescript@npm:11.1.6"
-  dependencies:
-    "@rollup/pluginutils": "npm:^5.1.0"
-    resolve: "npm:^1.22.1"
-  peerDependencies:
-    rollup: ^2.14.0||^3.0.0||^4.0.0
-    tslib: "*"
-    typescript: ">=3.7.0"
-  peerDependenciesMeta:
-    rollup:
-      optional: true
-    tslib:
-      optional: true
-  checksum: 10c0/5347cd73ac28d4cf2401a3e689864a1a0df8f3ae029abd9c38525cbc84bcfa16c3a32a0ac5698dac65ec531ba7cf8332e14f5fc7f8fa501193da23320a134c5c
   languageName: node
   linkType: hard
 
@@ -1139,15 +1102,6 @@ __metadata:
   dependencies:
     undici-types: "npm:~7.10.0"
   checksum: 10c0/0b55af4d7b37fea47bbeffffaff908462fa19ea9b1a18f92d9ed6d8415d97971b254f8cb3f629cd238916e94711fdb6ac939aa750cb353dfd6df6c0339435740
-  languageName: node
-  linkType: hard
-
-"@types/node@npm:^20.0.0":
-  version: 20.19.9
-  resolution: "@types/node@npm:20.19.9"
-  dependencies:
-    undici-types: "npm:~6.21.0"
-  checksum: 10c0/c6738131f1698258a5ac1e0185e4fc56977f7f566cd0ee11167f93f2339478470257bd82c5e1908a936a204e0ad7996d741356a1a07c04997a236161ea23a874
   languageName: node
   linkType: hard
 
@@ -3867,18 +3821,18 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "octocode-utils@workspace:packages/octocode-utils"
   dependencies:
-    "@rollup/plugin-node-resolve": "npm:^15.0.0"
-    "@rollup/plugin-typescript": "npm:^11.0.0"
+    "@rollup/plugin-node-resolve": "npm:^16.0.1"
+    "@rollup/plugin-typescript": "npm:^12.1.2"
     "@types/clean-css": "npm:^4.2.11"
     "@types/html-minifier-terser": "npm:^7.0.2"
-    "@types/node": "npm:^20.0.0"
+    "@types/node": "npm:^22.15.29"
     clean-css: "npm:^5.3.0"
     html-minifier-terser: "npm:^7.2.0"
-    rollup: "npm:^4.0.0"
+    rollup: "npm:^4.41.1"
     rollup-plugin-dts: "npm:^6.0.0"
     terser: "npm:^5.19.0"
-    tslib: "npm:^2.6.0"
-    typescript: "npm:^5.0.0"
+    tslib: "npm:^2.8.1"
+    typescript: "npm:^5.8.3"
     vitest: "npm:^3.2.4"
   languageName: unknown
   linkType: soft
@@ -3887,13 +3841,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "octocode@workspace:packages/octocode"
   dependencies:
-    "@rollup/plugin-node-resolve": "npm:^15.0.0"
-    "@rollup/plugin-typescript": "npm:^11.0.0"
-    "@types/node": "npm:^20.0.0"
-    rollup: "npm:^4.0.0"
+    "@rollup/plugin-node-resolve": "npm:^16.0.1"
+    "@rollup/plugin-typescript": "npm:^12.1.2"
+    "@types/node": "npm:^22.15.29"
+    rollup: "npm:^4.41.1"
     rollup-plugin-dts: "npm:^6.0.0"
-    tslib: "npm:^2.6.0"
-    typescript: "npm:^5.0.0"
+    tslib: "npm:^2.8.1"
+    typescript: "npm:^5.8.3"
   languageName: unknown
   linkType: soft
 
@@ -4410,7 +4364,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rollup@npm:^4.0.0, rollup@npm:^4.41.1, rollup@npm:^4.43.0, rollup@npm:^4.46.2":
+"rollup@npm:^4.41.1, rollup@npm:^4.43.0, rollup@npm:^4.46.2":
   version: 4.46.2
   resolution: "rollup@npm:4.46.2"
   dependencies:
@@ -5157,7 +5111,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tslib@npm:^2.0.3, tslib@npm:^2.4.0, tslib@npm:^2.6.0, tslib@npm:^2.8.1":
+"tslib@npm:^2.0.3, tslib@npm:^2.4.0, tslib@npm:^2.8.1":
   version: 2.8.1
   resolution: "tslib@npm:2.8.1"
   checksum: 10c0/9c4759110a19c53f992d9aae23aac5ced636e99887b51b9e61def52611732872ff7668757d4e4c61f19691e36f4da981cd9485e869b4a7408d689f6bf1f14e62
@@ -5207,7 +5161,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^5.0.0, typescript@npm:^5.8.3":
+"typescript@npm:^5.8.3":
   version: 5.9.2
   resolution: "typescript@npm:5.9.2"
   bin:
@@ -5217,7 +5171,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A^5.0.0#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>":
   version: 5.9.2
   resolution: "typescript@patch:typescript@npm%3A5.9.2#optional!builtin<compat/typescript>::version=5.9.2&hash=5786d5"
   bin:
