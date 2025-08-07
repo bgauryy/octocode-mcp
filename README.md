@@ -243,7 +243,7 @@ yarn global add octocode-mcp
 npm install octocode-mcp
 
 # Utilities
-npm install @octocode/utils
+npm install octocode-utils
 ```
 
 </td>

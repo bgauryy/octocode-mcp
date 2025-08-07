@@ -15,7 +15,7 @@ import {
   GitHubRepositoryStructureError,
 } from '../../mcp/tools/scheme/github_view_repo_structure';
 import { ContentSanitizer } from '../../security/contentSanitizer';
-import { minifyContent } from '@octocode/utils';
+import { minifyContent } from 'octocode-utils';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withCache } from '../cache';

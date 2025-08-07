@@ -24,7 +24,6 @@
     "url": "https://github.com/bgauryy/octocode-mcp/issues"
   },
   "license": "MIT",
-  "private": false,
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
