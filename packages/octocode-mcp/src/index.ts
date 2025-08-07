@@ -8,7 +8,7 @@ import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_con
 import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from './mcp/tools/package_search.js';
+import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
 import { version } from '../package.json';

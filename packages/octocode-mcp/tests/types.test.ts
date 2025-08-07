@@ -8,7 +8,7 @@ import {
   NpmPackageQuery,
   PythonPackageQuery,
   PackageSearchBulkParams,
-} from '../src/types';
+} from '../src/mcp/tools/package_search/types';
 
 describe('Types', () => {
   describe('NpmPackage', () => {

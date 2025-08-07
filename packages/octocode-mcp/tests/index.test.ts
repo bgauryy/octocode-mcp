@@ -11,7 +11,7 @@ vi.mock('../src/mcp/tools/github_fetch_content.js');
 vi.mock('../src/mcp/tools/github_search_repos.js');
 vi.mock('../src/mcp/tools/github_search_commits.js');
 vi.mock('../src/mcp/tools/github_search_pull_requests.js');
-vi.mock('../src/mcp/tools/package_search.js');
+vi.mock('../src/mcp/tools/package_search/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
@@ -23,7 +23,7 @@ import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetc
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from '../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../src/mcp/tools/package_search.js';
+import { registerPackageSearchTool } from '../src/mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';

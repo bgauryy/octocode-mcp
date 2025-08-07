@@ -20,7 +20,7 @@ vi.mock('axios', () => ({
 }));
 
 // Import after mocking
-import { registerPackageSearchTool } from '../../src/mcp/tools/package_search.js';
+import { registerPackageSearchTool } from '../../src/mcp/tools/package_search/package_search.js';
 
 describe('Package Search Tool (NPM & Python)', () => {
   let mockServer: MockMcpServer;

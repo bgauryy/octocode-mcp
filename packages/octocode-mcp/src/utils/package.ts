@@ -19,12 +19,12 @@ import {
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
 } from '../mcp/tools/scheme/package_search';
-import { NpmPackage, PythonPackage } from '../types';
+import { NpmPackage, PythonPackage } from '../mcp/tools/package_search/types';
 import {
   PackageSearchBulkParams,
   NpmPackageQuery,
   PythonPackageQuery,
-} from '../types';
+} from '../mcp/tools/package_search/types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 const MAX_DESCRIPTION_LENGTH = 100;

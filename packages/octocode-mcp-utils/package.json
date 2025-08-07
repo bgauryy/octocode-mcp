@@ -31,7 +31,7 @@
     "build": "rollup -c",
     "build:dev": "rollup -c --environment NODE_ENV:development",
     "build:watch": "rollup -c --watch",
-    "test": "vitest",
+    "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:coverage": "vitest --coverage",
     "lint": "eslint src --ext .ts",

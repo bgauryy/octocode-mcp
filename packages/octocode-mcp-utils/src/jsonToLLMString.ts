@@ -312,5 +312,3 @@ export function jsonToLLMString(
   // Fallback for unexpected types
   return String(data);
 }
-
-export default jsonToLLMString;
