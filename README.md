@@ -23,12 +23,12 @@
   
 </div>
 
-
 <div align="center">
-  <a href="https://github.com/bgauryy/octocode-mcp" style="font-size: 1.2em; font-weight: bold; text-decoration: none;">
+  <a href="https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-mcp" style="font-size: 1.8em; font-weight: bold; text-decoration: none; padding: 8px 16px; background-color: #f0f8ff; border-radius: 6px; color: #0066cc;">
     🚀 Go to Octocode MCP →
   </a>
 </div>
+
 <br/>
 
 
