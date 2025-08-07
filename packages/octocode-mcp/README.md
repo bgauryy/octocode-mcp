@@ -23,7 +23,8 @@
 
 
 <div align="center">
-  <a href="https://github.com/bgauryy/octocode-mcp/docs/USAGE_GUIDE.md" style="font-size: 1.2em; font-weight: bold; text-decoration: none;">
+  <a href="https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/USAGE_GUIDE.md" 
+  style="font-size: 1.2em; font-weight: bold; text-decoration: none;">
     Go To User Guide →
   </a>
 </div>
