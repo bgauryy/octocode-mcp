@@ -35,9 +35,7 @@
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "bin": {
-    "octocode-mcp": "dist/index.js"
-  },
+  "bin": "dist/index.js",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
     "@octokit/core": "^7.0.3",
