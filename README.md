@@ -22,7 +22,6 @@
   [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-yellow.svg?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/bgauryy)
   
 </div>
-
 <div align="center">
   <a href="https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-mcp" style="font-size: 1.8em; font-weight: bold; text-decoration: none; padding: 8px 16px; background-color: #f0f8ff; border-radius: 6px; color: #0066cc;">
     🚀 Go to Octocode MCP →
