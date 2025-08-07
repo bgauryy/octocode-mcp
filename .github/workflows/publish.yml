@@ -187,10 +187,20 @@ jobs:
           echo "🏷️  New alpha version: $ALPHA_VERSION"
           echo "⚠️  Will publish ONLY to 'alpha' tag, NOT 'latest'"
           
-          # Setup npmrc for this package
+          # Setup npmrc for this package (for both npm and yarn)
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
           echo "always-auth=true" >> .npmrc
+          
+          # Also configure Yarn for npm registry
+          echo "📋 Configuring Yarn for npm registry..."
+          yarn config set npmRegistryServer "https://registry.npmjs.org"
+          yarn config set npmAlwaysAuth true
+          yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"
+          
+          # Debug: Show package.json dependencies to understand workspace resolution
+          echo "📦 Current package.json dependencies:"
+          node -p "JSON.stringify(require('./package.json').dependencies || {}, null, 2)"
           
           # Safety verification before publishing
           if [[ ! "$ALPHA_VERSION" =~ -alpha\. ]]; then
@@ -204,15 +214,16 @@ jobs:
           # Temporarily update package.json version to alpha
           npm version $ALPHA_VERSION --no-git-tag-version
           
+          # Debug: Show how Yarn resolves workspace dependencies
+          echo "🔍 Yarn workspace dependency resolution:"
+          node -p "JSON.stringify(require('./package.json').dependencies || {}, null, 2)"
+          
           # Publish with alpha tag (NOT latest - ensures no main version pollution)
           echo "🚀 Publishing $PACKAGE_NAME@$ALPHA_VERSION to npm with 'alpha' tag (NOT 'latest')..."
           
-          # Use different publish commands based on package manager setup
-          if [ -f "yarn.lock" ]; then
-            yarn npm publish --access public --tag alpha
-          else
-            npm publish --access public --tag alpha
-          fi
+          # Always use Yarn for workspace packages (handles workspace: dependencies correctly)
+          echo "🔧 Using Yarn to publish (handles workspace dependencies automatically)"
+          yarn npm publish --access public --tag alpha
           
           # Revert package.json version back to original
           npm version $PACKAGE_VERSION --no-git-tag-version
