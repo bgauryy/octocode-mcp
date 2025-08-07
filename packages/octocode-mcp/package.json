@@ -1,0 +1,91 @@
+{
+  "name": "octocode-mcp",
+  "version": "4.0.0",
+  "description": "Model Context Protocol (MCP) server for advanced GitHub repository analysis, code discovery, and npm package exploration. Provides AI assistants with powerful tools to search, analyze, and understand codebases across GitHub and npm ecosystems.",
+  "author": "Guy Bary <bgauryy@gmail.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bgauryy/octocode-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bgauryy/octocode-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18.12.0"
+  },
+  "main": "dist/index.js",
+  "license": "MIT",
+  "type": "module",
+  "bin": "./dist/index.js",
+  "scripts": {
+    "build": "yarn lint && rollup -c",
+    "build:dev": "rollup -c",
+    "build:watch": "rollup -c --watch",
+    "prepublishOnly": "yarn lint && yarn test && rollup -c",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
+    "test:ui": "vitest --ui",
+    "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "lint": "eslint src/**/*.ts tests/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts tests/**/*.ts --fix",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
+    "dxt:validate": "dxt validate manifest.json",
+    "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
+    "dxt:release": "yarn build && dxt pack . octocode-mcp.dxt && dxt sign octocode-mcp.dxt --self-signed && dxt verify octocode-mcp.dxt"
+  },
+  "files": [
+    "dist/index.js",
+    "dist/src/**/*.js",
+    "manifest.json",
+    "assets/logo.png"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.16.0",
+    "@octokit/core": "^7.0.3",
+    "@octokit/plugin-throttling": "^11.0.1",
+    "@octokit/rest": "^22.0.0",
+    "async-mutex": "^0.5.0",
+    "axios": "^1.10.0",
+    "clean-css": "^5.3.3",
+    "html-minifier-terser": "^7.2.0",
+    "node-cache": "^5.1.2",
+    "node-fetch": "^3.3.2",
+    "octokit": "^5.0.3",
+    "terser": "^5.43.1",
+    "zod": "^3.25.26"
+  },
+  "devDependencies": {
+    "@anthropic-ai/dxt": "^0.2.1",
+    "@octokit/openapi-types": "^25.1.0",
+    "@types/clean-css": "^4.2.11",
+    "@types/html-minifier-terser": "^7.0.2"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "github",
+    "github-api",
+    "code-analysis",
+    "code-search",
+    "repository-analysis",
+    "npm",
+    "npm-search",
+    "developer-tools",
+    "ai-tools",
+    "claude",
+    "openai",
+    "anthropic",
+    "code-discovery",
+    "codebase-exploration",
+    "github-search",
+    "semantic-search",
+    "typescript",
+    "nodejs",
+    "cli-tool",
+    "dxt",
+    "desktop-extension"
+  ]
+}
