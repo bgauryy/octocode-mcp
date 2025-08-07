@@ -1,4 +1,4 @@
-# @octocode/utils
+# octocode-utils
 
 **Shared utilities for Octocode MCP packages**
 
@@ -8,7 +8,7 @@
 
 <div align="center">
   
-  [![Version](https://img.shields.io/npm/v/@octocode/utils.svg)](https://www.npmjs.com/package/@octocode/utils)
+  [![Version](https://img.shields.io/npm/v/octocode-utils.svg)](https://www.npmjs.com/package/octocode-utils)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
   [![Website](https://img.shields.io/badge/Website-octocode.ai-blue.svg?logo=web)](https://octocode.ai)
@@ -20,9 +20,9 @@ Essential utilities for building MCP (Model Context Protocol) applications with 
 ## Installation
 
 ```bash
-npm install @octocode/utils
+npm install octocode-utils
 # or
-yarn add @octocode/utils
+yarn add octocode-utils
 ```
 
 ## 🚀 Features
@@ -40,7 +40,7 @@ yarn add @octocode/utils
 Converts JSON data to natural language format optimized for LLM consumption.
 
 ```typescript
-import { jsonToLLMString } from '@octocode/utils';
+import { jsonToLLMString } from 'octocode-utils';
 
 const data = {
   name: 'John',
@@ -95,7 +95,7 @@ Parameters:
 Advanced content minification with intelligent strategy selection based on file type.
 
 ```typescript
-import { minifyContent } from '@octocode/utils';
+import { minifyContent } from 'octocode-utils';
 
 const result = await minifyContent(
   'const x = 1; // comment\n\nconst y = 2;',

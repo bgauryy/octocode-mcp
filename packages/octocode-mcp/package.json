@@ -44,7 +44,6 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
-    "@octocode/utils": "workspace:^",
     "@octokit/core": "^7.0.3",
     "@octokit/plugin-throttling": "^11.0.1",
     "@octokit/rest": "^22.0.0",
@@ -52,6 +51,7 @@
     "axios": "^1.10.0",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
+    "octocode-utils": "workspace:^",
     "octokit": "^5.0.3",
     "zod": "^3.25.26"
   },
