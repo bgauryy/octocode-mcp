@@ -24,10 +24,10 @@ import { createResult } from '../../mcp/responses';
 
 /**
  * Fetch GitHub file content using Octokit API with proper TypeScript types and caching
+ * Token management is handled internally by the GitHub client
  */
 export async function fetchGitHubFileContentAPI(
-  params: GithubFetchRequestParams,
-  token?: string
+  params: GithubFetchRequestParams
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
   // Generate cache key based on request parameters
   const cacheKey = generateCacheKey('gh-api-file-content', {
@@ -45,7 +45,7 @@ export async function fetchGitHubFileContentAPI(
 
   // Create a wrapper function that returns CallToolResult for the cache
   const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubFileContentAPIInternal(params, token);
+    const result = await fetchGitHubFileContentAPIInternal(params);
 
     // Convert GitHubAPIResponse to CallToolResult for caching
     if ('error' in result) {
@@ -82,13 +82,13 @@ export async function fetchGitHubFileContentAPI(
 
 /**
  * Internal implementation of fetchGitHubFileContentAPI without caching
+ * Token management is handled internally by the GitHub client
  */
 async function fetchGitHubFileContentAPIInternal(
-  params: GithubFetchRequestParams,
-  token?: string
+  params: GithubFetchRequestParams
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
     const { owner, repo, filePath, branch } = params;
 
     // Use properly typed parameters
@@ -386,18 +386,14 @@ async function processFileContentAPI(
  * View GitHub repository structure using Octokit API with caching
  */
 export async function viewGitHubRepositoryStructureAPI(
-  params: GitHubRepositoryStructureParams,
-  token?: string
+  params: GitHubRepositoryStructureParams
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
   // Generate cache key based on structure parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-repo-structure-api', params);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const structureOperation = async (): Promise<CallToolResult> => {
-    const result = await viewGitHubRepositoryStructureAPIInternal(
-      params,
-      token
-    );
+    const result = await viewGitHubRepositoryStructureAPIInternal(params);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -431,13 +427,13 @@ export async function viewGitHubRepositoryStructureAPI(
 
 /**
  * Internal implementation of viewGitHubRepositoryStructureAPI without caching
+ * Token management is handled internally by the GitHub client
  */
 async function viewGitHubRepositoryStructureAPIInternal(
-  params: GitHubRepositoryStructureParams,
-  token?: string
+  params: GitHubRepositoryStructureParams
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
     const {
       owner,
       repo,

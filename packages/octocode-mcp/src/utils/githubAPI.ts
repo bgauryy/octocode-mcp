@@ -4,6 +4,7 @@ export {
   getOctokit,
   OctokitWithThrottling,
   getDefaultBranch,
+  clearCachedToken,
   // Error handling
   handleGitHubAPIError,
   generateFileAccessHints,

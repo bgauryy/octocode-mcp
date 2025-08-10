@@ -17,7 +17,6 @@ import {
   type BulkResponseConfig,
 } from './utils/bulkOperations';
 import { generateHints } from './utils/hints_consolidated';
-import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 
@@ -121,8 +120,7 @@ async function searchMultipleGitHubRepos(
       query: GitHubReposSearchQuery
     ): Promise<ProcessedRepoSearchResult> => {
       try {
-        const token = await getGitHubToken();
-        const apiResult = await searchGitHubReposAPI(query, token || undefined);
+        const apiResult = await searchGitHubReposAPI(query);
 
         if ('error' in apiResult) {
           // Generate hints for this specific query error

@@ -138,8 +138,7 @@ describe('GitHub Search Commits Tool', () => {
           author: 'testuser',
           owner: 'facebook',
           repo: 'react',
-        }),
-        'test-token'
+        })
       );
     });
   });
@@ -154,8 +153,7 @@ describe('GitHub Search Commits Tool', () => {
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           queryTerms: ['readme', 'typo'],
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -168,8 +166,7 @@ describe('GitHub Search Commits Tool', () => {
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           orTerms: ['fix', 'bug', 'parser'],
-        }),
-        'test-token'
+        })
       );
     });
   });
@@ -184,8 +181,7 @@ describe('GitHub Search Commits Tool', () => {
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           queryTerms: ['fix'],
-        }),
-        'test-token'
+        })
       );
 
       const response = JSON.parse(result.content[0]?.text as string);
@@ -252,8 +248,7 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'owner',
           repo: 'repo',
           getChangesContent: true,
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -268,8 +263,7 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           author: 'testuser',
           'committer-date': '>2023-01-01',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -286,8 +280,7 @@ describe('GitHub Search Commits Tool', () => {
           'author-date': '>2023-01-01',
           owner: 'facebook',
           repo: 'react',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -300,8 +293,7 @@ describe('GitHub Search Commits Tool', () => {
       expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           hash: 'abc123def456',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -318,8 +310,7 @@ describe('GitHub Search Commits Tool', () => {
           'author-name': 'John Doe',
           owner: 'facebook',
           repo: 'react',
-        }),
-        'test-token'
+        })
       );
     });
   });

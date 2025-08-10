@@ -9,7 +9,6 @@ import {
   GitHubCommitSearchQuerySchema,
 } from './scheme/github_search_commits';
 import { generateHints } from './utils/hints_consolidated';
-import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
 
@@ -103,8 +102,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         }
 
         try {
-          const token = await getGitHubToken();
-          const result = await searchGitHubCommitsAPI(args, token || undefined);
+          const result = await searchGitHubCommitsAPI(args);
 
           // Check if result is an error
           if ('error' in result) {

@@ -11,7 +11,6 @@ import {
 } from './scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { generateHints } from './utils/hints_consolidated';
-import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
 
@@ -99,11 +98,7 @@ async function fetchMultipleGitHubFileContents(
   // Execute all queries
   for (const query of uniqueQueries) {
     try {
-      const token = await getGitHubToken();
-      const apiResult = await fetchGitHubFileContentAPI(
-        query,
-        token || undefined
-      );
+      const apiResult = await fetchGitHubFileContentAPI(query);
 
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;

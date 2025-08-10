@@ -1,5 +1,10 @@
 // Core client and utilities
-export { getOctokit, OctokitWithThrottling, getDefaultBranch } from './client';
+export {
+  getOctokit,
+  OctokitWithThrottling,
+  getDefaultBranch,
+  clearCachedToken,
+} from './client';
 export { handleGitHubAPIError, generateFileAccessHints } from './errors';
 
 // Export OpenAPI types

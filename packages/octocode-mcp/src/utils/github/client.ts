@@ -2,9 +2,43 @@ import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
 import type { GetRepoResponse } from '../../types/github-openapi';
+import { getGithubCLIToken } from '../exec';
 
-// TypeScript-safe conditional authentication
-const defaultToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+// GitHub Token Management - Centralized in GitHub API layer
+let cachedToken: string | null = null;
+
+/**
+ * Get GitHub token from various sources with caching
+ * Handles token resolution internally in the GitHub API layer
+ */
+async function getGitHubToken(): Promise<string | null> {
+  // Return cached token if available
+  if (cachedToken) {
+    return cachedToken;
+  }
+
+  // Try to get token from various sources
+  const token =
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    (await getGithubCLIToken()) ||
+    extractBearerToken(process.env.Authorization ?? '');
+
+  if (token) {
+    // Cache the token for subsequent calls
+    cachedToken = token;
+    return token;
+  }
+
+  return null;
+}
+
+/**
+ * Clear cached token (useful for testing or token refresh)
+ */
+export function clearCachedToken(): void {
+  cachedToken = null;
+}
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
@@ -31,14 +65,14 @@ const createThrottleOptions = () => ({
 });
 
 /**
- * Initialize Octokit with TypeScript-safe authentication and throttling plugin
- * GitHub API client initialization
+ * Initialize Octokit with internal token management and throttling plugin
+ * Token resolution is handled internally - no need to pass tokens from tools layer
  */
-export function getOctokit(
-  token?: string
-): InstanceType<typeof OctokitWithThrottling> {
+export async function getOctokit(): Promise<
+  InstanceType<typeof OctokitWithThrottling>
+> {
   if (!octokitInstance) {
-    const useToken = token || defaultToken || '';
+    const token = await getGitHubToken();
 
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
@@ -46,7 +80,7 @@ export function getOctokit(
       userAgent: 'octocode-mcp/1.0.0',
       request: { timeout: 30000 },
       throttle: createThrottleOptions(),
-      ...(useToken && { auth: useToken }),
+      ...(token && { auth: token }),
     };
 
     octokitInstance = new OctokitWithThrottling(options);
@@ -59,11 +93,11 @@ const defaultBranchCache = new Map<string, string>();
 
 /**
  * Get repository's default branch with caching
+ * Token is handled internally by the GitHub client
  */
 export async function getDefaultBranch(
   owner: string,
-  repo: string,
-  token?: string
+  repo: string
 ): Promise<string | null> {
   const cacheKey = `${owner}/${repo}`;
 
@@ -72,7 +106,7 @@ export async function getDefaultBranch(
   }
 
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
     const repoInfo: GetRepoResponse = await octokit.rest.repos.get({
       owner,
       repo,

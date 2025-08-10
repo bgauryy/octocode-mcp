@@ -17,17 +17,17 @@ import { createResult } from '../../mcp/responses';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
+ * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubCodeAPI(
-  params: GitHubCodeSearchQuery,
-  token?: string
+  params: GitHubCodeSearchQuery
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-code', params);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubCodeAPIInternal(params, token);
+    const result = await searchGitHubCodeAPIInternal(params);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -61,13 +61,13 @@ export async function searchGitHubCodeAPI(
 
 /**
  * Internal implementation of searchGitHubCodeAPI without caching
+ * Token management is handled internally by the GitHub client
  */
 async function searchGitHubCodeAPIInternal(
-  params: GitHubCodeSearchQuery,
-  token?: string
+  params: GitHubCodeSearchQuery
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
 
     // Apply quality boosting for better relevance
     const enhancedParams = applyQualityBoost(params);

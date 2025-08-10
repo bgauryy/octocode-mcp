@@ -17,7 +17,6 @@ import {
 import { generateHints, generateBulkHints } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { ProcessedCodeSearchResult } from './scheme/github_search_code';
-import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -126,8 +125,7 @@ async function searchMultipleGitHubCode(
       query: GitHubCodeSearchQuery
     ): Promise<ProcessedCodeSearchResult> => {
       try {
-        const token = await getGitHubToken();
-        const apiResult = await searchGitHubCodeAPI(query, token || undefined);
+        const apiResult = await searchGitHubCodeAPI(query);
 
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error

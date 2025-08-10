@@ -17,17 +17,17 @@ import { createResult } from '../../mcp/responses';
 
 /**
  * Search GitHub commits using Octokit API with caching
+ * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubCommitsAPI(
-  params: GitHubCommitSearchParams,
-  token?: string
+  params: GitHubCommitSearchParams
 ): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-commits-api', params);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubCommitsAPIInternal(params, token);
+    const result = await searchGitHubCommitsAPIInternal(params);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -63,11 +63,10 @@ export async function searchGitHubCommitsAPI(
  * Internal implementation of searchGitHubCommitsAPI without caching
  */
 async function searchGitHubCommitsAPIInternal(
-  params: GitHubCommitSearchParams,
-  token?: string
+  params: GitHubCommitSearchParams
 ): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
 
     // Build search query
     const searchQuery = buildCommitSearchQuery(params);
@@ -157,8 +156,7 @@ async function searchGitHubCommitsAPIInternal(
     // Transform to optimized format similar to CLI implementation
     const optimizedResult = await transformCommitsToOptimizedFormatAPI(
       transformedCommits,
-      params,
-      token
+      params
     );
 
     // Transform optimized commits back to expected GitHub format
@@ -244,8 +242,7 @@ async function searchGitHubCommitsAPIInternal(
  */
 async function transformCommitsToOptimizedFormatAPI(
   items: GitHubCommitSearchItem[],
-  params: GitHubCommitSearchParams,
-  token?: string
+  params: GitHubCommitSearchParams
 ): Promise<OptimizedCommitSearchResult> {
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepositoryAPI(items);
@@ -258,7 +255,7 @@ async function transformCommitsToOptimizedFormatAPI(
   if (shouldFetchDiff && items.length > 0) {
     // Fetch diff info for each commit (limit to first 10 to avoid rate limits)
     const commitShas = items.slice(0, 10).map(item => item.sha);
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
 
     const diffPromises = commitShas.map(async (sha: string) => {
       try {

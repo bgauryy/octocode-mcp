@@ -14,10 +14,10 @@ import { createResult } from '../../mcp/responses';
 
 /**
  * Search GitHub repositories using Octokit API with proper TypeScript types and caching
+ * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubReposAPI(
-  params: GitHubReposSearchQuery,
-  token?: string
+  params: GitHubReposSearchQuery
 ): Promise<
   GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
 > {
@@ -26,7 +26,7 @@ export async function searchGitHubReposAPI(
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubReposAPIInternal(params, token);
+    const result = await searchGitHubReposAPIInternal(params);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -68,13 +68,12 @@ export async function searchGitHubReposAPI(
  * Internal implementation of searchGitHubReposAPI without caching
  */
 async function searchGitHubReposAPIInternal(
-  params: GitHubReposSearchQuery,
-  token?: string
+  params: GitHubReposSearchQuery
 ): Promise<
   GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
 > {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
     const query = buildRepoSearchQuery(params);
 
     if (!query.trim()) {

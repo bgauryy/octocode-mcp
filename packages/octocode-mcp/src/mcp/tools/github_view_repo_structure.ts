@@ -11,7 +11,6 @@ import {
   AggregatedRepositoryContext,
 } from './scheme/github_view_repo_structure';
 import { generateHints } from './utils/hints_consolidated';
-import { getGitHubToken } from './utils/tokenManager';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
@@ -170,11 +169,7 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        const token = await getGitHubToken();
-        const apiResult = await viewGitHubRepositoryStructureAPI(
-          query,
-          token || undefined
-        );
+        const apiResult = await viewGitHubRepositoryStructureAPI(query);
 
         // Check if result is an error
         if ('error' in apiResult) {

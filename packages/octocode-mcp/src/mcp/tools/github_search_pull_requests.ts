@@ -9,7 +9,6 @@ import {
   GitHubPullRequestSearchBulkQuerySchema,
 } from './scheme/github_search_pull_requests';
 import { generateHints } from './utils/hints_consolidated';
-import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
 
@@ -169,11 +168,7 @@ async function searchMultipleGitHubPullRequests(
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       try {
-        const token = await getGitHubToken();
-        const result = await searchGitHubPullRequestsAPI(
-          query,
-          token || undefined
-        );
+        const result = await searchGitHubPullRequestsAPI(query);
         return {
           queryId: `pr-search_${index + 1}`,
           data: result,
