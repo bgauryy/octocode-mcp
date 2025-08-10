@@ -10,26 +10,10 @@ import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commi
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
-import { getNPMUserDetails } from './mcp/tools/utils/APIStatus.js';
-import { TOOL_NAMES, ToolOptions } from './mcp/tools/utils/toolConstants.js';
-import { getGithubCLIToken } from './utils/exec.js';
-import { extractBearerToken } from './utils/github/client.js';
 
-async function getToken(): Promise<string> {
-  const token =
-    process.env.GITHUB_TOKEN ||
-    process.env.GH_TOKEN ||
-    (await getGithubCLIToken()) ||
-    extractBearerToken(process.env.Authorization ?? '');
-
-  if (!token) {
-    throw new Error(
-      'No GitHub token found. Please set GITHUB_TOKEN or GH_TOKEN environment variable or authenticate with GitHub CLI'
-    );
-  }
-
-  return token;
-}
+import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
+import { SecureCredentialStore } from './security/credentialStore.js';
+import { getToken } from './mcp/tools/utils/tokenManager.js';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode',
@@ -38,59 +22,37 @@ const SERVER_CONFIG: Implementation = {
 };
 
 async function registerAllTools(server: McpServer) {
-  // Get the token first
-  const token = await getToken();
-
-  // Check NPM availability during initialization
-  let npmEnabled = false;
-  try {
-    const npmDetails = await getNPMUserDetails();
-    npmEnabled = npmDetails.npmConnected;
-  } catch (error) {
-    npmEnabled = false;
-  }
-
-  // Unified options for all tools
-  const toolOptions: ToolOptions = {
-    npmEnabled,
-    ghToken: token,
-  };
+  // Ensure token exists and is stored securely
+  await getToken();
 
   const toolRegistrations = [
     {
       name: TOOL_NAMES.GITHUB_SEARCH_CODE,
       fn: registerGitHubSearchCodeTool,
-      opts: toolOptions,
     },
     {
       name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       fn: registerSearchGitHubReposTool,
-      opts: toolOptions,
     },
     {
       name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       fn: registerFetchGitHubFileContentTool,
-      opts: toolOptions,
     },
     {
       name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       fn: registerViewGitHubRepoStructureTool,
-      opts: toolOptions,
     },
     {
       name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
       fn: registerSearchGitHubCommitsTool,
-      opts: toolOptions,
     },
     {
       name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       fn: registerSearchGitHubPullRequestsTool,
-      opts: toolOptions,
     },
     {
       name: TOOL_NAMES.PACKAGE_SEARCH,
       fn: registerPackageSearchTool,
-      opts: toolOptions,
     },
   ];
 
@@ -99,7 +61,7 @@ async function registerAllTools(server: McpServer) {
 
   for (const tool of toolRegistrations) {
     try {
-      tool.fn(server, tool.opts);
+      tool.fn(server);
       successCount++;
     } catch (error) {
       // Log the error but continue with other tools
@@ -153,8 +115,9 @@ async function startServer() {
           process.exit(1);
         }, 5000);
 
-        // Clear cache first (fastest operation)
+        // Clear cache and credentials (fastest operations)
         clearAllCache();
+        SecureCredentialStore.clearAll();
 
         // Close server with timeout protection
         try {

@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { fetchGitHubFileContentAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from './utils/toolConstants';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
@@ -11,6 +11,7 @@ import {
 } from './scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { generateHints } from './utils/hints_consolidated';
+import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
 
@@ -35,10 +36,7 @@ BEST PRACTICES:
 - Combine with repository structure exploration for navigation
 - Specify research goals for optimized next-step suggestions`;
 
-export function registerFetchGitHubFileContentTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerFetchGitHubFileContentTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
@@ -86,15 +84,14 @@ export function registerFetchGitHubFileContentTool(
           });
         }
 
-        return fetchMultipleGitHubFileContents(args.queries, opts);
+        return fetchMultipleGitHubFileContents(args.queries);
       }
     )
   );
 }
 
 async function fetchMultipleGitHubFileContents(
-  queries: FileContentQuery[],
-  opts: ToolOptions
+  queries: FileContentQuery[]
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'file-content');
   const results: FileContentQueryResult[] = [];
@@ -102,7 +99,11 @@ async function fetchMultipleGitHubFileContents(
   // Execute all queries
   for (const query of uniqueQueries) {
     try {
-      const apiResult = await fetchGitHubFileContentAPI(query, opts.ghToken);
+      const token = await getGitHubToken();
+      const apiResult = await fetchGitHubFileContentAPI(
+        query,
+        token || undefined
+      );
 
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;

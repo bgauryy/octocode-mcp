@@ -15,6 +15,7 @@ vi.mock('../src/mcp/tools/package_search/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
+vi.mock('../src/security/credentialStore.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
@@ -27,10 +28,8 @@ import { registerPackageSearchTool } from '../src/mcp/tools/package_search/packa
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
-import {
-  TOOL_NAMES,
-  ToolOptions,
-} from '../src/mcp/tools/utils/toolConstants.js';
+import { SecureCredentialStore } from '../src/security/credentialStore.js';
+import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
 
 // Mock implementations
 const mockMcpServer = {
@@ -43,6 +42,7 @@ const mockTransport = {
 };
 
 const mockClearAllCache = vi.mocked(clearAllCache);
+const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
@@ -202,41 +202,23 @@ describe('Index Module', () => {
   });
 
   describe('NPM Status Check', () => {
-    it('should check NPM status during initialization', async () => {
+    it('should no longer check NPM status during initialization', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockGetNPMUserDetails).toHaveBeenCalled();
-    });
-
-    it('should handle NPM status check failure gracefully', async () => {
-      mockGetNPMUserDetails.mockRejectedValue(new Error('NPM check failed'));
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Should still continue with tool registration
+      // NPM status checking is now handled internally by package search tool
+      expect(mockGetNPMUserDetails).not.toHaveBeenCalled();
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalled();
     });
 
-    it('should pass correct tool options based on NPM status', async () => {
-      mockGetNPMUserDetails.mockResolvedValue({
-        npmConnected: false,
-        registry: 'https://registry.npmjs.org/',
-      });
-
+    it('should register all tools without NPM status dependency', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: false,
-        ghToken: 'test-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
     });
   });
 
@@ -247,14 +229,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'github-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -265,14 +241,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'gh-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -284,14 +254,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'cli-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -331,43 +295,29 @@ describe('Index Module', () => {
   });
 
   describe('Tool Registration', () => {
-    it('should register all tools successfully with options', async () => {
+    it('should register all tools successfully', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'test-token',
-      };
-
-      // Verify all tool registration functions were called with server and options
+      // Verify all tool registration functions were called with server
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterGitHubSearchCommitsTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterSearchGitHubPullRequestsTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
-      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
-      );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
       expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -633,6 +583,7 @@ describe('Index Module', () => {
       }
 
       expect(mockClearAllCache).toHaveBeenCalled();
+      expect(mockSecureCredentialStore.clearAll).toHaveBeenCalled();
       expect(mockMcpServer.close).toHaveBeenCalled();
     });
 

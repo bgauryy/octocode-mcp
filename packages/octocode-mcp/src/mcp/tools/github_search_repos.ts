@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubReposAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
@@ -17,6 +17,7 @@ import {
   type BulkResponseConfig,
 } from './utils/bulkOperations';
 import { generateHints } from './utils/hints_consolidated';
+import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 
@@ -48,10 +49,7 @@ interface AggregatedRepoContext {
   };
 }
 
-export function registerSearchGitHubReposTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerSearchGitHubReposTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
@@ -105,11 +103,7 @@ export function registerSearchGitHubReposTool(
           });
         }
 
-        return searchMultipleGitHubRepos(
-          args.queries,
-          args.verbose || false,
-          opts
-        );
+        return searchMultipleGitHubRepos(args.queries, args.verbose || false);
       }
     )
   );
@@ -117,8 +111,7 @@ export function registerSearchGitHubReposTool(
 
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
-  verbose: boolean = false,
-  opts: ToolOptions
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-search');
 
@@ -128,7 +121,8 @@ async function searchMultipleGitHubRepos(
       query: GitHubReposSearchQuery
     ): Promise<ProcessedRepoSearchResult> => {
       try {
-        const apiResult = await searchGitHubReposAPI(query, opts.ghToken);
+        const token = await getGitHubToken();
+        const apiResult = await searchGitHubReposAPI(query, token || undefined);
 
         if ('error' in apiResult) {
           // Generate hints for this specific query error

@@ -26,17 +26,20 @@ import {
   PythonPackageQuery,
 } from '../mcp/tools/package_search/types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { isNPMEnabled } from './npmAPI';
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;
 
 export async function searchPackagesAPI(
-  params: PackageSearchBulkParams,
-  npmEnabled: boolean = true
+  params: PackageSearchBulkParams
 ): Promise<
   PackageSearchResult | PackageSearchError | BasicPackageSearchResult
 > {
   try {
+    // Check NPM availability internally
+    const npmEnabled = await isNPMEnabled();
+
     // Use bulk format directly
     let normalizedNpmQueries: NpmPackageQuery[] = npmEnabled
       ? params.npmPackages || []

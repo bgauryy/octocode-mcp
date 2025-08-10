@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
-import { TOOL_NAMES, ToolOptions } from './utils/toolConstants.js';
+import { TOOL_NAMES } from './utils/toolConstants.js';
 import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
@@ -17,6 +17,7 @@ import {
 import { generateHints, generateBulkHints } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { ProcessedCodeSearchResult } from './scheme/github_search_code';
+import { getGitHubToken } from './utils/tokenManager';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -52,10 +53,7 @@ interface GitHubCodeAggregatedContext {
   };
 }
 
-export function registerGitHubSearchCodeTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
@@ -110,11 +108,7 @@ export function registerGitHubSearchCodeTool(
           });
         }
 
-        return searchMultipleGitHubCode(
-          args.queries,
-          args.verbose || false,
-          opts
-        );
+        return searchMultipleGitHubCode(args.queries, args.verbose || false);
       }
     )
   );
@@ -122,8 +116,7 @@ export function registerGitHubSearchCodeTool(
 
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
-  verbose: boolean = false,
-  opts: ToolOptions
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
 
@@ -133,7 +126,8 @@ async function searchMultipleGitHubCode(
       query: GitHubCodeSearchQuery
     ): Promise<ProcessedCodeSearchResult> => {
       try {
-        const apiResult = await searchGitHubCodeAPI(query, opts.ghToken);
+        const token = await getGitHubToken();
+        const apiResult = await searchGitHubCodeAPI(query, token || undefined);
 
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error

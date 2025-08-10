@@ -30,9 +30,7 @@ describe('Package Search Tool (NPM & Python)', () => {
     mockServer = createMockMcpServer();
 
     // Register the tool for testing with npmEnabled true
-    registerPackageSearchTool(mockServer.server, {
-      npmEnabled: true,
-    });
+    registerPackageSearchTool(mockServer.server);
 
     // Clear all mocks
     vi.clearAllMocks();
@@ -45,9 +43,7 @@ describe('Package Search Tool (NPM & Python)', () => {
 
   describe('Tool Registration', () => {
     it('should register the package search tool', () => {
-      registerPackageSearchTool(mockServer.server, {
-        npmEnabled: true,
-      });
+      registerPackageSearchTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         'packageSearch',

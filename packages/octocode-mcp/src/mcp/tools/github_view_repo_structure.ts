@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
@@ -11,6 +11,7 @@ import {
   AggregatedRepositoryContext,
 } from './scheme/github_view_repo_structure';
 import { generateHints } from './utils/hints_consolidated';
+import { getGitHubToken } from './utils/tokenManager';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
   processBulkQueries,
@@ -39,10 +40,7 @@ BEST PRACTICES:
 - Specify research goals for optimized navigation suggestions
 - Use bulk operations to compare structures across multiple repositories`;
 
-export function registerViewGitHubRepoStructureTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerViewGitHubRepoStructureTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
@@ -101,8 +99,7 @@ export function registerViewGitHubRepoStructureTool(
 
         return exploreMultipleRepositoryStructures(
           args.queries,
-          args.verbose || false,
-          opts
+          args.verbose || false
         );
       }
     )
@@ -111,8 +108,7 @@ export function registerViewGitHubRepoStructureTool(
 
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
-  verbose: boolean = false,
-  opts: ToolOptions
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-structure');
 
@@ -174,9 +170,10 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
+        const token = await getGitHubToken();
         const apiResult = await viewGitHubRepositoryStructureAPI(
           query,
-          opts.ghToken
+          token || undefined
         );
 
         // Check if result is an error

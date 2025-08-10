@@ -8,6 +8,7 @@ import {
 const mockSearchGitHubCommitsAPI = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
+const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/githubAPI.js', () => ({
@@ -17,6 +18,10 @@ vi.mock('../../src/utils/githubAPI.js', () => ({
 vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withCache: mockWithCache,
+}));
+
+vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+  getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
@@ -36,6 +41,9 @@ describe('GitHub Search Commits Tool', () => {
     // @ts-expect-error - mockWithCache is not typed
     mockWithCache.mockImplementation(async (key, fn) => await fn());
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
+
+    // Mock token manager to return test token
+    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Default successful API mock behavior - return GitHubCommitSearchResult
     mockSearchGitHubCommitsAPI.mockResolvedValue({
@@ -74,9 +82,7 @@ describe('GitHub Search Commits Tool', () => {
     });
 
     // Register tool with API options
-    registerSearchGitHubCommitsTool(mockServer.server, {
-      npmEnabled: false,
-    });
+    registerSearchGitHubCommitsTool(mockServer.server);
   });
 
   afterEach(() => {
@@ -133,7 +139,7 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'facebook',
           repo: 'react',
         }),
-        undefined
+        'test-token'
       );
     });
   });
@@ -149,7 +155,7 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           queryTerms: ['readme', 'typo'],
         }),
-        undefined
+        'test-token'
       );
     });
 
@@ -163,7 +169,7 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           orTerms: ['fix', 'bug', 'parser'],
         }),
-        undefined
+        'test-token'
       );
     });
   });
@@ -179,7 +185,7 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           queryTerms: ['fix'],
         }),
-        undefined
+        'test-token'
       );
 
       const response = JSON.parse(result.content[0]?.text as string);
@@ -247,7 +253,7 @@ describe('GitHub Search Commits Tool', () => {
           repo: 'repo',
           getChangesContent: true,
         }),
-        undefined
+        'test-token'
       );
     });
 
@@ -263,7 +269,7 @@ describe('GitHub Search Commits Tool', () => {
           author: 'testuser',
           'committer-date': '>2023-01-01',
         }),
-        undefined
+        'test-token'
       );
     });
 
@@ -281,7 +287,7 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'facebook',
           repo: 'react',
         }),
-        undefined
+        'test-token'
       );
     });
 
@@ -295,7 +301,7 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           hash: 'abc123def456',
         }),
-        undefined
+        'test-token'
       );
     });
 
@@ -313,7 +319,7 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'facebook',
           repo: 'react',
         }),
-        undefined
+        'test-token'
       );
     });
   });
