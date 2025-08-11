@@ -2,49 +2,17 @@ import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
 import type { GetRepoResponse } from '../../types/github-openapi';
-import { getGithubCLIToken } from '../exec';
-
-// GitHub Token Management - Centralized in GitHub API layer
-let cachedToken: string | null = null;
-
-/**
- * Get GitHub token from various sources with caching
- * Handles token resolution internally in the GitHub API layer
- */
-async function getGitHubToken(): Promise<string | null> {
-  // Return cached token if available
-  if (cachedToken) {
-    return cachedToken;
-  }
-
-  // Try to get token from various sources
-  const token =
-    process.env.GITHUB_TOKEN ||
-    process.env.GH_TOKEN ||
-    (await getGithubCLIToken()) ||
-    extractBearerToken(process.env.Authorization ?? '');
-
-  if (token) {
-    // Cache the token for subsequent calls
-    cachedToken = token;
-    return token;
-  }
-
-  return null;
-}
-
-/**
- * Clear cached token (useful for testing or token refresh)
- */
-export function clearCachedToken(): void {
-  cachedToken = null;
-}
+import {
+  getGitHubToken,
+  onTokenRotated,
+} from '../../mcp/tools/utils/tokenManager.js';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Single Octokit instance since we only use one token
+// Octokit instance management with token rotation support
 let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
+let tokenRotationCleanup: (() => void) | null = null;
 
 /**
  * Throttle options following official Octokit.js best practices
@@ -65,8 +33,8 @@ const createThrottleOptions = () => ({
 });
 
 /**
- * Initialize Octokit with internal token management and throttling plugin
- * Token resolution is handled internally - no need to pass tokens from tools layer
+ * Initialize Octokit with centralized token management and rotation support
+ * Token resolution is delegated to tokenManager - single source of truth
  */
 export async function getOctokit(): Promise<
   InstanceType<typeof OctokitWithThrottling>
@@ -84,8 +52,28 @@ export async function getOctokit(): Promise<
     };
 
     octokitInstance = new OctokitWithThrottling(options);
+
+    // Subscribe to token rotation events for automatic re-initialization
+    tokenRotationCleanup = onTokenRotated(async () => {
+      // Force re-initialization with the new token on next call
+      // Note: existing lightweight caches such as default branch values are token-agnostic
+      // and can remain intact. Only Octokit authentication must refresh.
+      octokitInstance = null;
+    });
   }
   return octokitInstance;
+}
+
+/**
+ * Clear cached token - delegates to centralized token manager
+ * Maintains backward compatibility
+ */
+export function clearCachedToken(): void {
+  // Clear local Octokit instance
+  octokitInstance = null;
+
+  // The actual token clearing is handled by tokenManager
+  // This function is kept for backward compatibility but doesn't manage tokens directly
 }
 
 // Simple in-memory cache for default branch results
@@ -120,24 +108,9 @@ export async function getDefaultBranch(
   }
 }
 
-/**
- * Extract token from Authorization header
- */
-export function extractBearerToken(tokenInput: string): string | null {
-  if (!tokenInput) return '';
-
-  // Start by trimming the entire input
-  let token = tokenInput.trim();
-
-  // Remove "Bearer " prefix (case-insensitive) - get next word after Bearer
-  token = token.replace(/^bearer\s+/i, '');
-
-  // Remove "token " prefix (case insensitive)
-  token = token.replace(/^token\s+/i, '');
-
-  // Handle template format {{token}} - extract the actual token
-  token = token.replace(/^\{\{(.+)\}\}$/, '$1');
-
-  // Final trim to clean up any remaining whitespace
-  return token.trim();
-}
+// Clean up on process exit
+process.on('exit', () => {
+  if (tokenRotationCleanup) {
+    tokenRotationCleanup();
+  }
+});

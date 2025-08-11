@@ -16,6 +16,10 @@ vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
+vi.mock('../src/config/serverConfig.js');
+vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
+vi.mock('../src/translations/translationManager.js');
+vi.mock('../src/mcp/tools/utils/tokenManager.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
@@ -29,6 +33,10 @@ import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_vie
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
+import { ConfigManager } from '../src/config/serverConfig.js';
+import { ToolsetManager } from '../src/mcp/tools/toolsets/toolsetManager.js';
+import { TranslationManager } from '../src/translations/translationManager.js';
+import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
 
 // Mock implementations
@@ -47,6 +55,10 @@ const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
+const mockConfigManager = vi.mocked(ConfigManager);
+const mockToolsetManager = vi.mocked(ToolsetManager);
+const mockTranslationManager = vi.mocked(TranslationManager);
+const mockGetToken = vi.mocked(getToken);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -125,9 +137,9 @@ describe('Index Module', () => {
       .spyOn(process.stdin, 'resume')
       .mockImplementation(() => process.stdin);
     processStdinOnSpy = vi
-      .spyOn(process.stdin, 'on')
+      .spyOn(process.stdin, 'once')
       .mockImplementation(() => process.stdin);
-    processOnSpy = vi.spyOn(process, 'on').mockImplementation(() => process);
+    processOnSpy = vi.spyOn(process, 'once').mockImplementation(() => process);
     processStdoutUncorkSpy = vi
       .spyOn(process.stdout, 'uncork')
       .mockImplementation(() => {});
@@ -147,6 +159,31 @@ describe('Index Module', () => {
     mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
     mockRegisterPackageSearchTool.mockImplementation(() => {});
     mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
+
+    // Mock new dependencies
+    mockConfigManager.initialize.mockReturnValue({
+      version: '1.0.0',
+      enabledToolsets: [],
+      dynamicToolsets: false,
+      readOnly: false,
+      organizationId: undefined,
+      auditLogging: false,
+      rateLimiting: false,
+      enableCommandLogging: false,
+      logFilePath: undefined,
+      exportTranslations: false,
+      githubHost: undefined,
+      timeout: 30000,
+      maxRetries: 3,
+    });
+
+    mockToolsetManager.initialize.mockImplementation(() => {});
+    mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default
+
+    mockTranslationManager.initialize.mockReturnValue(() => ''); // Mock translation helper
+    mockTranslationManager.exportTranslations.mockImplementation(() => {});
+
+    mockGetToken.mockResolvedValue('test-token');
   });
 
   afterEach(() => {
@@ -263,6 +300,9 @@ describe('Index Module', () => {
       delete process.env.GITHUB_TOKEN;
       delete process.env.GH_TOKEN;
       mockGetGithubCLIToken.mockResolvedValue(null);
+
+      // Mock getToken to throw when no token is available
+      mockGetToken.mockRejectedValue(new Error('No token available'));
 
       // Override the mock to track the exit call without throwing
       let exitCalled = false;

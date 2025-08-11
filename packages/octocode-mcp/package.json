@@ -71,7 +71,7 @@
   },
   "files": [
     "dist/index.js",
-    "dist/src/**/*.js",
+    "dist/security/**/*.js",
     "manifest.json",
     "assets/logo_white.png"
   ],

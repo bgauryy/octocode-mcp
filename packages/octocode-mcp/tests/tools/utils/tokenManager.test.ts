@@ -3,6 +3,12 @@ import {
   getGitHubToken,
   clearCachedToken,
   getToken,
+  initialize,
+  onTokenRotated,
+  getTokenSource,
+  rotateToken,
+  getConfig,
+  clearConfig,
 } from '../../../src/mcp/tools/utils/tokenManager';
 
 // Mock dependencies
@@ -10,9 +16,7 @@ vi.mock('../../../src/utils/exec.js', () => ({
   getGithubCLIToken: vi.fn(),
 }));
 
-vi.mock('../../../src/utils/github/client.js', () => ({
-  extractBearerToken: vi.fn(),
-}));
+// extractBearerToken is now internal to tokenManager - no need to mock
 
 vi.mock('../../../src/security/credentialStore.js', () => ({
   SecureCredentialStore: {
@@ -21,11 +25,9 @@ vi.mock('../../../src/security/credentialStore.js', () => ({
 }));
 
 import { getGithubCLIToken } from '../../../src/utils/exec.js';
-import { extractBearerToken } from '../../../src/utils/github/client.js';
 import { SecureCredentialStore } from '../../../src/security/credentialStore.js';
 
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
-const mockExtractBearerToken = vi.mocked(extractBearerToken);
 const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 
 describe('Token Manager', () => {
@@ -59,7 +61,6 @@ describe('Token Manager', () => {
 
       expect(token).toBe('env-github-token');
       expect(mockGetGithubCLIToken).not.toHaveBeenCalled();
-      expect(mockExtractBearerToken).not.toHaveBeenCalled();
     });
 
     it('should return token from GH_TOKEN environment variable when GITHUB_TOKEN is not set', async () => {
@@ -69,7 +70,6 @@ describe('Token Manager', () => {
 
       expect(token).toBe('env-gh-token');
       expect(mockGetGithubCLIToken).not.toHaveBeenCalled();
-      expect(mockExtractBearerToken).not.toHaveBeenCalled();
     });
 
     it('should prefer GITHUB_TOKEN over GH_TOKEN when both are set', async () => {
@@ -80,7 +80,6 @@ describe('Token Manager', () => {
 
       expect(token).toBe('github-token');
       expect(mockGetGithubCLIToken).not.toHaveBeenCalled();
-      expect(mockExtractBearerToken).not.toHaveBeenCalled();
     });
 
     it('should get token from GitHub CLI when environment variables are not set', async () => {
@@ -90,42 +89,33 @@ describe('Token Manager', () => {
 
       expect(token).toBe('cli-token');
       expect(mockGetGithubCLIToken).toHaveBeenCalledOnce();
-      expect(mockExtractBearerToken).not.toHaveBeenCalled();
     });
 
     it('should extract bearer token from Authorization header when other methods fail', async () => {
       process.env.Authorization = 'Bearer extracted-token';
       mockGetGithubCLIToken.mockResolvedValue(null);
-      mockExtractBearerToken.mockReturnValue('extracted-token');
 
       const token = await getGitHubToken();
 
       expect(token).toBe('extracted-token');
       expect(mockGetGithubCLIToken).toHaveBeenCalledOnce();
-      expect(mockExtractBearerToken).toHaveBeenCalledWith(
-        'Bearer extracted-token'
-      );
     });
 
     it('should handle empty Authorization environment variable', async () => {
       mockGetGithubCLIToken.mockResolvedValue(null);
-      mockExtractBearerToken.mockReturnValue(null);
 
       const token = await getGitHubToken();
 
       expect(token).toBeNull();
-      expect(mockExtractBearerToken).toHaveBeenCalledWith('');
     });
 
     it('should return null when no token is available from any source', async () => {
       mockGetGithubCLIToken.mockResolvedValue(null);
-      mockExtractBearerToken.mockReturnValue(null);
 
       const token = await getGitHubToken();
 
       expect(token).toBeNull();
       expect(mockGetGithubCLIToken).toHaveBeenCalledOnce();
-      expect(mockExtractBearerToken).toHaveBeenCalledOnce();
     });
 
     it('should cache token after first successful retrieval', async () => {
@@ -148,7 +138,6 @@ describe('Token Manager', () => {
 
     it('should handle GitHub CLI token retrieval failure gracefully', async () => {
       mockGetGithubCLIToken.mockResolvedValue(null); // CLI returns null on failure
-      mockExtractBearerToken.mockReturnValue(null);
 
       const token = await getGitHubToken();
 
@@ -244,7 +233,6 @@ describe('Token Manager', () => {
     it('should return token from Authorization header extraction', async () => {
       process.env.Authorization = 'Bearer extracted-token';
       mockGetGithubCLIToken.mockResolvedValue(null);
-      mockExtractBearerToken.mockReturnValue('extracted-token');
 
       const token = await getToken();
 
@@ -252,14 +240,10 @@ describe('Token Manager', () => {
       expect(mockSecureCredentialStore.setToken).toHaveBeenCalledWith(
         'extracted-token'
       );
-      expect(mockExtractBearerToken).toHaveBeenCalledWith(
-        'Bearer extracted-token'
-      );
     });
 
     it('should throw error when no token is available', async () => {
       mockGetGithubCLIToken.mockResolvedValue(null);
-      mockExtractBearerToken.mockReturnValue(null);
 
       await expect(getToken()).rejects.toThrow(
         'No GitHub token found. Please set GITHUB_TOKEN or GH_TOKEN environment variable or authenticate with GitHub CLI'
@@ -270,7 +254,6 @@ describe('Token Manager', () => {
     it('should handle GitHub CLI failure and fallback to other methods', async () => {
       process.env.Authorization = 'Bearer fallback-token';
       mockGetGithubCLIToken.mockResolvedValue(null); // CLI returns null on failure
-      mockExtractBearerToken.mockReturnValue('fallback-token');
 
       const token = await getToken();
 
@@ -285,7 +268,6 @@ describe('Token Manager', () => {
       process.env.GH_TOKEN = 'gh-token';
       process.env.Authorization = 'Bearer auth-token';
       mockGetGithubCLIToken.mockResolvedValue('cli-token');
-      mockExtractBearerToken.mockReturnValue('auth-token');
 
       const token = await getToken();
 
@@ -294,7 +276,6 @@ describe('Token Manager', () => {
         'github-token'
       );
       expect(mockGetGithubCLIToken).not.toHaveBeenCalled();
-      expect(mockExtractBearerToken).not.toHaveBeenCalled();
     });
 
     it('should store token in SecureCredentialStore regardless of source', async () => {
@@ -353,7 +334,6 @@ describe('Token Manager', () => {
       process.env.GITHUB_TOKEN = '';
       process.env.GH_TOKEN = '';
       mockGetGithubCLIToken.mockResolvedValue('');
-      mockExtractBearerToken.mockReturnValue('');
 
       const token = await getGitHubToken();
       expect(token).toBeNull();
@@ -364,7 +344,6 @@ describe('Token Manager', () => {
     it('should handle whitespace-only tokens correctly', async () => {
       process.env.GITHUB_TOKEN = '   ';
       mockGetGithubCLIToken.mockResolvedValue('   ');
-      mockExtractBearerToken.mockReturnValue('   ');
 
       // Whitespace tokens should be treated as valid (the function doesn't trim)
       const token = await getGitHubToken();
@@ -388,14 +367,237 @@ describe('Token Manager', () => {
     });
 
     it('should handle async errors in token retrieval chain', async () => {
-      mockGetGithubCLIToken.mockResolvedValue(null); // CLI returns null on failure
-      mockExtractBearerToken.mockImplementation(() => {
-        throw new Error('Sync extraction error');
+      mockGetGithubCLIToken.mockImplementation(() => {
+        throw new Error('CLI error');
       });
 
-      // Both functions should propagate the extraction error since it's not wrapped in try-catch
-      await expect(getGitHubToken()).rejects.toThrow('Sync extraction error');
-      await expect(getToken()).rejects.toThrow('Sync extraction error');
+      // Both functions should propagate the CLI error
+      await expect(getGitHubToken()).rejects.toThrow('CLI error');
+      await expect(getToken()).rejects.toThrow('CLI error');
+    });
+  });
+
+  // ===== ENTERPRISE FEATURES TESTS =====
+
+  describe('Enterprise Features', () => {
+    beforeEach(() => {
+      // Reset mock implementations for enterprise tests
+      mockSecureCredentialStore.setToken.mockReset();
+      mockSecureCredentialStore.setToken.mockImplementation(
+        () => 'mock-token-id'
+      );
+
+      // Clear any existing enterprise configuration
+      clearConfig();
+    });
+
+    describe('initialize', () => {
+      it('should initialize with enterprise configuration', () => {
+        const config = {
+          organizationId: 'test-org',
+          enableAuditLogging: true,
+          enableRateLimiting: false,
+          enableOrganizationValidation: true,
+        };
+
+        initialize(config);
+
+        const storedConfig = getConfig();
+        expect(storedConfig).toEqual(config);
+      });
+
+      it('should handle initialization without config', () => {
+        initialize();
+        const storedConfig = getConfig();
+        expect(storedConfig).toBeNull();
+      });
+
+      it('should handle multiple initializations', () => {
+        const config1 = { organizationId: 'org1' };
+        const config2 = { organizationId: 'org2' };
+
+        initialize(config1);
+        initialize(config2);
+
+        const storedConfig = getConfig();
+        expect(storedConfig).toEqual(config2);
+      });
+    });
+
+    describe('getTokenSource', () => {
+      it('should return unknown initially', () => {
+        clearCachedToken();
+        expect(getTokenSource()).toBe('unknown');
+      });
+
+      it('should track token source from GITHUB_TOKEN', async () => {
+        process.env.GITHUB_TOKEN = 'env-token';
+        await getGitHubToken();
+        expect(getTokenSource()).toBe('env');
+      });
+
+      it('should track token source from GH_TOKEN', async () => {
+        process.env.GH_TOKEN = 'gh-env-token';
+        await getGitHubToken();
+        expect(getTokenSource()).toBe('env');
+      });
+
+      it('should track token source from CLI', async () => {
+        mockGetGithubCLIToken.mockResolvedValue('cli-token');
+        await getGitHubToken();
+        expect(getTokenSource()).toBe('cli');
+      });
+
+      it('should track token source from Authorization header', async () => {
+        process.env.Authorization = 'Bearer auth-token';
+        mockGetGithubCLIToken.mockResolvedValue(null);
+        await getGitHubToken();
+        expect(getTokenSource()).toBe('authorization');
+      });
+    });
+
+    describe('onTokenRotated', () => {
+      it('should register and call rotation handlers', async () => {
+        const handler1 = vi.fn();
+        const handler2 = vi.fn();
+
+        const cleanup1 = onTokenRotated(handler1);
+        const cleanup2 = onTokenRotated(handler2);
+
+        await rotateToken('new-token');
+
+        expect(handler1).toHaveBeenCalledWith('new-token', undefined);
+        expect(handler2).toHaveBeenCalledWith('new-token', undefined);
+
+        cleanup1();
+        cleanup2();
+      });
+
+      it('should provide old token to handlers when available', async () => {
+        // Set initial token
+        process.env.GITHUB_TOKEN = 'old-token';
+        await getGitHubToken();
+
+        const handler = vi.fn();
+        const cleanup = onTokenRotated(handler);
+
+        await rotateToken('new-token');
+
+        expect(handler).toHaveBeenCalledWith('new-token', 'old-token');
+        cleanup();
+      });
+
+      it('should handle handler errors gracefully', async () => {
+        const errorHandler = vi.fn(() => {
+          throw new Error('Handler error');
+        });
+        const goodHandler = vi.fn();
+
+        const cleanup1 = onTokenRotated(errorHandler);
+        const cleanup2 = onTokenRotated(goodHandler);
+
+        // Should not throw despite handler error
+        await expect(rotateToken('new-token')).resolves.not.toThrow();
+
+        expect(errorHandler).toHaveBeenCalled();
+        expect(goodHandler).toHaveBeenCalled();
+
+        cleanup1();
+        cleanup2();
+      });
+
+      it('should cleanup handlers properly', async () => {
+        const handler = vi.fn();
+        const cleanup = onTokenRotated(handler);
+
+        cleanup();
+        await rotateToken('new-token');
+
+        expect(handler).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('rotateToken', () => {
+      it('should update cached token', async () => {
+        await rotateToken('rotated-token');
+        const token = await getGitHubToken();
+        expect(token).toBe('rotated-token');
+      });
+
+      it('should store token securely', async () => {
+        await rotateToken('secure-token');
+        expect(mockSecureCredentialStore.setToken).toHaveBeenCalledWith(
+          'secure-token'
+        );
+      });
+
+      it('should update token source to unknown', async () => {
+        process.env.GITHUB_TOKEN = 'env-token';
+        await getGitHubToken();
+        expect(getTokenSource()).toBe('env');
+
+        await rotateToken('rotated-token');
+        expect(getTokenSource()).toBe('unknown');
+      });
+
+      it('should notify all handlers', async () => {
+        const handler1 = vi.fn();
+        const handler2 = vi.fn();
+
+        const cleanup1 = onTokenRotated(handler1);
+        const cleanup2 = onTokenRotated(handler2);
+
+        await rotateToken('notification-token');
+
+        expect(handler1).toHaveBeenCalledWith('notification-token', undefined);
+        expect(handler2).toHaveBeenCalledWith('notification-token', undefined);
+
+        cleanup1();
+        cleanup2();
+      });
+    });
+
+    describe('integration with existing functions', () => {
+      it('should work with existing getGitHubToken after rotation', async () => {
+        process.env.GITHUB_TOKEN = 'original-token';
+        const token1 = await getGitHubToken();
+        expect(token1).toBe('original-token');
+
+        await rotateToken('rotated-token');
+        const token2 = await getGitHubToken();
+        expect(token2).toBe('rotated-token');
+      });
+
+      it('should work with existing getToken after rotation', async () => {
+        // First set up an environment token so getToken() has something to resolve
+        process.env.GITHUB_TOKEN = 'initial-token';
+
+        await rotateToken('rotated-for-getToken');
+
+        // getGitHubToken should return the rotated token (uses cache)
+        const cachedToken = await getGitHubToken();
+        expect(cachedToken).toBe('rotated-for-getToken');
+
+        // getToken should also work by resolving from environment (ignores cache)
+        const resolvedToken = await getToken();
+        expect(resolvedToken).toBe('initial-token'); // getToken resolves fresh
+        expect(mockSecureCredentialStore.setToken).toHaveBeenCalledWith(
+          'initial-token'
+        );
+      });
+
+      it('should handle clearCachedToken with enterprise features', async () => {
+        await rotateToken('token-to-clear');
+        expect(getTokenSource()).toBe('unknown');
+
+        clearCachedToken();
+        expect(getTokenSource()).toBe('unknown');
+
+        // Should resolve new token
+        process.env.GITHUB_TOKEN = 'new-env-token';
+        await getGitHubToken();
+        expect(getTokenSource()).toBe('env');
+      });
     });
   });
 });

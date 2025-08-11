@@ -10,73 +10,24 @@ import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commi
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
-
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
-import { getToken } from './mcp/tools/utils/tokenManager.js';
+import {
+  getToken,
+  initialize as initializeTokenManager,
+  isEnterpriseTokenManager,
+  isCliTokenResolutionEnabled,
+} from './mcp/tools/utils/tokenManager.js';
+import { ConfigManager } from './config/serverConfig.js';
+import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
+import { TranslationManager } from './translations/translationManager.js';
+import { version } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
   name: 'octocode',
-  version: '4.0.5',
+  version: version,
   description: PROMPT_SYSTEM_PROMPT,
 };
-
-async function registerAllTools(server: McpServer) {
-  // Ensure token exists and is stored securely
-  await getToken();
-
-  const toolRegistrations = [
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      fn: registerGitHubSearchCodeTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      fn: registerSearchGitHubReposTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-      fn: registerFetchGitHubFileContentTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      fn: registerViewGitHubRepoStructureTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-      fn: registerSearchGitHubCommitsTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-      fn: registerSearchGitHubPullRequestsTool,
-    },
-    {
-      name: TOOL_NAMES.PACKAGE_SEARCH,
-      fn: registerPackageSearchTool,
-    },
-  ];
-
-  let successCount = 0;
-  const failedTools: string[] = [];
-
-  for (const tool of toolRegistrations) {
-    try {
-      tool.fn(server);
-      successCount++;
-    } catch (error) {
-      // Log the error but continue with other tools
-      failedTools.push(tool.name);
-    }
-  }
-
-  if (failedTools.length > 0) {
-    // Tools failed to register
-  }
-
-  if (successCount === 0) {
-    throw new Error('No tools were successfully registered');
-  }
-}
 
 async function startServer() {
   let shutdownInProgress = false;
@@ -118,6 +69,25 @@ async function startServer() {
         // Clear cache and credentials (fastest operations)
         clearAllCache();
         SecureCredentialStore.clearAll();
+
+        // Shutdown enterprise modules gracefully
+        try {
+          if (process.env.AUDIT_ALL_ACCESS === 'true') {
+            const { AuditLogger } = await import('./security/auditLogger.js');
+            AuditLogger.shutdown();
+          }
+
+          if (
+            process.env.RATE_LIMIT_API_HOUR ||
+            process.env.RATE_LIMIT_AUTH_HOUR ||
+            process.env.RATE_LIMIT_TOKEN_HOUR
+          ) {
+            const { RateLimiter } = await import('./security/rateLimiter.js');
+            RateLimiter.shutdown();
+          }
+        } catch (error) {
+          // Ignore shutdown errors
+        }
 
         // Close server with timeout protection
         try {
@@ -168,6 +138,173 @@ async function startServer() {
     process.stdin.resume();
   } catch (_error) {
     process.exit(1);
+  }
+}
+
+/**
+ * Initialize enterprise features if configured
+ * Progressive enhancement - only activates when environment variables are present
+ */
+export async function initializeEnterpriseFeatures(): Promise<void> {
+  // Check for enterprise configuration
+  const hasOrgConfig = process.env.GITHUB_ORGANIZATION;
+  const hasAuditConfig = process.env.AUDIT_ALL_ACCESS === 'true';
+  const hasRateLimitConfig =
+    process.env.RATE_LIMIT_API_HOUR ||
+    process.env.RATE_LIMIT_AUTH_HOUR ||
+    process.env.RATE_LIMIT_TOKEN_HOUR;
+
+  if (hasOrgConfig || hasAuditConfig || hasRateLimitConfig) {
+    // eslint-disable-next-line no-console
+    //console.log('Initializing enterprise security features...');
+    // TODO: use a Logger instead of console.log
+
+    try {
+      // Initialize audit logging first (if enabled)
+      if (hasAuditConfig) {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.initialize();
+      }
+
+      // Initialize organization manager (if configured)
+      if (hasOrgConfig) {
+        const { OrganizationManager } = await import(
+          './security/organizationManager.js'
+        );
+        OrganizationManager.initialize();
+      }
+
+      // Initialize rate limiter (if configured)
+      if (hasRateLimitConfig) {
+        const { RateLimiter } = await import('./security/rateLimiter.js');
+        RateLimiter.initialize();
+      }
+
+      // Initialize policy manager
+      const { PolicyManager } = await import('./security/policyManager.js');
+      PolicyManager.initialize();
+
+      // Initialize token manager with enterprise config
+      initializeTokenManager({
+        organizationId: process.env.GITHUB_ORGANIZATION,
+        enableAuditLogging: hasAuditConfig,
+        enableRateLimiting: !!hasRateLimitConfig,
+        enableOrganizationValidation: !!hasOrgConfig,
+      });
+
+      // eslint-disable-next-line no-console
+      console.log('Enterprise security features initialized successfully');
+
+      // Log the initialization
+      if (hasAuditConfig) {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'enterprise_features_initialized',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            organizationId: process.env.GITHUB_ORGANIZATION,
+            auditLogging: hasAuditConfig,
+            rateLimiting: !!hasRateLimitConfig,
+            organizationValidation: !!hasOrgConfig,
+          },
+        });
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to initialize enterprise features:', error);
+      // Don't throw - continue with basic functionality
+    }
+  }
+}
+
+export async function registerAllTools(server: McpServer) {
+  // Initialize configuration system
+  const config = ConfigManager.initialize();
+
+  // Initialize translations
+  TranslationManager.initialize();
+
+  // Initialize toolset management
+  ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
+
+  // Initialize enterprise features first (if configured)
+  await initializeEnterpriseFeatures();
+
+  // Ensure token exists and is stored securely (existing behavior)
+  await getToken();
+
+  // Warn about CLI restrictions in enterprise mode
+  if (isEnterpriseTokenManager() && !isCliTokenResolutionEnabled()) {
+    // Use stderr for enterprise mode notification to avoid console linter issues
+    process.stderr.write(
+      '🔒 Enterprise mode active: CLI token resolution disabled for security\n'
+    );
+  }
+
+  // Export translations if requested
+  if (config.exportTranslations) {
+    TranslationManager.exportTranslations();
+  }
+
+  const toolRegistrations = [
+    {
+      name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      fn: registerGitHubSearchCodeTool,
+    },
+    {
+      name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      fn: registerSearchGitHubReposTool,
+    },
+    {
+      name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      fn: registerFetchGitHubFileContentTool,
+    },
+    {
+      name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      fn: registerViewGitHubRepoStructureTool,
+    },
+    {
+      name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+      fn: registerSearchGitHubCommitsTool,
+    },
+    {
+      name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      fn: registerSearchGitHubPullRequestsTool,
+    },
+    {
+      name: TOOL_NAMES.PACKAGE_SEARCH,
+      fn: registerPackageSearchTool,
+    },
+  ];
+
+  let successCount = 0;
+  const failedTools: string[] = [];
+
+  for (const tool of toolRegistrations) {
+    try {
+      // Check if tool is enabled in current toolset configuration
+      if (ToolsetManager.isToolEnabled(tool.name)) {
+        tool.fn(server);
+        successCount++;
+      } else {
+        // Use stderr for toolset configuration messages to avoid console linter issues
+        process.stderr.write(
+          `Tool ${tool.name} disabled by toolset configuration\n`
+        );
+      }
+    } catch (error) {
+      // Log the error but continue with other tools
+      failedTools.push(tool.name);
+    }
+  }
+
+  if (failedTools.length > 0) {
+    // Tools failed to register
+  }
+
+  if (successCount === 0) {
+    throw new Error('No tools were successfully registered');
   }
 }
 
