@@ -35,7 +35,6 @@ import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager } from '../src/config/serverConfig.js';
 import { ToolsetManager } from '../src/mcp/tools/toolsets/toolsetManager.js';
-import { TranslationManager } from '../src/translations/translationManager.js';
 import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
 
@@ -57,7 +56,6 @@ const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockConfigManager = vi.mocked(ConfigManager);
 const mockToolsetManager = vi.mocked(ToolsetManager);
-const mockTranslationManager = vi.mocked(TranslationManager);
 const mockGetToken = vi.mocked(getToken);
 
 // Mock all tool registration functions
@@ -171,7 +169,6 @@ describe('Index Module', () => {
       rateLimiting: false,
       enableCommandLogging: false,
       logFilePath: undefined,
-      exportTranslations: false,
       githubHost: undefined,
       timeout: 30000,
       maxRetries: 3,
@@ -179,9 +176,6 @@ describe('Index Module', () => {
 
     mockToolsetManager.initialize.mockImplementation(() => {});
     mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default
-
-    mockTranslationManager.initialize.mockReturnValue(() => ''); // Mock translation helper
-    mockTranslationManager.exportTranslations.mockImplementation(() => {});
 
     mockGetToken.mockResolvedValue('test-token');
   });

@@ -24,7 +24,6 @@ export interface ServerConfig {
   // Logging and debugging
   enableCommandLogging: boolean;
   logFilePath?: string;
-  exportTranslations: boolean;
 
   // Advanced settings
   githubHost?: string; // GitHub Enterprise Server URL
@@ -64,7 +63,6 @@ export class ConfigManager {
       // Logging and debugging
       enableCommandLogging: process.env.ENABLE_COMMAND_LOGGING === 'true',
       logFilePath: process.env.LOG_FILE_PATH,
-      exportTranslations: process.env.EXPORT_TRANSLATIONS === 'true',
 
       // Advanced settings
       githubHost: process.env.GITHUB_HOST,

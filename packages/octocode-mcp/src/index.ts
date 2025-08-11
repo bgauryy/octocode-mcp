@@ -20,7 +20,6 @@ import {
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { TranslationManager } from './translations/translationManager.js';
 import { version } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -192,8 +191,20 @@ export async function initializeEnterpriseFeatures(): Promise<void> {
         enableOrganizationValidation: !!hasOrgConfig,
       });
 
-      // eslint-disable-next-line no-console
-      console.log('Enterprise security features initialized successfully');
+      // Log via audit logger rather than console
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'enterprise_features_initialized',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            message: 'Enterprise security features initialized successfully',
+          },
+        });
+      } catch {
+        // Fallback: silent if audit logger not available
+      }
 
       // Log the initialization
       if (hasAuditConfig) {
@@ -211,8 +222,24 @@ export async function initializeEnterpriseFeatures(): Promise<void> {
         });
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to initialize enterprise features:', error);
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'enterprise_features_initialized',
+          outcome: 'failure',
+          source: 'system',
+          details: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      } catch {
+        // Fallback to stderr to avoid console usage
+        process.stderr.write(
+          `Failed to initialize enterprise features: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`
+        );
+      }
       // Don't throw - continue with basic functionality
     }
   }
@@ -221,9 +248,6 @@ export async function initializeEnterpriseFeatures(): Promise<void> {
 export async function registerAllTools(server: McpServer) {
   // Initialize configuration system
   const config = ConfigManager.initialize();
-
-  // Initialize translations
-  TranslationManager.initialize();
 
   // Initialize toolset management
   ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
@@ -242,10 +266,7 @@ export async function registerAllTools(server: McpServer) {
     );
   }
 
-  // Export translations if requested
-  if (config.exportTranslations) {
-    TranslationManager.exportTranslations();
-  }
+  // Removed exportTranslations path (redundant)
 
   const toolRegistrations = [
     {

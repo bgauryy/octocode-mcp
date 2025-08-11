@@ -77,16 +77,22 @@ export class AuditLogger {
     // Add to buffer
     this.events.push(auditEvent);
 
-    // Development console logging
+    // Development logging to stderr (avoid console.* usage in codebase)
     if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.log(`[AUDIT] ${auditEvent.action}:`, {
+      const payload = {
         outcome: auditEvent.outcome,
         userId: auditEvent.userId,
         organizationId: auditEvent.organizationId,
         source: auditEvent.source,
         eventId: auditEvent.eventId,
-      });
+      };
+      try {
+        process.stderr.write(
+          `[AUDIT] ${auditEvent.action}: ${JSON.stringify(payload)}\n`
+        );
+      } catch (_err) {
+        void 0;
+      }
     }
 
     // Flush if buffer is getting large
@@ -128,13 +134,25 @@ export class AuditLogger {
 
       // Log the flush operation (but don't add to buffer to avoid recursion)
       if (process.env.NODE_ENV !== 'production') {
-        // eslint-disable-next-line no-console
-        console.log(`[AUDIT] Flushed ${flushedCount} events to ${logFile}`);
+        try {
+          process.stderr.write(
+            `[AUDIT] Flushed ${flushedCount} events to ${logFile}\n`
+          );
+        } catch (_err) {
+          void 0;
+        }
       }
     } catch (error) {
       // Log error but don't throw - audit logging should not break the application
-      // eslint-disable-next-line no-console
-      console.error('[AUDIT] Failed to flush events to disk:', error);
+      try {
+        process.stderr.write(
+          `[AUDIT] Failed to flush events to disk: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`
+        );
+      } catch (_err) {
+        void 0;
+      }
     }
   }
 
@@ -192,8 +210,15 @@ export class AuditLogger {
         mkdirSync(this.logDirectory, { recursive: true });
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('[AUDIT] Failed to create log directory:', error);
+      try {
+        process.stderr.write(
+          `[AUDIT] Failed to create log directory: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`
+        );
+      } catch (_err) {
+        void 0;
+      }
       // Don't throw - continue with in-memory logging only
     }
   }
