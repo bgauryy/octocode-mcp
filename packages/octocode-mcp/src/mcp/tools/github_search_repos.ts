@@ -22,16 +22,13 @@ const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk op
 
 KEY FEATURES:
 - Bulk queries: Execute up to 5 searches in parallel for comprehensive discovery
-- Topic search: Find repos by github topics (exploretory and searching for specific topics)
-- Text search: Match specific terms in names/descriptions
-- Quality filters: Stars, forks, activity, update frequency
-- Smart defaults: Excludes archived repos and forks for better results
+- use both topics specific query and terms specific query for better results
+- query with both topics and terms is not good for exploration
+- Quality filters: Stars, forks, activity (commits, issues, pull requests),last updated, update frequency
 
 SEARCH STRATEGIES:
 - for specific repositorry search with limit of 1 and get most relevant repository
-- Exploration: Use bulk search efficiently with several search directions (e.g. terms, topics)
-
-TIP: If repo not found, try ${TOOL_NAMES.PACKAGE_SEARCH} for npm/python packages search to get the github repo`;
+- Exploration: Use bulk search with several search directions`;
 
 interface AggregatedRepoContext {
   totalQueries: number;

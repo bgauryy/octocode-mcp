@@ -350,6 +350,94 @@ export RATE_LIMIT_TOKEN_HOUR="100"
 - **🛡️ Token Validation**: Enhanced token security checks
 - **📊 Permission Validation**: Granular permission checking
 
+### 📋 What Gets Logged (Audit Trail)
+
+When `AUDIT_ALL_ACCESS=true` is enabled, Octocode-MCP logs comprehensive security and operational events:
+
+#### **🔐 Authentication Events**
+- **Token Resolution**: Which token source was used (OAuth, GitHub App, env, CLI)
+- **Token Validation**: Success/failure of token validation checks
+- **Token Rotation**: Automatic token refresh operations
+- **Authentication Failures**: Failed authentication attempts with details
+
+#### **🛠️ Tool Execution Events**
+- **Tool Calls**: Every MCP tool execution with parameters (sanitized)
+- **API Requests**: GitHub API calls made by tools
+- **Resource Access**: File content fetching and repository access
+- **Search Operations**: Code search, repository search, and commit search activities
+
+#### **🏢 Organization & Access Control**
+- **Membership Validation**: Organization membership checks
+- **Access Grants/Denials**: Permission-based access decisions
+- **SSO Enforcement**: Single sign-on requirement validations
+- **Policy Violations**: Security policy enforcement actions
+
+#### **🚨 Security Events**
+- **Rate Limit Hits**: When rate limits are exceeded
+- **Suspicious Activity**: Unusual access patterns or requests
+- **Content Sanitization**: When sensitive content is filtered
+- **Command Validation**: Security validation of user inputs
+
+#### **📊 System Events**
+- **Server Startup/Shutdown**: System lifecycle events
+- **Configuration Changes**: Runtime configuration updates
+- **Error Conditions**: System errors and recovery actions
+- **Performance Metrics**: Token usage and API call statistics
+
+#### **📁 Log Storage & Format**
+
+**Development Mode** (`NODE_ENV !== 'production'`):
+- Logs to `stderr` in real-time for debugging
+- Format: `[AUDIT] action_name: {"outcome":"success","userId":"user123",...}`
+
+**Production Mode** (`AUDIT_ALL_ACCESS=true`):
+- **File Location**: `./logs/audit/audit-YYYY-MM-DD.jsonl` (configurable via `AUDIT_LOG_DIR`)
+- **Format**: JSONL (JSON Lines) for easy parsing and analysis
+- **Buffering**: Events are buffered and flushed every 5 minutes or 1000 events
+- **Rotation**: Daily log files with automatic cleanup
+
+**Sample Log Entry**:
+```json
+{
+  "eventId": "a1b2c3d4e5f6g7h8",
+  "timestamp": "2024-01-15T10:30:45.123Z",
+  "userId": "user123",
+  "organizationId": "my-org",
+  "action": "tool_github_search_code",
+  "outcome": "success",
+  "resource": "microsoft/vscode",
+  "source": "tool_execution",
+  "ipAddress": "192.168.1.100",
+  "details": {
+    "queryTerms": ["authentication"],
+    "resultCount": 42,
+    "rateLimitRemaining": 4950
+  }
+}
+```
+
+#### **🔒 Privacy & Security**
+- **Sensitive Data**: Tokens, secrets, and PII are automatically redacted
+- **Content Filtering**: Repository content is sanitized before logging
+- **Access Control**: Log files require appropriate file system permissions
+- **Compliance**: Structured format supports SOC2, GDPR, and other compliance requirements
+
+#### **📈 Log Analysis**
+Use standard tools to analyze audit logs:
+```bash
+# View today's authentication events
+grep '"source":"token_manager"' logs/audit/audit-$(date +%Y-%m-%d).jsonl
+
+# Count tool executions by type
+grep '"source":"tool_execution"' logs/audit/*.jsonl | jq -r '.action' | sort | uniq -c
+
+# Find failed operations
+grep '"outcome":"failure"' logs/audit/*.jsonl | jq '.action, .details'
+
+# Monitor rate limit usage
+grep 'rate_limit' logs/audit/*.jsonl | jq '.details.rateLimitRemaining'
+```
+
 ## 🔐 OAuth 2.0 Integration
 
 ### Complete OAuth Flow
