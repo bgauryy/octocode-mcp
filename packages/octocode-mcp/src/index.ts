@@ -20,6 +20,7 @@ import {
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
+import { createMCPAuthProtocol } from './auth/mcpAuthProtocol.js';
 import { version } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -34,6 +35,9 @@ async function startServer() {
 
   try {
     const server = new McpServer(SERVER_CONFIG);
+
+    // Initialize OAuth/GitHub App authentication
+    await initializeAuthentication();
 
     await registerAllTools(server);
 
@@ -137,6 +141,30 @@ async function startServer() {
     process.stdin.resume();
   } catch (_error) {
     process.exit(1);
+  }
+}
+
+/**
+ * Initialize OAuth/GitHub App authentication
+ */
+async function initializeAuthentication(): Promise<void> {
+  try {
+    const config = ConfigManager.getConfig();
+
+    // Initialize MCP Auth Protocol if OAuth or GitHub App is configured
+    if (config.oauth?.enabled || config.githubApp?.enabled) {
+      await createMCPAuthProtocol();
+    }
+
+    // Initialize token manager with OAuth/GitHub App support
+    await initializeTokenManager();
+  } catch (error) {
+    // Log error but don't fail startup - fall back to existing authentication
+    process.stderr.write(
+      `Warning: Failed to initialize OAuth/GitHub App authentication: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`
+    );
   }
 }
 

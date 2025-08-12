@@ -16,10 +16,39 @@ export interface ServerConfig {
   dynamicToolsets: boolean;
   readOnly: boolean;
 
+  // OAuth Configuration
+  oauth?: {
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+    scopes: string[];
+    enabled: boolean;
+    authorizationUrl?: string; // Default: https://github.com/login/oauth/authorize
+    tokenUrl?: string; // Default: https://github.com/login/oauth/access_token
+  };
+
+  // GitHub App Configuration
+  githubApp?: {
+    appId: string;
+    privateKey: string;
+    installationId?: number;
+    enabled: boolean;
+    baseUrl?: string; // For GitHub Enterprise Server
+  };
+
   // Enterprise features
   organizationId?: string;
   auditLogging: boolean;
   rateLimiting: boolean;
+
+  // Enhanced Enterprise Configuration
+  enterprise?: {
+    organizationId?: string;
+    ssoEnforcement: boolean;
+    auditLogging: boolean;
+    tokenValidation: boolean;
+    permissionValidation: boolean;
+  };
 
   // Logging and debugging
   enableCommandLogging: boolean;
@@ -55,10 +84,26 @@ export class ConfigManager {
       dynamicToolsets: process.env.GITHUB_DYNAMIC_TOOLSETS === 'true',
       readOnly: process.env.GITHUB_READ_ONLY === 'true',
 
+      // OAuth Configuration from environment
+      oauth: this.getOAuthConfig(),
+
+      // GitHub App Configuration from environment
+      githubApp: this.getGitHubAppConfig(),
+
       // Enterprise features
       organizationId: process.env.GITHUB_ORGANIZATION,
       auditLogging: process.env.AUDIT_ALL_ACCESS === 'true',
       rateLimiting: this.hasRateLimitConfig(),
+
+      // Enhanced Enterprise Configuration
+      enterprise: {
+        organizationId: process.env.GITHUB_ORGANIZATION,
+        ssoEnforcement: process.env.GITHUB_SSO_ENFORCEMENT === 'true',
+        auditLogging: process.env.AUDIT_ALL_ACCESS === 'true',
+        tokenValidation: process.env.GITHUB_TOKEN_VALIDATION === 'true',
+        permissionValidation:
+          process.env.GITHUB_PERMISSION_VALIDATION === 'true',
+      },
 
       // Logging and debugging
       enableCommandLogging: process.env.ENABLE_COMMAND_LOGGING === 'true',
@@ -133,6 +178,18 @@ export class ConfigManager {
     return {
       ...config,
       token: config.token ? '[REDACTED]' : undefined, // Never export actual token
+      oauth: config.oauth
+        ? {
+            ...config.oauth,
+            clientSecret: '[REDACTED]',
+          }
+        : undefined,
+      githubApp: config.githubApp
+        ? {
+            ...config.githubApp,
+            privateKey: '[REDACTED]',
+          }
+        : undefined,
     };
   }
 
@@ -151,6 +208,60 @@ export class ConfigManager {
       process.env.RATE_LIMIT_AUTH_HOUR ||
       process.env.RATE_LIMIT_TOKEN_HOUR
     );
+  }
+
+  // OAuth configuration helper
+  private static getOAuthConfig(): ServerConfig['oauth'] {
+    const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return undefined; // OAuth not configured
+    }
+
+    return {
+      clientId,
+      clientSecret,
+      redirectUri:
+        process.env.GITHUB_OAUTH_REDIRECT_URI ||
+        'http://localhost:3000/auth/callback',
+      scopes: (process.env.GITHUB_OAUTH_SCOPES || 'repo,read:user').split(','),
+      enabled: process.env.GITHUB_OAUTH_ENABLED !== 'false',
+      authorizationUrl:
+        process.env.GITHUB_OAUTH_AUTH_URL ||
+        (process.env.GITHUB_HOST
+          ? `${process.env.GITHUB_HOST}/login/oauth/authorize`
+          : 'https://github.com/login/oauth/authorize'),
+      tokenUrl:
+        process.env.GITHUB_OAUTH_TOKEN_URL ||
+        (process.env.GITHUB_HOST
+          ? `${process.env.GITHUB_HOST}/login/oauth/access_token`
+          : 'https://github.com/login/oauth/access_token'),
+    };
+  }
+
+  // GitHub App configuration helper
+  private static getGitHubAppConfig(): ServerConfig['githubApp'] {
+    const appId = process.env.GITHUB_APP_ID;
+    const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+    if (!appId || !privateKey) {
+      return undefined; // GitHub App not configured
+    }
+
+    return {
+      appId,
+      privateKey: privateKey.replace(/\\n/g, '\n'), // Handle escaped newlines
+      installationId: process.env.GITHUB_APP_INSTALLATION_ID
+        ? parseInt(process.env.GITHUB_APP_INSTALLATION_ID)
+        : undefined,
+      enabled: process.env.GITHUB_APP_ENABLED !== 'false',
+      baseUrl: process.env.GITHUB_HOST
+        ? process.env.GITHUB_HOST.startsWith('https://')
+          ? `${process.env.GITHUB_HOST}/api/v3`
+          : `https://${process.env.GITHUB_HOST}/api/v3`
+        : undefined,
+    };
   }
 
   private static validateConfig(): void {
@@ -176,6 +287,20 @@ export class ConfigManager {
       // Use stderr for warnings instead of console.warn to avoid linter issues
       process.stderr.write(
         'Warning: Audit logging enabled without organization ID - some features may not work correctly\n'
+      );
+    }
+
+    // OAuth validation
+    if (this.config.oauth?.enabled && !this.config.oauth.clientId) {
+      process.stderr.write(
+        'Warning: OAuth enabled but no client ID provided - OAuth authentication will not work\n'
+      );
+    }
+
+    // GitHub App validation
+    if (this.config.githubApp?.enabled && !this.config.githubApp.appId) {
+      process.stderr.write(
+        'Warning: GitHub App enabled but no app ID provided - GitHub App authentication will not work\n'
       );
     }
   }

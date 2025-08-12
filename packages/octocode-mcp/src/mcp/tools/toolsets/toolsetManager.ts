@@ -92,8 +92,14 @@ export class ToolsetManager {
       });
     }
 
-    // Enable enterprise toolset if configured
-    if (process.env.GITHUB_ORGANIZATION) {
+    // Enable enterprise toolset if any enterprise feature is configured
+    if (
+      process.env.GITHUB_ORGANIZATION ||
+      process.env.AUDIT_ALL_ACCESS === 'true' ||
+      process.env.RATE_LIMIT_API_HOUR ||
+      process.env.RATE_LIMIT_AUTH_HOUR ||
+      process.env.RATE_LIMIT_TOKEN_HOUR
+    ) {
       const enterpriseToolset = this.toolsets.get('enterprise');
       if (enterpriseToolset) {
         enterpriseToolset.enabled = true;

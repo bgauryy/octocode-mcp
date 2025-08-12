@@ -6,6 +6,7 @@ import {
   getGitHubToken,
   onTokenRotated,
 } from '../../mcp/tools/utils/tokenManager.js';
+import { ConfigManager } from '../../config/serverConfig.js';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
@@ -41,12 +42,15 @@ export async function getOctokit(): Promise<
 > {
   if (!octokitInstance) {
     const token = await getGitHubToken();
+    const baseUrl = ConfigManager.getGitHubBaseURL();
+    const config = ConfigManager.getConfig();
 
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
     } = {
       userAgent: 'octocode-mcp/1.0.0',
-      request: { timeout: 30000 },
+      baseUrl,
+      request: { timeout: config.timeout || 30000 },
       throttle: createThrottleOptions(),
       ...(token && { auth: token }),
     };
