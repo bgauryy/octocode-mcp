@@ -68,23 +68,37 @@ gh auth login
 npx octocode-mcp
 ```
 
-For enterprise setup and full GitHub authentication flows (tokens, scopes, org config), see the Installation Guide: `./docs/INSTALLATION.md`.
+For complete authentication setup including OAuth, GitHub Apps, and enterprise features, see the authentication guides below.
 
-<!-- Detailed installation/deployment methods are documented in ./docs/INSTALLATION.md -->
+## 🔐 Authentication & Configuration
 
-## 🔐 Authentication & Enterprise
+Octocode is an **MCP Server** that requires GitHub authentication. Choose your setup:
 
-Looking for token scopes, org configuration, or enterprise features? See `./docs/INSTALLATION.md` for the complete guide.
+### 🍎 Local Development (macOS with GitHub CLI)
+```bash
+# 1. Install and authenticate with [GitHub CLI](https://cli.github.com/)
+gh auth login
 
-## 🏢 Enterprise
+```
 
-For enterprise configuration (org membership, policies, audit logging, rate limiting) and deployment options, see `./docs/INSTALLATION.md`.
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp"]
+    }
+  }
+}
+```
 
-## 🔗 AI Assistant Integration
+### 🌐 Hosted/Production & Windows (GitHub Token)
+```bash
+# 1. Create Personal Access Token at: https://github.com/settings/tokens
+# Scopes needed: repo, read:user, read:org
 
-### Claude Desktop
-Add to your MCP configuration (`~/Library/Application Support/Claude/claude_desktop_config.json`):
-
+# 2. Add to your MCP configuration:
+```
 ```json
 {
   "mcpServers": {
@@ -92,15 +106,55 @@ Add to your MCP configuration (`~/Library/Application Support/Claude/claude_desk
       "command": "npx",
       "args": ["octocode-mcp"],
       "env": {
-        "GITHUB_ORGANIZATION": "your-org",
-        "AUDIT_ALL_ACCESS": "true"
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
       }
     }
   }
 }
 ```
 
-### Other MCP-Compatible Assistants
+### 🏢 Enterprise Setup
+For organizations with advanced security, audit logging, and OAuth 2.0 authentication:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx", 
+      "args": ["octocode-mcp"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
+        "GITHUB_ORGANIZATION": "your-org",
+        "AUDIT_ALL_ACCESS": "true",
+        "RATE_LIMIT_API_HOUR": "5000"
+      }
+    }
+  }
+}
+```
+
+**Enterprise Features:**
+- **Organization Controls** - Restrict access to organization members
+- **OAuth 2.0 & GitHub Apps** - Advanced authentication workflows
+- **Audit Logging** - Complete compliance and security tracking
+- **Rate Limiting** - Configurable API usage limits
+
+📚 **Enterprise Documentation:**
+- **[Enterprise Setup Guide](./docs/AUTHENTICATION.md#-enterprise-features)** - Organization policies, audit logging, and security configuration
+- **[OAuth 2.0 Integration](./docs/AUTHENTICATION.md#-oauth-20-integration)** - How OAuth authentication works for organizations
+
+### 📚 Complete Authentication Guides
+- **[30-Second Setup](./docs/AUTHENTICATION_QUICK_REFERENCE.md)** - Quick reference for all authentication methods
+- **[Complete Authentication Guide](./docs/AUTHENTICATION.md)** - Detailed setup for OAuth, GitHub Apps, and enterprise features
+
+## 🔗 AI Assistant Integration
+
+**Quick Setup with Claude CLI:**
+```bash
+claude mcp add -s user octocode npx 'octocode-mcp@latest'
+```
+
+**Other MCP-Compatible Assistants:**
 Octocode follows the standard Model Context Protocol, making it compatible with any MCP-enabled AI assistant.
 
 ## 🔍 Core Features
@@ -127,21 +181,19 @@ Octocode follows the standard Model Context Protocol, making it compatible with 
 
 ## 🚨 Troubleshooting & Help
 
-For troubleshooting, token scope checks, and enterprise diagnostics, see `./docs/INSTALLATION.md`.
+**Common Issues:**
+- **"No GitHub token found"** → See [Authentication Quick Reference](./docs/AUTHENTICATION_QUICK_REFERENCE.md)
+- **Rate limiting/Enterprise setup** → See [Complete Authentication Guide](./docs/AUTHENTICATION.md)
+- **MCP configuration help** → See examples above or [Complete Authentication Guide](./docs/AUTHENTICATION.md)
 
 ## 📚 Documentation
 
 ### Quick Links
 - 📚 **[Complete User Guide](./docs/USAGE_GUIDE.md)** - Examples and best practices
-- 📋 **[Complete Installation Guide](./docs/INSTALLATION.md)** - Individual & enterprise setup
+- 🔐 **[Authentication Guide](./docs/AUTHENTICATION.md)** - Complete setup for all authentication methods
+- ⚡ **[Quick Setup Reference](./docs/AUTHENTICATION_QUICK_REFERENCE.md)** - 30-second authentication setup
 - 🏗️ **[Technical Architecture](./docs/SUMMARY.md)** - System design and implementation
 - 🛠️ **[Tool Schemas](./docs/TOOL_SCHEMAS.md)** - Complete API reference
-
-<!-- Performance and scalability details are documented elsewhere to keep this README concise. -->
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## 📄 License
 
