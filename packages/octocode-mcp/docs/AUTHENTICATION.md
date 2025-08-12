@@ -47,6 +47,25 @@ export GITHUB_APP_ENABLED="true"
 export GITHUB_TOKEN="your_github_token_here"
 ```
 
+## 🔐 Required GitHub Scopes (and Why)
+
+Octocode MCP performs read-only analysis across repositories. It never writes to GitHub.
+
+Recommended minimum scopes:
+
+| Scope | Why it's needed | Features enabled |
+|------|------------------|------------------|
+| `repo` (or fine‑grained: Contents: Read, Metadata: Read, Pull requests: Read) | Read private repository contents and metadata | Code search, file fetch, repo structure, PR/commit search for private repos |
+| `read:user` | Identify the authenticated user and validate token | User context, rate limit checks, token validation |
+| `read:org` | Verify organization membership and team policies | Enterprise org/teams validation, policy enforcement |
+
+Notes:
+- For classic PATs, use `repo` + `read:user` + `read:org`.
+- For Fine‑grained PATs, prefer read‑only permissions: Repository contents (Read), Metadata (Read), Pull requests (Read). Do not grant write scopes.
+- OAuth apps should request the same read scopes; see the `GITHUB_OAUTH_SCOPES` example below.
+
+---
+
 ## 🔄 Authentication Flow
 
 Octocode-MCP uses a **unified authentication system** with the following initialization flow:
@@ -107,6 +126,50 @@ Octocode-MCP resolves tokens in the following **priority order**:
 - **Best for**: Direct API calls
 - **Format**: `Authorization: Bearer <token>`
 - **Note**: Lowest priority fallback
+
+### Token Selection & Fallback Flow
+
+```mermaid
+flowchart TD
+    Start([Start Token Resolution]) --> CheckOAuth{OAuth token
+available?}
+    CheckOAuth -- Yes --> UseOAuth[Use OAuth access token]
+    CheckOAuth -- No --> CheckApp{GitHub App token
+available?}
+    CheckApp -- Yes --> UseApp[Use GitHub App installation token]
+    CheckApp -- No --> CheckEnv{Env token
+available?}
+    CheckEnv -- GITHUB_TOKEN --> UseEnv1[Use GITHUB_TOKEN]
+    CheckEnv -- GH_TOKEN --> UseEnv2[Use GH_TOKEN]
+    CheckEnv -- None --> CheckEnterprise{Enterprise mode?}
+    CheckEnterprise -- No --> TryCLI{GitHub CLI token
+available?}
+    TryCLI -- Yes --> UseCLI[Use gh auth token]
+    TryCLI -- No --> CheckAuthHeader{Authorization header
+available?}
+    CheckEnterprise -- Yes --> SkipCLI[Skip CLI for security]
+    SkipCLI --> CheckAuthHeader
+    CheckAuthHeader -- Yes --> UseHeader[Use Authorization header token]
+    CheckAuthHeader -- No --> Fail[No token found → error]
+
+    %% Success nodes converge
+    UseOAuth --> Done([Token ready])
+    UseApp --> Done
+    UseEnv1 --> Done
+    UseEnv2 --> Done
+    UseCLI --> Done
+    UseHeader --> Done
+```
+
+### Enterprise-Aware Fallback Decision
+
+```mermaid
+flowchart LR
+    A[Enterprise mode detected] --> B{CLI token allowed?}
+    B -- No --> C[Skip CLI to prevent insecure auth]
+    C --> D[Require OAuth/GitHub App/Env tokens]
+    B -- Yes --> E[Allow CLI for local/dev only]
+```
 
 ## 💻 Local Development Setup
 
@@ -177,7 +240,7 @@ Perfect for web applications and hosted services:
      - **Homepage URL**: `https://yourapp.com`
      - **Authorization callback URL**: `https://yourapp.com/auth/callback`
 
-2. **Configure Environment Variables**:
+2. **Configure Environment Variables** (recommended scopes shown):
 ```bash
 export GITHUB_OAUTH_CLIENT_ID="your_client_id"
 export GITHUB_OAUTH_CLIENT_SECRET="your_client_secret"
@@ -201,6 +264,28 @@ const tokenResponse = await fetch('https://github.com/login/oauth/access_token',
     code: authorizationCode,
   }),
 });
+```
+
+#### OAuth Authorization Code with PKCE Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as Client (Your App)
+    participant G as GitHub OAuth Server
+
+    C->>C: Generate state + PKCE (code_verifier, code_challenge)
+    C->>U: Redirect to GitHub authorize URL
+    U->>G: Authorize application
+    G-->>U: Redirect back with code (+ state)
+    U-->>C: Browser sends code to redirect_uri
+    C->>C: Validate state
+    C->>G: Exchange code + code_verifier for tokens
+    G-->>C: Access token (+ refresh token)
+    C->>C: Store tokens securely (SecureCredentialStore)
+    C->>GitHub API: Call API with Bearer access_token
+    GitHub API-->>C: Protected resources
+    C-->>U: Operation successful
 ```
 
 ### GitHub App Setup (Enterprise)
@@ -377,12 +462,20 @@ console.log('Permissions:', metadata.permissions);
 | `GITHUB_TOKEN_VALIDATION` | Enhanced token validation | `false` | `true` |
 | `GITHUB_PERMISSION_VALIDATION` | Permission checking | `false` | `true` |
 
+Notes:
+- Enterprise mode is considered active if ANY of the following are set: `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS`, `GITHUB_SSO_ENFORCEMENT`, or any of the `RATE_LIMIT_*` variables.
+- If `AUDIT_ALL_ACCESS=true` is set without `GITHUB_ORGANIZATION`, the server will warn that some features may not work optimally.
+
 ### Rate Limiting
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `RATE_LIMIT_API_HOUR` | API calls per hour | - | `5000` |
 | `RATE_LIMIT_AUTH_HOUR` | Auth calls per hour | - | `1000` |
 | `RATE_LIMIT_TOKEN_HOUR` | Token calls per hour | - | `100` |
+
+Notes:
+- Setting any `RATE_LIMIT_*` variable automatically enables enterprise rate limiting.
+- Values are validated to be positive integers. If unset, internal safe defaults are used (API: 1000/h, Auth: 10/h, Token: 50/h).
 
 ## 🔍 Troubleshooting
 
