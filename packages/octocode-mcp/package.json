@@ -70,8 +70,7 @@
     "node": ">=18.12.0"
   },
   "files": [
-    "dist/index.js",
-    "dist/security/**/*.js",
+    "dist/**/*.js",
     "manifest.json",
     "assets/logo_white.png"
   ],
@@ -98,9 +97,7 @@
   "type": "module",
   "mcp": {
     "type": "stdio",
-    "command": "npx",
-    "args": [
-      "octocode-mcp"
-    ]
+    "command": "octocode-mcp",
+    "args": []
   }
 }
