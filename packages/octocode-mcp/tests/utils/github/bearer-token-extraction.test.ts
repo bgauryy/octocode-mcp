@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractBearerToken } from '../../../src/utils/github/client';
+import { extractBearerToken } from '../../../src/mcp/tools/utils/tokenManager';
 
 describe('Bearer Token Extraction - Case Sensitive', () => {
   describe('Bearer prefix handling (case-sensitive)', () => {
@@ -117,14 +117,14 @@ describe('Bearer Token Extraction - Case Sensitive', () => {
   describe('Edge cases', () => {
     it('should handle empty string', () => {
       const result = extractBearerToken('');
-      expect(result).toBe('');
+      expect(result).toBe(null);
     });
 
     it('should handle undefined/null', () => {
       const result1 = extractBearerToken(undefined as unknown as string);
       const result2 = extractBearerToken(null as unknown as string);
-      expect(result1).toBe('');
-      expect(result2).toBe('');
+      expect(result1).toBe(null);
+      expect(result2).toBe(null);
     });
 
     it('should handle plain token without any prefix', () => {

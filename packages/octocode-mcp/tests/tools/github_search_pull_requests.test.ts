@@ -6,6 +6,7 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
+const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/githubAPI.js', () => ({
@@ -15,6 +16,10 @@ vi.mock('../../src/utils/githubAPI.js', () => ({
 vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: vi.fn(),
   withCache: vi.fn(),
+}));
+
+vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+  getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
@@ -92,13 +97,13 @@ describe('GitHub Search Pull Requests Tool', () => {
 
   beforeEach(() => {
     mockServer = createMockMcpServer();
-    registerSearchGitHubPullRequestsTool(mockServer.server, {
-      npmEnabled: false,
-      ghToken: 'test-token',
-    });
+    registerSearchGitHubPullRequestsTool(mockServer.server);
 
     // Reset all mocks
     vi.clearAllMocks();
+
+    // Mock token manager to return test token
+    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Setup default successful API response using helper
     mockSearchGitHubPullRequestsAPI.mockResolvedValue(createMockPRResponse());
@@ -127,8 +132,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: 'facebook',
           repo: 'react',
           state: 'open',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -167,8 +171,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           query: 'bug fix',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -218,8 +221,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           query: 'feature',
           owner: 'test',
           repo: 'repo',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -240,8 +242,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
-        expect.objectContaining(searchParams),
-        'test-token'
+        expect.objectContaining(searchParams)
       );
     });
 
@@ -262,8 +263,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: ['facebook', 'microsoft'],
           repo: ['react', 'vscode'],
           label: ['bug', 'enhancement'],
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -288,8 +288,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           draft: true,
           merged: false,
           locked: false,
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -314,8 +313,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           created: '>2023-01-01',
           updated: '2023-01-01..2023-12-31',
           closed: '<2023-06-01',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -340,8 +338,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           comments: '>5',
           reactions: '10..50',
           interactions: '<100',
-        }),
-        'test-token'
+        })
       );
     });
 
@@ -364,8 +361,7 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: 'repo',
           getCommitData: true,
           withComments: true,
-        }),
-        'test-token'
+        })
       );
     });
   });
@@ -385,13 +381,11 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledTimes(2);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         1,
-        expect.objectContaining(queries[0]),
-        'test-token'
+        expect.objectContaining(queries[0])
       );
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining(queries[1]),
-        'test-token'
+        expect.objectContaining(queries[1])
       );
     });
 
@@ -547,10 +541,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         queries: [args],
       });
 
-      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
-        args,
-        'test-token'
-      );
+      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(args);
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data).toEqual(mockResponse);

@@ -1,6 +1,6 @@
-# Octocode MCP
+# Octocode MCP - Enterprise-Ready GitHub Intelligence
 
-**AI-Powered GitHub Intelligence for Code Research & Discovery**
+**AI-Powered GitHub Analysis for Developers and Organizations**
 
 <div align="center">
   <a href="https://github.com/modelcontextprotocol/servers">
@@ -17,193 +17,203 @@
   
   [![Version](https://img.shields.io/badge/version-4.0.3-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
+  [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.12.0-brightgreen)](https://nodejs.org/)
   [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
 
 </div>
 
-
 <div align="center">
   <a href="https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/USAGE_GUIDE.md" 
   style="font-size: 1.2em; font-weight: bold; text-decoration: none;">
-    Go To User Guide →
+    📚 Complete User Guide →
   </a>
 </div>
 
 ## What is Octocode?
 
-**Octocode transforms your AI assistant into a code research expert.** Instead of just writing code, your AI can now:
+**Octocode transforms your AI assistant into a code research expert.** Built for both individual developers and enterprise organizations, it provides:
 
+### 🏠 For Individual Developers
 - **🔍 Search millions of repositories** for real implementations
 - **📈 Analyze code patterns** from production codebases
 - **📚 Extract knowledge** from commits, PRs, and issues
-- **🏢 Access private repositories** for organizational intelligence
 - **🔗 Connect packages** to their source code automatically
+- **⚡ Zero-config setup** with GitHub CLI integration
+
+### 🏢 For Organizations & Enterprises
+- **🔒 Enterprise security** with comprehensive audit logging
+- **👥 Organization access controls** with team-based permissions
+- **📊 Rate limiting** and security monitoring
+- **📋 Compliance-ready** features (SOC 2, GDPR)
+- **🔄 Progressive enhancement** - enterprise features activate only when configured
+- **⬆️ 100% backward compatibility** - no breaking changes for existing users
 
 Built on the **Model Context Protocol (MCP)**, Octocode provides AI assistants with 8 specialized tools for GitHub repository analysis, code discovery, and package exploration.
 
-> **The Problem**: AI assistants are great at writing code but struggle with understanding existing codebases and finding proven patterns.
-> 
-> **The Solution**: Octocode makes any codebase instantly accessible and comprehensible to AI assistants.
+## 📋 Prerequisites
 
-## 📖 Documentation
-
-### Quick Links
-- 📚 **[Usage Guide](./docs/USAGE_GUIDE.md)** - Complete guide with examples and best practices
-- 🏗️ **[Technical Architecture](./docs/SUMMARY.md)** - Detailed system architecture and implementation
-- 🛠️ **[Tool Schemas](./docs/TOOL_SCHEMAS.md)** - Complete API reference and tool specifications
-- 🌐 **[Octocode Ecosystem](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode/README.md)** - Explore the complete Octocode suite
-
-> 💡 **Pro Tip:** Understanding the tool schemas will significantly improve your Octocode effectiveness.
-
-## ⚡ Quick Start
-
-### Prerequisites
-- **Node.js** v20+ (check with `node --version`)
-- **GitHub Authentication** (Personal Access Token or GitHub CLI)
-- **NPM** (Optional, enhances package research capabilities)
+- **Node.js** >= 18.12.0 (required) - [Download here](https://nodejs.org/)
+- **GitHub Authentication** (choose one):
+  - **GitHub CLI** (recommended for local development) - [Install here](https://cli.github.com/)
+  - **GitHub Personal Access Token** (required for enterprise/CI) - [Create here](https://github.com/settings/tokens)
 - **AI Assistant** (Claude Desktop, or any MCP-compatible assistant)
 
-### Authentication Options
-Octocode supports flexible GitHub authentication with smart fallback:
+## 🚀 Quick Start (Simple)
 
-1. **[GitHub CLI](https://cli.github.com/)** (Recommended for local development) - Run `gh auth login` for seamless authentication
-2. **[Personal Access Token](https://github.com/settings/tokens)** (Recommended for Windows & hosted environments) - Set `GITHUB_TOKEN` or `GH_TOKEN` environment variable
-3. **Authorization Header** (For API integrations) - Set `Authorization` environment variable with `Bearer {{token}}` format
+```bash
+# 1) Authenticate with GitHub (recommended)
+gh auth login
 
-### Performance Optimizations
-- **NPM Integration**: Automatically enhances package research when NPM is available
-  
-  *For CI/CD environments:*
-  ```bash
-  # As environment variable
-  export NPM_TOKEN=your_token_here
-  
-  # Then in .npmrc:
-  //registry.npmjs.org/:_authToken=${NPM_TOKEN}
-  ```
+# 2) Run Octocode
+npx octocode-mcp
+```
 
-- **PyPI Integration**: Discovers Python package repository URLs for comprehensive analysis
+For complete authentication setup including OAuth, GitHub Apps, and enterprise features, see the authentication guides below.
 
-## 🚀 Installation
+## 🔐 Authentication & Configuration
 
-### 🚀 Quick Configuration
+Octocode is an **MCP Server** that requires GitHub authentication. Choose your setup:
 
-#### **Option 1: GitHub CLI Authentication** 🟢 *Recommended*
-*Best for Mac and local development*
+### 🍎 Local Development (macOS with GitHub CLI)
+```bash
+# 1. Install and authenticate with [GitHub CLI](https://cli.github.com/)
+gh auth login
 
-1. **Install and authenticate with GitHub CLI:**
-   ```bash
-   # Install GitHub CLI (if not already installed)
-   # macOS: brew install gh
-   # Windows: winget install GitHub.cli
-   
-   # Authenticate
-   gh auth login
-   ```
-
-2. **Add to your MCP configuration:**
-   ```json
-   {
-     "octocode": {
-       "command": "npx",
-       "args": ["octocode-mcp"]
-     }
-   }
-   ```
-   > 💡 **Tip:** This method provides seamless, secure access to your GitHub resources without managing tokens.
-
----
-
-#### **Option 2: Personal Access Token**
-*Best for Windows, CI/CD, or hosted environments*
-
-1. **Create a GitHub token:**
-   - Go to [GitHub Settings → Personal Access Tokens](https://github.com/settings/tokens)
-   - Generate a new token with appropriate permissions
-
-2. **Add to your MCP configuration:**
-   ```json
-   {
-     "octocode": {
-       "command": "npx",
-       "args": ["octocode-mcp"],
-       "env": {
-         "GITHUB_TOKEN": "your_github_token_here"
-       }
-     }
-   }
-   ```
-
----
-
-#### **Option 3: Authorization Header Format**
-*Best for API integrations and templated configurations*
+```
 
 ```json
 {
-  "octocode": {
-    "command": "npx",
-    "args": ["octocode-mcp"],
-    "env": {
-      "Authorization": "Bearer your_github_token_here"
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp"]
     }
   }
 }
 ```
-> 💡 **Note:** Supports template formats like `Bearer {{GH_TOKEN}}` for dynamic token injection.
 
-### Authentication Fallback Chain
-
-Octocode uses an intelligent authentication system that tries multiple methods in priority order:
-
-1. **`GITHUB_TOKEN`** - Primary GitHub token environment variable
-2. **`GH_TOKEN`** - Alternative GitHub token environment variable  
-3. **GitHub CLI Token** - Automatically extracted from `gh auth login` session
-4. **`Authorization` Header** - Extracts token from Bearer format (`Bearer {{token}}`), supporting template variables
-
-
-
-## 📦 DXT Extension
-
-**Desktop Extension (DXT)** for one-click installation in Claude Desktop.
-
+### 🌐 Hosted/Production & Windows (GitHub Token)
 ```bash
-yarn install && yarn dxt:pack
+# 1. Create Personal Access Token at: https://github.com/settings/tokens
+# Scopes needed: repo, read:user, read:org
+
+# 2. Add to your MCP configuration:
+```
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
+      }
+    }
+  }
+}
 ```
 
-Install the generated `octocode-mcp.dxt` file by clicking on it in Claude Desktop.
+### 🏢 Enterprise Setup
+For organizations with advanced security, audit logging, and OAuth 2.0 authentication:
 
-### Enterprise/Production Deployment
-**Ideal for:** Team environments, Docker containers, CI/CD pipelines, hosted AI services
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx", 
+      "args": ["octocode-mcp"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
+        "GITHUB_ORGANIZATION": "your-org",
+        "AUDIT_ALL_ACCESS": "true",
+        "RATE_LIMIT_API_HOUR": "5000"
+      }
+    }
+  }
+}
+```
 
-| Feature | Details |
-|---------|---------|
-| **Authentication** | GitHub Personal Access Tokens or GitHub App tokens |
-| **Rate Limits** | 5,000 requests/hour (higher with GitHub Apps) |
-| **Access Control** | Managed by token scope and permissions |
-| **Setup** | Configure `GITHUB_TOKEN` environment variable |
+**Enterprise Features:**
+- **Organization Controls** - Restrict access to organization members
+- **OAuth 2.0 & GitHub Apps** - Advanced authentication workflows
+- **Audit Logging** - Complete compliance and security tracking
+- **Rate Limiting** - Configurable API usage limits
 
-## 🐳 Docker Support
+📚 **Enterprise Documentation:**
+- **[Enterprise Setup Guide](./docs/AUTHENTICATION.md#-enterprise-features)** - Organization policies, audit logging, and security configuration
+- **[OAuth 2.0 Integration](./docs/AUTHENTICATION.md#-oauth-20-integration)** - How OAuth authentication works for organizations
 
-Run Octocode MCP in a containerized environment with full GitHub authentication support. Perfect for consistent deployments and team environments.
+### 📚 Complete Authentication Guides
+- **[30-Second Setup](./docs/AUTHENTICATION_QUICK_REFERENCE.md)** - Quick reference for all authentication methods
+- **[Complete Authentication Guide](./docs/AUTHENTICATION.md)** - Detailed setup for OAuth, GitHub Apps, and enterprise features
 
-**[→ Complete Docker Setup Guide](./docker/README.Docker.md)**
+## 🔗 AI Assistant Integration
 
-## 🛡️ Security & Privacy
+**Quick Setup with Claude CLI:**
+```bash
+claude mcp add -s user octocode npx 'octocode-mcp@latest'
+```
 
-### Enterprise-Grade Security
-- **🛡️ Advanced Content Protection** - Multi-layer input validation and intelligent content sanitization
-- **🔐 Comprehensive Secret Detection** - Automatic detection and redaction of API keys, tokens, and credentials
-- **⚪ Safe Commands Only** - Pre-approved GitHub CLI and NPM commands with parameter validation
-- **🧹 Malicious Content Filtering** - Automatic detection and sanitization of harmful code patterns
-- **🔍 Security Pattern Analysis** - Built-in vulnerability and compliance issue identification
+**Other MCP-Compatible Assistants:**
+Octocode follows the standard Model Context Protocol, making it compatible with any MCP-enabled AI assistant.
 
-> **📚 [View complete security architecture →](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/SUMMARY.md)**
+## 🔍 Core Features
 
----
+### GitHub Analysis Tools
+- **🔍 Code Search** - Semantic code discovery across repositories with bulk operations
+- **📁 Repository Analysis** - Structure exploration and metadata extraction
+- **🔄 Pull Request Search** - Find PRs by criteria with optional diff analysis
+- **📝 Commit Search** - Track changes and development history
+- **📄 File Content Retrieval** - Access files with context and smart minification
+- **🏗️ Repository Structure** - Explore directory trees with intelligent filtering
+
+### Package Discovery
+- **📦 NPM Package Search** - Comprehensive npm registry exploration
+- **🐍 Python Package Search** - PyPI package discovery with repository links
+- **🔗 Repository Linking** - Automatic connection between packages and source code
+
+### Enterprise Security
+- **📊 Audit Logging** - Comprehensive event tracking and compliance reporting
+- **👥 Organization Controls** - Team-based access and membership validation
+- **⚡ Rate Limiting** - Configurable limits for API, auth, and token requests
+- **🔐 Token Security** - Encrypted storage and automatic rotation support
+- **📋 Policy Enforcement** - MFA requirements and repository access controls
+
+## 🚨 Troubleshooting & Help
+
+**Common Issues:**
+- **"No GitHub token found"** → See [Authentication Quick Reference](./docs/AUTHENTICATION_QUICK_REFERENCE.md)
+- **Rate limiting/Enterprise setup** → See [Complete Authentication Guide](./docs/AUTHENTICATION.md)
+- **MCP configuration help** → See examples above or [Complete Authentication Guide](./docs/AUTHENTICATION.md)
+
+## 📚 Documentation
+
+### Quick Links
+- 📚 **[Complete User Guide](./docs/USAGE_GUIDE.md)** - Examples and best practices
+- 🔐 **[Authentication Guide](./docs/AUTHENTICATION.md)** - Complete setup for all authentication methods
+- ⚡ **[Quick Setup Reference](./docs/AUTHENTICATION_QUICK_REFERENCE.md)** - 30-second authentication setup
+- 🏗️ **[Technical Architecture](./docs/SUMMARY.md)** - System design and implementation
+- 🛠️ **[Tool Schemas](./docs/TOOL_SCHEMAS.md)** - Complete API reference
 
 ## 📄 License
 
-MIT License - See [LICENSE](./LICENSE.md) for details.
+MIT License - see [LICENSE.md](LICENSE.md) for details.
 
-**Made with ❤️ by the Octocode team**
+## 📞 Support
+
+- **📚 Documentation**: [Complete guides and API reference](./docs/)
+- **🐛 Issues**: [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
+- **🏢 Enterprise Support**: [Contact us](mailto:enterprise@octocode.ai)
+- **💬 Community**: [Discord](https://discord.gg/octocode)
+
+---
+
+<div align="center">
+  <p>Built with ❤️ for the developer community</p>
+  <p>
+    <a href="https://octocode.ai">Website</a> •
+    <a href="https://github.com/bgauryy/octocode-mcp">GitHub</a> •
+    <a href="https://www.npmjs.com/package/octocode-mcp">NPM</a> •
+    <a href="https://discord.gg/octocode">Discord</a>
+  </p>
+</div>

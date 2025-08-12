@@ -71,9 +71,9 @@ const ERROR_RECOVERY_HINTS = {
     'For NPM: Check package availability on https://npmjs.com',
   CHECK_PYPI_REGISTRY: 'For Python: Check exact spelling on https://pypi.org',
   USE_FUNCTIONAL_TERMS:
-    'Try broader functional terms: "testing" instead of "jest-unit-test"',
+    'Try broader functional terms that describe what the code does rather than specific tool names',
   SIMPLIFY_PACKAGE_NAMES:
-    'Use single keywords: "http" instead of "http-client-library"',
+    'Use core concept keywords instead of compound library-specific names',
 } as const;
 
 /**
@@ -88,18 +88,18 @@ const TOOL_NAVIGATION_HINTS = {
   COMPARE_APPROACHES:
     'Compare implementations across 3-5 repositories to identify best practices',
   PACKAGE_SEARCH:
-    'Start with package search to discover libraries → get repo URLs → analyze implementations',
+    'Start with package search to discover libraries, then follow repository links for implementation analysis',
   LOOK_FOR_DOCS:
-    'Priority: README → docs/ folder → examples/ → verify against actual implementation',
+    'Prioritize documentation in this order: README files, docs folders, examples, then verify against implementation',
   EXAMINE_TESTS:
-    'Test files reveal real usage: __tests__/, spec/, test/ folders show practical examples',
+    'Test files reveal real usage patterns - look for test directories to understand practical examples',
   ANALYZE_PATTERNS:
     'Look for: naming conventions, file structure, error handling, and configuration patterns',
   STRATEGIC_CHAINING:
-    'Chain tools: repo search → structure view → code search → content fetch for deep analysis',
+    'Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis',
   // Quality-focused research hints
   IMPLEMENTATION_FIRST:
-    'Focus on implementation files (.ts, .js, .py, .go) for accurate code understanding',
+    'Focus on implementation files in relevant languages for accurate code understanding',
   VERIFY_DOCS:
     'Always verify documentation claims against actual implementation code',
   FIND_ENTRY_POINTS:
@@ -114,9 +114,9 @@ const TOOL_NAVIGATION_HINTS = {
     'Trust implementation over documentation when they conflict',
   // Repository search specific hints
   USE_TOPICS_FOR_EXPLORATION:
-    'Topics for ecosystem discovery: ["react", "component-library"] or ["cli", "nodejs"]',
+    'Topics for ecosystem discovery: combine technology type with domain area for broad exploration',
   USE_QUERY_TERMS_FOR_SPECIFIC:
-    'QueryTerms for exact matches: ["authentication system"] or ["file upload handling"]',
+    'QueryTerms for exact matches: use descriptive phrases that capture the specific functionality you need',
   BULK_QUERIES:
     'Use multiple queries in one call: broad discovery + specific patterns + error cases',
   // Commits/PRs guidance
@@ -135,9 +135,9 @@ const NO_RESULTS_HINTS = {
   START_WITH_REPOS:
     'Start with repository search to find relevant projects, then search within promising repos',
   DIFFERENT_TERMS:
-    'Try semantic alternatives: "auth" → "authentication", "config" → "configuration"',
+    'Try semantic alternatives: expand abbreviations, use synonyms, or try related conceptual terms',
   ALTERNATIVE_KEYWORDS:
-    'Use functional descriptions: "user login" instead of specific library names',
+    'Use functional descriptions that focus on what the code accomplishes rather than specific library names',
   EXPAND_SCOPE:
     'Remove owner/repo/language filters to discover more alternatives',
   WORKING_EXAMPLES:
@@ -149,11 +149,11 @@ const NO_RESULTS_HINTS = {
   PROJECT_ISSUES:
     'Use GitHub issues search to find real-world usage patterns and solutions',
   RELATED_TECH:
-    'Explore ecosystem: React → Next.js/Gatsby, Python → FastAPI/Django',
+    'Explore ecosystem: consider frameworks, libraries, and tools commonly used with your target technology',
   PACKAGE_DISCOVERY:
     'Use package search to find libraries, then explore their GitHub repositories',
   PROGRESSIVE_SEARCH:
-    'Start with core concepts, then drill down: "testing" → "unit testing" → "jest"',
+    'Start with core concepts, then progressively narrow to specific implementations and tools',
 } as const;
 
 // ============================================================================
@@ -322,6 +322,9 @@ function generateToolNavigationHints(
           hints.push('Explore structure of most popular repositories first');
         }
       } else {
+        hints.push(
+          `If repo not found, try ${TOOL_NAMES.PACKAGE_SEARCH} for npm/python packages search to get the github repo`
+        );
         hints.push(TOOL_NAVIGATION_HINTS.USE_TOPICS_FOR_EXPLORATION);
         hints.push(NO_RESULTS_HINTS.PACKAGE_DISCOVERY);
         hints.push(NO_RESULTS_HINTS.RELATED_TECH);
@@ -351,7 +354,7 @@ function generateToolNavigationHints(
         hints.push(TOOL_NAVIGATION_HINTS.FETCH_CONTENT);
         hints.push(TOOL_NAVIGATION_HINTS.ANALYZE_PATTERNS);
         hints.push(
-          'Focus on src/, lib/, examples/ folders for implementation details'
+          'Focus on source code and example directories for implementation details'
         );
       } else {
         hints.push(
@@ -377,7 +380,7 @@ function generateToolNavigationHints(
         hints.push(NO_RESULTS_HINTS.DIFFERENT_TERMS);
         hints.push(ERROR_RECOVERY_HINTS.USE_FUNCTIONAL_TERMS);
         hints.push(
-          'Try broader categories: "testing", "http", "database", "ui"'
+          'Try broader functional categories that describe the domain or purpose'
         );
         hints.push('Search GitHub repositories directly if package not found');
       }

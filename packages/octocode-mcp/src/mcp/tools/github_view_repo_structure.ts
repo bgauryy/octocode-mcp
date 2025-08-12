@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
@@ -39,10 +39,7 @@ BEST PRACTICES:
 - Specify research goals for optimized navigation suggestions
 - Use bulk operations to compare structures across multiple repositories`;
 
-export function registerViewGitHubRepoStructureTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerViewGitHubRepoStructureTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
@@ -101,8 +98,7 @@ export function registerViewGitHubRepoStructureTool(
 
         return exploreMultipleRepositoryStructures(
           args.queries,
-          args.verbose || false,
-          opts
+          args.verbose || false
         );
       }
     )
@@ -111,8 +107,7 @@ export function registerViewGitHubRepoStructureTool(
 
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
-  verbose: boolean = false,
-  opts: ToolOptions
+  verbose: boolean = false
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-structure');
 
@@ -174,10 +169,7 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        const apiResult = await viewGitHubRepositoryStructureAPI(
-          query,
-          opts.ghToken
-        );
+        const apiResult = await viewGitHubRepositoryStructureAPI(query);
 
         // Check if result is an error
         if ('error' in apiResult) {

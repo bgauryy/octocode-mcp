@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
-import { TOOL_NAMES, ToolOptions } from './utils/toolConstants.js';
+import { TOOL_NAMES } from './utils/toolConstants.js';
 import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
@@ -52,10 +52,7 @@ interface GitHubCodeAggregatedContext {
   };
 }
 
-export function registerGitHubSearchCodeTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerGitHubSearchCodeTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
@@ -70,10 +67,13 @@ export function registerGitHubSearchCodeTool(
       },
     },
     withSecurityValidation(
-      async (args: {
-        queries: GitHubCodeSearchQuery[];
-        verbose?: boolean;
-      }): Promise<CallToolResult> => {
+      async (
+        args: {
+          queries: GitHubCodeSearchQuery[];
+          verbose?: boolean;
+        },
+        userContext
+      ): Promise<CallToolResult> => {
         if (
           !args.queries ||
           !Array.isArray(args.queries) ||
@@ -110,10 +110,28 @@ export function registerGitHubSearchCodeTool(
           });
         }
 
+        // Log enterprise access if configured
+        if (userContext?.isEnterpriseMode) {
+          try {
+            const { logToolEvent } = await import(
+              '../../security/auditLogger.js'
+            );
+            logToolEvent(TOOL_NAMES.GITHUB_SEARCH_CODE, 'success', {
+              userId: userContext.userId,
+              userLogin: userContext.userLogin,
+              organizationId: userContext.organizationId,
+              queryCount: args.queries.length,
+              queryTerms: args.queries.map(q => q.queryTerms).flat(),
+            });
+          } catch {
+            // Ignore audit logging errors
+          }
+        }
+
         return searchMultipleGitHubCode(
           args.queries,
           args.verbose || false,
-          opts
+          userContext
         );
       }
     )
@@ -123,7 +141,7 @@ export function registerGitHubSearchCodeTool(
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
-  opts: ToolOptions
+  _userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
 
@@ -133,7 +151,7 @@ async function searchMultipleGitHubCode(
       query: GitHubCodeSearchQuery
     ): Promise<ProcessedCodeSearchResult> => {
       try {
-        const apiResult = await searchGitHubCodeAPI(query, opts.ghToken);
+        const apiResult = await searchGitHubCodeAPI(query);
 
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error

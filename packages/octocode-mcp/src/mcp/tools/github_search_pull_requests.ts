@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubPullRequestsAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
@@ -30,10 +30,7 @@ BEST PRACTICES:
 - Leverage author and assignee filters for people-specific searches
 - Specify research goals (debugging, analysis) for optimal guidance`;
 
-export function registerSearchGitHubPullRequestsTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
@@ -137,8 +134,7 @@ export function registerSearchGitHubPullRequestsTool(
         try {
           return await searchMultipleGitHubPullRequests(
             args.queries,
-            args.verbose || false,
-            opts
+            args.verbose || false
           );
         } catch (error) {
           const errorMessage =
@@ -167,13 +163,12 @@ export function registerSearchGitHubPullRequestsTool(
  */
 async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
-  _verbose: boolean = false,
-  opts: ToolOptions
+  _verbose: boolean = false
 ): Promise<CallToolResult> {
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       try {
-        const result = await searchGitHubPullRequestsAPI(query, opts.ghToken);
+        const result = await searchGitHubPullRequestsAPI(query);
         return {
           queryId: `pr-search_${index + 1}`,
           data: result,

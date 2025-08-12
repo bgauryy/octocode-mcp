@@ -1,8 +1,3 @@
-export interface ToolOptions {
-  npmEnabled: boolean;
-  ghToken?: string;
-}
-
 // Research goals might help the LLM to understand the user request and the context of the research
 // and add research hints to generate the best research plan and tools to use
 export const enum ResearchGoal {

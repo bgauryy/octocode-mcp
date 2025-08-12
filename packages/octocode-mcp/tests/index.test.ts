@@ -15,6 +15,11 @@ vi.mock('../src/mcp/tools/package_search/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
+vi.mock('../src/security/credentialStore.js');
+vi.mock('../src/config/serverConfig.js');
+vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
+vi.mock('../src/translations/translationManager.js');
+vi.mock('../src/mcp/tools/utils/tokenManager.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
@@ -27,10 +32,11 @@ import { registerPackageSearchTool } from '../src/mcp/tools/package_search/packa
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
-import {
-  TOOL_NAMES,
-  ToolOptions,
-} from '../src/mcp/tools/utils/toolConstants.js';
+import { SecureCredentialStore } from '../src/security/credentialStore.js';
+import { ConfigManager } from '../src/config/serverConfig.js';
+import { ToolsetManager } from '../src/mcp/tools/toolsets/toolsetManager.js';
+import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
+import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
 
 // Mock implementations
 const mockMcpServer = {
@@ -43,10 +49,14 @@ const mockTransport = {
 };
 
 const mockClearAllCache = vi.mocked(clearAllCache);
+const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
+const mockConfigManager = vi.mocked(ConfigManager);
+const mockToolsetManager = vi.mocked(ToolsetManager);
+const mockGetToken = vi.mocked(getToken);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -125,9 +135,9 @@ describe('Index Module', () => {
       .spyOn(process.stdin, 'resume')
       .mockImplementation(() => process.stdin);
     processStdinOnSpy = vi
-      .spyOn(process.stdin, 'on')
+      .spyOn(process.stdin, 'once')
       .mockImplementation(() => process.stdin);
-    processOnSpy = vi.spyOn(process, 'on').mockImplementation(() => process);
+    processOnSpy = vi.spyOn(process, 'once').mockImplementation(() => process);
     processStdoutUncorkSpy = vi
       .spyOn(process.stdout, 'uncork')
       .mockImplementation(() => {});
@@ -147,6 +157,34 @@ describe('Index Module', () => {
     mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
     mockRegisterPackageSearchTool.mockImplementation(() => {});
     mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
+
+    // Mock new dependencies
+    mockConfigManager.initialize.mockReturnValue({
+      version: '1.0.0',
+      enabledToolsets: [],
+      dynamicToolsets: false,
+      readOnly: false,
+      enterprise: {
+        organizationId: undefined,
+        ssoEnforcement: false,
+        auditLogging: false,
+        rateLimiting: false,
+        tokenValidation: false,
+        permissionValidation: false,
+      },
+      oauth: undefined,
+      githubApp: undefined,
+      enableCommandLogging: false,
+      logFilePath: undefined,
+      githubHost: undefined,
+      timeout: 30000,
+      maxRetries: 3,
+    });
+
+    mockToolsetManager.initialize.mockImplementation(() => {});
+    mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default
+
+    mockGetToken.mockResolvedValue('test-token');
   });
 
   afterEach(() => {
@@ -202,41 +240,23 @@ describe('Index Module', () => {
   });
 
   describe('NPM Status Check', () => {
-    it('should check NPM status during initialization', async () => {
+    it('should no longer check NPM status during initialization', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockGetNPMUserDetails).toHaveBeenCalled();
-    });
-
-    it('should handle NPM status check failure gracefully', async () => {
-      mockGetNPMUserDetails.mockRejectedValue(new Error('NPM check failed'));
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Should still continue with tool registration
+      // NPM status checking is now handled internally by package search tool
+      expect(mockGetNPMUserDetails).not.toHaveBeenCalled();
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalled();
     });
 
-    it('should pass correct tool options based on NPM status', async () => {
-      mockGetNPMUserDetails.mockResolvedValue({
-        npmConnected: false,
-        registry: 'https://registry.npmjs.org/',
-      });
-
+    it('should register all tools without NPM status dependency', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: false,
-        ghToken: 'test-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
     });
   });
 
@@ -247,14 +267,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'github-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -265,14 +279,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'gh-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -284,14 +292,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'cli-token',
-      };
-
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -299,6 +301,9 @@ describe('Index Module', () => {
       delete process.env.GITHUB_TOKEN;
       delete process.env.GH_TOKEN;
       mockGetGithubCLIToken.mockResolvedValue(null);
+
+      // Mock getToken to throw when no token is available
+      mockGetToken.mockRejectedValue(new Error('No token available'));
 
       // Override the mock to track the exit call without throwing
       let exitCalled = false;
@@ -331,43 +336,29 @@ describe('Index Module', () => {
   });
 
   describe('Tool Registration', () => {
-    it('should register all tools successfully with options', async () => {
+    it('should register all tools successfully', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const expectedOptions: ToolOptions = {
-        npmEnabled: true,
-        ghToken: 'test-token',
-      };
-
-      // Verify all tool registration functions were called with server and options
+      // Verify all tool registration functions were called with server
       expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterGitHubSearchCommitsTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
       expect(mockRegisterSearchGitHubPullRequestsTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
-      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
-      );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
       expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockMcpServer,
-        expectedOptions
+        mockMcpServer
       );
     });
 
@@ -446,6 +437,7 @@ describe('Index Module', () => {
 
       // The module should still load and register other tools
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Verify that other tools were still registered
       expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalled();
@@ -463,6 +455,7 @@ describe('Index Module', () => {
 
       // The module should still load and register other tools
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Verify that other tools were still registered
       expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
@@ -633,6 +626,7 @@ describe('Index Module', () => {
       }
 
       expect(mockClearAllCache).toHaveBeenCalled();
+      expect(mockSecureCredentialStore.clearAll).toHaveBeenCalled();
       expect(mockMcpServer.close).toHaveBeenCalled();
     });
 

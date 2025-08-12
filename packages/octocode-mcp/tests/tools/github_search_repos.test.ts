@@ -9,6 +9,7 @@ const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
+const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
 vi.mock('../../src/utils/exec.js', () => ({
@@ -22,6 +23,10 @@ vi.mock('../../src/utils/cache.js', () => ({
 
 vi.mock('../../src/utils/githubAPI.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
+}));
+
+vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+  getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
@@ -44,6 +49,9 @@ describe('GitHub Search Repositories Tool', () => {
     // @ts-expect-error - mockWithCache is not typed
     mockWithCache.mockImplementation(async (key, fn) => await fn());
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
+
+    // Mock token manager to return test token
+    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Default GitHub CLI mock behavior - return successful results
     const defaultMockResponse = createMockRepositoryResponse([
@@ -69,9 +77,7 @@ describe('GitHub Search Repositories Tool', () => {
 
   describe('Tool Registration', () => {
     it('should register the GitHub search repositories tool with correct parameters', () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
@@ -90,9 +96,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should register tool with security validation wrapper', () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       expect(mockServer.server.registerTool).toHaveBeenCalledTimes(1);
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
@@ -105,9 +109,7 @@ describe('GitHub Search Repositories Tool', () => {
 
   describe('Query Validation', () => {
     it('should accept valid queries with queryTerms', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },
@@ -126,9 +128,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should accept valid queries with queryTerms', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },
@@ -147,9 +147,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should accept valid queries with owner filter', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },
@@ -168,9 +166,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should accept valid queries with language filter', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },
@@ -189,9 +185,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should accept valid queries with topic filter', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },
@@ -210,9 +204,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should handle queries without any search parameters gracefully', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
@@ -229,9 +221,7 @@ describe('GitHub Search Repositories Tool', () => {
 
   describe('Single Query Processing', () => {
     it('should process successful single query', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         {
@@ -289,9 +279,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should handle query with no results', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([]);
 
@@ -314,9 +302,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should handle GitHub command execution failure', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       // Make sure both CLI and API fail
       mockSearchGitHubReposAPI.mockResolvedValue({
@@ -351,9 +337,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should handle unexpected errors in query processing', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       // Mock withCache to throw the error directly without wrapping
       mockWithCache.mockImplementation(async (_key, _fn) => {
@@ -379,9 +363,7 @@ describe('GitHub Search Repositories Tool', () => {
 
   describe('Multiple Query Processing', () => {
     it('should process multiple successful queries', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse1 = createMockRepositoryResponse([
         { name: 'repo1', stars: 100, language: 'JavaScript' },
@@ -432,9 +414,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should handle mix of successful and failed queries', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockSuccessResponse = createMockRepositoryResponse([
         { name: 'success-repo', stars: 100, language: 'JavaScript' },
@@ -463,9 +443,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should generate auto IDs for queries without explicit IDs', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },
@@ -492,9 +470,7 @@ describe('GitHub Search Repositories Tool', () => {
     });
 
     it('should process maximum 5 queries', async () => {
-      registerSearchGitHubReposTool(mockServer.server, {
-        npmEnabled: false,
-      });
+      registerSearchGitHubReposTool(mockServer.server);
 
       const mockResponse = createMockRepositoryResponse([
         { name: 'test-repo', stars: 100, language: 'JavaScript' },

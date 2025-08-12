@@ -84,7 +84,7 @@ describe('Consolidated Hints System', () => {
         'Use github_fetch_content with matchString from search results for precise context extraction'
       );
       expect(hints).toContain(
-        'Chain tools: repo search → structure view → code search → content fetch for deep analysis'
+        'Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis'
       );
       expect(
         hints.some(h => h.includes('Consider language or path filters'))
@@ -156,13 +156,13 @@ describe('Consolidated Hints System', () => {
         'Start with repository search to find relevant projects, then search within promising repos'
       );
       expect(hints).toContain(
-        'Start with core concepts, then drill down: "testing" → "unit testing" → "jest"'
+        'Start with core concepts, then progressively narrow to specific implementations and tools'
       );
       expect(hints).toContain(
         'No results found. Try broader search terms or related concepts'
       );
       expect(hints).toContain(
-        'Try semantic alternatives: "auth" → "authentication", "config" → "configuration"'
+        'Try semantic alternatives: expand abbreviations, use synonyms, or try related conceptual terms'
       );
       expect(hints.length).toBeLessThanOrEqual(6);
     });
@@ -174,7 +174,7 @@ describe('Consolidated Hints System', () => {
       });
 
       expect(hints).toContain(
-        'Topics for ecosystem discovery: ["react", "component-library"] or ["cli", "nodejs"]'
+        'Topics for ecosystem discovery: combine technology type with domain area for broad exploration'
       );
       expect(hints).toContain(
         'No results found. Try broader search terms or related concepts'

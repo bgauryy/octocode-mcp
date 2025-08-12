@@ -18,10 +18,7 @@ describe('GitHub View Repository Structure Tool', () => {
   beforeEach(() => {
     mockServer = createMockMcpServer();
     vi.clearAllMocks();
-    registerViewGitHubRepoStructureTool(mockServer.server, {
-      ghToken: 'test-token',
-      npmEnabled: false,
-    });
+    registerViewGitHubRepoStructureTool(mockServer.server);
 
     mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
       isError: false,

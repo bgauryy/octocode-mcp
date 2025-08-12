@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../../responses';
-import { ToolOptions, TOOL_NAMES } from '../utils/toolConstants';
+import { TOOL_NAMES } from '../utils/toolConstants';
 import { generateHints } from '../utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
@@ -30,10 +30,7 @@ BEST PRACTICES:
 - Specify research goals for optimized metadata extraction
 - Leverage bulk operations to compare multiple package alternatives`;
 
-export function registerPackageSearchTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerPackageSearchTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
@@ -95,7 +92,8 @@ export function registerPackageSearchTool(
 
         try {
           // Use the unified searchPackagesAPI function
-          const searchResult = await searchPackagesAPI(args, opts.npmEnabled);
+          // NPM enablement is now handled internally by searchPackagesAPI
+          const searchResult = await searchPackagesAPI(args);
 
           // Handle the result based on its type
           if ('error' in searchResult) {

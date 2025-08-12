@@ -23,17 +23,17 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 /**
  * Search GitHub pull requests using Octokit API with caching
+ * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubPullRequestsAPI(
-  params: GitHubPullRequestsSearchParams,
-  token?: string
+  params: GitHubPullRequestsSearchParams
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', params);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubPullRequestsAPIInternal(params, token);
+    const result = await searchGitHubPullRequestsAPIInternal(params);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -69,8 +69,7 @@ export async function searchGitHubPullRequestsAPI(
  * Internal implementation of searchGitHubPullRequestsAPI without caching
  */
 async function searchGitHubPullRequestsAPIInternal(
-  params: GitHubPullRequestsSearchParams,
-  token?: string
+  params: GitHubPullRequestsSearchParams
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
     // If prNumber is provided with owner/repo, fetch specific PR by number
@@ -81,10 +80,10 @@ async function searchGitHubPullRequestsAPIInternal(
       !Array.isArray(params.owner) &&
       !Array.isArray(params.repo)
     ) {
-      return await fetchGitHubPullRequestByNumberAPIInternal(params, token);
+      return await fetchGitHubPullRequestByNumberAPIInternal(params);
     }
 
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
 
     // Decide between search and list based on filters
     const shouldUseSearch = shouldUseSearchForPRs(params);
@@ -97,7 +96,7 @@ async function searchGitHubPullRequestsAPIInternal(
       !Array.isArray(params.repo)
     ) {
       // Use REST API for simple repository-specific searches (like gh pr list)
-      return await searchPullRequestsWithREST(octokit, params, token);
+      return await searchPullRequestsWithREST(octokit, params);
     }
 
     // Use Search API for complex queries (like gh search prs)
@@ -128,7 +127,7 @@ async function searchGitHubPullRequestsAPIInternal(
     // Transform pull requests to our expected format
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
       pullRequests.map(async (item: Record<string, unknown>) => {
-        return await transformPullRequestItem(item, params, octokit, token);
+        return await transformPullRequestItem(item, params, octokit);
       })
     );
 
@@ -210,8 +209,7 @@ async function searchGitHubPullRequestsAPIInternal(
  */
 async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
-  params: GitHubPullRequestsSearchParams,
-  token?: string
+  params: GitHubPullRequestsSearchParams
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
     const owner = params.owner as string;
@@ -237,12 +235,7 @@ async function searchPullRequestsWithREST(
     // Transform to our expected format
     const transformedPRs: GitHubPullRequestItem[] = await Promise.all(
       result.data.map(async (item: Record<string, unknown>) => {
-        return await transformPullRequestItemFromREST(
-          item,
-          params,
-          octokit,
-          token
-        );
+        return await transformPullRequestItemFromREST(item, params, octokit);
       })
     );
 
@@ -325,8 +318,7 @@ async function searchPullRequestsWithREST(
 async function transformPullRequestItem(
   item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
-  octokit: InstanceType<typeof OctokitWithThrottling>,
-  token?: string
+  octokit: InstanceType<typeof OctokitWithThrottling>
 ): Promise<GitHubPullRequestItem> {
   // Sanitize title and body content
   const titleSanitized = ContentSanitizer.sanitizeContent(
@@ -406,8 +398,7 @@ async function transformPullRequestItem(
             const fileChanges = await fetchPRFileChangesAPI(
               owner,
               repo,
-              item.number as number,
-              token
+              item.number as number
             );
             if (fileChanges) {
               result.file_changes = fileChanges;
@@ -464,11 +455,10 @@ async function transformPullRequestItem(
 async function fetchPRFileChangesAPI(
   owner: string,
   repo: string,
-  prNumber: number,
-  token?: string
+  prNumber: number
 ): Promise<{ total_count: number; files: DiffEntry[] } | null> {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
     const result = await octokit.rest.pulls.listFiles({
       owner,
       repo,
@@ -494,8 +484,7 @@ async function fetchPRFileChangesAPI(
 export async function transformPullRequestItemFromREST(
   item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
-  octokit: InstanceType<typeof OctokitWithThrottling>,
-  token?: string
+  octokit: InstanceType<typeof OctokitWithThrottling>
 ): Promise<GitHubPullRequestItem> {
   // Sanitize title and body content
   const titleSanitized = ContentSanitizer.sanitizeContent(
@@ -562,8 +551,7 @@ export async function transformPullRequestItemFromREST(
     const fileChanges = await fetchPRFileChangesAPI(
       params.owner as string,
       params.repo as string,
-      item.number as number,
-      token
+      item.number as number
     );
     if (fileChanges) {
       result.file_changes = fileChanges;
@@ -608,8 +596,7 @@ export async function transformPullRequestItemFromREST(
  * More efficient than search when we know the exact PR number
  */
 export async function fetchGitHubPullRequestByNumberAPI(
-  params: GitHubPullRequestsSearchParams,
-  token?: string
+  params: GitHubPullRequestsSearchParams
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', {
@@ -622,10 +609,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
 
   // Create a wrapper function that returns CallToolResult for the cache
   const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubPullRequestByNumberAPIInternal(
-      params,
-      token
-    );
+    const result = await fetchGitHubPullRequestByNumberAPIInternal(params);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -661,11 +645,10 @@ export async function fetchGitHubPullRequestByNumberAPI(
  * Internal implementation of fetchGitHubPullRequestByNumberAPI without caching
  */
 async function fetchGitHubPullRequestByNumberAPIInternal(
-  params: GitHubPullRequestsSearchParams,
-  token?: string
+  params: GitHubPullRequestsSearchParams
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
-    const octokit = getOctokit(token);
+    const octokit = await getOctokit();
 
     // Extract values from params
     const owner = params.owner as string;
@@ -683,7 +666,7 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
 
     // Transform to our expected format
     const transformedPR: GitHubPullRequestItem =
-      await transformPullRequestItemFromREST(pr, params, octokit, token);
+      await transformPullRequestItemFromREST(pr, params, octokit);
 
     // Transform to expected GitHub API format
     const formattedPR = {

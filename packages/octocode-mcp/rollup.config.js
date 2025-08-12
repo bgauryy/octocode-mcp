@@ -7,12 +7,26 @@ import { terser } from 'rollup-plugin-terser';
 export default {
   input: 'src/index.ts',
   output: {
-    file: 'dist/index.js',
+    dir: 'dist',
     format: 'es',
     sourcemap: false, // Disable source maps for production
     minifyInternalExports: true,
-    banner: '#!/usr/bin/env node'
+    banner: '#!/usr/bin/env node',
+    entryFileNames: 'index.js',
+    // Control chunk naming to preserve predictable paths for dynamic imports
+    chunkFileNames: (chunkInfo) => {
+      // For enterprise modules, use predictable names
+      if (chunkInfo.facadeModuleId) {
+        const fileName = chunkInfo.facadeModuleId.split('/').pop()?.replace('.ts', '.js');
+        if (fileName && ['auditLogger.js', 'organizationManager.js', 'rateLimiter.js', 'policyManager.js'].includes(fileName)) {
+          return `security/${fileName}`;
+        }
+      }
+      // For other chunks, use hash-based names
+      return '[name]-[hash].js';
+    }
   },
+  external: [],
   plugins: [
     nodeResolve({
       preferBuiltins: true

@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubCommitsAPI } from '../../utils/githubAPI';
-import { ToolOptions, TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
@@ -28,10 +28,7 @@ BEST PRACTICES:
 - Leverage author filters for developer-specific searches
 - Specify research goals (debugging, analysis) for optimal guidance`;
 
-export function registerSearchGitHubCommitsTool(
-  server: McpServer,
-  opts: ToolOptions
-) {
+export function registerSearchGitHubCommitsTool(server: McpServer) {
   server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_COMMITS,
     {
@@ -105,7 +102,7 @@ export function registerSearchGitHubCommitsTool(
         }
 
         try {
-          const result = await searchGitHubCommitsAPI(args, opts.ghToken);
+          const result = await searchGitHubCommitsAPI(args);
 
           // Check if result is an error
           if ('error' in result) {
