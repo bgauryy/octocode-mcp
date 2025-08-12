@@ -4,6 +4,7 @@ import { ContentSanitizer } from '../../../security/contentSanitizer';
 import { getUserContext } from '../../../utils/github/userInfo';
 import { RateLimiter } from '../../../security/rateLimiter';
 import { OrganizationManager } from '../../../security/organizationManager';
+import { isEnterpriseMode } from '../../../utils/enterpriseUtils';
 
 export interface UserContext {
   userId: string;
@@ -47,13 +48,7 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
             userId: context.user.id.toString(),
             userLogin: context.user.login,
             organizationId: context.organizationId,
-            isEnterpriseMode: !!(
-              context.organizationId ||
-              process.env.AUDIT_ALL_ACCESS === 'true' ||
-              process.env.RATE_LIMIT_API_HOUR ||
-              process.env.RATE_LIMIT_AUTH_HOUR ||
-              process.env.RATE_LIMIT_TOKEN_HOUR
-            ),
+            isEnterpriseMode: isEnterpriseMode(),
           };
 
           // 3. Enterprise rate limiting (if configured)

@@ -246,7 +246,7 @@ describe('Token Manager', () => {
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await expect(getToken()).rejects.toThrow(
-        'No GitHub token found. Please set GITHUB_TOKEN or GH_TOKEN environment variable or authenticate with GitHub CLI'
+        'No GitHub token found. Please configure OAuth authentication, set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI'
       );
       expect(mockSecureCredentialStore.setToken).not.toHaveBeenCalled();
     });

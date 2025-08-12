@@ -164,9 +164,16 @@ describe('Index Module', () => {
       enabledToolsets: [],
       dynamicToolsets: false,
       readOnly: false,
-      organizationId: undefined,
-      auditLogging: false,
-      rateLimiting: false,
+      enterprise: {
+        organizationId: undefined,
+        ssoEnforcement: false,
+        auditLogging: false,
+        rateLimiting: false,
+        tokenValidation: false,
+        permissionValidation: false,
+      },
+      oauth: undefined,
+      githubApp: undefined,
       enableCommandLogging: false,
       logFilePath: undefined,
       githubHost: undefined,
@@ -430,6 +437,7 @@ describe('Index Module', () => {
 
       // The module should still load and register other tools
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Verify that other tools were still registered
       expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalled();
@@ -447,6 +455,7 @@ describe('Index Module', () => {
 
       // The module should still load and register other tools
       await import('../src/index.js');
+      await waitForAsyncOperations();
 
       // Verify that other tools were still registered
       expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();

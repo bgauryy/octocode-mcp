@@ -27,9 +27,14 @@ describe('Enterprise Functionality', () => {
     });
   });
 
-  it('should export enterprise initialization function', async () => {
-    const module = await import('../../src/index');
-    expect(typeof module.initializeEnterpriseFeatures).toBe('function');
+  it('should export authentication manager', async () => {
+    const { AuthenticationManager } = await import(
+      '../../src/auth/authenticationManager'
+    );
+    expect(typeof AuthenticationManager.getInstance).toBe('function');
+    expect(typeof AuthenticationManager.getInstance().initialize).toBe(
+      'function'
+    );
   });
 
   it('should detect enterprise mode from environment variables', async () => {
@@ -81,9 +86,9 @@ describe('Enterprise Functionality', () => {
 
     const config = ConfigManager.initialize();
 
-    expect(config.organizationId).toBe('test-org');
-    expect(config.auditLogging).toBe(true);
-    expect(config.rateLimiting).toBe(true);
+    expect(config.enterprise?.organizationId).toBe('test-org');
+    expect(config.enterprise?.auditLogging).toBe(true);
+    expect(config.enterprise?.rateLimiting).toBe(true);
     expect(ConfigManager.isEnterpriseMode()).toBe(true);
   });
 

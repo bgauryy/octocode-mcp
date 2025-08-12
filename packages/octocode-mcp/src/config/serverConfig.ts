@@ -36,16 +36,12 @@ export interface ServerConfig {
     baseUrl?: string; // For GitHub Enterprise Server
   };
 
-  // Enterprise features
-  organizationId?: string;
-  auditLogging: boolean;
-  rateLimiting: boolean;
-
   // Enhanced Enterprise Configuration
   enterprise?: {
     organizationId?: string;
     ssoEnforcement: boolean;
     auditLogging: boolean;
+    rateLimiting: boolean; // ← Moved from duplicate fields
     tokenValidation: boolean;
     permissionValidation: boolean;
   };
@@ -90,16 +86,12 @@ export class ConfigManager {
       // GitHub App Configuration from environment
       githubApp: this.getGitHubAppConfig(),
 
-      // Enterprise features
-      organizationId: process.env.GITHUB_ORGANIZATION,
-      auditLogging: process.env.AUDIT_ALL_ACCESS === 'true',
-      rateLimiting: this.hasRateLimitConfig(),
-
       // Enhanced Enterprise Configuration
       enterprise: {
         organizationId: process.env.GITHUB_ORGANIZATION,
         ssoEnforcement: process.env.GITHUB_SSO_ENFORCEMENT === 'true',
         auditLogging: process.env.AUDIT_ALL_ACCESS === 'true',
+        rateLimiting: this.hasRateLimitConfig(),
         tokenValidation: process.env.GITHUB_TOKEN_VALIDATION === 'true',
         permissionValidation:
           process.env.GITHUB_PERMISSION_VALIDATION === 'true',
@@ -149,10 +141,18 @@ export class ConfigManager {
   static isEnterpriseMode(): boolean {
     const config = this.getConfig();
     return !!(
-      config.organizationId ||
-      config.auditLogging ||
-      config.rateLimiting
+      config.enterprise?.organizationId ||
+      config.enterprise?.auditLogging ||
+      config.enterprise?.rateLimiting ||
+      config.enterprise?.ssoEnforcement
     );
+  }
+
+  /**
+   * Get enterprise configuration
+   */
+  static getEnterpriseConfig(): ServerConfig['enterprise'] {
+    return this.getConfig().enterprise;
   }
 
   /**
@@ -283,7 +283,10 @@ export class ConfigManager {
     }
 
     // Enterprise validation
-    if (this.config.auditLogging && !this.config.organizationId) {
+    if (
+      this.config.enterprise?.auditLogging &&
+      !this.config.enterprise?.organizationId
+    ) {
       // Use stderr for warnings instead of console.warn to avoid linter issues
       process.stderr.write(
         'Warning: Audit logging enabled without organization ID - some features may not work correctly\n'

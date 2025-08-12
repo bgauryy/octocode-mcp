@@ -81,7 +81,15 @@ const rotationHandlers: Set<TokenRotationHandler> = new Set();
  * Enterprise mode is detected by the presence of enterprise configuration
  */
 function isEnterpriseMode(): boolean {
-  // Check for enterprise environment variables
+  // Check local token manager configuration
+  const hasEnterpriseConfig = !!(
+    config?.organizationId ||
+    config?.enableAuditLogging ||
+    config?.enableRateLimiting ||
+    config?.enableOrganizationValidation
+  );
+
+  // Check for enterprise environment variables (legacy support)
   const hasOrgConfig = !!process.env.GITHUB_ORGANIZATION;
   const hasAuditConfig = process.env.AUDIT_ALL_ACCESS === 'true';
   const hasRateLimitConfig = !!(
@@ -90,16 +98,8 @@ function isEnterpriseMode(): boolean {
     process.env.RATE_LIMIT_TOKEN_HOUR
   );
 
-  // Also check configuration state
-  const hasEnterpriseConfig = !!(
-    config?.organizationId ||
-    config?.enableAuditLogging ||
-    config?.enableRateLimiting ||
-    config?.enableOrganizationValidation
-  );
-
   return (
-    hasOrgConfig || hasAuditConfig || hasRateLimitConfig || hasEnterpriseConfig
+    hasEnterpriseConfig || hasOrgConfig || hasAuditConfig || hasRateLimitConfig
   );
 }
 

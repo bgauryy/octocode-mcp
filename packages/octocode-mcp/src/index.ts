@@ -14,13 +14,11 @@ import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
-  initialize as initializeTokenManager,
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { createMCPAuthProtocol } from './auth/mcpAuthProtocol.js';
 import { version } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -145,131 +143,22 @@ async function startServer() {
 }
 
 /**
- * Initialize OAuth/GitHub App authentication
+ * Initialize unified authentication system
  */
 async function initializeAuthentication(): Promise<void> {
   try {
-    const config = ConfigManager.getConfig();
-
-    // Initialize MCP Auth Protocol if OAuth or GitHub App is configured
-    if (config.oauth?.enabled || config.githubApp?.enabled) {
-      await createMCPAuthProtocol();
-    }
-
-    // Initialize token manager with OAuth/GitHub App support
-    await initializeTokenManager();
+    const { AuthenticationManager } = await import(
+      './auth/authenticationManager.js'
+    );
+    const authManager = AuthenticationManager.getInstance();
+    await authManager.initialize();
   } catch (error) {
     // Log error but don't fail startup - fall back to existing authentication
     process.stderr.write(
-      `Warning: Failed to initialize OAuth/GitHub App authentication: ${
+      `Warning: Failed to initialize authentication: ${
         error instanceof Error ? error.message : String(error)
       }\n`
     );
-  }
-}
-
-/**
- * Initialize enterprise features if configured
- * Progressive enhancement - only activates when environment variables are present
- */
-export async function initializeEnterpriseFeatures(): Promise<void> {
-  // Check for enterprise configuration
-  const hasOrgConfig = process.env.GITHUB_ORGANIZATION;
-  const hasAuditConfig = process.env.AUDIT_ALL_ACCESS === 'true';
-  const hasRateLimitConfig =
-    process.env.RATE_LIMIT_API_HOUR ||
-    process.env.RATE_LIMIT_AUTH_HOUR ||
-    process.env.RATE_LIMIT_TOKEN_HOUR;
-
-  if (hasOrgConfig || hasAuditConfig || hasRateLimitConfig) {
-    // eslint-disable-next-line no-console
-    //console.log('Initializing enterprise security features...');
-    // TODO: use a Logger instead of console.log
-
-    try {
-      // Initialize audit logging first (if enabled)
-      if (hasAuditConfig) {
-        const { AuditLogger } = await import('./security/auditLogger.js');
-        AuditLogger.initialize();
-      }
-
-      // Initialize organization manager (if configured)
-      if (hasOrgConfig) {
-        const { OrganizationManager } = await import(
-          './security/organizationManager.js'
-        );
-        OrganizationManager.initialize();
-      }
-
-      // Initialize rate limiter (if configured)
-      if (hasRateLimitConfig) {
-        const { RateLimiter } = await import('./security/rateLimiter.js');
-        RateLimiter.initialize();
-      }
-
-      // Initialize policy manager
-      const { PolicyManager } = await import('./security/policyManager.js');
-      PolicyManager.initialize();
-
-      // Initialize token manager with enterprise config
-      initializeTokenManager({
-        organizationId: process.env.GITHUB_ORGANIZATION,
-        enableAuditLogging: hasAuditConfig,
-        enableRateLimiting: !!hasRateLimitConfig,
-        enableOrganizationValidation: !!hasOrgConfig,
-      });
-
-      // Log via audit logger rather than console
-      try {
-        const { AuditLogger } = await import('./security/auditLogger.js');
-        AuditLogger.logEvent({
-          action: 'enterprise_features_initialized',
-          outcome: 'success',
-          source: 'system',
-          details: {
-            message: 'Enterprise security features initialized successfully',
-          },
-        });
-      } catch {
-        // Fallback: silent if audit logger not available
-      }
-
-      // Log the initialization
-      if (hasAuditConfig) {
-        const { AuditLogger } = await import('./security/auditLogger.js');
-        AuditLogger.logEvent({
-          action: 'enterprise_features_initialized',
-          outcome: 'success',
-          source: 'system',
-          details: {
-            organizationId: process.env.GITHUB_ORGANIZATION,
-            auditLogging: hasAuditConfig,
-            rateLimiting: !!hasRateLimitConfig,
-            organizationValidation: !!hasOrgConfig,
-          },
-        });
-      }
-    } catch (error) {
-      try {
-        const { AuditLogger } = await import('./security/auditLogger.js');
-        AuditLogger.logEvent({
-          action: 'enterprise_features_initialized',
-          outcome: 'failure',
-          source: 'system',
-          details: {
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
-      } catch {
-        // Fallback to stderr to avoid console usage
-        process.stderr.write(
-          `Failed to initialize enterprise features: ${
-            error instanceof Error ? error.message : String(error)
-          }\n`
-        );
-      }
-      // Don't throw - continue with basic functionality
-    }
   }
 }
 
@@ -279,9 +168,6 @@ export async function registerAllTools(server: McpServer) {
 
   // Initialize toolset management
   ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
-
-  // Initialize enterprise features first (if configured)
-  await initializeEnterpriseFeatures();
 
   // Ensure token exists and is stored securely (existing behavior)
   await getToken();
