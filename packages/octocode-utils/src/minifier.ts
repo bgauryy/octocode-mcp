@@ -206,6 +206,36 @@ function getFileExtension(filePath: string): string {
 
 function getFileConfig(filePath: string) {
   const ext = getFileExtension(filePath);
+
+  // Filename-based detection for indentation/whitespace sensitive files
+  // Many infra/devtool files have no extension and rely on indentation/tabs
+  const baseName = filePath.split('/').pop() || '';
+  const baseNameLower = baseName.toLowerCase();
+  const indentationSensitiveNames = new Set([
+    'makefile',
+    'dockerfile',
+    'procfile',
+    'justfile',
+    'rakefile',
+    'gemfile',
+    'podfile',
+    'fastfile',
+    'vagrantfile',
+    'jenkinsfile',
+    'cakefile',
+    'pipfile',
+    'buildfile',
+    'capfile',
+    'brewfile',
+  ]);
+
+  if (indentationSensitiveNames.has(baseNameLower)) {
+    return {
+      strategy: 'conservative',
+      comments: 'hash',
+    } as FileTypeMinifyConfig;
+  }
+
   return (
     MINIFY_CONFIG.fileTypes[ext] || {
       strategy: 'general', // Default to general minification for unknown extensions

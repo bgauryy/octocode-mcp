@@ -33,7 +33,6 @@ describe('withSecurityValidation enterprise short-circuit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
   it('does not fetch user context or perform enterprise checks when not in enterprise mode', async () => {
     mockIsEnterpriseMode.mockReturnValue(false);
 
@@ -54,7 +53,6 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     expect(mockRateLimiterCheck).not.toHaveBeenCalled();
     expect(mockOrgValidate).not.toHaveBeenCalled();
   });
-
   it('fetches user context and may perform enterprise checks in enterprise mode', async () => {
     mockIsEnterpriseMode.mockReturnValue(true);
     mockGetUserContext.mockResolvedValue({
@@ -77,9 +75,9 @@ describe('withSecurityValidation enterprise short-circuit', () => {
 
     // Enterprise path hit
     expect(mockGetUserContext).toHaveBeenCalled();
-    expect(mockRateLimiterCheck).toHaveBeenCalledWith('123', 'api', { increment: true });
+    expect(mockRateLimiterCheck).toHaveBeenCalledWith('123', 'api', {
+      increment: true,
+    });
     expect(mockOrgValidate).toHaveBeenCalledWith('org-1', 'tester');
   });
 });
-
-

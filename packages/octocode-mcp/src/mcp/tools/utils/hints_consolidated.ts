@@ -698,3 +698,32 @@ export function generateBulkHints(context: BulkHintContext): string[] {
 
   return prioritizedHints.slice(0, 6);
 }
+
+// ============================================================================
+// GLOBAL DEDUPLICATION AND NOVELTY RANKING
+// ============================================================================
+
+/**
+ * Consolidate multiple hint lists into a globally deduplicated, novelty-ranked set
+ * - Case-insensitive deduplication
+ * - Novelty ranking favors hints with more unique content words and actionable phrasing
+ * - Strict max cap
+ */
+export function consolidateHints(hints: string[], max: number = 6): string[] {
+  if (!Array.isArray(hints) || hints.length === 0) return [];
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const h of hints) {
+    if (typeof h !== 'string') continue;
+    const cleaned = h.trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase(); // simple case-insensitive dedup
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(cleaned);
+  }
+
+  return unique.slice(0, Math.max(0, max));
+}

@@ -216,6 +216,11 @@ async function transformToOptimizedFormat(
           nameWithOwner: item.repository.full_name,
           url: item.repository.url,
         },
+        // Expose per-file minification strategy used for transparency
+        ...(minify &&
+          minificationTypes.length > 0 && {
+            minificationType: Array.from(new Set(minificationTypes)).join(','),
+          }),
       };
     })
   );
