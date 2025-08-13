@@ -176,6 +176,59 @@ export async function withCache(
 }
 
 /**
+ * Generic typed cache wrapper for raw data (avoids JSON round-trips)
+ */
+export async function withDataCache<T>(
+  cacheKey: string,
+  operation: () => Promise<T>,
+  options: {
+    ttl?: number;
+    skipCache?: boolean;
+    forceRefresh?: boolean;
+    shouldCache?: (value: T) => boolean; // default: true
+  } = {}
+): Promise<T> {
+  if (options.skipCache) {
+    return await operation();
+  }
+
+  if (!options.forceRefresh) {
+    try {
+      const cached = cache.get<T>(cacheKey);
+      if (cached !== undefined) {
+        cacheStats.hits++;
+        return cached;
+      }
+    } catch (_e) {
+      // ignore cache read errors
+    }
+  }
+
+  cacheStats.misses++;
+
+  const result = await operation();
+
+  const shouldCache = options.shouldCache ?? (() => true);
+  if (shouldCache(result)) {
+    try {
+      let ttl = options.ttl;
+      if (!ttl) {
+        const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
+        const prefix = prefixMatch?.[1] ?? 'default';
+        ttl = getTTLForPrefix(prefix);
+      }
+      cache.set(cacheKey, result, ttl);
+      cacheStats.sets++;
+      cacheStats.totalKeys = cache.keys().length;
+    } catch (_e) {
+      // ignore cache write errors
+    }
+  }
+
+  return result;
+}
+
+/**
  * Clear all cache entries and reset statistics
  */
 export function clearAllCache(): void {

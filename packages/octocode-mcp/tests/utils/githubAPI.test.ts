@@ -36,6 +36,7 @@ const mockOctokitWithThrottling = vi.hoisted(() => {
 
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockWithCache = vi.hoisted(() => vi.fn());
+const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
 const mockContentSanitizer = vi.hoisted(() => ({
   sanitizeContent: vi.fn(),
@@ -75,6 +76,7 @@ vi.mock('@octokit/plugin-throttling', () => ({
 vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withCache: mockWithCache,
+  withDataCache: mockWithDataCache,
 }));
 
 vi.mock('../../src/mcp/responses.js', () => ({
@@ -111,6 +113,7 @@ describe('GitHub API Utils', () => {
     // Set up default mock behaviors
     mockGenerateCacheKey.mockReturnValue('test-cache-key');
     mockWithCache.mockImplementation(async (_key, fn) => await fn());
+    mockWithDataCache.mockImplementation(async (_key, fn) => await fn());
     mockCreateResult.mockImplementation(params => ({
       content: [{ type: 'text', text: JSON.stringify(params) }],
       isError: params.isError || false,

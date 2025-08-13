@@ -554,6 +554,16 @@ Notes:
 - Enterprise mode is considered active if ANY of the following are set: `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS`, `GITHUB_SSO_ENFORCEMENT`, or any of the `RATE_LIMIT_*` variables.
 - If `AUDIT_ALL_ACCESS=true` is set without `GITHUB_ORGANIZATION`, the server will warn that some features may not work optimally.
 
+#### Server Startup Behavior (Enterprise)
+
+When enterprise-related environment variables are present, Octocode‑MCP automatically initializes enterprise modules at server startup:
+
+- If `AUDIT_ALL_ACCESS=true` is set, the Audit Logger is initialized and will buffer events and flush to `./logs/audit/audit-YYYY-MM-DD.jsonl` in production mode.
+- If any of `RATE_LIMIT_API_HOUR`, `RATE_LIMIT_AUTH_HOUR`, or `RATE_LIMIT_TOKEN_HOUR` are set, the Enterprise Rate Limiter is initialized with those limits (validated as positive integers). If unset, internal safe defaults are used.
+- Initialization failures of enterprise modules are non-fatal by design and will not block the server from starting.
+
+No additional configuration is required beyond setting the environment variables above.
+
 ### Rate Limiting
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
