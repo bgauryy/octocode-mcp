@@ -323,6 +323,30 @@ describe('Consolidated Hints System', () => {
         /use|try|compare|analyze|explore|focus/
       );
     });
+
+    it('consolidateHints should deduplicate case-insensitively and trim', () => {
+      const input = [
+        '  Use github_fetch_content  ',
+        'use github_fetch_content',
+        'Use  github_fetch_content',
+        'Different Hint',
+      ];
+
+      const result = consolidateHints(input, 10);
+      expect(result).toEqual(['Use github_fetch_content', 'Different Hint']);
+    });
+
+    it('consolidateHints should preserve first occurrence order (stable)', () => {
+      const input = ['b', 'A', 'a', 'B', 'c'];
+      const result = consolidateHints(input, 10);
+      expect(result).toEqual(['b', 'A', 'c']);
+    });
+
+    it('consolidateHints should cap results by max while preserving order', () => {
+      const input = ['a', 'b', 'c', 'd', 'e', 'f'];
+      const result = consolidateHints(input, 3);
+      expect(result).toEqual(['a', 'b', 'c']);
+    });
   });
 
   describe('Performance', () => {
