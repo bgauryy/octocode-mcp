@@ -38,21 +38,21 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
         });
       }
 
-      // 2. Get user context for enterprise features
+      // 2. Load user context ONLY in enterprise mode to avoid overhead otherwise
       let userContext: UserContext | undefined;
 
-      try {
-        const context = await getUserContext();
-        if (context.user) {
-          userContext = {
-            userId: context.user.id.toString(),
-            userLogin: context.user.login,
-            organizationId: context.organizationId,
-            isEnterpriseMode: isEnterpriseMode(),
-          };
+      if (isEnterpriseMode()) {
+        try {
+          const context = await getUserContext();
+          if (context.user) {
+            userContext = {
+              userId: context.user.id.toString(),
+              userLogin: context.user.login,
+              organizationId: context.organizationId,
+              isEnterpriseMode: true,
+            };
 
-          // 3. Enterprise rate limiting (if configured)
-          if (userContext.isEnterpriseMode) {
+            // 3. Enterprise rate limiting (if configured)
             try {
               const rateLimitResult = await RateLimiter.checkLimit(
                 userContext.userId,
@@ -92,10 +92,10 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
               }
             }
           }
+        } catch (contextError) {
+          // If we can't get user context, continue with basic validation only
+          // This maintains backward compatibility for non-enterprise usage
         }
-      } catch (contextError) {
-        // If we can't get user context, continue with basic validation only
-        // This maintains backward compatibility for non-enterprise usage
       }
 
       // 5. Call the actual tool handler with sanitized parameters and user context

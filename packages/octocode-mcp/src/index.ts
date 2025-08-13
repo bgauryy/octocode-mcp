@@ -34,6 +34,25 @@ async function startServer() {
   try {
     const server = new McpServer(SERVER_CONFIG);
 
+    // Initialize enterprise components if configured
+    try {
+      if (process.env.AUDIT_ALL_ACCESS === 'true') {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.initialize();
+      }
+
+      if (
+        process.env.RATE_LIMIT_API_HOUR ||
+        process.env.RATE_LIMIT_AUTH_HOUR ||
+        process.env.RATE_LIMIT_TOKEN_HOUR
+      ) {
+        const { RateLimiter } = await import('./security/rateLimiter.js');
+        RateLimiter.initialize();
+      }
+    } catch (_enterpriseInitError) {
+      // Ignore enterprise initialization errors to avoid blocking startup
+    }
+
     // Initialize OAuth/GitHub App authentication
     await initializeAuthentication();
 

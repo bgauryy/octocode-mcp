@@ -11,9 +11,7 @@ import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
-import { generateCacheKey, withCache } from '../cache';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../mcp/responses';
+import { generateCacheKey, withDataCache } from '../cache';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
@@ -22,41 +20,23 @@ import { createResult } from '../../mcp/responses';
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-code', params);
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubCodeAPIInternal(params);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<
+    GitHubAPIResponse<OptimizedCodeSearchResult>
+  >(
+    cacheKey,
+    async () => {
+      return await searchGitHubCodeAPIInternal(params);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: (value: GitHubAPIResponse<OptimizedCodeSearchResult>) =>
+        'data' in value && !(value as { error?: unknown }).error,
     }
-  };
+  );
 
-  // Use cache with 1-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<OptimizedCodeSearchResult>;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<OptimizedCodeSearchResult>;
-  }
+  return result;
 }
 
 /**
