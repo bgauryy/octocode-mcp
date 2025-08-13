@@ -26,14 +26,18 @@ This guide explains how to run Octocode MCP in a Docker container with proper **
 For the impatient, here's the fastest way to get started:
 
 ```bash
-# 1. Set GitHub token (get one at https://github.com/settings/tokens)
-export GITHUB_TOKEN="your_github_token_here"
+# 1. Set GitHub token
+# See docs for scopes and priority: docs/AUTHENTICATION.md and docs/AUTHENTICATION_QUICK_REFERENCE.md
+export GITHUB_TOKEN="your_github_token_here"  # scopes: repo, read:org, read:user
 
 # 2. Clone and build
 git clone https://github.com/bgauryy/octocode-mcp.git
 cd octocode-mcp
 
-# 3. Run with helper script
+# 3. Build the Docker image (production-ready)
+docker build -t octocode-mcp:latest -f packages/octocode-mcp/docker/Dockerfile .
+
+# 4. Run with helper script (dev convenience)
 chmod +x docker/docker-run.sh
 ./docker/docker-run.sh
 ```
@@ -71,9 +75,12 @@ Ensure you have the following installed and configured:
 
 ### GitHub Authentication
 
-GitHub authentication is handled via Personal Access Tokens:
+Octocode-MCP supports multiple token sources (priority order) – see `docs/AUTHENTICATION.md`:
+1) OAuth token (hosted) → 2) GitHub App token (enterprise) → 3) `GITHUB_TOKEN` → 4) `GH_TOKEN` → 5) GitHub CLI (local only) → 6) Authorization header
 
-#### Creating a GitHub Token
+For containers, prefer environment variables (`GITHUB_TOKEN`/`GH_TOKEN`). CLI tokens are not available inside the image and are disabled in enterprise mode.
+
+#### Creating a GitHub Token (PAT)
 1. Go to https://github.com/settings/tokens
 2. Click "Generate new token" → "Generate new token (classic)"
 3. Select the following permissions:
@@ -99,7 +106,7 @@ docker run -e GITHUB_TOKEN=ghp_yourtoken ...
 echo "GITHUB_TOKEN=ghp_yourtoken" > .env
 ```
 
-### NPM Authentication
+### NPM Authentication (optional)
 
 For npm package research functionality:
 
@@ -112,7 +119,7 @@ chmod 600 ~/.npmrc
 ```
 
 #### Container Setup
-The `.npmrc` file is automatically mounted at runtime:
+Mount your `.npmrc` into the container for authenticated npm access (optional):
 ```bash
 -v ~/.npmrc:/home/nodejs/.npmrc:ro
 ```
@@ -127,9 +134,9 @@ git clone https://github.com/bgauryy/octocode-mcp.git
 cd octocode-mcp
 ```
 
-### Build Docker Image
+### Build Docker Image (Production)
 ```bash
-docker build -t octocode-mcp:latest -f docker/Dockerfile .
+docker build -t octocode-mcp:latest -f packages/octocode-mcp/docker/Dockerfile .
 ```
 
 **Build Arguments** (optional):
@@ -144,7 +151,7 @@ docker build \
 
 ## Running Options
 
-### Option 1: Helper Script (Recommended)
+### Option 1: Helper Script (Recommended for local dev)
 
 The helper script automatically handles token validation and container setup:
 
@@ -199,6 +206,8 @@ docker run -it --rm \
     --network host \
     -e NODE_ENV=production \
     octocode-mcp:latest
+
+Tip: In enterprise mode, set `GITHUB_ORGANIZATION` and other security envs (see docs below).
 ```
 
 **Configuration Explained:**
@@ -311,11 +320,12 @@ Add these secrets to your repository:
 ## Configuration Files
 
 ### Dockerfile
-- **Base Image:** `node:18-alpine`
-- **Installed Tools:** Git, Bash (GitHub CLI removed)
-- **User:** Non-root `nodejs` user (UID 1001)
-- **Port:** 3000 (configurable)
-- **Authentication:** Token-based via environment variables
+- Location: `packages/octocode-mcp/docker/Dockerfile`
+- Multi-stage build for small runtime image
+- Base image: `node:18-alpine`
+- Installs Git, Bash (no GitHub CLI)
+- Non-root `nodejs` user
+- Auth via env vars (`GITHUB_TOKEN`/`GH_TOKEN`)
 
 ### docker-compose.yml
 - **Service Name:** `octocode-mcp`
@@ -451,4 +461,39 @@ docker run --rm \
 
 ---
 
-This comprehensive setup ensures secure, reliable operation of Octocode MCP in containerized environments with token-based GitHub authentication and NPM integration for both development and production workflows.
+This setup aligns with local and hosted authentication flows in `docs/AUTHENTICATION.md` and `docs/INSTALLATION.md`, ensuring secure operation of Octocode-MCP in containers for both development and production.
+
+---
+
+## Example: Minimal Project Dockerfile (using published package)
+
+Use this if you want to ship a container that runs Octocode-MCP without cloning the repo. It installs the npm package and starts the server.
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install the published package
+RUN yarn global add octocode-mcp
+
+# Non-root user for security
+RUN addgroup -S nodejs && adduser -S nodejs -G nodejs
+USER nodejs
+
+# Tokens must be provided at runtime
+ENV NODE_ENV=production
+
+# Start the MCP server
+CMD ["octocode-mcp"]
+```
+
+Run it:
+
+```bash
+docker build -t my-octocode-mcp -f Dockerfile .
+docker run --rm -e GITHUB_TOKEN="$GITHUB_TOKEN" my-octocode-mcp
+```
+
+For enterprise deployments, add environment variables from `docs/AUTHENTICATION.md` (e.g., `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS`, rate limits) to the `docker run` command or your orchestrator configuration.
