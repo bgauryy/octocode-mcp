@@ -13,25 +13,9 @@
  * @param defaultPrefix Default prefix for auto-generated IDs (default: "query")
  * @returns Array of queries with guaranteed unique IDs
  */
-export function ensureUniqueQueryIds<T extends { id?: string }>(
-  queries: T[],
-  defaultPrefix: string = 'query'
-): (T & { id: string })[] {
-  const idCounts = new Map<string, number>();
-
-  return queries.map((query, index) => {
-    const baseId = query.id || `${defaultPrefix}_${index + 1}`;
-    const count = idCounts.get(baseId) || 0;
-    idCounts.set(baseId, count + 1);
-
-    const uniqueId = count === 0 ? baseId : `${baseId}_${count}`;
-
-    return {
-      ...query,
-      id: uniqueId,
-    } as T & { id: string };
-  });
-}
+// Deprecated: ensureUniqueQueryIds is consolidated in bulkOperations.ts
+// Keep a typed re-export for backward compatibility
+export { ensureUniqueQueryIds } from './bulkOperations';
 
 /**
  * Common pattern for cleaning query parameters by removing null/undefined values

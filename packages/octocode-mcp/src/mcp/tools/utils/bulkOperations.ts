@@ -73,22 +73,20 @@ export interface BulkResponseConfig {
  * @param queries Array of queries that may have duplicate or missing IDs
  * @returns Array of queries with guaranteed unique IDs
  */
-export function ensureUniqueQueryIds<T extends BulkQuery>(queries: T[]): T[] {
-  const usedIds = new Map<string, number>();
+export function ensureUniqueQueryIds<T extends BulkQuery>(
+  queries: T[],
+  defaultPrefix: string = 'query'
+): Array<T & { id: string }> {
+  const idCounts = new Map<string, number>();
 
   return queries.map((query, index) => {
-    let id = query.id || `query_${index + 1}`;
+    const baseId = query.id || `${defaultPrefix}_${index + 1}`;
+    const count = idCounts.get(baseId) || 0;
+    idCounts.set(baseId, count + 1);
 
-    // Handle duplicate IDs using Map-based counting
-    if (usedIds.has(id)) {
-      const count = usedIds.get(id)! + 1;
-      usedIds.set(id, count);
-      id = `${id}_${count}`;
-    } else {
-      usedIds.set(id, 1);
-    }
+    const uniqueId = count === 0 ? baseId : `${baseId}_${count}`;
 
-    return { ...query, id };
+    return { ...query, id: uniqueId } as T & { id: string };
   });
 }
 

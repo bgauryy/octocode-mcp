@@ -62,9 +62,7 @@ describe('withDataCache typed data cache', () => {
     const op = async () => {
       calls += 1;
       // Alternate successful-like and error-like values
-      return calls % 2 === 0
-        ? { data: calls }
-        : { error: 'e', data: null };
+      return calls % 2 === 0 ? { data: calls } : { error: 'e', data: null };
     };
 
     const key = generateCacheKey('gh-api-code', { mode: 'should' });
@@ -90,5 +88,3 @@ describe('withDataCache typed data cache', () => {
     expect(calls).toBe(before); // no extra execution
   });
 });
-
-
