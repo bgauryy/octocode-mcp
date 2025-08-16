@@ -14,7 +14,11 @@ import {
   BulkResponseConfig,
   processBulkQueries,
 } from './utils/bulkOperations.js';
-import { generateHints, generateBulkHints } from './utils/hints_consolidated';
+import {
+  generateHints,
+  generateBulkHints,
+  consolidateHints,
+} from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { ProcessedCodeSearchResult } from './scheme/github_search_code';
 
@@ -366,7 +370,10 @@ async function searchMultipleGitHubCode(
 
     // Combine enhanced hints with existing hints
     const existingHints = (responseData.hints as string[]) || [];
-    const combinedHints = [...enhancedHints, ...existingHints].slice(0, 8);
+    const combinedHints = consolidateHints(
+      [...enhancedHints, ...existingHints],
+      8
+    );
 
     // Create new response with enhanced hints
     return createResult({

@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   generateHints,
   generateBulkHints,
+  consolidateHints,
 } from '../../../src/mcp/tools/utils/hints_consolidated';
 import { TOOL_NAMES } from '../../../src/mcp/tools/utils/toolConstants';
 
@@ -296,6 +297,55 @@ describe('Consolidated Hints System', () => {
       expect(uniqueHints.length).toBe(hints.length); // No exact duplicates
       expect(hints).toContain('Completely different hint'); // Preserve unique hints
       expect(hints.length).toBeLessThanOrEqual(6); // Respect limit
+    });
+
+    it('should globally deduplicate and rank actionable items first', () => {
+      const noisy = [
+        'Use github_fetch_content with matchString from search results for precise context extraction',
+        'use github_fetch_content with matchString from search results for precise context extraction',
+        'Try broader search terms to expand your search scope',
+        'Compare implementations across 3-5 repositories to identify best practices',
+        'Analyze patterns in naming conventions and file structure',
+        'Explore structure of most popular repositories first',
+        'Focus on implementation files in relevant languages for accurate code understanding',
+        'Completely different hint',
+      ];
+
+      const ranked = consolidateHints(noisy, 5);
+      // No case-duplicates
+      const lower = ranked.map(h => h.toLowerCase());
+      expect(new Set(lower).size).toBe(lower.length);
+      // Capped at 5
+      expect(ranked.length).toBe(5);
+      // Actionable phrasing appears at the top
+      expect(ranked.length).toBeGreaterThan(0);
+      expect(ranked[0]!.toLowerCase()).toMatch(
+        /use|try|compare|analyze|explore|focus/
+      );
+    });
+
+    it('consolidateHints should deduplicate case-insensitively and trim', () => {
+      const input = [
+        '  Use github_fetch_content  ',
+        'use github_fetch_content',
+        'Use  github_fetch_content',
+        'Different Hint',
+      ];
+
+      const result = consolidateHints(input, 10);
+      expect(result).toEqual(['Use github_fetch_content', 'Different Hint']);
+    });
+
+    it('consolidateHints should preserve first occurrence order (stable)', () => {
+      const input = ['b', 'A', 'a', 'B', 'c'];
+      const result = consolidateHints(input, 10);
+      expect(result).toEqual(['b', 'A', 'c']);
+    });
+
+    it('consolidateHints should cap results by max while preserving order', () => {
+      const input = ['a', 'b', 'c', 'd', 'e', 'f'];
+      const result = consolidateHints(input, 3);
+      expect(result).toEqual(['a', 'b', 'c']);
     });
   });
 

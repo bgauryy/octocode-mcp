@@ -540,6 +540,8 @@ export interface OptimizedCodeSearchResult {
       nameWithOwner: string;
       url: string;
     };
+    // Optional metadata: minifier strategy used for this file's text matches
+    minificationType?: string;
   }>;
   total_count: number;
   repository?: {

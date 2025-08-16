@@ -351,6 +351,23 @@ setting3=value3    `;
       expect(result.content).not.toMatch(/[ \t]+$/m); // No trailing whitespace
       expect(result.content).not.toMatch(/\n\n\n+/); // No triple newlines
     });
+
+    it('should treat indentation-sensitive filenames conservatively (no extension)', async () => {
+      const makefile = `# Simple Makefile
+build:
+	@echo "Building"
+
+test:
+	@echo "Testing"`;
+
+      const result = await minifyContent(makefile, 'Makefile');
+
+      expect(result.type).toBe('conservative');
+      expect(result.failed).toBe(false);
+      // Tabs should be preserved for Makefile recipes
+      expect(result.content).toContain('\t@echo "Building"');
+      expect(result.content).toContain('\t@echo "Testing"');
+    });
   });
 
   describe('Edge Cases', () => {

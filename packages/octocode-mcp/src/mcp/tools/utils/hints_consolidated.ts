@@ -698,3 +698,30 @@ export function generateBulkHints(context: BulkHintContext): string[] {
 
   return prioritizedHints.slice(0, 6);
 }
+
+/**
+ * Consolidate multiple hint lists into a globally deduplicated set
+ * - Case-insensitive deduplication
+ * - Preserves first occurrence order
+ * - Strict max cap
+ */
+export function consolidateHints(hints: string[], max: number = 6): string[] {
+  if (!hints.length) return [];
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const hint of hints) {
+    const normalized = hint.trim().replace(/\s+/g, ' ');
+    if (!normalized) continue;
+
+    const key = normalized.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(normalized); // preserve original casing
+      if (result.length >= max) break;
+    }
+  }
+
+  return result;
+}
