@@ -51,8 +51,7 @@
   "files": [
     "dist",
     "src",
-    "README.md",
-    "assets"
+    "README.md"
   ],
   "main": "dist/index.js",
   "module": "dist/index.mjs",

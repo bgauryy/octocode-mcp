@@ -21,6 +21,19 @@ import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
 import { version } from '../package.json';
 
+// a list of tools to run, separated by commas, e.g. "githubSearchCode,githubGetFileContent"
+// GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+// GITHUB_SEARCH_CODE: 'githubSearchCode',
+// GITHUB_SEARCH_COMMITS: 'githubSearchCommits',
+// GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+// GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+// GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+// PACKAGE_SEARCH: 'packageSearch',
+const inclusiveTools =
+  process.env.TOOLS_TO_RUN?.split(',')
+    .map(tool => tool.trim())
+    .filter(tool => tool.length > 0) || [];
+
 const SERVER_CONFIG: Implementation = {
   name: 'octocode',
   version: version,
@@ -199,7 +212,8 @@ export async function registerAllTools(server: McpServer) {
     );
   }
 
-  // Removed exportTranslations path (redundant)
+  // Determine if we should run all tools or only specific ones
+  const runAllTools = inclusiveTools.length === 0;
 
   const toolRegistrations = [
     {
@@ -237,10 +251,18 @@ export async function registerAllTools(server: McpServer) {
 
   for (const tool of toolRegistrations) {
     try {
-      // Check if tool is enabled in current toolset configuration
-      if (ToolsetManager.isToolEnabled(tool.name)) {
+      // Check if tool should be registered based on inclusiveTools configuration
+      const shouldRegisterTool =
+        runAllTools || inclusiveTools.includes(tool.name);
+
+      if (shouldRegisterTool && ToolsetManager.isToolEnabled(tool.name)) {
         tool.fn(server);
         successCount++;
+      } else if (!shouldRegisterTool) {
+        // Use stderr for selective tool messages to avoid console linter issues
+        process.stderr.write(
+          `Tool ${tool.name} excluded by TOOLS_TO_RUN configuration\n`
+        );
       } else {
         // Use stderr for toolset configuration messages to avoid console linter issues
         process.stderr.write(

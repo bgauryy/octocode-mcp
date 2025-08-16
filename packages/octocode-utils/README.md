@@ -3,7 +3,7 @@
 **Shared utilities for Octocode MCP packages**
 
 <div align="center">
-  <img src="./assets/logo_builder.png" width="200px">
+  <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-utils/assets/logo_builder.png" width="200px" alt="Octocode Utils Logo">
 </div>
 
 <div align="center">
