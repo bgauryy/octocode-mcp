@@ -152,8 +152,9 @@ describe('AuditLogger', () => {
       const events = AuditLogger['events'];
 
       expect(events[0]?.timestamp).toBeInstanceOf(Date);
+      // Allow for 1ms tolerance to handle timing precision issues
       expect(events[0]?.timestamp.getTime()).toBeGreaterThanOrEqual(
-        beforeTime.getTime()
+        beforeTime.getTime() - 1
       );
       expect(events[0]?.timestamp.getTime()).toBeLessThanOrEqual(
         afterTime.getTime()

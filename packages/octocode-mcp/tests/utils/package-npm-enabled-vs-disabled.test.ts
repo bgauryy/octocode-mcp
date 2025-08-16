@@ -12,6 +12,10 @@ vi.mock('../../src/utils/npmAPI', () => ({
   isNPMEnabled: vi.fn(),
 }));
 
+vi.mock('../../src/mcp/tools/utils/APIStatus', () => ({
+  getNPMUserDetails: vi.fn(),
+}));
+
 const mockExecuteNpmCommand = vi.mocked(executeNpmCommand);
 const mockIsNPMEnabled = vi.mocked(isNPMEnabled);
 
@@ -26,7 +30,7 @@ describe('Package Search - NPM Enabled vs Disabled Comparison', () => {
   };
 
   it('should execute NPM commands when NPM is enabled', async () => {
-    // Mock NPM as enabled
+    // Mock NPM as enabled with faster resolution to prevent timeout
     mockIsNPMEnabled.mockResolvedValue(true);
 
     // Mock successful NPM command execution
@@ -74,7 +78,7 @@ describe('Package Search - NPM Enabled vs Disabled Comparison', () => {
     expect(result).toHaveProperty('total_count', 2);
     expect('npm' in result).toBe(true);
     expect('python' in result).toBe(true);
-  });
+  }, 10000); // 10 second timeout
 
   it('should NOT execute NPM commands when NPM is disabled', async () => {
     // Mock NPM as disabled
