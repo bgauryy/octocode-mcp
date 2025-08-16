@@ -15,9 +15,10 @@
 
 <div align="center">
   
-  [![Version](https://img.shields.io/badge/version-4.0.3-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-4.1.0-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.12.0-brightgreen)](https://nodejs.org/)
+  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
 
 </div>
