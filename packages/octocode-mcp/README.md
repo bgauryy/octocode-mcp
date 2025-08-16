@@ -186,6 +186,156 @@ Octocode follows the standard Model Context Protocol, making it compatible with 
 - **Rate limiting/Enterprise setup** → See [Complete Authentication Guide](./docs/AUTHENTICATION.md)
 - **MCP configuration help** → See examples above or [Complete Authentication Guide](./docs/AUTHENTICATION.md)
 
+## 🔧 Environment Variables
+
+Octocode-MCP supports extensive configuration through environment variables. Here's a complete reference:
+
+### 🔑 Authentication & Core Settings
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `GITHUB_TOKEN` | GitHub Personal Access Token | - | `ghp_xxxxxxxxxxxx` |
+| `GH_TOKEN` | Alternative GitHub token (GitHub CLI format) | - | `ghp_xxxxxxxxxxxx` |
+| `GITHUB_HOST` | GitHub Enterprise Server URL | `github.com` | `github.company.com` |
+| `TOOLS_TO_RUN` | Comma-separated list of tools to enable | All tools | `githubSearchCode,githubGetFileContent` |
+
+#### 🛠️ Available Tools
+
+| Tool Name | Description | Use Case |
+|-----------|-------------|----------|
+| `githubSearchCode` | Search code across GitHub repositories | Find implementations, patterns, examples |
+| `githubSearchRepositories` | Search and discover GitHub repositories | Find relevant projects, libraries, frameworks |
+| `githubGetFileContent` | Fetch file contents from repositories | Read specific files, documentation, configs |
+| `githubViewRepoStructure` | Explore repository directory structure | Understand project organization, find entry points |
+| `githubSearchCommits` | Search commit history and changes | Track development, find bug fixes, analyze changes |
+| `githubSearchPullRequests` | Search pull requests and reviews | Understand features, review processes, discussions |
+| `packageSearch` | Search NPM and Python packages | Find libraries, check versions, get repository links |
+
+**Example Configurations:**
+```bash
+# Enable only code search and file content tools
+export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"
+
+# Enable repository exploration tools
+export TOOLS_TO_RUN="githubSearchRepositories,githubViewRepoStructure,packageSearch"
+
+# Enable all GitHub tools (exclude package search)
+export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories,githubGetFileContent,githubViewRepoStructure,githubSearchCommits,githubSearchPullRequests"
+
+# Enable single tool for specific use case
+export TOOLS_TO_RUN="githubSearchCode"
+```
+
+### 🏢 Enterprise & Organization Settings
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `GITHUB_ORGANIZATION` | Organization ID for access control | - | `my-company` |
+| `GITHUB_ORGANIZATION_NAME` | Display name for organization | Same as ID | `My Company Inc` |
+| `GITHUB_ALLOWED_USERS` | Comma-separated list of allowed users | - | `user1,user2,user3` |
+| `GITHUB_REQUIRED_TEAMS` | Required team memberships | - | `developers,admins` |
+| `GITHUB_ADMIN_USERS` | Admin users with elevated privileges | - | `admin1,admin2` |
+| `RESTRICT_TO_MEMBERS` | Restrict access to org members only | `false` | `true` |
+| `REQUIRE_MFA` | Require multi-factor authentication | `false` | `true` |
+
+### 🔐 OAuth 2.0 Configuration
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `GITHUB_OAUTH_CLIENT_ID` | OAuth application client ID | - | `Iv1.a629723bfced6b0c` |
+| `GITHUB_OAUTH_CLIENT_SECRET` | OAuth application client secret | - | `secret_value_here` |
+| `GITHUB_OAUTH_REDIRECT_URI` | OAuth callback URL | `http://localhost:3000/auth/callback` | `https://app.com/callback` |
+| `GITHUB_OAUTH_SCOPES` | Comma-separated OAuth scopes | `repo,read:user` | `repo,read:user,read:org` |
+| `GITHUB_OAUTH_ENABLED` | Enable OAuth authentication | `true` | `false` |
+| `GITHUB_OAUTH_AUTH_URL` | Custom authorization URL | Auto-detected | `https://github.com/login/oauth/authorize` |
+| `GITHUB_OAUTH_TOKEN_URL` | Custom token exchange URL | Auto-detected | `https://github.com/login/oauth/access_token` |
+
+### 🤖 GitHub App Configuration
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `GITHUB_APP_ID` | GitHub App ID | - | `123456` |
+| `GITHUB_APP_PRIVATE_KEY` | GitHub App private key (PEM format) | - | `-----BEGIN RSA PRIVATE KEY-----\n...` |
+| `GITHUB_APP_INSTALLATION_ID` | Installation ID for the app | - | `12345678` |
+| `GITHUB_APP_ENABLED` | Enable GitHub App authentication | `true` | `false` |
+
+### 📊 Rate Limiting & Performance
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `RATE_LIMIT_API_HOUR` | API requests per hour per user | `1000` | `5000` |
+| `RATE_LIMIT_AUTH_HOUR` | Authentication attempts per hour | `10` | `50` |
+| `RATE_LIMIT_TOKEN_HOUR` | Token requests per hour | `50` | `100` |
+| `REQUEST_TIMEOUT` | Request timeout in milliseconds | `30000` | `60000` |
+| `MAX_RETRIES` | Maximum retry attempts | `3` | `5` |
+
+### 🔍 Tool Management
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `GITHUB_TOOLSETS` | Comma-separated enabled toolsets | `all` | `core,enterprise` |
+| `GITHUB_DYNAMIC_TOOLSETS` | Enable dynamic toolset loading | `false` | `true` |
+| `GITHUB_READ_ONLY` | Enable read-only mode | `false` | `true` |
+
+### 🛡️ Security & Validation
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `GITHUB_SSO_ENFORCEMENT` | Enforce SSO authentication | `false` | `true` |
+| `GITHUB_TOKEN_VALIDATION` | Enable token validation | `false` | `true` |
+| `GITHUB_PERMISSION_VALIDATION` | Enable permission validation | `false` | `true` |
+
+### 📝 Audit Logging
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `AUDIT_ALL_ACCESS` | Enable comprehensive audit logging | `false` | `true` |
+| `AUDIT_LOG_DIR` | Directory for audit log files | `./logs/audit` | `/var/log/octocode` |
+| `ENABLE_COMMAND_LOGGING` | Log all command executions | `false` | `true` |
+| `LOG_FILE_PATH` | Custom log file path | - | `/var/log/octocode.log` |
+
+### 🔧 Development & Debugging
+
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `NODE_ENV` | Node.js environment | `production` | `development` |
+| `npm_package_version` | Package version (auto-set by npm) | Auto-detected | `4.0.5` |
+
+### 📋 Configuration Examples
+
+**Basic Setup:**
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+```
+
+**Enterprise Setup:**
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+export GITHUB_ORGANIZATION="my-company"
+export AUDIT_ALL_ACCESS="true"
+export RATE_LIMIT_API_HOUR="5000"
+export RESTRICT_TO_MEMBERS="true"
+```
+
+**OAuth Setup:**
+```bash
+export GITHUB_OAUTH_CLIENT_ID="Iv1.a629723bfced6b0c"
+export GITHUB_OAUTH_CLIENT_SECRET="your_client_secret"
+export GITHUB_OAUTH_REDIRECT_URI="https://yourapp.com/auth/callback"
+```
+
+**GitHub App Setup:**
+```bash
+export GITHUB_APP_ID="123456"
+export GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----..."
+export GITHUB_APP_INSTALLATION_ID="12345678"
+```
+
+**Selective Tool Usage:**
+```bash
+export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent,githubViewRepoStructure"
+```
+
 ## 📚 Documentation
 
 ### Quick Links

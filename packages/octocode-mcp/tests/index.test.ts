@@ -725,4 +725,282 @@ describe('Index Module', () => {
       expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe('githubGetFileContent');
     });
   });
+
+  describe('Inclusive Tools Configuration', () => {
+    let originalToolsToRun: string | undefined;
+
+    beforeEach(() => {
+      // Store original TOOLS_TO_RUN environment variable
+      originalToolsToRun = process.env.TOOLS_TO_RUN;
+    });
+
+    afterEach(() => {
+      // Restore original TOOLS_TO_RUN environment variable
+      if (originalToolsToRun !== undefined) {
+        process.env.TOOLS_TO_RUN = originalToolsToRun;
+      } else {
+        delete process.env.TOOLS_TO_RUN;
+      }
+    });
+
+    it('should register all tools when TOOLS_TO_RUN is not set', async () => {
+      delete process.env.TOOLS_TO_RUN;
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify all tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterGitHubSearchCommitsTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterSearchGitHubPullRequestsTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+    });
+
+    it('should register all tools when TOOLS_TO_RUN is empty string', async () => {
+      process.env.TOOLS_TO_RUN = '';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify all tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterGitHubSearchCommitsTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterSearchGitHubPullRequestsTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+    });
+
+    it('should register only 2 specific tools when TOOLS_TO_RUN contains 2 tools', async () => {
+      process.env.TOOLS_TO_RUN = 'githubSearchCode,githubGetFileContent';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify only specified tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+
+      // Verify other tools were NOT registered
+      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+
+    it('should register only 3 specific tools when TOOLS_TO_RUN contains 3 tools', async () => {
+      process.env.TOOLS_TO_RUN =
+        'githubSearchCode,githubSearchRepositories,packageSearch';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify only specified tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
+
+      // Verify other tools were NOT registered
+      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+
+    it('should handle single tool in TOOLS_TO_RUN', async () => {
+      process.env.TOOLS_TO_RUN = 'githubSearchCode';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify only specified tool was registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+
+      // Verify other tools were NOT registered
+      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+
+    it('should handle whitespace in TOOLS_TO_RUN', async () => {
+      process.env.TOOLS_TO_RUN = ' githubSearchCode , githubGetFileContent ';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify specified tools were registered (whitespace should be handled)
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+
+      // Verify other tools were NOT registered
+      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+
+    it('should handle invalid tool names in TOOLS_TO_RUN gracefully', async () => {
+      process.env.TOOLS_TO_RUN =
+        'githubSearchCode,invalidTool,githubGetFileContent';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify valid tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+
+      // Verify other tools were NOT registered (including invalid one)
+      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+
+    it('should still respect toolset configuration when using TOOLS_TO_RUN', async () => {
+      process.env.TOOLS_TO_RUN = 'githubSearchCode,githubGetFileContent';
+
+      // Mock toolset manager to disable one of the requested tools
+      mockToolsetManager.isToolEnabled.mockImplementation(
+        (toolName: string) => {
+          return toolName !== 'githubGetFileContent'; // Disable this tool
+        }
+      );
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify only the enabled tool was registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+
+      // Verify the disabled tool was NOT registered, even though it was in TOOLS_TO_RUN
+      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
+
+      // Verify other tools were NOT registered
+      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+
+    it('should exit when no tools match TOOLS_TO_RUN configuration', async () => {
+      process.env.TOOLS_TO_RUN = 'nonExistentTool1,nonExistentTool2';
+
+      // Track the exit call without throwing
+      let exitCalled = false;
+      let exitCode: number | undefined;
+      processExitSpy.mockImplementation(
+        (code?: string | number | null | undefined) => {
+          exitCalled = true;
+          exitCode =
+            typeof code === 'number'
+              ? code
+              : code
+                ? parseInt(String(code))
+                : undefined;
+          return undefined as never;
+        }
+      );
+
+      try {
+        await import('../src/index.js');
+        await waitForAsyncOperations();
+        // Give extra time for the catch block to execute
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        // Ignore any errors from module loading
+      }
+
+      // Verify no tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).not.toHaveBeenCalled();
+      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+
+      // Verify the process exits with error code
+      expect(exitCalled).toBe(true);
+      expect(exitCode).toBe(1);
+    });
+
+    it('should register all available tools from a mixed valid/invalid TOOLS_TO_RUN list', async () => {
+      process.env.TOOLS_TO_RUN =
+        'githubSearchCode,invalidTool1,githubSearchRepositories,invalidTool2,packageSearch';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify only valid tools were registered
+      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
+        mockMcpServer
+      );
+      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockMcpServer);
+
+      // Verify other tools were NOT registered
+      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
+      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+  });
 });
