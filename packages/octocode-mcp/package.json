@@ -71,13 +71,13 @@
   },
   "files": [
     "dist/**/*.js",
-    "manifest.json",
-    "assets/logo_white.png"
+    "manifest.json"
   ],
   "main": "dist/index.js",
   "scripts": {
-    "build": "yarn lint && rollup -c",
-    "build:dev": "rollup -c",
+    "build": "yarn lint && yarn clean && rollup -c",
+    "build:dev": "yarn clean && rollup -c",
+    "clean": "rm -rf dist/",
     "build:watch": "rollup -c --watch",
     "debug": "npx @modelcontextprotocol/inspector node dist/index.js",
     "dxt:pack": "yarn build && dxt pack . octocode-mcp.dxt",
