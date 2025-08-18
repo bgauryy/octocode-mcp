@@ -22,6 +22,7 @@
   [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
   [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-yellow.svg?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/bgauryy)
   
+  
 </div>
 <div align="center">
   <a href="https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-mcp" style="font-size: 1.8em; font-weight: bold; text-decoration: none; padding: 8px 16px; background-color: #f0f8ff; border-radius: 6px; color: #0066cc;">
@@ -92,6 +93,9 @@ Dramatically increase development velocity by enabling teams to instantly learn 
 - [![DevTool.io](https://img.shields.io/badge/DevTool.io-Development%20Tool-teal.svg?logo=tools)](https://devtool.io/tool/octocode-mcp)
 - [![MCP Server Finder](https://img.shields.io/badge/MCP%20Server%20Finder-Directory-blue.svg?logo=search)](https://www.mcpserverfinder.com/servers/bgauryy/octocode-mcp)
 - [![MCP Container](https://img.shields.io/badge/MCP%20Container-Registry-purple.svg?logo=docker)](https://mcp-container.com/en/mcp/137e872e-ef4f-4bdb-a697-d1e628200215)
+
+ <a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" />
 
 ## 🏗️ The Octocode Ecosystem
 
