@@ -26,7 +26,10 @@ export default {
       return '[name]-[hash].js';
     }
   },
-  external: [],
+  external: [
+    // Only externalize Node.js built-ins - users expect dependencies to be bundled
+    'fs', 'path', 'os', 'crypto', 'util', 'stream', 'events', 'http', 'https', 'url', 'zlib', 'buffer', 'child_process'
+  ],
   plugins: [
     nodeResolve({
       preferBuiltins: true
