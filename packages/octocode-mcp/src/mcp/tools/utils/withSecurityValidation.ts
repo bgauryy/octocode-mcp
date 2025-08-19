@@ -4,7 +4,11 @@ import { ContentSanitizer } from '../../../security/contentSanitizer';
 import { getUserContext } from '../../../utils/github/userInfo';
 import { RateLimiter } from '../../../security/rateLimiter';
 import { OrganizationManager } from '../../../security/organizationManager';
-import { isEnterpriseMode } from '../../../utils/enterpriseUtils';
+import {
+  isEnterpriseMode,
+  isSSOEnforcementEnabled,
+} from '../../../utils/enterpriseUtils';
+import { getTokenSource } from './tokenManager';
 
 export interface UserContext {
   userId: string;
@@ -89,6 +93,22 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
                 }
               } catch (orgError) {
                 // Organization manager not initialized - continue without org validation
+              }
+            }
+
+            // 5. SSO enforcement (if enabled)
+            if (isSSOEnforcementEnabled()) {
+              const source = getTokenSource();
+              if (source === 'cli') {
+                return createResult({
+                  error:
+                    'SSO enforcement active: CLI tokens are not permitted. Use OAuth, GitHub App, or environment tokens.',
+                  isError: true,
+                  hints: [
+                    'Authenticate via OAuth or configure GITHUB_TOKEN/GH_TOKEN',
+                    'In enterprise, CLI token resolution is disabled',
+                  ],
+                });
               }
             }
           }

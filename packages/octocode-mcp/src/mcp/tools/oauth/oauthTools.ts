@@ -208,12 +208,18 @@ BEST PRACTICES:
             callbackUrl = callbackServer.getCallbackUrl();
           }
 
-          // Create authorization URL
+          // Create authorization URL (ensure requested scopes are applied)
+          const requestedScopes = args.scopes || [
+            'repo',
+            'read:user',
+            'read:org',
+          ];
           const authorizationUrl = oauthManager.createAuthorizationUrl(
             state,
             codeChallenge,
             {
               redirect_uri: callbackUrl,
+              scope: requestedScopes.join(' '),
             }
           );
 
@@ -221,7 +227,7 @@ BEST PRACTICES:
           await OAuthStateManager.storeOAuthState(state, {
             codeVerifier,
             organization: args.organization,
-            scopes: args.scopes || ['repo', 'read:user', 'read:org'],
+            scopes: requestedScopes,
             callbackMethod: args.callbackMethod || 'local_server',
             callbackPort: args.callbackPort,
             clientId: config.oauth.clientId,
@@ -230,6 +236,9 @@ BEST PRACTICES:
           // Handle different callback methods
           let instructions = '';
           const additionalInfo: Record<string, unknown> = {};
+
+          // Gate deep_link by env flag in strict environments
+          const allowDeepLink = process.env.ALLOW_OAUTH_DEEP_LINK === 'true';
 
           switch (args.callbackMethod) {
             case 'local_server':
@@ -299,6 +308,10 @@ BEST PRACTICES:
               break;
 
             case 'deep_link':
+              if (!allowDeepLink) {
+                instructions = `\nDeep-link is disabled by server policy. Please use 'local_server' or 'manual' callback method.`;
+                break;
+              }
               instructions = `
 1. Visit the authorization URL in your browser
 2. Authorize the application with GitHub

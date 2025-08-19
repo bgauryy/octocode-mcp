@@ -1,13 +1,31 @@
 # Octocode MCP Installation & Configuration Guide
 
-End-to-end setup for tokens, permissions, OAuth (PKCE), enterprise configuration, and startup behavior. This guide reflects the actual implementation in the codebase.
+## Table of Contents
 
-Implementation references:
-- `src/mcp/tools/utils/tokenManager.ts`
-- `src/auth/oauthManager.ts`
-- `src/auth/mcpAuthProtocol.ts`
-- `src/http/oauthCallbackServer.ts`
-- `src/index.ts`
+- [Quick Start](#quick-start)
+- [Local Authentication (dev-first)](#local-authentication-dev-first)
+  - [Token sources (priority order)](#token-sources-priority-order)
+  - [How Octocode chooses a token (fallback system)](#how-octocode-chooses-a-token-fallback-system)
+- [Required GitHub Permissions (Scopes)](#required-github-permissions-scopes)
+- [Authentication Sources & Fallback Order](#authentication-sources--fallback-order)
+- [OAuth 2.0/2.1 (PKCE) Setup](#oauth-2021-pkce-setup)
+  - [Configure environment](#configure-environment)
+  - [Flow methods (all supported)](#flow-methods-all-supported)
+  - [PKCE Authorization Code flow](#pkce-authorization-code-flow)
+  - [Using a custom auth page (manual method)](#using-a-custom-auth-page-manual-method)
+  - [Local server method](#local-server-method)
+- [MCP Resource Metadata Server (optional)](#mcp-resource-metadata-server-optional)
+- [GitHub App (Enterprise)](#github-app-enterprise)
+- [Enterprise Features](#enterprise-features)
+- [MCP Client Examples](#mcp-client-examples)
+- [Verification & Health](#verification--health)
+- [Troubleshooting](#troubleshooting)
+- [Configuration Reference](#configuration-reference)
+- [GitHub Enterprise Server (GHES) Setup](#github-enterprise-server-ghes-setup)
+- [Organization Security Profiles (examples)](#organization-security-profiles-examples)
+- [Docker Deployment Examples](#docker-deployment-examples)
+- [Security Best Practices](#security-best-practices)
+- [FAQ](#faq)
 
 ## Quick Start
 
@@ -24,30 +42,35 @@ docker run -i --rm -e GITHUB_TOKEN octocode/octocode-mcp:latest
 
 Startup behavior (validated): the server calls `getToken()` at startup and will exit if no usable token source is available.
 
-## Required GitHub Permissions (Scopes)
+## Local Authentication (dev-first)
 
-Use read-only scopes. Minimum recommended for private repos and org-aware features:
+Use these options first when developing locally. Enterprise mode changes behavior (CLI disabled) – see Enterprise section.
 
-| Scope | Why | Features |
-|------|-----|----------|
-| `repo` (or fine-grained: Contents: Read, Metadata: Read, Pull requests: Read) | Read private repository contents and metadata | Code search, file fetch, repo structure, PR/commit search |
-| `read:user` | Identify the authenticated user and validate token | Token validation, rate limit checks |
-| `read:org` | Verify organization membership and team policies | Enterprise org/teams validation |
+### Token sources (priority order)
 
-Notes:
-- Fine‑grained PATs: prefer read-only permissions for Contents, Metadata, Pull requests.
-- OAuth apps should request the same read scopes; see `GITHUB_OAUTH_SCOPES`.
+- GITHUB_TOKEN or GH_TOKEN
+- GitHub CLI token (gh auth token) [disabled in enterprise]
+- Authorization environment variable (Bearer/token)
 
-## Authentication Sources & Fallback Order
+Examples:
 
-Exact priority implemented in `tokenManager.ts`:
+```bash
+# PAT (Preferred for local dev)
+export GITHUB_TOKEN="ghp_xxx"
 
-1) OAuth token (stored securely, auto-refresh)
-2) GitHub App installation token (auto-refresh via JWT)
-3) `GITHUB_TOKEN`
-4) `GH_TOKEN`
-5) GitHub CLI token from `gh auth token` (disabled in Enterprise mode)
-6) `Authorization` environment variable (supports `Bearer <token>` or `token <token>`)
+# CLI (non-enterprise only)
+gh auth login
+gh auth status
+
+# Authorization env (fallback)
+export Authorization="Bearer ghp_xxx"
+```
+
+Helpful links:
+- Install GitHub CLI: [GitHub CLI](https://cli.github.com/)
+- Create a personal access token: [Fine‑grained PAT](https://github.com/settings/personal-access-tokens/new) or [Classic PAT](https://github.com/settings/tokens/new)
+
+### How Octocode chooses a token (fallback system)
 
 ```mermaid
 flowchart TD
@@ -73,6 +96,31 @@ flowchart TD
   G1 --> DONE
   F1 --> DONE
 ```
+
+## Required GitHub Permissions (Scopes)
+
+Use read-only scopes. Minimum recommended for private repos and org-aware features:
+
+| Scope | Why | Features |
+|------|-----|----------|
+| `repo` (or fine-grained: Contents: Read, Metadata: Read, Pull requests: Read) | Read private repository contents and metadata | Code search, file fetch, repo structure, PR/commit search |
+| `read:user` | Identify the authenticated user and validate token | Token validation, rate limit checks |
+| `read:org` | Verify organization membership and team policies | Enterprise org/teams validation |
+
+Notes:
+- Fine‑grained PATs: prefer read-only permissions for Contents, Metadata, Pull requests.
+- OAuth apps should request the same read scopes; see `GITHUB_OAUTH_SCOPES`.
+
+## Authentication Sources & Fallback Order
+
+Exact priority implemented in `tokenManager.ts`:
+
+1) OAuth token (stored securely, auto-refresh)
+2) GitHub App installation token (auto-refresh via JWT)
+3) `GITHUB_TOKEN`
+4) `GH_TOKEN`
+5) GitHub CLI token from `gh auth token` (disabled in Enterprise mode)
+6) `Authorization` environment variable (supports `Bearer <token>` or `token <token>`)
 
 Enterprise mode detection (code): enabled if any of `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS=true`, or any `RATE_LIMIT_*` env is set. In enterprise mode, CLI token resolution is disabled.
 
@@ -142,6 +190,10 @@ Behavior details (validated): tokens are cached in memory and stored via `Secure
 
 Best for hosted services or when you want user sign-in with scoped access. Fully implemented via `OAuthManager` with PKCE, secure state, refresh, and GitHub Enterprise support.
 
+Notes:
+- Scopes precedence: `oauthInitiate.scopes` passed at runtime overrides default `GITHUB_OAUTH_SCOPES` so each flow requests exactly the needed permissions (least privilege).
+- Deep-link policy: deep-link callback is disabled by default. Enable with `ALLOW_OAUTH_DEEP_LINK=true` only in environments where the MCP client supports it.
+
 ### Configure environment
 
 ```bash
@@ -176,6 +228,8 @@ Callback URL must exactly match your OAuth app configuration.
   { "callbackMethod": "deep_link" }
   ```
 
+  Deep-link requires client support and is disabled by default for security. Set `ALLOW_OAUTH_DEEP_LINK=true` to enable.
+
 ### PKCE Authorization Code flow
 
 ```mermaid
@@ -207,6 +261,16 @@ Your page at `https://yourapp.com/auth/callback` only needs to read `code` and `
 
 Octocode can run a temporary local callback server (`http://127.0.0.1:8765/auth/callback`) to capture the code/state automatically. See `src/http/oauthCallbackServer.ts`.
 
+## MCP Resource Metadata Server (optional)
+
+Strict enterprises can host a local MCP resource metadata endpoint to back the `WWW-Authenticate` header’s `resource_metadata` URL.
+
+- Enable with: `START_METADATA_SERVER=true`
+- Default bind: `127.0.0.1:8787`
+- Endpoint: `/.well-known/mcp-resource-metadata`
+
+This returns the same protected resource metadata as `mcpAuthProtocol.getProtectedResourceMetadata()` and shuts down gracefully with the main server.
+
 ## GitHub App (Enterprise)
 
 Use when your organization installs a GitHub App for broader access. Octocode will refresh the installation token automatically via App JWT.
@@ -232,6 +296,7 @@ Effects:
 - Optional modules initialize automatically at startup:
   - Audit logging (JSONL, buffered, daily rotation)
   - Rate limiting (per-hour)
+  - SSO enforcement (optional via `GITHUB_SSO_ENFORCEMENT=true`): CLI tokens are blocked at tool entry; use OAuth, GitHub App, or env tokens instead.
 
 Example configuration:
 ```bash
@@ -345,6 +410,12 @@ Core authentication:
 | `Authorization` | No* | `Bearer ghp_xxx` |
 | `GITHUB_HOST` | No | `https://github.company.com` |
 
+Server/runtime (optional):
+| Variable | Required | Example |
+|----------|----------|---------|
+| `START_METADATA_SERVER` | No | `true` |
+| `ALLOW_OAUTH_DEEP_LINK` | No | `true` |
+
 OAuth:
 | Variable | Required | Example |
 |----------|----------|---------|
@@ -419,6 +490,43 @@ Effects (validated):
 - deep_link: When integrated via an MCP gateway, uses the gateway’s deep link channel to deliver `code` and `state` back to the server.
 
 Tokens are securely persisted via `SecureCredentialStore`; refresh is scheduled automatically (~5 minutes before expiry).
+
+## Organization Security Profiles (examples)
+
+Use these environment sets to configure different security postures for an organization deployment.
+
+### Basic (org-aware, minimal restrictions)
+```bash
+GITHUB_ORGANIZATION="your-org"
+AUDIT_ALL_ACCESS=false
+RESTRICT_TO_MEMBERS=false
+GITHUB_SSO_ENFORCEMENT=false
+ALLOW_OAUTH_DEEP_LINK=false
+```
+
+### Standard (members-only, audit + rate limits)
+```bash
+GITHUB_ORGANIZATION="your-org"
+RESTRICT_TO_MEMBERS=true
+AUDIT_ALL_ACCESS=true
+RATE_LIMIT_API_HOUR=1000
+RATE_LIMIT_AUTH_HOUR=100
+RATE_LIMIT_TOKEN_HOUR=50
+GITHUB_SSO_ENFORCEMENT=true
+ALLOW_OAUTH_DEEP_LINK=false
+```
+
+### Strict (SSO enforced, hosted metadata, OAuth-only)
+```bash
+GITHUB_ORGANIZATION="your-org"
+RESTRICT_TO_MEMBERS=true
+AUDIT_ALL_ACCESS=true
+GITHUB_SSO_ENFORCEMENT=true
+START_METADATA_SERVER=true
+# Disable CLI by enterprise mode; prefer OAuth or GitHub App
+GITHUB_OAUTH_ENABLED=true
+ALLOW_OAUTH_DEEP_LINK=false
+```
 
 ## Scope-to-Feature Matrix
 

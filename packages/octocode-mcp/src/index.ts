@@ -107,6 +107,28 @@ async function startServer() {
 
     await registerAllTools(server);
 
+    // Optionally start a tiny resource metadata server for strict enterprises
+    // Controlled by START_METADATA_SERVER=true
+    let metadataServer:
+      | import('./http/resourceMetadataServer.js').ResourceMetadataServer
+      | null = null;
+    try {
+      if (process.env.START_METADATA_SERVER === 'true') {
+        const { ResourceMetadataServer } = await import(
+          './http/resourceMetadataServer.js'
+        );
+        metadataServer = new ResourceMetadataServer({});
+        await metadataServer.start();
+        process.stderr.write(
+          `MCP resource metadata server listening at ${metadataServer.getBaseUrl()}\n`
+        );
+      }
+    } catch (metaErr) {
+      process.stderr.write(
+        `Warning: Failed to start metadata server: ${metaErr}\n`
+      );
+    }
+
     const transport = new StdioServerTransport();
 
     await server.connect(transport);
@@ -166,6 +188,16 @@ async function startServer() {
             './mcp/tools/utils/oauthStateManager.js'
           );
           OAuthStateManager.shutdown();
+
+          // Stop resource metadata server if running
+          if (metadataServer) {
+            try {
+              metadataServer.stop();
+            } catch {
+              // ignore
+            }
+            metadataServer = null;
+          }
         } catch (error) {
           // Ignore shutdown errors
         }

@@ -308,16 +308,9 @@ describe('Index Module', () => {
       // Override the mock to track the exit call without throwing
       let exitCalled = false;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      let exitCode: number | undefined;
       processExitSpy.mockImplementation(
-        (code?: string | number | null | undefined) => {
+        (_code?: string | number | null | undefined) => {
           exitCalled = true;
-          exitCode =
-            typeof code === 'number'
-              ? code
-              : code
-                ? parseInt(String(code))
-                : undefined;
           return undefined as never;
         }
       );
