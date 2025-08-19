@@ -95,16 +95,12 @@ export class MCPAuthProtocol {
   async initialize(): Promise<void> {
     const config = ConfigManager.getConfig();
 
-    // Initialize OAuth manager if configured
+    // Use managers if present; initialization is centralized elsewhere
     if (config.oauth?.enabled) {
       this.oauthManager = OAuthManager.getInstance();
-      this.oauthManager.initialize();
     }
-
-    // Initialize GitHub App manager if configured
     if (config.githubApp?.enabled) {
       this.githubAppManager = GitHubAppManager.getInstance();
-      this.githubAppManager.initialize();
     }
   }
 
@@ -241,6 +237,7 @@ export class MCPAuthProtocol {
 
   /**
    * Validate Bearer token from Authorization header
+   * Delegates to OAuthManager for consistent validation
    */
   async validateBearerToken(authorizationHeader: string): Promise<{
     valid: boolean;
@@ -261,7 +258,25 @@ export class MCPAuthProtocol {
 
       const token = match[1];
 
-      // Validate token against GitHub API
+      if (!token) {
+        return {
+          valid: false,
+          error: 'Empty token in authorization header',
+        };
+      }
+
+      // Delegate to OAuthManager if available
+      if (this.oauthManager) {
+        const validation = await this.oauthManager.validateToken(token);
+        return {
+          valid: validation.valid,
+          token: validation.valid ? token : undefined,
+          error: validation.error,
+          scopes: validation.scopes,
+        };
+      }
+
+      // Fallback to direct GitHub API validation if OAuthManager not available
       const config = ConfigManager.getConfig();
       const apiBaseUrl = config.githubHost
         ? `${config.githubHost}/api/v3`
@@ -342,90 +357,6 @@ export class MCPAuthProtocol {
   }
 
   /**
-   * Get OAuth authorization URL with MCP parameters
-   */
-  async getAuthorizationUrl(
-    clientId?: string,
-    redirectUri?: string,
-    scopes?: string[],
-    state?: string
-  ): Promise<{
-    authorizationUrl: string;
-    state: string;
-    codeVerifier: string;
-  }> {
-    if (!this.oauthManager) {
-      throw new Error('OAuth not configured');
-    }
-
-    const config = ConfigManager.getConfig();
-
-    // Use provided parameters or fall back to configuration
-    const finalClientId = clientId || config.oauth?.clientId;
-    const finalRedirectUri = redirectUri || config.oauth?.redirectUri;
-    const finalScopes = scopes || config.oauth?.scopes || ['repo', 'read:user'];
-
-    if (!finalClientId || !finalRedirectUri) {
-      throw new Error('OAuth client ID and redirect URI required');
-    }
-
-    // Generate PKCE parameters
-    const { codeVerifier, codeChallenge } =
-      this.oauthManager.generatePKCEParams();
-    const finalState = state || this.oauthManager.generateState();
-
-    // Build authorization URL
-    const authUrl = this.oauthManager.createAuthorizationUrl(
-      finalState,
-      codeChallenge,
-      {
-        client_id: finalClientId,
-        redirect_uri: finalRedirectUri,
-        scope: finalScopes.join(' '),
-      }
-    );
-
-    return {
-      authorizationUrl: authUrl,
-      state: finalState,
-      codeVerifier,
-    };
-  }
-
-  /**
-   * Exchange authorization code for access token
-   */
-  async exchangeCodeForToken(
-    code: string,
-    codeVerifier: string,
-    state?: string
-  ): Promise<{
-    accessToken: string;
-    refreshToken?: string;
-    tokenType: string;
-    expiresIn: number;
-    scope: string;
-  }> {
-    if (!this.oauthManager) {
-      throw new Error('OAuth not configured');
-    }
-
-    const tokenResponse = await this.oauthManager.exchangeCodeForToken(
-      code,
-      codeVerifier,
-      state
-    );
-
-    return {
-      accessToken: tokenResponse.accessToken,
-      refreshToken: tokenResponse.refreshToken,
-      tokenType: tokenResponse.tokenType,
-      expiresIn: tokenResponse.expiresIn,
-      scope: tokenResponse.scope,
-    };
-  }
-
-  /**
    * Get GitHub App installation token
    */
   async getGitHubAppToken(installationId?: number): Promise<{
@@ -444,37 +375,6 @@ export class MCPAuthProtocol {
       token: tokenInfo.token,
       expiresAt: tokenInfo.expiresAt,
       permissions: tokenInfo.permissions,
-    };
-  }
-
-  /**
-   * Get authorization server metadata (OAuth Discovery)
-   */
-  getAuthorizationServerMetadata(): AuthorizationServerInfo | null {
-    const config = ConfigManager.getConfig();
-
-    if (!config.oauth?.enabled) {
-      return null;
-    }
-
-    const baseUrl = config.githubHost || 'https://github.com';
-
-    return {
-      issuer: baseUrl,
-      authorization_endpoint:
-        config.oauth.authorizationUrl || `${baseUrl}/login/oauth/authorize`,
-      token_endpoint:
-        config.oauth.tokenUrl || `${baseUrl}/login/oauth/access_token`,
-      scopes_supported: config.oauth.scopes || [
-        'repo',
-        'read:user',
-        'read:org',
-      ],
-      response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code', 'refresh_token'],
-      code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: ['client_secret_post'],
-      revocation_endpoint: `${baseUrl}/login/oauth/revoke`,
     };
   }
 

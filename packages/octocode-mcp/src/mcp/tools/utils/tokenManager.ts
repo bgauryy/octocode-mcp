@@ -668,11 +668,8 @@ async function refreshGitHubAppToken(
     // Store the new token securely
     await storeGitHubAppToken(newTokenInfo);
 
-    // Schedule next refresh (5 minutes before expiration)
-    const refreshTime = new Date(
-      newTokenInfo.expiresAt.getTime() - 5 * 60 * 1000
-    );
-    scheduleTokenRefresh(refreshTime, 'github_app', newTokenInfo);
+    // Schedule next refresh; let scheduler subtract the buffer
+    scheduleTokenRefresh(newTokenInfo.expiresAt, 'github_app', newTokenInfo);
 
     // Log successful refresh in enterprise mode
     if (isEnterpriseMode()) {
@@ -754,7 +751,7 @@ async function storeGitHubAppToken(
 /**
  * Clear OAuth tokens from secure storage
  */
-async function clearOAuthTokens(): Promise<void> {
+export async function clearOAuthTokens(): Promise<void> {
   await deleteSecureCredential('oauth_access_token');
   await deleteSecureCredential('oauth_refresh_token');
   await deleteSecureCredential('oauth_expires_at');
@@ -993,8 +990,8 @@ export async function storeGitHubAppTokenInfo(
   tokenExpiresAt = tokenInfo.expiresAt;
 
   // Schedule refresh
-  const refreshTime = new Date(tokenInfo.expiresAt.getTime() - 5 * 60 * 1000);
-  scheduleTokenRefresh(refreshTime, 'github_app', tokenInfo);
+  // Pass actual expiration; scheduler applies its own safety buffer
+  scheduleTokenRefresh(tokenInfo.expiresAt, 'github_app', tokenInfo);
 
   // Log in enterprise mode
   if (isEnterpriseMode()) {

@@ -10,25 +10,21 @@ import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commi
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
+import { registerAllOAuthTools } from './mcp/tools/oauth/oauthTools.js';
+import { registerAllOrganizationTools } from './mcp/tools/organization/organizationTools.js';
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
+  getGitHubToken,
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
 import { version } from '../package.json';
 
 // a list of tools to run, separated by commas, e.g. "githubSearchCode,githubGetFileContent"
-// GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-// GITHUB_SEARCH_CODE: 'githubSearchCode',
-// GITHUB_SEARCH_COMMITS: 'githubSearchCommits',
-// GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-// GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-// GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-// PACKAGE_SEARCH: 'packageSearch',
 const inclusiveTools =
   process.env.TOOLS_TO_RUN?.split(',')
     .map(tool => tool.trim())
@@ -43,6 +39,7 @@ const SERVER_CONFIG: Implementation = {
 async function startServer() {
   let shutdownInProgress = false;
   let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
+  let tokenProbeInterval: ReturnType<typeof setInterval> | null = null;
 
   try {
     const server = new McpServer(SERVER_CONFIG);
@@ -68,6 +65,45 @@ async function startServer() {
 
     // Initialize OAuth/GitHub App authentication
     await initializeAuthentication();
+
+    // Start background token probe if OAuth is not configured/enabled
+    try {
+      const cfg = ConfigManager.getConfig();
+      if (!cfg.oauth?.enabled) {
+        const probe = async () => {
+          try {
+            const token = await getGitHubToken();
+            if (token && tokenProbeInterval) {
+              process.stderr.write(
+                'Detected GitHub token from environment/CLI.\n'
+              );
+              clearInterval(tokenProbeInterval);
+              tokenProbeInterval = null;
+            }
+          } catch {
+            // ignore probe errors
+          }
+        };
+        // Immediate probe once, then every 30s
+        await probe();
+        tokenProbeInterval = setInterval(probe, 30_000);
+      }
+    } catch {
+      // ignore background probe setup issues
+    }
+
+    // Initialize OAuth state manager for OAuth flow support
+    try {
+      const { OAuthStateManager } = await import(
+        './mcp/tools/utils/oauthStateManager.js'
+      );
+      OAuthStateManager.initialize();
+    } catch (stateManagerError) {
+      // OAuth state manager is optional
+      process.stderr.write(
+        `Warning: OAuth state manager initialization failed: ${stateManagerError}\n`
+      );
+    }
 
     await registerAllTools(server);
 
@@ -103,6 +139,12 @@ async function startServer() {
         clearAllCache();
         SecureCredentialStore.clearAll();
 
+        // Stop background token probe if running
+        if (tokenProbeInterval) {
+          clearInterval(tokenProbeInterval);
+          tokenProbeInterval = null;
+        }
+
         // Shutdown enterprise modules gracefully
         try {
           if (process.env.AUDIT_ALL_ACCESS === 'true') {
@@ -118,6 +160,12 @@ async function startServer() {
             const { RateLimiter } = await import('./security/rateLimiter.js');
             RateLimiter.shutdown();
           }
+
+          // Shutdown OAuth state manager
+          const { OAuthStateManager } = await import(
+            './mcp/tools/utils/oauthStateManager.js'
+          );
+          OAuthStateManager.shutdown();
         } catch (error) {
           // Ignore shutdown errors
         }
@@ -201,8 +249,12 @@ export async function registerAllTools(server: McpServer) {
   // Initialize toolset management
   ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
 
-  // Ensure token exists and is stored securely (existing behavior)
-  await getToken();
+  // Best-effort token bootstrap: do not fail startup if token is missing.
+  try {
+    await getToken();
+  } catch (_e) {
+    // Token will be obtained later via OAuth or environment/CLI; continue startup.
+  }
 
   // Warn about CLI restrictions in enterprise mode
   if (isEnterpriseTokenManager() && !isCliTokenResolutionEnabled()) {
@@ -245,6 +297,22 @@ export async function registerAllTools(server: McpServer) {
       fn: registerPackageSearchTool,
     },
   ];
+
+  // Register OAuth and Organization tools if configured
+  try {
+    // Always register OAuth tools (they handle their own availability checks)
+    registerAllOAuthTools(server);
+
+    // Register organization tools if OAuth is configured or enterprise mode is enabled
+    if (config.oauth?.enabled || config.enterprise?.organizationId) {
+      registerAllOrganizationTools(server);
+    }
+  } catch (oauthError) {
+    // Log but don't fail - OAuth tools are optional
+    process.stderr.write(
+      `Warning: Failed to register OAuth/Organization tools: ${oauthError}\n`
+    );
+  }
 
   let successCount = 0;
   const failedTools: string[] = [];

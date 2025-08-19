@@ -1,6 +1,13 @@
-# Octocode MCP Installation Guide
+# Octocode MCP Installation & Configuration Guide
 
-Comprehensive installation and configuration guide for Octocode MCP Server. Supports individual developers, teams, and enterprise deployments with advanced security features.
+End-to-end setup for tokens, permissions, OAuth (PKCE), enterprise configuration, and startup behavior. This guide reflects the actual implementation in the codebase.
+
+Implementation references:
+- `src/mcp/tools/utils/tokenManager.ts`
+- `src/auth/oauthManager.ts`
+- `src/auth/mcpAuthProtocol.ts`
+- `src/http/oauthCallbackServer.ts`
+- `src/index.ts`
 
 ## Quick Start
 
@@ -8,153 +15,438 @@ Comprehensive installation and configuration guide for Octocode MCP Server. Supp
 # Install globally
 npm install -g octocode-mcp
 
-# Or run directly  
+# Or run directly
 npx octocode-mcp
 
 # With Docker
 docker run -i --rm -e GITHUB_TOKEN octocode/octocode-mcp:latest
 ```
 
-Octocode requires a GitHub token at startup. If no token is available, it will fail fast during initialization.
+Startup behavior (validated): the server calls `getToken()` at startup and will exit if no usable token source is available.
 
-How Octocode resolves your token (priority order):
-- `GITHUB_TOKEN`
-- `GH_TOKEN`
-- GitHub CLI token from `gh auth token` (**disabled in Enterprise mode**)
-- `Authorization` environment variable (Bearer or token prefix)
+## Required GitHub Permissions (Scopes)
 
-Implementation reference: `src/mcp/tools/utils/tokenManager.ts` (`resolveToken`, `getToken`) and `src/index.ts` (bootstrap and enterprise initialization).
+Use read-only scopes. Minimum recommended for private repos and org-aware features:
 
-## 1) Individual Developers
+| Scope | Why | Features |
+|------|-----|----------|
+| `repo` (or fine-grained: Contents: Read, Metadata: Read, Pull requests: Read) | Read private repository contents and metadata | Code search, file fetch, repo structure, PR/commit search |
+| `read:user` | Identify the authenticated user and validate token | Token validation, rate limit checks |
+| `read:org` | Verify organization membership and team policies | Enterprise org/teams validation |
 
-Goal: Make a token available to Octocode locally.
+Notes:
+- Fine‑grained PATs: prefer read-only permissions for Contents, Metadata, Pull requests.
+- OAuth apps should request the same read scopes; see `GITHUB_OAUTH_SCOPES`.
 
-Recommended: GitHub CLI (Individual developers only)
+## Authentication Sources & Fallback Order
+
+Exact priority implemented in `tokenManager.ts`:
+
+1) OAuth token (stored securely, auto-refresh)
+2) GitHub App installation token (auto-refresh via JWT)
+3) `GITHUB_TOKEN`
+4) `GH_TOKEN`
+5) GitHub CLI token from `gh auth token` (disabled in Enterprise mode)
+6) `Authorization` environment variable (supports `Bearer <token>` or `token <token>`)
+
+```mermaid
+flowchart TD
+  A([Start]) --> B{OAuth token available?}
+  B -- Yes --> B1[Use OAuth access token]
+  B -- No --> C{GitHub App token available?}
+  C -- Yes --> C1[Use installation token]
+  C -- No --> D{Env tokens present?}
+  D -- GITHUB_TOKEN --> D1[Use GITHUB_TOKEN]
+  D -- GH_TOKEN --> D2[Use GH_TOKEN]
+  D -- None --> E{Enterprise mode?}
+  E -- Yes --> E1[Skip CLI for security]
+  E1 --> F{Authorization env?}
+  E -- No --> G{CLI token available?}
+  G -- Yes --> G1[Use gh auth token]
+  G -- No --> F
+  F -- Yes --> F1[Use Authorization env token]
+  F -- No --> Z[[Fail: no token found]]
+  B1 --> DONE([Token ready])
+  C1 --> DONE
+  D1 --> DONE
+  D2 --> DONE
+  G1 --> DONE
+  F1 --> DONE
+```
+
+Enterprise mode detection (code): enabled if any of `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS=true`, or any `RATE_LIMIT_*` env is set. In enterprise mode, CLI token resolution is disabled.
+
+## Local Usage Options
+
+Choose one of the following for development:
+
+- GitHub CLI (recommended for local dev; disabled in enterprise)
+  ```bash
+  brew install gh   # macOS
+  gh auth login
+  gh auth status
+  gh auth token | head -c 5 && echo '*****'
+  ```
+
+- Environment variable PAT
+  ```bash
+  export GITHUB_TOKEN="<your_pat>"
+  # or
+  export GH_TOKEN="<your_pat>"
+  ```
+
+- Authorization environment variable (last resort)
+  ```bash
+  # Supports Bearer/token prefixes; normalized internally
+  export Authorization="Bearer <your_pat>"
+  ```
+
+- .env (when launching via an orchestrator that loads env files)
+  ```bash
+  GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+  GITHUB_HOST=github.com
+  ```
+
+Behavior details (validated): tokens are cached in memory and stored via `SecureCredentialStore`. Prefixes `Bearer` and `token` are normalized.
+
+## OAuth 2.0/2.1 (PKCE) Setup
+
+Best for hosted services or when you want user sign-in with scoped access. Fully implemented via `OAuthManager` with PKCE, secure state, refresh, and GitHub Enterprise support.
+
+### Configure environment
+
 ```bash
-# Install GitHub CLI (examples)
-# macOS: brew install gh
-# Ubuntu/Debian: sudo apt install gh
-# Windows: winget install GitHub.cli
+GITHUB_OAUTH_CLIENT_ID=your_client_id
+GITHUB_OAUTH_CLIENT_SECRET=your_client_secret
+GITHUB_OAUTH_REDIRECT_URI=https://yourapp.com/auth/callback   # or http://127.0.0.1:8765/auth/callback for local
+GITHUB_OAUTH_SCOPES=repo,read:user,read:org
+GITHUB_OAUTH_ENABLED=true
 
-# Authenticate
-gh auth login
-
-# Verify token is available
-gh auth status
-gh auth token | head -c 5 && echo '*****'
+# Optional for GitHub Enterprise Server
+GITHUB_HOST=https://github.enterprise.com
+GITHUB_OAUTH_AUTH_URL=https://github.enterprise.com/login/oauth/authorize
+GITHUB_OAUTH_TOKEN_URL=https://github.enterprise.com/login/oauth/access_token
 ```
 
-**⚠️ Note**: GitHub CLI token resolution is **disabled in Enterprise mode** for security reasons. Enterprise deployments must use environment variables.
+Callback URL must exactly match your OAuth app configuration.
 
-Alternative: Environment variable
+### Flow methods (all supported)
+
+- local_server (desktop/dev; built-in callback server)
+  ```json
+  { "callbackMethod": "local_server", "callbackPort": 8765 }
+  ```
+
+- manual (custom callback page; headless/server)
+  ```json
+  { "callbackMethod": "manual" }
+  ```
+
+- deep_link (for MCP gateways)
+  ```json
+  { "callbackMethod": "deep_link" }
+  ```
+
+### PKCE Authorization Code flow
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant C as MCP Client
+  participant S as Octocode MCP
+  participant G as GitHub OAuth Server
+
+  C->>S: oauthInitiate (scopes, method)
+  S->>S: Generate state + PKCE (code_verifier/challenge)
+  S-->>C: authorizationUrl + state
+  C->>U: Open authorizationUrl
+  U->>G: Authorize application
+  G-->>U: Redirect to redirect_uri with code + state
+  U-->>C: Provide code + state (manual/local_server/deep_link)
+  C->>S: oauthCallback(code, state)
+  S->>G: Exchange code + verifier for tokens
+  G-->>S: access_token (+ refresh_token)
+  S->>S: Store tokens securely (auto-refresh)
+  S-->>C: Success (scopes, metadata)
+```
+
+### Using a custom auth page (manual method)
+
+Your page at `https://yourapp.com/auth/callback` only needs to read `code` and `state` from the URL and present them to the user (or deep-link back to the client). The token exchange occurs inside Octocode MCP.
+
+### Local server method
+
+Octocode can run a temporary local callback server (`http://127.0.0.1:8765/auth/callback`) to capture the code/state automatically. See `src/http/oauthCallbackServer.ts`.
+
+## GitHub App (Enterprise)
+
+Use when your organization installs a GitHub App for broader access. Octocode will refresh the installation token automatically via App JWT.
+
 ```bash
-# macOS/Linux (bash/zsh)
-export GITHUB_TOKEN="<your_personal_access_token>"
-
-# Windows PowerShell
-$env:GITHUB_TOKEN = "<your_personal_access_token>"
+GITHUB_APP_ID="123456"
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+GITHUB_APP_INSTALLATION_ID="12345678"
+GITHUB_APP_ENABLED=true
 ```
 
-Notes that match the code:
-- Octocode will first read `GITHUB_TOKEN`, then `GH_TOKEN`, then fall back to the GitHub CLI token.
-- Tokens may be provided with prefixes like "Bearer" or "token"; Octocode normalizes them internally.
-- On startup, Octocode calls `getToken()` and will exit if no token is found.
+Behavior (validated): installation tokens are stored securely and refreshed proactively (approximately 10 minutes before expiry due to conservative scheduling).
 
-## 2) Organizations (Enterprise)
+## Enterprise Features
 
-Goal: Provide a token with the right scopes and identify your organization so Octocode can enable org-aware features.
+Enterprise mode is enabled if ANY of the following are set:
+- `GITHUB_ORGANIZATION`
+- `AUDIT_ALL_ACCESS=true`
+- any of `RATE_LIMIT_API_HOUR`, `RATE_LIMIT_AUTH_HOUR`, `RATE_LIMIT_TOKEN_HOUR`
 
-Required token scopes for private org work:
-```
-repo, read:org, read:user
-```
+Effects:
+- GitHub CLI token resolution is disabled
+- Optional modules initialize automatically at startup:
+  - Audit logging (JSONL, buffered, daily rotation)
+  - Rate limiting (per-hour)
 
-Create a Personal Access Token (PAT):
-1. Go to GitHub Settings → Developer settings → Personal access tokens (classic)
-2. Generate a new token with scopes: `repo`, `read:org`, `read:user`
-3. Copy the token (store it securely)
-
-Provide the token via environment variables (CLI is disabled in enterprise mode):
+Example configuration:
 ```bash
-# Required: environment variable (CLI authentication disabled for security)
-export GITHUB_TOKEN="<enterprise_pat_with_scopes>"
+GITHUB_ORGANIZATION="your-org"
+AUDIT_ALL_ACCESS=true
+RATE_LIMIT_API_HOUR=1000
+RATE_LIMIT_AUTH_HOUR=100
+RATE_LIMIT_TOKEN_HOUR=50
 ```
 
-**🔒 Enterprise Security**: CLI token resolution is disabled in enterprise mode. You must use environment variables (`GITHUB_TOKEN` or `GH_TOKEN`) for authentication.
+Audit logging details:
+- Location: `./logs/audit/audit-YYYY-MM-DD.jsonl` by default, or `AUDIT_LOG_DIR` if provided
+- Format: JSONL, buffered, daily rotation
+- Safety: tokens redacted and content sanitized
 
-Identify your organization to enable enterprise features:
-```bash
-export GITHUB_ORGANIZATION="your-org"
+Rate limiting:
+- Per-user/hour; set via `RATE_LIMIT_*` envs
+- If unset, safe internal defaults apply
+
+## MCP Client Examples
+
+Claude Desktop:
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp"],
+      "env": {
+        "GITHUB_OAUTH_CLIENT_ID": "your_client_id",
+        "GITHUB_OAUTH_CLIENT_SECRET": "your_client_secret",
+        "GITHUB_OAUTH_SCOPES": "repo,read:user,read:org",
+        "GITHUB_ORGANIZATION": "your-org"
+      }
+    }
+  }
+}
 ```
 
-What this does (per implementation in `src/index.ts`):
-- If `GITHUB_ORGANIZATION` is set: initializes `OrganizationManager` and `PolicyManager`, and configures `tokenManager.initialize` with org context.
-- If `AUDIT_ALL_ACCESS=true`: initializes `AuditLogger` with periodic flush and secure JSONL logging.
-- If any `RATE_LIMIT_*` env is set: initializes `RateLimiter` with configured per-hour limits.
-- All these are progressive: only enabled when their envs are present. Core behavior continues without them.
-
-Optional enterprise environment variables:
-```bash
-# Organization identity (enables org validation)
-export GITHUB_ORGANIZATION="your-org"                 # REQUIRED to enable org-aware features
-export GITHUB_ORGANIZATION_NAME="Your Organization"   # Optional display name
-
-# Access controls (enforced by Policy/Organization Managers)
-export GITHUB_ALLOWED_USERS="user1,user2"             # Limit to specific usernames (optional)
-export GITHUB_REQUIRED_TEAMS="developers,security"     # Require membership in ALL listed teams (optional)
-export GITHUB_ADMIN_USERS="admin1,admin2"             # Admin users with elevated allowances (optional)
-
-# Security policies
-export RESTRICT_TO_MEMBERS=true                        # Deny non-org members (optional)
-export REQUIRE_MFA=true                                # Enforce MFA requirement (optional)
-
-# Audit logging
-export AUDIT_ALL_ACCESS=true                           # Enable comprehensive audit logging (optional)
-export AUDIT_LOG_DIR=./logs/audit                      # Custom log directory (optional)
-
-# Per-user rate limits (per hour)
-export RATE_LIMIT_API_HOUR=1000
-export RATE_LIMIT_AUTH_HOUR=10
-export RATE_LIMIT_TOKEN_HOUR=50
+MCP Gateway (YAML):
+```yaml
+servers:
+  - name: octocode
+    command: ["npx", "octocode-mcp"]
+    environment:
+      GITHUB_OAUTH_CLIENT_ID: "your_client_id"
+      GITHUB_OAUTH_CLIENT_SECRET: "your_client_secret"
+      GITHUB_OAUTH_SCOPES: "repo,read:user,read:org"
+      GITHUB_ORGANIZATION: "your-org"
 ```
 
-Step-by-step (enterprise):
+## Verification & Health
+
+Check PAT works:
 ```bash
-# 1) Create PAT with scopes: repo, read:org, read:user
-export GITHUB_TOKEN="<enterprise_pat>"
-
-# 2) Set your organization
-export GITHUB_ORGANIZATION="your-org"
-
-# 3) (Optional) Enable enterprise modules
-export AUDIT_ALL_ACCESS=true
-export GITHUB_REQUIRED_TEAMS="developers,security"
-export RATE_LIMIT_API_HOUR=1000
-
-# 4) Run Octocode (from your assistant or shell)
-npx octocode-mcp
-```
-
-Verification tips:
-```bash
-# Confirm your token works with GitHub
 curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user | jq .login
-
-# Confirm org membership endpoint is accessible with your scopes
-curl -I -H "Authorization: token $GITHUB_TOKEN" \
-  https://api.github.com/orgs/<your-org>/members/<your-username>
-
-# If using required teams, verify team membership via GitHub UI/API
-# Ensure the PAT owner is a member of ALL teams in GITHUB_REQUIRED_TEAMS
 ```
 
-Security behavior (aligned with code):
-- Token is resolved once and cached in memory; if present, it is stored via the in-memory credential store (`SecureCredentialStore`).
-- Source tracking is kept (`env`, `cli`, or `authorization`).
-- If you rotate tokens, restart Octocode or use internal rotation APIs if integrated.
+Check rate limit:
+```bash
+curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/rate_limit | jq .
+```
 
-Troubleshooting (org auth):
-- 403/404 on org membership endpoint: token missing `read:org` or membership is private; use a PAT with `read:org`.
-- No enterprise features active: confirm `GITHUB_ORGANIZATION` is set (and `AUDIT_ALL_ACCESS`, `RATE_LIMIT_*` if desired).
-- Required teams failing: user must be in ALL teams listed in `GITHUB_REQUIRED_TEAMS`.
-- Check logs directory when `AUDIT_ALL_ACCESS=true` and ensure write permissions to `AUDIT_LOG_DIR`.
+Enable debug logs:
+```bash
+export DEBUG="octocode:auth,octocode:token"
+export ENABLE_COMMAND_LOGGING="true"
+export LOG_FILE_PATH="./octocode-debug.log"
+```
+
+Programmatic check:
+```javascript
+import { getTokenMetadata } from '@octocode/mcp/tokenManager';
+
+const meta = await getTokenMetadata();
+console.log(meta.source, meta.expiresAt);
+```
+
+Notes on scopes formatting:
+- `GITHUB_OAUTH_SCOPES` is comma-separated in the environment (e.g., `repo,read:user,read:org`).
+- The server automatically converts those to space-separated when building the authorization URL.
+
+## Troubleshooting
+
+- No token found at startup
+  - Ensure one of: OAuth configured, GitHub App configured, `GITHUB_TOKEN`/`GH_TOKEN`, CLI (non‑enterprise), or `Authorization` env
+
+- CLI token ignored
+  - Enterprise mode disables CLI tokens by design
+
+- OAuth redirect_uri mismatch
+  - Callback URL in GitHub OAuth App must exactly match `GITHUB_OAUTH_REDIRECT_URI`
+
+- Missing `read:org` scope
+  - Add `read:org` to `GITHUB_OAUTH_SCOPES` or PAT scopes
+
+- Token expired
+  - OAuth and GitHub App tokens auto‑refresh; PATs do not
+ 
+- 401 with `WWW-Authenticate`
+  - Server signals `missing_token` or `invalid_token`; include a valid `Authorization: Bearer <token>` or configure OAuth/PAT
+  - Resource metadata URL points to provider metadata
+
+## Configuration Reference
+
+Core authentication:
+| Variable | Required | Example |
+|----------|----------|---------|
+| `GITHUB_TOKEN` | No* | `ghp_xxxxxxxxxxxx` |
+| `GH_TOKEN` | No* | `ghp_xxxxxxxxxxxx` |
+| `Authorization` | No* | `Bearer ghp_xxx` |
+| `GITHUB_HOST` | No | `https://github.company.com` |
+
+OAuth:
+| Variable | Required | Example |
+|----------|----------|---------|
+| `GITHUB_OAUTH_CLIENT_ID` | Yes† | `Iv1.a629723d4c8a5678` |
+| `GITHUB_OAUTH_CLIENT_SECRET` | Yes† | `abc123...` |
+| `GITHUB_OAUTH_REDIRECT_URI` | Yes† | `https://yourapp.com/auth/callback` |
+| `GITHUB_OAUTH_SCOPES` | No | `repo,read:user,read:org` (comma-separated) |
+| `GITHUB_OAUTH_ENABLED` | No | `true` |
+
+GitHub App:
+| Variable | Required | Example |
+|----------|----------|---------|
+| `GITHUB_APP_ID` | Yes‡ | `123456` |
+| `GITHUB_APP_PRIVATE_KEY` | Yes‡ | `-----BEGIN RSA...` |
+| `GITHUB_APP_INSTALLATION_ID` | No | `12345678` |
+| `GITHUB_APP_ENABLED` | No | `true` |
+
+Enterprise:
+| Variable | Default | Example |
+|----------|---------|---------|
+| `GITHUB_ORGANIZATION` | - | `my-company` |
+| `AUDIT_ALL_ACCESS` | `false` | `true` |
+| `GITHUB_SSO_ENFORCEMENT` | `false` | `true` |
+| `GITHUB_TOKEN_VALIDATION` | `false` | `true` |
+| `GITHUB_PERMISSION_VALIDATION` | `false` | `true` |
+| `RESTRICT_TO_MEMBERS` | `false` | `true` |
+| `REQUIRE_MFA` | `false` | `true` |
+| `RATE_LIMIT_API_HOUR` | - | `1000` |
+| `RATE_LIMIT_AUTH_HOUR` | - | `100` |
+| `RATE_LIMIT_TOKEN_HOUR` | - | `50` |
+
+Access control (optional):
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `GITHUB_ORGANIZATION_NAME` | Display name for organization | `Your Organization` |
+| `GITHUB_ALLOWED_USERS` | Comma-separated usernames allowed | `user1,user2` |
+| `GITHUB_REQUIRED_TEAMS` | Require membership in ALL listed teams | `developers,security` |
+| `GITHUB_ADMIN_USERS` | Admin users with elevated allowances | `admin1,admin2` |
+
+Tool management (optional):
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `GITHUB_TOOLSETS` | Comma-separated toolsets to enable | `all` |
+| `GITHUB_DYNAMIC_TOOLSETS` | Enable dynamic toolsets | `true` |
+| `GITHUB_READ_ONLY` | Force read-only mode | `true` |
+
+Footnotes: *At least one authentication method required. †Required for OAuth. ‡Required for GitHub App.
+
+---
+
+This guide consolidates all authentication and OAuth details into a single document, aligned with the implementation and ready for both local and enterprise deployments.
+
+## GitHub Enterprise Server (GHES) Setup
+
+When using GHES, set these variables so OAuth and API calls target your instance:
+
+```bash
+GITHUB_HOST=https://github.enterprise.com
+# Optional explicit OAuth endpoints (otherwise derived from GITHUB_HOST)
+GITHUB_OAUTH_AUTH_URL=https://github.enterprise.com/login/oauth/authorize
+GITHUB_OAUTH_TOKEN_URL=https://github.enterprise.com/login/oauth/access_token
+```
+
+Effects (validated):
+- Authorization URL and token URL use GHES host
+- API base is `${GITHUB_HOST}/api/v3`
+
+## OAuth Callback Methods Explained
+
+- local_server: Starts a short-lived HTTP server on `127.0.0.1:8765` to receive `code` and `state` automatically. Ideal for desktop/dev.
+- manual: Your hosted callback page displays `code` and `state` to paste back (or deep-link). Works in headless/server environments.
+- deep_link: When integrated via an MCP gateway, uses the gateway’s deep link channel to deliver `code` and `state` back to the server.
+
+Tokens are securely persisted via `SecureCredentialStore`; refresh is scheduled automatically (~5 minutes before expiry).
+
+## Scope-to-Feature Matrix
+
+| Scope | Feature Areas |
+|-------|----------------|
+| `repo` (or fine‑grained: Contents: Read, Metadata: Read, Pull requests: Read) | Code search, file fetch, repo structure, PR/commit search on private repos |
+| `read:user` | Token validation, user identity, rate limit checks |
+| `read:org` | Organization membership/teams validation for enterprise flows |
+
+For public-only usage, `repo` may be omitted, but features against private repos require it.
+
+## Docker Deployment Examples
+
+Basic PAT run:
+```bash
+docker run -i --rm \
+  -e GITHUB_TOKEN \
+  octocode/octocode-mcp:latest
+```
+
+Enterprise with audit logs and OAuth callback (local_server):
+```bash
+docker run -i --rm \
+  -e GITHUB_ORGANIZATION=your-org \
+  -e AUDIT_ALL_ACCESS=true \
+  -e GITHUB_OAUTH_CLIENT_ID=xxx \
+  -e GITHUB_OAUTH_CLIENT_SECRET=yyy \
+  -e GITHUB_OAUTH_SCOPES=repo,read:user,read:org \
+  -e GITHUB_OAUTH_ENABLED=true \
+  -e AUDIT_LOG_DIR=/data/logs/audit \
+  -v $(pwd)/data:/data \
+  -p 8765:8765 \
+  octocode/octocode-mcp:latest
+```
+
+Notes:
+- Map a persistent volume for logs/secrets if desired (`/data`).
+- Expose `8765` only if using the local OAuth callback server from inside the container.
+
+## Security Best Practices
+
+- Prefer OAuth/GitHub App with automatic rotation for long-lived deployments
+- Keep PAT scopes minimal; rotate periodically
+- Never log tokens; avoid pasting tokens into chats or issue trackers
+- Use HTTPS for OAuth callbacks and validate redirect URIs
+- In enterprise, enable audit logging and rate limiting
+
+## FAQ
+
+- Which token source will be used?
+  - The server picks in this order: OAuth → GitHub App → `GITHUB_TOKEN` → `GH_TOKEN` → CLI (non‑enterprise) → `Authorization` env.
+
+- Why is my CLI token ignored?
+  - Enterprise mode disables CLI token resolution for security. Use env vars or OAuth instead.
+
+- Do fine‑grained PATs work?
+  - Yes. Grant Contents: Read, Metadata: Read, Pull requests: Read. Match repo visibility requirements.
+
+- Can I point to GHES?
+  - Yes; set `GITHUB_HOST` and optional explicit OAuth endpoints.

@@ -297,7 +297,7 @@ describe('Index Module', () => {
       );
     });
 
-    it('should exit when no token is available', async () => {
+    it('should not exit when no token is available (startup tolerant, OAuth-first)', async () => {
       delete process.env.GITHUB_TOKEN;
       delete process.env.GH_TOKEN;
       mockGetGithubCLIToken.mockResolvedValue(null);
@@ -307,6 +307,7 @@ describe('Index Module', () => {
 
       // Override the mock to track the exit call without throwing
       let exitCalled = false;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       let exitCode: number | undefined;
       processExitSpy.mockImplementation(
         (code?: string | number | null | undefined) => {
@@ -330,8 +331,8 @@ describe('Index Module', () => {
         // Ignore any errors from module loading
       }
 
-      expect(exitCalled).toBe(true);
-      expect(exitCode).toBe(1);
+      // With safe startup, process should not exit; tools/OAuth can be used to obtain a token later
+      expect(exitCalled).toBe(false);
     });
   });
 

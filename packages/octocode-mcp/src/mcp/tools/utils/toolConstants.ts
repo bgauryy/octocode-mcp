@@ -37,6 +37,15 @@ export const TOOL_NAMES = {
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
+  // OAuth Tools
+  OAUTH_INITIATE: 'oauthInitiate',
+  OAUTH_CALLBACK: 'oauthCallback',
+  OAUTH_STATUS: 'oauthStatus',
+  OAUTH_REVOKE: 'oauthRevoke',
+  // Organization Tools
+  CHECK_ORGANIZATION_MEMBERSHIP: 'checkOrganizationMembership',
+  LIST_USER_ORGANIZATIONS: 'listUserOrganizations',
+  CHECK_TEAM_MEMBERSHIP: 'checkTeamMembership',
 } as const;
 
 export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];

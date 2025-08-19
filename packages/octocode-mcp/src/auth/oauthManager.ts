@@ -169,7 +169,8 @@ export class OAuthManager {
   async exchangeCodeForToken(
     code: string,
     codeVerifier: string,
-    state?: string
+    state?: string,
+    redirectUriOverride?: string
   ): Promise<TokenResponse> {
     if (!this.config) throw new Error('OAuth not initialized');
 
@@ -187,7 +188,7 @@ export class OAuthManager {
           code,
           code_verifier: codeVerifier,
           grant_type: 'authorization_code',
-          redirect_uri: this.config.redirectUri,
+          redirect_uri: redirectUriOverride || this.config.redirectUri,
           ...(state && { state }),
         }),
       });
@@ -308,15 +309,10 @@ export class OAuthManager {
       }
 
       const scopes = response.headers.get('x-oauth-scopes')?.split(', ') || [];
-      const rateLimitReset = response.headers.get('x-ratelimit-reset');
-      const expiresAt = rateLimitReset
-        ? new Date(parseInt(rateLimitReset) * 1000)
-        : undefined;
 
       return {
         valid: true,
         scopes,
-        expiresAt,
       };
     } catch (error) {
       return {
@@ -352,27 +348,35 @@ export class OAuthManager {
 
     try {
       const serverConfig = ConfigManager.getConfig();
-      const revokeUrl = serverConfig.githubHost
-        ? `${serverConfig.githubHost}/login/oauth/revoke`
-        : 'https://github.com/login/oauth/revoke';
+      const apiBase = serverConfig.githubHost
+        ? `${serverConfig.githubHost}/api/v3`
+        : 'https://api.github.com';
+
+      // GitHub Applications API: Revoke a grant for an application
+      // DELETE /applications/{client_id}/grant with Basic auth (client_id:client_secret)
+      const revokeUrl = `${apiBase}/applications/${this.config.clientId}/grant`;
+
+      const basicAuth = Buffer.from(
+        `${this.config.clientId}:${this.config.clientSecret}`
+      ).toString('base64');
 
       const response = await fetch(revokeUrl, {
-        method: 'POST',
+        method: 'DELETE',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
+          Authorization: `Basic ${basicAuth}`,
+          Accept: 'application/vnd.github+json',
           'User-Agent': this.config.userAgent,
+          'Content-Type': 'application/json',
         },
-        body: new URLSearchParams({
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          token,
-        }),
+        body: JSON.stringify({ access_token: token }),
       });
 
       if (!response.ok) {
+        const text = await response.text();
         throw new Error(
-          `Token revocation failed: ${response.status} ${response.statusText}`
+          `Token revocation failed: ${response.status} ${response.statusText}${
+            text ? ` - ${text}` : ''
+          }`
         );
       }
 
