@@ -25,6 +25,7 @@
     "rollup": "^4.41.1",
     "rollup-plugin-dts": "^6.0.0",
     "tslib": "^2.8.1",
+    "tsx": "^4.20.4",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },
@@ -60,6 +61,8 @@
     "build:dev": "rollup -c --environment NODE_ENV:development",
     "build:watch": "rollup -c --watch",
     "clean": "rm -rf dist",
+    "example": "tsx examples/example.ts",
+    "examples": "tsx examples/example.ts",
     "format": "prettier --write src/**/*.ts",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
