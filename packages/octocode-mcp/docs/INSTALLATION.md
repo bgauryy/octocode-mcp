@@ -76,6 +76,35 @@ flowchart TD
 
 Enterprise mode detection (code): enabled if any of `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS=true`, or any `RATE_LIMIT_*` env is set. In enterprise mode, CLI token resolution is disabled.
 
+### getToken() resolution (implementation view)
+
+```mermaid
+flowchart LR
+  A[getToken()] --> B[resolveTokenWithOAuth()]
+  B --> C{tryGetOAuthToken()}
+  C -- token --> Z[return OAuth token]
+  C -- none --> D{tryGetGitHubAppToken()}
+  D -- token --> Z
+  D -- none --> E[resolveToken()]
+  E --> F{GITHUB_TOKEN?}
+  F -- yes --> Z
+  F -- no --> G{GH_TOKEN?}
+  G -- yes --> Z
+  G -- no --> H{Enterprise mode?}
+  H -- yes --> I[Skip CLI]
+  H -- no --> J{gh CLI token?}
+  J -- yes --> Z
+  J -- no --> K{Authorization env?}
+  I --> K
+  K -- yes --> Z
+  K -- no --> X[[throw Error: no token]]
+```
+
+Notes:
+- CLI token resolution is skipped in enterprise mode.
+- `Authorization` supports `Bearer <token>` or `token <token>` and is normalized.
+- On success, tokens are cached and refresh is scheduled when applicable.
+
 ## Local Usage Options
 
 Choose one of the following for development:
