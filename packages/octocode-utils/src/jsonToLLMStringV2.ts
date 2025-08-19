@@ -100,7 +100,10 @@ export function jsonToLLMStringV2(
           return '#content converted from json\n[Error: Circular structure detected - cannot serialize to JSON]';
         }
         // Handle unsupported types like BigInt, undefined
-        if (error.message.includes('BigInt') || error.message.includes('undefined')) {
+        if (
+          error.message.includes('BigInt') ||
+          error.message.includes('undefined')
+        ) {
           return `#content converted from json\n[Error: Cannot serialize ${typeof data} to JSON]`;
         }
       }
@@ -121,7 +124,8 @@ export function jsonToLLMStringV2(
         JSON_TO_LLM_V2_DEFAULT_OPTIONS.sortEntries) as SortEntriesOption,
       maxChars: options?.maxChars ?? JSON_TO_LLM_V2_DEFAULT_OPTIONS.maxChars,
       maxBinaryChars:
-        options?.maxBinaryChars ?? JSON_TO_LLM_V2_DEFAULT_OPTIONS.maxBinaryChars,
+        options?.maxBinaryChars ??
+        JSON_TO_LLM_V2_DEFAULT_OPTIONS.maxBinaryChars,
       maxErrorChars:
         options?.maxErrorChars ?? JSON_TO_LLM_V2_DEFAULT_OPTIONS.maxErrorChars,
     } as const;
@@ -194,7 +198,8 @@ export function jsonToLLMStringV2(
       if (typeof value === 'string') return formatString(value);
       if (typeof value === 'number') {
         if (Number.isNaN(value)) return 'NaN';
-        if (!Number.isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity';
+        if (!Number.isFinite(value))
+          return value > 0 ? 'Infinity' : '-Infinity';
         if (Object.is(value, -0)) return '-0';
         return String(value);
       }
@@ -379,7 +384,8 @@ export function jsonToLLMStringV2(
     return full;
   } catch (fatalError) {
     // GUARANTEE: Even if everything else fails, always return the required format
-    const errorMsg = fatalError instanceof Error ? fatalError.message : 'Unknown fatal error';
+    const errorMsg =
+      fatalError instanceof Error ? fatalError.message : 'Unknown fatal error';
     return `#content converted from json\n[Fatal Error: ${errorMsg}]`;
   }
 }
