@@ -3,4 +3,5 @@
  */
 
 export { jsonToLLMString } from './jsonToLLMString';
+export { jsonToLLMStringV2 } from './jsonToLLMStringV2';
 export { minifyContent } from './minifier';

@@ -28,7 +28,8 @@
   "ignorePatterns": [
     "build/**/*",
     "node_modules/**/*",
-    "*.js"
+    "*.js",
+    "**/examples/**/*"
   ],
   "overrides": [
     {
