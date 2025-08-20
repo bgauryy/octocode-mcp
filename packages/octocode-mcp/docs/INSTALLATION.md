@@ -37,6 +37,29 @@ The server requires at least one authentication method configured at startup:
 - Personal Access Token (development/testing)
 - GitHub CLI authentication (local development only)
 
+### Quick Local Development Setup
+
+**For immediate local testing (no configuration needed):**
+```bash
+# 1. Install and authenticate GitHub CLI
+brew install gh
+gh auth login
+
+# 2. Run MCP server directly
+npx octocode-mcp
+# ✅ Should work immediately with CLI token
+
+# 3. Or use Personal Access Token
+export GITHUB_TOKEN="ghp_your_token_here"
+npx octocode-mcp
+```
+
+**Local development features:**
+- ✅ GitHub CLI tokens work automatically (unless Enterprise mode is enabled)
+- ✅ No organization validation required
+- ✅ All tools available immediately
+- ✅ Fallback token resolution: `GITHUB_TOKEN` → `GH_TOKEN` → CLI → `Authorization`
+
 ### Enterprise Mode Detection
 
 **Important:** Enterprise mode is automatically enabled when ANY of these environment variables are set:
@@ -283,8 +306,30 @@ Create a `.env` file for development:
 ```bash
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 GITHUB_HOST=github.com
-GITHUB_ORGANIZATION=your-org
+# GITHUB_ORGANIZATION=your-org  # Uncomment to enable Enterprise mode
 ```
+
+### Testing Local Authentication
+
+You can verify your local authentication setup works correctly:
+
+```bash
+# Test GitHub CLI authentication
+gh auth status
+
+# Test token access (shows first 10 characters only)
+gh auth token | head -c 10 && echo "..."
+
+# Test MCP server startup with local auth
+npx octocode-mcp
+# Should show: [AUDIT] token_detected: {"outcome":"success"...}
+```
+
+**Expected behavior in local development mode:**
+- ✅ GitHub CLI tokens are **enabled** (no enterprise restrictions)
+- ✅ Token resolution follows priority: `GITHUB_TOKEN` → `GH_TOKEN` → CLI → `Authorization`
+- ✅ All MCP tools should be available immediately
+- ✅ No organization validation or audit logging (unless explicitly enabled)
 
 ## Enterprise Features
 
@@ -533,6 +578,26 @@ GITHUB_OAUTH_TOKEN_URL=https://github.enterprise.com/login/oauth/access_token
 **"No token found at startup"**
 - Ensure one of: OAuth configured, GitHub App configured, `GITHUB_TOKEN`/`GH_TOKEN`, CLI (non-enterprise), or `Authorization` env
 - Check token precedence: OAuth → GitHub App → ENV → CLI → Authorization header
+
+**Testing Local Development Authentication:**
+```bash
+# 1. Check if Enterprise mode would be enabled
+env | grep -E "(GITHUB_ORGANIZATION|AUDIT_ALL_ACCESS|GITHUB_SSO_ENFORCEMENT|RATE_LIMIT_)" || echo "✅ Local development mode"
+
+# 2. Test GitHub CLI authentication
+gh auth status
+gh auth token | head -c 10 && echo "..." # Shows first 10 chars
+
+# 3. Test different token methods (in priority order)
+export GITHUB_TOKEN="your_pat_token"     # Highest priority
+export GH_TOKEN="your_alt_pat_token"     # Alternative PAT
+# CLI token used automatically if no env vars set
+export Authorization="Bearer your_token"  # Lowest priority
+
+# 4. Test server startup
+npx octocode-mcp
+# Look for: [AUDIT] token_detected: {"outcome":"success"...}
+```
 
 **"CLI token ignored"**
 - Enterprise mode automatically disables CLI tokens for security

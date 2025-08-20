@@ -28,12 +28,41 @@ console.log(`   GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET ? '✅ Set' : '❌ 
 console.log(`   GITHUB_HOST: ${GITHUB_HOST}`);
 console.log(`   .env file path: ${path.join(__dirname, '.env')}`);
 
+// Check if .env file exists
+const fs = require('fs');
+const envPath = path.join(__dirname, '.env');
+if (!fs.existsSync(envPath)) {
+  console.error('\n❌ .env file not found!');
+  console.error('   Please copy env.example to .env and configure your GitHub OAuth App:');
+  console.error(`   cp ${path.join(__dirname, 'env.example')} ${envPath}`);
+  console.error('\n📋 Then edit .env and set your GitHub OAuth App credentials:');
+  console.error('   GITHUB_CLIENT_ID=your_actual_client_id');
+  console.error('   GITHUB_CLIENT_SECRET=your_actual_client_secret');
+  console.error('\n🔗 Create OAuth App at: https://github.com/settings/applications/new');
+  process.exit(1);
+}
+
 // Validate required environment variables
 if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
   console.error('\n❌ Missing required environment variables:');
   console.error('   GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are required');
-  console.error('   Copy env.example to .env and configure your GitHub OAuth App');
-  console.error(`   Expected .env location: ${path.join(__dirname, '.env')}`);
+  console.error('   Please edit your .env file and set the correct values');
+  console.error(`   .env location: ${envPath}`);
+  console.error('\n🔗 Create OAuth App at: https://github.com/settings/applications/new');
+  process.exit(1);
+}
+
+// Additional validation for placeholder values
+if (GITHUB_CLIENT_ID === 'your_github_client_id_here' || GITHUB_CLIENT_SECRET === 'your_github_client_secret_here') {
+  console.error('\n❌ Placeholder values detected in environment variables!');
+  console.error('   Please replace the placeholder values in your .env file with actual GitHub OAuth App credentials');
+  console.error(`   .env location: ${envPath}`);
+  console.error('\n📋 Steps to fix:');
+  console.error('   1. Go to https://github.com/settings/applications/new');
+  console.error('   2. Create a new OAuth App with these settings:');
+  console.error('      - Homepage URL: http://localhost:3000');
+  console.error('      - Authorization callback URL: http://localhost:3000/api/auth/callback/github');
+  console.error('   3. Copy the Client ID and Client Secret to your .env file');
   process.exit(1);
 }
 

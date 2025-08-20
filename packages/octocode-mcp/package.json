@@ -47,6 +47,7 @@
     "node-fetch": "^3.3.2",
     "octocode-utils": "^1.0.0",
     "octokit": "^5.0.3",
+    "open": "^10.2.0",
     "zod": "^3.25.26"
   },
   "devDependencies": {

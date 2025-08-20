@@ -23,6 +23,7 @@ export interface OAuthConfig {
   scopes: string[];
   authorizationUrl: string;
   tokenUrl: string;
+  baseUrl: string;
   userAgent: string;
 }
 
@@ -44,6 +45,15 @@ export interface TokenResponse {
   tokenType: string;
   expiresIn: number;
   scope: string;
+}
+
+export interface DeviceFlowInitiateResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete?: string;
+  expires_in: number;
+  interval: number;
 }
 
 export interface TokenValidation {
@@ -87,6 +97,8 @@ export class OAuthManager {
         config?.tokenUrl ||
         serverConfig.oauth.tokenUrl ||
         'https://github.com/login/oauth/access_token',
+      baseUrl:
+        config?.baseUrl || serverConfig.githubHost || 'https://github.com',
       userAgent: config?.userAgent || `octocode-mcp/${serverConfig.version}`,
     };
   }
@@ -560,6 +572,7 @@ export class OAuthManager {
       scopes: this.config.scopes,
       authorizationUrl: this.config.authorizationUrl,
       tokenUrl: this.config.tokenUrl,
+      baseUrl: this.config.baseUrl,
       userAgent: this.config.userAgent,
     };
   }
@@ -594,6 +607,157 @@ export class OAuthManager {
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=/g, '');
+  }
+
+  /**
+   * Initiate GitHub Device Flow (RFC 8628)
+   */
+  async initiateDeviceFlow(
+    scopes: string[]
+  ): Promise<DeviceFlowInitiateResponse> {
+    if (!this.config) throw new Error('OAuth not initialized');
+
+    try {
+      const response = await fetch(`${this.config.baseUrl}/login/device/code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+          'User-Agent': this.config.userAgent,
+        },
+        body: new URLSearchParams({
+          client_id: this.config.clientId,
+          scope: scopes.join(' '),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Device flow initiation failed: ${response.status} ${response.statusText} - ${errorText}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(
+          `Device flow error: ${data.error_description || data.error}`
+        );
+      }
+
+      // Log successful device flow initiation
+      await this.logOAuthEvent('device_flow_initiate', 'success', {
+        userCode: data.user_code,
+        expiresIn: data.expires_in,
+        interval: data.interval,
+      });
+
+      return {
+        device_code: data.device_code,
+        user_code: data.user_code,
+        verification_uri: data.verification_uri,
+        verification_uri_complete: data.verification_uri_complete,
+        expires_in: data.expires_in,
+        interval: data.interval,
+      };
+    } catch (error) {
+      await this.logOAuthEvent('device_flow_initiate', 'failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Poll for Device Flow token completion (RFC 8628)
+   */
+  async pollDeviceFlowToken(
+    deviceCode: string,
+    interval: number
+  ): Promise<TokenResponse> {
+    if (!this.config) throw new Error('OAuth not initialized');
+
+    const startTime = Date.now();
+    const maxWaitTime = 15 * 60 * 1000; // 15 minutes max
+
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const response = await fetch(
+          `${this.config.baseUrl}/login/oauth/access_token`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Accept: 'application/json',
+              'User-Agent': this.config.userAgent,
+            },
+            body: new URLSearchParams({
+              client_id: this.config.clientId,
+              device_code: deviceCode,
+              grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `Device flow token request failed: ${response.status} ${response.statusText} - ${errorText}`
+          );
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+          if (data.error === 'authorization_pending') {
+            // User hasn't completed authorization yet, continue polling
+            await new Promise(resolve => setTimeout(resolve, interval * 1000));
+            continue;
+          } else if (data.error === 'slow_down') {
+            // Increase polling interval
+            interval += 5;
+            await new Promise(resolve => setTimeout(resolve, interval * 1000));
+            continue;
+          } else if (data.error === 'expired_token') {
+            throw new Error(
+              'Device code has expired. Please start a new device flow.'
+            );
+          } else if (data.error === 'access_denied') {
+            throw new Error('User denied the authorization request.');
+          } else {
+            throw new Error(
+              `Device flow error: ${data.error_description || data.error}`
+            );
+          }
+        }
+
+        // Success! We have a token
+        const tokenResponse = {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          tokenType: data.token_type || 'Bearer',
+          expiresIn: data.expires_in || 3600,
+          scope: data.scope || this.config.scopes.join(' '),
+        };
+
+        // Log successful device flow completion
+        await this.logOAuthEvent('device_flow_complete', 'success', {
+          expiresIn: tokenResponse.expiresIn,
+          scope: tokenResponse.scope,
+        });
+
+        return tokenResponse;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('expired')) {
+          throw error; // Don't retry on expired tokens
+        }
+        // For other errors, wait and retry
+        await new Promise(resolve => setTimeout(resolve, interval * 1000));
+      }
+    }
+
+    throw new Error('Device flow timed out after 15 minutes');
   }
 
   /**

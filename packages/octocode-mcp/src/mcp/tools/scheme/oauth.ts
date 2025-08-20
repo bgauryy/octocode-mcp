@@ -20,10 +20,10 @@ export const OAuthInitiateSchema = BaseQuerySchema.extend({
     .optional()
     .describe('Organization to validate membership for after OAuth completion'),
   callbackMethod: z
-    .enum(['local_server', 'manual', 'deep_link'])
+    .enum(['local_server', 'manual', 'deep_link', 'device_flow'])
     .optional()
     .describe('Method for handling OAuth callback')
-    .default('local_server'),
+    .default('device_flow'),
   callbackPort: z
     .number()
     .min(1024)
@@ -33,6 +33,13 @@ export const OAuthInitiateSchema = BaseQuerySchema.extend({
       'Port for local callback server (only used with local_server method)'
     )
     .default(8765),
+  openBrowser: z
+    .boolean()
+    .optional()
+    .describe(
+      'Automatically open the authorization URL in the default browser (only used with local_server method)'
+    )
+    .default(true),
 });
 
 export type OAuthInitiateParams = z.infer<typeof OAuthInitiateSchema>;

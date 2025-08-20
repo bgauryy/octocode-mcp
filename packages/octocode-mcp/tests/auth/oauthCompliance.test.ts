@@ -22,7 +22,7 @@ describe('OAuth MCP Compliance', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Use mock fetch for OAuth calls
     global.fetch = mockFetch;
 
@@ -188,10 +188,10 @@ describe('OAuth MCP Compliance', () => {
     beforeEach(async () => {
       // Use real fetch for server tests
       global.fetch = originalFetch;
-      
+
       // Initialize MCP auth protocol first
       await mcpAuthProtocol.initialize();
-      
+
       protectedResourceServer = new ProtectedResourceServer({
         port: 3002, // Use different port for testing
       });
@@ -430,7 +430,7 @@ describe('OAuth MCP Compliance', () => {
       // Use mock fetch for OAuth error tests
       global.fetch = mockFetch;
     });
-    
+
     it('should handle network errors gracefully', async () => {
       mockFetch.mockRejectedValue(new Error('Network error'));
 
@@ -459,10 +459,10 @@ describe('OAuth MCP Compliance', () => {
     beforeEach(async () => {
       // Use real fetch for server tests
       global.fetch = originalFetch;
-      
+
       // Initialize MCP auth protocol first
       await mcpAuthProtocol.initialize();
-      
+
       protectedResourceServer = new ProtectedResourceServer({
         port: 3003,
       });

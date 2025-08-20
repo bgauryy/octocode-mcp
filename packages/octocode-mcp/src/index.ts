@@ -268,6 +268,72 @@ async function startServer() {
       }
     }
 
+    // Start HTTP server if configured
+    let mcpHttpServer: import('./http/mcpHttpServer.js').MCPHttpServer | null =
+      null;
+
+    if (
+      process.env.MCP_HTTP_ENABLED === 'true' ||
+      ConfigManager.getConfig().oauth?.enabled
+    ) {
+      try {
+        const { MCPHttpServer, getMCPHttpServerConfig } = await import(
+          './http/mcpHttpServer.js'
+        );
+
+        const httpConfig = getMCPHttpServerConfig();
+        mcpHttpServer = new MCPHttpServer(server, httpConfig);
+        await mcpHttpServer.start();
+
+        // Log HTTP server startup
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'mcp_http_server_started',
+            outcome: 'success',
+            source: 'system',
+            details: {
+              baseUrl: mcpHttpServer.getBaseUrl(),
+              oauthEnabled: ConfigManager.getConfig().oauth?.enabled,
+              transport: 'http',
+            },
+          });
+        } catch {
+          process.stderr.write(
+            `🌐 MCP HTTP Server listening at ${mcpHttpServer.getBaseUrl()}\n`
+          );
+          process.stderr.write(`📋 MCP HTTP Endpoints:\n`);
+          process.stderr.write(
+            `   - POST ${mcpHttpServer.getBaseUrl()}/mcp - Main MCP endpoint (OAuth protected)\n`
+          );
+          process.stderr.write(
+            `   - GET  ${mcpHttpServer.getBaseUrl()}/health - Health check\n`
+          );
+        }
+      } catch (httpError) {
+        // Log HTTP server startup failure
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'mcp_http_server_startup',
+            outcome: 'failure',
+            source: 'system',
+            details: {
+              error:
+                httpError instanceof Error
+                  ? httpError.message
+                  : String(httpError),
+              component: 'mcp_http_server',
+            },
+          });
+        } catch {
+          process.stderr.write(
+            `⚠️  Warning: Failed to start MCP HTTP server: ${httpError}\n`
+          );
+        }
+      }
+    }
+
     const transport = new StdioServerTransport();
 
     await server.connect(transport);
@@ -346,6 +412,16 @@ async function startServer() {
               // ignore
             }
             legacyMetadataServer = null;
+          }
+
+          // Stop MCP HTTP server if running
+          if (mcpHttpServer) {
+            try {
+              mcpHttpServer.stop();
+            } catch {
+              // ignore
+            }
+            mcpHttpServer = null;
           }
         } catch (error) {
           // Ignore shutdown errors

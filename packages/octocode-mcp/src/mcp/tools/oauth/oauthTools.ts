@@ -15,6 +15,7 @@ import { ConfigManager } from '../../../config/serverConfig.js';
 import { OAuthStateManager } from '../utils/oauthStateManager.js';
 import { OAuthCallbackServer } from '../../../http/oauthCallbackServer.js';
 import { OrganizationService } from '../../../services/organizationService.js';
+import open from 'open';
 import {
   getTokenMetadata,
   getGitHubToken,
@@ -157,14 +158,26 @@ FEATURES:
 - Secure state parameter generation and storage
 
 CALLBACK METHODS:
-- local_server: Starts temporary HTTP server for automatic callback handling
+- device_flow: GitHub Device Flow - perfect for hosted/remote servers (DEFAULT)
+- local_server: Starts temporary HTTP server for automatic callback handling (opens browser automatically)
 - manual: Returns code/state for manual completion via oauthCallback tool
 - deep_link: Uses custom URL scheme for MCP client integration
 
+DEVICE FLOW (Recommended for Hosted):
+- User gets a simple code (e.g., "248707") to enter at github.com/login/device
+- No callback URLs needed - works from any device/browser
+- Server polls GitHub for completion automatically
+- Perfect for hosted MCP servers, CLI tools, and headless environments
+
+BROWSER OPENING:
+- local_server method automatically opens the authorization URL in your default browser
+- Set openBrowser=false to disable automatic browser opening
+- Falls back to manual instructions if browser opening fails
+
 BEST PRACTICES:
+- Use device_flow for hosted/remote MCP servers
+- Use local_server for local desktop applications
 - Include 'read:org' scope for organization features
-- Use local_server method for desktop applications
-- Use manual method for server deployments
 - Specify organization for automatic membership validation`,
       inputSchema: OAuthInitiateSchema.shape,
       annotations: {
@@ -253,6 +266,32 @@ BEST PRACTICES:
               if (callbackServer) {
                 additionalInfo.callbackUrl = callbackUrl;
                 additionalInfo.localServerPort = args.callbackPort;
+
+                // Auto-open browser if requested (default: true for local_server)
+                const shouldOpenBrowser = args.openBrowser !== false;
+                if (shouldOpenBrowser) {
+                  try {
+                    await open(authorizationUrl);
+                    additionalInfo.browserOpened = true;
+                    instructions = `
+1. Your browser should open automatically to the GitHub authorization page
+2. If it doesn't open, visit: ${authorizationUrl}
+3. Authorize the application with GitHub
+4. The callback will be handled automatically by the local server
+5. OAuth flow will complete automatically`;
+                  } catch (openError) {
+                    // If browser opening fails, fall back to manual instructions
+                    additionalInfo.browserOpened = false;
+                    additionalInfo.browserOpenError =
+                      openError instanceof Error
+                        ? openError.message
+                        : String(openError);
+                    process.stderr.write(
+                      `Warning: Failed to open browser automatically: ${openError instanceof Error ? openError.message : String(openError)}\n`
+                    );
+                  }
+                }
+
                 // Start listening and auto-complete the OAuth flow in background
                 (async () => {
                   try {
@@ -319,12 +358,74 @@ BEST PRACTICES:
 3. The callback will be handled by your MCP client automatically`;
               additionalInfo.deepLinkScheme = 'mcp-oauth';
               break;
+
+            case 'device_flow':
+              // Initiate GitHub Device Flow
+              try {
+                const deviceFlowResult =
+                  await oauthManager.initiateDeviceFlow(requestedScopes);
+
+                instructions = `
+🔐 GitHub Device Flow Authentication
+
+1. Visit: ${deviceFlowResult.verification_uri}
+2. Enter code: ${deviceFlowResult.user_code}
+3. Authorize the application with GitHub
+4. The server will automatically detect completion
+
+⏱️  Code expires in ${Math.floor(deviceFlowResult.expires_in / 60)} minutes
+🔄 Checking every ${deviceFlowResult.interval} seconds...`;
+
+                additionalInfo.deviceCode = deviceFlowResult.device_code;
+                additionalInfo.userCode = deviceFlowResult.user_code;
+                additionalInfo.verificationUri =
+                  deviceFlowResult.verification_uri;
+                additionalInfo.verificationUriComplete =
+                  deviceFlowResult.verification_uri_complete;
+                additionalInfo.expiresIn = deviceFlowResult.expires_in;
+                additionalInfo.interval = deviceFlowResult.interval;
+
+                // Start background polling for device flow completion
+                (async () => {
+                  try {
+                    const tokenResponse =
+                      await oauthManager.pollDeviceFlowToken(
+                        deviceFlowResult.device_code,
+                        deviceFlowResult.interval
+                      );
+
+                    // Complete OAuth flow using shared helper
+                    const stateData = {
+                      codeVerifier: '', // Not used in device flow
+                      organization: args.organization,
+                      scopes: requestedScopes,
+                      callbackMethod: 'device_flow' as const,
+                      clientId: config.oauth!.clientId,
+                    };
+
+                    await completeOAuthFlowAndPersist(tokenResponse, stateData);
+
+                    // Clear OAuth state
+                    await OAuthStateManager.clearOAuthState(state);
+                  } catch (deviceError) {
+                    // Background errors should not crash the server; log to stderr
+                    process.stderr.write(
+                      `Warning: OAuth device_flow background polling failed: ${deviceError instanceof Error ? deviceError.message : String(deviceError)}\n`
+                    );
+                  }
+                })();
+              } catch (deviceFlowError) {
+                throw new Error(
+                  `Failed to initiate device flow: ${deviceFlowError instanceof Error ? deviceFlowError.message : String(deviceFlowError)}`
+                );
+              }
+              break;
           }
 
           const response = {
             authorizationUrl,
             state,
-            callbackMethod: args.callbackMethod || 'local_server',
+            callbackMethod: args.callbackMethod || 'device_flow',
             callbackUrl,
             organization: args.organization,
             scopes: args.scopes || ['repo', 'read:user', 'read:org'],

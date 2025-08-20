@@ -39,6 +39,8 @@ GITHUB_CLIENT_ID=Iv1.your_actual_client_id
 GITHUB_CLIENT_SECRET=your_actual_client_secret
 ```
 
+⚠️ **Important**: Replace the placeholder values with your actual GitHub OAuth App credentials. The server will detect and reject placeholder values like `your_github_client_id_here`.
+
 ### 3. Install and Run
 
 ```bash
@@ -248,6 +250,12 @@ For production deployment, consider:
 - Copy `env.example` to `.env` in the `example/` directory
 - Add your GitHub OAuth App Client ID and Secret
 - Check startup logs for which variables are loaded
+
+**"Bad URL with placeholder values (your_github_client_id_here)"**
+- This means the `.env` file either doesn't exist or contains placeholder values
+- Run: `cp env.example .env` to create the file
+- Edit `.env` and replace all placeholder values with actual GitHub OAuth App credentials
+- The server will detect and reject placeholder values for security
 
 ### OAuth Configuration  
 **"OAuth redirect_uri mismatch"**

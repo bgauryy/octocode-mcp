@@ -12,7 +12,7 @@ export interface OAuthStateData {
   codeVerifier: string;
   organization?: string;
   scopes: string[];
-  callbackMethod: 'local_server' | 'manual' | 'deep_link';
+  callbackMethod: 'local_server' | 'manual' | 'deep_link' | 'device_flow';
   callbackPort?: number;
   clientId: string;
   createdAt: Date;
