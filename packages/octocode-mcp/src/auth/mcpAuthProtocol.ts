@@ -114,9 +114,10 @@ export class MCPAuthProtocol {
     error?: string,
     error_description?: string
   ): MCPAuthResponse {
-    const config = ConfigManager.getConfig();
-    const baseUrl = config.githubHost || 'https://github.com';
-    const resourceMetadataUrl = `${baseUrl}/.well-known/mcp-resource-metadata`;
+    // Use our OAuth metadata server URL for RFC 9728 compliance
+    const metadataPort = process.env.OAUTH_METADATA_PORT || '3001';
+    const metadataHost = process.env.OAUTH_METADATA_HOST || '127.0.0.1';
+    const resourceMetadataUrl = `http://${metadataHost}:${metadataPort}/.well-known/oauth-protected-resource`;
 
     const challenge: MCPAuthChallenge = {
       scheme: 'Bearer',
@@ -134,6 +135,8 @@ export class MCPAuthProtocol {
       headers: {
         'WWW-Authenticate': wwwAuthenticateHeader,
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
       },
       body: {
         error: error || 'unauthorized',
@@ -141,6 +144,8 @@ export class MCPAuthProtocol {
           error_description ||
           'Valid GitHub access token required in Authorization header',
         resource_metadata: resourceMetadataUrl,
+        realm: realm || 'github-api',
+        scope: scope || 'repo read:user',
       },
     };
   }
@@ -265,9 +270,18 @@ export class MCPAuthProtocol {
         };
       }
 
-      // Delegate to OAuthManager if available
+      // Delegate to OAuthManager if available (with audience validation)
       if (this.oauthManager) {
-        const validation = await this.oauthManager.validateToken(token);
+        // Get the resource URI for this MCP server for audience validation
+        const config = ConfigManager.getConfig();
+        const resourceUri =
+          process.env.MCP_SERVER_RESOURCE_URI ||
+          `${config.githubHost || 'https://github.com'}/mcp-server`;
+
+        const validation = await this.oauthManager.validateToken(
+          token,
+          resourceUri
+        );
         return {
           valid: validation.valid,
           token: validation.valid ? token : undefined,

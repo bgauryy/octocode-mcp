@@ -220,7 +220,8 @@ BEST PRACTICES:
             {
               redirect_uri: callbackUrl,
               scope: requestedScopes.join(' '),
-            }
+            },
+            process.env.MCP_SERVER_RESOURCE_URI // RFC 8707 resource parameter
           );
 
           // Store OAuth state with TTL
@@ -427,11 +428,13 @@ SECURITY:
           // Get OAuth manager (should be initialized by AuthenticationManager)
           const oauthManager = OAuthManager.getInstance();
 
-          // Exchange code for token
+          // Exchange code for token (with resource parameter for RFC 8707 compliance)
           const tokenResponse = await oauthManager.exchangeCodeForToken(
             args.code,
             stateData.codeVerifier,
-            args.state
+            args.state,
+            undefined, // redirectUriOverride
+            process.env.MCP_SERVER_RESOURCE_URI // resourceUri for MCP compliance
           );
 
           // Complete OAuth flow using shared helper

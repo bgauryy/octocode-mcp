@@ -1,0 +1,18 @@
+{
+  "name": "octocode-mcp-oauth-demo",
+  "version": "1.0.0",
+  "description": "OAuth demonstration for Octocode MCP",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0"
+  },
+  "keywords": ["oauth", "github", "mcp", "demo"],
+  "author": "Octocode MCP",
+  "license": "MIT"
+}

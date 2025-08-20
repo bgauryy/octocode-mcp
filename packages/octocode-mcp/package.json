@@ -90,7 +90,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
     "test:ui": "vitest --ui",
-    "test:watch": "vitest --watch"
+    "test:watch": "vitest --watch",
+    "oauthDev": "cd example && npm install && npm run dev"
   },
   "type": "module",
   "mcp": {

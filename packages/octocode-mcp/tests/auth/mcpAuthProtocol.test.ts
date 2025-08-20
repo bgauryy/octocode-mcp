@@ -88,7 +88,8 @@ describe('MCPAuthProtocol', () => {
       expect(result.token).toBe('test-token-123');
       expect(result.scopes).toEqual(['repo', 'read:user']);
       expect(mockOAuthManager.validateToken).toHaveBeenCalledWith(
-        'test-token-123'
+        'test-token-123',
+        'https://github.com/mcp-server'
       );
     });
 
@@ -119,7 +120,8 @@ describe('MCPAuthProtocol', () => {
       expect(result.error).toBe('Token expired');
       expect(result.scopes).toEqual([]);
       expect(mockOAuthManager.validateToken).toHaveBeenCalledWith(
-        'oauth-token'
+        'oauth-token',
+        'https://github.com/mcp-server'
       );
     });
 
@@ -150,7 +152,8 @@ describe('MCPAuthProtocol', () => {
       expect(result.valid).toBe(true);
       expect(result.token).toBe('lowercase-token');
       expect(mockOAuthManager.validateToken).toHaveBeenCalledWith(
-        'lowercase-token'
+        'lowercase-token',
+        'https://github.com/mcp-server'
       );
     });
   });
@@ -261,13 +264,15 @@ describe('MCPAuthProtocol', () => {
 
       expect(challenge.status).toBe(401);
       expect(challenge.headers['WWW-Authenticate']).toBe(
-        'Bearer, realm="github-api", scope="repo read:user", error="invalid_token", error_description="Token validation failed", resource_metadata="https://github.com/.well-known/mcp-resource-metadata"'
+        'Bearer, realm="github-api", scope="repo read:user", error="invalid_token", error_description="Token validation failed", resource_metadata="http://127.0.0.1:3001/.well-known/oauth-protected-resource"'
       );
       expect(challenge.body).toEqual({
         error: 'invalid_token',
         error_description: 'Token validation failed',
         resource_metadata:
-          'https://github.com/.well-known/mcp-resource-metadata',
+          'http://127.0.0.1:3001/.well-known/oauth-protected-resource',
+        realm: 'github-api',
+        scope: 'repo read:user',
       });
     });
 
@@ -276,14 +281,16 @@ describe('MCPAuthProtocol', () => {
 
       expect(challenge.status).toBe(401);
       expect(challenge.headers['WWW-Authenticate']).toBe(
-        'Bearer, resource_metadata="https://github.com/.well-known/mcp-resource-metadata"'
+        'Bearer, resource_metadata="http://127.0.0.1:3001/.well-known/oauth-protected-resource"'
       );
       expect(challenge.body).toEqual({
         error: 'unauthorized',
         error_description:
           'Valid GitHub access token required in Authorization header',
         resource_metadata:
-          'https://github.com/.well-known/mcp-resource-metadata',
+          'http://127.0.0.1:3001/.well-known/oauth-protected-resource',
+        realm: 'github-api',
+        scope: 'repo read:user',
       });
     });
 
@@ -298,7 +305,7 @@ describe('MCPAuthProtocol', () => {
 
       expect(
         (challenge.body as { resource_metadata: string }).resource_metadata
-      ).toBe('https://github.example.com/.well-known/mcp-resource-metadata');
+      ).toBe('http://127.0.0.1:3001/.well-known/oauth-protected-resource');
     });
   });
 

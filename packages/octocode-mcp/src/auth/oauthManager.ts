@@ -120,7 +120,8 @@ export class OAuthManager {
   createAuthorizationUrl(
     state: string,
     codeChallenge: string,
-    additionalParams?: Record<string, string>
+    additionalParams?: Record<string, string>,
+    resourceUri?: string
   ): string {
     if (!this.config) throw new Error('OAuth not initialized');
 
@@ -132,10 +133,25 @@ export class OAuthManager {
       state,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
+      // RFC 8707: Resource parameter for MCP compliance
+      resource: resourceUri || this.getResourceUri(),
       ...additionalParams,
     });
 
     return `${this.config.authorizationUrl}?${params.toString()}`;
+  }
+
+  /**
+   * Get the resource URI for this MCP server (RFC 8707)
+   */
+  private getResourceUri(): string {
+    const serverConfig = ConfigManager.getConfig();
+
+    // Use configured resource URI or derive from server configuration
+    const baseUrl = serverConfig.githubHost || 'https://api.github.com';
+
+    // For MCP servers, the resource should identify this specific server instance
+    return process.env.MCP_SERVER_RESOURCE_URI || `${baseUrl}/mcp-server`;
   }
 
   /**
@@ -170,7 +186,8 @@ export class OAuthManager {
     code: string,
     codeVerifier: string,
     state?: string,
-    redirectUriOverride?: string
+    redirectUriOverride?: string,
+    resourceUri?: string
   ): Promise<TokenResponse> {
     if (!this.config) throw new Error('OAuth not initialized');
 
@@ -189,6 +206,8 @@ export class OAuthManager {
           code_verifier: codeVerifier,
           grant_type: 'authorization_code',
           redirect_uri: redirectUriOverride || this.config.redirectUri,
+          // RFC 8707: Include resource parameter in token request
+          resource: resourceUri || this.getResourceUri(),
           ...(state && { state }),
         }),
       });
@@ -282,9 +301,16 @@ export class OAuthManager {
   }
 
   /**
-   * Validate access token against GitHub API
+   * Validate access token against GitHub API with audience validation
+   *
+   * CRITICAL SECURITY: Implements RFC 8707 audience validation as required by MCP spec.
+   * MCP servers MUST validate that tokens were issued specifically for them to prevent
+   * confused deputy attacks and ensure tokens aren't reused across different services.
    */
-  async validateToken(token: string): Promise<TokenValidation> {
+  async validateToken(
+    token: string,
+    expectedAudience?: string
+  ): Promise<TokenValidation> {
     if (!this.config) throw new Error('OAuth not initialized');
 
     try {
@@ -293,6 +319,7 @@ export class OAuthManager {
         ? `${serverConfig.githubHost}/api/v3`
         : 'https://api.github.com';
 
+      // Step 1: Basic token validation with GitHub API
       const response = await fetch(`${baseUrl}/user`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -301,6 +328,12 @@ export class OAuthManager {
       });
 
       if (!response.ok) {
+        await this.logOAuthEvent('token_validation', 'failure', {
+          error: 'GitHub API validation failed',
+          status: response.status,
+          statusText: response.statusText,
+        });
+
         return {
           valid: false,
           scopes: [],
@@ -310,15 +343,141 @@ export class OAuthManager {
 
       const scopes = response.headers.get('x-oauth-scopes')?.split(', ') || [];
 
+      // Step 2: CRITICAL - Audience validation (RFC 8707 compliance)
+      const resourceUri = expectedAudience || this.getResourceUri();
+      const audienceValidation = await this.validateTokenAudience(
+        token,
+        resourceUri
+      );
+
+      if (!audienceValidation.validAudience) {
+        await this.logOAuthEvent('token_validation', 'failure', {
+          error: 'Token audience validation failed',
+          expectedAudience: resourceUri,
+          reason: audienceValidation.error,
+          clientId: this.config.clientId,
+        });
+
+        return {
+          valid: false,
+          scopes: [],
+          error: `Token audience validation failed: ${audienceValidation.error}`,
+        };
+      }
+
+      // Success - log for audit trail
+      await this.logOAuthEvent('token_validation', 'success', {
+        scopes: scopes,
+        audience: resourceUri,
+        clientId: this.config.clientId,
+      });
+
       return {
         valid: true,
         scopes,
+        expiresAt: audienceValidation.expiresAt,
       };
     } catch (error) {
+      await this.logOAuthEvent('token_validation', 'failure', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
       return {
         valid: false,
         scopes: [],
         error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Validate token audience (RFC 8707 Resource Indicators)
+   *
+   * SECURITY CRITICAL: This method prevents confused deputy attacks by ensuring
+   * tokens were issued specifically for this MCP server. It validates that the
+   * token was issued by our OAuth application, not by a different one.
+   *
+   * Implementation uses GitHub's token introspection API to verify the token's
+   * provenance and ensure it matches our configured client_id.
+   */
+  private async validateTokenAudience(
+    token: string,
+    _expectedResource: string
+  ): Promise<{
+    validAudience: boolean;
+    error?: string;
+    expiresAt?: Date;
+  }> {
+    try {
+      const serverConfig = ConfigManager.getConfig();
+      const baseUrl = serverConfig.githubHost
+        ? `${serverConfig.githubHost}/api/v3`
+        : 'https://api.github.com';
+
+      // Use GitHub's token introspection API to verify token metadata
+      // POST /applications/{client_id}/token - Check token validity and ownership
+      const introspectionUrl = `${baseUrl}/applications/${this.config!.clientId}/token`;
+
+      const basicAuth = Buffer.from(
+        `${this.config!.clientId}:${this.config!.clientSecret}`
+      ).toString('base64');
+
+      const introspectionResponse = await fetch(introspectionUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${basicAuth}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': this.config!.userAgent,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          access_token: token,
+        }),
+      });
+
+      if (!introspectionResponse.ok) {
+        // If introspection fails, the token might not be from our app
+        return {
+          validAudience: false,
+          error: `Token introspection failed: ${introspectionResponse.status} - Token may not be issued by this OAuth application`,
+        };
+      }
+
+      const tokenData = await introspectionResponse.json();
+
+      // Critical check: Verify token was issued by our OAuth application
+      const isOurToken = tokenData.app?.client_id === this.config!.clientId;
+
+      if (!isOurToken) {
+        return {
+          validAudience: false,
+          error: `Token was issued by client_id '${tokenData.app?.client_id || 'unknown'}' but this server expects '${this.config!.clientId}'`,
+        };
+      }
+
+      // Additional validation: Check if token is still active
+      if (tokenData.expires_at) {
+        const expiresAt = new Date(tokenData.expires_at);
+        if (expiresAt <= new Date()) {
+          return {
+            validAudience: false,
+            error: 'Token has expired according to introspection data',
+          };
+        }
+
+        return {
+          validAudience: true,
+          expiresAt,
+        };
+      }
+
+      // Token is valid and issued by our application
+      return { validAudience: true };
+    } catch (error) {
+      // Network or parsing errors during audience validation
+      return {
+        validAudience: false,
+        error: `Audience validation error: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
   }
