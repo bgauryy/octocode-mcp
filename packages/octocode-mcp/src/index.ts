@@ -11,6 +11,7 @@ import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_
 import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { registerAllOAuthTools } from './mcp/tools/oauth/oauthTools.js';
+import { registerSimpleOAuthTool } from './mcp/tools/oauth/simpleOAuthTool.js';
 import { registerAllOrganizationTools } from './mcp/tools/organization/organizationTools.js';
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
@@ -583,14 +584,165 @@ export async function registerAllTools(server: McpServer) {
     },
   ];
 
-  // Register OAuth and Organization tools if configured
+  // Register OAuth and Organization tools ONLY when properly configured
   try {
-    // Always register OAuth tools (they handle their own availability checks)
-    registerAllOAuthTools(server);
+    const hasOAuthCredentials = !!(
+      process.env.GITHUB_OAUTH_CLIENT_ID &&
+      process.env.GITHUB_OAUTH_CLIENT_SECRET
+    );
+    const hasGitHubAppCredentials = !!(
+      process.env.GITHUB_APP_ID &&
+      process.env.GITHUB_APP_PRIVATE_KEY &&
+      process.env.GITHUB_APP_ENABLED === 'true'
+    );
+    const hasEnterpriseConfig = !!(
+      process.env.GITHUB_ORGANIZATION ||
+      process.env.AUDIT_ALL_ACCESS === 'true' ||
+      process.env.GITHUB_SSO_ENFORCEMENT === 'true' ||
+      process.env.RATE_LIMIT_API_HOUR ||
+      process.env.RATE_LIMIT_AUTH_HOUR ||
+      process.env.RATE_LIMIT_TOKEN_HOUR
+    );
+    const hasAnyAuthConfig =
+      hasOAuthCredentials || hasGitHubAppCredentials || hasEnterpriseConfig;
 
-    // Register organization tools if OAuth is configured or enterprise mode is enabled
-    if (config.oauth?.enabled || config.enterprise?.organizationId) {
+    // Register simple OAuth tool ONLY when OAuth credentials are configured
+    if (hasOAuthCredentials) {
+      registerSimpleOAuthTool(server);
+      // Log OAuth tool registration
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_tool_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolName: 'simpleOAuth',
+            reason: 'oauth_credentials_configured',
+            hasClientId: !!process.env.GITHUB_OAUTH_CLIENT_ID,
+            hasClientSecret: !!process.env.GITHUB_OAUTH_CLIENT_SECRET,
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write(
+          '🔐 OAuth credentials detected: simpleOAuth tool registered\n'
+        );
+      }
+    } else {
+      // Log why simpleOAuth tool is not registered
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_tool_skipped',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolName: 'simpleOAuth',
+            reason: 'no_oauth_credentials',
+            hasClientId: !!process.env.GITHUB_OAUTH_CLIENT_ID,
+            hasClientSecret: !!process.env.GITHUB_OAUTH_CLIENT_SECRET,
+            recommendation:
+              'Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET to enable OAuth tools',
+          },
+        });
+      } catch {
+        // Silent - only log when OAuth is expected but not configured
+      }
+    }
+
+    // Register advanced OAuth tools ONLY when OAuth or GitHub App credentials are configured
+    if (hasOAuthCredentials || hasGitHubAppCredentials) {
+      registerAllOAuthTools(server);
+      // Log advanced OAuth tools registration
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_tools_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolsRegistered: 'advanced_oauth_tools',
+            reason: hasOAuthCredentials
+              ? 'oauth_credentials_configured'
+              : 'github_app_configured',
+            hasOAuthCredentials,
+            hasGitHubAppCredentials,
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write('🔧 Advanced OAuth tools registered\n');
+      }
+    }
+
+    // Register organization tools ONLY when enterprise or OAuth configuration is present
+    if (
+      hasAnyAuthConfig &&
+      (config.oauth?.enabled ||
+        config.enterprise?.organizationId ||
+        hasEnterpriseConfig)
+    ) {
       registerAllOrganizationTools(server);
+      // Log organization tools registration
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'organization_tools_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolsRegistered: 'organization_tools',
+            reason: 'enterprise_or_oauth_configured',
+            hasOAuthCredentials,
+            hasGitHubAppCredentials,
+            hasEnterpriseConfig,
+            organizationConfigured: !!config.enterprise?.organizationId,
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write('🏢 Organization tools registered\n');
+      }
+    }
+
+    // Log summary of authentication tools registration
+    const registeredTools = [];
+    if (hasOAuthCredentials) registeredTools.push('simpleOAuth');
+    if (hasOAuthCredentials || hasGitHubAppCredentials)
+      registeredTools.push('advancedOAuth');
+    if (
+      hasAnyAuthConfig &&
+      (config.oauth?.enabled ||
+        config.enterprise?.organizationId ||
+        hasEnterpriseConfig)
+    )
+      registeredTools.push('organization');
+
+    if (registeredTools.length === 0) {
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'no_auth_tools_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            reason: 'no_authentication_configuration',
+            recommendation:
+              'Set OAuth credentials (GITHUB_OAUTH_CLIENT_ID + GITHUB_OAUTH_CLIENT_SECRET) or GitHub App credentials to enable authentication tools',
+            availableAuthMethods: [
+              'personal_access_token',
+              'github_cli_local_only',
+              'authorization_header',
+            ],
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write(
+          'ℹ️ No authentication tools registered - using fallback token resolution only\n'
+        );
+      }
     }
   } catch (oauthError) {
     // Log OAuth tool registration failure via audit system

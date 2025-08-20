@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ChildProcess } from 'child_process';
 import { createMockMcpServer } from '../../fixtures/mcp-fixtures.js';
 import type { MockMcpServer } from '../../fixtures/mcp-fixtures.js';
 import {
@@ -22,6 +23,8 @@ vi.mock('../../../src/auth/oauthManager.js', () => ({
     getInstance: vi.fn(),
   },
 }));
+
+vi.mock('open');
 
 vi.mock('../../../src/mcp/tools/utils/oauthStateManager.js', () => ({
   OAuthStateManager: {
@@ -58,6 +61,7 @@ import {
   storeOAuthTokenInfo,
   clearOAuthTokens,
 } from '../../../src/mcp/tools/utils/tokenManager.js';
+import open from 'open';
 
 const mockConfigManager = vi.mocked(ConfigManager);
 const mockOAuthManager = {
@@ -77,6 +81,7 @@ const mockTokenManager = {
   storeOAuthTokenInfo: vi.mocked(storeOAuthTokenInfo),
   clearOAuthTokens: vi.mocked(clearOAuthTokens),
 };
+const mockOpen = vi.mocked(open);
 
 describe('OAuth Tools', () => {
   let mockServer: MockMcpServer;
@@ -121,6 +126,12 @@ describe('OAuth Tools', () => {
       () =>
         mockOrgService as unknown as InstanceType<typeof OrganizationService>
     );
+
+    // Mock open function to prevent browser opening during tests
+    mockOpen.mockImplementation(async (_url: string) => {
+      // If this gets called, we want to know about it but not actually open anything
+      return {} as ChildProcess;
+    });
 
     // Register tools
     registerOAuthInitiateTool(mockServer.server);

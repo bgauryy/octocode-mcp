@@ -38,6 +38,7 @@ export const TOOL_NAMES = {
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
   PACKAGE_SEARCH: 'packageSearch',
   // OAuth Tools
+  SIMPLE_OAUTH: 'simpleOAuth',
   OAUTH_INITIATE: 'oauthInitiate',
   OAUTH_CALLBACK: 'oauthCallback',
   OAUTH_STATUS: 'oauthStatus',

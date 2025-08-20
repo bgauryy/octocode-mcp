@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ChildProcess } from 'child_process';
 
 // Mock all dependencies before importing index
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
@@ -20,6 +21,7 @@ vi.mock('../src/config/serverConfig.js');
 vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/tools/utils/tokenManager.js');
+vi.mock('open');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
@@ -37,6 +39,7 @@ import { ConfigManager } from '../src/config/serverConfig.js';
 import { ToolsetManager } from '../src/mcp/tools/toolsets/toolsetManager.js';
 import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
+import open from 'open';
 
 // Mock implementations
 const mockMcpServer = {
@@ -57,6 +60,7 @@ const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockConfigManager = vi.mocked(ConfigManager);
 const mockToolsetManager = vi.mocked(ToolsetManager);
 const mockGetToken = vi.mocked(getToken);
+const mockOpen = vi.mocked(open);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -124,6 +128,21 @@ describe('Index Module', () => {
     // Mock GitHub CLI token
     mockGetGithubCLIToken.mockResolvedValue('cli-token');
 
+    // Mock open function to prevent browser opening during tests
+    mockOpen.mockImplementation(async (_url: string) => {
+      // If this gets called, we want to know about it but not actually open anything
+      return {} as ChildProcess;
+    });
+
+    // Mock tool registration functions to succeed
+    mockRegisterGitHubSearchCodeTool.mockReturnValue(undefined);
+    mockRegisterFetchGitHubFileContentTool.mockReturnValue(undefined);
+    mockRegisterSearchGitHubReposTool.mockReturnValue(undefined);
+    mockRegisterGitHubSearchCommitsTool.mockReturnValue(undefined);
+    mockRegisterSearchGitHubPullRequestsTool.mockReturnValue(undefined);
+    mockRegisterPackageSearchTool.mockReturnValue(undefined);
+    mockRegisterViewGitHubRepoStructureTool.mockReturnValue(undefined);
+
     // Create spies for process methods - use a safer mock that doesn't throw by default
     processExitSpy = vi
       .spyOn(process, 'exit')
@@ -159,7 +178,7 @@ describe('Index Module', () => {
     mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
 
     // Mock new dependencies
-    mockConfigManager.initialize.mockReturnValue({
+    const mockServerConfig = {
       version: '1.0.0',
       enabledToolsets: [],
       dynamicToolsets: false,
@@ -179,7 +198,10 @@ describe('Index Module', () => {
       githubHost: undefined,
       timeout: 30000,
       maxRetries: 3,
-    });
+    };
+
+    mockConfigManager.initialize.mockReturnValue(mockServerConfig);
+    mockConfigManager.getConfig.mockReturnValue(mockServerConfig);
 
     mockToolsetManager.initialize.mockImplementation(() => {});
     mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default

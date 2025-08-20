@@ -312,20 +312,28 @@ async function resolveToken(): Promise<{
     return { token: process.env.GH_TOKEN, source: 'env' };
   }
 
-  // Skip CLI token resolution in enterprise mode OR when OAuth is configured
-  const isOAuthConfigured = !!(
-    process.env.GITHUB_OAUTH_CLIENT_ID &&
-    process.env.GITHUB_OAUTH_CLIENT_SECRET &&
-    process.env.GITHUB_OAUTH_ENABLED === 'true'
+  // Enable CLI token resolution ONLY if:
+  // 1. NOT in enterprise mode (no GITHUB_ORGANIZATION, AUDIT_ALL_ACCESS, etc.)
+  // 2. AND no OAuth credentials configured (GITHUB_OAUTH_CLIENT_ID + GITHUB_OAUTH_CLIENT_SECRET)
+  // 3. AND no valid GitHub App credentials
+  const hasOAuthCredentials = !!(
+    process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET
   );
 
-  if (!isEnterpriseMode() && !isOAuthConfigured) {
+  const hasGitHubAppCredentials = !!(
+    process.env.GITHUB_APP_ID &&
+    process.env.GITHUB_APP_PRIVATE_KEY &&
+    process.env.GITHUB_APP_ENABLED === 'true'
+  );
+
+  // CLI is enabled for local development when OAuth/GitHub App not configured
+  if (!isEnterpriseMode() && !hasOAuthCredentials && !hasGitHubAppCredentials) {
     const cliToken = await getGithubCLIToken();
     if (cliToken) {
       return { token: cliToken, source: 'cli' };
     }
   } else {
-    // Log warning if enterprise mode or OAuth configured and no env tokens
+    // Log why CLI token resolution is disabled
     if (
       !process.env.GITHUB_TOKEN &&
       !process.env.GH_TOKEN &&
@@ -335,18 +343,28 @@ async function resolveToken(): Promise<{
         const { logAuthEvent } = await import(
           '../../../security/auditLogger.js'
         );
-        const reason = isOAuthConfigured
-          ? 'CLI token resolution disabled when OAuth is configured'
-          : 'CLI token resolution disabled in enterprise mode';
-        const action = isOAuthConfigured
-          ? 'cli_disabled_oauth_configured'
-          : 'cli_disabled_enterprise';
+
+        let reason = 'CLI token resolution disabled: ';
+        let action = 'cli_disabled_';
+
+        if (isEnterpriseMode()) {
+          reason += 'Enterprise mode active';
+          action += 'enterprise';
+        } else if (hasOAuthCredentials) {
+          reason += 'OAuth credentials configured';
+          action += 'oauth_configured';
+        } else if (hasGitHubAppCredentials) {
+          reason += 'GitHub App credentials configured';
+          action += 'github_app_configured';
+        }
 
         logAuthEvent('token_validation', 'success', {
           reason,
           organizationId: config?.organizationId,
           action,
-          oauthConfigured: isOAuthConfigured,
+          enterpriseMode: isEnterpriseMode(),
+          oauthConfigured: hasOAuthCredentials,
+          githubAppConfigured: hasGitHubAppCredentials,
         });
       } catch {
         // Ignore audit logging errors
@@ -418,25 +436,16 @@ export async function getToken(): Promise<string> {
 
   if (!result.token) {
     const enterpriseMode = isEnterpriseMode();
-    const isOAuthConfigured = !!(
-      process.env.GITHUB_OAUTH_CLIENT_ID &&
-      process.env.GITHUB_OAUTH_CLIENT_SECRET &&
-      process.env.GITHUB_OAUTH_ENABLED === 'true'
-    );
 
-    let errorMessage: string;
     if (enterpriseMode) {
-      errorMessage =
-        'No GitHub token found. In enterprise mode, please configure OAuth, GitHub App, or set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled for security)';
-    } else if (isOAuthConfigured) {
-      errorMessage =
-        'No GitHub token found. OAuth is configured but no valid token available. Please complete OAuth flow or set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled when OAuth is configured)';
-    } else {
-      errorMessage =
-        'No GitHub token found. Please configure OAuth authentication, set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI';
+      throw new Error(
+        'No GitHub token found. In enterprise mode, please configure OAuth, GitHub App, or set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled for security)'
+      );
     }
 
-    throw new Error(errorMessage);
+    throw new Error(
+      'No GitHub token found. Please configure OAuth authentication, set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI'
+    );
   }
 
   // Store token securely for internal security benefits
