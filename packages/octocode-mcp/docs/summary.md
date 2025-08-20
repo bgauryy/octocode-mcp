@@ -8,23 +8,25 @@
 
 | Capability | Standard MCP Servers | **OctoCode MCP** |
 |------------|---------------------|------------------|
-| **Intelligence Level** | Basic API calls | **8 specialized tools with adaptive AI behavior** |
+| **Intelligence Level** | Basic API calls | **15+ specialized tools with adaptive AI behavior** |
 | **Error Handling** | Simple try/catch | **Multi-tier fallback with semantic recovery** |
 | **Guidance System** | Static documentation | **700+ lines of contextual hints with AI prioritization** |
 | **Tool Orchestration** | Individual tools | **Strategic workflow chains with relationship mapping** |
 | **Data Optimization** | Raw API responses | **Token-optimized with 50+ file type minification** |
 | **Research Capability** | Single queries | **Progressive refinement with cross-validation** |
-| **Production Readiness** | Demo quality | **Enterprise security with 1,157+ secret detection patterns** |
+| **Production Readiness** | Demo quality | **Enterprise OAuth 2.0/2.1 + 1,157+ secret detection patterns** |
 
 ## 🏗️ Technical Architecture
 
 ### Core Technologies
 - **Language**: TypeScript 5.8+ with strict type checking
 - **Protocol**: Model Context Protocol (MCP) v1.16.0
+- **Authentication**: OAuth 2.0/2.1 with PKCE, GitHub Apps, Enterprise SSO
 - **External Integrations**:
   - GitHub API (Octokit v22.0) with intelligent throttling
   - GitHub CLI (`gh`) with fallback integration
   - NPM CLI for package ecosystem analysis
+  - OAuth 2.0/2.1 authorization servers
 - **Key Libraries**:
   - `@modelcontextprotocol/sdk`: MCP protocol implementation
   - `octokit`: GitHub API client with rate limiting
@@ -36,8 +38,10 @@
 ### Architecture Layers
 
 #### 1. Application Layer (`src/index.ts`)
-- **Dual Authentication Strategy**: GitHub environment vars → GitHub CLI fallback
-- **Tool Registration**: All 8 tools with unified options and error handling
+- **Multi-Modal Authentication**: OAuth 2.0/2.1, GitHub Apps, Environment tokens, CLI fallback
+- **Tool Registration**: 15+ tools with unified options and error handling
+- **Enterprise Integration**: Audit logging, rate limiting, organization management
+- **OAuth Infrastructure**: Protected resource servers, callback handling, state management
 - **Graceful Shutdown**: Signal handling with 5-second timeout protection
 - **NPM Integration**: Optional package ecosystem support detection
 
@@ -125,11 +129,30 @@ export function registerTool(server: McpServer, opts: ToolOptions) {
 - **Error Isolation**: Failed queries don't affect successful ones
 - **Standardized Response**: Consistent `{data, meta, hints}` structure across all tools
 
-#### 4. Security Layer Architecture
+#### 4. Authentication & Security Layer Architecture
+- **OAuth 2.0/2.1 Manager** (`src/auth/oauthManager.ts`): RFC-compliant OAuth flows with PKCE
+- **GitHub App Manager** (`src/auth/githubAppManager.ts`): JWT generation, installation tokens
+- **MCP Auth Protocol** (`src/auth/mcpAuthProtocol.ts`): Bearer token validation, WWW-Authenticate
+- **Authentication Manager** (`src/auth/authenticationManager.ts`): Unified auth initialization
 - **Input Validation**: Zod schema validation with type safety
 - **Parameter Sanitization**: Size limits, dangerous key blocking
 - **Content Sanitization**: 1,157 patterns across 15+ categories
 - **Universal Security Wrapper**: Decorates all tools with consistent protection
+
+#### 5. HTTP Server Infrastructure (`src/http/`)
+- **OAuth Callback Server**: Temporary local server for OAuth redirects
+- **Protected Resource Server**: RFC 9728 OAuth resource metadata
+- **MCP HTTP Server**: HTTP transport for MCP protocol
+- **Resource Metadata Server**: Legacy OAuth discovery support
+
+#### 6. Enterprise Security Suite (`src/security/`)
+- **Audit Logger**: JSONL event logging with buffered persistence
+- **Rate Limiter**: Per-user API rate limiting with sliding windows
+- **Organization Manager**: GitHub organization membership validation
+- **Policy Manager**: Enterprise access control policies
+- **Command Validator**: Shell command injection prevention
+- **Environment Manager**: Secure environment variable filtering
+- **Credential Store**: AES-256-GCM encrypted credential storage
 
 ## 🛠️ Core Tools & Advanced Schema Architecture
 
@@ -337,9 +360,76 @@ interface FileQuery {
 - **Repository Integration**: Direct GitHub repository connections
 - **Metadata Enrichment**: Versions, dependencies, popularity metrics
 
+### 9. **OAuth Authentication Tools** (`oauth/`)
+**Complete OAuth 2.0/2.1 authentication suite**
+
+**Tools Available**:
+- **`simpleOAuth`**: Simplified OAuth interface with device flow
+- **`oauthInitiate`**: Start OAuth authorization flow with PKCE
+- **`oauthCallback`**: Handle OAuth callbacks and token exchange
+- **`oauthStatus`**: Check current authentication status
+- **`oauthRevoke`**: Revoke OAuth tokens and clear credentials
+
+**Advanced Features**:
+- **Device Flow**: No browser redirect required
+- **PKCE Support**: RFC 7636 Proof Key for Code Exchange
+- **State Management**: Secure state parameter handling
+- **Token Rotation**: Automatic refresh token handling
+- **Enterprise Integration**: Organization validation and audit logging
+
+### 10. **Organization Management Tools** (`organization/`)
+**Enterprise GitHub organization integration**
+
+**Tools Available**:
+- **`checkOrganizationMembership`**: Verify user membership in organizations
+- **`listUserOrganizations`**: List user's organization memberships
+- **`checkTeamMembership`**: Validate team membership within organizations
+
+**Enterprise Features**:
+- **Membership Caching**: 15-minute TTL for performance
+- **Role Detection**: Member, admin, owner role identification
+- **Privacy Handling**: Public/private membership visibility
+- **Audit Integration**: All membership checks logged for compliance
+
 ## 🔒 Enterprise Security Architecture
 
-### Multi-Layer Secret Detection System
+### 1. OAuth 2.0/2.1 Authentication System
+**RFC-Compliant OAuth Implementation** (`src/auth/`):
+
+```typescript
+// OAuth Manager with PKCE support
+export class OAuthManager {
+  // RFC 6749 OAuth 2.0 + RFC 7636 PKCE compliance
+  generatePKCEParams(): PKCEParams;
+  startAuthorizationFlow(): AuthorizationResult;
+  exchangeCodeForToken(): Promise<TokenResponse>;
+  
+  // Device Flow (RFC 8628) for CLI environments
+  initiateDeviceFlow(): Promise<DeviceFlowInitiateResponse>;
+  pollDeviceFlowToken(): Promise<TokenResponse>;
+  
+  // Token management with automatic refresh
+  refreshToken(): Promise<TokenResponse>;
+  validateToken(): Promise<TokenValidation>;
+}
+
+// GitHub App authentication with JWT
+export class GitHubAppManager {
+  generateJWT(): string; // RFC 7519 JWT generation
+  getInstallationToken(): Promise<InstallationToken>;
+  validateInstallationPermissions(): Promise<boolean>;
+  validateRepositoryAccess(): Promise<boolean>;
+}
+
+// MCP Authorization Protocol integration
+export class MCPAuthProtocol {
+  createAuthChallenge(): MCPAuthResponse; // RFC 6750 Bearer tokens
+  getProtectedResourceMetadata(): ProtectedResourceMetadata; // RFC 9728
+  validateBearerToken(): Promise<ValidationResult>;
+}
+```
+
+### 2. Multi-Layer Secret Detection System
 **Comprehensive Pattern Coverage** (`src/security/regexes.ts`):
 ```typescript
 // 1,157 patterns across 15+ categories
@@ -355,7 +445,7 @@ const secretCategories = [
 ];
 ```
 
-### Content Sanitization Pipeline
+### 3. Content Sanitization Pipeline
 ```typescript
 export class ContentSanitizer {
   // Input parameter validation
@@ -373,6 +463,44 @@ export class ContentSanitizer {
     // 3. Content masking with [REDACTED-CATEGORY] replacement
     // 4. Comprehensive reporting of detected secrets
   }
+}
+```
+
+### 4. Enterprise Access Control
+```typescript
+// Organization membership validation
+export class OrganizationManager {
+  validateOrganizationAccess(): Promise<ValidationResult>;
+  verifyOrganizationMembership(): Promise<boolean>;
+  isUserAdmin(): boolean;
+}
+
+// Policy-based access control
+export class PolicyManager {
+  evaluatePolicies(): Promise<PolicyEvaluationResult>;
+  isMfaRequired(): boolean;
+  isRepositoryAccessRestricted(): boolean;
+}
+
+// Rate limiting with per-user tracking
+export class RateLimiter {
+  checkLimit(userId: string, action: 'api' | 'auth' | 'token'): Promise<RateLimitResult>;
+  recordAction(userId: string, action: string): void;
+}
+```
+
+### 5. Audit & Compliance System
+```typescript
+// Enterprise audit logging
+export class AuditLogger {
+  logEvent(event: AuditEvent): void;
+  flushToDisk(): void; // JSONL format with buffered persistence
+}
+
+// Secure credential storage
+export class SecureCredentialStore {
+  setCredential(credential: string): string; // AES-256-GCM encryption
+  getCredential(credentialId: string): string | null;
 }
 ```
 
@@ -730,23 +858,46 @@ class GitHubIntegration {
 
 ## 🏢 Enterprise Features
 
-### 1. Organization Repository Access
+### 1. OAuth 2.0/2.1 Authentication Infrastructure
+- **Device Flow Support**: CLI-friendly authentication without browser redirects
+- **PKCE Implementation**: RFC 7636 Proof Key for Code Exchange security
+- **Token Management**: Automatic refresh, rotation, and secure storage
+- **GitHub App Integration**: JWT-based app authentication with installation tokens
+- **MCP Protocol Compliance**: RFC 9728 protected resource metadata
+- **State Management**: Secure OAuth state parameter handling with TTL
+
+### 2. Organization Repository Access
 - **Private Repository Support**: Full access to organizational private repos
 - **Permission Respect**: Honors GitHub permissions and team access
 - **Cross-Repository Analysis**: Map dependencies between multiple private repos
+- **Membership Validation**: Real-time organization and team membership checks
+- **Role-Based Access**: Admin, member, owner role detection and enforcement
 - **Audit Trail**: Comprehensive logging of all repository access
 
-### 2. Advanced Security
+### 3. Advanced Security & Compliance
 - **Multi-Layer Secret Detection**: 1,157 patterns across 15+ categories
 - **Content Sanitization**: Real-time detection and masking of sensitive data
 - **Input Validation**: Comprehensive parameter and structure validation
 - **Security Logging**: Detailed logs of security events and violations
+- **Rate Limiting**: Per-user API rate limiting with sliding windows
+- **Policy Engine**: Configurable access control policies
+- **Command Validation**: Shell injection prevention for CLI operations
+- **Environment Security**: Dangerous environment variable filtering
 
-### 3. Scalability Features
+### 4. Scalability & Performance Features
 - **Rate Limit Management**: Intelligent handling of GitHub API limits
 - **Concurrent Processing**: Configurable parallelism with error isolation
 - **Caching Strategy**: Multi-TTL caching with intelligent invalidation
 - **Performance Monitoring**: Built-in metrics and performance tracking
+- **Token Rotation**: Automatic token refresh with zero-downtime updates
+- **Connection Pooling**: Efficient HTTP connection management
+
+### 5. HTTP Server Infrastructure
+- **OAuth Callback Server**: Temporary local server for OAuth redirects
+- **Protected Resource Server**: RFC 9728 OAuth resource metadata endpoints
+- **MCP HTTP Transport**: HTTP-based MCP protocol support
+- **Health Check Endpoints**: Service monitoring and status reporting
+- **CORS Support**: Cross-origin resource sharing for web integration
 
 ## 🔍 Advanced Research Capabilities
 
@@ -791,25 +942,41 @@ const RESEARCH_GUIDANCE_PATTERNS: Record<ResearchGoal, (context: HintGenerationC
 - **4-Tier Hint Generation**: Provides intelligent, contextual guidance that evolves with research phase
 - **Strategic Tool Orchestration**: Chains tools intelligently based on results, not just sequential calls
 
+### 🔐 Enterprise-Grade Authentication & Security
+- **OAuth 2.0/2.1 Compliance**: Full RFC implementation with PKCE, device flow, and token management
+- **GitHub App Integration**: JWT-based authentication with installation token management
+- **MCP Authorization Protocol**: RFC 9728 protected resource metadata and Bearer token validation
+- **Multi-Modal Auth**: Environment tokens, CLI fallback, OAuth flows, and GitHub Apps
+- **Enterprise Access Control**: Organization membership, team validation, and policy enforcement
+
 ### 🔄 Advanced Fallback Systems
 - **Multi-Level Recovery**: When GitHub rate limits hit, automatically switches strategies and suggests alternatives
 - **Error-Specific Intelligence**: Recognizes auth failures, network issues, validation errors with tailored recovery paths
 - **Cross-Tool Workflows**: Failed repository search → package search → alternative approaches
+- **Authentication Fallback**: OAuth → GitHub App → Environment → CLI token resolution
 
 ### 🎯 Production-Grade Architecture
 - **Token Optimization**: Minifies content across 50+ programming languages while preserving semantic meaning
 - **Dual Execution**: CLI + API with intelligent fallback preference and reliability scoring
 - **Enterprise Security**: Content sanitization, input validation, and secret detection at every layer
+- **HTTP Infrastructure**: OAuth callback servers, protected resource endpoints, and MCP HTTP transport
 
 ### 💡 Beyond Standard MCP Capabilities
 - **Bulk Operations**: Parallel processing with context aggregation across multiple queries
 - **Research Quality**: Cross-repository validation, popularity weighting, and freshness scoring
 - **Intelligent Caching**: TTL-based strategies optimized per tool type with collision detection
+- **15+ Specialized Tools**: GitHub analysis, OAuth flows, organization management, and package discovery
 
+### 🏢 Enterprise-Ready Features
+- **Audit Logging**: JSONL event logging with buffered persistence for compliance
+- **Rate Limiting**: Per-user API rate limiting with sliding windows
+- **Policy Engine**: Configurable access control policies and MFA requirements
+- **Secure Storage**: AES-256-GCM encrypted credential storage
+- **Organization Integration**: GitHub organization and team membership validation
 
-While most MCP servers are **functional API bridges**, OctoCode MCP is a **complete research platform** that transforms how LLMs interact with code ecosystems. It's the difference between having a basic calculator and having a sophisticated scientific computing environment - both can do math, but only one can orchestrate complex analytical workflows with intelligence and adaptability.
+While most MCP servers are **functional API bridges**, OctoCode MCP is a **complete enterprise research platform** that transforms how LLMs interact with code ecosystems. It's the difference between having a basic calculator and having a sophisticated scientific computing environment with enterprise security, compliance, and authentication - both can do math, but only one can orchestrate complex analytical workflows with intelligence, security, and enterprise-grade reliability.
 
-**This isn't just an MCP server - it's the future of AI-assisted code research.**
+**This isn't just an MCP server - it's the future of enterprise AI-assisted code research.**
 
 ---
 

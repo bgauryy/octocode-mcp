@@ -18,6 +18,8 @@
 <div align="center">
   
   [![Website](https://img.shields.io/badge/Website-octocode.ai-blue.svg?logo=web)](https://octocode.ai)
+  [![Installation Guide](https://img.shields.io/badge/📚_Installation-Guide-green.svg)](./packages/octocode-mcp/docs/INSTALLATION.md)
+  [![OAuth Authentication](https://img.shields.io/badge/🔐_OAuth-Authentication-orange.svg)](./packages/octocode-mcp/docs/INSTALLATION.md#oauth-20-authentication)
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
   [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
   [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-yellow.svg?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/bgauryy)
@@ -32,6 +34,16 @@
 
 <br/>
 
+
+## 📚 Quick Documentation Links
+
+**Get started quickly with these essential guides:**
+
+- **[📖 Complete Installation Guide](./packages/octocode-mcp/docs/INSTALLATION.md)** - Step-by-step setup for all environments
+- **[🔐 OAuth 2.0 Authentication](./packages/octocode-mcp/docs/INSTALLATION.md#oauth-20-authentication)** - Enterprise authentication setup
+- **[🛠️ Tool Schemas & Usage](./packages/octocode-mcp/docs/TOOL_SCHEMAS.md)** - Complete tool reference
+- **[🏗️ Technical Architecture](./packages/octocode-mcp/docs/SUMMARY.md)** - Deep technical implementation details
+- **[⚡ Usage Examples](./packages/octocode-mcp/docs/USAGE_GUIDE.md)** - Real-world usage patterns
 
 ## 🌟 What is Octocode?
 
