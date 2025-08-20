@@ -586,12 +586,17 @@ export class OAuthManager {
     const charset =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
     let result = '';
-    const randomBytes = crypto.randomBytes(length);
+    const charsetLength = charset.length;
+    const maxValidValue = Math.floor(256 / charsetLength) * charsetLength - 1;
 
-    for (let i = 0; i < length; i++) {
-      const byteValue = randomBytes[i];
-      if (byteValue !== undefined) {
-        result += charset.charAt(byteValue % charset.length);
+    while (result.length < length) {
+      const randomBytes = crypto.randomBytes(length * 2); // Generate extra bytes to account for rejections
+
+      for (let i = 0; i < randomBytes.length && result.length < length; i++) {
+        const byteValue = randomBytes[i];
+        if (byteValue !== undefined && byteValue <= maxValidValue) {
+          result += charset.charAt(byteValue % charsetLength);
+        }
       }
     }
 

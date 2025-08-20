@@ -32,7 +32,13 @@ export function createMockMcpServer(): MockMcpServer {
     }),
     // Add other server methods as needed
     addTool: vi.fn(),
-    listTools: vi.fn(),
+    listTools: vi.fn().mockResolvedValue({
+      tools: Array.from(toolHandlers.keys()).map(name => ({
+        name,
+        description: `Mock tool: ${name}`,
+        inputSchema: { type: 'object', properties: {} },
+      })),
+    }),
   } as unknown as McpServer;
 
   const callTool = async (

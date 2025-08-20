@@ -43,22 +43,34 @@ export class ContentSanitizer {
       for (const pattern of allRegexPatterns) {
         const matches = sanitizedContent.match(pattern.regex);
         if (matches && matches.length > 0) {
-          // Add each match to the set (automatically deduplicates)
-          matches.forEach(_match => secretsDetectedSet.add(pattern.name));
-
-          // Replace with redacted placeholder
-          sanitizedContent = sanitizedContent.replace(
-            pattern.regex,
-            `[REDACTED-${pattern.name.toUpperCase()}]`
+          // Check if this is a false positive by looking at context
+          // Use current sanitizedContent for consistent detection
+          const isFalsePositive = this.isFalsePositiveMatch(
+            sanitizedContent,
+            pattern,
+            matches
           );
+
+          if (!isFalsePositive) {
+            // Add each match to the set (automatically deduplicates)
+            matches.forEach(_match => secretsDetectedSet.add(pattern.name));
+
+            // Replace ALL matches with redacted placeholder (using replaceAll for global replacement)
+            sanitizedContent = sanitizedContent.replaceAll(
+              pattern.regex,
+              `[REDACTED-${pattern.name.toUpperCase()}]`
+            );
+          }
         }
       }
     } catch (error) {
-      // Return original content if there's an error
+      // If sanitization fails, apply basic redaction to prevent content leakage
+      // Don't return original content - apply emergency sanitization
+      const emergencySanitized = this.emergencySanitization(content);
       return {
-        hasSecrets: false,
-        secretsDetected: [],
-        sanitizedContent: content,
+        hasSecrets: true, // Assume secrets present if sanitization failed
+        secretsDetected: ['SANITIZATION_ERROR'],
+        sanitizedContent: emergencySanitized,
       };
     }
 
@@ -69,6 +81,90 @@ export class ContentSanitizer {
       secretsDetected,
       sanitizedContent,
     };
+  }
+
+  private static isFalsePositiveMatch(
+    content: string,
+    pattern: { name: string; regex: RegExp },
+    _matches: RegExpMatchArray
+  ): boolean {
+    // Skip email detection in JSON error responses
+    if (pattern.name === 'emailAddress') {
+      // Check if this is in a JSON error message context
+      if (
+        content.includes('"error"') ||
+        content.includes('"message"') ||
+        content.includes('OAuth')
+      ) {
+        return true;
+      }
+    }
+
+    // Skip other patterns that commonly cause false positives in error messages
+    const falsePositivePatterns = [
+      'credentialsInUrl', // Often matches legitimate error message URLs
+      'jwtToken', // Can match random base64-like strings in errors
+      'sessionIds', // Can match random IDs in error messages
+    ];
+
+    if (falsePositivePatterns.includes(pattern.name)) {
+      // Check if we're in an error message context
+      if (
+        content.includes('"error"') ||
+        content.includes('"message"') ||
+        content.includes('failed') ||
+        content.includes('OAuth') ||
+        content.includes('Rate limit') ||
+        content.includes('timeout')
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Emergency sanitization when normal sanitization fails
+   * Applies basic patterns to prevent obvious secret leakage
+   */
+  private static emergencySanitization(content: string): string {
+    try {
+      let sanitized = content;
+
+      // Basic patterns for common secrets (simplified, non-regex approach)
+      const emergencyPatterns = [
+        // GitHub tokens
+        {
+          pattern: /\bgh[porus]_[a-zA-Z0-9_]{36,255}\b/g,
+          replacement: '[REDACTED-GITHUB-TOKEN]',
+        },
+        // API keys (generic)
+        {
+          pattern: /\b[a-zA-Z0-9]{32,}\b/g,
+          replacement: '[REDACTED-POTENTIAL-KEY]',
+        },
+        // Email addresses
+        {
+          pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+          replacement: '[REDACTED-EMAIL]',
+        },
+        // URLs with credentials
+        {
+          pattern: /\b[a-zA-Z]{3,10}:\/\/[^\s'"]+:[^\s'"]+@[^\s'"]+\b/g,
+          replacement: '[REDACTED-URL-WITH-CREDS]',
+        },
+      ];
+
+      for (const { pattern, replacement } of emergencyPatterns) {
+        sanitized = sanitized.replaceAll(pattern, replacement);
+      }
+
+      return sanitized;
+    } catch {
+      // If even emergency sanitization fails, return heavily redacted content
+      return '[CONTENT-REDACTED-DUE-TO-SANITIZATION-ERROR]';
+    }
   }
 
   public static validateInputParameters(

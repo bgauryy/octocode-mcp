@@ -172,6 +172,12 @@ export class GitHubAppManager {
         }
       );
 
+      if (!response) {
+        throw new Error(
+          'Failed to get installation token: No response from GitHub API'
+        );
+      }
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(

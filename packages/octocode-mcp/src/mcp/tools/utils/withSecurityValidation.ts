@@ -30,14 +30,26 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
   return async (args: unknown): Promise<CallToolResult> => {
     try {
       // 1. Validate and sanitize input parameters for security
-      const validation = ContentSanitizer.validateInputParameters(
-        args as Record<string, unknown>
-      );
+      let validation;
+      try {
+        validation = ContentSanitizer.validateInputParameters(
+          args as Record<string, unknown>
+        );
+      } catch (validationError) {
+        return createResult({
+          error: `Security validation error: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`,
+          isError: true,
+        });
+      }
 
       // Check if validation failed due to structural/security issues
-      if (!validation.isValid) {
+      if (!validation || !validation.isValid) {
+        const warningMessage = validation?.warnings?.length
+          ? validation.warnings.join('; ')
+          : 'Parameters failed security validation';
+
         return createResult({
-          error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          error: `Security validation failed: ${warningMessage}`,
           isError: true,
         });
       }

@@ -109,10 +109,10 @@ BENEFITS:
 
           switch (args.action) {
             case 'authenticate': {
-              // Start device flow
-              const deviceFlowResult = await oauthManager.initiateDeviceFlow(
-                args.scopes
-              );
+              // Start device flow with default scopes if none provided
+              const scopes = args.scopes || ['repo', 'read:user', 'read:org'];
+              const deviceFlowResult =
+                await oauthManager.initiateDeviceFlow(scopes);
 
               // Start polling in background
               (async () => {
@@ -129,7 +129,7 @@ BENEFITS:
                     expiresAt: new Date(
                       Date.now() + tokenResponse.expiresIn * 1000
                     ),
-                    scopes: tokenResponse.scope?.split(' ') || args.scopes,
+                    scopes: tokenResponse.scope?.split(' ') || scopes,
                     tokenType: tokenResponse.tokenType || 'Bearer',
                     clientId: config.oauth!.clientId,
                   });
