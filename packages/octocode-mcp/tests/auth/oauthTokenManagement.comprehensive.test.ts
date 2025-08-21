@@ -335,19 +335,23 @@ describe('OAuth Token Management - Comprehensive Tests', () => {
                 mockOAuthToken!.refreshToken as string
               );
               cachedToken = refreshed.accessToken;
-              (mockOAuthToken as any).accessToken = refreshed.accessToken;
+              (mockOAuthToken as Record<string, unknown>).accessToken =
+                refreshed.accessToken;
               mockTokenSource = 'oauth';
               // Simulate storing refreshed token securely
               await mockTokenManager.storeOAuthTokenInfo({
                 accessToken: refreshed.accessToken,
                 refreshToken:
-                  (mockOAuthToken as any).refreshToken ||
-                  refreshed.refreshToken,
+                  ((mockOAuthToken as Record<string, unknown>)
+                    .refreshToken as string) || refreshed.refreshToken,
                 expiresAt: new Date(Date.now() + 3600 * 1000),
-                scopes: (mockOAuthToken as any).scopes || [],
+                scopes:
+                  ((mockOAuthToken as Record<string, unknown>)
+                    .scopes as string[]) || [],
                 tokenType: 'Bearer',
-                clientId: (mockOAuthToken as any).clientId,
-              } as any);
+                clientId: (mockOAuthToken as Record<string, unknown>)
+                  .clientId as string,
+              });
               return cachedToken;
             } catch (err) {
               const message = (err as Error)?.message || '';
@@ -359,7 +363,9 @@ describe('OAuth Token Management - Comprehensive Tests', () => {
                     outcome: 'failure',
                     details: { error: message },
                   });
-                } catch {}
+                } catch {
+                  // Ignore audit logging errors in tests
+                }
               }
               if (process.env.GITHUB_TOKEN) {
                 cachedToken = process.env.GITHUB_TOKEN;
@@ -367,7 +373,8 @@ describe('OAuth Token Management - Comprehensive Tests', () => {
                 return cachedToken;
               }
               // Fallback to current (expired) token string
-              return (mockOAuthToken as any).accessToken as string;
+              return (mockOAuthToken as Record<string, unknown>)
+                .accessToken as string;
             } finally {
               refreshInFlight = null;
             }
@@ -384,20 +391,28 @@ describe('OAuth Token Management - Comprehensive Tests', () => {
       ) {
         const refreshed =
           await mockGitHubAppManagerInstance.getInstallationToken(
-            (mockGitHubAppToken as any).installationId as number
+            (mockGitHubAppToken as Record<string, unknown>)
+              .installationId as number
           );
-        cachedToken = (refreshed as any).token;
-        (mockGitHubAppToken as any).installationToken = (
-          refreshed as any
-        ).token;
+        const refreshedToken = refreshed as {
+          token: string;
+          expiresAt: Date;
+          permissions: Record<string, unknown>;
+        };
+        cachedToken = refreshedToken.token;
+        (mockGitHubAppToken as Record<string, unknown>).installationToken =
+          refreshedToken.token;
         mockTokenSource = 'github_app';
         await mockTokenManager.storeGitHubAppTokenInfo({
-          installationToken: (refreshed as any).token,
-          expiresAt: (refreshed as any).expiresAt,
-          installationId: (mockGitHubAppToken as any).installationId,
-          permissions: (refreshed as any).permissions || {},
-          appId: (mockGitHubAppToken as any).appId || '123456',
-        } as any);
+          installationToken: refreshedToken.token,
+          expiresAt: refreshedToken.expiresAt,
+          installationId: (mockGitHubAppToken as Record<string, unknown>)
+            .installationId as number,
+          permissions: refreshedToken.permissions || {},
+          appId:
+            ((mockGitHubAppToken as Record<string, unknown>).appId as string) ||
+            '123456',
+        });
         return cachedToken;
       }
 
@@ -417,7 +432,9 @@ describe('OAuth Token Management - Comprehensive Tests', () => {
           mockTokenSource = 'cli';
           return cachedToken;
         }
-      } catch {}
+      } catch {
+        // Ignore CLI token errors in tests
+      }
 
       mockTokenSource = 'unknown';
       return null;
@@ -555,7 +572,9 @@ describe('OAuth Token Management - Comprehensive Tests', () => {
         rotationListeners.forEach(listener => {
           try {
             listener(newToken, oldToken);
-          } catch {}
+          } catch {
+            // Ignore rotation callback errors in tests
+          }
         });
 
         // Log rotation
