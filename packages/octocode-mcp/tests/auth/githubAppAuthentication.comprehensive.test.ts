@@ -97,7 +97,7 @@ jMxBXrorhcSuDFljq2VvVqE=
     mockConfigManager.getConfig.mockReturnValue(mockConfig);
 
     // Set up default fetch mock to prevent unhandled rejections
-    mockFetch.mockImplementation(async (url: string) => {
+    mockFetch.mockImplementation(async (_url: string) => {
       // Default mock response for any unmocked calls
       return {
         ok: false,
@@ -123,10 +123,10 @@ jMxBXrorhcSuDFljq2VvVqE=
     // Clear caches to prevent any lingering promises
     githubAppManager.clearTokenCache();
     githubAppManager.clearInstallationCache();
-    
+
     // Wait a tick to allow any pending promises to resolve
     await new Promise(resolve => setTimeout(resolve, 0));
-    
+
     vi.restoreAllMocks();
   });
 

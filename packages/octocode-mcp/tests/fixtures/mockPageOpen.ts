@@ -1,11 +1,11 @@
 /**
  * Mock Page Open Utility
- * 
+ *
  * Provides mock functionality for opening pages/URLs in tests.
  * This prevents actual browser/system calls during testing.
  */
 
-import { vi } from 'vitest';
+import { vi, expect } from 'vitest';
 
 export interface MockPageOpenOptions {
   shouldSucceed?: boolean;
@@ -50,7 +50,7 @@ export class MockPageOpen {
     }
 
     // Simulate successful page open
-    console.log(`[MOCK] Page opened: ${url}`);
+    // Debug: Page opened: ${url}
   }
 
   /**
@@ -64,7 +64,9 @@ export class MockPageOpen {
    * Get the last page open call
    */
   getLastCall(): { url: string; timestamp: number } | null {
-    return this.openCalls.length > 0 ? this.openCalls[this.openCalls.length - 1] : null;
+    return this.openCalls.length > 0
+      ? this.openCalls[this.openCalls.length - 1]!
+      : null;
   }
 
   /**
@@ -91,11 +93,15 @@ export function setupMockPageOpen(): MockPageOpen {
 
   // Mock common page opening modules
   vi.mock('open', () => ({
-    default: vi.fn().mockImplementation((url: string) => mockPageOpen.open(url)),
+    default: vi
+      .fn()
+      .mockImplementation((url: string) => mockPageOpen.open(url)),
   }));
 
   vi.mock('opener', () => ({
-    default: vi.fn().mockImplementation((url: string) => mockPageOpen.open(url)),
+    default: vi
+      .fn()
+      .mockImplementation((url: string) => mockPageOpen.open(url)),
   }));
 
   // Mock child_process exec for system open commands
@@ -103,18 +109,27 @@ export function setupMockPageOpen(): MockPageOpen {
     const actual = await vi.importActual('child_process');
     return {
       ...actual,
-      exec: vi.fn().mockImplementation((command: string, callback?: Function) => {
-        if (command.includes('open ') || command.includes('start ') || command.includes('xdg-open ')) {
-          const url = command.split(' ').pop() || '';
-          mockPageOpen.open(url).then(() => {
-            if (callback) callback(null, 'success', '');
-          }).catch((error) => {
-            if (callback) callback(error, '', error.message);
-          });
-        } else if (callback) {
-          callback(null, 'success', '');
-        }
-      }),
+      exec: vi
+        .fn()
+        .mockImplementation((command: string, callback?: Function) => {
+          if (
+            command.includes('open ') ||
+            command.includes('start ') ||
+            command.includes('xdg-open ')
+          ) {
+            const url = command.split(' ').pop() || '';
+            mockPageOpen
+              .open(url)
+              .then(() => {
+                if (callback) callback(null, 'success', '');
+              })
+              .catch(error => {
+                if (callback) callback(error, '', error.message);
+              });
+          } else if (callback) {
+            callback(null, 'success', '');
+          }
+        }),
     };
   });
 

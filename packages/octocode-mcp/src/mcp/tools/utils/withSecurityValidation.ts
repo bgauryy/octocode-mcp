@@ -48,8 +48,20 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
           ? validation.warnings.join('; ')
           : 'Parameters failed security validation';
 
+        // Check for specific security violations
+        const hasSecurityViolation = validation?.warnings?.some(
+          w =>
+            w.includes('Potential secret detected') ||
+            w.includes('malicious') ||
+            w.includes('suspicious')
+        );
+
+        const errorMessage = hasSecurityViolation
+          ? `Invalid input detected. Potential security violation. Use proper OAuth flow parameters.`
+          : `Security validation failed: ${warningMessage}`;
+
         return createResult({
-          error: `Security validation failed: ${warningMessage}`,
+          error: errorMessage,
           isError: true,
         });
       }
@@ -157,8 +169,20 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
 
       // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
+        // Check for specific security violations
+        const hasSecurityViolation = validation?.warnings?.some(
+          w =>
+            w.includes('Potential secret detected') ||
+            w.includes('malicious') ||
+            w.includes('suspicious')
+        );
+
+        const errorMessage = hasSecurityViolation
+          ? `Invalid input detected. Potential security violation. Use proper OAuth flow parameters.`
+          : `Security validation failed: ${validation.warnings.join('; ')}`;
+
         return createResult({
-          error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          error: errorMessage,
           isError: true,
         });
       }

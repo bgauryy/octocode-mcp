@@ -376,7 +376,7 @@ describe('OAuth Tools', () => {
 
       expect(result.isError).toBe(true);
       const response = JSON.parse(result.content[0]!.text as string);
-      expect(response.meta.error).toContain('Failed to complete OAuth flow');
+      expect(response.meta.error).toContain('OAuth operation failed');
     });
   });
 
@@ -546,7 +546,7 @@ describe('OAuth Tools', () => {
 
       expect(result.isError).toBe(true);
       const response = JSON.parse(result.content[0]!.text as string);
-      expect(response.meta.error).toContain('Failed to complete OAuth flow');
+      expect(response.meta.error).toContain('OAuth operation failed');
     });
   });
 

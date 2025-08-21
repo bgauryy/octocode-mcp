@@ -19,6 +19,7 @@ import { createResult } from '../../responses.js';
 import { generateHints } from '../utils/hints_consolidated.js';
 import { OAuthManager } from '../../../auth/oauthManager.js';
 import { ConfigManager } from '../../../config/serverConfig.js';
+import { RateLimiter } from '../../../security/rateLimiter.js';
 import {
   storeOAuthTokenInfo,
   getTokenMetadata,
@@ -90,13 +91,13 @@ BENEFITS:
           if (!config.oauth?.enabled) {
             return createResult({
               isError: true,
-              error:
-                'OAuth not configured. Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET',
+              error: 'OAuth is not configured',
               hints: generateHints({
                 toolName: SIMPLE_OAUTH_TOOL_NAME,
                 hasResults: false,
                 totalItems: 0,
                 customHints: [
+                  'OAuth not configured',
                   'OAuth requires client credentials',
                   'Set GITHUB_OAUTH_CLIENT_ID environment variable',
                   'Set GITHUB_OAUTH_CLIENT_SECRET environment variable',
@@ -110,6 +111,34 @@ BENEFITS:
 
           switch (args.action) {
             case 'authenticate': {
+              // Rate limiting check for authentication attempts
+              const rateLimitResult = await RateLimiter.checkLimit(
+                'oauth-user',
+                'auth',
+                { increment: true }
+              );
+
+              // Check if rate limit exceeded
+              if (!rateLimitResult.allowed) {
+                const hints = generateHints({
+                  toolName: SIMPLE_OAUTH_TOOL_NAME,
+                  hasResults: false,
+                  totalItems: 0,
+                  errorMessage: 'Rate limit exceeded',
+                  customHints: [
+                    `Rate limit exceeded: ${rateLimitResult.limit} requests per hour`,
+                    `Try again after ${rateLimitResult.resetTime?.toISOString()}`,
+                    'Wait for rate limit to reset before retrying',
+                  ],
+                });
+
+                return createResult({
+                  isError: true,
+                  error: `Rate limit exceeded: ${rateLimitResult.limit} requests per hour`,
+                  hints,
+                });
+              }
+
               // Start device flow with default scopes if none provided
               const scopes = args.scopes || ['repo', 'read:user', 'read:org'];
               const deviceFlowResult =
@@ -173,60 +202,92 @@ Code expires in ${Math.floor(deviceFlowResult.expires_in / 60)} minutes.`,
             }
 
             case 'status': {
-              const metadata = await getTokenMetadata();
-              const authenticated = !!metadata && metadata.source === 'oauth';
+              try {
+                const { getTokenMetadata } = await import(
+                  '../utils/tokenManager.js'
+                );
+                const metadata = await getTokenMetadata();
 
-              if (!authenticated) {
+                const isAuthenticated =
+                  !!metadata &&
+                  (metadata.source === 'oauth' ||
+                    metadata.source === 'github_app' ||
+                    metadata.source === 'env' ||
+                    metadata.source === 'cli' ||
+                    metadata.source === 'authorization');
+
+                if (!isAuthenticated) {
+                  return createResult({
+                    data: {
+                      action: 'status',
+                      authenticated: false,
+                      message:
+                        'Not authenticated. Run with action="authenticate" to start.',
+                    },
+                    hints: generateHints({
+                      toolName: SIMPLE_OAUTH_TOOL_NAME,
+                      hasResults: true,
+                      totalItems: 1,
+                      customHints: [
+                        'Run with action="authenticate" to start OAuth flow',
+                      ],
+                    }),
+                  });
+                }
+
+                const expiresIn = metadata.expiresAt
+                  ? Math.max(
+                      0,
+                      Math.floor(
+                        (metadata.expiresAt.getTime() - Date.now()) / 1000
+                      )
+                    )
+                  : null;
+
                 return createResult({
                   data: {
                     action: 'status',
-                    authenticated: false,
-                    message:
-                      'Not authenticated. Run with action="authenticate" to start.',
+                    authenticated: true,
+                    source: metadata.source,
+                    scopes: metadata.scopes || [],
+                    expiresIn,
+                    expiresAt: metadata.expiresAt?.toISOString(),
+                    message: `Authenticated via ${metadata.source}`,
                   },
                   hints: generateHints({
                     toolName: SIMPLE_OAUTH_TOOL_NAME,
                     hasResults: true,
                     totalItems: 1,
                     customHints: [
-                      'Run with action="authenticate" to start OAuth flow',
+                      'Successfully authenticated',
+                      expiresIn
+                        ? `Token expires in ${Math.floor((expiresIn || 0) / 60)} minutes`
+                        : 'Token expiration unknown',
+                      'Run with action="revoke" to clear authentication',
                     ],
                   }),
                 });
-              }
-
-              const expiresIn = metadata.expiresAt
-                ? Math.max(
-                    0,
-                    Math.floor(
-                      (metadata.expiresAt.getTime() - Date.now()) / 1000
+              } catch (statusError) {
+                const { error: specificError, hints: customHints } =
+                  handleOAuthError(
+                    new Error(
+                      (statusError as Error)?.message ||
+                        'Token validation failed'
                     )
-                  )
-                : null;
+                  );
 
-              return createResult({
-                data: {
-                  action: 'status',
-                  authenticated: true,
-                  source: metadata.source,
-                  scopes: metadata.scopes || [],
-                  expiresIn,
-                  expiresAt: metadata.expiresAt?.toISOString(),
-                  message: `Authenticated via ${metadata.source}`,
-                },
-                hints: generateHints({
-                  toolName: SIMPLE_OAUTH_TOOL_NAME,
-                  hasResults: true,
-                  totalItems: 1,
-                  customHints: [
-                    'Successfully authenticated',
-                    expiresIn
-                      ? `Token expires in ${Math.floor(expiresIn / 60)} minutes`
-                      : 'Token expiration unknown',
-                    'Run with action="revoke" to clear authentication',
-                  ],
-                }),
-              });
+                return createResult({
+                  isError: true,
+                  error: specificError,
+                  hints: generateHints({
+                    toolName: SIMPLE_OAUTH_TOOL_NAME,
+                    hasResults: false,
+                    totalItems: 0,
+                    errorMessage: specificError,
+                    customHints,
+                  }),
+                });
+              }
             }
 
             case 'revoke': {
@@ -291,24 +352,24 @@ Code expires in ${Math.floor(deviceFlowResult.expires_in / 60)} minutes.`,
             const { AuditLogger } = await import(
               '../../../security/auditLogger.js'
             );
-            await AuditLogger.logEvent({
+            AuditLogger.logEvent({
               action: 'oauth_authentication',
               outcome: 'failure',
+              source: 'tool_execution',
               details: {
                 error: error instanceof Error ? error.message : String(error),
                 tool: SIMPLE_OAUTH_TOOL_NAME,
                 action: (args as SimpleOAuthParams).action,
               },
-              timestamp: new Date(),
             });
           } catch (auditError) {
             // Audit logging failed, but don't fail the main operation
-            console.warn('Failed to log audit event:', auditError);
+            process.stderr.write(`Failed to log audit event: ${auditError}\n`);
           }
 
           return createResult({
             isError: true,
-            error: `OAuth operation failed: ${error instanceof Error ? error.message : String(error)}`,
+            error: specificError,
             hints: generateHints({
               toolName: SIMPLE_OAUTH_TOOL_NAME,
               hasResults: false,

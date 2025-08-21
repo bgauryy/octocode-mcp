@@ -83,6 +83,13 @@ export const OAuthRevokeSchema = BaseQuerySchema.extend({
     .optional()
     .describe('Also revoke the refresh token (if available)')
     .default(true),
+  revokeRemote: z
+    .boolean()
+    .optional()
+    .describe(
+      'Revoke token remotely with GitHub API (if false, only clears local tokens)'
+    )
+    .default(true),
 });
 
 export type OAuthRevokeParams = z.infer<typeof OAuthRevokeSchema>;
