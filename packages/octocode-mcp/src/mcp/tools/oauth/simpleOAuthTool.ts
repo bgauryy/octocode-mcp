@@ -25,6 +25,7 @@ import {
   clearOAuthTokens,
 } from '../utils/tokenManager.js';
 import { TOOL_NAMES } from '../utils/toolConstants.js';
+import { handleOAuthError } from '../utils/oauthErrorHandler.js';
 
 // Simple OAuth Schema
 export const SimpleOAuthSchema = z.object({
@@ -282,6 +283,29 @@ Code expires in ${Math.floor(deviceFlowResult.expires_in / 60)} minutes.`,
               });
           }
         } catch (error) {
+          const { error: specificError, hints: customHints } =
+            handleOAuthError(error);
+
+          // Log audit event for OAuth authentication failure
+          try {
+            const { AuditLogger } = await import(
+              '../../../security/auditLogger.js'
+            );
+            await AuditLogger.logEvent({
+              action: 'oauth_authentication',
+              outcome: 'failure',
+              details: {
+                error: error instanceof Error ? error.message : String(error),
+                tool: SIMPLE_OAUTH_TOOL_NAME,
+                action: (args as SimpleOAuthParams).action,
+              },
+              timestamp: new Date(),
+            });
+          } catch (auditError) {
+            // Audit logging failed, but don't fail the main operation
+            console.warn('Failed to log audit event:', auditError);
+          }
+
           return createResult({
             isError: true,
             error: `OAuth operation failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -289,13 +313,8 @@ Code expires in ${Math.floor(deviceFlowResult.expires_in / 60)} minutes.`,
               toolName: SIMPLE_OAUTH_TOOL_NAME,
               hasResults: false,
               totalItems: 0,
-              errorMessage:
-                error instanceof Error ? error.message : String(error),
-              customHints: [
-                'Check OAuth configuration',
-                'Ensure GITHUB_OAUTH_CLIENT_ID is set',
-                'Ensure GITHUB_OAUTH_CLIENT_SECRET is set',
-              ],
+              errorMessage: specificError,
+              customHints,
             }),
           });
         }

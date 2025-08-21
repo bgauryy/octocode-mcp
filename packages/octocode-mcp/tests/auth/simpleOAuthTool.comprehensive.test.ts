@@ -29,6 +29,7 @@ import {
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
 import type { ServerConfig } from '../../src/config/serverConfig.js';
+import open from 'open';
 
 // Mock external dependencies
 vi.mock('../../src/auth/oauthFacade.js');
@@ -36,6 +37,7 @@ vi.mock('../../src/auth/oauthManager.js');
 vi.mock('../../src/config/serverConfig.js');
 vi.mock('../../src/services/organizationService.js');
 vi.mock('../../src/mcp/tools/utils/tokenManager.js');
+vi.mock('open');
 
 const mockOAuthFacade = vi.mocked(OAuthFacade);
 const mockOAuthManager = vi.mocked(OAuthManager);
@@ -45,6 +47,7 @@ const mockStoreOAuthTokenInfo = vi.mocked(storeOAuthTokenInfo);
 const mockGetTokenMetadata = vi.mocked(getTokenMetadata);
 const mockClearOAuthTokens = vi.mocked(clearOAuthTokens);
 const mockGetGitHubToken = vi.mocked(getGitHubToken);
+const mockOpen = vi.mocked(open);
 
 describe('Simple OAuth Tool - Comprehensive Tests', () => {
   let mockServer: ReturnType<typeof createMockMcpServer>;
@@ -140,6 +143,9 @@ describe('Simple OAuth Tool - Comprehensive Tests', () => {
     });
     mockClearOAuthTokens.mockResolvedValue(undefined);
     mockGetGitHubToken.mockResolvedValue('test-token');
+
+    // Mock open function to prevent browser opening
+    mockOpen.mockResolvedValue({} as import('child_process').ChildProcess);
 
     // Register the tool
     registerSimpleOAuthTool(mockServer.server);

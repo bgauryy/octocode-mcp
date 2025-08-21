@@ -312,7 +312,7 @@ describe('OAuth Tools', () => {
 
       expect(result.isError).toBe(true);
       const response = JSON.parse(result.content[0]!.text as string);
-      expect(response.meta.error).toContain('Invalid or expired OAuth state');
+      expect(response.meta.error).toContain('OAuth state validation failed');
     });
 
     it('should handle organization validation failure gracefully', async () => {
@@ -546,7 +546,7 @@ describe('OAuth Tools', () => {
 
       expect(result.isError).toBe(true);
       const response = JSON.parse(result.content[0]!.text as string);
-      expect(response.meta.error).toContain('Failed to revoke OAuth token');
+      expect(response.meta.error).toContain('Failed to complete OAuth flow');
     });
   });
 

@@ -16,19 +16,12 @@
  * - Security compliance features
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { registerAllOrganizationTools } from '../../src/mcp/tools/organization/organizationTools.js';
-import { OrganizationService } from '../../src/services/organizationService.js';
-import { OrganizationManager } from '../../src/security/organizationManager.js';
-import { PolicyManager } from '../../src/security/policyManager.js';
-import { RateLimiter } from '../../src/security/rateLimiter.js';
-import { AuditLogger } from '../../src/security/auditLogger.js';
-import { ConfigManager } from '../../src/config/serverConfig.js';
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from 'vitest';
+import type { ServerConfig } from '../../src/config/serverConfig.js';
 import {
   createMockMcpServer,
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
-import type { ServerConfig } from '../../src/config/serverConfig.js';
 
 // Mock external dependencies
 vi.mock('../../src/services/organizationService.js');
@@ -39,6 +32,15 @@ vi.mock('../../src/security/auditLogger.js');
 vi.mock('../../src/config/serverConfig.js');
 vi.mock('../../src/mcp/tools/utils/tokenManager.js');
 
+// Import the modules after setting up mocks
+import { registerAllOrganizationTools } from '../../src/mcp/tools/organization/organizationTools.js';
+import { OrganizationService } from '../../src/services/organizationService.js';
+import { OrganizationManager } from '../../src/security/organizationManager.js';
+import { PolicyManager } from '../../src/security/policyManager.js';
+import { RateLimiter } from '../../src/security/rateLimiter.js';
+import { AuditLogger } from '../../src/security/auditLogger.js';
+import { ConfigManager } from '../../src/config/serverConfig.js';
+
 const mockOrganizationService = vi.mocked(OrganizationService);
 const mockOrganizationManager = vi.mocked(OrganizationManager);
 const mockPolicyManager = vi.mocked(PolicyManager);
@@ -48,6 +50,7 @@ const mockConfigManager = vi.mocked(ConfigManager);
 
 describe('Enterprise OAuth - Comprehensive Tests', () => {
   let mockServer: ReturnType<typeof createMockMcpServer>;
+  let mockConfig: ServerConfig;
   let mockOrgServiceInstance: {
     checkMembership: ReturnType<typeof vi.fn>;
     getUserOrganizations: ReturnType<typeof vi.fn>;
@@ -56,14 +59,13 @@ describe('Enterprise OAuth - Comprehensive Tests', () => {
     getUserTeams: ReturnType<typeof vi.fn>;
     getAuthenticatedUser: ReturnType<typeof vi.fn>;
   };
-  let mockConfig: ServerConfig;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
 
     mockServer = createMockMcpServer();
 
-    // Mock Organization Service instance
+    // Create mock instance for each test
     mockOrgServiceInstance = {
       checkMembership: vi.fn(),
       getUserOrganizations: vi.fn(),
@@ -72,6 +74,9 @@ describe('Enterprise OAuth - Comprehensive Tests', () => {
       getUserTeams: vi.fn(),
       getAuthenticatedUser: vi.fn(),
     };
+
+    // Setup OrganizationService to return our mock instance
+    mockOrganizationService.mockImplementation(() => mockOrgServiceInstance as any);
 
     // Mock Enterprise configuration
     mockConfig = {
@@ -102,9 +107,6 @@ describe('Enterprise OAuth - Comprehensive Tests', () => {
     };
 
     // Setup mocks
-    mockOrganizationService.mockImplementation(
-      () => mockOrgServiceInstance as unknown as OrganizationService
-    );
     mockConfigManager.getConfig.mockReturnValue(mockConfig);
 
     // Mock static methods
@@ -118,7 +120,12 @@ describe('Enterprise OAuth - Comprehensive Tests', () => {
     mockPolicyManager.isMfaRequired = vi.fn();
 
     mockRateLimiter.initialize = vi.fn();
-    mockRateLimiter.checkLimit = vi.fn();
+    mockRateLimiter.checkLimit = vi.fn().mockResolvedValue({
+      allowed: true,
+      remaining: 4999,
+      limit: 5000,
+      resetTime: new Date(Date.now() + 3600000),
+    });
     mockRateLimiter.recordAction = vi.fn();
 
     mockAuditLogger.initialize = vi.fn();

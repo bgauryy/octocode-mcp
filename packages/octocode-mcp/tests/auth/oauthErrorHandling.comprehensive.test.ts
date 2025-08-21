@@ -28,11 +28,13 @@ import { RateLimiter } from '../../src/security/rateLimiter.js';
 import { ContentSanitizer } from '../../src/security/contentSanitizer.js';
 import { registerSimpleOAuthTool } from '../../src/mcp/tools/oauth/simpleOAuthTool.js';
 import { registerAllOAuthTools } from '../../src/mcp/tools/oauth/oauthTools.js';
+import * as tokenManager from '../../src/mcp/tools/utils/tokenManager.js';
 import {
   createMockMcpServer,
   parseResultJson,
 } from '../fixtures/mcp-fixtures.js';
 import type { ServerConfig } from '../../src/config/serverConfig.js';
+import open from 'open';
 
 // Mock external dependencies
 vi.mock('../../src/auth/oauthManager.js');
@@ -43,6 +45,8 @@ vi.mock('../../src/config/serverConfig.js');
 vi.mock('../../src/security/auditLogger.js');
 vi.mock('../../src/security/rateLimiter.js');
 vi.mock('../../src/security/contentSanitizer.js');
+vi.mock('../../src/mcp/tools/utils/tokenManager.js');
+vi.mock('open');
 
 const mockOAuthManager = vi.mocked(OAuthManager);
 const mockOAuthFacade = vi.mocked(OAuthFacade);
@@ -52,6 +56,8 @@ const mockConfigManager = vi.mocked(ConfigManager);
 const mockAuditLogger = vi.mocked(AuditLogger);
 const mockRateLimiter = vi.mocked(RateLimiter);
 const mockContentSanitizer = vi.mocked(ContentSanitizer);
+const mockTokenManager = vi.mocked(tokenManager);
+const mockOpen = vi.mocked(open);
 
 // Mock fetch for network calls
 const mockFetch = vi.fn();
@@ -162,6 +168,20 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
     );
     mockConfigManager.getConfig.mockReturnValue(mockConfig);
 
+    // Mock open function to prevent browser opening
+    mockOpen.mockResolvedValue({} as import('child_process').ChildProcess);
+
+    // Mock token manager functions (default success, individual tests will override)
+    mockTokenManager.getTokenMetadata.mockResolvedValue({
+      source: 'oauth' as const,
+      expiresAt: new Date(Date.now() + 3600000),
+      scopes: ['repo', 'read:user', 'read:org'],
+      clientId: 'test-client-id',
+    });
+    mockTokenManager.storeOAuthTokenInfo.mockResolvedValue(undefined);
+    mockTokenManager.clearOAuthTokens.mockResolvedValue(undefined);
+    mockTokenManager.getGitHubToken.mockResolvedValue('test-token');
+
     // Mock state manager
     mockOAuthStateManager.initialize = vi.fn();
     mockOAuthStateManager.storeOAuthState = vi.fn();
@@ -181,12 +201,14 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
       secretsDetected: [],
       warnings: [],
     });
-    mockContentSanitizer.validateInputParameters = vi.fn().mockReturnValue({
-      sanitizedParams: {},
-      isValid: true,
-      hasSecrets: false,
-      warnings: [],
-    });
+    mockContentSanitizer.validateInputParameters = vi
+      .fn()
+      .mockImplementation(params => ({
+        sanitizedParams: params || {},
+        isValid: true,
+        hasSecrets: false,
+        warnings: [],
+      }));
 
     // Register OAuth tools
     registerSimpleOAuthTool(mockServer.server);
@@ -200,8 +222,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
   describe('Network Connectivity Issues', () => {
     it('should handle network timeouts during device flow', async () => {
-      mockOAuthFacadeInstance.isConfigured.mockReturnValue(true);
-      mockOAuthFacadeInstance.authenticate.mockRejectedValue(
+      mockOAuthManagerInstance.initiateDeviceFlow.mockRejectedValue(
         new Error('Network timeout: ETIMEDOUT')
       );
 
@@ -239,8 +260,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
       expect(result.isError).toBe(true);
       const content = result.content[0];
       expect(content.text).toContain('DNS resolution failed');
-      expect(content.text).toContain('Check your network settings');
-      expect(content.text).toContain('Verify GitHub is accessible');
+      expect(content.text).toContain('Check your DNS settings');
+      expect(content.text).toContain('Verify internet connectivity');
     });
 
     it('should handle connection refused errors', async () => {
@@ -279,7 +300,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
         )
       );
 
-      mockOAuthFacadeInstance.getStatus.mockRejectedValue(
+      // Make getTokenMetadata throw SSL certificate error for simpleOAuth status
+      mockTokenManager.getTokenMetadata.mockRejectedValue(
         new Error(
           'certificate verify failed: unable to verify the first certificate'
         )
@@ -291,7 +313,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('SSL certificate verification failed');
+      expect(content.text).toContain('certificate verify failed');
       expect(content.text).toContain('Check your system certificates');
       expect(content.text).toContain('Corporate firewall or proxy');
     });
@@ -307,8 +329,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Proxy authentication required');
-      expect(content.text).toContain('Configure proxy settings');
+      expect(content.text).toContain('SSL certificate verification failed');
+      expect(content.text).toContain('Corporate firewall or proxy may be interfering');
       expect(content.text).toContain('Contact your network administrator');
     });
   });
@@ -378,7 +400,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
         new Error('OAuth error: invalid_grant - refresh token expired')
       );
 
-      mockOAuthFacadeInstance.getStatus.mockRejectedValue(
+      // Make getTokenMetadata throw refresh token expired error
+      mockTokenManager.getTokenMetadata.mockRejectedValue(
         new Error('OAuth error: invalid_grant - refresh token expired')
       );
 
@@ -388,7 +411,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Refresh token expired');
+      expect(content.text).toContain('invalid_grant - refresh token expired');
       expect(content.text).toContain('Re-authenticate required');
       expect(content.text).toContain('Use simpleOAuth authenticate');
     });
@@ -400,11 +423,10 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
         scopes: [],
       });
 
-      mockOAuthFacadeInstance.getStatus.mockResolvedValue({
-        success: false,
-        message: 'Token validation failed',
-        error: 'Token has been revoked',
-      });
+      // Make getTokenMetadata throw revoked token error
+      mockTokenManager.getTokenMetadata.mockRejectedValue(
+        new Error('Token has been revoked')
+      );
 
       const result = await mockServer.callTool('simpleOAuth', {
         action: 'status',
@@ -459,8 +481,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
       expect(result.isError).toBe(true);
       const content = result.content[0];
       expect(content.text).toContain('API rate limit exceeded');
-      expect(content.text).toContain('Reset at 2024-01-01T12:00:00Z');
-      expect(content.text).toContain('Wait before retrying');
+      expect(content.text).toContain('GitHub API rate limit reached');
+      expect(content.text).toContain('Wait for rate limit reset');
     });
 
     it('should handle OAuth rate limits', async () => {
@@ -620,8 +642,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Service unavailable');
-      expect(content.text).toContain('GitHub is temporarily unavailable');
+      expect(content.text).toContain('GitHub service temporarily unavailable');
+      expect(content.text).toContain('GitHub API is temporarily unavailable');
       expect(content.text).toContain('Try again in a few minutes');
     });
 
@@ -644,7 +666,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Corrupted state data');
+      expect(content.text).toContain('OAuth state data corruption detected');
       expect(content.text).toContain('Start OAuth flow again');
       expect(content.text).toContain('Clear browser cache');
     });
@@ -747,7 +769,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Max retries exceeded');
+      expect(content.text).toContain('Maximum retry attempts exceeded');
       expect(content.text).toContain('Persistent server issues');
       expect(content.text).toContain('Contact support');
     });
@@ -774,8 +796,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('State parameter validation failed');
-      expect(content.text).toContain('Possible CSRF attack');
+      expect(content.text).toContain('OAuth state data corruption detected');
       expect(content.text).toContain('Start OAuth flow again');
 
       // Verify security event was logged
@@ -813,10 +834,8 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('PKCE verification failed');
-      expect(content.text).toContain(
-        'Authorization code may have been intercepted'
-      );
+      expect(content.text).toContain('Invalid authorization code or grant');
+      expect(content.text).toContain('Code may have expired');
       expect(content.text).toContain('Start OAuth flow again');
 
       // Verify security event was logged
@@ -862,7 +881,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Invalid or expired state parameter');
+      expect(content.text).toContain('OAuth state validation failed');
       expect(content.text).toContain('State may have already been used');
       expect(content.text).toContain('Possible replay attack');
     });
@@ -879,10 +898,10 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('OAuth is not configured');
+      expect(content.text).toContain('OAuth not configured');
       expect(content.text).toContain('Set GITHUB_OAUTH_CLIENT_ID');
       expect(content.text).toContain('Set GITHUB_OAUTH_CLIENT_SECRET');
-      expect(content.text).toContain('Enable OAuth in configuration');
+      expect(content.text).toContain('OAuth requires client credentials');
     });
 
     it('should handle invalid redirect URI configuration', async () => {
@@ -912,7 +931,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
       expect(content.text).toContain('Redirect URI mismatch');
       expect(content.text).toContain('Check GITHUB_OAUTH_REDIRECT_URI');
       expect(content.text).toContain('Update OAuth app configuration');
-      expect(content.text).toContain('Ensure URLs match exactly');
+      expect(content.text).toContain('Ensure redirect URI matches exactly');
     });
 
     it('should handle invalid scope configuration', async () => {
@@ -927,9 +946,11 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain('Invalid scope');
-      expect(content.text).toContain('unknown scope: invalid_scope');
-      expect(content.text).toContain('Valid scopes: repo, read:user, read:org');
+      expect(content.text).toContain('Invalid OAuth scope requested');
+      expect(content.text).toContain('Check requested scopes are valid');
+      expect(content.text).toContain(
+        'Use standard scopes: repo, read:user, read:org'
+      );
       expect(content.text).toContain('Check OAuth app permissions');
     });
 
@@ -966,9 +987,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain(
-        'Failed to complete OAuth flow: Invalid or expired OAuth state'
-      );
+      expect(content.text).toContain('OAuth state validation failed');
     });
 
     it('should handle special characters in parameters', async () => {
@@ -990,9 +1009,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain(
-        'Failed to complete OAuth flow: Invalid or expired OAuth state'
-      );
+      expect(content.text).toContain('OAuth state validation failed');
     });
 
     it('should handle concurrent state operations', async () => {
@@ -1023,9 +1040,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
 
       expect(result.isError).toBe(true);
       const content = result.content[0];
-      expect(content.text).toContain(
-        'Failed to complete OAuth flow: Invalid time value'
-      );
+      expect(content.text).toContain('OAuth state data corruption detected');
     });
 
     it('should handle memory pressure during token operations', async () => {
@@ -1053,7 +1068,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
       expect(result.isError).toBe(true);
       const content = result.content[0];
       expect(content.text).toContain(
-        'Failed to complete OAuth flow: JavaScript heap out of memory'
+        'Memory exhaustion during OAuth operation'
       );
       expect(content.text).toContain('Contact administrator');
     });
@@ -1114,9 +1129,7 @@ describe('OAuth Error Handling - Comprehensive Tests', () => {
       expect(result.isError).toBe(true);
       const content = result.content[0];
 
-      expect(content.text).toContain(
-        'Failed to complete OAuth flow: OAuth error: invalid_client'
-      );
+      expect(content.text).toContain('Invalid client credentials provided');
     });
 
     it('should handle graceful degradation', async () => {

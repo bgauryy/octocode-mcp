@@ -33,6 +33,7 @@ import {
   OAuthRevokeParams,
 } from '../scheme/oauth.js';
 import { TOOL_NAMES } from '../utils/toolConstants.js';
+import { handleOAuthError } from '../utils/oauthErrorHandler.js';
 
 // Extend TOOL_NAMES to include OAuth tools
 export const OAUTH_TOOL_NAMES = {
@@ -454,23 +455,20 @@ BEST PRACTICES:
             hints,
           });
         } catch (error) {
+          const { error: specificError, hints: customHints } =
+            handleOAuthError(error);
+
           const hints = generateHints({
             toolName: OAUTH_TOOL_NAMES.OAUTH_INITIATE,
             hasResults: false,
             totalItems: 0,
-            errorMessage:
-              error instanceof Error ? error.message : String(error),
-            customHints: [
-              'Ensure GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET are set',
-              'Check GITHUB_OAUTH_REDIRECT_URI configuration',
-              'Verify OAuth application is properly configured in GitHub',
-              'For GitHub Enterprise, ensure GITHUB_HOST is set correctly',
-            ],
+            errorMessage: specificError,
+            customHints,
           });
 
           return createResult({
             isError: true,
-            error: `Failed to initiate OAuth flow: ${error instanceof Error ? error.message : String(error)}`,
+            error: specificError,
             hints,
           });
         }
@@ -571,23 +569,20 @@ SECURITY:
             hints,
           });
         } catch (error) {
+          const { error: specificError, hints: customHints } =
+            handleOAuthError(error);
+
           const hints = generateHints({
             toolName: OAUTH_TOOL_NAMES.OAUTH_CALLBACK,
             hasResults: false,
             totalItems: 0,
-            errorMessage:
-              error instanceof Error ? error.message : String(error),
-            customHints: [
-              'Ensure code and state parameters are correct from GitHub callback',
-              'State may have expired (15 minute limit) - start new OAuth flow',
-              'Check that OAuth application configuration matches',
-              'Verify network connectivity to GitHub',
-            ],
+            errorMessage: specificError,
+            customHints,
           });
 
           return createResult({
             isError: true,
-            error: `Failed to complete OAuth flow: ${error instanceof Error ? error.message : String(error)}`,
+            error: specificError,
             hints,
           });
         }
@@ -749,23 +744,20 @@ TROUBLESHOOTING:
             hints,
           });
         } catch (error) {
+          const { error: specificError, hints: customHints } =
+            handleOAuthError(error);
+
           const hints = generateHints({
             toolName: OAUTH_TOOL_NAMES.OAUTH_STATUS,
             hasResults: false,
             totalItems: 0,
-            errorMessage:
-              error instanceof Error ? error.message : String(error),
-            customHints: [
-              'Error checking authentication status',
-              'Token may be corrupted or invalid',
-              'Try starting a new OAuth flow',
-              'Check credential store permissions',
-            ],
+            errorMessage: specificError,
+            customHints,
           });
 
           return createResult({
             isError: true,
-            error: `Failed to check OAuth status: ${error instanceof Error ? error.message : String(error)}`,
+            error: specificError,
             hints,
           });
         }
@@ -895,23 +887,20 @@ USAGE:
             hints,
           });
         } catch (error) {
+          const { error: specificError, hints: customHints } =
+            handleOAuthError(error);
+
           const hints = generateHints({
             toolName: OAUTH_TOOL_NAMES.OAUTH_REVOKE,
             hasResults: false,
             totalItems: 0,
-            errorMessage:
-              error instanceof Error ? error.message : String(error),
-            customHints: [
-              'Error during token revocation',
-              'Tokens may have been partially cleared',
-              'Check network connectivity to GitHub',
-              'Use oauthStatus to verify current state',
-            ],
+            errorMessage: specificError,
+            customHints,
           });
 
           return createResult({
             isError: true,
-            error: `Failed to revoke OAuth token: ${error instanceof Error ? error.message : String(error)}`,
+            error: specificError,
             hints,
           });
         }
