@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
+import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './utils/cache.js';
 import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
@@ -19,6 +20,7 @@ import {
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
+import { isBetaEnabled } from './utils/betaFeatures.js';
 import { version, name } from '../package.json';
 
 const inclusiveTools =
@@ -41,6 +43,7 @@ async function startServer() {
       capabilities: {
         prompts: {},
         tools: {},
+        ...(isBetaEnabled() && { sampling: {} }),
       },
     });
 
@@ -70,6 +73,11 @@ async function startServer() {
 
     // Register prompts
     registerPrompts(server);
+
+    // Register sampling capabilities only if BETA features are enabled
+    if (isBetaEnabled()) {
+      registerSampling(server);
+    }
 
     const transport = new StdioServerTransport();
 

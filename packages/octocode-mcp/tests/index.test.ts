@@ -7,6 +7,7 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/cache.js');
 vi.mock('../src/mcp/prompts.js'); // Add missing mock for prompts
+vi.mock('../src/mcp/sampling.js');
 vi.mock('../src/mcp/tools/github_search_code.js');
 vi.mock('../src/mcp/tools/github_fetch_content.js');
 vi.mock('../src/mcp/tools/github_search_repos.js');
@@ -26,6 +27,7 @@ vi.mock('../src/auth/authenticationManager.js'); // Add missing mock for authent
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
 import { registerPrompts } from '../src/mcp/prompts.js';
+import { registerSampling } from '../src/mcp/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
@@ -1010,6 +1012,117 @@ describe('Index Module', () => {
       expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
       expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
       expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Beta Features Configuration', () => {
+    let originalBeta: string | undefined;
+    let mockRegisterSampling: ReturnType<
+      typeof vi.mocked<typeof registerSampling>
+    >;
+
+    beforeEach(() => {
+      originalBeta = process.env.BETA;
+      mockRegisterSampling = vi.mocked(registerSampling);
+      mockRegisterSampling.mockClear();
+    });
+
+    afterEach(() => {
+      if (originalBeta !== undefined) {
+        process.env.BETA = originalBeta;
+      } else {
+        delete process.env.BETA;
+      }
+    });
+
+    it('should register sampling when BETA=1', async () => {
+      process.env.BETA = '1';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify sampling was registered
+      expect(mockRegisterSampling).toHaveBeenCalledWith(mockMcpServer);
+    });
+
+    it('should register sampling when BETA=true', async () => {
+      process.env.BETA = 'true';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify sampling was registered
+      expect(mockRegisterSampling).toHaveBeenCalledWith(mockMcpServer);
+    });
+
+    it('should NOT register sampling when BETA=0', async () => {
+      process.env.BETA = '0';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify sampling was NOT registered
+      expect(mockRegisterSampling).not.toHaveBeenCalled();
+    });
+
+    it('should NOT register sampling when BETA is not set', async () => {
+      delete process.env.BETA;
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify sampling was NOT registered
+      expect(mockRegisterSampling).not.toHaveBeenCalled();
+    });
+
+    it('should NOT register sampling when BETA=false', async () => {
+      process.env.BETA = 'false';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify sampling was NOT registered
+      expect(mockRegisterSampling).not.toHaveBeenCalled();
+    });
+
+    it('should configure server capabilities correctly when BETA=1', async () => {
+      process.env.BETA = '1';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify server was created with sampling capability
+      expect(mockMcpServerConstructor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: expect.stringMatching(/octocode-mcp_/),
+        }),
+        expect.objectContaining({
+          capabilities: expect.objectContaining({
+            sampling: {},
+          }),
+        })
+      );
+    });
+
+    it('should configure server capabilities correctly when BETA=0', async () => {
+      process.env.BETA = '0';
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Verify server was created and find the right call
+      expect(mockMcpServerConstructor).toHaveBeenCalled();
+
+      // Get the last call (most recent) - there may be multiple calls from different tests
+      const calls = mockMcpServerConstructor.mock.calls;
+      const lastCall = calls[calls.length - 1];
+      expect(lastCall).toBeDefined();
+      const capabilities = lastCall![1]!.capabilities;
+
+      // Should have prompts and tools but NOT sampling when BETA=0
+      expect(capabilities).toHaveProperty('prompts');
+      expect(capabilities).toHaveProperty('tools');
+      expect(capabilities).not.toHaveProperty('sampling');
     });
   });
 });
