@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { searchPackagesAPI } from '../../src/utils/package';
-import { executeNpmCommand } from '../../src/utils/exec';
 import { isNPMEnabled } from '../../src/utils/npmAPI';
+
+// Use vi.hoisted to ensure mocks are available during module initialization
+const mockExecuteNpmCommand = vi.hoisted(() => vi.fn());
+const mockAxios = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
 
 // Mock dependencies
 vi.mock('../../src/utils/exec', () => ({
-  executeNpmCommand: vi.fn(),
+  executeNpmCommand: mockExecuteNpmCommand,
 }));
 
 vi.mock('../../src/utils/npmAPI', () => ({
@@ -16,7 +21,10 @@ vi.mock('../../src/mcp/tools/utils/APIStatus', () => ({
   getNPMUserDetails: vi.fn(),
 }));
 
-const mockExecuteNpmCommand = vi.mocked(executeNpmCommand);
+vi.mock('axios', () => ({
+  default: mockAxios,
+}));
+
 const mockIsNPMEnabled = vi.mocked(isNPMEnabled);
 
 describe('Package Search - NPM Enabled vs Disabled Comparison', () => {
@@ -51,18 +59,15 @@ describe('Package Search - NPM Enabled vs Disabled Comparison', () => {
     });
 
     // Mock Python package search
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          info: {
-            name: 'requests',
-            version: '2.28.0',
-            summary: 'HTTP library',
-          },
-        }),
+    mockAxios.get.mockResolvedValue({
+      data: {
+        info: {
+          name: 'requests',
+          version: '2.28.0',
+          summary: 'HTTP library',
+        },
+      },
     });
-    global.fetch = mockFetch;
 
     const result = await searchPackagesAPI(testParams);
 
@@ -85,18 +90,15 @@ describe('Package Search - NPM Enabled vs Disabled Comparison', () => {
     mockIsNPMEnabled.mockResolvedValue(false);
 
     // Mock Python package search
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          info: {
-            name: 'requests',
-            version: '2.28.0',
-            summary: 'HTTP library',
-          },
-        }),
+    mockAxios.get.mockResolvedValue({
+      data: {
+        info: {
+          name: 'requests',
+          version: '2.28.0',
+          summary: 'HTTP library',
+        },
+      },
     });
-    global.fetch = mockFetch;
 
     const result = await searchPackagesAPI(testParams);
 
