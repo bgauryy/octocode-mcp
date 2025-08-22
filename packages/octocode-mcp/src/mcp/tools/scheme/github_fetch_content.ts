@@ -72,6 +72,17 @@ export interface FileContentQueryResult {
   originalQuery?: FileContentQuery; // Only included on error or not found
   result: GitHubFileContentResponse | { error: string; hints?: string[] };
   error?: string;
+  sampling?: {
+    codeExplanation: string;
+    filePath: string;
+    repo: string;
+    usage?: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
+    stopReason?: string;
+  }; // Beta feature: LLM explanation of what the code is doing
 }
 export interface GitHubFileContentResponse {
   filePath: string;

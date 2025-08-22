@@ -88,6 +88,14 @@ export function jsonToLLMStringV2(
   options?: JsonToLLMStringV2Options
 ): string {
   try {
+    // Check for unsupported types before attempting JSON normalization
+    if (data === undefined) {
+      return '#content converted from json\n[Error: Cannot serialize undefined to JSON]';
+    }
+    if (typeof data === 'bigint') {
+      return '#content converted from json\n[Error: Cannot serialize bigint to JSON]';
+    }
+
     // Normalize data to only enumerable, JSON-serializable properties
     // This removes functions, symbols, non-enumerable props, and normalizes special objects
     let normalizedData: unknown;
@@ -99,7 +107,7 @@ export function jsonToLLMStringV2(
         if (error.message.includes('circular')) {
           return '#content converted from json\n[Error: Circular structure detected - cannot serialize to JSON]';
         }
-        // Handle unsupported types like BigInt, undefined
+        // Handle any remaining unsupported types
         if (
           error.message.includes('BigInt') ||
           error.message.includes('undefined')

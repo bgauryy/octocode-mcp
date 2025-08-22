@@ -144,6 +144,31 @@ For organizations with advanced security, audit logging, and OAuth 2.0 authentic
 - **[Enterprise Setup Guide](./docs/AUTHENTICATION.md#-enterprise-features)** - Organization policies, audit logging, and security configuration
 - **[OAuth 2.0 Integration](./docs/AUTHENTICATION.md#-oauth-20-integration)** - How OAuth authentication works for organizations
 
+### 🧪 Beta Features (Experimental)
+
+Enable experimental features by setting `BETA=1` in your environment:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
+        "BETA": "1"
+      }
+    }
+  }
+}
+```
+
+**Current Beta Features:**
+- **🤖 Code Explanation Sampling** - When fetching file contents, automatically generates prompts asking the LLM to explain what the code is doing
+- **📊 Enhanced Context Injection** - Provides additional context through MCP sampling protocol to improve response quality
+
+**Note:** Beta features are experimental and may change. Enable only for testing and development.
+
 ### 📚 Complete Authentication Guides
 - **[30-Second Setup](./docs/AUTHENTICATION_QUICK_REFERENCE.md)** - Quick reference for all authentication methods
 - **[Complete Authentication Guide](./docs/AUTHENTICATION.md)** - Detailed setup for OAuth, GitHub Apps, and enterprise features

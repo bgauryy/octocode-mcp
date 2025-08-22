@@ -3787,6 +3787,7 @@ __metadata:
     zod: "npm:^3.25.26"
   bin:
     octocode-mcp: dist/index.js
+    octocode-mcp-beta: dist/index.js
   languageName: unknown
   linkType: soft
 
@@ -3817,7 +3818,18 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"octocode-utils@npm:^1.0.0, octocode-utils@workspace:packages/octocode-utils":
+"octocode-utils@npm:^1.0.0":
+  version: 1.0.1
+  resolution: "octocode-utils@npm:1.0.1"
+  dependencies:
+    clean-css: "npm:^5.3.0"
+    html-minifier-terser: "npm:^7.2.0"
+    terser: "npm:^5.19.0"
+  checksum: 10c0/add2e70bd48b855ddfcfe87de7589113ce85ffc900704e0bb1586ba2c1f1b10b84f62bbadac29cecfb68e5c666f1824da3b51a189fd7b204837ca0d71bcf39b6
+  languageName: node
+  linkType: hard
+
+"octocode-utils@workspace:packages/octocode-utils":
   version: 0.0.0-use.local
   resolution: "octocode-utils@workspace:packages/octocode-utils"
   dependencies:

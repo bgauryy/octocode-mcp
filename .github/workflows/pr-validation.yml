@@ -1,0 +1,106 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Pull Request
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch more history for better analysis
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # Enable Corepack for Yarn support
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint code
+        run: |
+          echo "🔍 Running lint checks..."
+          yarn lint
+
+      - name: Build packages
+        run: |
+          echo "🏗️ Building all packages..."
+          yarn build
+
+      - name: Run tests
+        run: |
+          echo "🧪 Running test suite..."
+          yarn test
+
+      - name: Validate package integrity
+        run: |
+          echo "📦 Validating package configurations..."
+          # Check that all packages have valid package.json files
+          for package_dir in packages/*/; do
+            if [ -f "${package_dir}package.json" ]; then
+              echo "✅ Validating ${package_dir}package.json"
+              node -e "
+                try { 
+                  const pkg = require('./${package_dir}package.json'); 
+                  console.log('Package:', pkg.name, 'Version:', pkg.version);
+                } catch(e) { 
+                  console.error('Invalid package.json in ${package_dir}:', e.message); 
+                  process.exit(1);
+                }
+              "
+            fi
+          done
+  
+  # Summary job that other jobs can depend on
+  pr-validation-complete:
+    name: PR Validation Complete
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: always()
+    steps:
+      - name: Check validation results
+        run: |
+          if [ "${{ needs.validate.result }}" == "success" ]; then
+            echo "✅ All validation checks passed!"
+            echo "🚀 This PR is ready for review and merge."
+          else
+            echo "❌ Validation checks failed!"
+            echo "🛑 This PR cannot be merged until all checks pass."
+            exit 1
+          fi
+
+      - name: Post validation summary
+        if: always()
+        run: |
+          echo "## 📋 PR Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ needs.validate.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Checks Performed:" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 **Lint:** Code style and quality checks" >> $GITHUB_STEP_SUMMARY
+          echo "- 🏗️ **Build:** Package compilation and bundling" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧪 **Tests:** Unit and integration test suite" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 **Package Integrity:** Validate package.json files" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.validate.result }}" == "success" ]; then
+            echo "🎉 **All checks passed!** This PR is ready for review." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Some checks failed.** Please fix the issues before merging." >> $GITHUB_STEP_SUMMARY
+          fi
