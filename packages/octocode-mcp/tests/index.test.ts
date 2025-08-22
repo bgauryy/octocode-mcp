@@ -6,6 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/cache.js');
+vi.mock('../src/mcp/prompts.js'); // Add missing mock for prompts
 vi.mock('../src/mcp/tools/github_search_code.js');
 vi.mock('../src/mcp/tools/github_fetch_content.js');
 vi.mock('../src/mcp/tools/github_search_repos.js');
@@ -20,9 +21,11 @@ vi.mock('../src/config/serverConfig.js');
 vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/tools/utils/tokenManager.js');
+vi.mock('../src/auth/authenticationManager.js'); // Add missing mock for authentication
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
+import { registerPrompts } from '../src/mcp/prompts.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
@@ -49,6 +52,7 @@ const mockTransport = {
 };
 
 const mockClearAllCache = vi.mocked(clearAllCache);
+const mockRegisterPrompts = vi.mocked(registerPrompts);
 const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
@@ -150,6 +154,7 @@ describe('Index Module', () => {
     mockMcpServer.close.mockResolvedValue(undefined);
 
     // Mock all tool registration functions to succeed by default
+    mockRegisterPrompts.mockImplementation(() => {});
     mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
     mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {});
     mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
@@ -220,11 +225,15 @@ describe('Index Module', () => {
 
       expect(mockMcpServerConstructor).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'octocode',
+          name: expect.stringContaining('octocode-mcp'),
+          title: 'Octocode MCP',
           version: expect.any(String),
-          description: expect.stringContaining(
-            'Expert GitHub code research assistant'
-          ),
+        }),
+        expect.objectContaining({
+          capabilities: expect.objectContaining({
+            prompts: {},
+            tools: {},
+          }),
         })
       );
     });

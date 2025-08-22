@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
+import { registerPrompts } from './mcp/prompts.js';
 import { clearAllCache } from './utils/cache.js';
 import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
@@ -19,25 +19,17 @@ import {
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { version } from '../package.json';
+import { version, name } from '../package.json';
 
-// a list of tools to run, separated by commas, e.g. "githubSearchCode,githubGetFileContent"
-// GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-// GITHUB_SEARCH_CODE: 'githubSearchCode',
-// GITHUB_SEARCH_COMMITS: 'githubSearchCommits',
-// GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-// GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-// GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-// PACKAGE_SEARCH: 'packageSearch',
 const inclusiveTools =
   process.env.TOOLS_TO_RUN?.split(',')
     .map(tool => tool.trim())
     .filter(tool => tool.length > 0) || [];
 
 const SERVER_CONFIG: Implementation = {
-  name: 'octocode',
+  name: `${name}_${version}`,
+  title: 'Octocode MCP',
   version: version,
-  description: PROMPT_SYSTEM_PROMPT,
 };
 
 async function startServer() {
@@ -45,7 +37,12 @@ async function startServer() {
   let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
-    const server = new McpServer(SERVER_CONFIG);
+    const server = new McpServer(SERVER_CONFIG, {
+      capabilities: {
+        prompts: {},
+        tools: {},
+      },
+    });
 
     // Initialize enterprise components if configured
     try {
@@ -70,6 +67,9 @@ async function startServer() {
     await initializeAuthentication();
 
     await registerAllTools(server);
+
+    // Register prompts
+    registerPrompts(server);
 
     const transport = new StdioServerTransport();
 
