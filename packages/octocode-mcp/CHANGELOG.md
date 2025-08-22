@@ -5,6 +5,35 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.2] - 2025-08-22 - Beta Features & Research Intelligence
+
+### Added
+- **Sampling Capabilities**: Advanced sampling functionality for enhanced code analysis (Beta)
+  - MCP sampling protocol support with automatic code explanation
+  - Beta-gated feature controlled by `BETA` environment variable
+  - Only available when `BETA=1` or `BETA=true` is set
+  - Seamless integration with github_fetch_content tool for intelligent code analysis
+
+- **Research Prompts**: Enhanced research intelligence system
+  - Advanced prompt templates for improved AI-assisted research
+  - Context-aware guidance for optimal research workflows
+  - Integration with existing tool ecosystem for better user experience
+
+### Enhanced
+- **Beta Feature Management**: Comprehensive beta feature control system
+  - Environment variable-based feature gating (`BETA=0/1`, `BETA=false/true`)
+  - Server capabilities conditionally include sampling based on beta status
+  - Clean separation of stable and experimental features
+  - Full test coverage for beta feature toggling
+
+### Technical Improvements
+- **MCP Server Configuration**: Dynamic capability registration based on feature flags
+- **Environment-based Feature Control**: Robust feature flagging system with proper validation
+- **Test Infrastructure**: Comprehensive test suite for beta feature management
+- **Type Safety**: Enhanced TypeScript support for sampling and prompt features
+
+---
+
 ## [4.1.1] - 2025-08-18 - Package Size Optimization
 
 ### Enhanced
