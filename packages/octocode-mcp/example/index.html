@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth-Enabled MCP Server</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+        }
+        
+        .logo {
+            font-size: 64px;
+            margin-bottom: 10px;
+        }
+        
+        .card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 24px;
+            margin: 20px 0;
+        }
+        
+        .info-card {
+            background: #e7f3ff;
+            border: 1px solid #b8daff;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .success-card {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: #24292e;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            margin: 8px;
+        }
+        
+        .btn:hover {
+            background: #1b1f23;
+        }
+        
+        .btn-primary {
+            background: #0366d6;
+        }
+        
+        .btn-primary:hover {
+            background: #0256cc;
+        }
+        
+        pre {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            overflow-x: auto;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+            font-size: 14px;
+        }
+        
+        .endpoint-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .endpoint-list li {
+            padding: 8px 12px;
+            margin: 4px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #0366d6;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🔐</div>
+        <h1>OAuth-Enabled MCP Server</h1>
+        <p>Local OAuth endpoint with GitHub integration for Model Context Protocol</p>
+    </div>
+
+    <div class="success-card">
+        <h2>🎉 MCP OAuth Server Ready!</h2>
+        <p>This server implements the complete MCP Authorization Protocol with GitHub OAuth integration. Your MCP clients can now use OAuth for secure authentication.</p>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>🔗 OAuth Endpoints</h3>
+            <ul class="endpoint-list">
+                <li><a href="/.well-known/oauth-protected-resource">Protected Resource Metadata</a></li>
+                <li><a href="/.well-known/oauth-authorization-server">Authorization Server Metadata</a></li>
+                <li>POST /oauth/token - Token exchange</li>
+                <li>GET /oauth/authorize - Authorization</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h3>🛠️ MCP Endpoints</h3>
+            <ul class="endpoint-list">
+                <li>POST <a href="/mcp">/mcp</a> - Main MCP endpoint</li>
+                <li>GET <a href="/mcp/sse">/mcp/sse</a> - Server-Sent Events</li>
+                <li>GET <a href="/health">/health</a> - Health check</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="info-card">
+        <h3>🧪 Test OAuth Flow</h3>
+        <p>Traditional OAuth demo (for understanding the flow):</p>
+        <a href="/api/auth/github" class="btn btn-primary">🔗 Login with GitHub</a>
+        
+        <p style="margin-top: 20px;">Test MCP endpoint protection:</p>
+        <pre>curl -X POST http://localhost:3000/mcp
+# Should return 401 with OAuth challenge</pre>
+    </div>
+
+    <div class="card">
+        <h3>📋 MCP Client Configuration</h3>
+        <p>Add this to your MCP client (Claude Desktop, etc.):</p>
+        <pre>{
+  "mcpServers": {
+    "local-oauth-demo": {
+      "command": "node",
+      "args": ["http://localhost:3000/mcp"],
+      "transport": {
+        "type": "http"
+      }
+    }
+  }
+}</pre>
+
+        <p>Or test with MCP Inspector:</p>
+        <pre>npx @modelcontextprotocol/inspector http://localhost:3000/mcp</pre>
+    </div>
+
+    <div class="card">
+        <h3>🚀 Integration with Octocode MCP</h3>
+        <p>To use your OAuth credentials with the full Octocode MCP server:</p>
+        <pre>{
+  "mcpServers": {
+    "octocode-with-oauth": {
+      "command": "npx",
+      "args": ["octocode-mcp"],
+      "env": {
+        "GITHUB_OAUTH_CLIENT_ID": "your_client_id",
+        "GITHUB_OAUTH_CLIENT_SECRET": "your_client_secret",
+        "GITHUB_OAUTH_REDIRECT_URI": "http://localhost:3000/api/auth/callback/github",
+        "GITHUB_OAUTH_SCOPES": "repo,read:user,read:org",
+        "GITHUB_OAUTH_ENABLED": "true",
+        "MCP_SERVER_RESOURCE_URI": "http://localhost:3000"
+      }
+    }
+  }
+}</pre>
+    </div>
+
+    <div class="info-card">
+        <h3>🌊 How OAuth Works with MCP</h3>
+        <ol>
+            <li><strong>Client connects</strong> to MCP endpoint without token</li>
+            <li><strong>Server returns 401</strong> with <code>WWW-Authenticate</code> header</li>
+            <li><strong>Client discovers</strong> OAuth endpoints from metadata</li>
+            <li><strong>Browser opens</strong> for GitHub authentication</li>
+            <li><strong>User authorizes</strong> application with GitHub</li>
+            <li><strong>Token exchange</strong> happens automatically</li>
+            <li><strong>Client uses token</strong> for all subsequent MCP requests</li>
+        </ol>
+    </div>
+
+    <div class="footer">
+        <p>
+            <a href="/health">Server Status</a> | 
+            <a href="https://modelcontextprotocol.io/" target="_blank">MCP Specification</a> |
+            <a href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps" target="_blank">GitHub OAuth</a>
+        </p>
+        <p>This is a development server. Use proper security practices in production.</p>
+    </div>
+</body>
+</html>

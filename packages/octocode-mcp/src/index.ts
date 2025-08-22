@@ -10,25 +10,22 @@ import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commi
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
+import { registerAllOAuthTools } from './mcp/tools/oauth/oauthTools.js';
+import { registerSimpleOAuthTool } from './mcp/tools/oauth/simpleOAuthTool.js';
+import { registerAllOrganizationTools } from './mcp/tools/organization/organizationTools.js';
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
+  getGitHubToken,
 } from './mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
 import { version } from '../package.json';
 
 // a list of tools to run, separated by commas, e.g. "githubSearchCode,githubGetFileContent"
-// GITHUB_FETCH_CONTENT: 'githubGetFileContent',
-// GITHUB_SEARCH_CODE: 'githubSearchCode',
-// GITHUB_SEARCH_COMMITS: 'githubSearchCommits',
-// GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
-// GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
-// GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-// PACKAGE_SEARCH: 'packageSearch',
 const inclusiveTools =
   process.env.TOOLS_TO_RUN?.split(',')
     .map(tool => tool.trim())
@@ -43,6 +40,7 @@ const SERVER_CONFIG: Implementation = {
 async function startServer() {
   let shutdownInProgress = false;
   let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
+  let tokenProbeInterval: ReturnType<typeof setInterval> | null = null;
 
   try {
     const server = new McpServer(SERVER_CONFIG);
@@ -52,6 +50,13 @@ async function startServer() {
       if (process.env.AUDIT_ALL_ACCESS === 'true') {
         const { AuditLogger } = await import('./security/auditLogger.js');
         AuditLogger.initialize();
+
+        AuditLogger.logEvent({
+          action: 'enterprise_initialization',
+          outcome: 'success',
+          source: 'system',
+          details: { component: 'audit_logger' },
+        });
       }
 
       if (
@@ -61,15 +66,274 @@ async function startServer() {
       ) {
         const { RateLimiter } = await import('./security/rateLimiter.js');
         RateLimiter.initialize();
+
+        // Log rate limiter initialization
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'enterprise_initialization',
+            outcome: 'success',
+            source: 'system',
+            details: { component: 'rate_limiter' },
+          });
+        } catch {
+          // Silent fail if audit logging not available
+        }
       }
-    } catch (_enterpriseInitError) {
-      // Ignore enterprise initialization errors to avoid blocking startup
+    } catch (enterpriseInitError) {
+      // Log enterprise initialization failure
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'enterprise_initialization',
+          outcome: 'failure',
+          source: 'system',
+          details: {
+            error:
+              enterpriseInitError instanceof Error
+                ? enterpriseInitError.message
+                : String(enterpriseInitError),
+          },
+        });
+      } catch {
+        // Fallback to stderr if audit logging fails
+        process.stderr.write(
+          `Warning: Enterprise initialization failed: ${enterpriseInitError}\n`
+        );
+      }
     }
 
     // Initialize OAuth/GitHub App authentication
     await initializeAuthentication();
 
+    // Start background token probe if OAuth is not configured/enabled
+    try {
+      const cfg = ConfigManager.getConfig();
+      if (!cfg.oauth?.enabled) {
+        const probe = async () => {
+          try {
+            const token = await getGitHubToken();
+            if (token && tokenProbeInterval) {
+              // Log token detection via audit system
+              try {
+                const { AuditLogger } = await import(
+                  './security/auditLogger.js'
+                );
+                AuditLogger.logEvent({
+                  action: 'token_detected',
+                  outcome: 'success',
+                  source: 'auth',
+                  details: {
+                    method: 'background_probe',
+                    tokenSource: 'environment_or_cli',
+                  },
+                });
+              } catch {
+                // Fallback to stderr
+                process.stderr.write(
+                  'Detected GitHub token from environment/CLI.\n'
+                );
+              }
+              clearInterval(tokenProbeInterval);
+              tokenProbeInterval = null;
+            }
+          } catch {
+            // ignore probe errors
+          }
+        };
+        // Immediate probe once, then every 30s
+        await probe();
+        tokenProbeInterval = setInterval(probe, 30_000);
+      }
+    } catch {
+      // ignore background probe setup issues
+    }
+
+    // Initialize OAuth state manager for OAuth flow support
+    try {
+      const { OAuthStateManager } = await import(
+        './mcp/tools/utils/oauthStateManager.js'
+      );
+      OAuthStateManager.initialize();
+    } catch (stateManagerError) {
+      // OAuth state manager is optional - log via audit system
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_state_manager_init',
+          outcome: 'failure',
+          source: 'auth',
+          details: {
+            error:
+              stateManagerError instanceof Error
+                ? stateManagerError.message
+                : String(stateManagerError),
+            component: 'oauth_state_manager',
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write(
+          `Warning: OAuth state manager initialization failed: ${stateManagerError}\n`
+        );
+      }
+    }
+
     await registerAllTools(server);
+
+    // Start OAuth Protected Resource Metadata Server (RFC 9728) - Required for MCP OAuth compliance
+    let oauthMetadataServer:
+      | import('./http/protectedResourceServer.js').ProtectedResourceServer
+      | null = null;
+    let legacyMetadataServer:
+      | import('./http/resourceMetadataServer.js').ResourceMetadataServer
+      | null = null;
+
+    try {
+      const config = ConfigManager.getConfig();
+
+      // Start OAuth metadata server if OAuth is enabled or explicitly requested
+      if (config.oauth?.enabled || process.env.START_OAUTH_SERVER === 'true') {
+        const { ProtectedResourceServer, getProtectedResourceServerConfig } =
+          await import('./http/protectedResourceServer.js');
+
+        const serverConfig = getProtectedResourceServerConfig();
+        oauthMetadataServer = new ProtectedResourceServer(serverConfig);
+        await oauthMetadataServer.start();
+
+        // Log OAuth metadata server startup via audit system
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'oauth_metadata_server_started',
+            outcome: 'success',
+            source: 'system',
+            details: {
+              baseUrl: oauthMetadataServer.getBaseUrl(),
+              protectedResourceUrl: oauthMetadataServer.getMetadataUrl(),
+              authServerUrl: oauthMetadataServer.getAuthServerUrl(),
+              rfcCompliance: ['RFC 9728', 'RFC 8707', 'RFC 7636'],
+              oauthEnabled: config.oauth?.enabled,
+            },
+          });
+        } catch {
+          // Fallback to stderr for startup messages
+          process.stderr.write(
+            `🔐 OAuth Protected Resource Server listening at ${oauthMetadataServer.getBaseUrl()}\n`
+          );
+          process.stderr.write(`📋 OAuth metadata endpoints:\n`);
+          process.stderr.write(
+            `   - Protected Resource: ${oauthMetadataServer.getMetadataUrl()}\n`
+          );
+          process.stderr.write(
+            `   - Authorization Server: ${oauthMetadataServer.getAuthServerUrl()}\n`
+          );
+
+          if (config.oauth?.enabled) {
+            process.stderr.write(
+              `✅ MCP OAuth 2.1 compliance: RFC 9728, RFC 8707, RFC 7636\n`
+            );
+          }
+        }
+      }
+
+      // Optionally start legacy metadata server for backward compatibility
+      if (process.env.START_METADATA_SERVER === 'true') {
+        const { ResourceMetadataServer } = await import(
+          './http/resourceMetadataServer.js'
+        );
+        legacyMetadataServer = new ResourceMetadataServer({});
+        await legacyMetadataServer.start();
+        process.stderr.write(
+          `📡 Legacy metadata server listening at ${legacyMetadataServer.getBaseUrl()}\n`
+        );
+      }
+    } catch (metaErr) {
+      // Log metadata server startup failure via audit system
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'metadata_server_startup',
+          outcome: 'failure',
+          source: 'system',
+          details: {
+            error: metaErr instanceof Error ? metaErr.message : String(metaErr),
+            component: 'oauth_metadata_servers',
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write(
+          `⚠️  Warning: Failed to start metadata servers: ${metaErr}\n`
+        );
+      }
+    }
+
+    // Start HTTP server if configured
+    let mcpHttpServer: import('./http/mcpHttpServer.js').MCPHttpServer | null =
+      null;
+
+    if (
+      process.env.MCP_HTTP_ENABLED === 'true' ||
+      ConfigManager.getConfig().oauth?.enabled
+    ) {
+      try {
+        const { MCPHttpServer, getMCPHttpServerConfig } = await import(
+          './http/mcpHttpServer.js'
+        );
+
+        const httpConfig = getMCPHttpServerConfig();
+        mcpHttpServer = new MCPHttpServer(server, httpConfig);
+        await mcpHttpServer.start();
+
+        // Log HTTP server startup
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'mcp_http_server_started',
+            outcome: 'success',
+            source: 'system',
+            details: {
+              baseUrl: mcpHttpServer.getBaseUrl(),
+              oauthEnabled: ConfigManager.getConfig().oauth?.enabled,
+              transport: 'http',
+            },
+          });
+        } catch {
+          process.stderr.write(
+            `🌐 MCP HTTP Server listening at ${mcpHttpServer.getBaseUrl()}\n`
+          );
+          process.stderr.write(`📋 MCP HTTP Endpoints:\n`);
+          process.stderr.write(
+            `   - POST ${mcpHttpServer.getBaseUrl()}/mcp - Main MCP endpoint (OAuth protected)\n`
+          );
+          process.stderr.write(
+            `   - GET  ${mcpHttpServer.getBaseUrl()}/health - Health check\n`
+          );
+        }
+      } catch (httpError) {
+        // Log HTTP server startup failure
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'mcp_http_server_startup',
+            outcome: 'failure',
+            source: 'system',
+            details: {
+              error:
+                httpError instanceof Error
+                  ? httpError.message
+                  : String(httpError),
+              component: 'mcp_http_server',
+            },
+          });
+        } catch {
+          process.stderr.write(
+            `⚠️  Warning: Failed to start MCP HTTP server: ${httpError}\n`
+          );
+        }
+      }
+    }
 
     const transport = new StdioServerTransport();
 
@@ -103,6 +367,12 @@ async function startServer() {
         clearAllCache();
         SecureCredentialStore.clearAll();
 
+        // Stop background token probe if running
+        if (tokenProbeInterval) {
+          clearInterval(tokenProbeInterval);
+          tokenProbeInterval = null;
+        }
+
         // Shutdown enterprise modules gracefully
         try {
           if (process.env.AUDIT_ALL_ACCESS === 'true') {
@@ -117,6 +387,42 @@ async function startServer() {
           ) {
             const { RateLimiter } = await import('./security/rateLimiter.js');
             RateLimiter.shutdown();
+          }
+
+          // Shutdown OAuth state manager
+          const { OAuthStateManager } = await import(
+            './mcp/tools/utils/oauthStateManager.js'
+          );
+          OAuthStateManager.shutdown();
+
+          // Stop OAuth protected resource server if running
+          if (oauthMetadataServer) {
+            try {
+              oauthMetadataServer.stop();
+            } catch {
+              // ignore
+            }
+            oauthMetadataServer = null;
+          }
+
+          // Stop legacy metadata server if running
+          if (legacyMetadataServer) {
+            try {
+              legacyMetadataServer.stop();
+            } catch {
+              // ignore
+            }
+            legacyMetadataServer = null;
+          }
+
+          // Stop MCP HTTP server if running
+          if (mcpHttpServer) {
+            try {
+              mcpHttpServer.stop();
+            } catch {
+              // ignore
+            }
+            mcpHttpServer = null;
           }
         } catch (error) {
           // Ignore shutdown errors
@@ -185,12 +491,26 @@ async function initializeAuthentication(): Promise<void> {
     const authManager = AuthenticationManager.getInstance();
     await authManager.initialize();
   } catch (error) {
-    // Log error but don't fail startup - fall back to existing authentication
-    process.stderr.write(
-      `Warning: Failed to initialize authentication: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`
-    );
+    // Log error via audit system but don't fail startup
+    try {
+      const { AuditLogger } = await import('./security/auditLogger.js');
+      AuditLogger.logEvent({
+        action: 'authentication_initialization',
+        outcome: 'failure',
+        source: 'auth',
+        details: {
+          error: error instanceof Error ? error.message : String(error),
+          fallback: 'existing_authentication',
+        },
+      });
+    } catch {
+      // Fallback to stderr if audit logging fails
+      process.stderr.write(
+        `Warning: Failed to initialize authentication: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`
+      );
+    }
   }
 }
 
@@ -201,15 +521,33 @@ export async function registerAllTools(server: McpServer) {
   // Initialize toolset management
   ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
 
-  // Ensure token exists and is stored securely (existing behavior)
-  await getToken();
+  // Best-effort token bootstrap: do not fail startup if token is missing.
+  try {
+    await getToken();
+  } catch (_e) {
+    // Token will be obtained later via OAuth or environment/CLI; continue startup.
+  }
 
-  // Warn about CLI restrictions in enterprise mode
+  // Log enterprise mode restrictions via audit system
   if (isEnterpriseTokenManager() && !isCliTokenResolutionEnabled()) {
-    // Use stderr for enterprise mode notification to avoid console linter issues
-    process.stderr.write(
-      '🔒 Enterprise mode active: CLI token resolution disabled for security\n'
-    );
+    try {
+      const { AuditLogger } = await import('./security/auditLogger.js');
+      AuditLogger.logEvent({
+        action: 'enterprise_security_restriction',
+        outcome: 'success',
+        source: 'system',
+        details: {
+          restriction: 'cli_token_resolution_disabled',
+          reason: 'security_policy',
+          mode: 'enterprise',
+        },
+      });
+    } catch {
+      // Fallback to stderr
+      process.stderr.write(
+        '🔒 Enterprise mode active: CLI token resolution disabled for security\n'
+      );
+    }
   }
 
   // Determine if we should run all tools or only specific ones
@@ -246,6 +584,191 @@ export async function registerAllTools(server: McpServer) {
     },
   ];
 
+  // Register OAuth and Organization tools ONLY when properly configured
+  try {
+    const hasOAuthCredentials = !!(
+      process.env.GITHUB_OAUTH_CLIENT_ID &&
+      process.env.GITHUB_OAUTH_CLIENT_SECRET
+    );
+    const hasGitHubAppCredentials = !!(
+      process.env.GITHUB_APP_ID &&
+      process.env.GITHUB_APP_PRIVATE_KEY &&
+      process.env.GITHUB_APP_ENABLED === 'true'
+    );
+    const hasEnterpriseConfig = !!(
+      process.env.GITHUB_ORGANIZATION ||
+      process.env.AUDIT_ALL_ACCESS === 'true' ||
+      process.env.GITHUB_SSO_ENFORCEMENT === 'true' ||
+      process.env.RATE_LIMIT_API_HOUR ||
+      process.env.RATE_LIMIT_AUTH_HOUR ||
+      process.env.RATE_LIMIT_TOKEN_HOUR
+    );
+    const hasAnyAuthConfig =
+      hasOAuthCredentials || hasGitHubAppCredentials || hasEnterpriseConfig;
+
+    // Register simple OAuth tool ONLY when OAuth credentials are configured
+    if (hasOAuthCredentials) {
+      registerSimpleOAuthTool(server);
+      // Log OAuth tool registration
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_tool_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolName: 'simpleOAuth',
+            reason: 'oauth_credentials_configured',
+            hasClientId: !!process.env.GITHUB_OAUTH_CLIENT_ID,
+            hasClientSecret: !!process.env.GITHUB_OAUTH_CLIENT_SECRET,
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write(
+          '🔐 OAuth credentials detected: simpleOAuth tool registered\n'
+        );
+      }
+    } else {
+      // Log why simpleOAuth tool is not registered
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_tool_skipped',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolName: 'simpleOAuth',
+            reason: 'no_oauth_credentials',
+            hasClientId: !!process.env.GITHUB_OAUTH_CLIENT_ID,
+            hasClientSecret: !!process.env.GITHUB_OAUTH_CLIENT_SECRET,
+            recommendation:
+              'Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET to enable OAuth tools',
+          },
+        });
+      } catch {
+        // Silent - only log when OAuth is expected but not configured
+      }
+    }
+
+    // Register advanced OAuth tools ONLY when OAuth or GitHub App credentials are configured
+    if (hasOAuthCredentials || hasGitHubAppCredentials) {
+      registerAllOAuthTools(server);
+      // Log advanced OAuth tools registration
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'oauth_tools_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolsRegistered: 'advanced_oauth_tools',
+            reason: hasOAuthCredentials
+              ? 'oauth_credentials_configured'
+              : 'github_app_configured',
+            hasOAuthCredentials,
+            hasGitHubAppCredentials,
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write('🔧 Advanced OAuth tools registered\n');
+      }
+    }
+
+    // Register organization tools ONLY when enterprise or OAuth configuration is present
+    if (
+      hasAnyAuthConfig &&
+      (config.oauth?.enabled ||
+        config.enterprise?.organizationId ||
+        hasEnterpriseConfig)
+    ) {
+      registerAllOrganizationTools(server);
+      // Log organization tools registration
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'organization_tools_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            toolsRegistered: 'organization_tools',
+            reason: 'enterprise_or_oauth_configured',
+            hasOAuthCredentials,
+            hasGitHubAppCredentials,
+            hasEnterpriseConfig,
+            organizationConfigured: !!config.enterprise?.organizationId,
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write('🏢 Organization tools registered\n');
+      }
+    }
+
+    // Log summary of authentication tools registration
+    const registeredTools = [];
+    if (hasOAuthCredentials) registeredTools.push('simpleOAuth');
+    if (hasOAuthCredentials || hasGitHubAppCredentials)
+      registeredTools.push('advancedOAuth');
+    if (
+      hasAnyAuthConfig &&
+      (config.oauth?.enabled ||
+        config.enterprise?.organizationId ||
+        hasEnterpriseConfig)
+    )
+      registeredTools.push('organization');
+
+    if (registeredTools.length === 0) {
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'no_auth_tools_registered',
+          outcome: 'success',
+          source: 'system',
+          details: {
+            reason: 'no_authentication_configuration',
+            recommendation:
+              'Set OAuth credentials (GITHUB_OAUTH_CLIENT_ID + GITHUB_OAUTH_CLIENT_SECRET) or GitHub App credentials to enable authentication tools',
+            availableAuthMethods: [
+              'personal_access_token',
+              'github_cli_local_only',
+              'authorization_header',
+            ],
+          },
+        });
+      } catch {
+        // Fallback to stderr
+        process.stderr.write(
+          'ℹ️ No authentication tools registered - using fallback token resolution only\n'
+        );
+      }
+    }
+  } catch (oauthError) {
+    // Log OAuth tool registration failure via audit system
+    try {
+      const { AuditLogger } = await import('./security/auditLogger.js');
+      AuditLogger.logEvent({
+        action: 'oauth_tools_registration',
+        outcome: 'failure',
+        source: 'system',
+        details: {
+          error:
+            oauthError instanceof Error
+              ? oauthError.message
+              : String(oauthError),
+          component: 'oauth_organization_tools',
+          impact: 'optional_tools_unavailable',
+        },
+      });
+    } catch {
+      // Fallback to stderr
+      process.stderr.write(
+        `Warning: Failed to register OAuth/Organization tools: ${oauthError}\n`
+      );
+    }
+  }
+
   let successCount = 0;
   const failedTools: string[] = [];
 
@@ -258,20 +781,82 @@ export async function registerAllTools(server: McpServer) {
       if (shouldRegisterTool && ToolsetManager.isToolEnabled(tool.name)) {
         tool.fn(server);
         successCount++;
+
+        // Log successful tool registration
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'tool_registered',
+            outcome: 'success',
+            source: 'system',
+            details: {
+              toolName: tool.name,
+              registrationMethod: 'standard_toolset',
+            },
+          });
+        } catch {
+          // Silent fail for audit logging
+        }
       } else if (!shouldRegisterTool) {
-        // Use stderr for selective tool messages to avoid console linter issues
-        process.stderr.write(
-          `Tool ${tool.name} excluded by TOOLS_TO_RUN configuration\n`
-        );
+        // Log tool exclusion via audit system
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'tool_excluded',
+            outcome: 'success',
+            source: 'system',
+            details: {
+              toolName: tool.name,
+              reason: 'tools_to_run_configuration',
+              configuration: 'selective_tool_loading',
+            },
+          });
+        } catch {
+          // Fallback to stderr
+          process.stderr.write(
+            `Tool ${tool.name} excluded by TOOLS_TO_RUN configuration\n`
+          );
+        }
       } else {
-        // Use stderr for toolset configuration messages to avoid console linter issues
-        process.stderr.write(
-          `Tool ${tool.name} disabled by toolset configuration\n`
-        );
+        // Log toolset configuration exclusion via audit system
+        try {
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.logEvent({
+            action: 'tool_disabled',
+            outcome: 'success',
+            source: 'system',
+            details: {
+              toolName: tool.name,
+              reason: 'toolset_configuration',
+              configuration: 'toolset_policy',
+            },
+          });
+        } catch {
+          // Fallback to stderr
+          process.stderr.write(
+            `Tool ${tool.name} disabled by toolset configuration\n`
+          );
+        }
       }
     } catch (error) {
-      // Log the error but continue with other tools
+      // Log tool registration failure via audit system
       failedTools.push(tool.name);
+
+      try {
+        const { AuditLogger } = await import('./security/auditLogger.js');
+        AuditLogger.logEvent({
+          action: 'tool_registration_failed',
+          outcome: 'failure',
+          source: 'system',
+          details: {
+            toolName: tool.name,
+            error: error instanceof Error ? error.message : String(error),
+            continuedExecution: true,
+          },
+        });
+      } catch {
+        // Silent fail for audit logging
+      }
     }
   }
 

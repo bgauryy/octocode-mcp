@@ -92,13 +92,14 @@ export class ToolsetManager {
       });
     }
 
-    // Enable enterprise toolset if any enterprise feature is configured
+    // Enable enterprise toolset only for true enterprise configurations
+    // Rate limiting alone should NOT enable enterprise mode
     if (
       process.env.GITHUB_ORGANIZATION ||
       process.env.AUDIT_ALL_ACCESS === 'true' ||
-      process.env.RATE_LIMIT_API_HOUR ||
-      process.env.RATE_LIMIT_AUTH_HOUR ||
-      process.env.RATE_LIMIT_TOKEN_HOUR
+      process.env.GITHUB_SSO_ENFORCEMENT === 'true' ||
+      process.env.GITHUB_TOKEN_VALIDATION === 'true' ||
+      process.env.GITHUB_PERMISSION_VALIDATION === 'true'
     ) {
       const enterpriseToolset = this.toolsets.get('enterprise');
       if (enterpriseToolset) {

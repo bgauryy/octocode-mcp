@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Octocode MCP OAuth Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 18px;
+        }
+        
+        .card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 30px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .btn {
+            display: inline-block;
+            background: #24292e;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            margin: 10px;
+        }
+        
+        .btn:hover {
+            background: #1b1f23;
+        }
+        
+        .btn-github {
+            background: #24292e;
+        }
+        
+        .btn-github:hover {
+            background: #1b1f23;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b8daff;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .steps {
+            text-align: left;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .steps ol {
+            padding-left: 20px;
+        }
+        
+        .steps li {
+            margin: 10px 0;
+        }
+        
+        code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        }
+        
+        pre {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            overflow-x: auto;
+            text-align: left;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🐙</div>
+        <h1>Octocode MCP OAuth Demo</h1>
+        <p class="subtitle">Demonstrate GitHub OAuth integration for Octocode MCP</p>
+    </div>
+
+    <div class="card">
+        <h2>🔐 GitHub Authentication</h2>
+        <p>Click below to authenticate with GitHub and get a token for Octocode MCP.</p>
+        <a href="/api/auth/github" class="btn btn-github">
+            🔗 Login with GitHub
+        </a>
+    </div>
+
+    <div class="info-box">
+        <h3>📋 What this demo does:</h3>
+        <div class="steps">
+            <ol>
+                <li>Redirects you to GitHub for OAuth authorization</li>
+                <li>Requests <code>repo</code>, <code>read:user</code>, and <code>read:org</code> scopes</li>
+                <li>Exchanges the authorization code for an access token</li>
+                <li>Displays your token and configuration for Octocode MCP</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="warning-box">
+        <h3>⚠️ Setup Required</h3>
+        <p>Before using this demo, you need to:</p>
+        <div class="steps">
+            <ol>
+                <li>Create a GitHub OAuth App at <a href="https://github.com/settings/applications/new" target="_blank">GitHub Developer Settings</a></li>
+                <li>Configure these URLs in your OAuth App:
+                    <pre>Homepage URL: http://localhost:3000
+Authorization callback URL: http://localhost:3000/api/auth/callback/github</pre>
+                </li>
+                <li>Copy <code>env.example</code> to <code>.env</code> and add your Client ID and Secret</li>
+                <li>Run <code>npm install</code> and <code>npm run dev</code></li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🚀 After Authentication</h3>
+        <p>Once you get your token, you can use it with Octocode MCP:</p>
+        <pre>export GITHUB_TOKEN="your_token_here"
+npx octocode-mcp</pre>
+    </div>
+
+    <div class="footer">
+        <p>
+            <a href="/health">Health Check</a> | 
+            <a href="https://github.com/modelcontextprotocol/servers/tree/main/src/github" target="_blank">Octocode MCP</a> |
+            <a href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps" target="_blank">GitHub OAuth Docs</a>
+        </p>
+        <p>This is a development demo. In production, use proper session management and token storage.</p>
+    </div>
+</body>
+</html>

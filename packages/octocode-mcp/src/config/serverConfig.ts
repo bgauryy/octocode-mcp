@@ -137,14 +137,21 @@ export class ConfigManager {
 
   /**
    * Check if enterprise features are enabled
+   *
+   * Enterprise mode is ONLY enabled by explicit organizational/security settings,
+   * NOT by performance settings like rate limiting.
    */
   static isEnterpriseMode(): boolean {
     const config = this.getConfig();
     return !!(
-      config.enterprise?.organizationId ||
-      config.enterprise?.auditLogging ||
-      config.enterprise?.rateLimiting ||
-      config.enterprise?.ssoEnforcement
+      (
+        config.enterprise?.organizationId || // Organization-based enterprise
+        config.enterprise?.auditLogging || // Security audit requirement
+        config.enterprise?.ssoEnforcement || // SSO security requirement
+        config.enterprise?.tokenValidation || // Enhanced token security
+        config.enterprise?.permissionValidation // Enhanced permission security
+      )
+      // NOTE: rateLimiting is intentionally excluded - it's a performance setting, not enterprise
     );
   }
 

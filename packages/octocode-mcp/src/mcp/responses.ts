@@ -90,31 +90,48 @@ function wrapResponse(data: unknown): string {
     text = '[Unserializable data]';
   }
 
-  // First, sanitize for malicious content and prompt injection
-  const sanitizationResult = ContentSanitizer.sanitizeContent(text);
+  // Check if this is a JSON response (most tool responses are JSON)
+  let isJsonResponse = false;
+  try {
+    JSON.parse(text);
+    isJsonResponse = true;
+  } catch {
+    // Not JSON
+  }
 
-  // Then mask sensitive data
-  const maskedText = maskSensitiveData(sanitizationResult.content);
+  // For JSON responses, be more conservative with sanitization
+  // Only apply masking for sensitive data, not full content sanitization
+  if (isJsonResponse) {
+    // Only mask sensitive data patterns, don't replace entire content
+    const maskedText = maskSensitiveData(text);
 
-  // Add security warnings if any issues were detected
-  // Only add warnings for non-JSON responses to avoid breaking JSON parsing
-  if (sanitizationResult.warnings.length > 0) {
-    try {
-      // Test if the content is valid JSON
-      JSON.parse(maskedText);
-      // If it's valid JSON, we'll need to embed warnings differently
-      // For now, let's skip warnings for JSON responses to avoid breaking tests
-      // In production, warnings could be added to a metadata field
-    } catch {
-      // Not JSON, safe to add warnings
+    // Only apply content sanitization if we detect actual secrets
+    const sanitizationResult = ContentSanitizer.sanitizeContent(text);
+    if (
+      sanitizationResult.hasSecrets &&
+      sanitizationResult.warnings.length > 0
+    ) {
+      // For JSON with actual secrets, we need to be careful not to break the JSON structure
+      // Apply selective sanitization only to the detected secret parts
+      return sanitizationResult.content;
+    }
+
+    return maskedText;
+  } else {
+    // For non-JSON responses, apply full sanitization
+    const sanitizationResult = ContentSanitizer.sanitizeContent(text);
+    const maskedText = maskSensitiveData(sanitizationResult.content);
+
+    // Add security warnings for non-JSON responses
+    if (sanitizationResult.warnings.length > 0) {
       const warningText = sanitizationResult.warnings
         .map(w => `⚠️ ${w}`)
         .join('\n');
       return `${maskedText}\n\n--- Security Notice ---\n${warningText}`;
     }
-  }
 
-  return maskedText;
+    return maskedText;
+  }
 }
 
 /**

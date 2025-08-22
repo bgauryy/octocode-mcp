@@ -9,6 +9,10 @@ import {
   rotateToken,
   getConfig,
   clearConfig,
+  getTokenMetadata,
+  storeOAuthTokenInfo,
+  storeGitHubAppTokenInfo,
+  clearOAuthTokens,
 } from '../../../src/mcp/tools/utils/tokenManager';
 
 // Mock dependencies
@@ -21,6 +25,9 @@ vi.mock('../../../src/utils/exec.js', () => ({
 vi.mock('../../../src/security/credentialStore.js', () => ({
   SecureCredentialStore: {
     setToken: vi.fn(),
+    setCredential: vi.fn().mockReturnValue('mock-credential-id'),
+    getCredential: vi.fn(),
+    removeCredential: vi.fn(),
   },
 }));
 
@@ -30,12 +37,30 @@ import { SecureCredentialStore } from '../../../src/security/credentialStore.js'
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 
+// Mock storage for OAuth tokens
+const mockOAuthStorage: Record<string, string> = {};
+mockSecureCredentialStore.setCredential.mockImplementation((value: string) => {
+  const id = `mock-id-${Date.now()}-${Math.random()}`;
+  mockOAuthStorage[id] = value;
+  return id;
+});
+mockSecureCredentialStore.getCredential.mockImplementation((id: string) => {
+  return mockOAuthStorage[id] || null;
+});
+mockSecureCredentialStore.removeCredential.mockImplementation((id: string) => {
+  delete mockOAuthStorage[id];
+  return true;
+});
+
 describe('Token Manager', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     // Clear all mocks
     vi.clearAllMocks();
+
+    // Clear mock OAuth storage
+    Object.keys(mockOAuthStorage).forEach(key => delete mockOAuthStorage[key]);
 
     // Clear cached token before each test
     clearCachedToken();
@@ -598,6 +623,231 @@ describe('Token Manager', () => {
         await getGitHubToken();
         expect(getTokenSource()).toBe('env');
       });
+    });
+  });
+
+  describe('OAuth and GitHub App Token Priority', () => {
+    beforeEach(() => {
+      // Ensure we start with a clean slate
+      clearCachedToken();
+    });
+
+    it('should prioritize OAuth tokens over environment variables', async () => {
+      // Set up environment token
+      process.env.GITHUB_TOKEN = 'env-token';
+
+      // Store OAuth token
+      await storeOAuthTokenInfo({
+        accessToken: 'oauth-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['repo', 'read:user'],
+        tokenType: 'Bearer',
+        clientId: 'test-client',
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('oauth-token');
+      expect(getTokenSource()).toBe('oauth');
+    });
+
+    it('should prioritize GitHub App tokens over environment variables', async () => {
+      // Set up environment token
+      process.env.GITHUB_TOKEN = 'env-token';
+
+      // Store GitHub App token
+      await storeGitHubAppTokenInfo({
+        installationToken: 'app-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        installationId: 12345,
+        permissions: { contents: 'read' },
+        appId: 'test-app',
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('app-token');
+      expect(getTokenSource()).toBe('github_app');
+    });
+
+    it('should prioritize OAuth tokens over GitHub App tokens', async () => {
+      // Store GitHub App token first
+      await storeGitHubAppTokenInfo({
+        installationToken: 'app-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        installationId: 12345,
+        permissions: { contents: 'read' },
+        appId: 'test-app',
+      });
+
+      // Store OAuth token (higher priority)
+      await storeOAuthTokenInfo({
+        accessToken: 'oauth-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['repo', 'read:user'],
+        tokenType: 'Bearer',
+        clientId: 'test-client',
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('oauth-token');
+      expect(getTokenSource()).toBe('oauth');
+    });
+
+    it('should fall back to environment variables when OAuth/GitHub App tokens are expired', async () => {
+      process.env.GITHUB_TOKEN = 'env-fallback-token';
+
+      // Store expired OAuth token
+      await storeOAuthTokenInfo({
+        accessToken: 'expired-oauth-token',
+        expiresAt: new Date(Date.now() - 1000), // Expired 1 second ago
+        scopes: ['repo'],
+        tokenType: 'Bearer',
+        clientId: 'test-client',
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('env-fallback-token');
+      expect(getTokenSource()).toBe('env');
+    });
+
+    it('should return correct token metadata for OAuth tokens', async () => {
+      const oauthInfo = {
+        accessToken: 'oauth-metadata-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['repo', 'read:user', 'read:org'],
+        tokenType: 'Bearer',
+        clientId: 'metadata-client',
+      };
+
+      await storeOAuthTokenInfo(oauthInfo);
+      await getGitHubToken(); // Trigger token resolution
+
+      const metadata = await getTokenMetadata();
+      expect(metadata.source).toBe('oauth');
+      expect(metadata.scopes).toEqual(['repo', 'read:user', 'read:org']);
+      expect(metadata.clientId).toBe('metadata-client');
+      expect(metadata.expiresAt).toEqual(oauthInfo.expiresAt);
+    });
+
+    it('should return correct token metadata for GitHub App tokens', async () => {
+      const appInfo = {
+        installationToken: 'app-metadata-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        installationId: 98765,
+        permissions: { contents: 'read', issues: 'write' },
+        appId: 'metadata-app',
+      };
+
+      await storeGitHubAppTokenInfo(appInfo);
+      await getGitHubToken(); // Trigger token resolution
+
+      const metadata = await getTokenMetadata();
+      expect(metadata.source).toBe('github_app');
+      expect(metadata.permissions).toEqual({
+        contents: 'read',
+        issues: 'write',
+      });
+      expect(metadata.appId).toBe('metadata-app');
+      expect(metadata.installationId).toBe(98765);
+      expect(metadata.expiresAt).toEqual(appInfo.expiresAt);
+    });
+
+    it('should clear OAuth tokens correctly', async () => {
+      // Store OAuth token
+      await storeOAuthTokenInfo({
+        accessToken: 'oauth-to-clear',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['repo'],
+        tokenType: 'Bearer',
+        clientId: 'clear-client',
+      });
+
+      // Verify token is available
+      let token = await getGitHubToken();
+      expect(token).toBe('oauth-to-clear');
+
+      // Clear OAuth tokens
+      await clearOAuthTokens();
+      clearCachedToken();
+
+      // Set fallback environment token
+      process.env.GITHUB_TOKEN = 'fallback-after-clear';
+
+      // Should now use environment token
+      token = await getGitHubToken();
+      expect(token).toBe('fallback-after-clear');
+      expect(getTokenSource()).toBe('env');
+    });
+
+    it('should handle OAuth token refresh scenario', async () => {
+      // Store initial OAuth token with refresh token
+      await storeOAuthTokenInfo({
+        accessToken: 'initial-oauth-token',
+        refreshToken: 'refresh-token-123',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['repo', 'read:user'],
+        tokenType: 'Bearer',
+        clientId: 'refresh-client',
+      });
+
+      let token = await getGitHubToken();
+      expect(token).toBe('initial-oauth-token');
+
+      // Simulate token refresh by storing new token info
+      await storeOAuthTokenInfo({
+        accessToken: 'refreshed-oauth-token',
+        refreshToken: 'refresh-token-456',
+        expiresAt: new Date(Date.now() + 7200000),
+        scopes: ['repo', 'read:user', 'read:org'],
+        tokenType: 'Bearer',
+        clientId: 'refresh-client',
+      });
+
+      // Clear cache to force re-resolution
+      clearCachedToken();
+
+      token = await getGitHubToken();
+      expect(token).toBe('refreshed-oauth-token');
+      expect(getTokenSource()).toBe('oauth');
+    });
+
+    it('should handle mixed token types in getToken error message', async () => {
+      // Clear all tokens and environment variables
+      await clearOAuthTokens();
+      clearCachedToken();
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GH_TOKEN;
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      await expect(getToken()).rejects.toThrow(
+        'No GitHub token found. Please configure OAuth authentication, set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI'
+      );
+    });
+
+    it('should handle enterprise mode with OAuth tokens', async () => {
+      // Set enterprise environment
+      process.env.GITHUB_ORGANIZATION = 'enterprise-org';
+
+      await storeOAuthTokenInfo({
+        accessToken: 'enterprise-oauth-token',
+        expiresAt: new Date(Date.now() + 3600000),
+        scopes: ['repo', 'read:org'],
+        tokenType: 'Bearer',
+        clientId: 'enterprise-client',
+      });
+
+      const token = await getGitHubToken();
+      expect(token).toBe('enterprise-oauth-token');
+      expect(getTokenSource()).toBe('oauth');
+
+      // In enterprise mode, the error message should reflect disabled CLI
+      clearCachedToken();
+      await clearOAuthTokens();
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GH_TOKEN;
+
+      await expect(getToken()).rejects.toThrow(
+        'No GitHub token found. In enterprise mode, please configure OAuth, GitHub App, or set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled for security)'
+      );
     });
   });
 });

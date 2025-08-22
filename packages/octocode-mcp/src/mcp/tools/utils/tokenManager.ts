@@ -1,5 +1,6 @@
 import { SecureCredentialStore } from '../../../security/credentialStore.js';
 import { getGithubCLIToken } from '../../../utils/exec.js';
+import { Mutex } from 'async-mutex';
 import crypto from 'crypto';
 
 /**
@@ -23,6 +24,11 @@ let tokenExpiresAt: Date | null = null;
 
 // Token refresh timers
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Thread-safe token operations with mutex locks
+const oauthTokenMutex = new Mutex();
+const githubAppTokenMutex = new Mutex();
+const tokenResolutionMutex = new Mutex();
 
 // OAuth and GitHub App token sources
 type TokenSource =
@@ -90,16 +96,21 @@ function isEnterpriseMode(): boolean {
   );
 
   // Check for enterprise environment variables (legacy support)
+  // Rate limiting alone should NOT enable enterprise mode
   const hasOrgConfig = !!process.env.GITHUB_ORGANIZATION;
   const hasAuditConfig = process.env.AUDIT_ALL_ACCESS === 'true';
-  const hasRateLimitConfig = !!(
-    process.env.RATE_LIMIT_API_HOUR ||
-    process.env.RATE_LIMIT_AUTH_HOUR ||
-    process.env.RATE_LIMIT_TOKEN_HOUR
-  );
+  const hasSsoConfig = process.env.GITHUB_SSO_ENFORCEMENT === 'true';
+  const hasTokenValidation = process.env.GITHUB_TOKEN_VALIDATION === 'true';
+  const hasPermissionValidation =
+    process.env.GITHUB_PERMISSION_VALIDATION === 'true';
 
   return (
-    hasEnterpriseConfig || hasOrgConfig || hasAuditConfig || hasRateLimitConfig
+    hasEnterpriseConfig ||
+    hasOrgConfig ||
+    hasAuditConfig ||
+    hasSsoConfig ||
+    hasTokenValidation ||
+    hasPermissionValidation
   );
 }
 
@@ -244,40 +255,42 @@ async function tryGetGitHubAppToken(): Promise<GitHubAppTokenInfo | null> {
 }
 
 /**
- * Enhanced token resolution with OAuth support
+ * Enhanced token resolution with OAuth support (thread-safe)
  * Priority: OAuth > GitHub App > Environment > CLI > Authorization header
  */
 async function resolveTokenWithOAuth(): Promise<TokenResolutionResult> {
-  // 1. Try OAuth token first (highest priority for enterprise)
-  const oauthToken = await tryGetOAuthToken();
-  if (oauthToken) {
-    return {
-      token: oauthToken.accessToken,
-      source: 'oauth',
-      metadata: oauthToken,
-      expiresAt: oauthToken.expiresAt,
-    };
-  }
+  return await tokenResolutionMutex.runExclusive(async () => {
+    // 1. Try OAuth token first (highest priority for enterprise)
+    const oauthToken = await tryGetOAuthToken();
+    if (oauthToken) {
+      return {
+        token: oauthToken.accessToken,
+        source: 'oauth',
+        metadata: oauthToken,
+        expiresAt: oauthToken.expiresAt,
+      };
+    }
 
-  // 2. Try GitHub App token
-  const appToken = await tryGetGitHubAppToken();
-  if (appToken) {
-    return {
-      token: appToken.installationToken,
-      source: 'github_app',
-      metadata: appToken,
-      expiresAt: appToken.expiresAt,
-    };
-  }
+    // 2. Try GitHub App token
+    const appToken = await tryGetGitHubAppToken();
+    if (appToken) {
+      return {
+        token: appToken.installationToken,
+        source: 'github_app',
+        metadata: appToken,
+        expiresAt: appToken.expiresAt,
+      };
+    }
 
-  // 3. Fall back to existing PAT resolution
-  const existingResult = await resolveToken();
-  return {
-    token: existingResult.token,
-    source: existingResult.source as TokenSource,
-    metadata: undefined,
-    expiresAt: undefined,
-  };
+    // 3. Fall back to existing PAT resolution
+    const existingResult = await resolveToken();
+    return {
+      token: existingResult.token,
+      source: existingResult.source as TokenSource,
+      metadata: undefined,
+      expiresAt: undefined,
+    };
+  });
 }
 
 /**
@@ -299,14 +312,28 @@ async function resolveToken(): Promise<{
     return { token: process.env.GH_TOKEN, source: 'env' };
   }
 
-  // Skip CLI token resolution in enterprise mode
-  if (!isEnterpriseMode()) {
+  // Enable CLI token resolution ONLY if:
+  // 1. NOT in enterprise mode (no GITHUB_ORGANIZATION, AUDIT_ALL_ACCESS, etc.)
+  // 2. AND no OAuth credentials configured (GITHUB_OAUTH_CLIENT_ID + GITHUB_OAUTH_CLIENT_SECRET)
+  // 3. AND no valid GitHub App credentials
+  const hasOAuthCredentials = !!(
+    process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET
+  );
+
+  const hasGitHubAppCredentials = !!(
+    process.env.GITHUB_APP_ID &&
+    process.env.GITHUB_APP_PRIVATE_KEY &&
+    process.env.GITHUB_APP_ENABLED === 'true'
+  );
+
+  // CLI is enabled for local development when OAuth/GitHub App not configured
+  if (!isEnterpriseMode() && !hasOAuthCredentials && !hasGitHubAppCredentials) {
     const cliToken = await getGithubCLIToken();
     if (cliToken) {
       return { token: cliToken, source: 'cli' };
     }
   } else {
-    // Log warning if enterprise mode detected and no env tokens
+    // Log why CLI token resolution is disabled
     if (
       !process.env.GITHUB_TOKEN &&
       !process.env.GH_TOKEN &&
@@ -316,10 +343,28 @@ async function resolveToken(): Promise<{
         const { logAuthEvent } = await import(
           '../../../security/auditLogger.js'
         );
+
+        let reason = 'CLI token resolution disabled: ';
+        let action = 'cli_disabled_';
+
+        if (isEnterpriseMode()) {
+          reason += 'Enterprise mode active';
+          action += 'enterprise';
+        } else if (hasOAuthCredentials) {
+          reason += 'OAuth credentials configured';
+          action += 'oauth_configured';
+        } else if (hasGitHubAppCredentials) {
+          reason += 'GitHub App credentials configured';
+          action += 'github_app_configured';
+        }
+
         logAuthEvent('token_validation', 'success', {
-          reason: 'CLI token resolution disabled in enterprise mode',
-          organizationId: config.organizationId,
-          action: 'cli_disabled_enterprise',
+          reason,
+          organizationId: config?.organizationId,
+          action,
+          enterpriseMode: isEnterpriseMode(),
+          oauthConfigured: hasOAuthCredentials,
+          githubAppConfigured: hasGitHubAppCredentials,
         });
       } catch {
         // Ignore audit logging errors
@@ -391,11 +436,16 @@ export async function getToken(): Promise<string> {
 
   if (!result.token) {
     const enterpriseMode = isEnterpriseMode();
-    const errorMessage = enterpriseMode
-      ? 'No GitHub token found. In enterprise mode, please configure OAuth, GitHub App, or set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled for security)'
-      : 'No GitHub token found. Please configure OAuth authentication, set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI';
 
-    throw new Error(errorMessage);
+    if (enterpriseMode) {
+      throw new Error(
+        'No GitHub token found. In enterprise mode, please configure OAuth, GitHub App, or set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled for security)'
+      );
+    }
+
+    throw new Error(
+      'No GitHub token found. Please configure OAuth authentication, set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI'
+    );
   }
 
   // Store token securely for internal security benefits
@@ -516,200 +566,201 @@ export function isEnterpriseTokenManager(): boolean {
 // ===== OAUTH 2.0/2.1 SUPPORT =====
 
 /**
- * Refresh OAuth token using refresh token
+ * Refresh OAuth token using refresh token (thread-safe)
  */
 async function refreshOAuthToken(
   refreshToken: string,
   clientId?: string
 ): Promise<OAuthTokenInfo | null> {
-  try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
-    const config = ConfigManager.getConfig();
+  return await oauthTokenMutex.runExclusive(async () => {
+    try {
+      const { ConfigManager } = await import('../../../config/serverConfig.js');
+      const config = ConfigManager.getConfig();
 
-    if (!config.oauth?.enabled || !config.oauth.clientSecret) {
-      throw new Error('OAuth not properly configured');
-    }
-
-    const tokenUrl =
-      config.oauth.tokenUrl ||
-      (config.githubHost
-        ? `${config.githubHost}/login/oauth/access_token`
-        : 'https://github.com/login/oauth/access_token');
-
-    const response = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-        'User-Agent': `octocode-mcp/${config.version}`,
-      },
-      body: new URLSearchParams({
-        client_id: clientId || config.oauth.clientId,
-        client_secret: config.oauth.clientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Token refresh failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(`OAuth error: ${data.error_description || data.error}`);
-    }
-
-    const newTokenInfo: OAuthTokenInfo = {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || refreshToken,
-      tokenType: data.token_type || 'Bearer',
-      expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
-      scopes: data.scope ? data.scope.split(' ') : [],
-      clientId: clientId || config.oauth.clientId,
-    };
-
-    // Store the new tokens securely
-    await storeOAuthTokens(newTokenInfo);
-
-    // Schedule next refresh
-    scheduleTokenRefresh(newTokenInfo.expiresAt, 'oauth', newTokenInfo);
-
-    // Log successful refresh in enterprise mode
-    if (isEnterpriseMode()) {
-      try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
-        logAuthEvent('token_rotation', 'success', {
-          clientId: newTokenInfo.clientId,
-          expiresAt: newTokenInfo.expiresAt.toISOString(),
-          scopes: newTokenInfo.scopes,
-        });
-      } catch {
-        // Ignore audit logging errors
+      if (!config.oauth?.enabled || !config.oauth.clientSecret) {
+        throw new Error('OAuth not properly configured');
       }
-    }
 
-    return newTokenInfo;
-  } catch (error) {
-    // Clear invalid tokens
-    await clearOAuthTokens();
+      const tokenUrl =
+        config.oauth.tokenUrl ||
+        (config.githubHost
+          ? `${config.githubHost}/login/oauth/access_token`
+          : 'https://github.com/login/oauth/access_token');
 
-    // Log failure in enterprise mode
-    if (isEnterpriseMode()) {
-      try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
-        logAuthEvent('token_rotation', 'failure', {
-          error: error instanceof Error ? error.message : String(error),
-          clientId,
-        });
-      } catch {
-        // Ignore audit logging errors
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+          'User-Agent': `octocode-mcp/${config.version}`,
+        },
+        body: new URLSearchParams({
+          client_id: clientId || config.oauth.clientId,
+          client_secret: config.oauth.clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token refresh failed: ${response.statusText}`);
       }
-    }
 
-    throw error;
-  }
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(`OAuth error: ${data.error_description || data.error}`);
+      }
+
+      const newTokenInfo: OAuthTokenInfo = {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || refreshToken,
+        tokenType: data.token_type || 'Bearer',
+        expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
+        scopes: data.scope ? data.scope.split(' ') : [],
+        clientId: clientId || config.oauth.clientId,
+      };
+
+      // Store the new tokens securely
+      await storeOAuthTokens(newTokenInfo);
+
+      // Schedule next refresh
+      scheduleTokenRefresh(newTokenInfo.expiresAt, 'oauth', newTokenInfo);
+
+      // Log successful refresh in enterprise mode
+      if (isEnterpriseMode()) {
+        try {
+          const { logAuthEvent } = await import(
+            '../../../security/auditLogger.js'
+          );
+          logAuthEvent('token_rotation', 'success', {
+            clientId: newTokenInfo.clientId,
+            expiresAt: newTokenInfo.expiresAt.toISOString(),
+            scopes: newTokenInfo.scopes,
+          });
+        } catch {
+          // Ignore audit logging errors
+        }
+      }
+
+      return newTokenInfo;
+    } catch (error) {
+      // Clear invalid tokens
+      await clearOAuthTokens();
+
+      // Log failure in enterprise mode
+      if (isEnterpriseMode()) {
+        try {
+          const { logAuthEvent } = await import(
+            '../../../security/auditLogger.js'
+          );
+          logAuthEvent('token_rotation', 'failure', {
+            error: error instanceof Error ? error.message : String(error),
+            clientId,
+          });
+        } catch {
+          // Ignore audit logging errors
+        }
+      }
+
+      throw error;
+    }
+  });
 }
 
 /**
- * Refresh GitHub App installation token
+ * Refresh GitHub App installation token (thread-safe)
  */
 async function refreshGitHubAppToken(
   installationId: number
 ): Promise<GitHubAppTokenInfo | null> {
-  try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
-    const config = ConfigManager.getConfig();
+  return await githubAppTokenMutex.runExclusive(async () => {
+    try {
+      const { ConfigManager } = await import('../../../config/serverConfig.js');
+      const config = ConfigManager.getConfig();
 
-    if (!config.githubApp?.enabled) {
-      throw new Error('GitHub App not configured');
-    }
-
-    // Generate JWT for app authentication
-    const jwt = await generateGitHubAppJWT(
-      config.githubApp.appId,
-      config.githubApp.privateKey
-    );
-
-    const baseUrl = config.githubApp.baseUrl || 'https://api.github.com';
-    const response = await fetch(
-      `${baseUrl}/app/installations/${installationId}/access_tokens`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': `octocode-mcp/${config.version}`,
-        },
+      if (!config.githubApp?.enabled) {
+        throw new Error('GitHub App not configured');
       }
-    );
 
-    if (!response.ok) {
-      throw new Error(
-        `GitHub App token refresh failed: ${response.statusText}`
+      // Generate JWT for app authentication
+      const jwt = await generateGitHubAppJWT(
+        config.githubApp.appId,
+        config.githubApp.privateKey
       );
-    }
 
-    const data = await response.json();
+      const baseUrl = config.githubApp.baseUrl || 'https://api.github.com';
+      const response = await fetch(
+        `${baseUrl}/app/installations/${installationId}/access_tokens`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': `octocode-mcp/${config.version}`,
+          },
+        }
+      );
 
-    const newTokenInfo: GitHubAppTokenInfo = {
-      installationToken: data.token,
-      expiresAt: new Date(data.expires_at),
-      installationId,
-      permissions: data.permissions || {},
-      appId: config.githubApp.appId,
-    };
-
-    // Store the new token securely
-    await storeGitHubAppToken(newTokenInfo);
-
-    // Schedule next refresh (5 minutes before expiration)
-    const refreshTime = new Date(
-      newTokenInfo.expiresAt.getTime() - 5 * 60 * 1000
-    );
-    scheduleTokenRefresh(refreshTime, 'github_app', newTokenInfo);
-
-    // Log successful refresh in enterprise mode
-    if (isEnterpriseMode()) {
-      try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
+      if (!response.ok) {
+        throw new Error(
+          `GitHub App token refresh failed: ${response.statusText}`
         );
-        logAuthEvent('token_rotation', 'success', {
-          appId: newTokenInfo.appId,
-          installationId,
-          expiresAt: newTokenInfo.expiresAt.toISOString(),
-          permissions: Object.keys(newTokenInfo.permissions),
-        });
-      } catch {
-        // Ignore audit logging errors
       }
-    }
 
-    return newTokenInfo;
-  } catch (error) {
-    // Log failure in enterprise mode
-    if (isEnterpriseMode()) {
-      try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
-        logAuthEvent('token_rotation', 'failure', {
-          error: error instanceof Error ? error.message : String(error),
-          installationId,
-        });
-      } catch {
-        // Ignore audit logging errors
+      const data = await response.json();
+
+      const newTokenInfo: GitHubAppTokenInfo = {
+        installationToken: data.token,
+        expiresAt: new Date(data.expires_at),
+        installationId,
+        permissions: data.permissions || {},
+        appId: config.githubApp.appId,
+      };
+
+      // Store the new token securely
+      await storeGitHubAppToken(newTokenInfo);
+
+      // Schedule next refresh; let scheduler subtract the buffer
+      scheduleTokenRefresh(newTokenInfo.expiresAt, 'github_app', newTokenInfo);
+
+      // Log successful refresh in enterprise mode
+      if (isEnterpriseMode()) {
+        try {
+          const { logAuthEvent } = await import(
+            '../../../security/auditLogger.js'
+          );
+          logAuthEvent('token_rotation', 'success', {
+            appId: newTokenInfo.appId,
+            installationId,
+            expiresAt: newTokenInfo.expiresAt.toISOString(),
+            permissions: Object.keys(newTokenInfo.permissions),
+          });
+        } catch {
+          // Ignore audit logging errors
+        }
       }
-    }
 
-    throw error;
-  }
+      return newTokenInfo;
+    } catch (error) {
+      // Log failure in enterprise mode
+      if (isEnterpriseMode()) {
+        try {
+          const { logAuthEvent } = await import(
+            '../../../security/auditLogger.js'
+          );
+          logAuthEvent('token_rotation', 'failure', {
+            error: error instanceof Error ? error.message : String(error),
+            installationId,
+          });
+        } catch {
+          // Ignore audit logging errors
+        }
+      }
+
+      throw error;
+    }
+  });
 }
 
 /**
@@ -754,7 +805,7 @@ async function storeGitHubAppToken(
 /**
  * Clear OAuth tokens from secure storage
  */
-async function clearOAuthTokens(): Promise<void> {
+export async function clearOAuthTokens(): Promise<void> {
   await deleteSecureCredential('oauth_access_token');
   await deleteSecureCredential('oauth_refresh_token');
   await deleteSecureCredential('oauth_expires_at');
@@ -993,8 +1044,8 @@ export async function storeGitHubAppTokenInfo(
   tokenExpiresAt = tokenInfo.expiresAt;
 
   // Schedule refresh
-  const refreshTime = new Date(tokenInfo.expiresAt.getTime() - 5 * 60 * 1000);
-  scheduleTokenRefresh(refreshTime, 'github_app', tokenInfo);
+  // Pass actual expiration; scheduler applies its own safety buffer
+  scheduleTokenRefresh(tokenInfo.expiresAt, 'github_app', tokenInfo);
 
   // Log in enterprise mode
   if (isEnterpriseMode()) {

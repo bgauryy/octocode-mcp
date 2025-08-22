@@ -4,7 +4,11 @@ import { ContentSanitizer } from '../../../security/contentSanitizer';
 import { getUserContext } from '../../../utils/github/userInfo';
 import { RateLimiter } from '../../../security/rateLimiter';
 import { OrganizationManager } from '../../../security/organizationManager';
-import { isEnterpriseMode } from '../../../utils/enterpriseUtils';
+import {
+  isEnterpriseMode,
+  isSSOEnforcementEnabled,
+} from '../../../utils/enterpriseUtils';
+import { getTokenSource } from './tokenManager';
 
 export interface UserContext {
   userId: string;
@@ -26,14 +30,38 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
   return async (args: unknown): Promise<CallToolResult> => {
     try {
       // 1. Validate and sanitize input parameters for security
-      const validation = ContentSanitizer.validateInputParameters(
-        args as Record<string, unknown>
-      );
+      let validation;
+      try {
+        validation = ContentSanitizer.validateInputParameters(
+          args as Record<string, unknown>
+        );
+      } catch (validationError) {
+        return createResult({
+          error: `Security validation error: ${validationError instanceof Error ? validationError.message : 'Unknown validation error'}`,
+          isError: true,
+        });
+      }
 
       // Check if validation failed due to structural/security issues
-      if (!validation.isValid) {
+      if (!validation || !validation.isValid) {
+        const warningMessage = validation?.warnings?.length
+          ? validation.warnings.join('; ')
+          : 'Parameters failed security validation';
+
+        // Check for specific security violations
+        const hasSecurityViolation = validation?.warnings?.some(
+          w =>
+            w.includes('Potential secret detected') ||
+            w.includes('malicious') ||
+            w.includes('suspicious')
+        );
+
+        const errorMessage = hasSecurityViolation
+          ? `Invalid input detected. Potential security violation. Use proper OAuth flow parameters.`
+          : `Security validation failed: ${warningMessage}`;
+
         return createResult({
-          error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          error: errorMessage,
           isError: true,
         });
       }
@@ -91,6 +119,22 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
                 // Organization manager not initialized - continue without org validation
               }
             }
+
+            // 5. SSO enforcement (if enabled)
+            if (isSSOEnforcementEnabled()) {
+              const source = getTokenSource();
+              if (source === 'cli') {
+                return createResult({
+                  error:
+                    'SSO enforcement active: CLI tokens are not permitted. Use OAuth, GitHub App, or environment tokens.',
+                  isError: true,
+                  hints: [
+                    'Authenticate via OAuth or configure GITHUB_TOKEN/GH_TOKEN',
+                    'In enterprise, CLI token resolution is disabled',
+                  ],
+                });
+              }
+            }
           }
         } catch (contextError) {
           // If we can't get user context, continue with basic validation only
@@ -125,8 +169,20 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
 
       // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
+        // Check for specific security violations
+        const hasSecurityViolation = validation?.warnings?.some(
+          w =>
+            w.includes('Potential secret detected') ||
+            w.includes('malicious') ||
+            w.includes('suspicious')
+        );
+
+        const errorMessage = hasSecurityViolation
+          ? `Invalid input detected. Potential security violation. Use proper OAuth flow parameters.`
+          : `Security validation failed: ${validation.warnings.join('; ')}`;
+
         return createResult({
-          error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          error: errorMessage,
           isError: true,
         });
       }
