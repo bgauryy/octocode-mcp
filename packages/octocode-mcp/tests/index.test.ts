@@ -39,7 +39,10 @@ import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager } from '../src/config/serverConfig.js';
-import { ToolsetManager } from '../src/mcp/tools/toolsets/toolsetManager.js';
+import {
+  ToolsetManager,
+  registerTools,
+} from '../src/mcp/tools/toolsets/toolsetManager.js';
 import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
 
@@ -62,6 +65,7 @@ const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockConfigManager = vi.mocked(ConfigManager);
 const mockToolsetManager = vi.mocked(ToolsetManager);
+const mockRegisterTools = vi.mocked(registerTools);
 const mockGetToken = vi.mocked(getToken);
 
 // Mock all tool registration functions
@@ -190,6 +194,67 @@ describe('Index Module', () => {
 
     mockToolsetManager.initialize.mockImplementation(() => {});
     mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default
+
+    // Mock registerTools to delegate to individual tool registration functions
+    // This maintains compatibility with existing test expectations
+    mockRegisterTools.mockImplementation((server, config) => {
+      // Process inclusiveTools from user configuration like the real implementation
+      const inclusiveTools =
+        config.userConfig.toolsToRun
+          ?.split(',')
+          .map(tool => tool.trim())
+          .filter(tool => tool.length > 0) || [];
+
+      const runAllTools = inclusiveTools.length === 0;
+      let successCount = 0;
+      const failedTools: string[] = [];
+
+      const toolRegistrations = [
+        {
+          name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+          fn: mockRegisterGitHubSearchCodeTool,
+        },
+        {
+          name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+          fn: mockRegisterSearchGitHubReposTool,
+        },
+        {
+          name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          fn: mockRegisterFetchGitHubFileContentTool,
+        },
+        {
+          name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+          fn: mockRegisterViewGitHubRepoStructureTool,
+        },
+        {
+          name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+          fn: mockRegisterGitHubSearchCommitsTool,
+        },
+        {
+          name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+          fn: mockRegisterSearchGitHubPullRequestsTool,
+        },
+        { name: TOOL_NAMES.PACKAGE_SEARCH, fn: mockRegisterPackageSearchTool },
+      ];
+
+      for (const tool of toolRegistrations) {
+        try {
+          const shouldRegisterTool =
+            runAllTools || inclusiveTools.includes(tool.name);
+          if (
+            shouldRegisterTool &&
+            mockToolsetManager.isToolEnabled(tool.name)
+          ) {
+            tool.fn(server);
+            successCount++;
+          }
+        } catch (error) {
+          failedTools.push(tool.name);
+        }
+      }
+
+      return { successCount, failedTools };
+    });
 
     mockGetToken.mockResolvedValue('test-token');
   });

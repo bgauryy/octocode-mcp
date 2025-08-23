@@ -4,14 +4,10 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './utils/cache.js';
-import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
-import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
-import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
+import {
+  registerTools,
+  ToolRegistrationConfig,
+} from './mcp/tools/toolsets/toolsetManager.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
@@ -22,11 +18,6 @@ import { ConfigManager } from './config/serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
 import { isBetaEnabled } from './utils/betaFeatures.js';
 import { version, name } from '../package.json';
-
-const inclusiveTools =
-  process.env.TOOLS_TO_RUN?.split(',')
-    .map(tool => tool.trim())
-    .filter(tool => tool.length > 0) || [];
 
 const SERVER_CONFIG: Implementation = {
   name: `${name}_${version}`,
@@ -220,68 +211,19 @@ export async function registerAllTools(server: McpServer) {
     );
   }
 
-  // Determine if we should run all tools or only specific ones
-  const runAllTools = inclusiveTools.length === 0;
+  // Prepare tool registration configuration
+  const toolRegistrationConfig: ToolRegistrationConfig = {
+    serverConfig: config,
+    userConfig: {
+      toolsToRun: process.env.TOOLS_TO_RUN, // could be undefined
+    },
+  };
 
-  const toolRegistrations = [
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      fn: registerGitHubSearchCodeTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      fn: registerSearchGitHubReposTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-      fn: registerFetchGitHubFileContentTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      fn: registerViewGitHubRepoStructureTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-      fn: registerSearchGitHubCommitsTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-      fn: registerSearchGitHubPullRequestsTool,
-    },
-    {
-      name: TOOL_NAMES.PACKAGE_SEARCH,
-      fn: registerPackageSearchTool,
-    },
-  ];
-
-  let successCount = 0;
-  const failedTools: string[] = [];
-
-  for (const tool of toolRegistrations) {
-    try {
-      // Check if tool should be registered based on inclusiveTools configuration
-      const shouldRegisterTool =
-        runAllTools || inclusiveTools.includes(tool.name);
-
-      if (shouldRegisterTool && ToolsetManager.isToolEnabled(tool.name)) {
-        tool.fn(server);
-        successCount++;
-      } else if (!shouldRegisterTool) {
-        // Use stderr for selective tool messages to avoid console linter issues
-        process.stderr.write(
-          `Tool ${tool.name} excluded by TOOLS_TO_RUN configuration\n`
-        );
-      } else {
-        // Use stderr for toolset configuration messages to avoid console linter issues
-        process.stderr.write(
-          `Tool ${tool.name} disabled by toolset configuration\n`
-        );
-      }
-    } catch (error) {
-      // Log the error but continue with other tools
-      failedTools.push(tool.name);
-    }
-  }
+  // Register tools using the centralized toolset manager
+  const { successCount, failedTools } = registerTools(
+    server,
+    toolRegistrationConfig
+  );
 
   if (failedTools.length > 0) {
     // Tools failed to register
