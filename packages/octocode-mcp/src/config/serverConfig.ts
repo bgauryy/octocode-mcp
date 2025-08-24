@@ -12,7 +12,6 @@ export interface ServerConfig {
   token?: string; // Optional - will be resolved by tokenManager
 
   // Tool management
-  enabledToolsets: string[];
 
   // New tool control environment variables
   enableTools?: string[]; // Tools to enable in addition to defaults
@@ -76,9 +75,6 @@ export class ConfigManager {
       host: process.env.GITHUB_HOST,
 
       // Tool management (GitHub MCP compatible)
-      enabledToolsets: this.parseStringArray(process.env.GITHUB_TOOLSETS) || [
-        'all',
-      ],
 
       // New tool control environment variables
       enableTools: this.parseStringArray(process.env.ENABLE_TOOLS),
@@ -279,11 +275,6 @@ export class ConfigManager {
     // Validate retries
     if (this.config.maxRetries < 0 || this.config.maxRetries > 10) {
       this.config.maxRetries = 3;
-    }
-
-    // Validate toolsets
-    if (this.config.enabledToolsets.length === 0) {
-      this.config.enabledToolsets = ['all'];
     }
 
     // Enterprise validation

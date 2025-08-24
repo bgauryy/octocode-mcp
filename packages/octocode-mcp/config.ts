@@ -25,7 +25,6 @@ export interface MCPConfig {
 
   // Tool Management
   tools: {
-    enabledToolsets: string[];
     enableTools?: string[];
     disableTools?: string[];
   };
@@ -216,7 +215,6 @@ export function loadConfig(): MCPConfig {
 
     // Tool Management
     tools: {
-      enabledToolsets: parseStringArray(process.env.GITHUB_TOOLSETS) || ['all'],
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
     },
@@ -357,11 +355,7 @@ function validateConfig(config: MCPConfig): void {
     logWarning('Max retries out of range, reset to 3');
   }
 
-  // Validate toolsets
-  if (config.tools.enabledToolsets.length === 0) {
-    config.tools.enabledToolsets = ['all'];
-    logWarning('No toolsets enabled, defaulting to all');
-  }
+
 
   // Enterprise validation warnings
   if (config.enterprise.auditLogging && !config.enterprise.organizationId) {
@@ -492,9 +486,7 @@ export function getGitHubHost(): string | undefined {
   return getConfig().github.host;
 }
 
-export function getEnabledToolsets(): string[] {
-  return getConfig().tools.enabledToolsets;
-}
+
 
 export function getEnableTools(): string[] | undefined {
   return getConfig().tools.enableTools;
@@ -673,7 +665,7 @@ export default {
   getGitHubApiUrl,
   getAppVersion,
   getGitHubHost,
-  getEnabledToolsets,
+
   getEnableTools,
   getDisableTools,
   // Config section getters

@@ -29,7 +29,7 @@ vi.mock('../../config.js', () => ({
   getEnterpriseConfig: vi.fn(),
 }));
 
-import { registerTools } from '../../src/mcp/tools/toolsetManager.js';
+import { registerTools } from '../../src/mcp/tools/toolsManager.js';
 
 // Import config helper mocks
 import {
@@ -333,7 +333,7 @@ describe('registerTools', () => {
         'registration_start',
         'success',
         {
-          totalTools: 7, // Total tools in DEFAULT_TOOLSETS
+          totalTools: 7,
           enableTools: [],
           disableTools: [],
         }

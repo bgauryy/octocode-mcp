@@ -5,7 +5,7 @@ import { registerPrompts } from './mcp/prompts.js';
 import { registerResources } from './mcp/resources.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './mcp/utils/cache.js';
-import { registerTools } from './mcp/tools/toolsetManager.js';
+import { registerTools } from './mcp/tools/toolsManager.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
@@ -201,12 +201,7 @@ export async function registerAllTools(server: McpServer) {
     );
   }
 
-  // Register tools using the centralized toolset manager
-  const { successCount, failedTools } = registerTools(server);
-
-  if (failedTools.length > 0) {
-    // Tools failed to register
-  }
+  const { successCount } = registerTools(server);
 
   if (successCount === 0) {
     throw new Error('No tools were successfully registered');

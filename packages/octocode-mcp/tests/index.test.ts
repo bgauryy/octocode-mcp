@@ -21,7 +21,7 @@ vi.mock('../src/mcp/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
-vi.mock('../src/mcp/tools/toolsetManager.js');
+vi.mock('../src/mcp/tools/toolsManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/utils/tokenManager.js');
 vi.mock('../src/auth/authenticationManager.js', () => ({
@@ -48,7 +48,7 @@ import { getNPMUserDetails } from '../src/mcp/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/mcp/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager } from '../src/config/serverConfig.js';
-import { registerTools } from '../src/mcp/tools/toolsetManager.js';
+import { registerTools } from '../src/mcp/tools/toolsManager.js';
 import { getToken } from '../src/mcp/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/utils/toolConstants.js';
 import {
@@ -227,7 +227,8 @@ describe('Index Module', () => {
     // Mock new dependencies
     mockConfigManager.initialize.mockReturnValue({
       version: '1.0.0',
-      enabledToolsets: [],
+      enableTools: [],
+      disableTools: [],
       enterprise: {
         organizationId: undefined,
         ssoEnforcement: false,

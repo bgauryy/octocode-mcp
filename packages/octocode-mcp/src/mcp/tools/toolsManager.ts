@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DEFAULT_TOOLSETS } from './tools.js';
+import { DEFAULT_TOOLS } from './tools.js';
 import { logToolEvent, AuditLogger } from '../../security/auditLogger.js';
 import {
   getEnableTools,
@@ -26,13 +26,13 @@ export function registerTools(server: McpServer): {
 
   // Log tool registration start
   logToolEvent('registration_start', 'success', {
-    totalTools: DEFAULT_TOOLSETS.length,
+    totalTools: DEFAULT_TOOLS.length,
     enableTools,
     disableTools,
   });
 
   // Register tools based on configuration
-  for (const tool of DEFAULT_TOOLSETS) {
+  for (const tool of DEFAULT_TOOLS) {
     try {
       let shouldRegisterTool = false;
       let reason = '';
@@ -115,7 +115,7 @@ export function registerTools(server: McpServer): {
     successCount,
     failedCount: failedTools.length,
     failedTools,
-    totalTools: DEFAULT_TOOLSETS.length,
+    totalTools: DEFAULT_TOOLS.length,
   });
 
   return { successCount, failedTools };

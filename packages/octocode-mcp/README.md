@@ -299,9 +299,8 @@ export TOOLS_TO_RUN="githubSearchCode"
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
-| `GITHUB_TOOLSETS` | Comma-separated enabled toolsets | `all` | `core,enterprise` |
-| `GITHUB_DYNAMIC_TOOLSETS` | Enable dynamic toolset loading | `false` | `true` |
-| `GITHUB_READ_ONLY` | Enable read-only mode | `false` | `true` |
+| `ENABLE_TOOLS` | Additional tools to enable (beyond defaults) | none | `github_search_commits,package_search` |
+| `DISABLE_TOOLS` | Default tools to disable | none | `github_view_repo_structure` |
 
 ### 🛡️ Security & Validation
 

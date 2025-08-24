@@ -25,23 +25,143 @@ How Octocode resolves your token (priority order):
 
 Implementation reference: `src/mcp/utils/tokenManager.ts` (`resolveToken`, `getToken`) and `src/index.ts` (bootstrap and enterprise initialization).
 
+## Tool Configuration
+
+Octocode MCP provides simple tool management through environment variables. The system uses default tools with optional enable/disable lists.
+
+### Default Tools (Always Available)
+
+The following tools are **enabled by default** and require no configuration:
+
+**Core GitHub Tools:**
+- ✅ `github_search_code` - Semantic code search across repositories  
+- ✅ `github_fetch_content` - File content retrieval with partial access
+- ✅ `github_view_repo_structure` - Repository structure exploration
+- ✅ `github_search_repositories` - Repository discovery and exploration
+
+### Optional Tools (Disabled by Default)
+
+The following tools are **disabled by default** but can be enabled:
+
+**Extended GitHub Tools:**
+- ➕ `github_search_commits` - Commit history and change analysis
+- ➕ `github_search_pull_requests` - Pull request analysis with diff content  
+
+**Package Management Tools:**
+- ➕ `package_search` - NPM and Python package discovery
+
+### Tool Control
+
+```bash
+# Enable additional tools (adds to default tools)
+export ENABLE_TOOLS="github_search_commits,package_search"
+
+# Disable default tools (removes from default tools)
+export DISABLE_TOOLS="github_view_repo_structure"
+```
+
+### Configuration Examples
+
+```bash
+# Default setup (no configuration needed)
+# Runs: github_search_code, github_fetch_content, github_view_repo_structure, github_search_repositories
+
+# Add commit search
+export ENABLE_TOOLS="github_search_commits"
+# Runs: all default tools + github_search_commits
+
+# Remove repository structure tool
+export DISABLE_TOOLS="github_view_repo_structure" 
+# Runs: github_search_code, github_fetch_content, github_search_repositories
+
+# Full GitHub + package search
+export ENABLE_TOOLS="github_search_commits,github_search_pull_requests,package_search"
+# Runs: all default tools + extended GitHub tools + package search
+
+# Minimal code research setup
+export DISABLE_TOOLS="github_search_repositories"
+export ENABLE_TOOLS="github_search_commits"
+# Runs: github_search_code, github_fetch_content, github_view_repo_structure + github_search_commits
+```
+
+### Tool Priority
+
+1. **Default tools** are enabled automatically
+2. **ENABLE_TOOLS** adds additional tools to the default set
+3. **DISABLE_TOOLS** removes tools from the final set (takes priority)
+
+**Note**: Tool changes require restarting the MCP server.
+
 ## 1) Individual Developers
 
-Goal: Make a token available to Octocode locally.
+Goal: Make a token available to Octocode locally and configure tools as needed.
 
-Recommended: GitHub CLI (Individual developers only)
+### GitHub CLI Setup (Recommended for Individual Developers)
+
+The GitHub CLI provides the easiest authentication method for local development:
+
+**Installation:**
 ```bash
-# Install GitHub CLI (examples)
-# macOS: brew install gh
-# Ubuntu/Debian: sudo apt install gh
-# Windows: winget install GitHub.cli
+# macOS
+brew install gh
 
-# Authenticate
+# Ubuntu/Debian
+sudo apt update
+sudo apt install gh
+
+# Windows (winget)
+winget install GitHub.cli
+
+# Windows (scoop)
+scoop install gh
+
+# Manual installation: https://github.com/cli/cli#installation
+```
+
+**Authentication and Setup:**
+```bash
+# Authenticate with GitHub
+gh auth login
+# Choose: GitHub.com → HTTPS → Yes (Git credential helper) → Login via web browser
+
+# Verify authentication
+gh auth status
+# Should show: ✓ Logged in to github.com as <username>
+
+# Test token access (shows first 5 chars for security)
+gh auth token | head -c 5 && echo '*****'
+
+# Verify API access
+gh api user --jq '.login'
+```
+
+**Post-Authentication Configuration:**
+```bash
+# Optional: Enable additional tools (default tools run automatically)
+export ENABLE_TOOLS="github_search_commits,package_search"
+
+# Optional: Performance tuning
+export REQUEST_TIMEOUT=30000   # 30 seconds (default)
+export MAX_RETRIES=3          # Default retry count
+
+# Optional: Enable beta features
+export BETA=true              # Enables experimental features
+```
+
+**Complete Individual Developer Setup:**
+```bash
+# 1. Install and authenticate GitHub CLI
 gh auth login
 
-# Verify token is available
-gh auth status
-gh auth token | head -c 5 && echo '*****'
+# 2. Verify access
+gh auth status && gh api user --jq '.login'
+
+# 3. (Optional) Enable additional tools
+export ENABLE_TOOLS="github_search_commits,package_search"
+export BETA=true
+
+# 4. Run Octocode MCP
+npx octocode-mcp
 ```
 
 **⚠️ Note**: GitHub CLI token resolution is **disabled in Enterprise mode** for security reasons. Enterprise deployments must use environment variables.
@@ -158,3 +278,100 @@ Troubleshooting (org auth):
 - No enterprise features active: confirm `GITHUB_ORGANIZATION` is set (and `AUDIT_ALL_ACCESS`, `RATE_LIMIT_*` if desired).
 - Required teams failing: user must be in ALL teams listed in `GITHUB_REQUIRED_TEAMS`.
 - Check logs directory when `AUDIT_ALL_ACCESS=true` and ensure write permissions to `AUDIT_LOG_DIR`.
+
+## 3) Advanced Configuration
+
+### OAuth Configuration (Alternative Authentication)
+
+For applications requiring OAuth flow instead of token-based authentication:
+
+```bash
+# OAuth Setup
+export GITHUB_OAUTH_ENABLED=true                    # Enable OAuth (default: true if client configured)
+export GITHUB_OAUTH_CLIENT_ID="your_client_id"      # Required for OAuth
+export GITHUB_OAUTH_CLIENT_SECRET="your_secret"     # Required for OAuth
+export GITHUB_OAUTH_REDIRECT_URI="http://localhost:3000/auth/callback"  # Default callback
+export GITHUB_OAUTH_SCOPES="repo,read:user"         # Default scopes
+export GITHUB_OAUTH_AUTH_URL="https://github.com/login/oauth/authorize"  # Custom auth URL
+export GITHUB_OAUTH_TOKEN_URL="https://github.com/login/oauth/access_token"  # Custom token URL
+```
+
+### GitHub App Configuration
+
+For GitHub App authentication (advanced use cases):
+
+```bash
+# GitHub App Setup  
+export GITHUB_APP_ENABLED=true                      # Enable GitHub App auth
+export GITHUB_APP_ID="123456"                       # Your GitHub App ID
+export GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----..."  # Private key content
+export GITHUB_APP_INSTALLATION_ID="12345678"        # Installation ID (optional)
+export GITHUB_HOST="github.company.com"             # For GitHub Enterprise Server
+```
+
+### GitHub Enterprise Server
+
+For GitHub Enterprise Server deployments:
+
+```bash
+# Enterprise Server Configuration
+export GITHUB_HOST="github.company.com"             # Your GHE server hostname
+export GITHUB_TOKEN="your_enterprise_token"         # Token for your GHE instance
+
+# API URLs are automatically configured based on GITHUB_HOST:
+# - API Base: https://github.company.com/api/v3
+# - Auth URL: https://github.company.com/login/oauth/authorize  
+# - Token URL: https://github.company.com/login/oauth/access_token
+```
+
+### Performance & Reliability
+
+```bash
+# Request Configuration
+export REQUEST_TIMEOUT=30000                        # Request timeout in ms (default: 30000)
+export MAX_RETRIES=3                                # Max retry attempts (default: 3)
+
+# Command Logging (for debugging)
+export ENABLE_COMMAND_LOGGING=true                  # Log all CLI commands
+export LOG_FILE_PATH="/path/to/logfile.log"         # Custom log file location
+```
+
+### Beta Features
+
+```bash
+# Beta Feature Access
+export BETA=true                                    # Enable all beta features
+# When enabled, provides access to:
+# - Advanced sampling capabilities
+# - Experimental tool features  
+# - Enhanced debugging information
+```
+
+### Complete Configuration Reference
+
+Environment variables are processed in this order:
+
+1. **Authentication** (required):
+   - `GITHUB_TOKEN` or `GH_TOKEN` or GitHub CLI token
+   
+2. **Tool Management** (optional):
+   - `ENABLE_TOOLS="tool1,tool2"` (adds to default tools)
+   - `DISABLE_TOOLS="tool3,tool4"` (removes from default tools)
+
+3. **Enterprise Features** (optional):
+   - `GITHUB_ORGANIZATION="your-org"`
+   - `AUDIT_ALL_ACCESS=true`
+   - `RATE_LIMIT_API_HOUR=1000`
+   - `RESTRICT_TO_MEMBERS=true`
+   - `REQUIRE_MFA=true`
+
+4. **Advanced Authentication** (optional):
+   - OAuth: `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`
+   - GitHub App: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`
+
+5. **Performance Tuning** (optional):
+   - `REQUEST_TIMEOUT=30000`
+   - `MAX_RETRIES=3`
+   - `BETA=true`
+
+**Configuration Validation**: Invalid configurations are automatically corrected with warnings logged to stderr. The server will continue to operate with safe defaults.

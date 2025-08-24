@@ -11,7 +11,7 @@ import { registerSearchGitHubPullRequestsTool } from './github_search_pull_reque
 import { registerPackageSearchTool } from './package_search.js';
 import { registerViewGitHubRepoStructureTool } from './github_view_repo_structure.js';
 
-export interface ToolsetConfig {
+export interface ToolConfig {
   name: string;
   description: string;
   isDefault: boolean;
@@ -19,7 +19,7 @@ export interface ToolsetConfig {
   fn: (server: McpServer) => RegisteredTool;
 }
 
-export const GITHUB_SEARCH_CODE_TOOLSET: ToolsetConfig = {
+export const GITHUB_SEARCH_CODE: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_CODE,
   description: 'Search code across GitHub repositories',
   isDefault: true,
@@ -27,7 +27,7 @@ export const GITHUB_SEARCH_CODE_TOOLSET: ToolsetConfig = {
   fn: registerGitHubSearchCodeTool,
 };
 
-export const GITHUB_FETCH_CONTENT_TOOLSET: ToolsetConfig = {
+export const GITHUB_FETCH_CONTENT: ToolConfig = {
   name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
   description: 'Fetch file content from GitHub repositories',
   isDefault: true,
@@ -35,7 +35,7 @@ export const GITHUB_FETCH_CONTENT_TOOLSET: ToolsetConfig = {
   fn: registerFetchGitHubFileContentTool,
 };
 
-export const GITHUB_VIEW_REPO_STRUCTURE_TOOLSET: ToolsetConfig = {
+export const GITHUB_VIEW_REPO_STRUCTURE: ToolConfig = {
   name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
   description: 'View GitHub repository structure and navigation',
   isDefault: true,
@@ -43,7 +43,7 @@ export const GITHUB_VIEW_REPO_STRUCTURE_TOOLSET: ToolsetConfig = {
   fn: registerViewGitHubRepoStructureTool,
 };
 
-export const GITHUB_SEARCH_REPOSITORIES_TOOLSET: ToolsetConfig = {
+export const GITHUB_SEARCH_REPOSITORIES: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
   description: 'Search and discover GitHub repositories',
   isDefault: true,
@@ -51,7 +51,7 @@ export const GITHUB_SEARCH_REPOSITORIES_TOOLSET: ToolsetConfig = {
   fn: registerSearchGitHubReposTool,
 };
 
-export const GITHUB_SEARCH_COMMITS_TOOLSET: ToolsetConfig = {
+export const GITHUB_SEARCH_COMMITS: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
   description: 'Search GitHub commits and change history',
   isDefault: false,
@@ -59,7 +59,7 @@ export const GITHUB_SEARCH_COMMITS_TOOLSET: ToolsetConfig = {
   fn: registerSearchGitHubCommitsTool,
 };
 
-export const GITHUB_SEARCH_PULL_REQUESTS_TOOLSET: ToolsetConfig = {
+export const GITHUB_SEARCH_PULL_REQUESTS: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
   description: 'Search GitHub pull requests and code reviews',
   isDefault: false,
@@ -67,7 +67,7 @@ export const GITHUB_SEARCH_PULL_REQUESTS_TOOLSET: ToolsetConfig = {
   fn: registerSearchGitHubPullRequestsTool,
 };
 
-export const PACKAGE_SEARCH_TOOLSET: ToolsetConfig = {
+export const PACKAGE_SEARCH: ToolConfig = {
   name: TOOL_NAMES.PACKAGE_SEARCH,
   description: 'Search NPM and Python package registries',
   isDefault: false,
@@ -75,12 +75,12 @@ export const PACKAGE_SEARCH_TOOLSET: ToolsetConfig = {
   fn: registerPackageSearchTool,
 };
 
-export const DEFAULT_TOOLSETS: ToolsetConfig[] = [
-  GITHUB_SEARCH_CODE_TOOLSET,
-  GITHUB_FETCH_CONTENT_TOOLSET,
-  GITHUB_VIEW_REPO_STRUCTURE_TOOLSET,
-  GITHUB_SEARCH_REPOSITORIES_TOOLSET,
-  GITHUB_SEARCH_COMMITS_TOOLSET,
-  GITHUB_SEARCH_PULL_REQUESTS_TOOLSET,
-  PACKAGE_SEARCH_TOOLSET,
+export const DEFAULT_TOOLS: ToolConfig[] = [
+  GITHUB_SEARCH_CODE,
+  GITHUB_FETCH_CONTENT,
+  GITHUB_VIEW_REPO_STRUCTURE,
+  GITHUB_SEARCH_REPOSITORIES,
+  GITHUB_SEARCH_COMMITS,
+  GITHUB_SEARCH_PULL_REQUESTS,
+  PACKAGE_SEARCH,
 ];

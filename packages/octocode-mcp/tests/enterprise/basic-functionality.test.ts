@@ -125,7 +125,7 @@ describe('Enterprise Functionality', () => {
     process.env.GITHUB_ORGANIZATION = 'test-org';
 
     const { registerTools } = await import(
-      '../../src/mcp/tools/toolsetManager.js'
+      '../../src/mcp/tools/toolsManager.js'
     );
 
     const mockServer = {
