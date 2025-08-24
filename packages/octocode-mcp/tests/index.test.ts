@@ -13,14 +13,14 @@ vi.mock('../src/mcp/tools/github_fetch_content.js');
 vi.mock('../src/mcp/tools/github_search_repos.js');
 vi.mock('../src/mcp/tools/github_search_commits.js');
 vi.mock('../src/mcp/tools/github_search_pull_requests.js');
-vi.mock('../src/mcp/tools/package_search/package_search.js');
+vi.mock('../src/mcp/tools/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/utils/APIStatus.js');
 vi.mock('../src/mcp/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
-vi.mock('../src/mcp/toolsets/toolsetManager.js');
+vi.mock('../src/mcp/tools/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/utils/tokenManager.js');
 vi.mock('../src/auth/authenticationManager.js', () => ({

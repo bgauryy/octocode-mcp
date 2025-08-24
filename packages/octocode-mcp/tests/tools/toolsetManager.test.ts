@@ -10,7 +10,7 @@ vi.mock('../../src/mcp/tools/github_fetch_content.js');
 vi.mock('../../src/mcp/tools/github_search_repos.js');
 vi.mock('../../src/mcp/tools/github_search_commits.js');
 vi.mock('../../src/mcp/tools/github_search_pull_requests.js');
-vi.mock('../../src/mcp/tools/package_search/package_search.js');
+vi.mock('../../src/mcp/tools/package_search.js');
 vi.mock('../../src/mcp/tools/github_view_repo_structure.js');
 
 // Mock audit logger
@@ -147,7 +147,7 @@ describe('registerTools', () => {
   afterEach(() => {
     // Restore original environment variables
     process.env = { ...originalEnvVars };
-    processStderrWriteSpy.mockRestore();
+    processStderrWriteSpy?.mockRestore();
   });
 
   it('should register only default tools when no TOOLS_TO_RUN is specified', () => {
