@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
+import { registerResources } from './mcp/resources.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './mcp/utils/cache.js';
 import { registerTools } from './mcp/tools/toolsetManager.js';
@@ -32,6 +33,7 @@ async function startServer() {
     const server = new McpServer(SERVER_CONFIG, {
       capabilities: {
         prompts: {},
+        resources: {},
         tools: {},
         ...(isBetaEnabled() && { sampling: {} }),
       },
@@ -59,6 +61,9 @@ async function startServer() {
 
     // Register prompts
     registerPrompts(server);
+
+    // Register resources
+    registerResources(server);
 
     // Register sampling capabilities only if BETA features are enabled
     if (isBetaEnabled()) {

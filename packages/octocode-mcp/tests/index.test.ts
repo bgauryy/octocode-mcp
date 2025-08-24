@@ -7,6 +7,7 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/mcp/utils/cache.js');
 vi.mock('../src/mcp/prompts.js'); // Add missing mock for prompts
+vi.mock('../src/mcp/resources.js'); // Add missing mock for resources
 vi.mock('../src/mcp/sampling.js');
 vi.mock('../src/mcp/tools/github_search_code.js');
 vi.mock('../src/mcp/tools/github_fetch_content.js');
@@ -34,6 +35,7 @@ vi.mock('../src/auth/authenticationManager.js', () => ({
 // Import mocked functions
 import { clearAllCache } from '../src/mcp/utils/cache.js';
 import { registerPrompts } from '../src/mcp/prompts.js';
+import { registerResources } from '../src/mcp/resources.js';
 import { registerSampling } from '../src/mcp/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
@@ -67,6 +69,7 @@ const mockTransport = {
 
 const mockClearAllCache = vi.mocked(clearAllCache);
 const mockRegisterPrompts = vi.mocked(registerPrompts);
+const mockRegisterResources = vi.mocked(registerResources);
 const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
@@ -249,6 +252,10 @@ describe('Index Module', () => {
     });
 
     mockGetToken.mockResolvedValue('test-token');
+
+    // Mock resources and prompts registration
+    mockRegisterResources.mockImplementation(() => {});
+    mockRegisterPrompts.mockImplementation(() => {});
   });
 
   afterEach(() => {
