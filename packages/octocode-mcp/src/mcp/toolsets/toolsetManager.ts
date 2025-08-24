@@ -1,12 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLSETS } from './tools.js';
-import { logToolEvent, AuditLogger } from '../../../security/auditLogger.js';
+import { logToolEvent, AuditLogger } from '../../security/auditLogger.js';
 import {
   getEnableTools,
   getDisableTools,
   isEnterpriseMode,
   getEnterpriseConfig,
-} from '../../../../config.js';
+} from '../../../config.js';
 
 /**
  * Register tools based on configuration

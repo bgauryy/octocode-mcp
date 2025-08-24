@@ -9,7 +9,7 @@ import {
   GitHubViewRepoStructureBulkQuerySchema,
   ProcessedRepositoryStructureResult,
   AggregatedRepositoryContext,
-} from './scheme/github_view_repo_structure';
+} from '../scheme/github_view_repo_structure';
 import { generateHints } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {

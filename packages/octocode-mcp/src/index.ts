@@ -4,7 +4,7 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './utils/cache.js';
-import { registerTools } from './mcp/tools/toolsets/toolsetManager.js';
+import { registerTools } from './mcp/toolsets/toolsetManager.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,

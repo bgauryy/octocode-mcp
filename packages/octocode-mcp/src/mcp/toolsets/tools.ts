@@ -2,14 +2,14 @@ import {
   McpServer,
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { TOOL_NAMES } from '../utils/toolConstants.js';
-import { registerGitHubSearchCodeTool } from '../github_search_code.js';
-import { registerFetchGitHubFileContentTool } from '../github_fetch_content.js';
-import { registerSearchGitHubReposTool } from '../github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from '../github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from '../github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../package_search/package_search.js';
-import { registerViewGitHubRepoStructureTool } from '../github_view_repo_structure.js';
+import { TOOL_NAMES } from '../tools/utils/toolConstants.js';
+import { registerGitHubSearchCodeTool } from '../tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from '../tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from '../tools/github_search_pull_requests.js';
+import { registerPackageSearchTool } from '../tools/package_search/package_search.js';
+import { registerViewGitHubRepoStructureTool } from '../tools/github_view_repo_structure.js';
 
 export interface ToolsetConfig {
   name: string;

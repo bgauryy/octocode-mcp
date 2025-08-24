@@ -7,7 +7,7 @@ import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
-} from './scheme/github_search_code.js';
+} from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../../utils/githubAPI.js';
 import {
   createBulkResponse,
@@ -20,7 +20,7 @@ import {
   consolidateHints,
 } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { ProcessedCodeSearchResult } from './scheme/github_search_code';
+import { ProcessedCodeSearchResult } from '../scheme/github_search_code';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 

@@ -1,5 +1,5 @@
-import { GitHubCodeSearchQuery } from '../mcp/tools/scheme/github_search_code';
-import { GitHubReposSearchQuery } from '../mcp/tools/scheme/github_search_repos';
+import { GitHubCodeSearchQuery } from '../mcp/scheme/github_search_code';
+import { GitHubReposSearchQuery } from '../mcp/scheme/github_search_repos';
 import {
   GitHubPullRequestsSearchParams,
   GitHubCommitSearchParams,

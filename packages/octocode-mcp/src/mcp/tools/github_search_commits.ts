@@ -7,7 +7,7 @@ import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
-} from './scheme/github_search_commits';
+} from '../scheme/github_search_commits';
 import { generateHints } from './utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.

@@ -5,7 +5,7 @@ import type {
   GitHubAPIResponse,
   OptimizedCodeSearchResult,
 } from '../types/github-openapi';
-import { GitHubCodeSearchQuery } from '../mcp/tools/scheme/github_search_code';
+import { GitHubCodeSearchQuery } from '../mcp/scheme/github_search_code';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
@@ -62,9 +62,10 @@ async function searchGitHubCodeAPIInternal(
     }
 
     // Optimized search parameters with better defaults
+    const limit: number = enhancedParams.limit ?? 30;
     const searchParams: SearchCodeParameters = {
       q: query,
-      per_page: Math.min(enhancedParams.limit || 30, 100),
+      per_page: Math.min(limit, 100),
       page: 1,
       // Always request text matches for better context
       headers: {

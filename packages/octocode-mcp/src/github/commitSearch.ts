@@ -6,7 +6,7 @@ import {
 import {
   GitHubCommitSearchResult,
   GitHubCommitSearchError,
-} from '../mcp/tools/scheme/github_search_commits';
+} from '../mcp/scheme/github_search_commits';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';

@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { ResearchGoalEnum } from '../utils/toolConstants';
+import { ResearchGoalEnum } from '../tools/utils/toolConstants';
 
 /**
  * Base query schema that all tool queries should extend

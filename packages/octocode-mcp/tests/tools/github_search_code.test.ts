@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GitHubCodeSearchQuerySchema } from '../../src/mcp/tools/scheme/github_search_code.js';
+import { GitHubCodeSearchQuerySchema } from '../../src/mcp/scheme/github_search_code.js';
 import { ensureUniqueQueryIds } from '../../src/mcp/tools/utils/queryUtils.js';
 
 // Mock the GitHub client

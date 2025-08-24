@@ -41,7 +41,7 @@
 - **Graceful Shutdown**: Signal handling with 5-second timeout protection
 - **NPM Integration**: Optional package ecosystem support detection
 
-#### 2. Schema Foundation Layer (`src/mcp/tools/scheme/baseSchema.ts`)
+#### 2. Schema Foundation Layer (`src/mcp/scheme/baseSchema.ts`)
 **Unified Schema Architecture** - The foundation of all tool operations:
 
 ```typescript

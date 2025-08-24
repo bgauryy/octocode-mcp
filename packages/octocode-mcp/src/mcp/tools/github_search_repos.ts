@@ -8,7 +8,7 @@ import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
-} from './scheme/github_search_repos';
+} from '../scheme/github_search_repos';
 import type { Repository } from '../../types/github-openapi';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {

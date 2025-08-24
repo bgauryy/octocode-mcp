@@ -7,7 +7,7 @@ import { generateHints } from '../utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
-} from '../scheme/package_search';
+} from '../../scheme/package_search';
 import { searchPackagesAPI } from '../../../utils/package';
 
 const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.

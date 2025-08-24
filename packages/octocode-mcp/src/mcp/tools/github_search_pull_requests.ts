@@ -7,7 +7,7 @@ import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
-} from './scheme/github_search_pull_requests';
+} from '../scheme/github_search_pull_requests';
 import { generateHints } from './utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.

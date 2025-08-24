@@ -29,7 +29,7 @@ vi.mock('../../config.js', () => ({
   getEnterpriseConfig: vi.fn(),
 }));
 
-import { registerTools } from '../../src/mcp/tools/toolsets/toolsetManager.js';
+import { registerTools } from '../../src/mcp/toolsets/toolsetManager.js';
 
 // Import config helper mocks
 import {

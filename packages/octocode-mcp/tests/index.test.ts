@@ -20,7 +20,7 @@ vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
-vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
+vi.mock('../src/mcp/toolsets/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/tools/utils/tokenManager.js');
 vi.mock('../src/auth/authenticationManager.js', () => ({
@@ -46,7 +46,7 @@ import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager } from '../src/config/serverConfig.js';
-import { registerTools } from '../src/mcp/tools/toolsets/toolsetManager.js';
+import { registerTools } from '../src/mcp/toolsets/toolsetManager.js';
 import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
 import {

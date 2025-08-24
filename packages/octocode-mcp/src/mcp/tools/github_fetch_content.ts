@@ -8,7 +8,7 @@ import {
   FileContentQuery,
   FileContentBulkQuerySchema,
   FileContentQueryResult,
-} from './scheme/github_fetch_content';
+} from '../scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { generateHints } from './utils/hints_consolidated';
 import { isSamplingEnabled } from '../../utils/betaFeatures';
