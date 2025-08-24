@@ -13,7 +13,7 @@ vi.mock('../../src/utils/enterpriseUtils.js', () => ({
   isEnterpriseMode: mockIsEnterpriseMode,
 }));
 
-vi.mock('../../src/utils/github/userInfo.js', () => ({
+vi.mock('../../src/github/userInfo.js', () => ({
   getUserContext: mockGetUserContext,
 }));
 

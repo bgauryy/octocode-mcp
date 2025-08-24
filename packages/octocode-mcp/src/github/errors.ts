@@ -1,5 +1,5 @@
 import { RequestError } from 'octokit';
-import type { GitHubAPIError } from '../../types/github-openapi';
+import type { GitHubAPIError } from '../types/github-openapi';
 
 /**
  * Enhanced error handling for GitHub API

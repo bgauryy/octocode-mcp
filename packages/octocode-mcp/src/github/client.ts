@@ -1,12 +1,12 @@
 import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
-import type { GetRepoResponse } from '../../types/github-openapi';
+import type { GetRepoResponse } from '../types/github-openapi';
 import {
   getGitHubToken,
   onTokenRotated,
-} from '../../mcp/tools/utils/tokenManager.js';
-import { ConfigManager } from '../../config/serverConfig.js';
+} from '../mcp/tools/utils/tokenManager.js';
+import { ConfigManager } from '../config/serverConfig.js';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
