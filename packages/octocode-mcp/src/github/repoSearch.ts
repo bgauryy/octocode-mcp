@@ -3,7 +3,7 @@ import type {
   RepoSearchResultItem,
   GitHubAPIResponse,
   Repository,
-} from '../types/github-openapi';
+} from './types';
 import { GitHubReposSearchQuery } from '../mcp/scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';

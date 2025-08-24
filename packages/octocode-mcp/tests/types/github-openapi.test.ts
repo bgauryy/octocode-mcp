@@ -14,7 +14,7 @@ import {
   type PullRequest,
   type WorkflowRun,
   type CheckRun,
-} from '../../src/types/github-openapi';
+} from '../../src/github/types';
 
 // Helper function to create minimal user objects for repository owners
 function createUser(login: string, id: number) {

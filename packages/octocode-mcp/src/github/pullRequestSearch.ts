@@ -1,7 +1,4 @@
-import {
-  GitHubPullRequestsSearchParams,
-  GitHubPullRequestItem,
-} from '../types/github-openapi';
+import { GitHubPullRequestsSearchParams, GitHubPullRequestItem } from './types';
 import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestSearchResult,

@@ -2,7 +2,7 @@ import {
   GitHubCommitSearchParams,
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
-} from '../types/github-openapi';
+} from './types';
 import {
   GitHubCommitSearchResult,
   GitHubCommitSearchError,

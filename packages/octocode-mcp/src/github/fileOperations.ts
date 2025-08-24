@@ -1,8 +1,5 @@
 import { RequestError } from 'octokit';
-import type {
-  GetContentParameters,
-  GitHubAPIResponse,
-} from '../types/github-openapi';
+import type { GetContentParameters, GitHubAPIResponse } from './types';
 import {
   GithubFetchRequestParams,
   GitHubFileContentResponse,
