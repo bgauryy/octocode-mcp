@@ -18,19 +18,12 @@ vi.mock('../src/mcp/tools/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/utils/APIStatus.js');
 vi.mock('../src/mcp/utils/exec.js');
-vi.mock('../src/security/credentialStore.js');
+
 vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
 vi.mock('../src/mcp/tools/toolsManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/utils/tokenManager.js');
-vi.mock('../src/auth/authenticationManager.js', () => ({
-  AuthenticationManager: {
-    getInstance: vi.fn(() => ({
-      initialize: vi.fn().mockResolvedValue(undefined),
-    })),
-  },
-}));
 
 // Import mocked functions
 import { clearAllCache } from '../src/mcp/utils/cache.js';
@@ -46,16 +39,12 @@ import { registerPackageSearchTool } from '../src/mcp/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/mcp/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/mcp/utils/exec.js';
-import { SecureCredentialStore } from '../src/security/credentialStore.js';
+
 import { ConfigManager } from '../src/config/serverConfig.js';
 import { registerTools } from '../src/mcp/tools/toolsManager.js';
 import { getToken } from '../src/mcp/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/utils/toolConstants.js';
-import {
-  isBetaEnabled,
-  isAuditingEnabled,
-  isRateLimitingEnabled,
-} from '../config.js';
+import { isBetaEnabled } from '../config.js';
 
 // Mock implementations
 const mockMcpServer = {
@@ -70,7 +59,7 @@ const mockTransport = {
 const mockClearAllCache = vi.mocked(clearAllCache);
 const mockRegisterPrompts = vi.mocked(registerPrompts);
 const mockRegisterResources = vi.mocked(registerResources);
-const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
+
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
@@ -82,8 +71,6 @@ const mockGetToken = vi.mocked(getToken);
 
 // Config function mocks
 const mockIsBetaEnabled = vi.mocked(isBetaEnabled);
-const mockIsAuditingEnabled = vi.mocked(isAuditingEnabled);
-const mockIsRateLimitingEnabled = vi.mocked(isRateLimitingEnabled);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -164,8 +151,6 @@ describe('Index Module', () => {
 
     // Mock config functions with default values
     mockIsBetaEnabled.mockReturnValue(false);
-    mockIsAuditingEnabled.mockReturnValue(false);
-    mockIsRateLimitingEnabled.mockReturnValue(false);
 
     // Create spies for process methods - use a safer mock that doesn't throw by default
     processExitSpy = vi
@@ -229,19 +214,7 @@ describe('Index Module', () => {
       version: '1.0.0',
       enableTools: [],
       disableTools: [],
-      enterprise: {
-        organizationId: undefined,
-        ssoEnforcement: false,
-        auditLogging: false,
-        rateLimiting: false,
-        tokenValidation: false,
-        permissionValidation: false,
-      },
-      oauth: undefined,
-      githubApp: undefined,
-      enableCommandLogging: false,
-      logFilePath: undefined,
-      githubHost: undefined,
+      enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
     });
@@ -672,7 +645,7 @@ describe('Index Module', () => {
       }
 
       expect(mockClearAllCache).toHaveBeenCalled();
-      expect(mockSecureCredentialStore.clearAll).toHaveBeenCalled();
+
       expect(mockMcpServer.close).toHaveBeenCalled();
     });
 

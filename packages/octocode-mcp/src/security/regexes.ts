@@ -899,7 +899,7 @@ const versionControlPatterns: SensitiveDataPattern[] = [
   },
   {
     name: 'githubAppInstallationToken',
-    description: 'GitHub App installation token',
+    description: 'GitHub installation token',
     regex: /\bghs_[0-9a-zA-Z]{37}\b/g,
     matchAccuracy: 'high',
   },

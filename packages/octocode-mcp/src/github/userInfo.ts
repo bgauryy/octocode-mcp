@@ -190,12 +190,11 @@ export async function withRateLimitedAPI<T>(
 }
 
 /**
- * Get user context for enterprise features
+ * Get user context for advanced features
  * Combines user info with organization membership if applicable
  */
 export async function getUserContext(): Promise<{
   user: GitHubUserInfo | null;
-  organizationId?: string;
   rateLimits: GitHubRateLimitInfo | null;
 }> {
   const [user, rateLimits] = await Promise.all([
@@ -203,12 +202,8 @@ export async function getUserContext(): Promise<{
     getRateLimitStatus(),
   ]);
 
-  // Get organization from environment if configured
-  const organizationId = process.env.GITHUB_ORGANIZATION;
-
   return {
     user,
-    organizationId,
     rateLimits,
   };
 }

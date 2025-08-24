@@ -1,12 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLS } from './tools.js';
 import { logToolEvent, AuditLogger } from '../../security/auditLogger.js';
-import {
-  getEnableTools,
-  getDisableTools,
-  isEnterpriseMode,
-  getEnterpriseConfig,
-} from '../../../config.js';
+import { getEnableTools, getDisableTools } from '../../../config.js';
 
 /**
  * Register tools based on configuration
@@ -84,28 +79,6 @@ export function registerTools(server: McpServer): {
         toolName: tool.name,
         error: error instanceof Error ? error.message : String(error),
         isDefault: tool.isDefault,
-      });
-    }
-  }
-
-  // Enable auth tools automatically if organization is configured
-  if (isEnterpriseMode()) {
-    try {
-      const enterpriseConfig = getEnterpriseConfig();
-      // Auth tools are enabled automatically in enterprise mode
-      // No additional registration needed - existing tools handle enterprise mode
-      process.stderr.write('🔒 Enterprise mode active: auth tools enabled\n');
-
-      // Audit enterprise mode activation
-      logToolEvent('enterprise_mode_activated', 'success', {
-        organization: enterpriseConfig.organizationId,
-        authToolsEnabled: true,
-      });
-    } catch (error) {
-      // Enterprise auth setup failed but don't break startup
-      logToolEvent('enterprise_mode_failed', 'failure', {
-        organization: getEnterpriseConfig().organizationId,
-        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

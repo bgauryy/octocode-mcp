@@ -125,7 +125,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Repository visibility'),
 
-  app: z.string().optional().describe('GitHub App author'),
+  app: z.string().optional().describe('GitHub application author'),
 
   match: z
     .array(z.enum(['title', 'body', 'comments']))

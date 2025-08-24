@@ -76,9 +76,9 @@ Ensure you have the following installed and configured:
 ### GitHub Authentication
 
 Octocode-MCP supports multiple token sources (priority order) – see `docs/AUTHENTICATION.md`:
-1) OAuth token (hosted) → 2) GitHub App token (enterprise) → 3) `GITHUB_TOKEN` → 4) `GH_TOKEN` → 5) GitHub CLI (local only) → 6) Authorization header
+1) `GITHUB_TOKEN` → 2) `GH_TOKEN` → 3) GitHub CLI (local only) → 4) Authorization header
 
-For containers, prefer environment variables (`GITHUB_TOKEN`/`GH_TOKEN`). CLI tokens are not available inside the image and are disabled in enterprise mode.
+For containers, prefer environment variables (`GITHUB_TOKEN`/`GH_TOKEN`). CLI tokens are not available inside the image and are disabled in advanced mode.
 
 #### Creating a GitHub Token (PAT)
 1. Go to https://github.com/settings/tokens
@@ -207,7 +207,7 @@ docker run -it --rm \
     -e NODE_ENV=production \
     octocode-mcp:latest
 
-Tip: In enterprise mode, set `GITHUB_ORGANIZATION` and other security envs (see docs below).
+Tip: In advanced mode, set security environment variables (see docs below).
 ```
 
 **Configuration Explained:**
@@ -496,4 +496,4 @@ docker build -t my-octocode-mcp -f Dockerfile .
 docker run --rm -e GITHUB_TOKEN="$GITHUB_TOKEN" my-octocode-mcp
 ```
 
-For enterprise deployments, add environment variables from `docs/AUTHENTICATION.md` (e.g., `GITHUB_ORGANIZATION`, `AUDIT_ALL_ACCESS`, rate limits) to the `docker run` command or your orchestrator configuration.
+For advanced deployments, add environment variables from `docs/AUTHENTICATION.md` (e.g., `AUDIT_ALL_ACCESS`) to the `docker run` command or your orchestrator configuration.

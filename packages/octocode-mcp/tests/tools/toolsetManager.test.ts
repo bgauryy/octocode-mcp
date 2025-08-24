@@ -25,19 +25,12 @@ vi.mock('../../src/security/auditLogger.js', () => ({
 vi.mock('../../config.js', () => ({
   getEnableTools: vi.fn(),
   getDisableTools: vi.fn(),
-  isEnterpriseMode: vi.fn(),
-  getEnterpriseConfig: vi.fn(),
 }));
 
 import { registerTools } from '../../src/mcp/tools/toolsManager.js';
 
 // Import config helper mocks
-import {
-  getEnableTools,
-  getDisableTools,
-  isEnterpriseMode,
-  getEnterpriseConfig,
-} from '../../config.js';
+import { getEnableTools, getDisableTools } from '../../config.js';
 
 // Import the mocked functions for verification
 import { registerGitHubSearchCodeTool } from '../../src/mcp/tools/github_search_code.js';
@@ -75,8 +68,6 @@ const mockAuditLogger = vi.mocked(AuditLogger);
 // Config helper mocks
 const mockGetEnableTools = vi.mocked(getEnableTools);
 const mockGetDisableTools = vi.mocked(getDisableTools);
-const mockIsEnterpriseMode = vi.mocked(isEnterpriseMode);
-const mockGetEnterpriseConfig = vi.mocked(getEnterpriseConfig);
 
 describe('registerTools', () => {
   let originalEnvVars: Record<string, string | undefined>;
@@ -92,7 +83,7 @@ describe('registerTools', () => {
     originalEnvVars = { ...process.env };
 
     // Clear environment variables
-    delete process.env.GITHUB_ORGANIZATION;
+
     delete process.env.TOOLS_TO_RUN;
 
     // Reset mocks
@@ -101,15 +92,6 @@ describe('registerTools', () => {
     // Setup default config mock returns
     mockGetEnableTools.mockReturnValue(undefined);
     mockGetDisableTools.mockReturnValue(undefined);
-    mockIsEnterpriseMode.mockReturnValue(false);
-    mockGetEnterpriseConfig.mockReturnValue({
-      organizationId: undefined,
-      ssoEnforcement: false,
-      auditLogging: false,
-      rateLimiting: false,
-      tokenValidation: false,
-      permissionValidation: false,
-    });
 
     // Ensure all mocks are properly reset to not throw errors
     mockRegisterGitHubSearchCodeTool.mockImplementation(
@@ -182,26 +164,6 @@ describe('registerTools', () => {
 
     expect(result.successCount).toBe(3); // 3 remaining default tools
     expect(result.failedTools).toEqual(['githubSearchCode']);
-  });
-
-  it('should enable auth tools when GITHUB_ORGANIZATION is set', () => {
-    // Mock enterprise mode
-    mockIsEnterpriseMode.mockReturnValue(true);
-    mockGetEnterpriseConfig.mockReturnValue({
-      organizationId: 'test-org',
-      ssoEnforcement: false,
-      auditLogging: false,
-      rateLimiting: false,
-      tokenValidation: false,
-      permissionValidation: false,
-    });
-
-    const result = registerTools(mockServer);
-
-    expect(result.successCount).toBe(4); // Only default tools
-    expect(processStderrWriteSpy).toHaveBeenCalledWith(
-      '🔒 Enterprise mode active: auth tools enabled\n'
-    );
   });
 
   it('should show appropriate exclusion messages for non-default tools', () => {
@@ -444,30 +406,6 @@ describe('registerTools', () => {
       );
 
       expect(result.failedTools).toEqual(['githubSearchCode']);
-    });
-
-    it('should log enterprise mode activation', () => {
-      mockIsEnterpriseMode.mockReturnValue(true);
-      mockGetEnterpriseConfig.mockReturnValue({
-        organizationId: 'test-org',
-        ssoEnforcement: false,
-        auditLogging: false,
-        rateLimiting: false,
-        tokenValidation: false,
-        permissionValidation: false,
-      });
-
-      registerTools(mockServer);
-
-      // Verify enterprise mode event
-      expect(mockLogToolEvent).toHaveBeenCalledWith(
-        'enterprise_mode_activated',
-        'success',
-        {
-          organization: 'test-org',
-          authToolsEnabled: true,
-        }
-      );
     });
   });
 });

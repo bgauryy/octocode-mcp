@@ -6,17 +6,9 @@ import { registerResources } from './mcp/resources.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './mcp/utils/cache.js';
 import { registerTools } from './mcp/tools/toolsManager.js';
-import { SecureCredentialStore } from './security/credentialStore.js';
-import {
-  getToken,
-  isEnterpriseTokenManager,
-  isCliTokenResolutionEnabled,
-} from './mcp/utils/tokenManager.js';
-import {
-  isBetaEnabled,
-  isAuditingEnabled,
-  isRateLimitingEnabled,
-} from '../config.js';
+
+import { getToken, isAdvancedTokenManager } from './mcp/utils/tokenManager.js';
+import { isBetaEnabled } from '../config.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -39,23 +31,13 @@ async function startServer() {
       },
     });
 
-    // Initialize enterprise components if configured
+    // Initialize advanced components if configured
     try {
-      if (isAuditingEnabled()) {
-        const { AuditLogger } = await import('./security/auditLogger.js');
-        AuditLogger.initialize();
-      }
-
-      if (isRateLimitingEnabled()) {
-        const { RateLimiter } = await import('./security/rateLimiter.js');
-        RateLimiter.initialize();
-      }
-    } catch (_enterpriseInitError) {
-      // Ignore enterprise initialization errors to avoid blocking startup
+      const { AuditLogger } = await import('./security/auditLogger.js');
+      AuditLogger.initialize();
+    } catch (_advancedInitError) {
+      // Ignore advanced initialization errors to avoid blocking startup
     }
-
-    // Initialize OAuth/GitHub App authentication
-    await initializeAuthentication();
 
     await registerAllTools(server);
 
@@ -100,19 +82,11 @@ async function startServer() {
 
         // Clear cache and credentials (fastest operations)
         clearAllCache();
-        SecureCredentialStore.clearAll();
 
-        // Shutdown enterprise modules gracefully
+        // Shutdown advanced modules gracefully
         try {
-          if (isAuditingEnabled()) {
-            const { AuditLogger } = await import('./security/auditLogger.js');
-            AuditLogger.shutdown();
-          }
-
-          if (isRateLimitingEnabled()) {
-            const { RateLimiter } = await import('./security/rateLimiter.js');
-            RateLimiter.shutdown();
-          }
+          const { AuditLogger } = await import('./security/auditLogger.js');
+          AuditLogger.shutdown();
         } catch (error) {
           // Ignore shutdown errors
         }
@@ -169,36 +143,13 @@ async function startServer() {
   }
 }
 
-/**
- * Initialize unified authentication system
- */
-async function initializeAuthentication(): Promise<void> {
-  try {
-    const { AuthenticationManager } = await import(
-      './auth/authenticationManager.js'
-    );
-    const authManager = AuthenticationManager.getInstance();
-    await authManager.initialize();
-  } catch (error) {
-    // Log error but don't fail startup - fall back to existing authentication
-    process.stderr.write(
-      `Warning: Failed to initialize authentication: ${
-        error instanceof Error ? error.message : String(error)
-      }\n`
-    );
-  }
-}
-
 export async function registerAllTools(server: McpServer) {
   // Ensure token exists and is stored securely (existing behavior)
   await getToken();
 
-  // Warn about CLI restrictions in enterprise mode
-  if (isEnterpriseTokenManager() && !isCliTokenResolutionEnabled()) {
-    // Use stderr for enterprise mode notification to avoid console linter issues
-    process.stderr.write(
-      '🔒 Enterprise mode active: CLI token resolution disabled for security\n'
-    );
+  // Info message for audit logging
+  if (isAdvancedTokenManager()) {
+    process.stderr.write('📊 Audit logging enabled\n');
   }
 
   const { successCount } = registerTools(server);

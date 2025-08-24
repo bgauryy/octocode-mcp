@@ -15,7 +15,7 @@ export default {
     entryFileNames: 'index.js',
     // Control chunk naming to preserve predictable paths for dynamic imports
     chunkFileNames: (chunkInfo) => {
-      // For enterprise modules, use predictable names
+      // For advanced modules, use predictable names
       if (chunkInfo.facadeModuleId) {
         const fileName = chunkInfo.facadeModuleId.split('/').pop()?.replace('.ts', '.js');
         if (fileName && ['auditLogger.js', 'organizationManager.js', 'rateLimiter.js', 'policyManager.js'].includes(fileName)) {

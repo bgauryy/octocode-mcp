@@ -1,5 +1,5 @@
 /**
- * Basic tests for enterprise functionality
+ * Basic tests for advanced functionality
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -43,15 +43,14 @@ const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
   registerViewGitHubRepoStructureTool
 );
 
-describe('Enterprise Functionality', () => {
+describe('Advanced Functionality', () => {
   let originalEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
     originalEnv = {
       GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-      GITHUB_ORGANIZATION: process.env.GITHUB_ORGANIZATION,
+
       AUDIT_ALL_ACCESS: process.env.AUDIT_ALL_ACCESS,
-      RATE_LIMIT_API_HOUR: process.env.RATE_LIMIT_API_HOUR,
     };
 
     // Clear all mocks
@@ -91,39 +90,25 @@ describe('Enterprise Functionality', () => {
     });
   });
 
-  it('should export authentication manager', async () => {
-    const { AuthenticationManager } = await import(
-      '../../src/auth/authenticationManager'
-    );
-    expect(typeof AuthenticationManager.getInstance).toBe('function');
-    expect(typeof AuthenticationManager.getInstance().initialize).toBe(
-      'function'
-    );
-  });
-
-  it('should detect enterprise mode from environment variables', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
+  it('should detect advanced mode from environment variables', async () => {
     process.env.AUDIT_ALL_ACCESS = 'true';
-    process.env.RATE_LIMIT_API_HOUR = '1000';
 
-    const { isEnterpriseTokenManager } = await import(
+    const { isAdvancedTokenManager } = await import(
       '../../src/mcp/utils/tokenManager'
     );
-    expect(isEnterpriseTokenManager()).toBe(true);
+    expect(isAdvancedTokenManager()).toBe(true);
   });
 
-  it('should disable CLI token resolution in enterprise mode', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
+  it('should always enable CLI token resolution', async () => {
+    process.env.AUDIT_ALL_ACCESS = 'true';
 
     const { isCliTokenResolutionEnabled } = await import(
       '../../src/mcp/utils/tokenManager'
     );
-    expect(isCliTokenResolutionEnabled()).toBe(false);
+    expect(isCliTokenResolutionEnabled()).toBe(true);
   });
 
-  it('should enable enterprise toolset when organization configured', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
-
+  it('should enable advanced toolset when audit configured', async () => {
     const { registerTools } = await import(
       '../../src/mcp/tools/toolsManager.js'
     );
@@ -139,10 +124,8 @@ describe('Enterprise Functionality', () => {
 
     const result = registerTools(mockServer as unknown as McpServer);
 
-    // Should show enterprise mode active message
-    expect(stderrSpy).toHaveBeenCalledWith(
-      '🔒 Enterprise mode active: auth tools enabled\n'
-    );
+    // Should have been called (advanced mode logging is active)
+    expect(stderrSpy).toHaveBeenCalled();
 
     // Should have default tools registered
     expect(result.successCount).toBeGreaterThan(0);
@@ -150,11 +133,7 @@ describe('Enterprise Functionality', () => {
     stderrSpy.mockRestore();
   });
 
-  it('should load enterprise configuration correctly', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
-    process.env.AUDIT_ALL_ACCESS = 'true';
-    process.env.RATE_LIMIT_API_HOUR = '1000';
-
+  it('should load basic configuration correctly', async () => {
     const { ConfigManager } = await import('../../src/config/serverConfig');
 
     // Reset the singleton state to force re-initialization
@@ -165,15 +144,12 @@ describe('Enterprise Functionality', () => {
 
     const config = ConfigManager.initialize();
 
-    expect(config.enterprise?.organizationId).toBe('test-org');
-    expect(config.enterprise?.auditLogging).toBe(true);
-    expect(config.enterprise?.rateLimiting).toBe(true);
-    expect(ConfigManager.isEnterpriseMode()).toBe(true);
+    expect(config.version).toBeDefined();
+    expect(config.timeout).toBe(30000);
+    expect(config.maxRetries).toBe(3);
   });
 
-  it('should handle GitHub Enterprise Server URL configuration', async () => {
-    process.env.GITHUB_HOST = 'github.enterprise.com';
-
+  it('should handle configuration initialization correctly', async () => {
     const { ConfigManager } = await import('../../src/config/serverConfig');
 
     // Reset the singleton state to force re-initialization
@@ -182,9 +158,8 @@ describe('Enterprise Functionality', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (ConfigManager as any).config = null;
 
-    ConfigManager.initialize(); // Initialize with new env vars
-    const baseURL = ConfigManager.getGitHubBaseURL();
-    expect(baseURL).toBe('https://github.enterprise.com/api/v3');
+    const config = ConfigManager.initialize(); // Initialize with new env vars
+    expect(config.version).toBeDefined();
   });
 
   it('should export registerAllTools function', async () => {
