@@ -20,11 +20,7 @@ export function registerTools(server: McpServer): {
   const failedTools: string[] = [];
 
   // Log tool registration start
-  logToolEvent('registration_start', 'success', {
-    totalTools: DEFAULT_TOOLS.length,
-    enableTools,
-    disableTools,
-  });
+  logToolEvent('registration_start');
 
   // Register tools based on configuration
   for (const tool of DEFAULT_TOOLS) {
@@ -55,41 +51,23 @@ export function registerTools(server: McpServer): {
         successCount++;
 
         // Audit successful tool registration
-        logToolEvent('registration_success', 'success', {
-          toolName: tool.name,
-          isDefault: tool.isDefault,
-          explicitlyEnabled: enableTools.includes(tool.name),
-        });
+        logToolEvent(tool.name);
       } else if (reason) {
         process.stderr.write(`Tool ${tool.name} ${reason}\n`);
 
         // Audit disabled/skipped tool
-        logToolEvent('registration_skipped', 'success', {
-          toolName: tool.name,
-          reason,
-          isDefault: tool.isDefault,
-          explicitlyDisabled: disableTools.includes(tool.name),
-        });
+        logToolEvent(`${tool.name}_skipped`);
       }
     } catch (error) {
       failedTools.push(tool.name);
 
       // Audit failed tool registration
-      logToolEvent('registration_failed', 'failure', {
-        toolName: tool.name,
-        error: error instanceof Error ? error.message : String(error),
-        isDefault: tool.isDefault,
-      });
+      logToolEvent(`${tool.name}_failed`);
     }
   }
 
   // Log final registration summary
-  logToolEvent('registration_complete', 'success', {
-    successCount,
-    failedCount: failedTools.length,
-    failedTools,
-    totalTools: DEFAULT_TOOLS.length,
-  });
+  logToolEvent('registration_complete');
 
   return { successCount, failedTools };
 }

@@ -1,121 +1,52 @@
 import { createHash } from 'crypto';
-import { getServerConfig } from '../config/serverConfig.js';
 
 /**
- * Audit Logger
+ * Simple Audit Logger
  *
- * Provides simple event logging to stderr when enabled.
- * Uses only process.stderr.write for output.
+ * Just logs basic events with eventId and timestamp to stderr.
  */
 
 export interface AuditEvent {
   eventId: string;
   timestamp: Date;
-  userId?: string;
-
   action: string;
-  outcome: 'success' | 'failure';
-  resource?: string;
-  details?: Record<string, unknown>;
-  source: 'token_manager' | 'api_client' | 'tool_execution' | 'auth' | 'system';
-  ipAddress?: string;
-  userAgent?: string;
 }
 
 export class AuditLogger {
-  private static initialized = false;
-
   /**
-   * Initialize audit logging system
-   * Safe to call multiple times - no-op if already initialized
+   * Initialize audit logging - no-op for simplicity
    */
   static initialize(): void {
-    if (this.initialized) return;
-
-    this.initialized = true;
-
-    // Log initialization if logging is enabled
-    this.logEvent({
-      action: 'audit_logger_initialized',
-      outcome: 'success',
-      source: 'system',
-      details: {
-        loggingEnabled: getServerConfig().enableLogging,
-      },
-    });
+    // No-op
   }
 
   /**
-   * Log an audit event
-   * Only logs to stderr if logging is enabled
+   * Log an audit event - simple stderr logging
    */
   static logEvent(event: Omit<AuditEvent, 'eventId' | 'timestamp'>): void {
-    const config = getServerConfig();
-
-    // Only log if logging is enabled
-    if (!config.enableLogging) {
-      return;
-    }
-
     const auditEvent: AuditEvent = {
       ...event,
       eventId: this.generateEventId(),
       timestamp: new Date(),
     };
 
-    const payload = {
-      outcome: auditEvent.outcome,
-      userId: auditEvent.userId,
-      source: auditEvent.source,
-      eventId: auditEvent.eventId,
-    };
-
     try {
       process.stderr.write(
-        `[AUDIT] ${auditEvent.action}: ${JSON.stringify(payload)}\n`
+        `[AUDIT] ${auditEvent.eventId} ${auditEvent.timestamp.toISOString()} ${auditEvent.action}\n`
       );
     } catch (_err) {
-      void 0;
+      // Ignore errors
     }
   }
 
   /**
-   * Flush method - no-op in simplified version
-   * Kept for backward compatibility
+   * No-op methods for backward compatibility
    */
-  static flushToDisk(): void {
-    // No-op - no buffering in simplified version
-  }
-
-  /**
-   * Get current audit statistics
-   * For monitoring and debugging
-   */
-  static getStats(): {
-    initialized: boolean;
-    loggingEnabled: boolean;
-  } {
-    return {
-      initialized: this.initialized,
-      loggingEnabled: getServerConfig().enableLogging,
-    };
-  }
-
-  /**
-   * Clear buffer - no-op in simplified version
-   * Kept for backward compatibility
-   */
-  static clearBuffer(): void {
-    // No-op - no buffering in simplified version
-  }
-
-  /**
-   * Shutdown audit logger
-   * Kept for backward compatibility
-   */
-  static shutdown(): void {
-    if (!this.initialized) return;
-    this.initialized = false;
+  static flushToDisk(): void {}
+  static clearBuffer(): void {}
+  static shutdown(): void {}
+  static getStats() {
+    return { initialized: true, loggingEnabled: true };
   }
 
   // ===== PRIVATE METHODS =====
@@ -131,58 +62,25 @@ export class AuditLogger {
   }
 }
 
-// ===== CONVENIENCE FUNCTIONS =====
+// ===== SIMPLE CONVENIENCE FUNCTIONS =====
 
 /**
  * Log authentication events
  */
-export function logAuthEvent(
-  action:
-    | 'token_resolved'
-    | 'token_rotation'
-    | 'auth_failure'
-    | 'token_validation',
-  outcome: 'success' | 'failure',
-  details?: Record<string, unknown>
-): void {
-  AuditLogger.logEvent({
-    action: `auth_${action}`,
-    outcome,
-    source: 'token_manager',
-    details,
-  });
+export function logAuthEvent(action: string): void {
+  AuditLogger.logEvent({ action: `auth_${action}` });
 }
 
 /**
  * Log API access events
  */
-export function logApiEvent(
-  action: string,
-  outcome: 'success' | 'failure',
-  resource?: string,
-  details?: Record<string, unknown>
-): void {
-  AuditLogger.logEvent({
-    action: `api_${action}`,
-    outcome,
-    source: 'api_client',
-    resource,
-    details,
-  });
+export function logApiEvent(action: string): void {
+  AuditLogger.logEvent({ action: `api_${action}` });
 }
 
 /**
  * Log tool execution events
  */
-export function logToolEvent(
-  toolName: string,
-  outcome: 'success' | 'failure',
-  details?: Record<string, unknown>
-): void {
-  AuditLogger.logEvent({
-    action: `tool_${toolName}`,
-    outcome,
-    source: 'tool_execution',
-    details,
-  });
+export function logToolEvent(toolName: string): void {
+  AuditLogger.logEvent({ action: `tool_${toolName}` });
 }

@@ -6,7 +6,6 @@ import { registerResources } from './mcp/resources.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './mcp/utils/cache.js';
 import { registerTools } from './mcp/tools/toolsManager.js';
-
 import { getToken, isAdvancedTokenManager } from './mcp/utils/tokenManager.js';
 import { isBetaEnabled } from '../config.js';
 import { version, name } from '../package.json';

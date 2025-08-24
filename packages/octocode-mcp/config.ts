@@ -26,8 +26,6 @@ export interface MCPConfig {
     disableTools?: string[];
   };
 
-
-
   // Logging & Debugging
   logging: {
     enableLogging: boolean;
@@ -113,7 +111,11 @@ export function loadConfig(): MCPConfig {
 
     // Tool Management
     tools: {
-      enableTools: parseStringArray(process.env.ENABLE_TOOLS),
+      // Support legacy TOOLS_TO_RUN environment variable for backward compatibility
+      // If TOOLS_TO_RUN exists, use it; otherwise fall back to ENABLE_TOOLS
+      enableTools: parseStringArray(
+        process.env.TOOLS_TO_RUN || process.env.ENABLE_TOOLS
+      ),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
     },
 
@@ -169,8 +171,6 @@ function validateConfig(config: MCPConfig): void {
     config.performance.maxRetries = 3;
     logWarning('Max retries out of range, reset to 3');
   }
-
-
 }
 
 /**
@@ -195,7 +195,6 @@ export function getRedactedConfig(config: MCPConfig): Record<string, unknown> {
         : undefined,
     },
     tools: config.tools,
-
 
     logging: config.logging,
     performance: config.performance,
@@ -236,10 +235,6 @@ export function getDisableTools(): string[] | undefined {
   return getConfig().tools.disableTools;
 }
 
-
-
-
-
 export function getLoggingConfig() {
   const config = getConfig();
   return {
@@ -261,7 +256,6 @@ export function getPerformanceConfig() {
  * @deprecated Use direct functions instead (e.g., isBetaEnabled() instead of ConfigHelpers.isBetaEnabled(config))
  */
 export const ConfigHelpers = {
-
   isBetaEnabled: (config: MCPConfig) => config.beta.enabled,
   getGitHubToken: (config: MCPConfig) =>
     config.github.token ||
@@ -306,7 +300,6 @@ export function updateConfig(updates: Partial<MCPConfig>): MCPConfig {
     app: { ...configInstance.app, ...updates.app },
     github: { ...configInstance.github, ...updates.github },
     tools: { ...configInstance.tools, ...updates.tools },
-
 
     logging: { ...configInstance.logging, ...updates.logging },
     performance: { ...configInstance.performance, ...updates.performance },
