@@ -4,10 +4,7 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './utils/cache.js';
-import {
-  registerTools,
-  ToolRegistrationConfig,
-} from './mcp/tools/toolsets/toolsetManager.js';
+import { registerTools } from './mcp/tools/toolsets/toolsetManager.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
@@ -18,17 +15,6 @@ import {
   isBetaEnabled,
   isAuditingEnabled,
   isRateLimitingEnabled,
-  getGitHubToken,
-  getAppVersion,
-  getGitHubHost,
-  getEnabledToolsets,
-  getEnableTools,
-  getDisableTools,
-  getOAuthConfig,
-  getGitHubAppConfig,
-  getEnterpriseConfig,
-  getLoggingConfig,
-  getPerformanceConfig,
 } from '../config.js';
 import { version, name } from '../package.json';
 
@@ -210,36 +196,8 @@ export async function registerAllTools(server: McpServer) {
     );
   }
 
-  // Prepare tool registration configuration compatible with existing system
-  const toolRegistrationConfig: ToolRegistrationConfig = {
-    serverConfig: {
-      // Get configuration through helper functions
-      version: getAppVersion(),
-      host: getGitHubHost(),
-      token: getGitHubToken(),
-      enabledToolsets: getEnabledToolsets(),
-      enableTools: getEnableTools(),
-      disableTools: getDisableTools(),
-      oauth: getOAuthConfig(),
-      githubApp: getGitHubAppConfig(),
-      enterprise: getEnterpriseConfig(),
-      enableCommandLogging: getLoggingConfig().enableCommandLogging,
-      logFilePath: getLoggingConfig().logFilePath,
-      githubHost: getGitHubHost(),
-      timeout: getPerformanceConfig().requestTimeout,
-      maxRetries: getPerformanceConfig().maxRetries,
-    },
-    userConfig: {
-      enableTools: getEnableTools(),
-      disableTools: getDisableTools(),
-    },
-  };
-
   // Register tools using the centralized toolset manager
-  const { successCount, failedTools } = registerTools(
-    server,
-    toolRegistrationConfig
-  );
+  const { successCount, failedTools } = registerTools(server);
 
   if (failedTools.length > 0) {
     // Tools failed to register

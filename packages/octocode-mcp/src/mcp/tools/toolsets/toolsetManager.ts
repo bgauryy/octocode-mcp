@@ -1,28 +1,25 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ServerConfig } from '../../../config/serverConfig.js';
 import { DEFAULT_TOOLSETS } from './tools.js';
 import { logToolEvent, AuditLogger } from '../../../security/auditLogger.js';
-
-export interface ToolRegistrationConfig {
-  serverConfig: ServerConfig;
-  userConfig: {
-    enableTools?: string[];
-    disableTools?: string[];
-  };
-}
+import {
+  getEnableTools,
+  getDisableTools,
+  isEnterpriseMode,
+  getEnterpriseConfig,
+} from '../../../../config.js';
 
 /**
  * Register tools based on configuration
  */
-export function registerTools(
-  server: McpServer,
-  config: ToolRegistrationConfig
-): { successCount: number; failedTools: string[] } {
+export function registerTools(server: McpServer): {
+  successCount: number;
+  failedTools: string[];
+} {
   // Initialize audit logger if not already initialized
   AuditLogger.initialize();
 
-  const enableTools = config.userConfig.enableTools || [];
-  const disableTools = config.userConfig.disableTools || [];
+  const enableTools = getEnableTools() || [];
+  const disableTools = getDisableTools() || [];
 
   let successCount = 0;
   const failedTools: string[] = [];
@@ -92,21 +89,22 @@ export function registerTools(
   }
 
   // Enable auth tools automatically if organization is configured
-  if (process.env.GITHUB_ORGANIZATION) {
+  if (isEnterpriseMode()) {
     try {
+      const enterpriseConfig = getEnterpriseConfig();
       // Auth tools are enabled automatically in enterprise mode
       // No additional registration needed - existing tools handle enterprise mode
       process.stderr.write('🔒 Enterprise mode active: auth tools enabled\n');
 
       // Audit enterprise mode activation
       logToolEvent('enterprise_mode_activated', 'success', {
-        organization: process.env.GITHUB_ORGANIZATION,
+        organization: enterpriseConfig.organizationId,
         authToolsEnabled: true,
       });
     } catch (error) {
       // Enterprise auth setup failed but don't break startup
       logToolEvent('enterprise_mode_failed', 'failure', {
-        organization: process.env.GITHUB_ORGANIZATION,
+        organization: getEnterpriseConfig().organizationId,
         error: error instanceof Error ? error.message : String(error),
       });
     }

@@ -360,29 +360,15 @@ describe('Index Module', () => {
 
       // NPM status checking is now handled internally by package search tool
       expect(mockGetNPMUserDetails).not.toHaveBeenCalled();
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalled();
+      expect(mockRegisterTools).toHaveBeenCalled();
     });
 
     it('should register default tools without NPM status dependency', async () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // Verify default tools are registered
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-
-      // Package search is not a default tool, so it's not registered unless explicitly enabled
-      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      // Verify tools registration function was called
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
   });
 
@@ -393,9 +379,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should use GH_TOKEN when GITHUB_TOKEN is not present', async () => {
@@ -405,9 +389,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should use CLI token when no env tokens are present', async () => {
@@ -418,9 +400,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should exit when no token is available', async () => {
@@ -466,62 +446,29 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // Verify default tool registration functions were called with server (4 tools)
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-
-      // Verify non-default tools were NOT registered (3 tools)
-      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
-      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      // Verify tool registration function was called
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should continue registering tools even if some fail', async () => {
-      // Make first tool registration fail
-      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Registration failed');
+      // Mock registerTools to return partial failure
+      mockRegisterTools.mockReturnValue({
+        successCount: 3,
+        failedTools: ['githubSearchCode'],
       });
 
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // Verify other tools were still attempted
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
+      // Verify registerTools was called
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should exit when no tools are successfully registered', async () => {
-      // Make all tool registrations fail
-      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterSearchGitHubReposTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterGitHubSearchCommitsTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterPackageSearchTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {
-        throw new Error('Registration failed');
+      // Mock registerTools to return complete failure
+      mockRegisterTools.mockReturnValue({
+        successCount: 0,
+        failedTools: ['githubSearchCode', 'githubGetFileContent', 'githubSearchRepositories', 'githubViewRepoStructure'],
       });
 
       // Track the exit call without throwing
@@ -554,39 +501,33 @@ describe('Index Module', () => {
     });
 
     it('should handle tool registration errors gracefully', async () => {
-      // Mock a tool registration function to throw an error
-      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Tool registration failed');
+      // Mock registerTools to return partial success  
+      mockRegisterTools.mockReturnValue({
+        successCount: 3,
+        failedTools: ['githubSearchCode'],
       });
 
-      // The module should still load and register other tools
+      // The module should still load
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // Verify that other tools were still registered
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
+      // Verify registerTools was called
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should handle multiple tool registration errors', async () => {
-      // Mock multiple default tool registration functions to throw errors
-      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Tool 1 registration failed');
-      });
-      mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {
-        throw new Error('Tool 2 registration failed');
+      // Mock registerTools to return multiple failures
+      mockRegisterTools.mockReturnValue({
+        successCount: 2,
+        failedTools: ['githubSearchCode', 'githubGetFileContent'],
       });
 
-      // The module should still load and register other default tools
+      // The module should still load
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // Verify that other default tools were still registered
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalled();
-      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalled();
-
-      // Non-default tools are not registered unless explicitly enabled
-      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
+      // Verify registerTools was called
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     it('should handle all tool registration errors', async () => {
@@ -858,24 +799,8 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // Verify default tools were registered (4 tools)
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-
-      // Verify non-default tools were NOT registered (3 tools)
-      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
-      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+      // Verify registerTools was called
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
     // Note: The following tests demonstrate the new toolset system behavior
