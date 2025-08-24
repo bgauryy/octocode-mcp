@@ -40,13 +40,13 @@ import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetc
 import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from '../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../src/mcp/tools/package_search/package_search.js';
+import { registerPackageSearchTool } from '../src/mcp/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/mcp/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/mcp/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager } from '../src/config/serverConfig.js';
-import { registerTools } from '../src/mcp/toolsets/toolsetManager.js';
+import { registerTools } from '../src/mcp/tools/toolsetManager.js';
 import { getToken } from '../src/mcp/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/utils/toolConstants.js';
 import {

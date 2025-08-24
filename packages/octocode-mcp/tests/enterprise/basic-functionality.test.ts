@@ -20,7 +20,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/mcp/tools/github_f
 import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../../src/mcp/tools/package_search/package_search.js';
+import { registerPackageSearchTool } from '../../src/mcp/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
 
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -125,7 +125,7 @@ describe('Enterprise Functionality', () => {
     process.env.GITHUB_ORGANIZATION = 'test-org';
 
     const { registerTools } = await import(
-      '../../src/mcp/toolsets/toolsetManager'
+      '../../src/mcp/tools/toolsetManager.js'
     );
 
     const mockServer = {

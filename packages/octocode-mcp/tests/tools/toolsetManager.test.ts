@@ -29,7 +29,7 @@ vi.mock('../../config.js', () => ({
   getEnterpriseConfig: vi.fn(),
 }));
 
-import { registerTools } from '../../src/mcp/toolsets/toolsetManager.js';
+import { registerTools } from '../../src/mcp/tools/toolsetManager.js';
 
 // Import config helper mocks
 import {
@@ -45,7 +45,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/mcp/tools/github_f
 import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../../src/mcp/tools/package_search/package_search.js';
+import { registerPackageSearchTool } from '../../src/mcp/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
 import { logToolEvent, AuditLogger } from '../../src/security/auditLogger.js';
 
