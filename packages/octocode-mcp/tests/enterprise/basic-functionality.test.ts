@@ -132,24 +132,12 @@ describe('Enterprise Functionality', () => {
       setRequestHandler: vi.fn(),
     };
 
-    const config = {
-      serverConfig: {
-        enabledToolsets: [],
-        githubHost: undefined,
-        timeout: 30000,
-        maxRetries: 3,
-        version: '1.0.0',
-        enableCommandLogging: false,
-      },
-      userConfig: {},
-    };
-
     // Capture stderr output
     const stderrSpy = vi
       .spyOn(process.stderr, 'write')
       .mockImplementation(() => true);
 
-    const result = registerTools(mockServer as unknown as McpServer, config);
+    const result = registerTools(mockServer as unknown as McpServer);
 
     // Should show enterprise mode active message
     expect(stderrSpy).toHaveBeenCalledWith(

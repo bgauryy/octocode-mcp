@@ -19,10 +19,17 @@ vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/config/serverConfig.js');
+vi.mock('../config.js');
 vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/tools/utils/tokenManager.js');
-vi.mock('../src/auth/authenticationManager.js'); // Add missing mock for authentication
+vi.mock('../src/auth/authenticationManager.js', () => ({
+  AuthenticationManager: {
+    getInstance: vi.fn(() => ({
+      initialize: vi.fn().mockResolvedValue(undefined),
+    })),
+  },
+}));
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
@@ -42,6 +49,11 @@ import { ConfigManager } from '../src/config/serverConfig.js';
 import { registerTools } from '../src/mcp/tools/toolsets/toolsetManager.js';
 import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
+import {
+  isBetaEnabled,
+  isAuditingEnabled,
+  isRateLimitingEnabled,
+} from '../config.js';
 
 // Mock implementations
 const mockMcpServer = {
@@ -64,6 +76,11 @@ const mockConfigManager = vi.mocked(ConfigManager);
 
 const mockRegisterTools = vi.mocked(registerTools);
 const mockGetToken = vi.mocked(getToken);
+
+// Config function mocks
+const mockIsBetaEnabled = vi.mocked(isBetaEnabled);
+const mockIsAuditingEnabled = vi.mocked(isAuditingEnabled);
+const mockIsRateLimitingEnabled = vi.mocked(isRateLimitingEnabled);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -141,6 +158,11 @@ describe('Index Module', () => {
 
     // Mock GitHub CLI token
     mockGetGithubCLIToken.mockResolvedValue('cli-token');
+
+    // Mock config functions with default values
+    mockIsBetaEnabled.mockReturnValue(false);
+    mockIsAuditingEnabled.mockReturnValue(false);
+    mockIsRateLimitingEnabled.mockReturnValue(false);
 
     // Create spies for process methods - use a safer mock that doesn't throw by default
     processExitSpy = vi
@@ -220,78 +242,10 @@ describe('Index Module', () => {
       maxRetries: 3,
     });
 
-    // Mock registerTools to delegate to individual tool registration functions
-    // This maintains compatibility with existing test expectations
-    mockRegisterTools.mockImplementation((server, config) => {
-      // Use simplified logic like the real implementation
-      const enableTools = config.userConfig.enableTools || [];
-      const disableTools = config.userConfig.disableTools || [];
-
-      let successCount = 0;
-      const failedTools: string[] = [];
-
-      const toolRegistrations = [
-        {
-          name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-          fn: mockRegisterGitHubSearchCodeTool,
-          isDefault: true,
-        },
-        {
-          name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-          fn: mockRegisterSearchGitHubReposTool,
-          isDefault: true,
-        },
-        {
-          name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          fn: mockRegisterFetchGitHubFileContentTool,
-          isDefault: true,
-        },
-        {
-          name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-          fn: mockRegisterViewGitHubRepoStructureTool,
-          isDefault: true,
-        },
-        {
-          name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-          fn: mockRegisterGitHubSearchCommitsTool,
-          isDefault: false,
-        },
-        {
-          name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          fn: mockRegisterSearchGitHubPullRequestsTool,
-          isDefault: false,
-        },
-        {
-          name: TOOL_NAMES.PACKAGE_SEARCH,
-          fn: mockRegisterPackageSearchTool,
-          isDefault: false,
-        },
-      ];
-
-      for (const tool of toolRegistrations) {
-        try {
-          let shouldRegisterTool = tool.isDefault;
-
-          // Add tools from ENABLE_TOOLS
-          if (enableTools.includes(tool.name)) {
-            shouldRegisterTool = true;
-          }
-
-          // Remove tools from DISABLE_TOOLS (takes priority)
-          if (disableTools.includes(tool.name)) {
-            shouldRegisterTool = false;
-          }
-
-          if (shouldRegisterTool) {
-            tool.fn(server);
-            successCount++;
-          }
-        } catch (error) {
-          failedTools.push(tool.name);
-        }
-      }
-
-      return { successCount, failedTools };
+    // Mock registerTools with simple successful response
+    mockRegisterTools.mockReturnValue({
+      successCount: 4,
+      failedTools: [],
     });
 
     mockGetToken.mockResolvedValue('test-token');
@@ -468,7 +422,12 @@ describe('Index Module', () => {
       // Mock registerTools to return complete failure
       mockRegisterTools.mockReturnValue({
         successCount: 0,
-        failedTools: ['githubSearchCode', 'githubGetFileContent', 'githubSearchRepositories', 'githubViewRepoStructure'],
+        failedTools: [
+          'githubSearchCode',
+          'githubGetFileContent',
+          'githubSearchRepositories',
+          'githubViewRepoStructure',
+        ],
       });
 
       // Track the exit call without throwing
@@ -501,7 +460,7 @@ describe('Index Module', () => {
     });
 
     it('should handle tool registration errors gracefully', async () => {
-      // Mock registerTools to return partial success  
+      // Mock registerTools to return partial success
       mockRegisterTools.mockReturnValue({
         successCount: 3,
         failedTools: ['githubSearchCode'],
@@ -557,6 +516,17 @@ describe('Index Module', () => {
       mockRegisterViewGitHubRepoStructureTool.mockImplementation(
         mockError('ViewGitHubRepoStructure')
       );
+
+      // Mock registerTools to return complete failure for this test
+      mockRegisterTools.mockReturnValue({
+        successCount: 0,
+        failedTools: [
+          'githubSearchCode',
+          'githubGetFileContent',
+          'githubSearchRepositories',
+          'githubViewRepoStructure',
+        ],
+      });
 
       // Track the exit call without throwing
       let exitCalled = false;
@@ -835,6 +805,7 @@ describe('Index Module', () => {
 
     it('should register sampling when BETA=1', async () => {
       process.env.BETA = '1';
+      mockIsBetaEnabled.mockReturnValue(true);
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -845,6 +816,7 @@ describe('Index Module', () => {
 
     it('should register sampling when BETA=true', async () => {
       process.env.BETA = 'true';
+      mockIsBetaEnabled.mockReturnValue(true);
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -885,6 +857,7 @@ describe('Index Module', () => {
 
     it('should configure server capabilities correctly when BETA=1', async () => {
       process.env.BETA = '1';
+      mockIsBetaEnabled.mockReturnValue(true);
 
       await import('../src/index.js');
       await waitForAsyncOperations();
