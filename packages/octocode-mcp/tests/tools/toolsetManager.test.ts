@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  McpServer,
+  RegisteredTool,
+} from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // Mock all tool registration functions
 vi.mock('../../src/mcp/tools/github_search_code.js');
@@ -10,18 +13,20 @@ vi.mock('../../src/mcp/tools/github_search_pull_requests.js');
 vi.mock('../../src/mcp/tools/package_search/package_search.js');
 vi.mock('../../src/mcp/tools/github_view_repo_structure.js');
 
+// Mock audit logger
+vi.mock('../../src/security/auditLogger.js', () => ({
+  logToolEvent: vi.fn(),
+  AuditLogger: {
+    initialize: vi.fn(),
+  },
+}));
+
 import {
-  ToolsetManager,
   registerTools,
-  ToolsetConfig,
   ToolRegistrationConfig,
-  initializeToolsets,
-  getEnabledTools,
-  isToolEnabled,
-  DEFAULT_TOOLSETS,
 } from '../../src/mcp/tools/toolsets/toolsetManager.js';
-import { ServerConfig } from '../../src/config/serverConfig.js';
-import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
+
+// Import the mocked functions for verification
 import { registerGitHubSearchCodeTool } from '../../src/mcp/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../../src/mcp/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
@@ -29,6 +34,7 @@ import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_sear
 import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from '../../src/mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+import { logToolEvent, AuditLogger } from '../../src/security/auditLogger.js';
 
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
   registerGitHubSearchCodeTool
@@ -50,768 +56,392 @@ const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
   registerViewGitHubRepoStructureTool
 );
 
-describe('ToolsetManager', () => {
+const mockLogToolEvent = vi.mocked(logToolEvent);
+const mockAuditLogger = vi.mocked(AuditLogger);
+
+describe('registerTools', () => {
   let originalEnvVars: Record<string, string | undefined>;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-  let processStderrWriteSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let processStderrWriteSpy: any;
+
+  const mockServer = {
+    setRequestHandler: vi.fn(),
+  } as unknown as McpServer;
+
+  const defaultConfig: ToolRegistrationConfig = {
+    serverConfig: {
+      enabledToolsets: [],
+      githubHost: undefined,
+      timeout: 30000,
+      maxRetries: 3,
+      version: '1.0.0',
+      enableCommandLogging: false,
+    },
+    userConfig: {},
+  };
 
   beforeEach(() => {
+    // Save original environment variables
+    originalEnvVars = { ...process.env };
+
+    // Clear environment variables
+    delete process.env.GITHUB_ORGANIZATION;
+    delete process.env.TOOLS_TO_RUN;
+
+    // Reset mocks
     vi.clearAllMocks();
 
-    // Store original environment variables
-    originalEnvVars = {
-      GITHUB_ORGANIZATION: process.env.GITHUB_ORGANIZATION,
-      AUDIT_ALL_ACCESS: process.env.AUDIT_ALL_ACCESS,
-      RATE_LIMIT_API_HOUR: process.env.RATE_LIMIT_API_HOUR,
-      RATE_LIMIT_AUTH_HOUR: process.env.RATE_LIMIT_AUTH_HOUR,
-      RATE_LIMIT_TOKEN_HOUR: process.env.RATE_LIMIT_TOKEN_HOUR,
+    // Ensure all mocks are properly reset to not throw errors
+    mockRegisterGitHubSearchCodeTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+    mockRegisterFetchGitHubFileContentTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+    mockRegisterSearchGitHubReposTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+    mockRegisterSearchGitHubCommitsTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+    mockRegisterPackageSearchTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+    mockRegisterViewGitHubRepoStructureTool.mockImplementation(
+      () => ({}) as RegisteredTool
+    );
+
+    // Mock process.stderr.write to avoid console output during tests
+    processStderrWriteSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+
+    // Clear audit logger mocks
+    mockLogToolEvent.mockClear();
+    mockAuditLogger.initialize.mockClear();
+  });
+
+  afterEach(() => {
+    // Restore original environment variables
+    process.env = { ...originalEnvVars };
+    processStderrWriteSpy.mockRestore();
+  });
+
+  it('should register only default tools when no TOOLS_TO_RUN is specified', () => {
+    const result = registerTools(mockServer, defaultConfig);
+
+    expect(result.successCount).toBe(4);
+    expect(result.failedTools).toHaveLength(0);
+
+    // Verify default tools were called
+    expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+      mockServer
+    );
+    expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
+      mockServer
+    );
+
+    // Verify non-default tools were NOT called
+    expect(mockRegisterSearchGitHubCommitsTool).not.toHaveBeenCalled();
+    expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
+    expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+  });
+
+  it('should handle tool registration failures gracefully', () => {
+    // Mock one tool to throw an error
+    mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
+      throw new Error('Mock registration error');
+    });
+
+    const result = registerTools(mockServer, defaultConfig);
+
+    expect(result.successCount).toBe(3); // 3 remaining default tools
+    expect(result.failedTools).toEqual(['githubSearchCode']);
+  });
+
+  it('should enable auth tools when GITHUB_ORGANIZATION is set', () => {
+    process.env.GITHUB_ORGANIZATION = 'test-org';
+
+    const result = registerTools(mockServer, defaultConfig);
+
+    expect(result.successCount).toBe(4); // Only default tools
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      '🔒 Enterprise mode active: auth tools enabled\n'
+    );
+  });
+
+  it('should show appropriate exclusion messages for non-default tools', () => {
+    const result = registerTools(mockServer, defaultConfig);
+
+    expect(result.successCount).toBe(4); // Only default tools
+
+    // Verify non-default tools show "not a default tool" message
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      'Tool githubSearchCommits not a default tool\n'
+    );
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      'Tool githubSearchPullRequests not a default tool\n'
+    );
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      'Tool packageSearch not a default tool\n'
+    );
+  });
+
+  it('should enable non-default tools with ENABLE_TOOLS', () => {
+    const config: ToolRegistrationConfig = {
+      ...defaultConfig,
+      userConfig: {
+        enableTools: ['packageSearch', 'githubSearchCommits'],
+      },
     };
 
-    // Clear environment variables completely
-    delete process.env.GITHUB_ORGANIZATION;
-    delete process.env.AUDIT_ALL_ACCESS;
-    delete process.env.RATE_LIMIT_API_HOUR;
-    delete process.env.RATE_LIMIT_AUTH_HOUR;
-    delete process.env.RATE_LIMIT_TOKEN_HOUR;
+    const result = registerTools(mockServer, config);
 
-    // Reset ToolsetManager state completely
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ToolsetManager as any).toolsets = new Map();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ToolsetManager as any).initialized = false;
+    expect(result.successCount).toBe(6); // 4 default + 2 enabled
+    expect(result.failedTools).toHaveLength(0);
 
-    // Mock console and stderr to capture messages
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    processStderrWriteSpy = vi
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .spyOn(process.stderr, 'write' as any)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .mockImplementation(() => true) as any;
+    // Verify default tools were called
+    expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+      mockServer
+    );
+    expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
+      mockServer
+    );
 
-    // Mock tool registration functions
-    mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
-    mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubCommitsTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
-    mockRegisterPackageSearchTool.mockImplementation(() => {});
-    mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
+    // Verify enabled tools were called
+    expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterSearchGitHubCommitsTool).toHaveBeenCalledWith(
+      mockServer
+    );
+
+    // Verify non-enabled tool was NOT called
+    expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
   });
 
-  afterEach(() => {
-    // Restore environment variables
-    for (const [key, value] of Object.entries(originalEnvVars)) {
-      if (value !== undefined) {
-        process.env[key] = value;
-      } else {
-        delete process.env[key];
-      }
-    }
+  it('should disable tools with DISABLE_TOOLS', () => {
+    const config: ToolRegistrationConfig = {
+      ...defaultConfig,
+      userConfig: {
+        disableTools: ['githubSearchCode', 'packageSearch'],
+      },
+    };
 
-    consoleErrorSpy?.mockRestore();
-    processStderrWriteSpy?.mockRestore();
+    const result = registerTools(mockServer, config);
+
+    expect(result.successCount).toBe(3); // 4 default - 1 disabled = 3
+    expect(result.failedTools).toHaveLength(0);
+
+    // Verify non-disabled default tools were called
+    expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+      mockServer
+    );
+    expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
+      mockServer
+    );
+
+    // Verify disabled tools were NOT called
+    expect(mockRegisterGitHubSearchCodeTool).not.toHaveBeenCalled();
+    expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+
+    // Verify disable message
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      'Tool githubSearchCode disabled by DISABLE_TOOLS configuration\n'
+    );
   });
 
-  describe('Default Configuration', () => {
-    it('should have correct default toolsets', () => {
-      expect(DEFAULT_TOOLSETS).toHaveLength(4);
+  it('should handle ENABLE_TOOLS and DISABLE_TOOLS together (DISABLE takes priority)', () => {
+    const config: ToolRegistrationConfig = {
+      ...defaultConfig,
+      userConfig: {
+        enableTools: ['packageSearch', 'githubSearchCommits'],
+        disableTools: ['githubSearchCode', 'packageSearch'], // packageSearch disabled despite being enabled
+      },
+    };
 
-      const reposToolset = DEFAULT_TOOLSETS.find(t => t.name === 'repos');
-      expect(reposToolset).toEqual({
-        name: 'repos',
-        description: 'GitHub Repository related tools',
-        enabled: true,
-        readOnly: false,
-        tools: [
-          'githubSearchCode',
-          'githubGetFileContent',
-          'githubViewRepoStructure',
-        ],
-        category: 'core',
-      });
+    const result = registerTools(mockServer, config);
 
-      const searchToolset = DEFAULT_TOOLSETS.find(t => t.name === 'search');
-      expect(searchToolset).toEqual({
-        name: 'search',
-        description: 'GitHub Search and Discovery tools',
-        enabled: true,
-        readOnly: true,
-        tools: [
-          'githubSearchRepositories',
-          'githubSearchCommits',
-          'githubSearchPullRequests',
-        ],
-        category: 'core',
-      });
+    expect(result.successCount).toBe(4); // 4 default - 1 disabled + 1 enabled = 4
+    expect(result.failedTools).toHaveLength(0);
 
-      const packagesToolset = DEFAULT_TOOLSETS.find(t => t.name === 'packages');
-      expect(packagesToolset).toEqual({
-        name: 'packages',
-        description: 'Package registry tools',
-        enabled: true,
-        readOnly: true,
-        tools: ['packageSearch'],
-        category: 'core',
-      });
+    // Verify non-disabled default tools were called
+    expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
+      mockServer
+    );
+    expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(mockServer);
+    expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
+      mockServer
+    );
 
-      const enterpriseToolset = DEFAULT_TOOLSETS.find(
-        t => t.name === 'enterprise'
-      );
-      expect(enterpriseToolset).toEqual({
-        name: 'enterprise',
-        description: 'Enterprise security and audit tools',
-        enabled: false,
-        readOnly: false,
-        tools: ['audit_logger', 'rate_limiter', 'organization_manager'],
-        category: 'enterprise',
-      });
-    });
+    // Verify enabled tool was called (and not disabled)
+    expect(mockRegisterSearchGitHubCommitsTool).toHaveBeenCalledWith(
+      mockServer
+    );
+
+    // Verify disabled tools were NOT called (even if in enableTools)
+    expect(mockRegisterGitHubSearchCodeTool).not.toHaveBeenCalled();
+    expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
+
+    // Verify disable messages
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      'Tool githubSearchCode disabled by DISABLE_TOOLS configuration\n'
+    );
+    expect(processStderrWriteSpy).toHaveBeenCalledWith(
+      'Tool packageSearch disabled by DISABLE_TOOLS configuration\n'
+    );
   });
 
-  describe('Initialization', () => {
-    it('should initialize with default settings', () => {
-      // When no enabledToolsets is specified, it enables ALL toolsets including enterprise
-      ToolsetManager.initialize();
+  describe('audit logging', () => {
+    it('should initialize audit logger and log registration events', () => {
+      const result = registerTools(mockServer, defaultConfig);
 
-      expect(ToolsetManager.getEnabledToolsets()).toHaveLength(4); // repos, search, packages, enterprise (all enabled by default)
-      const enabledToolsets = ToolsetManager.getEnabledToolsets();
-      const toolsetNames = enabledToolsets.map(t => t.name);
-      expect(toolsetNames).toEqual([
-        'repos',
-        'search',
-        'packages',
-        'enterprise',
-      ]);
+      // Verify audit logger is initialized
+      expect(mockAuditLogger.initialize).toHaveBeenCalledOnce();
 
-      expect(ToolsetManager.getEnabledTools()).toEqual([
-        'githubSearchCode',
-        'githubGetFileContent',
-        'githubViewRepoStructure',
-        'githubSearchRepositories',
-        'githubSearchCommits',
-        'githubSearchPullRequests',
-        'packageSearch',
-        'audit_logger',
-        'rate_limiter',
-        'organization_manager',
-      ]);
-    });
-
-    it('should not reinitialize if already initialized', () => {
-      ToolsetManager.initialize(['repos']);
-      expect(ToolsetManager.getEnabledToolsets()).toHaveLength(1);
-
-      // Try to reinitialize with different settings
-      ToolsetManager.initialize(['search', 'packages']);
-      expect(ToolsetManager.getEnabledToolsets()).toHaveLength(1); // Should still be 1
-    });
-
-    it('should enable specific toolsets only', () => {
-      ToolsetManager.initialize(['repos']);
-
-      const enabledToolsets = ToolsetManager.getEnabledToolsets();
-      expect(enabledToolsets).toHaveLength(1);
-      expect(enabledToolsets[0]?.name).toBe('repos');
-    });
-
-    it('should enable all toolsets when "all" is specified', () => {
-      ToolsetManager.initialize(['all']);
-
-      const enabledToolsets = ToolsetManager.getEnabledToolsets();
-      expect(enabledToolsets).toHaveLength(4); // Including enterprise
-    });
-
-    it('should apply readOnly mode globally', () => {
-      ToolsetManager.initialize(undefined, true);
-
-      const enabledToolsets = ToolsetManager.getEnabledToolsets();
-      for (const toolset of enabledToolsets) {
-        expect(toolset.readOnly).toBe(true);
-      }
-    });
-
-    it('should preserve individual readOnly settings when global is false', () => {
-      ToolsetManager.initialize(undefined, false);
-
-      const reposToolset = ToolsetManager.getEnabledToolsets().find(
-        t => t.name === 'repos'
-      );
-      const searchToolset = ToolsetManager.getEnabledToolsets().find(
-        t => t.name === 'search'
+      // Verify registration start event
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_start',
+        'success',
+        {
+          totalTools: 7, // Total tools in DEFAULT_TOOLSETS
+          enableTools: [],
+          disableTools: [],
+        }
       );
 
-      expect(reposToolset?.readOnly).toBe(false);
-      expect(searchToolset?.readOnly).toBe(true); // This one is readOnly by default
-    });
-
-    it('should enable enterprise toolset with GITHUB_ORGANIZATION', () => {
-      process.env.GITHUB_ORGANIZATION = 'my-org';
-      ToolsetManager.initialize();
-
-      const enterpriseToolset = ToolsetManager.getEnabledToolsets().find(
-        t => t.name === 'enterprise'
+      // Verify registration complete event
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_complete',
+        'success',
+        {
+          successCount: 4,
+          failedCount: 0,
+          failedTools: [],
+          totalTools: 7,
+        }
       );
-      expect(enterpriseToolset?.enabled).toBe(true);
+
+      expect(result.successCount).toBe(4);
     });
 
-    it('should enable enterprise toolset with AUDIT_ALL_ACCESS', () => {
-      process.env.AUDIT_ALL_ACCESS = 'true';
-      ToolsetManager.initialize();
+    it('should log successful tool registrations', () => {
+      registerTools(mockServer, defaultConfig);
 
-      const enterpriseToolset = ToolsetManager.getEnabledToolsets().find(
-        t => t.name === 'enterprise'
+      // Verify successful registration events for default tools
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_success',
+        'success',
+        {
+          toolName: 'githubSearchCode',
+          isDefault: true,
+          explicitlyEnabled: false,
+        }
       );
-      expect(enterpriseToolset?.enabled).toBe(true);
-    });
 
-    it('should enable enterprise toolset with rate limiting env vars', () => {
-      process.env.RATE_LIMIT_API_HOUR = '1000';
-      ToolsetManager.initialize();
-
-      const enterpriseToolset = ToolsetManager.getEnabledToolsets().find(
-        t => t.name === 'enterprise'
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_success',
+        'success',
+        {
+          toolName: 'githubGetFileContent',
+          isDefault: true,
+          explicitlyEnabled: false,
+        }
       );
-      expect(enterpriseToolset?.enabled).toBe(true);
-    });
-  });
-
-  describe('Toolset Management', () => {
-    beforeEach(() => {
-      ToolsetManager.initialize();
     });
 
-    it('should register custom toolset', () => {
-      const customToolset: ToolsetConfig = {
-        name: 'custom',
-        description: 'Custom toolset',
-        enabled: true,
-        readOnly: false,
-        tools: ['customTool1', 'customTool2'],
-        category: 'experimental',
-      };
+    it('should log skipped tool registrations', () => {
+      registerTools(mockServer, defaultConfig);
 
-      ToolsetManager.registerToolset(customToolset);
-
-      const stats = ToolsetManager.getStats();
-      expect(stats.totalToolsets).toBe(5); // 4 default + 1 custom
-    });
-
-    it('should enable toolsets by name', () => {
-      // Force reset state to ensure clean test
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (ToolsetManager as any).toolsets = new Map();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (ToolsetManager as any).initialized = false;
-
-      // Initialize with explicit toolsets excluding enterprise
-      ToolsetManager.initialize(['repos', 'search', 'packages']);
-
-      // Initially enterprise should be disabled
-      expect(ToolsetManager.isToolEnabled('audit_logger')).toBe(false);
-
-      ToolsetManager.enableToolsets(['enterprise']);
-      expect(ToolsetManager.isToolEnabled('audit_logger')).toBe(true);
-    });
-
-    it('should enable all toolsets with "all"', () => {
-      ToolsetManager.enableToolsets(['all']);
-
-      const stats = ToolsetManager.getStats();
-      expect(stats.enabledToolsets).toBe(4); // All toolsets enabled
-    });
-
-    it('should get correct toolset for tool', () => {
-      const toolset = ToolsetManager.getToolsetForTool('githubSearchCode');
-      expect(toolset?.name).toBe('repos');
-
-      const noToolset = ToolsetManager.getToolsetForTool('nonExistentTool');
-      expect(noToolset).toBeNull();
-    });
-
-    it('should return correct statistics', () => {
-      const stats = ToolsetManager.getStats();
-
-      expect(stats.totalToolsets).toBe(4);
-      expect(stats.enabledToolsets).toBe(4); // repos, search, packages, enterprise (all enabled)
-      expect(stats.totalTools).toBe(10); // All tools across all toolsets
-      expect(stats.enabledTools).toBe(10); // All tools in enabled toolsets
-      expect(stats.readOnlyMode).toBe(true); // search and packages are readOnly
-    });
-  });
-
-  describe('Tool Enablement', () => {
-    it('should check if tool is enabled - positive cases', () => {
-      ToolsetManager.initialize();
-
-      expect(ToolsetManager.isToolEnabled('githubSearchCode')).toBe(true);
-      expect(ToolsetManager.isToolEnabled('githubSearchRepositories')).toBe(
-        true
+      // Verify skipped registration events for non-default tools
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_skipped',
+        'success',
+        {
+          toolName: 'githubSearchCommits',
+          reason: 'not a default tool',
+          isDefault: false,
+          explicitlyDisabled: false,
+        }
       );
-      expect(ToolsetManager.isToolEnabled('packageSearch')).toBe(true);
+
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_skipped',
+        'success',
+        {
+          toolName: 'packageSearch',
+          reason: 'not a default tool',
+          isDefault: false,
+          explicitlyDisabled: false,
+        }
+      );
     });
 
-    it('should check if tool is enabled - negative cases', () => {
-      // Initialize with specific toolsets to exclude enterprise
-      ToolsetManager.initialize(['repos', 'search', 'packages']);
-
-      expect(ToolsetManager.isToolEnabled('audit_logger')).toBe(false); // Enterprise disabled
-      expect(ToolsetManager.isToolEnabled('nonExistentTool')).toBe(false);
-    });
-
-    it('should check if tool is enabled with specific toolsets', () => {
-      ToolsetManager.initialize(['repos']);
-
-      expect(ToolsetManager.isToolEnabled('githubSearchCode')).toBe(true);
-      expect(ToolsetManager.isToolEnabled('githubSearchRepositories')).toBe(
-        false
-      ); // search toolset disabled
-    });
-  });
-
-  describe('Convenience Functions', () => {
-    it('should initialize toolsets via convenience function', () => {
-      initializeToolsets(['repos'], true);
-
-      expect(ToolsetManager.getEnabledToolsets()).toHaveLength(1);
-      expect(ToolsetManager.getEnabledToolsets()[0]?.readOnly).toBe(true);
-    });
-
-    it('should get enabled tools via convenience function', () => {
-      ToolsetManager.initialize(['repos']);
-
-      const tools = getEnabledTools();
-      expect(tools).toEqual([
-        'githubSearchCode',
-        'githubGetFileContent',
-        'githubViewRepoStructure',
-      ]);
-    });
-
-    it('should check tool enablement via convenience function', () => {
-      ToolsetManager.initialize(['repos']);
-
-      expect(isToolEnabled('githubSearchCode')).toBe(true);
-      expect(isToolEnabled('githubSearchRepositories')).toBe(false);
-    });
-  });
-});
-
-describe('registerTools Function', () => {
-  let mockServer: McpServer;
-  let processStderrWriteSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-
-    mockServer = {
-      setRequestHandler: vi.fn(),
-      connect: vi.fn(),
-      close: vi.fn(),
-    } as unknown as McpServer;
-
-    // Reset ToolsetManager
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ToolsetManager as any).toolsets = new Map();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ToolsetManager as any).initialized = false;
-
-    processStderrWriteSpy = vi
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .spyOn(process.stderr, 'write' as any)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .mockImplementation(() => true) as any;
-
-    // Mock all tool registration functions to succeed
-    mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
-    mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubCommitsTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
-    mockRegisterPackageSearchTool.mockImplementation(() => {});
-    mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    processStderrWriteSpy?.mockRestore();
-  });
-
-  describe('All Tools Scenarios', () => {
-    it('should register all tools when inclusiveTools is empty', () => {
-      ToolsetManager.initialize(); // Enable default toolsets
-
+    it('should log disabled tool registrations', () => {
       const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
+        ...defaultConfig,
         userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(7);
-      expect(result.failedTools).toHaveLength(0);
-
-      // Verify all tools were called
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockServer
-      );
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockServer
-      );
-      expect(mockRegisterSearchGitHubCommitsTool).toHaveBeenCalledWith(
-        mockServer
-      );
-      expect(mockRegisterSearchGitHubPullRequestsTool).toHaveBeenCalledWith(
-        mockServer
-      );
-      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockServer);
-      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockServer
-      );
-    });
-
-    it('should register all tools when runAllTools is true despite toolset restrictions', () => {
-      ToolsetManager.initialize(['repos']); // Only repos toolset enabled
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      // Should only register tools from enabled toolsets
-      expect(result.successCount).toBe(3); // Only repos tools
-      expect(result.failedTools).toHaveLength(0);
-
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockServer
-      );
-      expect(mockRegisterViewGitHubRepoStructureTool).toHaveBeenCalledWith(
-        mockServer
-      );
-
-      // These should not be called because their toolsets are disabled
-      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubCommitsTool).not.toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
-      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Selective Tools Scenarios', () => {
-    it('should register only specified tools', () => {
-      ToolsetManager.initialize();
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: `${TOOL_NAMES.GITHUB_SEARCH_CODE},${TOOL_NAMES.PACKAGE_SEARCH}`,
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(2);
-      expect(result.failedTools).toHaveLength(0);
-
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
-      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockServer);
-
-      // Others should not be called
-      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
-    });
-
-    it('should respect toolset configuration even with specific tools requested', () => {
-      ToolsetManager.initialize(['repos']); // Only repos enabled
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: `${TOOL_NAMES.GITHUB_SEARCH_CODE},${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES}`,
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(1); // Only githubSearchCode (repos toolset)
-      expect(result.failedTools).toHaveLength(0);
-
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
-      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled(); // search toolset disabled
-
-      // Should log that the tool was disabled by toolset configuration
-      expect(processStderrWriteSpy).toHaveBeenCalledWith(
-        `Tool ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} disabled by toolset configuration\n`
-      );
-    });
-
-    it('should log excluded tools', () => {
-      ToolsetManager.initialize();
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: TOOL_NAMES.GITHUB_SEARCH_CODE,
+          disableTools: ['githubSearchCode'],
         },
       };
 
       registerTools(mockServer, config);
 
-      // Should log that other tools were excluded
-      expect(processStderrWriteSpy).toHaveBeenCalledWith(
-        `Tool ${TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES} excluded by TOOLS_TO_RUN configuration\n`
-      );
-      expect(processStderrWriteSpy).toHaveBeenCalledWith(
-        `Tool ${TOOL_NAMES.GITHUB_FETCH_CONTENT} excluded by TOOLS_TO_RUN configuration\n`
+      // Verify disabled registration event
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_skipped',
+        'success',
+        {
+          toolName: 'githubSearchCode',
+          reason: 'disabled by DISABLE_TOOLS configuration',
+          isDefault: true,
+          explicitlyDisabled: true,
+        }
       );
     });
-  });
 
-  describe('Error Handling', () => {
-    it('should handle tool registration errors', () => {
-      ToolsetManager.initialize();
-
-      // Make some tools throw errors
+    it('should log failed tool registrations', () => {
+      // Mock one tool to throw an error
       mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-      mockRegisterPackageSearchTool.mockImplementation(() => {
-        throw new Error('Another failure');
+        throw new Error('Mock registration error');
       });
 
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
+      const result = registerTools(mockServer, defaultConfig);
 
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(5); // 7 total - 2 failed
-      expect(result.failedTools).toEqual([
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        TOOL_NAMES.PACKAGE_SEARCH,
-      ]);
-    });
-
-    it('should continue registering tools after failures', () => {
-      ToolsetManager.initialize();
-
-      // Make first tool fail
-      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(6); // 6 successful
-      expect(result.failedTools).toEqual([TOOL_NAMES.GITHUB_SEARCH_CODE]);
-
-      // Other tools should still be registered
-      expect(mockRegisterFetchGitHubFileContentTool).toHaveBeenCalledWith(
-        mockServer
+      // Verify failed registration event
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'registration_failed',
+        'failure',
+        {
+          toolName: 'githubSearchCode',
+          error: 'Mock registration error',
+          isDefault: true,
+        }
       );
-      expect(mockRegisterSearchGitHubReposTool).toHaveBeenCalledWith(
-        mockServer
-      );
+
+      expect(result.failedTools).toEqual(['githubSearchCode']);
     });
 
-    it('should handle all tools failing', () => {
-      ToolsetManager.initialize();
-
-      // Make all tools throw errors
-      const mockError = new Error('Registration failed');
-      mockRegisterGitHubSearchCodeTool.mockImplementation(() => {
-        throw mockError;
-      });
-      mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {
-        throw mockError;
-      });
-      mockRegisterSearchGitHubReposTool.mockImplementation(() => {
-        throw mockError;
-      });
-      mockRegisterSearchGitHubCommitsTool.mockImplementation(() => {
-        throw mockError;
-      });
-      mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {
-        throw mockError;
-      });
-      mockRegisterPackageSearchTool.mockImplementation(() => {
-        throw mockError;
-      });
-      mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {
-        throw mockError;
-      });
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(0);
-      expect(result.failedTools).toHaveLength(7);
-    });
-  });
-
-  describe('Complex Scenarios', () => {
-    it('should handle mixed valid/invalid tool names', () => {
-      ToolsetManager.initialize();
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: `${TOOL_NAMES.GITHUB_SEARCH_CODE},nonExistentTool,${TOOL_NAMES.PACKAGE_SEARCH},anotherInvalidTool`,
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(2); // Only valid tools
-      expect(result.failedTools).toHaveLength(0);
-
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
-      expect(mockRegisterPackageSearchTool).toHaveBeenCalledWith(mockServer);
-    });
-
-    it('should handle empty toolsets configuration', () => {
-      // Pass non-existent toolset names to disable all toolsets
-      ToolsetManager.initialize(['nonexistent']);
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(0);
-      expect(result.failedTools).toHaveLength(0);
-    });
-
-    it('should handle readOnly configuration in config object', () => {
-      ToolsetManager.initialize();
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: { readOnly: true } as ServerConfig,
-        userConfig: {
-          toolsToRun: undefined, // Empty means all tools
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(7);
-      expect(result.failedTools).toHaveLength(0);
-    });
-  });
-
-  describe('Tool Name Validation', () => {
-    it('should handle all valid tool names', () => {
-      ToolsetManager.initialize();
-
-      const allValidToolNames = [
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        TOOL_NAMES.PACKAGE_SEARCH,
-      ];
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: allValidToolNames.join(','),
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(7);
-      expect(result.failedTools).toHaveLength(0);
-    });
-
-    it('should handle single tool registration', () => {
-      ToolsetManager.initialize();
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(1);
-      expect(result.failedTools).toHaveLength(0);
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(mockServer);
-    });
-
-    it('should handle duplicate tool names in inclusiveTools', () => {
-      ToolsetManager.initialize();
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: `${TOOL_NAMES.GITHUB_SEARCH_CODE},${TOOL_NAMES.GITHUB_SEARCH_CODE},${TOOL_NAMES.PACKAGE_SEARCH}`,
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(2); // Should not register duplicates
-      expect(result.failedTools).toHaveLength(0);
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledTimes(1); // Called only once
-    });
-  });
-
-  describe('Enterprise Toolset Integration', () => {
-    it('should not register enterprise tools when toolset is disabled', () => {
-      ToolsetManager.initialize(); // Enterprise disabled by default
-
-      const config: ToolRegistrationConfig = {
-        serverConfig: {} as ServerConfig,
-        userConfig: {
-          toolsToRun: 'audit_logger', // Not a real tool, but testing the concept
-        },
-      };
-
-      const result = registerTools(mockServer, config);
-
-      expect(result.successCount).toBe(0);
-      expect(result.failedTools).toHaveLength(0);
-    });
-
-    it('should handle enterprise toolset activation', () => {
+    it('should log enterprise mode activation', () => {
       process.env.GITHUB_ORGANIZATION = 'test-org';
-      ToolsetManager.initialize(); // Should enable enterprise
 
-      const enterpriseToolset = ToolsetManager.getEnabledToolsets().find(
-        t => t.name === 'enterprise'
+      registerTools(mockServer, defaultConfig);
+
+      // Verify enterprise mode event
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'enterprise_mode_activated',
+        'success',
+        {
+          organization: 'test-org',
+          authToolsEnabled: true,
+        }
       );
-      expect(enterpriseToolset?.enabled).toBe(true);
     });
   });
 });

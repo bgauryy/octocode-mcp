@@ -57,7 +57,7 @@ interface GitHubCodeAggregatedContext {
 }
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
       description: DESCRIPTION,

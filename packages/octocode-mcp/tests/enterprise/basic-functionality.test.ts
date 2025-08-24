@@ -2,7 +2,46 @@
  * Basic tests for enterprise functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+// Mock all tool registration functions
+vi.mock('../../src/mcp/tools/github_search_code.js');
+vi.mock('../../src/mcp/tools/github_fetch_content.js');
+vi.mock('../../src/mcp/tools/github_search_repos.js');
+vi.mock('../../src/mcp/tools/github_search_commits.js');
+vi.mock('../../src/mcp/tools/github_search_pull_requests.js');
+vi.mock('../../src/mcp/tools/package_search/package_search.js');
+vi.mock('../../src/mcp/tools/github_view_repo_structure.js');
+
+// Import the mocked functions
+import { registerGitHubSearchCodeTool } from '../../src/mcp/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../../src/mcp/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
+import { registerPackageSearchTool } from '../../src/mcp/tools/package_search/package_search.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+
+const mockRegisterGitHubSearchCodeTool = vi.mocked(
+  registerGitHubSearchCodeTool
+);
+const mockRegisterFetchGitHubFileContentTool = vi.mocked(
+  registerFetchGitHubFileContentTool
+);
+const mockRegisterSearchGitHubReposTool = vi.mocked(
+  registerSearchGitHubReposTool
+);
+const mockRegisterSearchGitHubCommitsTool = vi.mocked(
+  registerSearchGitHubCommitsTool
+);
+const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
+  registerSearchGitHubPullRequestsTool
+);
+const mockRegisterPackageSearchTool = vi.mocked(registerPackageSearchTool);
+const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
+  registerViewGitHubRepoStructureTool
+);
 
 describe('Enterprise Functionality', () => {
   let originalEnv: Record<string, string | undefined>;
@@ -14,6 +53,31 @@ describe('Enterprise Functionality', () => {
       AUDIT_ALL_ACCESS: process.env.AUDIT_ALL_ACCESS,
       RATE_LIMIT_API_HOUR: process.env.RATE_LIMIT_API_HOUR,
     };
+
+    // Clear all mocks
+    vi.clearAllMocks();
+
+    // Set up mocks to not throw errors
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterGitHubSearchCodeTool.mockImplementation(() => ({}) as any);
+    mockRegisterFetchGitHubFileContentTool.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({}) as any
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterSearchGitHubReposTool.mockImplementation(() => ({}) as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterSearchGitHubCommitsTool.mockImplementation(() => ({}) as any);
+    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({}) as any
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterPackageSearchTool.mockImplementation(() => ({}) as any);
+    mockRegisterViewGitHubRepoStructureTool.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({}) as any
+    );
   });
 
   afterEach(() => {
@@ -60,15 +124,42 @@ describe('Enterprise Functionality', () => {
   it('should enable enterprise toolset when organization configured', async () => {
     process.env.GITHUB_ORGANIZATION = 'test-org';
 
-    const { ToolsetManager } = await import(
+    const { registerTools } = await import(
       '../../src/mcp/tools/toolsets/toolsetManager'
     );
-    ToolsetManager.initialize(['all']);
 
-    const enterpriseToolset = ToolsetManager.getEnabledToolsets().find(
-      ts => ts.name === 'enterprise'
+    const mockServer = {
+      setRequestHandler: vi.fn(),
+    };
+
+    const config = {
+      serverConfig: {
+        enabledToolsets: [],
+        githubHost: undefined,
+        timeout: 30000,
+        maxRetries: 3,
+        version: '1.0.0',
+        enableCommandLogging: false,
+      },
+      userConfig: {},
+    };
+
+    // Capture stderr output
+    const stderrSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+
+    const result = registerTools(mockServer as unknown as McpServer, config);
+
+    // Should show enterprise mode active message
+    expect(stderrSpy).toHaveBeenCalledWith(
+      '🔒 Enterprise mode active: auth tools enabled\n'
     );
-    expect(enterpriseToolset?.enabled).toBe(true);
+
+    // Should have default tools registered
+    expect(result.successCount).toBeGreaterThan(0);
+
+    stderrSpy.mockRestore();
   });
 
   it('should load enterprise configuration correctly', async () => {

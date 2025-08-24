@@ -13,8 +13,10 @@ export interface ServerConfig {
 
   // Tool management
   enabledToolsets: string[];
-  dynamicToolsets: boolean;
-  readOnly: boolean;
+
+  // New tool control environment variables
+  enableTools?: string[]; // Tools to enable in addition to defaults
+  disableTools?: string[]; // Tools to disable by name
 
   // OAuth Configuration
   oauth?: {
@@ -77,8 +79,10 @@ export class ConfigManager {
       enabledToolsets: this.parseStringArray(process.env.GITHUB_TOOLSETS) || [
         'all',
       ],
-      dynamicToolsets: process.env.GITHUB_DYNAMIC_TOOLSETS === 'true',
-      readOnly: process.env.GITHUB_READ_ONLY === 'true',
+
+      // New tool control environment variables
+      enableTools: this.parseStringArray(process.env.ENABLE_TOOLS),
+      disableTools: this.parseStringArray(process.env.DISABLE_TOOLS),
 
       // OAuth Configuration from environment
       oauth: this.getOAuthConfig(),

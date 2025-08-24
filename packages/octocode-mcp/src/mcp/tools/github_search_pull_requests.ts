@@ -31,7 +31,7 @@ BEST PRACTICES:
 - Specify research goals (debugging, analysis) for optimal guidance`;
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
       description: DESCRIPTION,

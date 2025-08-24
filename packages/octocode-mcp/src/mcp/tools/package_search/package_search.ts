@@ -31,7 +31,7 @@ BEST PRACTICES:
 - Leverage bulk operations to compare multiple package alternatives`;
 
 export function registerPackageSearchTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTION,

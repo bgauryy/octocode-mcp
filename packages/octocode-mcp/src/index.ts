@@ -14,9 +14,22 @@ import {
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
 } from './mcp/tools/utils/tokenManager.js';
-import { ConfigManager } from './config/serverConfig.js';
-import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { isBetaEnabled } from './utils/betaFeatures.js';
+import {
+  isBetaEnabled,
+  isAuditingEnabled,
+  isRateLimitingEnabled,
+  getGitHubToken,
+  getAppVersion,
+  getGitHubHost,
+  getEnabledToolsets,
+  getEnableTools,
+  getDisableTools,
+  getOAuthConfig,
+  getGitHubAppConfig,
+  getEnterpriseConfig,
+  getLoggingConfig,
+  getPerformanceConfig,
+} from '../config.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -40,16 +53,12 @@ async function startServer() {
 
     // Initialize enterprise components if configured
     try {
-      if (process.env.AUDIT_ALL_ACCESS === 'true') {
+      if (isAuditingEnabled()) {
         const { AuditLogger } = await import('./security/auditLogger.js');
         AuditLogger.initialize();
       }
 
-      if (
-        process.env.RATE_LIMIT_API_HOUR ||
-        process.env.RATE_LIMIT_AUTH_HOUR ||
-        process.env.RATE_LIMIT_TOKEN_HOUR
-      ) {
+      if (isRateLimitingEnabled()) {
         const { RateLimiter } = await import('./security/rateLimiter.js');
         RateLimiter.initialize();
       }
@@ -104,16 +113,12 @@ async function startServer() {
 
         // Shutdown enterprise modules gracefully
         try {
-          if (process.env.AUDIT_ALL_ACCESS === 'true') {
+          if (isAuditingEnabled()) {
             const { AuditLogger } = await import('./security/auditLogger.js');
             AuditLogger.shutdown();
           }
 
-          if (
-            process.env.RATE_LIMIT_API_HOUR ||
-            process.env.RATE_LIMIT_AUTH_HOUR ||
-            process.env.RATE_LIMIT_TOKEN_HOUR
-          ) {
+          if (isRateLimitingEnabled()) {
             const { RateLimiter } = await import('./security/rateLimiter.js');
             RateLimiter.shutdown();
           }
@@ -194,12 +199,6 @@ async function initializeAuthentication(): Promise<void> {
 }
 
 export async function registerAllTools(server: McpServer) {
-  // Initialize configuration system
-  const config = ConfigManager.initialize();
-
-  // Initialize toolset management
-  ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
-
   // Ensure token exists and is stored securely (existing behavior)
   await getToken();
 
@@ -211,11 +210,28 @@ export async function registerAllTools(server: McpServer) {
     );
   }
 
-  // Prepare tool registration configuration
+  // Prepare tool registration configuration compatible with existing system
   const toolRegistrationConfig: ToolRegistrationConfig = {
-    serverConfig: config,
+    serverConfig: {
+      // Get configuration through helper functions
+      version: getAppVersion(),
+      host: getGitHubHost(),
+      token: getGitHubToken(),
+      enabledToolsets: getEnabledToolsets(),
+      enableTools: getEnableTools(),
+      disableTools: getDisableTools(),
+      oauth: getOAuthConfig(),
+      githubApp: getGitHubAppConfig(),
+      enterprise: getEnterpriseConfig(),
+      enableCommandLogging: getLoggingConfig().enableCommandLogging,
+      logFilePath: getLoggingConfig().logFilePath,
+      githubHost: getGitHubHost(),
+      timeout: getPerformanceConfig().requestTimeout,
+      maxRetries: getPerformanceConfig().maxRetries,
+    },
     userConfig: {
-      toolsToRun: process.env.TOOLS_TO_RUN, // could be undefined
+      enableTools: getEnableTools(),
+      disableTools: getDisableTools(),
     },
   };
 
