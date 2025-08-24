@@ -9,10 +9,10 @@ import {
   rotateToken,
   getConfig,
   clearConfig,
-} from '../../../src/mcp/tools/utils/tokenManager';
+} from '../../../src/mcp/utils/tokenManager';
 
 // Mock dependencies
-vi.mock('../../../src/utils/exec.js', () => ({
+vi.mock('../../../src/mcp/utils/exec.js', () => ({
   getGithubCLIToken: vi.fn(),
 }));
 
@@ -24,7 +24,7 @@ vi.mock('../../../src/security/credentialStore.js', () => ({
   },
 }));
 
-import { getGithubCLIToken } from '../../../src/utils/exec.js';
+import { getGithubCLIToken } from '../../../src/mcp/utils/exec.js';
 import { SecureCredentialStore } from '../../../src/security/credentialStore.js';
 
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);

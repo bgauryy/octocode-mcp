@@ -138,7 +138,11 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   const queryParts: string[] = [];
 
   // Add main search terms
-  if (params.queryTerms && params.queryTerms.length > 0) {
+  if (
+    params.queryTerms &&
+    Array.isArray(params.queryTerms) &&
+    params.queryTerms.length > 0
+  ) {
     queryParts.push(...params.queryTerms);
   }
 
@@ -147,7 +151,7 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
 
   // Add filters as qualifiers
   if (params.language) {
-    const mappedLanguage = mapLanguageToGitHub(params.language);
+    const mappedLanguage = mapLanguageToGitHub(params.language as string);
     queryParts.push(`language:${mappedLanguage}`);
   }
 
@@ -218,13 +222,17 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
 
   // Add queryTerms for specific text matching in repository names and descriptions
   // This is used for targeted searches like "todo app", "authentication", etc.
-  if (params.queryTerms && params.queryTerms.length > 0) {
+  if (
+    params.queryTerms &&
+    Array.isArray(params.queryTerms) &&
+    params.queryTerms.length > 0
+  ) {
     queryParts.push(...params.queryTerms);
   }
 
   // Add filters as qualifiers
   if (params.language) {
-    const mappedLanguage = mapLanguageToGitHub(params.language);
+    const mappedLanguage = mapLanguageToGitHub(params.language as string);
     queryParts.push(`language:${mappedLanguage}`);
   }
 

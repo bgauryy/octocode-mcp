@@ -1,22 +1,22 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { viewGitHubRepositoryStructureAPI } from '../../utils/githubAPI';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { viewGitHubRepositoryStructureAPI } from '../utils/githubAPI';
+import { TOOL_NAMES } from '../utils/toolConstants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
   ProcessedRepositoryStructureResult,
   AggregatedRepositoryContext,
 } from '../scheme/github_view_repo_structure';
-import { generateHints } from './utils/hints_consolidated';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
+import { generateHints } from '../utils/hints_consolidated';
+import { ensureUniqueQueryIds } from '../utils/queryUtils';
 import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
-} from './utils/bulkOperations';
+} from '../utils/bulkOperations';
 
 const DESCRIPTION = `Explore GitHub repository structure and validate repository access with intelligent navigation.
 

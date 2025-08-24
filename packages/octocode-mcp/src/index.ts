@@ -3,14 +3,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
 import { registerSampling } from './mcp/sampling.js';
-import { clearAllCache } from './utils/cache.js';
+import { clearAllCache } from './mcp/utils/cache.js';
 import { registerTools } from './mcp/toolsets/toolsetManager.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
-} from './mcp/tools/utils/tokenManager.js';
+} from './mcp/utils/tokenManager.js';
 import {
   isBetaEnabled,
   isAuditingEnabled,

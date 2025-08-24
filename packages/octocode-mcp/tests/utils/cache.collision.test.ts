@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { generateCacheKey, clearAllCache } from '../../src/utils/cache';
+import { generateCacheKey, clearAllCache } from '../../src/mcp/utils/cache';
 
 // Helper function to safely extract hash from cache key
 function extractHash(cacheKey: string): string {

@@ -1,14 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
+import { withSecurityValidation } from '../../utils/withSecurityValidation';
 import { createResult } from '../../responses';
-import { TOOL_NAMES } from '../utils/toolConstants';
-import { generateHints } from '../utils/hints_consolidated';
+import { TOOL_NAMES } from '../../utils/toolConstants';
+import { generateHints } from '../../utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
 } from '../../scheme/package_search';
-import { searchPackagesAPI } from '../../../utils/package';
+import { searchPackagesAPI } from '../../utils/package';
 
 const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.
 

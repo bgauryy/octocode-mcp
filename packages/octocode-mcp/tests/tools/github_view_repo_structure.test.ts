@@ -6,7 +6,7 @@ import {
 
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 

@@ -92,10 +92,10 @@ graph TD
 ### Key Components
 
 1. **[AuthenticationManager](../src/auth/authenticationManager.ts)** - Single entry point for all auth
-2. **[TokenManager](../src/mcp/tools/utils/tokenManager.ts)** - Handles token resolution and caching
+2. **[TokenManager](../src/mcp/utils/tokenManager.ts)** - Handles token resolution and caching
 3. **[ServerConfig](../src/config/serverConfig.ts)** - Configuration management
 4. **[EnterpriseUtils](../src/utils/enterpriseUtils.ts)** - Enterprise feature detection
-5. **[SecurityValidation](../src/mcp/tools/utils/withSecurityValidation.ts)** - Request validation
+5. **[SecurityValidation](../src/mcp/utils/withSecurityValidation.ts)** - Request validation
 
 ## 🔑 Token Sources & Priority
 

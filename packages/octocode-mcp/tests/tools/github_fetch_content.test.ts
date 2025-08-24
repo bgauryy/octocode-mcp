@@ -6,7 +6,7 @@ import {
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
 }));
 

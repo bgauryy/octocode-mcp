@@ -1,22 +1,22 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { searchGitHubReposAPI } from '../../utils/githubAPI';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { searchGitHubReposAPI } from '../utils/githubAPI';
+import { TOOL_NAMES } from '../utils/toolConstants';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from '../scheme/github_search_repos';
 import type { Repository } from '../../types/github-openapi';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
+import { ensureUniqueQueryIds } from '../utils/queryUtils';
 import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
-} from './utils/bulkOperations';
-import { generateHints } from './utils/hints_consolidated';
+} from '../utils/bulkOperations';
+import { generateHints } from '../utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 

@@ -9,16 +9,16 @@ const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
   searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/mcp/utils/cache.js', () => ({
   generateCacheKey: vi.fn(),
   withCache: vi.fn(),
 }));
 
-vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+vi.mock('../../src/mcp/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 

@@ -2,7 +2,7 @@ import {
   McpServer,
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { TOOL_NAMES } from '../tools/utils/toolConstants.js';
+import { TOOL_NAMES } from '../utils/toolConstants.js';
 import { registerGitHubSearchCodeTool } from '../tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../tools/github_search_repos.js';

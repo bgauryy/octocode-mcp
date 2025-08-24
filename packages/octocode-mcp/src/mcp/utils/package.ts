@@ -3,14 +3,14 @@ import { executeNpmCommand } from './exec';
 import {
   NpmPackageSearchBuilder,
   NpmPackageViewBuilder,
-} from '../mcp/tools/utils/NpmCommandBuilder';
+} from './NpmCommandBuilder';
 import { generateCacheKey, withCache } from './cache';
 import {
   toDDMMYYYY,
   humanizeBytes,
   simplifyRepoUrl,
   createResult,
-} from '../mcp/responses';
+} from '../responses';
 import {
   PackageSearchResult,
   PackageSearchError,
@@ -18,13 +18,13 @@ import {
   EnhancedPackageMetadata,
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
-} from '../mcp/scheme/package_search';
-import { NpmPackage, PythonPackage } from '../mcp/tools/package_search/types';
+} from '../scheme/package_search';
+import { NpmPackage, PythonPackage } from '../tools/package_search/types';
 import {
   PackageSearchBulkParams,
   NpmPackageQuery,
   PythonPackageQuery,
-} from '../mcp/tools/package_search/types';
+} from '../tools/package_search/types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { isNPMEnabled } from './npmAPI';
 

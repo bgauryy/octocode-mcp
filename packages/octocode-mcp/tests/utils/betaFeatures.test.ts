@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { isBetaEnabled, isSamplingEnabled } from '../../src/utils/betaFeatures';
+import {
+  isBetaEnabled,
+  isSamplingEnabled,
+} from '../../src/mcp/utils/betaFeatures';
 
 describe('Beta Features', () => {
   const originalBeta = process.env.BETA;

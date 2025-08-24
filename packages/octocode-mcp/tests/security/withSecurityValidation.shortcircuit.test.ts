@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Import the wrapper under test
-import { withSecurityValidation } from '../../src/mcp/tools/utils/withSecurityValidation.js';
+import { withSecurityValidation } from '../../src/mcp/utils/withSecurityValidation.js';
 
 // Mocks
 const mockIsEnterpriseMode = vi.hoisted(() => vi.fn());
@@ -9,7 +9,7 @@ const mockGetUserContext = vi.hoisted(() => vi.fn());
 const mockRateLimiterCheck = vi.hoisted(() => vi.fn());
 const mockOrgValidate = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/utils/enterpriseUtils.js', () => ({
+vi.mock('../../src/mcp/utils/enterpriseUtils.js', () => ({
   isEnterpriseMode: mockIsEnterpriseMode,
 }));
 

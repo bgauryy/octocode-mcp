@@ -18,7 +18,7 @@ import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
-import { generateCacheKey, withCache } from '../utils/cache';
+import { generateCacheKey, withCache } from '../mcp/utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../mcp/responses';
 

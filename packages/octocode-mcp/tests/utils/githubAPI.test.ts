@@ -73,7 +73,7 @@ vi.mock('@octokit/plugin-throttling', () => ({
   throttling: vi.fn(),
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
+vi.mock('../../src/mcp/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withCache: mockWithCache,
   withDataCache: mockWithDataCache,
@@ -100,7 +100,7 @@ import {
   viewGitHubRepositoryStructureAPI,
   searchGitHubPullRequestsAPI,
   searchGitHubCommitsAPI,
-} from '../../src/utils/githubAPI.js';
+} from '../../src/mcp/utils/githubAPI.js';
 
 describe('GitHub API Utils', () => {
   beforeEach(() => {

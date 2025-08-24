@@ -2,24 +2,24 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
-import { TOOL_NAMES } from './utils/toolConstants.js';
-import { withSecurityValidation } from './utils/withSecurityValidation.js';
+import { TOOL_NAMES } from '../utils/toolConstants.js';
+import { withSecurityValidation } from '../utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
 } from '../scheme/github_search_code.js';
-import { searchGitHubCodeAPI } from '../../utils/githubAPI.js';
+import { searchGitHubCodeAPI } from '../utils/githubAPI.js';
 import {
   createBulkResponse,
   BulkResponseConfig,
   processBulkQueries,
-} from './utils/bulkOperations.js';
+} from '../utils/bulkOperations.js';
 import {
   generateHints,
   generateBulkHints,
   consolidateHints,
-} from './utils/hints_consolidated';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
+} from '../utils/hints_consolidated';
+import { ensureUniqueQueryIds } from '../utils/queryUtils';
 import { ProcessedCodeSearchResult } from '../scheme/github_search_code';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
@@ -145,7 +145,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
-  _userContext?: import('./utils/withSecurityValidation').UserContext
+  _userContext?: import('../utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
 

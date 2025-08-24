@@ -17,7 +17,7 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
-import { generateCacheKey, withCache } from '../utils/cache';
+import { generateCacheKey, withCache } from '../mcp/utils/cache';
 import { createResult } from '../mcp/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 

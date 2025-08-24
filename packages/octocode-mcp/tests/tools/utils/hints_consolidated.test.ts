@@ -7,8 +7,8 @@ import {
   generateHints,
   generateBulkHints,
   consolidateHints,
-} from '../../../src/mcp/tools/utils/hints_consolidated';
-import { TOOL_NAMES } from '../../../src/mcp/tools/utils/toolConstants';
+} from '../../../src/mcp/utils/hints_consolidated';
+import { TOOL_NAMES } from '../../../src/mcp/utils/toolConstants';
 
 describe('Consolidated Hints System', () => {
   describe('Error Recovery', () => {

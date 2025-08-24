@@ -1,17 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { fetchGitHubFileContentAPI } from '../../utils/githubAPI';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { fetchGitHubFileContentAPI } from '../utils/githubAPI';
+import { TOOL_NAMES } from '../utils/toolConstants';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
   FileContentQueryResult,
 } from '../scheme/github_fetch_content';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { generateHints } from './utils/hints_consolidated';
-import { isSamplingEnabled } from '../../utils/betaFeatures';
+import { ensureUniqueQueryIds } from '../utils/queryUtils';
+import { generateHints } from '../utils/hints_consolidated';
+import { isSamplingEnabled } from '../utils/betaFeatures';
 import { SamplingUtils, performSampling } from '../sampling';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.

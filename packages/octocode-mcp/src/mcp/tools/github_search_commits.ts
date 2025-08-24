@@ -1,14 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { searchGitHubCommitsAPI } from '../../utils/githubAPI';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { searchGitHubCommitsAPI } from '../utils/githubAPI';
+import { TOOL_NAMES } from '../utils/toolConstants';
 import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
 } from '../scheme/github_search_commits';
-import { generateHints } from './utils/hints_consolidated';
+import { generateHints } from '../utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
 

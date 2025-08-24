@@ -1,4 +1,4 @@
-import { getNPMUserDetails } from '../mcp/tools/utils/APIStatus.js';
+import { getNPMUserDetails } from './APIStatus.js';
 
 /**
  * NPM API utilities for managing NPM availability and authentication

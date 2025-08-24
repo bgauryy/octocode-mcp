@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   NpmPackageSearchBuilder,
   NpmPackageViewBuilder,
-} from '../../../src/mcp/tools/utils/NpmCommandBuilder.js';
+} from '../../../src/mcp/utils/NpmCommandBuilder.js';
 
 describe('NpmCommandBuilder', () => {
   describe('NpmPackageViewBuilder', () => {

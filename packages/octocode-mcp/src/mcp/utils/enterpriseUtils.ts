@@ -4,7 +4,7 @@
  * Inspired by GitHub MCP Server's simple configuration patterns
  */
 
-import { ConfigManager, type ServerConfig } from '../config/serverConfig.js';
+import { ConfigManager, type ServerConfig } from '../../config/serverConfig.js';
 
 /**
  * Check if system is running in enterprise mode

@@ -23,7 +23,7 @@ How Octocode resolves your token (priority order):
 - GitHub CLI token from `gh auth token` (**disabled in Enterprise mode**)
 - `Authorization` environment variable (Bearer or token prefix)
 
-Implementation reference: `src/mcp/tools/utils/tokenManager.ts` (`resolveToken`, `getToken`) and `src/index.ts` (bootstrap and enterprise initialization).
+Implementation reference: `src/mcp/utils/tokenManager.ts` (`resolveToken`, `getToken`) and `src/index.ts` (bootstrap and enterprise initialization).
 
 ## 1) Individual Developers
 

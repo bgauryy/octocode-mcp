@@ -5,7 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 // Mock all dependencies before importing index
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
-vi.mock('../src/utils/cache.js');
+vi.mock('../src/mcp/utils/cache.js');
 vi.mock('../src/mcp/prompts.js'); // Add missing mock for prompts
 vi.mock('../src/mcp/sampling.js');
 vi.mock('../src/mcp/tools/github_search_code.js');
@@ -15,14 +15,14 @@ vi.mock('../src/mcp/tools/github_search_commits.js');
 vi.mock('../src/mcp/tools/github_search_pull_requests.js');
 vi.mock('../src/mcp/tools/package_search/package_search.js');
 vi.mock('../src/mcp/tools/github_view_repo_structure.js');
-vi.mock('../src/mcp/tools/utils/APIStatus.js');
-vi.mock('../src/utils/exec.js');
+vi.mock('../src/mcp/utils/APIStatus.js');
+vi.mock('../src/mcp/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
 vi.mock('../src/mcp/toolsets/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
-vi.mock('../src/mcp/tools/utils/tokenManager.js');
+vi.mock('../src/mcp/utils/tokenManager.js');
 vi.mock('../src/auth/authenticationManager.js', () => ({
   AuthenticationManager: {
     getInstance: vi.fn(() => ({
@@ -32,7 +32,7 @@ vi.mock('../src/auth/authenticationManager.js', () => ({
 }));
 
 // Import mocked functions
-import { clearAllCache } from '../src/utils/cache.js';
+import { clearAllCache } from '../src/mcp/utils/cache.js';
 import { registerPrompts } from '../src/mcp/prompts.js';
 import { registerSampling } from '../src/mcp/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
@@ -42,13 +42,13 @@ import { registerSearchGitHubCommitsTool } from '../src/mcp/tools/github_search_
 import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from '../src/mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
-import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
-import { getGithubCLIToken } from '../src/utils/exec.js';
+import { getNPMUserDetails } from '../src/mcp/utils/APIStatus.js';
+import { getGithubCLIToken } from '../src/mcp/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager } from '../src/config/serverConfig.js';
 import { registerTools } from '../src/mcp/toolsets/toolsetManager.js';
-import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
-import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
+import { getToken } from '../src/mcp/utils/tokenManager.js';
+import { TOOL_NAMES } from '../src/mcp/utils/toolConstants.js';
 import {
   isBetaEnabled,
   isAuditingEnabled,

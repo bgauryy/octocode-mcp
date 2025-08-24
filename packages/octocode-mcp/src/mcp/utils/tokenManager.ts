@@ -1,5 +1,5 @@
-import { SecureCredentialStore } from '../../../security/credentialStore.js';
-import { getGithubCLIToken } from '../../../utils/exec.js';
+import { SecureCredentialStore } from '../../security/credentialStore.js';
+import { getGithubCLIToken } from './exec.js';
 import crypto from 'crypto';
 
 /**
@@ -172,9 +172,7 @@ async function tryGetOAuthToken(): Promise<OAuthTokenInfo | null> {
     // Log error in enterprise mode
     if (isEnterpriseMode()) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_resolved', 'failure', {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -191,7 +189,7 @@ async function tryGetOAuthToken(): Promise<OAuthTokenInfo | null> {
  */
 async function tryGetGitHubAppToken(): Promise<GitHubAppTokenInfo | null> {
   try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
+    const { ConfigManager } = await import('../../config/serverConfig.js');
     const config = ConfigManager.getConfig();
 
     if (!config.githubApp?.enabled) return null;
@@ -229,9 +227,7 @@ async function tryGetGitHubAppToken(): Promise<GitHubAppTokenInfo | null> {
     // Log error in enterprise mode
     if (isEnterpriseMode()) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_resolved', 'failure', {
           error: error instanceof Error ? error.message : String(error),
         });
@@ -313,9 +309,7 @@ async function resolveToken(): Promise<{
       config?.enableAuditLogging
     ) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_validation', 'success', {
           reason: 'CLI token resolution disabled in enterprise mode',
           organizationId: config.organizationId,
@@ -523,7 +517,7 @@ async function refreshOAuthToken(
   clientId?: string
 ): Promise<OAuthTokenInfo | null> {
   try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
+    const { ConfigManager } = await import('../../config/serverConfig.js');
     const config = ConfigManager.getConfig();
 
     if (!config.oauth?.enabled || !config.oauth.clientSecret) {
@@ -579,9 +573,7 @@ async function refreshOAuthToken(
     // Log successful refresh in enterprise mode
     if (isEnterpriseMode()) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_rotation', 'success', {
           clientId: newTokenInfo.clientId,
           expiresAt: newTokenInfo.expiresAt.toISOString(),
@@ -600,9 +592,7 @@ async function refreshOAuthToken(
     // Log failure in enterprise mode
     if (isEnterpriseMode()) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_rotation', 'failure', {
           error: error instanceof Error ? error.message : String(error),
           clientId,
@@ -623,7 +613,7 @@ async function refreshGitHubAppToken(
   installationId: number
 ): Promise<GitHubAppTokenInfo | null> {
   try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
+    const { ConfigManager } = await import('../../config/serverConfig.js');
     const config = ConfigManager.getConfig();
 
     if (!config.githubApp?.enabled) {
@@ -677,9 +667,7 @@ async function refreshGitHubAppToken(
     // Log successful refresh in enterprise mode
     if (isEnterpriseMode()) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_rotation', 'success', {
           appId: newTokenInfo.appId,
           installationId,
@@ -696,9 +684,7 @@ async function refreshGitHubAppToken(
     // Log failure in enterprise mode
     if (isEnterpriseMode()) {
       try {
-        const { logAuthEvent } = await import(
-          '../../../security/auditLogger.js'
-        );
+        const { logAuthEvent } = await import('../../security/auditLogger.js');
         logAuthEvent('token_rotation', 'failure', {
           error: error instanceof Error ? error.message : String(error),
           installationId,
@@ -785,7 +771,7 @@ function scheduleTokenRefresh(
           if (isEnterpriseMode()) {
             try {
               const { logAuthEvent } = await import(
-                '../../../security/auditLogger.js'
+                '../../security/auditLogger.js'
               );
               logAuthEvent('auth_failure', 'failure', {
                 error: error instanceof Error ? error.message : String(error),
@@ -803,7 +789,7 @@ function scheduleTokenRefresh(
         if (isEnterpriseMode()) {
           try {
             const { logAuthEvent } = await import(
-              '../../../security/auditLogger.js'
+              '../../security/auditLogger.js'
             );
             logAuthEvent('auth_failure', 'failure', {
               error: error instanceof Error ? error.message : String(error),
@@ -834,7 +820,7 @@ function scheduleTokenRefresh(
       if (isEnterpriseMode()) {
         try {
           const { logAuthEvent } = await import(
-            '../../../security/auditLogger.js'
+            '../../security/auditLogger.js'
           );
           await logAuthEvent('token_rotation', 'failure', {
             error: error instanceof Error ? error.message : String(error),
@@ -966,7 +952,7 @@ export async function storeOAuthTokenInfo(
   // Log in enterprise mode
   if (isEnterpriseMode()) {
     try {
-      const { logAuthEvent } = await import('../../../security/auditLogger.js');
+      const { logAuthEvent } = await import('../../security/auditLogger.js');
       logAuthEvent('token_resolved', 'success', {
         clientId: tokenInfo.clientId,
         expiresAt: tokenInfo.expiresAt.toISOString(),
@@ -999,7 +985,7 @@ export async function storeGitHubAppTokenInfo(
   // Log in enterprise mode
   if (isEnterpriseMode()) {
     try {
-      const { logAuthEvent } = await import('../../../security/auditLogger.js');
+      const { logAuthEvent } = await import('../../security/auditLogger.js');
       logAuthEvent('token_resolved', 'success', {
         appId: tokenInfo.appId,
         installationId: tokenInfo.installationId,

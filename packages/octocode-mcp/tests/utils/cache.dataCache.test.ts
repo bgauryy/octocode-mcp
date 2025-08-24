@@ -4,7 +4,7 @@ import {
   withDataCache,
   clearAllCache,
   getCacheStats,
-} from '../../src/utils/cache';
+} from '../../src/mcp/utils/cache';
 
 describe('withDataCache typed data cache', () => {
   beforeEach(() => {

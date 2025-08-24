@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 describe('Security Validation Module', () => {
   it('should export required functions', async () => {
     const module = await import(
-      '../../../../src/mcp/tools/utils/withSecurityValidation'
+      '../../../../src/mcp/utils/withSecurityValidation'
     );
 
     expect(typeof module.withSecurityValidation).toBe('function');

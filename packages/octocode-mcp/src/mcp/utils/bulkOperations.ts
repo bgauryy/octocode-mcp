@@ -10,11 +10,11 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../responses';
+import { createResult } from '../responses';
 // Hints are now provided by the consolidated hints system
 import { ToolName } from './toolConstants';
 import { generateBulkHints, BulkHintContext } from './hints_consolidated';
-import { executeWithErrorIsolation } from '../../../utils/promiseUtils';
+import { executeWithErrorIsolation } from './promiseUtils';
 
 /**
  * Base interface for bulk query operations

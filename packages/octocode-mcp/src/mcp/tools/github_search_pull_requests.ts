@@ -1,14 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { searchGitHubPullRequestsAPI } from '../../utils/githubAPI';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { searchGitHubPullRequestsAPI } from '../utils/githubAPI';
+import { TOOL_NAMES } from '../utils/toolConstants';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
 } from '../scheme/github_search_pull_requests';
-import { generateHints } from './utils/hints_consolidated';
+import { generateHints } from '../utils/hints_consolidated';
 
 const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
 

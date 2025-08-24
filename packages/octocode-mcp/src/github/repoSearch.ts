@@ -8,7 +8,7 @@ import { GitHubReposSearchQuery } from '../mcp/scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
-import { generateCacheKey, withCache } from '../utils/cache';
+import { generateCacheKey, withCache } from '../mcp/utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../mcp/responses';
 
@@ -85,9 +85,10 @@ async function searchGitHubReposAPIInternal(
     }
 
     // Use properly typed parameters
+    const limit = typeof params.limit === 'number' ? params.limit : 30;
     const searchParams: SearchReposParameters = {
       q: query,
-      per_page: Math.min(params.limit || 30, 100),
+      per_page: Math.min(limit, 100),
       page: 1,
     };
 

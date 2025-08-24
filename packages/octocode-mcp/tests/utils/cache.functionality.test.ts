@@ -6,7 +6,7 @@ import {
   clearAllCache,
   getCacheStats,
   CACHE_TTL_CONFIG,
-} from '../../src/utils/cache';
+} from '../../src/mcp/utils/cache';
 
 describe('Cache Functionality Regression Tests', () => {
   beforeEach(() => {

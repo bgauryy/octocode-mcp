@@ -13,7 +13,7 @@ import {
   isEnterpriseMode,
   getEnterpriseConfig,
   isAuditLoggingEnabled,
-} from '../utils/enterpriseUtils.js';
+} from '../mcp/utils/enterpriseUtils.js';
 
 export class AuthenticationManager {
   private static instance: AuthenticationManager;
@@ -137,7 +137,7 @@ export class AuthenticationManager {
       : undefined;
 
     const { initialize: initializeTokenManager } = await import(
-      '../mcp/tools/utils/tokenManager.js'
+      '../mcp/utils/tokenManager.js'
     );
     await initializeTokenManager(tokenConfig);
   }

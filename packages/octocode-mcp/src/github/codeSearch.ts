@@ -11,7 +11,7 @@ import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
-import { generateCacheKey, withDataCache } from '../utils/cache';
+import { generateCacheKey, withDataCache } from '../mcp/utils/cache';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
@@ -62,7 +62,8 @@ async function searchGitHubCodeAPIInternal(
     }
 
     // Optimized search parameters with better defaults
-    const limit: number = enhancedParams.limit ?? 30;
+    const limit =
+      typeof enhancedParams.limit === 'number' ? enhancedParams.limit : 30;
     const searchParams: SearchCodeParameters = {
       q: query,
       per_page: Math.min(limit, 100),
@@ -75,10 +76,10 @@ async function searchGitHubCodeAPIInternal(
 
     // Add sorting parameters for better relevance
     if (enhancedParams.sort && enhancedParams.sort !== 'best-match') {
-      searchParams.sort = enhancedParams.sort;
+      searchParams.sort = enhancedParams.sort as 'indexed';
     }
     if (enhancedParams.order) {
-      searchParams.order = enhancedParams.order;
+      searchParams.order = enhancedParams.order as 'asc' | 'desc';
     }
 
     // Direct API call with optimized parameters

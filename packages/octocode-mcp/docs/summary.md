@@ -430,7 +430,7 @@ export async function executeWithErrorIsolation<T>(
 ): Promise<Array<ExecutionResult<T>>>
 ```
 
-### 4. Bulk Operations Framework (`src/mcp/tools/utils/bulkOperations.ts`)
+### 4. Bulk Operations Framework (`src/mcp/utils/bulkOperations.ts`)
 ```typescript
 // Unified bulk processing with intelligent error recovery
 export async function processBulkQueries<T extends BulkQuery, R extends ProcessedBulkResult>(
@@ -442,7 +442,7 @@ export async function processBulkQueries<T extends BulkQuery, R extends Processe
 }>
 ```
 
-## 🧠 Intelligent Hints System (`src/mcp/tools/utils/hints_consolidated.ts`)
+## 🧠 Intelligent Hints System (`src/mcp/utils/hints_consolidated.ts`)
 
 ### Advanced AI Guidance
 **700+ lines of consolidated hint generation logic with**:
