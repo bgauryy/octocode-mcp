@@ -8,7 +8,7 @@ import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
 } from '../scheme/github_search_code.js';
-import { searchGitHubCodeAPI } from '../utils/githubAPI.js';
+import { searchGitHubCodeAPI } from '../github/githubAPI.js';
 import {
   createBulkResponse,
   BulkResponseConfig,

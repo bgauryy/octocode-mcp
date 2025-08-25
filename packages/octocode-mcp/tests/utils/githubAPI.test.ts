@@ -100,7 +100,7 @@ import {
   viewGitHubRepositoryStructureAPI,
   searchGitHubPullRequestsAPI,
   searchGitHubCommitsAPI,
-} from '../../src/utils/githubAPI.js';
+} from '../../src/github/githubAPI.js';
 
 describe('GitHub API Utils', () => {
   beforeEach(() => {

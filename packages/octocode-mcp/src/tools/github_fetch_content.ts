@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSmartValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { fetchGitHubFileContentAPI } from '../utils/githubAPI';
+import { fetchGitHubFileContentAPI } from '../github/githubAPI';
 import { TOOL_NAMES } from '../utils/toolConstants';
 import {
   FileContentQuery,
