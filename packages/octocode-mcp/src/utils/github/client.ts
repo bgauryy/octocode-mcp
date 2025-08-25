@@ -7,6 +7,7 @@ import {
   onTokenRotated,
 } from '../../mcp/tools/utils/tokenManager.js';
 import { ConfigManager } from '../../config/serverConfig.js';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
@@ -37,11 +38,11 @@ const createThrottleOptions = () => ({
  * Initialize Octokit with centralized token management and rotation support
  * Token resolution is delegated to tokenManager - single source of truth
  */
-export async function getOctokit(): Promise<
+export async function getOctokit(authInfo?: AuthInfo): Promise<
   InstanceType<typeof OctokitWithThrottling>
 > {
-  if (!octokitInstance) {
-    const token = await getGitHubToken();
+  if (!octokitInstance || authInfo) {
+    const token = authInfo?.token || (await getGitHubToken());
     const baseUrl = ConfigManager.getGitHubBaseURL();
     const config = ConfigManager.getConfig();
 

@@ -13,3 +13,6 @@ coverage
 .env
 .cursor
 .context
+
+# sqlite DB
+mcp.sqlite

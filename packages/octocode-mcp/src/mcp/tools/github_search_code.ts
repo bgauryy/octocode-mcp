@@ -21,6 +21,7 @@ import {
 } from './utils/hints_consolidated';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { ProcessedCodeSearchResult } from './scheme/github_search_code';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -76,6 +77,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           queries: GitHubCodeSearchQuery[];
           verbose?: boolean;
         },
+        authInfo,
         userContext
       ): Promise<CallToolResult> => {
         if (
@@ -135,6 +137,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         return searchMultipleGitHubCode(
           args.queries,
           args.verbose || false,
+          authInfo,
           userContext
         );
       }
@@ -145,6 +148,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
+  authInfo?: AuthInfo,
   _userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
@@ -155,7 +159,7 @@ async function searchMultipleGitHubCode(
       query: GitHubCodeSearchQuery
     ): Promise<ProcessedCodeSearchResult> => {
       try {
-        const apiResult = await searchGitHubCodeAPI(query);
+        const apiResult = await searchGitHubCodeAPI(query, authInfo);
 
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error
