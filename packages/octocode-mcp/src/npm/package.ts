@@ -1,16 +1,16 @@
 import axios from 'axios';
-import { executeNpmCommand } from './exec';
+import { executeNpmCommand } from '../mcp/utils/exec';
 import {
   NpmPackageSearchBuilder,
   NpmPackageViewBuilder,
-} from '../../npm/NpmCommandBuilder';
-import { generateCacheKey, withCache } from './cache';
+} from './NpmCommandBuilder';
+import { generateCacheKey, withCache } from '../mcp/utils/cache';
 import {
   toDDMMYYYY,
   humanizeBytes,
   simplifyRepoUrl,
   createResult,
-} from '../responses';
+} from '../mcp/responses';
 import {
   PackageSearchResult,
   PackageSearchError,
@@ -18,15 +18,15 @@ import {
   EnhancedPackageMetadata,
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
-} from '../scheme/package_search';
-import { NpmPackage, PythonPackage } from '../types';
+} from '../mcp/scheme/package_search';
+import { NpmPackage, PythonPackage } from '../mcp/types';
 import {
   PackageSearchBulkParams,
   NpmPackageQuery,
   PythonPackageQuery,
-} from '../types';
+} from '../mcp/types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { isNPMEnabled } from '../../npm/npmAPI';
+import { isNPMEnabled } from './npmAPI';
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;

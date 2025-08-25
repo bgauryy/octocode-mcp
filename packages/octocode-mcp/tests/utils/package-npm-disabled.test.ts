@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { searchPackagesAPI } from '../../src/mcp/utils/package';
+import { searchPackagesAPI } from '../../src/npm/package';
 import { isNPMEnabled } from '../../src/npm/npmAPI';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
