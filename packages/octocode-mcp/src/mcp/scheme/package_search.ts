@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ResearchGoalEnum } from '../utils/toolConstants';
+import { BaseQuerySchema } from './baseSchema';
 
 // NPM package field enum for validation
 const NpmFieldEnum = [
@@ -21,8 +21,8 @@ const NpmFieldEnum = [
   'time',
 ] as const;
 
-// NPM Package Query Schema
-const NpmPackageQuerySchema = z.object({
+// NPM Package Query Schema - extends base query
+const NpmPackageQuerySchema = BaseQuerySchema.extend({
   name: z.string().describe('NPM package name to search for'),
   searchLimit: z
     .number()
@@ -51,8 +51,8 @@ const NpmPackageQuerySchema = z.object({
     .describe('Specific field(s) to retrieve from this NPM package'),
 });
 
-// Python Package Query Schema
-const PythonPackageQuerySchema = z.object({
+// Python Package Query Schema - extends base query
+const PythonPackageQuerySchema = BaseQuerySchema.extend({
   name: z.string().describe('Python package name to search for'),
   searchLimit: z
     .number()
@@ -65,8 +65,8 @@ const PythonPackageQuerySchema = z.object({
     ),
 });
 
-// Bulk Package Search Schema - main input schema
-export const BulkPackageSearchSchema = z.object({
+// Bulk Package Search Schema - main input schema, extends base query
+export const BulkPackageSearchSchema = BaseQuerySchema.extend({
   // Global defaults
   searchLimit: z
     .number()
@@ -94,11 +94,6 @@ export const BulkPackageSearchSchema = z.object({
     .describe(
       'Global default for NPM metadata fetching. Can be overridden per query. Default: false'
     ),
-
-  researchGoal: z
-    .enum(ResearchGoalEnum)
-    .optional()
-    .describe('Research goal to guide tool behavior and hint generation'),
 
   // Package arrays for bulk search
   npmPackages: z
