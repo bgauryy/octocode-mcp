@@ -503,7 +503,14 @@ BASE_URL="https://yourapp.com"    # Default: http://localhost:3000
 PORT="3000"                       # Default: 3000
 
 # Tool selection (optional)
-TOOLS_TO_RUN="github_search_code,github_fetch_content"  # Comma-separated tool names
+# Available tools in HTTP server mode (comma-separated tool names):
+# - githubSearchCode: Search for code across GitHub repositories
+# - githubSearchRepositories: Search and discover GitHub repositories
+# - githubGetFileContent: Fetch complete file contents from GitHub repositories
+# - githubViewRepoStructure: Explore GitHub repository structure
+# - githubSearchCommits: Search commit history and analyze changes
+# - githubSearchPullRequests: Search and analyze GitHub pull requests
+TOOLS_TO_RUN="tool1,too2,tool3"  # Example: run only specific tools
 ```
 
 #### **Stdio OAuth Configuration (for stdio mode)**

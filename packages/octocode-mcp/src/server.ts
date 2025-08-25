@@ -13,7 +13,6 @@ import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_con
 import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
@@ -315,10 +314,11 @@ export async function registerAllTools(server: McpServer) {
       name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       fn: registerSearchGitHubPullRequestsTool,
     },
-    {
-      name: TOOL_NAMES.PACKAGE_SEARCH,
-      fn: registerPackageSearchTool,
-    },
+    // DO NOT RUN PACKAGE SEARCH TOOL IN SERVER MODE
+    // {
+    //   name: TOOL_NAMES.PACKAGE_SEARCH,
+    //   fn: registerPackageSearchTool,
+    // },
   ];
 
   let successCount = 0;
