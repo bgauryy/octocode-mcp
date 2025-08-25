@@ -16,9 +16,25 @@ interface ValidationResult {
   warnings: string[];
 }
 
+// Security patterns for INPUT SANITIZATION - CLI injection detection in user parameters
+// These patterns are used to validate user inputs, NOT to sanitize output content
+const CLI_INJECTION_PATTERNS = [
+  // Command chaining characters in user inputs
+  /[;&|`$(){}]/g,
+  // Path traversal patterns in user inputs
+  /\.\.[/\\]/g,
+  // Common dangerous commands in user inputs
+  /\b(rm|del|format|curl|wget|eval|exec|system)\s/gi,
+];
+
 export class ContentSanitizer {
+  /**
+   * Sanitizes OUTPUT CONTENT (not user input parameters)
+   * This method handles content sanitization for API responses and output,
+   * while validateInputParameters() handles user input validation
+   */
   public static sanitizeContent(content: string): SanitizationResult {
-    // Detect secrets
+    // Detect secrets in output content
     const secretsResult = this.detectSecrets(content);
 
     return {
@@ -31,6 +47,10 @@ export class ContentSanitizer {
     };
   }
 
+  /**
+   * Detects and redacts secrets in OUTPUT CONTENT (not user input)
+   * Uses regex patterns from regexes.ts to find API keys, tokens, etc. in content
+   */
   private static detectSecrets(content: string): {
     hasSecrets: boolean;
     secretsDetected: string[];
@@ -46,7 +66,7 @@ export class ContentSanitizer {
           // Add each match to the set (automatically deduplicates)
           matches.forEach(_match => secretsDetectedSet.add(pattern.name));
 
-          // Replace with redacted placeholder
+          // Replace with redacted placeholder in output content
           sanitizedContent = sanitizedContent.replace(
             pattern.regex,
             `[REDACTED-${pattern.name.toUpperCase()}]`
@@ -71,6 +91,28 @@ export class ContentSanitizer {
     };
   }
 
+  /**
+   * Detects CLI injection patterns in USER INPUT parameters
+   * Used for input validation, not content sanitization
+   */
+  private static detectCliInjection(value: string): boolean {
+    return CLI_INJECTION_PATTERNS.some(pattern => pattern.test(value));
+  }
+
+  /**
+   * Sanitizes dangerous CLI characters from USER INPUT parameters
+   * Used for input sanitization, not content sanitization
+   */
+  private static sanitizeCliCharacters(value: string): string {
+    // Remove dangerous CLI characters from user inputs
+    return value.replace(/[;&|`$(){}]/g, '');
+  }
+
+  /**
+   * Validates and sanitizes USER INPUT parameters (not content output)
+   * This method handles input validation and sanitization for tool parameters,
+   * while sanitizeContent() handles output content sanitization
+   */
   public static validateInputParameters(
     params: Record<string, unknown>
   ): ValidationResult {
@@ -123,7 +165,23 @@ export class ContentSanitizer {
           );
           sanitizedParams[key] = value.slice(0, 100);
         } else {
-          sanitizedParams[key] = value;
+          // Check each string element in the array for malicious content
+          const sanitizedArray = value.map(item => {
+            if (typeof item === 'string') {
+              // Check for CLI injection
+              if (this.detectCliInjection(item)) {
+                hasValidationErrors = true;
+                warnings.add(
+                  `Potentially malicious content in parameter '${key}' array element`
+                );
+              }
+              // Always sanitize CLI characters even if malicious
+              return this.sanitizeCliCharacters(item);
+            }
+            // Non-string items pass through unchanged
+            return item;
+          });
+          sanitizedParams[key] = sanitizedArray;
         }
       } else if (value !== null && typeof value === 'object') {
         // Recursively validate nested objects

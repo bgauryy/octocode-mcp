@@ -615,7 +615,7 @@ describe('Package Search Tool (NPM & Python)', () => {
       );
     });
 
-    it.skip('should handle NPM metadata fetching for specific queries', async () => {
+    it('should handle NPM metadata fetching for specific queries', async () => {
       const mockSearchResponse = {
         result: [
           {
