@@ -216,17 +216,20 @@ describe('GitHub API Utils', () => {
         },
       });
 
-      // The function should return the result directly, not call createResult
+      // The function now returns CallToolResult format
       const result = await searchGitHubCodeAPI(params);
-      expect(result).toEqual(
-        expect.objectContaining({
-          data: expect.objectContaining({
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        expect(parsedData.data).toEqual(
+          expect.objectContaining({
             total_count: 1,
             items: expect.any(Array),
-          }),
-          status: 200,
-        })
-      );
+          })
+        );
+        expect(parsedData.meta.status).toBe(200);
+      }
     });
 
     it('should handle empty search query', async () => {
@@ -248,10 +251,14 @@ describe('GitHub API Utils', () => {
       const result = await searchGitHubCodeAPI(params);
 
       // Empty queries should return an error since they don't provide meaningful search terms
-      expect(result).toHaveProperty('error');
-      expect((result as { error: string }).error).toBe(
-        'Search query cannot be empty'
-      );
+      expect(result.isError).toBe(true);
+      if (result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        expect(parsedData.meta?.error || parsedData.error).toBe(
+          'Search query cannot be empty'
+        );
+      }
     });
 
     it('should handle GitHub API rate limit error', async () => {
@@ -289,13 +296,14 @@ describe('GitHub API Utils', () => {
       };
       const result = await searchGitHubCodeAPI(params);
 
-      expect(result).toEqual(
-        expect.objectContaining({
-          error: expect.stringContaining('rate limit'),
-          status: 403,
-          type: 'http',
-        })
-      );
+      expect(result.isError).toBe(true);
+      if (result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        expect(parsedData.error).toContain('rate limit');
+        expect(parsedData.meta.status).toBe(403);
+        expect(parsedData.meta.type).toBe('http');
+      }
     });
 
     it('should handle authentication error', async () => {
@@ -322,13 +330,14 @@ describe('GitHub API Utils', () => {
       };
       const result = await searchGitHubCodeAPI(params);
 
-      expect(result).toEqual(
-        expect.objectContaining({
-          error: expect.stringContaining('authentication'),
-          status: 401,
-          type: 'http',
-        })
-      );
+      expect(result.isError).toBe(true);
+      if (result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        expect(parsedData.error).toContain('authentication');
+        expect(parsedData.meta.status).toBe(401);
+        expect(parsedData.meta.type).toBe('http');
+      }
     });
 
     it('should handle validation error', async () => {
@@ -355,13 +364,16 @@ describe('GitHub API Utils', () => {
       };
       const result = await searchGitHubCodeAPI(params);
 
-      expect(result).toEqual(
-        expect.objectContaining({
-          error: 'Invalid search query or request parameters',
-          status: 422,
-          type: 'http',
-        })
-      );
+      expect(result.isError).toBe(true);
+      if (result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        expect(parsedData.error).toBe(
+          'Code search failed: Invalid search query or request parameters'
+        );
+        expect(parsedData.meta.status).toBe(422);
+        expect(parsedData.meta.type).toBe('http');
+      }
     });
 
     it('should build complex search queries correctly', async () => {
@@ -707,10 +719,13 @@ describe('GitHub API Utils', () => {
           page: 1,
         });
 
-        // The function should return the result directly, not call createResult
+        // The function now returns CallToolResult format
         const result = await searchGitHubReposAPI(params);
-        expect(result).toEqual({
-          data: {
+        expect(result.isError).toBe(false);
+        if (!result.isError) {
+          const jsonText = (result.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          expect(parsedData.data).toEqual({
             total_count: 1,
             repositories: [
               {
@@ -725,9 +740,9 @@ describe('GitHub API Utils', () => {
                 owner: 'facebook',
               },
             ],
-          },
-          status: 200,
-        });
+          });
+          expect(parsedData.meta.status).toBe(200);
+        }
       });
 
       it('should handle empty search query for repositories', async () => {
@@ -815,13 +830,14 @@ describe('GitHub API Utils', () => {
         const params = { queryTerms: ['test'] };
         const result = await searchGitHubReposAPI(params);
 
-        expect(result).toEqual(
-          expect.objectContaining({
-            error: expect.stringContaining('rate limit'),
-            status: 403,
-            type: 'http',
-          })
-        );
+        expect(result.isError).toBe(true);
+        if (result.isError) {
+          const jsonText = (result.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          expect(parsedData.error).toContain('rate limit');
+          expect(parsedData.meta.status).toBe(403);
+          expect(parsedData.meta.type).toBe('http');
+        }
       });
 
       it('should truncate long descriptions', async () => {
@@ -851,18 +867,21 @@ describe('GitHub API Utils', () => {
         const params = { queryTerms: ['test'] };
         const result = await searchGitHubReposAPI(params);
 
-        expect(result).toEqual(
-          expect.objectContaining({
-            data: expect.objectContaining({
+        expect(result.isError).toBe(false);
+        if (!result.isError) {
+          const jsonText = (result.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          expect(parsedData.data).toEqual(
+            expect.objectContaining({
               repositories: [
                 expect.objectContaining({
                   description: longDescription.substring(0, 150) + '...',
                 }),
               ],
-            }),
-            status: 200,
-          })
-        );
+            })
+          );
+          expect(parsedData.meta.status).toBe(200);
+        }
       });
 
       // REMOVED: GitHub File Content API tests - redundant low-level API tests that don't match implementation patterns

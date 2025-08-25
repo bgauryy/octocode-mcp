@@ -1,5 +1,5 @@
 import { RequestError } from 'octokit';
-import type { GetContentParameters, GitHubAPIResponse } from './types';
+import type { GetContentParameters } from './types';
 import {
   GithubFetchRequestParams,
   GitHubFileContentResponse,
@@ -25,7 +25,7 @@ import { createResult } from '../mcp/responses';
  */
 export async function fetchGitHubFileContentAPI(
   params: GithubFetchRequestParams
-): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
+): Promise<CallToolResult> {
   // Generate cache key based on request parameters
   const cacheKey = generateCacheKey('gh-api-file-content', {
     owner: params.owner,
@@ -40,41 +40,10 @@ export async function fetchGitHubFileContentAPI(
     matchStringContextLines: params.matchStringContextLines,
   });
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubFileContentAPIInternal(params);
-
-    // Convert GitHubAPIResponse to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result.data,
-      });
-    }
-  };
-
   // Use cache with 1-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, fetchOperation);
-
-  // Convert CallToolResult back to GitHubAPIResponse
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<GitHubFileContentResponse>;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return {
-      data: parsedData.data as GitHubFileContentResponse,
-      status: 200,
-    };
-  }
+  return await withCache(cacheKey, () =>
+    fetchGitHubFileContentAPIInternal(params)
+  );
 }
 
 /**
@@ -83,7 +52,7 @@ export async function fetchGitHubFileContentAPI(
  */
 async function fetchGitHubFileContentAPIInternal(
   params: GithubFetchRequestParams
-): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
+): Promise<CallToolResult> {
   try {
     const octokit = await getOctokit();
     const { owner, repo, filePath, branch } = params;
@@ -103,12 +72,15 @@ async function fetchGitHubFileContentAPIInternal(
 
     // Check if it's a directory (array response)
     if (Array.isArray(data)) {
-      return {
+      return createResult({
         error:
           'Path is a directory. Use githubViewRepoStructure to list directory contents',
-        type: 'unknown' as const,
-        status: 400,
-      };
+        isError: true,
+        meta: {
+          type: 'unknown' as const,
+          status: 400,
+        },
+      });
     }
 
     // Check if it's a file with content
@@ -121,30 +93,39 @@ async function fetchGitHubFileContentAPIInternal(
         const fileSizeKB = Math.round(fileSize / 1024);
         const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
 
-        return {
+        return createResult({
           error: `File too large (${fileSizeKB}KB > ${maxSizeKB}KB). Use githubSearchCode to search within the file or use startLine/endLine parameters to get specific sections`,
-          type: 'unknown' as const,
-          status: 413,
-        };
+          isError: true,
+          meta: {
+            type: 'unknown' as const,
+            status: 413,
+          },
+        });
       }
 
       // Get and decode content
       if (!data.content) {
-        return {
+        return createResult({
           error: 'File is empty - no content to display',
-          type: 'unknown' as const,
-          status: 404,
-        };
+          isError: true,
+          meta: {
+            type: 'unknown' as const,
+            status: 404,
+          },
+        });
       }
 
       const base64Content = data.content.replace(/\s/g, ''); // Remove all whitespace
 
       if (!base64Content) {
-        return {
+        return createResult({
           error: 'File is empty - no content to display',
-          type: 'unknown' as const,
-          status: 404,
-        };
+          isError: true,
+          meta: {
+            type: 'unknown' as const,
+            status: 404,
+          },
+        });
       }
 
       let decodedContent: string;
@@ -153,22 +134,28 @@ async function fetchGitHubFileContentAPIInternal(
 
         // Simple binary check - look for null bytes
         if (buffer.indexOf(0) !== -1) {
-          return {
+          return createResult({
             error:
               'Binary file detected. Cannot display as text - download directly from GitHub',
-            type: 'unknown' as const,
-            status: 415,
-          };
+            isError: true,
+            meta: {
+              type: 'unknown' as const,
+              status: 415,
+            },
+          });
         }
 
         decodedContent = buffer.toString('utf-8');
       } catch (decodeError) {
-        return {
+        return createResult({
           error:
             'Failed to decode file. Encoding may not be supported (expected UTF-8)',
-          type: 'unknown' as const,
-          status: 422,
-        };
+          isError: true,
+          meta: {
+            type: 'unknown' as const,
+            status: 422,
+          },
+        });
       }
 
       // Process the content similar to CLI implementation
@@ -185,30 +172,47 @@ async function fetchGitHubFileContentAPIInternal(
         params.matchString
       );
 
-      // Wrap the result in GitHubAPISuccess if it's not an error
+      // Wrap the result in CallToolResult
       if ('error' in result) {
-        // Ensure the error has the required type property
-        return {
-          ...result,
-          type: result.type || ('unknown' as const),
-        };
+        // This is an error result
+        return createResult({
+          error: result.error,
+          isError: true,
+          hints: result.hints || [],
+          meta: {
+            ...result,
+            type: result.type || ('unknown' as const),
+          },
+        });
       } else {
-        return {
+        return createResult({
           data: result,
-          status: 200,
-        };
+          meta: { status: 200 },
+        });
       }
     }
 
     // Handle other file types (symlinks, submodules, etc.)
-    return {
+    return createResult({
       error: `Unsupported file type: ${data.type}`,
-      type: 'unknown' as const,
-      status: 415,
-    };
+      isError: true,
+      meta: {
+        type: 'unknown' as const,
+        status: 415,
+      },
+    });
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    return apiError;
+    return createResult({
+      error: `File fetch failed: ${apiError.error}`,
+      isError: true,
+      meta: {
+        status: apiError.status,
+        type: apiError.type,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+      },
+    });
   }
 }
 

@@ -1,5 +1,17 @@
 import { RequestError } from 'octokit';
-import type { GitHubAPIError } from './types';
+
+/**
+ * GitHub API Error interface for internal error handling
+ */
+export interface GitHubAPIError {
+  error: string;
+  status?: number;
+  type: 'http' | 'graphql' | 'network' | 'unknown';
+  scopesSuggestion?: string;
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
+  retryAfter?: number;
+}
 
 /**
  * Enhanced error handling for GitHub API

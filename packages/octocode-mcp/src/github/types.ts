@@ -221,60 +221,15 @@ export interface EnhancedSearchResult<T> {
   };
 }
 
-// Type-safe error response
-export interface GitHubAPIError {
-  error: string;
-  status?: number;
-  type: 'http' | 'graphql' | 'network' | 'unknown';
-  scopesSuggestion?: string;
-  rateLimitRemaining?: number;
-  rateLimitReset?: number;
-  retryAfter?: number;
-}
-
-// Type-safe success response
-export interface GitHubAPISuccess<T> {
-  data: T;
-  status: number;
-  headers?: Record<string, string>;
-}
-
-// Union type for API responses
-export type GitHubAPIResponse<T> = GitHubAPISuccess<T> | GitHubAPIError;
+// Legacy API response types removed - all functions now return CallToolResult
+// Error information is embedded in CallToolResult.meta
+// Success data is embedded in CallToolResult.data
 
 // ============================================================================
 // TYPE GUARDS
 // ============================================================================
 
-/**
- * Type guard to check if an object is a GitHub API error
- */
-export function isGitHubAPIError(obj: unknown): obj is GitHubAPIError {
-  return !!(
-    obj &&
-    typeof obj === 'object' &&
-    obj !== null &&
-    'error' in obj &&
-    typeof (obj as Record<string, unknown>).error === 'string' &&
-    'type' in obj
-  );
-}
-
-/**
- * Type guard to check if an object is a GitHub API success response
- */
-export function isGitHubAPISuccess<T>(
-  obj: unknown
-): obj is GitHubAPISuccess<T> {
-  return !!(
-    obj &&
-    typeof obj === 'object' &&
-    obj !== null &&
-    'data' in obj &&
-    'status' in obj &&
-    typeof (obj as Record<string, unknown>).status === 'number'
-  );
-}
+// Legacy type guards removed - use CallToolResult.isError instead
 
 /**
  * Type guard to check if an object is a repository

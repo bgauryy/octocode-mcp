@@ -1,9 +1,4 @@
-import type {
-  SearchReposParameters,
-  RepoSearchResultItem,
-  GitHubAPIResponse,
-  Repository,
-} from './types';
+import type { SearchReposParameters, RepoSearchResultItem } from './types';
 import { GitHubReposSearchQuery } from '../mcp/scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -18,50 +13,12 @@ import { createResult } from '../mcp/responses';
  */
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery
-): Promise<
-  GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
-> {
+): Promise<CallToolResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-repos', params);
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubReposAPIInternal(params);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
-    }
-  };
-
   // Use cache with 2-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<{
-      total_count: number;
-      repositories: Repository[];
-    }>;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<{
-      total_count: number;
-      repositories: Repository[];
-    }>;
-  }
+  return await withCache(cacheKey, () => searchGitHubReposAPIInternal(params));
 }
 
 /**
@@ -69,19 +26,17 @@ export async function searchGitHubReposAPI(
  */
 async function searchGitHubReposAPIInternal(
   params: GitHubReposSearchQuery
-): Promise<
-  GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
-> {
+): Promise<CallToolResult> {
   try {
     const octokit = await getOctokit();
     const query = buildRepoSearchQuery(params);
 
     if (!query.trim()) {
-      return {
+      return createResult({
         error: 'Search query cannot be empty. Provide queryTerms or filters.',
-        type: 'http',
-        status: 400,
-      };
+        isError: true,
+        meta: { status: 400, type: 'http' },
+      });
     }
 
     // Use properly typed parameters
@@ -120,15 +75,27 @@ async function searchGitHubReposAPIInternal(
       })
     );
 
-    return {
+    return createResult({
       data: {
         total_count: result.data.total_count,
         repositories,
       },
-      status: 200,
-      headers: result.headers,
-    };
+      meta: {
+        status: 200,
+        headers: result.headers,
+      },
+    });
   } catch (error: unknown) {
-    return handleGitHubAPIError(error);
+    const apiError = handleGitHubAPIError(error);
+    return createResult({
+      error: `Repository search failed: ${apiError.error}`,
+      isError: true,
+      meta: {
+        status: apiError.status,
+        type: apiError.type,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+      },
+    });
   }
 }

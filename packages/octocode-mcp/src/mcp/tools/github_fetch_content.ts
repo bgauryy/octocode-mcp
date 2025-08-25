@@ -8,6 +8,7 @@ import {
   FileContentQuery,
   FileContentBulkQuerySchema,
   FileContentQueryResult,
+  GitHubFileContentResponse,
 } from '../scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from '../utils/queryUtils';
 import { generateHints } from '../utils/hints_consolidated';
@@ -106,14 +107,30 @@ async function fetchMultipleGitHubFileContents(
     try {
       const apiResult = await fetchGitHubFileContentAPI(query);
 
-      // Extract the actual result from the GitHubAPIResponse wrapper
-      const result = 'data' in apiResult ? apiResult.data : apiResult;
+      // Extract the actual result from the CallToolResult
+      let result: unknown;
+      if (apiResult.isError) {
+        // Extract error information from CallToolResult
+        const jsonText = (apiResult.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        result = {
+          error: parsedData.meta?.error || 'Unknown error',
+          hints: parsedData.hints || [],
+        };
+      } else {
+        // Extract success data from CallToolResult
+        const jsonText = (apiResult.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        result = parsedData.data;
+      }
 
       // Build the result object
       const resultObj: FileContentQueryResult = {
         queryId: query.id,
         researchGoal: query.researchGoal,
-        result: result,
+        result: result as
+          | GitHubFileContentResponse
+          | { error: string; hints?: string[] },
       };
 
       // Add sampling result if BETA features are enabled

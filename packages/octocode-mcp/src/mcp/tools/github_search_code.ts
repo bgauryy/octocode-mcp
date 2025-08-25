@@ -131,60 +131,75 @@ async function searchMultipleGitHubCode(
       try {
         const apiResult = await searchGitHubCodeAPI(query);
 
-        if ('error' in apiResult) {
+        if (apiResult.isError) {
+          // Extract error information from CallToolResult
+          const jsonText = (apiResult.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          const errorMessage = parsedData.meta?.error || 'Unknown error';
+
           // Generate smart suggestions for this specific query error
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
-            errorMessage: apiResult.error,
+            errorMessage: errorMessage,
             researchGoal: query.researchGoal,
           });
 
           return {
             queryId: query.id!,
-            error: apiResult.error,
+            error: errorMessage,
             hints: hints,
             metadata: {
               queryArgs: { ...query },
-              error: apiResult.error,
+              error: errorMessage,
               hints: hints,
               researchGoal: query.researchGoal || 'discovery',
             },
           };
         }
 
+        // Extract data from CallToolResult
+        const jsonText = (apiResult.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const codeData = parsedData.data;
+
         // Extract repository context
         const repository =
-          apiResult.data.repository?.name ||
-          (apiResult.data.items.length > 0 &&
-          apiResult.data.items[0]?.repository?.nameWithOwner
-            ? apiResult.data.items[0].repository.nameWithOwner
+          codeData.repository?.name ||
+          (codeData.items.length > 0 &&
+          codeData.items[0]?.repository?.nameWithOwner
+            ? codeData.items[0].repository.nameWithOwner
             : undefined);
 
         // Count total matches across all files
-        const totalMatches = apiResult.data.items.reduce(
-          (sum, item) => sum + item.matches.length,
+        const totalMatches = codeData.items.reduce(
+          (sum: number, item: { matches: unknown[] }) =>
+            sum + item.matches.length,
           0
         );
 
         // Check if there are no results
-        const hasNoResults = apiResult.data.items.length === 0;
+        const hasNoResults = codeData.items.length === 0;
 
         const result = {
           queryId: query.id!,
           data: {
             repository,
-            files: apiResult.data.items.map(item => ({
-              path: item.path,
-              // text_matches contain actual file content processed through the same
-              // content optimization pipeline as file fetching (sanitization, minification)
-              text_matches: item.matches.map(match => match.context),
-            })),
-            totalCount: apiResult.data.total_count,
+            files: codeData.items.map(
+              (item: { path: string; matches: { context: string }[] }) => ({
+                path: item.path,
+                // text_matches contain actual file content processed through the same
+                // content optimization pipeline as file fetching (sanitization, minification)
+                text_matches: item.matches.map(
+                  (match: { context: string }) => match.context
+                ),
+              })
+            ),
+            totalCount: codeData.total_count,
           },
           metadata: {
             researchGoal: query.researchGoal || 'discovery',
-            resultCount: apiResult.data.items.length,
+            resultCount: codeData.items.length,
             hasMatches: totalMatches > 0,
             repositories: repository ? [repository] : [],
           },

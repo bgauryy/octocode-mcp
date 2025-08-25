@@ -1,14 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isGitHubAPIError,
-  isGitHubAPISuccess,
   isRepository,
   isSearchResultItem,
   isPullRequest,
   isWorkflowRun,
   isCheckRun,
-  type GitHubAPIError,
-  type GitHubAPISuccess,
   type Repository,
   type CodeSearchResultItem,
   type PullRequest,
@@ -199,6 +195,8 @@ function createRepository(
 }
 
 describe('GitHub OpenAPI Types', () => {
+  // Legacy type guard tests commented out - using CallToolResult everywhere now
+  /*
   describe('isGitHubAPIError', () => {
     it('should return true for valid GitHub API error', () => {
       const error: GitHubAPIError = {
@@ -277,6 +275,7 @@ describe('GitHub OpenAPI Types', () => {
       expect(isGitHubAPISuccess({ data: 'success' })).toBe(false);
     });
   });
+  */
 
   describe('isRepository', () => {
     it('should return true for valid repository object', () => {

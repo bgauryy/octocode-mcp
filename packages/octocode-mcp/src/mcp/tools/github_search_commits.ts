@@ -105,22 +105,31 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           const result = await searchGitHubCommitsAPI(args);
 
           // Check if result is an error
-          if ('error' in result) {
+          if (result.isError) {
+            // Extract error information from CallToolResult
+            const jsonText = (result.content[0] as { text: string }).text;
+            const parsedData = JSON.parse(jsonText);
+            const errorMessage = parsedData.meta?.error || 'Unknown error';
+            const existingHints = parsedData.hints || [];
+
             const hints = generateHints({
               toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
               hasResults: false,
               totalItems: 0,
-              errorMessage: result.error,
-              customHints: result.hints || [],
+              errorMessage: errorMessage,
+              customHints: existingHints,
               researchGoal: args.researchGoal,
             });
             return createResult({
-              error: result.error,
+              error: errorMessage,
               hints,
             });
           }
 
-          // Success - generate intelligent hints
+          // Success - extract data from CallToolResult
+          const jsonText = (result.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          const commitData = parsedData.data;
 
           const searchTerms = [
             ...(args.queryTerms || []),
@@ -129,8 +138,8 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
 
           const baseHints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-            hasResults: result.commits.length > 0,
-            totalItems: result.commits.length,
+            hasResults: commitData.commits.length > 0,
+            totalItems: commitData.commits.length,
             researchGoal: args.researchGoal,
             queryContext: {
               owner: args.owner,
@@ -143,7 +152,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           let enhancedHints = baseHints;
 
           // Add hint about getChangesContent if we have results
-          if (result.commits.length > 0) {
+          if (commitData.commits.length > 0) {
             const changesHint =
               args.owner && args.repo
                 ? `You can see code changes of the commit using getChangesContent: true`
@@ -152,8 +161,10 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           }
 
           // Add hint about limited results if total_count > shown commits
-          if ((result.total_count || 0) > (result.commits?.length || 0)) {
-            const limitHint = `Showing ${result.commits?.length || 0} of ${result.total_count} total commits. Increase limit parameter to see more results.`;
+          if (
+            (commitData.total_count || 0) > (commitData.commits?.length || 0)
+          ) {
+            const limitHint = `Showing ${commitData.commits?.length || 0} of ${commitData.total_count} total commits. Increase limit parameter to see more results.`;
             enhancedHints = [limitHint, ...enhancedHints];
           }
 
@@ -161,15 +172,16 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
 
           return createResult({
             data: {
-              total_count: result.total_count || 0,
-              incomplete_results: result.incomplete_results || false,
-              commits: result.commits || [],
+              total_count: commitData.total_count || 0,
+              incomplete_results: commitData.incomplete_results || false,
+              commits: commitData.commits || [],
             },
             meta: {
-              totalResults: result.commits?.length || 0,
-              totalAvailable: result.total_count || 0,
+              totalResults: commitData.commits?.length || 0,
+              totalAvailable: commitData.total_count || 0,
               showingLimited:
-                (result.total_count || 0) > (result.commits?.length || 0),
+                (commitData.total_count || 0) >
+                (commitData.commits?.length || 0),
               researchGoal: args.researchGoal,
             },
             hints,

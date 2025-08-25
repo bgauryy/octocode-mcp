@@ -25,68 +25,79 @@ vi.mock('../../src/mcp/utils/tokenManager.js', () => ({
 // Import after mocking
 import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
 
-// Helper function to create standard mock response
+// Helper function to create standard mock response in CallToolResult format
 function createMockPRResponse(overrides: Record<string, unknown> = {}) {
   return {
-    total_count: 1,
-    incomplete_results: false,
-    pull_requests: [
+    isError: false,
+    content: [
       {
-        id: 456,
-        number: 456,
-        title: 'Test PR',
-        state: 'open',
-        draft: false,
-        merged: false,
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-01T00:00:00Z',
-        closed_at: null,
-        merged_at: null,
-        user: {
-          login: 'testuser',
-          id: 1,
-          avatar_url: '',
-          html_url: '',
-        },
-        assignees: [],
-        labels: [],
-        milestone: null,
-        head: {
-          ref: 'feature-branch',
-          sha: 'abc123',
-          repo: {
-            id: 1,
-            name: 'test-repo',
-            full_name: 'test/test-repo',
-            owner: { login: 'test', id: 1 },
-            private: false,
-            html_url: 'https://github.com/test/test-repo',
-            default_branch: 'main',
+        type: 'text',
+        text: JSON.stringify({
+          data: {
+            total_count: 1,
+            incomplete_results: false,
+            pull_requests: [
+              {
+                id: 456,
+                number: 456,
+                title: 'Test PR',
+                state: 'open',
+                draft: false,
+                merged: false,
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+                closed_at: null,
+                merged_at: null,
+                user: {
+                  login: 'testuser',
+                  id: 1,
+                  avatar_url: '',
+                  html_url: '',
+                },
+                assignees: [],
+                labels: [],
+                milestone: null,
+                head: {
+                  ref: 'feature-branch',
+                  sha: 'abc123',
+                  repo: {
+                    id: 1,
+                    name: 'test-repo',
+                    full_name: 'test/test-repo',
+                    owner: { login: 'test', id: 1 },
+                    private: false,
+                    html_url: 'https://github.com/test/test-repo',
+                    default_branch: 'main',
+                  },
+                },
+                base: {
+                  ref: 'main',
+                  sha: 'def456',
+                  repo: {
+                    id: 1,
+                    name: 'test-repo',
+                    full_name: 'test/test-repo',
+                    owner: { login: 'test', id: 1 },
+                    private: false,
+                    html_url: 'https://github.com/test/test-repo',
+                    default_branch: 'main',
+                  },
+                },
+                body: 'Test PR description',
+                comments: 0,
+                review_comments: 0,
+                commits: 1,
+                additions: 10,
+                deletions: 5,
+                changed_files: 2,
+                url: 'https://api.github.com/repos/test/test-repo/pulls/456',
+                html_url: 'https://github.com/test/test-repo/pull/456',
+                ...overrides,
+              },
+            ],
           },
-        },
-        base: {
-          ref: 'main',
-          sha: 'def456',
-          repo: {
-            id: 1,
-            name: 'test-repo',
-            full_name: 'test/test-repo',
-            owner: { login: 'test', id: 1 },
-            private: false,
-            html_url: 'https://github.com/test/test-repo',
-            default_branch: 'main',
-          },
-        },
-        body: 'Test PR description',
-        comments: 0,
-        review_comments: 0,
-        commits: 1,
-        additions: 10,
-        deletions: 5,
-        changed_files: 2,
-        url: 'https://api.github.com/repos/test/test-repo/pulls/456',
-        html_url: 'https://github.com/test/test-repo/pull/456',
-        ...overrides,
+          meta: { status: 200 },
+        }),
       },
     ],
   };
@@ -414,9 +425,21 @@ describe('GitHub Search Pull Requests Tool', () => {
   describe('Error Handling', () => {
     it('should handle API errors gracefully', async () => {
       mockSearchGitHubPullRequestsAPI.mockResolvedValue({
-        error: 'API rate limit exceeded',
-        status: 429,
-        hints: ['Wait before retrying', 'Check rate limit status'],
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'API rate limit exceeded',
+              meta: {
+                error: 'API rate limit exceeded',
+                status: 429,
+                type: 'http',
+              },
+              hints: ['Wait before retrying', 'Check rate limit status'],
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool('githubSearchPullRequests', {
@@ -535,7 +558,18 @@ describe('GitHub Search Pull Requests Tool', () => {
         ],
       };
 
-      mockSearchGitHubPullRequestsAPI.mockResolvedValue(mockResponse);
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              data: mockResponse,
+              meta: { status: 200 },
+            }),
+          },
+        ],
+      });
 
       const result = await mockServer.callTool('githubSearchPullRequests', {
         queries: [args],
@@ -564,7 +598,23 @@ describe('GitHub Search Pull Requests Tool', () => {
         ],
       };
 
-      mockSearchGitHubPullRequestsAPI.mockResolvedValue(mockError);
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: mockError.error,
+              meta: {
+                error: mockError.error,
+                status: mockError.status,
+                type: 'http',
+              },
+              hints: mockError.hints,
+            }),
+          },
+        ],
+      });
 
       const result = await mockServer.callTool('githubSearchPullRequests', {
         queries: [args],

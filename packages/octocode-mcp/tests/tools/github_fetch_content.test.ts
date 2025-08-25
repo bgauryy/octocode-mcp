@@ -30,13 +30,24 @@ describe('GitHub Fetch Content Tool', () => {
     it('should handle single valid file request', async () => {
       // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
-        filePath: 'README.md',
-        owner: 'test',
-        repo: 'repo',
-        branch: 'main',
-        content: '# Hello World\n\nThis is a test file.',
-        totalLines: 3,
-        minified: false,
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                filePath: 'README.md',
+                owner: 'test',
+                repo: 'repo',
+                branch: 'main',
+                content: '# Hello World\n\nThis is a test file.',
+                totalLines: 3,
+                minified: false,
+              },
+              meta: { status: 200 },
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -72,20 +83,42 @@ describe('GitHub Fetch Content Tool', () => {
       // Mock successful API responses
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
-          filePath: 'README.md',
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-          content: '# README',
-          totalLines: 1,
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                data: {
+                  filePath: 'README.md',
+                  owner: 'test',
+                  repo: 'repo',
+                  branch: 'main',
+                  content: '# README',
+                  totalLines: 1,
+                },
+                meta: { status: 200 },
+              }),
+            },
+          ],
         })
         .mockResolvedValueOnce({
-          filePath: 'package.json',
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-          content: '{"name": "test"}',
-          totalLines: 1,
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                data: {
+                  filePath: 'package.json',
+                  owner: 'test',
+                  repo: 'repo',
+                  branch: 'main',
+                  content: '{"name": "test"}',
+                  totalLines: 1,
+                },
+                meta: { status: 200 },
+              }),
+            },
+          ],
         });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -125,10 +158,23 @@ describe('GitHub Fetch Content Tool', () => {
     it('should handle file not found error', async () => {
       // Mock API error response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
-        error: 'Repository, resource, or path not found',
-        status: 404,
-        type: 'http',
-        hints: ['Verify the file path, repository name, and branch exist.'],
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Repository, resource, or path not found',
+              meta: {
+                error: 'Repository, resource, or path not found',
+                status: 404,
+                type: 'http',
+              },
+              hints: [
+                'Verify the file path, repository name, and branch exist.',
+              ],
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool('githubGetFileContent', {

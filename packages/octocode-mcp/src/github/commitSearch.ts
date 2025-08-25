@@ -3,10 +3,6 @@ import {
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
 } from './types';
-import {
-  GitHubCommitSearchResult,
-  GitHubCommitSearchError,
-} from '../mcp/scheme/github_search_commits';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -21,42 +17,14 @@ import { createResult } from '../mcp/responses';
  */
 export async function searchGitHubCommitsAPI(
   params: GitHubCommitSearchParams
-): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
+): Promise<CallToolResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-commits-api', params);
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubCommitsAPIInternal(params);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
-    }
-  };
-
   // Use cache with 1-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubCommitSearchError;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubCommitSearchResult;
-  }
+  return await withCache(cacheKey, () =>
+    searchGitHubCommitsAPIInternal(params)
+  );
 }
 
 /**
@@ -64,7 +32,7 @@ export async function searchGitHubCommitsAPI(
  */
 async function searchGitHubCommitsAPIInternal(
   params: GitHubCommitSearchParams
-): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
+): Promise<CallToolResult> {
   try {
     const octokit = await getOctokit();
 
@@ -72,13 +40,14 @@ async function searchGitHubCommitsAPIInternal(
     const searchQuery = buildCommitSearchQuery(params);
 
     if (!searchQuery) {
-      return {
+      return createResult({
         error: 'No valid search parameters provided',
-        status: 400,
+        isError: true,
         hints: [
           'Provide search query or filters like author, committer, hash, or date',
         ],
-      };
+        meta: { status: 400 },
+      });
     }
 
     // Execute search using GitHub Search API with proper pagination
@@ -219,21 +188,26 @@ async function searchGitHubCommitsAPIInternal(
         : undefined,
     }));
 
-    return {
-      total_count: totalCount,
-      incomplete_results: totalCount > allCommits.length,
-      commits: formattedCommits,
-    };
+    return createResult({
+      data: {
+        total_count: totalCount,
+        incomplete_results: totalCount > allCommits.length,
+        commits: formattedCommits,
+      },
+    });
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    return {
+    return createResult({
       error: `Commit search failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
+      isError: true,
       hints: [`Verify authentication and search parameters`],
-      type: apiError.type,
-    };
+      meta: {
+        status: apiError.status,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+        type: apiError.type,
+      },
+    });
   }
 }
 

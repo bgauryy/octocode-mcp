@@ -119,31 +119,41 @@ async function searchMultipleGitHubRepos(
       try {
         const apiResult = await searchGitHubReposAPI(query);
 
-        if ('error' in apiResult) {
+        if (apiResult.isError) {
+          // Extract error information from CallToolResult
+          const jsonText = (apiResult.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          const errorMessage = parsedData.meta?.error || 'Unknown error';
+
           // Generate hints for this specific query error
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
             hasResults: false,
-            errorMessage: apiResult.error,
+            errorMessage: errorMessage,
             researchGoal: query.researchGoal,
           });
 
           return {
             queryId: query.id!,
-            error: apiResult.error,
+            error: errorMessage,
             hints,
             metadata: {
               queryArgs: { ...query },
-              error: apiResult.error,
+              error: errorMessage,
               researchGoal: query.researchGoal || 'discovery',
             },
           };
         }
 
+        // Extract success data from CallToolResult
+        const jsonText = (apiResult.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const repoData = parsedData.data;
+
         // Extract repository data
-        const repositories = apiResult.data.repositories || [];
+        const repositories = repoData.repositories || [];
         const hasResults =
-          repositories.length > 0 && (apiResult.data.total_count || 0) > 0;
+          repositories.length > 0 && (repoData.total_count || 0) > 0;
 
         const typedRepositories = repositories as unknown as Repository[];
 
@@ -151,7 +161,7 @@ async function searchMultipleGitHubRepos(
           queryId: query.id!,
           data: {
             repositories: typedRepositories,
-            total_count: apiResult.data.total_count,
+            total_count: repoData.total_count,
           },
           metadata: {
             // Only include queryArgs for no-result cases

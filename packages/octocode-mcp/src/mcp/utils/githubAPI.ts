@@ -8,7 +8,7 @@ export {
   // Error handling
   handleGitHubAPIError,
   generateFileAccessHints,
-  type GitHubAPIError,
+
   // Query builders
   getOwnerQualifier,
   buildCodeSearchQuery,
@@ -34,8 +34,6 @@ export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-meth
 
 // Export new OpenAPI types
 export type {
-  GitHubAPIResponse,
-  GitHubAPISuccess,
   Repository,
   RepositorySimple,
   PullRequest,
@@ -87,8 +85,6 @@ export type {
   GitHubURL,
   GitHubDate,
   RepositoryReference,
-  isGitHubAPIError,
-  isGitHubAPISuccess,
   isRepository,
   isSearchResultItem,
   isPullRequest,

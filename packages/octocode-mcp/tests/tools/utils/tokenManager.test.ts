@@ -33,7 +33,6 @@ describe('Token Manager', () => {
     delete process.env.GITHUB_TOKEN;
     delete process.env.GH_TOKEN;
 
-
     // Clear all mocks
     vi.clearAllMocks();
     mockGetGithubCLIToken.mockResolvedValue(null);
@@ -76,7 +75,6 @@ describe('Token Manager', () => {
       expect(token).toBe('cli-token');
       expect(mockGetGithubCLIToken).toHaveBeenCalled();
     });
-
 
     it('should cache token after first resolution', async () => {
       process.env.GITHUB_TOKEN = 'github-token';
@@ -155,7 +153,6 @@ describe('Token Manager', () => {
       await getGitHubToken();
       expect(getTokenSource()).toBe('cli');
     });
-
   });
 
   describe('Configuration', () => {
@@ -231,5 +228,4 @@ describe('Token Manager', () => {
       expect(goodHandler).toHaveBeenCalled();
     });
   });
-
 });

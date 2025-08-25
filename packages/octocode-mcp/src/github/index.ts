@@ -5,13 +5,14 @@ export {
   getDefaultBranch,
   clearCachedToken,
 } from './client';
-export { handleGitHubAPIError, generateFileAccessHints } from './errors';
+export {
+  handleGitHubAPIError,
+  generateFileAccessHints,
+  type GitHubAPIError,
+} from './errors';
 
 // Export OpenAPI types
 export type {
-  GitHubAPIError,
-  GitHubAPIResponse,
-  GitHubAPISuccess,
   Repository,
   PullRequest,
   Commit,
@@ -39,8 +40,6 @@ export type {
   PullRequestState,
   RepositoryVisibility,
   ContentType,
-  isGitHubAPIError,
-  isGitHubAPISuccess,
   isRepository,
   isSearchResultItem,
 } from './types';

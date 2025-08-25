@@ -1,9 +1,5 @@
 import { GitHubPullRequestsSearchParams, GitHubPullRequestItem } from './types';
 import type { components } from '@octokit/openapi-types';
-import {
-  GitHubPullRequestSearchResult,
-  GitHubPullRequestSearchError,
-} from '../mcp/scheme/github_search_pull_requests';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
@@ -24,42 +20,14 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
  */
 export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<CallToolResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', params);
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubPullRequestsAPIInternal(params);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
-    }
-  };
-
   // Use cache with 30-minute TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchError;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchResult;
-  }
+  return await withCache(cacheKey, () =>
+    searchGitHubPullRequestsAPIInternal(params)
+  );
 }
 
 /**
@@ -67,7 +35,7 @@ export async function searchGitHubPullRequestsAPI(
  */
 async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<CallToolResult> {
   try {
     // If prNumber is provided with owner/repo, fetch specific PR by number
     if (
@@ -100,11 +68,12 @@ async function searchGitHubPullRequestsAPIInternal(
     const searchQuery = buildPullRequestSearchQuery(params);
 
     if (!searchQuery) {
-      return {
+      return createResult({
         error: 'No valid search parameters provided',
-        status: 400,
+        isError: true,
         hints: ['Provide search query or filters like owner/repo'],
-      };
+        meta: { status: 400 },
+      });
     }
 
     // Execute search using GitHub Search API (issues endpoint filters PRs)
@@ -183,21 +152,26 @@ async function searchGitHubPullRequestsAPIInternal(
       ...(pr.file_changes && { file_changes: pr.file_changes }),
     }));
 
-    return {
-      total_count: searchResult.data.total_count,
-      incomplete_results: searchResult.data.incomplete_results,
-      pull_requests: formattedPRs,
-    };
+    return createResult({
+      data: {
+        total_count: searchResult.data.total_count,
+        incomplete_results: searchResult.data.incomplete_results,
+        pull_requests: formattedPRs,
+      },
+    });
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    return {
+    return createResult({
       error: `Pull request search failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
+      isError: true,
       hints: [`Verify authentication and search parameters`],
-      type: apiError.type,
-    };
+      meta: {
+        status: apiError.status,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+        type: apiError.type,
+      },
+    });
   }
 }
 
@@ -207,7 +181,7 @@ async function searchGitHubPullRequestsAPIInternal(
 async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<CallToolResult> {
   try {
     const owner = params.owner as string;
     const repo = params.repo as string;
@@ -291,21 +265,26 @@ async function searchPullRequestsWithREST(
       ...(pr.file_changes && { file_changes: pr.file_changes }),
     }));
 
-    return {
-      total_count: formattedPRs.length,
-      incomplete_results: false,
-      pull_requests: formattedPRs,
-    };
+    return createResult({
+      data: {
+        total_count: formattedPRs.length,
+        incomplete_results: false,
+        pull_requests: formattedPRs,
+      },
+    });
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    return {
+    return createResult({
       error: `Pull request list failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
+      isError: true,
       hints: [`Verify repository access and authentication`],
-      type: apiError.type,
-    };
+      meta: {
+        status: apiError.status,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+        type: apiError.type,
+      },
+    });
   }
 }
 
@@ -594,7 +573,7 @@ export async function transformPullRequestItemFromREST(
  */
 export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<CallToolResult> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', {
     owner: params.owner,
@@ -604,38 +583,10 @@ export async function fetchGitHubPullRequestByNumberAPI(
     withComments: params.withComments,
   });
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubPullRequestByNumberAPIInternal(params);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
-    }
-  };
-
   // Use cache with 30-minute TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, fetchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchError;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchResult;
-  }
+  return await withCache(cacheKey, () =>
+    fetchGitHubPullRequestByNumberAPIInternal(params)
+  );
 }
 
 /**
@@ -643,7 +594,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
  */
 async function fetchGitHubPullRequestByNumberAPIInternal(
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<CallToolResult> {
   try {
     const octokit = await getOctokit();
 
@@ -726,28 +677,33 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       }),
     };
 
-    return {
-      total_count: 1,
-      incomplete_results: false,
-      pull_requests: [formattedPR],
-    };
+    return createResult({
+      data: {
+        total_count: 1,
+        incomplete_results: false,
+        pull_requests: [formattedPR],
+      },
+    });
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     const owner = params.owner as string;
     const repo = params.repo as string;
     const prNumber = params.prNumber!;
 
-    return {
+    return createResult({
       error: `Failed to fetch pull request #${prNumber}: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
+      isError: true,
       hints: [
         `Verify that pull request #${prNumber} exists in ${owner}/${repo}`,
         'Check if you have access to this repository',
         'Ensure the PR number is correct',
       ],
-      type: apiError.type,
-    };
+      meta: {
+        status: apiError.status,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+        type: apiError.type,
+      },
+    });
   }
 }

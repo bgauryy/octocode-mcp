@@ -168,7 +168,27 @@ async function searchMultipleGitHubPullRequests(
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       try {
-        const result = await searchGitHubPullRequestsAPI(query);
+        const apiResult = await searchGitHubPullRequestsAPI(query);
+
+        // Extract the actual result from the CallToolResult
+        let result:
+          | { pull_requests?: unknown[]; error?: string; hints?: string[] }
+          | { pull_requests: unknown[]; total_count: number };
+        if (apiResult.isError) {
+          // Extract error information from CallToolResult
+          const jsonText = (apiResult.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          result = {
+            error: parsedData.meta?.error || 'Unknown error',
+            hints: parsedData.hints || [],
+          };
+        } else {
+          // Extract success data from CallToolResult
+          const jsonText = (apiResult.content[0] as { text: string }).text;
+          const parsedData = JSON.parse(jsonText);
+          result = parsedData.data;
+        }
+
         return {
           queryId: `pr-search_${index + 1}`,
           data: result,

@@ -307,14 +307,19 @@ describe('GitHub Search Repositories Tool', () => {
       // Make sure both CLI and API fail
       mockSearchGitHubReposAPI.mockResolvedValue({
         isError: true,
-        content: [{ text: 'Command failed' }],
-      });
-
-      // Ensure API also fails
-      mockSearchGitHubReposAPI.mockResolvedValue({
-        error: 'API failed',
-        type: 'http',
-        status: 500,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'API failed',
+              meta: {
+                error: 'API failed',
+                type: 'http',
+                status: 500,
+              },
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool(
@@ -478,16 +483,27 @@ describe('GitHub Search Repositories Tool', () => {
 
       mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
       mockSearchGitHubReposAPI.mockResolvedValue({
-        total_count: 1,
-        repositories: [
+        isError: false,
+        content: [
           {
-            name: 'test-repo',
-            stars: 100,
-            language: 'JavaScript',
-            url: 'https://github.com/test/repo',
-            forks: 0,
-            updatedAt: '01/01/2023',
-            owner: 'test',
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                total_count: 1,
+                repositories: [
+                  {
+                    name: 'test-repo',
+                    stars: 100,
+                    language: 'JavaScript',
+                    url: 'https://github.com/test/repo',
+                    forks: 0,
+                    updatedAt: '01/01/2023',
+                    owner: 'test',
+                  },
+                ],
+              },
+              meta: { status: 200 },
+            }),
           },
         ],
       });
@@ -516,22 +532,31 @@ describe('GitHub Search Repositories Tool', () => {
   // Helper function to create mock repository response
   function createMockRepositoryResponse(repos: Array<Record<string, unknown>>) {
     return {
-      data: {
-        total_count: repos.length,
-        repositories: repos.map(repo => ({
-          name: repo.name || 'test-repo',
-          full_name: repo.fullName || `owner/${repo.name || 'test-repo'}`,
-          stargazers_count: repo.stars || 0,
-          language: repo.language || 'JavaScript',
-          description: repo.description || 'Test repository',
-          forks_count: repo.forks || 0,
-          updated_at: repo.updatedAt || '2023-12-01T10:00:00Z',
-          owner: repo.owner || { login: 'owner' },
-          html_url:
-            repo.url || `https://github.com/owner/${repo.name || 'test-repo'}`,
-        })),
-      },
-      status: 200,
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            data: {
+              total_count: repos.length,
+              repositories: repos.map(repo => ({
+                name: repo.name || 'test-repo',
+                full_name: repo.fullName || `owner/${repo.name || 'test-repo'}`,
+                stargazers_count: repo.stars || 0,
+                language: repo.language || 'JavaScript',
+                description: repo.description || 'Test repository',
+                forks_count: repo.forks || 0,
+                updated_at: repo.updatedAt || '2023-12-01T10:00:00Z',
+                owner: repo.owner || { login: 'owner' },
+                html_url:
+                  repo.url ||
+                  `https://github.com/owner/${repo.name || 'test-repo'}`,
+              })),
+            },
+            meta: { status: 200 },
+          }),
+        },
+      ],
     };
   }
 });

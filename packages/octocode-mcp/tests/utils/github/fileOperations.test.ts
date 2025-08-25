@@ -149,14 +149,16 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data).toBeDefined();
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.totalLines).toBe(5);
-        expect(result.data.isPartial).toBeUndefined();
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+
+        expect(fileData).toBeDefined();
+        expect(fileData.content).toBe('line 1\nline 2\nline 3\nline 4\nline 5');
+        expect(fileData.totalLines).toBe(5);
+        expect(fileData.isPartial).toBeUndefined();
       }
     });
 
@@ -174,11 +176,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         'line 1\nline 2\nline 3\nline 4\nline 5',
         'test.txt'
       );
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('minified content');
-        expect(result.data.minified).toBe(true);
-        expect(result.data.minificationType).toBe('general');
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+
+        expect(fileData.content).toBe('minified content');
+        expect(fileData.minified).toBe(true);
+        expect(fileData.minificationType).toBe('general');
       }
     });
 
@@ -193,12 +199,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const result = await fetchGitHubFileContentAPI(params);
 
       expect(mockminifyContent).not.toHaveBeenCalled();
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.minified).toBeUndefined();
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+
+        expect(fileData.content).toBe('line 1\nline 2\nline 3\nline 4\nline 5');
+        expect(fileData.minified).toBeUndefined();
       }
     });
   });
@@ -232,13 +240,16 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('line 3\nline 4\nline 5\nline 6');
-        expect(result.data.startLine).toBe(3);
-        expect(result.data.endLine).toBe(6);
-        expect(result.data.isPartial).toBe(true);
-        expect(result.data.totalLines).toBe(10);
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+        expect(fileData.content).toBe('line 3\nline 4\nline 5\nline 6');
+        expect(fileData.startLine).toBe(3);
+        expect(fileData.endLine).toBe(6);
+        expect(fileData.isPartial).toBe(true);
+        expect(fileData.totalLines).toBe(10);
       }
     });
 
@@ -253,12 +264,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('line 8\nline 9\nline 10');
-        expect(result.data.startLine).toBe(8);
-        expect(result.data.endLine).toBe(10);
-        expect(result.data.isPartial).toBe(true);
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+        expect(fileData.content).toBe('line 8\nline 9\nline 10');
+        expect(fileData.startLine).toBe(8);
+        expect(fileData.endLine).toBe(10);
+        expect(fileData.isPartial).toBe(true);
       }
     });
 
@@ -273,12 +287,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('line 1\nline 2\nline 3');
-        expect(result.data.startLine).toBe(1);
-        expect(result.data.endLine).toBe(3);
-        expect(result.data.isPartial).toBe(true);
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+        expect(fileData.content).toBe('line 1\nline 2\nline 3');
+        expect(fileData.startLine).toBe(1);
+        expect(fileData.endLine).toBe(3);
+        expect(fileData.isPartial).toBe(true);
       }
     });
 
@@ -294,12 +311,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
         // Should return the whole file when range is invalid
-        expect(result.data.content).toContain('line 1');
-        expect(result.data.content).toContain('line 10');
-        expect(result.data.isPartial).toBeUndefined();
+        expect(fileData.content).toContain('line 1');
+        expect(fileData.content).toContain('line 10');
+        expect(fileData.isPartial).toBeUndefined();
       }
     });
 
@@ -315,12 +335,15 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('line 8\nline 9\nline 10');
-        expect(result.data.startLine).toBe(8);
-        expect(result.data.endLine).toBe(10);
-        expect(result.data.securityWarnings).toContain(
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+        expect(fileData.content).toBe('line 8\nline 9\nline 10');
+        expect(fileData.startLine).toBe(8);
+        expect(fileData.endLine).toBe(10);
+        expect(fileData.securityWarnings).toContain(
           'Requested endLine 15 adjusted to 10 (file end)'
         );
       }
@@ -364,14 +387,17 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
         // Should include 5 lines before + matching line + 5 lines after (but limited by file bounds)
-        expect(result.data.content).toContain('function MyComponent()');
-        expect(result.data.content).toContain('import React from "react"'); // Context before
-        expect(result.data.content).toContain('export default MyComponent'); // Context after
-        expect(result.data.isPartial).toBe(true);
-        expect(result.data.securityWarnings).toContain(
+        expect(fileData.content).toContain('function MyComponent()');
+        expect(fileData.content).toContain('import React from "react"'); // Context before
+        expect(fileData.content).toContain('export default MyComponent'); // Context after
+        expect(fileData.isPartial).toBe(true);
+        expect(fileData.securityWarnings).toContain(
           'Found "function MyComponent()" on line 5'
         );
       }
@@ -389,14 +415,17 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
         // Should include 2 lines before + matching line + 2 lines after
-        expect(result.data.content).toContain('function MyComponent()');
-        expect(result.data.isPartial).toBe(true);
+        expect(fileData.content).toContain('function MyComponent()');
+        expect(fileData.isPartial).toBe(true);
         // With 2 context lines, should be around lines 3-7 (5±2)
-        expect(result.data.startLine).toBe(3); // Max(1, 5-2)
-        expect(result.data.endLine).toBe(7); // Min(10, 5+2)
+        expect(fileData.startLine).toBe(3); // Max(1, 5-2)
+        expect(fileData.endLine).toBe(7); // Min(10, 5+2)
       }
     });
 
@@ -412,18 +441,33 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
         // The implementation returns the full context even when matchStringContextLines=0
         // because it uses the default value of 5 when the parameter is not provided
-        expect(result.data.content).toContain('function MyComponent()');
-        expect(result.data.startLine).toBe(1); // Max(1, 5-5)
-        expect(result.data.endLine).toBe(10); // Min(10, 5+5)
-        expect(result.data.isPartial).toBe(true);
+        expect(fileData.content).toContain('function MyComponent()');
+        expect(fileData.startLine).toBe(1); // Max(1, 5-5)
+        expect(fileData.endLine).toBe(10); // Min(10, 5+5)
+        expect(fileData.isPartial).toBe(true);
       }
     });
 
     it('should return error when matchString not found', async () => {
+      // Mock file content that doesn't contain the search string
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: Buffer.from(
+            'import React from "react";\nfunction MyComponent() {\n  return <div>Hello</div>;\n}\nexport default MyComponent;'
+          ).toString('base64'),
+          size: 100,
+          sha: 'abc123',
+        },
+      });
+
       const params = {
         owner: 'test',
         repo: 'repo',
@@ -435,9 +479,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const result = await fetchGitHubFileContentAPI(params);
 
       // The result should be an error response
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain(
+      expect(result.isError).toBe(true);
+      if (result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        expect(parsedData.data.error).toContain(
           'Match string "nonexistent string" not found in file'
         );
       }
@@ -455,11 +501,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
         // Should use the first match and indicate multiple matches
-        expect(result.data.content).toContain('import React from "react"');
-        expect(result.data.securityWarnings).toContain(
+        expect(fileData.content).toContain('import React from "react"');
+        expect(fileData.securityWarnings).toContain(
           'Found "import" on line 2 (and 1 other locations)'
         );
       }
@@ -496,13 +545,16 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
         // Should use match-based range, not manual startLine/endLine
-        expect(result.data.content).toContain('line 10');
-        expect(result.data.startLine).toBe(8); // 10-2
-        expect(result.data.endLine).toBe(12); // 10+2
-        expect(result.data.content).toBe(
+        expect(fileData.content).toContain('line 10');
+        expect(fileData.startLine).toBe(8); // 10-2
+        expect(fileData.endLine).toBe(12); // 10+2
+        expect(fileData.content).toBe(
           'line 8\nline 9\nline 10\nline 11\nline 12'
         );
       }
@@ -524,11 +576,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         'line 5\nline 6\nline 7\nline 8',
         'test.txt'
       );
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('minified content');
-        expect(result.data.minified).toBe(true);
-        expect(result.data.isPartial).toBe(true);
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+        expect(fileData.content).toBe('minified content');
+        expect(fileData.minified).toBe(true);
+        expect(fileData.isPartial).toBe(true);
       }
     });
 
@@ -548,11 +603,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         'line 14\nline 15\nline 16',
         'test.txt'
       );
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('minified content');
-        expect(result.data.minified).toBe(true);
-        expect(result.data.isPartial).toBe(true);
+      expect(result.isError).toBe(false);
+      if (!result.isError) {
+        const jsonText = (result.content[0] as { text: string }).text;
+        const parsedData = JSON.parse(jsonText);
+        const fileData = parsedData.data;
+        expect(fileData.content).toBe('minified content');
+        expect(fileData.minified).toBe(true);
+        expect(fileData.isPartial).toBe(true);
       }
     });
   });

@@ -2,7 +2,6 @@ import type {
   SearchCodeParameters,
   SearchCodeResponse,
   CodeSearchResultItem,
-  GitHubAPIResponse,
   OptimizedCodeSearchResult,
 } from './types';
 import { GitHubCodeSearchQuery } from '../mcp/scheme/github_search_code';
@@ -11,7 +10,9 @@ import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
-import { generateCacheKey, withDataCache } from '../mcp/utils/cache';
+import { generateCacheKey, withCache } from '../mcp/utils/cache';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { createResult } from '../mcp/responses';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
@@ -19,24 +20,10 @@ import { generateCacheKey, withDataCache } from '../mcp/utils/cache';
  */
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery
-): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
+): Promise<CallToolResult> {
   const cacheKey = generateCacheKey('gh-api-code', params);
 
-  const result = await withDataCache<
-    GitHubAPIResponse<OptimizedCodeSearchResult>
-  >(
-    cacheKey,
-    async () => {
-      return await searchGitHubCodeAPIInternal(params);
-    },
-    {
-      // Only cache successful responses
-      shouldCache: (value: GitHubAPIResponse<OptimizedCodeSearchResult>) =>
-        'data' in value && !(value as { error?: unknown }).error,
-    }
-  );
-
-  return result;
+  return await withCache(cacheKey, () => searchGitHubCodeAPIInternal(params));
 }
 
 /**
@@ -45,7 +32,7 @@ export async function searchGitHubCodeAPI(
  */
 async function searchGitHubCodeAPIInternal(
   params: GitHubCodeSearchQuery
-): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
+): Promise<CallToolResult> {
   try {
     const octokit = await getOctokit();
 
@@ -54,11 +41,11 @@ async function searchGitHubCodeAPIInternal(
     const query = buildCodeSearchQuery(enhancedParams);
 
     if (!query.trim()) {
-      return {
+      return createResult({
         error: 'Search query cannot be empty',
-        type: 'http',
-        status: 400,
-      };
+        isError: true,
+        meta: { status: 400, type: 'http' },
+      });
     }
 
     // Optimized search parameters with better defaults
@@ -91,7 +78,7 @@ async function searchGitHubCodeAPIInternal(
       enhancedParams.sanitize !== false
     );
 
-    return {
+    return createResult({
       data: {
         total_count: result.data.total_count,
         items: optimizedResult.items,
@@ -102,12 +89,23 @@ async function searchGitHubCodeAPIInternal(
         minificationTypes: optimizedResult.minificationTypes,
         _researchContext: optimizedResult._researchContext,
       },
-      status: 200,
-      headers: result.headers,
-    };
+      meta: {
+        status: 200,
+        headers: result.headers,
+      },
+    });
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
-    return apiError;
+    return createResult({
+      error: `Code search failed: ${apiError.error}`,
+      isError: true,
+      meta: {
+        status: apiError.status,
+        type: apiError.type,
+        rateLimitRemaining: apiError.rateLimitRemaining,
+        rateLimitReset: apiError.rateLimitReset,
+      },
+    });
   }
 }
 
