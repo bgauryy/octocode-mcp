@@ -91,6 +91,7 @@ describe('registerTools', () => {
       enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
+      betaEnabled: false,
     });
 
     // Ensure all mocks are properly reset to not throw errors
@@ -192,6 +193,7 @@ describe('registerTools', () => {
       enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
+      betaEnabled: false,
     });
 
     const result = registerTools(mockServer);
@@ -228,6 +230,7 @@ describe('registerTools', () => {
       enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
+      betaEnabled: false,
     });
 
     const result = registerTools(mockServer);
@@ -263,6 +266,7 @@ describe('registerTools', () => {
       enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
+      betaEnabled: false,
     });
 
     const result = registerTools(mockServer);
@@ -344,6 +348,7 @@ describe('registerTools', () => {
         enableLogging: false,
         timeout: 30000,
         maxRetries: 3,
+        betaEnabled: false,
       });
 
       registerTools(mockServer);

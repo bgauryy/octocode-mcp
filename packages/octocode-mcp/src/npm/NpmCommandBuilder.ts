@@ -1,7 +1,4 @@
-import {
-  BaseCommandBuilder,
-  BaseCommandParams,
-} from '../utils/BaseCommandBuilder';
+import { BaseCommandBuilder, BaseCommandParams } from './BaseCommandBuilder';
 
 /**
  * NPM-specific command builder

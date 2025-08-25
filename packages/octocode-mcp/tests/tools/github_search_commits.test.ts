@@ -6,22 +6,10 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubCommitsAPI = vi.hoisted(() => vi.fn());
-const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
-const mockWithCache = vi.hoisted(() => vi.fn());
-const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubCommitsAPI: mockSearchGitHubCommitsAPI,
-}));
-
-vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
-}));
-
-vi.mock('../../src/utils/tokenManager.js', () => ({
-  getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
@@ -36,14 +24,6 @@ describe('GitHub Search Commits Tool', () => {
 
     // Clear all mocks
     vi.clearAllMocks();
-
-    // Default cache behavior
-    // @ts-expect-error - mockWithCache is not typed
-    mockWithCache.mockImplementation(async (key, fn) => await fn());
-    mockGenerateCacheKey.mockReturnValue('test-cache-key');
-
-    // Mock token manager to return test token
-    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Default successful API mock behavior - return CallToolResult
     mockSearchGitHubCommitsAPI.mockResolvedValue({

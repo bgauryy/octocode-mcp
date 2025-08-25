@@ -5,28 +5,11 @@ import {
 } from '../fixtures/mcp-fixtures.js';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
-const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
-const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
-const mockWithCache = vi.hoisted(() => vi.fn());
-const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/exec.js', () => ({
-  executeGitHubCommand: mockExecuteGitHubCommand,
-}));
-
-vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
-}));
-
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
-}));
-
-vi.mock('../../src/utils/tokenManager.js', () => ({
-  getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
@@ -44,14 +27,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     // Clear all mocks
     vi.clearAllMocks();
-
-    // Default cache behavior
-    // @ts-expect-error - mockWithCache is not typed
-    mockWithCache.mockImplementation(async (key, fn) => await fn());
-    mockGenerateCacheKey.mockReturnValue('test-cache-key');
-
-    // Mock token manager to return test token
-    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Default GitHub CLI mock behavior - return successful results
     const defaultMockResponse = createMockRepositoryResponse([
@@ -344,10 +319,8 @@ describe('GitHub Search Repositories Tool', () => {
     it('should handle unexpected errors in query processing', async () => {
       registerSearchGitHubReposTool(mockServer.server);
 
-      // Mock withCache to throw the error directly without wrapping
-      mockWithCache.mockImplementation(async (_key, _fn) => {
-        throw new Error('Network timeout');
-      });
+      // Mock API to throw the error directly
+      mockSearchGitHubReposAPI.mockRejectedValue(new Error('Network timeout'));
 
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,

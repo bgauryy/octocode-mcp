@@ -12,7 +12,7 @@ import {
 } from '../scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from '../utils/queryUtils';
 import { generateHints } from '../utils/hints_consolidated';
-import { isSamplingEnabled } from '../utils/betaFeatures';
+import { isSamplingEnabled } from '../config/serverConfig';
 import { SamplingUtils, performSampling } from '../sampling';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.

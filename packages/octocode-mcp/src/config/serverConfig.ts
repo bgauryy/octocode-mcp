@@ -6,6 +6,8 @@ export interface ServerConfig {
   disableTools?: string[]; // Tools to disable by name
   // Logging and debugging
   enableLogging: boolean;
+  // Beta features
+  betaEnabled: boolean;
   // Advanced settings
   timeout: number;
   maxRetries: number;
@@ -14,6 +16,11 @@ export interface ServerConfig {
 export class ConfigManager {
   private static config: ServerConfig | null = null;
   private static initialized = false;
+
+  static reset(): void {
+    this.config = null;
+    this.initialized = false;
+  }
 
   /**
    * Initialize configuration from environment variables
@@ -33,6 +40,10 @@ export class ConfigManager {
 
       // Logging and debugging
       enableLogging: process.env.ENABLE_LOGGING === 'true',
+
+      // Beta features
+      betaEnabled:
+        process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
 
       // Advanced settings
       timeout: parseInt(process.env.REQUEST_TIMEOUT || '30000'),
@@ -105,4 +116,18 @@ export class ConfigManager {
 // Export convenience functions
 export function getServerConfig(): ServerConfig {
   return ConfigManager.getConfig();
+}
+
+/**
+ * Check if BETA features are enabled
+ */
+export function isBetaEnabled(): boolean {
+  return ConfigManager.getConfig().betaEnabled;
+}
+
+/**
+ * Check if sampling features are enabled (requires BETA=1)
+ */
+export function isSamplingEnabled(): boolean {
+  return isBetaEnabled();
 }

@@ -215,6 +215,7 @@ describe('Index Module', () => {
       enableLogging: false,
       timeout: 30000,
       maxRetries: 3,
+      betaEnabled: false,
     });
 
     // Mock registerTools with simple successful response

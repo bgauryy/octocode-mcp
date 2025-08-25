@@ -6,20 +6,10 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
-const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
-}));
-
-vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: vi.fn(),
-  withCache: vi.fn(),
-}));
-
-vi.mock('../../src/utils/tokenManager.js', () => ({
-  getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
@@ -113,8 +103,7 @@ describe('GitHub Search Pull Requests Tool', () => {
     // Reset all mocks
     vi.clearAllMocks();
 
-    // Mock token manager to return test token
-    mockGetGitHubToken.mockResolvedValue('test-token');
+
 
     // Setup default successful API response using helper
     mockSearchGitHubPullRequestsAPI.mockResolvedValue(createMockPRResponse());
