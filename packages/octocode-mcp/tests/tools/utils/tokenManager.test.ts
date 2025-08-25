@@ -33,7 +33,6 @@ describe('Token Manager', () => {
     delete process.env.GITHUB_TOKEN;
     delete process.env.GH_TOKEN;
 
-    delete process.env.Authorization;
 
     // Clear all mocks
     vi.clearAllMocks();
@@ -78,11 +77,6 @@ describe('Token Manager', () => {
       expect(mockGetGithubCLIToken).toHaveBeenCalled();
     });
 
-    it('should return authorization header token', async () => {
-      process.env.Authorization = 'Bearer auth-token';
-      const token = await getGitHubToken();
-      expect(token).toBe('auth-token');
-    });
 
     it('should cache token after first resolution', async () => {
       process.env.GITHUB_TOKEN = 'github-token';
@@ -162,11 +156,6 @@ describe('Token Manager', () => {
       expect(getTokenSource()).toBe('cli');
     });
 
-    it('should return authorization when token from header', async () => {
-      process.env.Authorization = 'Bearer auth-token';
-      await getGitHubToken();
-      expect(getTokenSource()).toBe('authorization');
-    });
   });
 
   describe('Configuration', () => {
@@ -243,29 +232,4 @@ describe('Token Manager', () => {
     });
   });
 
-  describe('Authorization Header Parsing', () => {
-    it('should extract token from Bearer header', async () => {
-      process.env.Authorization = 'Bearer test-token';
-      const token = await getGitHubToken();
-      expect(token).toBe('test-token');
-    });
-
-    it('should extract token from token header', async () => {
-      process.env.Authorization = 'token test-token';
-      const token = await getGitHubToken();
-      expect(token).toBe('test-token');
-    });
-
-    it('should extract token from template format', async () => {
-      process.env.Authorization = '{{test-token}}';
-      const token = await getGitHubToken();
-      expect(token).toBe('test-token');
-    });
-
-    it('should handle malformed headers gracefully', async () => {
-      process.env.Authorization = '   Bearer    ';
-      const token = await getGitHubToken();
-      expect(token).toBeNull();
-    });
-  });
 });

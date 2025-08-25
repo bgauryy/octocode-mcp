@@ -47,7 +47,6 @@ function isAuditEnabled(): boolean {
   );
 }
 
-
 /**
  * Token resolution with environment variables and CLI
  */
@@ -212,4 +211,3 @@ export function isCliTokenResolutionEnabled(): boolean {
 export function isAdvancedTokenManager(): boolean {
   return isAuditEnabled();
 }
-
