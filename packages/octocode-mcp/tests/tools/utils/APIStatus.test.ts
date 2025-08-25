@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getNPMUserDetails } from '../../../src/mcp/utils/APIStatus';
+import { getNPMUserDetails } from '../../../src/npm/api';
 import { executeNpmCommand } from '../../../src/mcp/utils/exec';
 import { createResult } from '../../../src/mcp/responses';
 

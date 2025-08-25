@@ -107,8 +107,6 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
   return z.object({
     queries: z
       .array(singleQuerySchema)
-      .min(minQueries)
-      .max(maxQueries)
       .describe(
         description ||
           `Array of ${minQueries}-${maxQueries} queries for bulk execution`

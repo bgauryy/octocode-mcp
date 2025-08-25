@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
+import { withSmartValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubCommitsAPI } from '../utils/githubAPI';
 import { TOOL_NAMES } from '../utils/toolConstants';
@@ -42,7 +42,8 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    withSecurityValidation(
+    withSmartValidation(
+      GitHubCommitSearchQuerySchema,
       async (args: GitHubCommitSearchQuery): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
         const hasSearchTerms = args.queryTerms?.length || args.orTerms?.length;

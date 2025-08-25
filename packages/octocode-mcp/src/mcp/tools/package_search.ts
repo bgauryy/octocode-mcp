@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
+import { withSmartValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { TOOL_NAMES } from '../utils/toolConstants';
 import { generateHints } from '../utils/hints_consolidated';
@@ -44,7 +44,8 @@ export function registerPackageSearchTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    withSecurityValidation(
+    withSmartValidation(
+      BulkPackageSearchSchema,
       async (args: BulkPackageSearchParams): Promise<CallToolResult> => {
         // Validate that at least one type of query is provided
         const hasNpmQueries = args.npmPackages && args.npmPackages.length > 0;

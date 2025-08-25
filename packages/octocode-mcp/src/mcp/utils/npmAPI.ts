@@ -1,4 +1,4 @@
-import { getNPMUserDetails } from './APIStatus.js';
+import { getNPMUserDetails } from '../../npm/api.js';
 
 /**
  * NPM API utilities for managing NPM availability and authentication

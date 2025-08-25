@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
+import { withSmartValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { fetchGitHubFileContentAPI } from '../utils/githubAPI';
 import { TOOL_NAMES } from '../utils/toolConstants';
@@ -55,19 +55,16 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    withSecurityValidation(
+    withSmartValidation(
+      FileContentBulkQuerySchema,
       async (args: {
         queries: FileContentQuery[];
       }): Promise<CallToolResult> => {
-        const emptyQueries =
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0;
-
-        if (emptyQueries) {
+        // Additional validation beyond schema
+        if (args.queries.length === 0) {
           return createResult({
             isError: true,
-            data: { error: 'Queries array is required and cannot be empty' },
+            error: 'Queries array is required and cannot be empty',
             hints: ['Provide at least one file content query'],
           });
         }
@@ -84,7 +81,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
 
           return createResult({
             isError: true,
-            data: { error: 'Maximum 10 file queries allowed per request' },
+            error: 'Maximum 10 file queries allowed per request',
             hints,
           });
         }

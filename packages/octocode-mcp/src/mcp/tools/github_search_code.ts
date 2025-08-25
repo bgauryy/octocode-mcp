@@ -3,7 +3,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
 import { TOOL_NAMES } from '../utils/toolConstants.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation.js';
+import { withSmartValidation } from '../utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
@@ -70,7 +70,8 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    withSecurityValidation(
+    withSmartValidation(
+      GitHubCodeSearchBulkQuerySchema,
       async (args: {
         queries: GitHubCodeSearchQuery[];
         verbose?: boolean;

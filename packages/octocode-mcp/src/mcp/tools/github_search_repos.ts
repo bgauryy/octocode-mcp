@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
+import { withSmartValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubReposAPI } from '../utils/githubAPI';
 import { TOOL_NAMES } from '../utils/toolConstants';
@@ -56,7 +56,8 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         openWorld: true,
       },
     },
-    withSecurityValidation(
+    withSmartValidation(
+      GitHubReposSearchQuerySchema,
       async (args: {
         queries: GitHubReposSearchQuery[];
         verbose?: boolean;

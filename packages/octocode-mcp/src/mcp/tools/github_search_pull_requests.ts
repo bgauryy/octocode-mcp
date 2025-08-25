@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
+import { withSmartValidation } from '../utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubPullRequestsAPI } from '../utils/githubAPI';
 import { TOOL_NAMES } from '../utils/toolConstants';
@@ -44,16 +44,14 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         openWorldHint: true,
       },
     },
-    withSecurityValidation(
+    withSmartValidation(
+      GitHubPullRequestSearchBulkQuerySchema,
       async (args: {
         queries: GitHubPullRequestSearchQuery[];
         verbose?: boolean;
       }): Promise<CallToolResult> => {
-        if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
+        // Additional validation beyond schema
+        if (args.queries.length === 0) {
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
             hasResults: false,

@@ -603,14 +603,13 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       const result = await mockServer.callTool('packageSearch', {
         npmPackages: [{ name: 'lodash' }], // No searchLimit specified
-        searchLimit: 15, // Global default
+        searchLimit: 10, // Global default (max allowed)
       });
-
       expect(result.isError).toBe(false);
       // Verify global default was applied
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['lodash', '--searchlimit=15', '--json']),
+        expect.arrayContaining(['lodash', '--searchlimit=10', '--json']),
         { cache: true }
       );
     });
