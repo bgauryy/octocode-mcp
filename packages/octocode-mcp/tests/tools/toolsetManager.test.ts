@@ -320,8 +320,12 @@ describe('registerTools', () => {
       registerTools(mockServer);
 
       // Verify skipped registration events for non-default tools
-      expect(mockLogToolEvent).toHaveBeenCalledWith('githubSearchCommits_skipped');
-      expect(mockLogToolEvent).toHaveBeenCalledWith('githubSearchPullRequests_skipped');
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'githubSearchCommits_skipped'
+      );
+      expect(mockLogToolEvent).toHaveBeenCalledWith(
+        'githubSearchPullRequests_skipped'
+      );
       expect(mockLogToolEvent).toHaveBeenCalledWith('packageSearch_skipped');
     });
 

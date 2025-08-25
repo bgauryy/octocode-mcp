@@ -49,50 +49,91 @@ These tools can be enabled using `ENABLE_TOOLS`:
 
 ## Tool Configuration
 
-Control which tools are active using environment variables:
+Octocode MCP supports three distinct configuration modes for controlling which tools are active:
+
+### Configuration Modes
+
+#### Mode 1: Default Configuration (No Custom Settings)
+When no tool configuration is provided, only default tools are enabled:
 
 ```bash
-# Enable additional tools (adds to default tools)
+# No configuration needed - runs default tools automatically
+# Active: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchRepositories
+```
+
+#### Mode 2: Exclusive Mode (TOOLS_TO_RUN)
+Run ONLY the specified tools, ignoring all defaults and other settings:
+
+```bash
+# Run ONLY these tools (truly exclusive)
+export TOOLS_TO_RUN="githubSearchCode,packageSearch"
+# Active: ONLY githubSearchCode and packageSearch
+# Note: ENABLE_TOOLS and DISABLE_TOOLS are completely ignored in this mode
+```
+
+#### Mode 3: Additive/Subtractive Mode (ENABLE_TOOLS/DISABLE_TOOLS)
+Modify the default tool set by adding or removing specific tools:
+
+```bash
+# Add tools to defaults
 export ENABLE_TOOLS="githubSearchCommits,packageSearch"
+# Active: all default tools + githubSearchCommits + packageSearch
 
-# Disable default tools (removes from enabled tools)  
+# Remove tools from defaults
 export DISABLE_TOOLS="githubViewRepoStructure"
+# Active: all default tools except githubViewRepoStructure
 
-# Legacy support (backward compatibility)
-export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"
+# Combined: add some, remove others
+export ENABLE_TOOLS="githubSearchCommits"
+export DISABLE_TOOLS="githubSearchRepositories"
+# Active: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchCommits
 ```
 
 ### Configuration Examples
 
 ```bash
-# Default setup (no configuration needed)
-# Active: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchRepositories
+# Example 1: Default setup
+# (no environment variables)
+# Result: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchRepositories
 
-# Add commit and package search
-export ENABLE_TOOLS="githubSearchCommits,packageSearch"
-# Active: all default tools + githubSearchCommits + packageSearch
+# Example 2: Exclusive mode - only code search and package search
+export TOOLS_TO_RUN="githubSearchCode,packageSearch"
+# Result: ONLY githubSearchCode, packageSearch
 
-# Remove repository structure tool
-export DISABLE_TOOLS="githubViewRepoStructure"
-# Active: githubSearchCode, githubGetFileContent, githubSearchRepositories
+# Example 3: Exclusive mode - minimal setup
+export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"
+# Result: ONLY githubSearchCode, githubGetFileContent
 
-# Full feature set
-export ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests,packageSearch"
-# Active: all tools enabled
-
-# Minimal code-focused setup
-export DISABLE_TOOLS="githubSearchRepositories"
+# Example 4: Additive mode - add commit search
 export ENABLE_TOOLS="githubSearchCommits"
-# Active: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchCommits
+# Result: all defaults + githubSearchCommits
+
+# Example 5: Subtractive mode - remove repo structure
+export DISABLE_TOOLS="githubViewRepoStructure"
+# Result: all defaults except githubViewRepoStructure
+
+# Example 6: Combined additive/subtractive
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"
+export DISABLE_TOOLS="githubSearchRepositories"
+# Result: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchCommits, packageSearch
+
+# Example 7: Full feature set (additive mode)
+export ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests,packageSearch"
+# Result: all 7 tools enabled
 ```
 
-### Tool Priority Logic
+### Configuration Mode Priority
 
-1. **Default tools** are enabled automatically (isDefault: true)
-2. **ENABLE_TOOLS** adds additional tools to the active set
-3. **DISABLE_TOOLS** removes tools from the final set (takes priority)
+1. **TOOLS_TO_RUN** (Mode 2): If set, runs ONLY these tools. All other configuration is ignored.
+2. **ENABLE_TOOLS/DISABLE_TOOLS** (Mode 3): If TOOLS_TO_RUN is not set, modifies default tools.
+3. **Default Mode** (Mode 1): If no configuration is provided, runs default tools only.
 
-**Note**: Tool configuration changes require restarting the MCP server.
+### Important Notes
+
+- **Mode 2 is truly exclusive**: When `TOOLS_TO_RUN` is set, `ENABLE_TOOLS` and `DISABLE_TOOLS` are completely ignored.
+- **Tool names must be exact**: Use the exact tool names listed in the Available Tools section.
+- **Configuration changes require restart**: Tool configuration is read at server startup.
+- **Invalid tool names are ignored**: Misspelled or non-existent tool names are silently ignored.
 
 ## Setup Methods
 
@@ -200,10 +241,12 @@ export Authorization="Bearer your_token"       # Alternative format
 ### Tool Management Variables
 
 ```bash
-# Tool configuration
-export ENABLE_TOOLS="githubSearchCommits,packageSearch"           # Add tools
-export DISABLE_TOOLS="githubViewRepoStructure"                    # Remove tools
-export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"       # Legacy support
+# Mode 2: Exclusive mode - run ONLY these tools (ignores all other configuration)
+export TOOLS_TO_RUN="githubSearchCode,packageSearch"             # Exclusive tool list
+
+# Mode 3: Additive/subtractive mode - modify default tools (only works when TOOLS_TO_RUN is not set)
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"           # Add tools to defaults
+export DISABLE_TOOLS="githubViewRepoStructure"                    # Remove tools from defaults
 ```
 
 ### Performance & Reliability Variables
@@ -217,9 +260,8 @@ export MAX_RETRIES=3                          # Max retry attempts (0-10)
 ### Logging & Debugging Variables
 
 ```bash
-# Audit logging
-export ENABLE_LOGGING=true                    # Enable audit logging
-export AUDIT_LOG_DIR="./logs/audit"          # Custom log directory
+# Logging
+export ENABLE_LOGGING=true                    # Enable logging
 ```
 
 ### Beta Features Variables
@@ -326,7 +368,6 @@ REQUEST_TIMEOUT=45000
 MAX_RETRIES=5
 BETA=true
 ENABLE_LOGGING=true
-AUDIT_LOG_DIR=./logs/audit
 
 # Load and run
 set -a && source .env && set +a
@@ -344,8 +385,7 @@ export REQUEST_TIMEOUT=45000                   # 45 second timeout
 export MAX_RETRIES=5                          # Higher retry count
 
 # Monitoring
-export ENABLE_LOGGING=true                    # Enable audit logs
-export AUDIT_LOG_DIR="/var/log/octocode"     # Centralized logging
+export ENABLE_LOGGING=true                    # Enable logs
 
 # Features (optional)
 export ENABLE_TOOLS="githubSearchCommits,packageSearch"

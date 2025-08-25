@@ -1,6 +1,6 @@
-# Octocode MCP - GitHub Intelligence
+# Octocode MCP - Code Research Intelligence
 
-**AI-Powered GitHub Analysis for Developers and Organizations**
+**AI-Powered Advanced GitHub Code Research for Developers and Organizations**
 
 <div align="center">
   <a href="https://github.com/modelcontextprotocol/servers">

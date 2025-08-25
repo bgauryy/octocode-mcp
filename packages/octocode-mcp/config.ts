@@ -22,15 +22,14 @@ export interface MCPConfig {
 
   // Tool Management
   tools: {
-    toolsToRun?: string[];     // TOOLS_TO_RUN - run ONLY these tools (exclusive)
-    enableTools?: string[];    // ENABLE_TOOLS - add these tools to defaults (additive)
-    disableTools?: string[];   // DISABLE_TOOLS - remove these tools (takes priority)
+    toolsToRun?: string[]; // TOOLS_TO_RUN - run ONLY these tools (exclusive)
+    enableTools?: string[]; // ENABLE_TOOLS - add these tools to defaults (additive)
+    disableTools?: string[]; // DISABLE_TOOLS - remove these tools (takes priority)
   };
 
   // Logging & Debugging
   logging: {
     enableLogging: boolean;
-    auditLogDir: string;
   };
 
   // Performance & Reliability
@@ -122,7 +121,6 @@ export function loadConfig(): MCPConfig {
     // Logging & Debugging
     logging: {
       enableLogging: parseBoolean(process.env.ENABLE_LOGGING),
-      auditLogDir: process.env.AUDIT_LOG_DIR || './logs/audit',
     },
 
     // Performance & Reliability
@@ -243,7 +241,6 @@ export function getLoggingConfig() {
   const config = getConfig();
   return {
     enableLogging: config.logging.enableLogging,
-    auditLogDir: config.logging.auditLogDir,
   };
 }
 

@@ -55,19 +55,51 @@ function extractBearerToken(tokenInput: string): string | null {
   if (!tokenInput) return null;
 
   // Start by trimming the entire input
-  let token = tokenInput.trim();
+  const originalToken = tokenInput.trim();
+  let token = originalToken;
 
-  // Remove "Bearer " prefix (case-insensitive) - get next word after Bearer
-  token = token.replace(/^bearer\s*/i, '');
+  // Track if we made any changes
+  let wasModified = false;
 
-  // Remove "token " prefix (case insensitive)
-  token = token.replace(/^token\s*/i, '');
+  // Remove "Bearer " prefix (CASE-SENSITIVE) - MUST have space after Bearer
+  const bearerMatch = token.match(/^Bearer\s+(.+)/);
+  if (bearerMatch) {
+    token = bearerMatch[1]!;
+    wasModified = true;
+  }
+
+  // Remove "bearer/BEARER/BeaRer " prefix (any case) - MUST have space after
+  // This handles non-standard Bearer formats
+  if (!wasModified) {
+    const anyBearerMatch = token.match(/^bearer\s+(.+)/i);
+    if (anyBearerMatch) {
+      token = anyBearerMatch[1]!;
+      wasModified = true;
+    }
+  }
+
+  // Remove "token " prefix (case insensitive) - MUST have space after token
+  const tokenMatch = token.match(/^token\s+(.+)/i);
+  if (tokenMatch) {
+    token = tokenMatch[1]!;
+    wasModified = true;
+  }
 
   // Handle template format {{token}} - extract the actual token
-  token = token.replace(/^\{\{(.+)\}\}$/, '$1');
+  const templateMatch = token.match(/^\{\{(.+)\}\}$/);
+  if (templateMatch) {
+    token = templateMatch[1]!;
+    wasModified = true;
+  }
 
   // Final trim to clean up any remaining whitespace
   const finalToken = token.trim();
+
+  // If no modifications were made, return original string
+  if (!wasModified) {
+    return originalToken;
+  }
+
   return finalToken || null;
 }
 
@@ -86,14 +118,16 @@ async function resolveToken(): Promise<TokenResolutionResult> {
     return { token: process.env.GH_TOKEN, source: 'env' };
   }
 
-  // Try CLI token as fallback
-  const cliToken = await getGithubCLIToken();
-  if (cliToken) {
-    return { token: cliToken, source: 'cli' };
+  // Try CLI token as fallback (unless in advanced mode)
+  if (!isAuditEnabled()) {
+    const cliToken = await getGithubCLIToken();
+    if (cliToken) {
+      return { token: cliToken, source: 'cli' };
+    }
   }
 
   const authToken = extractBearerToken(process.env.Authorization ?? '');
-  if (authToken) {
+  if (authToken && authToken.trim() !== 'Bearer') {
     return { token: authToken, source: 'authorization' };
   }
 
@@ -141,8 +175,9 @@ export async function getToken(): Promise<string> {
   const result = await resolveToken();
 
   if (!result.token) {
-    const errorMessage =
-      'No GitHub token found. Please set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI';
+    const errorMessage = isAuditEnabled()
+      ? 'No GitHub token found. In advanced mode, please set GITHUB_TOKEN/GH_TOKEN environment variable (CLI authentication is disabled for security)'
+      : 'No GitHub token found. Please set GITHUB_TOKEN/GH_TOKEN environment variable, or authenticate with GitHub CLI';
 
     throw new Error(errorMessage);
   }
