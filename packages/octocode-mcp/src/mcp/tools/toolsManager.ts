@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLS } from './tools.js';
 import { logToolEvent, AuditLogger } from '../../security/auditLogger.js';
-import { getEnableTools, getDisableTools } from '../../../config.js';
+import {
+  getToolsToRun,
+  getEnableTools,
+  getDisableTools,
+} from '../../../config.js';
 
 /**
  * Register tools based on configuration
@@ -13,6 +17,7 @@ export function registerTools(server: McpServer): {
   // Initialize audit logger if not already initialized
   AuditLogger.initialize();
 
+  const toolsToRun = getToolsToRun() || [];
   const enableTools = getEnableTools() || [];
   const disableTools = getDisableTools() || [];
 
@@ -28,22 +33,37 @@ export function registerTools(server: McpServer): {
       let shouldRegisterTool = false;
       let reason = '';
 
-      // Start with default tools
-      shouldRegisterTool = tool.isDefault;
+      // Three distinct configuration modes:
+      // 1. TOOLS_TO_RUN - exclusive mode: run ONLY these tools
+      // 2. ENABLE_TOOLS/DISABLE_TOOLS - additive/subtractive: modify default tools
+      // 3. Default mode - run only default tools
 
-      // Add tools from ENABLE_TOOLS (if not already default)
-      if (enableTools.includes(tool.name)) {
-        shouldRegisterTool = true;
-      }
+      if (toolsToRun.length > 0) {
+        // Mode 1: TOOLS_TO_RUN - truly exclusive, ignores all other configuration
+        shouldRegisterTool = toolsToRun.includes(tool.name);
+        if (!shouldRegisterTool) {
+          reason = 'not in TOOLS_TO_RUN list (exclusive mode)';
+        }
+        // Note: DISABLE_TOOLS is ignored in TOOLS_TO_RUN mode
+      } else {
+        // Mode 2 & 3: Standard mode with defaults + enableTools - disableTools
+        // Start with default tools
+        shouldRegisterTool = tool.isDefault;
 
-      // Remove tools from DISABLE_TOOLS (takes priority)
-      if (disableTools.includes(tool.name)) {
-        shouldRegisterTool = false;
-        reason = 'disabled by DISABLE_TOOLS configuration';
-      }
+        // Add tools from ENABLE_TOOLS (if not already default)
+        if (enableTools.includes(tool.name)) {
+          shouldRegisterTool = true;
+        }
 
-      if (!shouldRegisterTool && reason === '') {
-        reason = 'not a default tool';
+        if (!shouldRegisterTool && reason === '') {
+          reason = 'not a default tool';
+        }
+
+        // DISABLE_TOOLS only applies in standard mode (not TOOLS_TO_RUN mode)
+        if (disableTools.includes(tool.name)) {
+          shouldRegisterTool = false;
+          reason = 'disabled by DISABLE_TOOLS configuration';
+        }
       }
 
       if (shouldRegisterTool) {

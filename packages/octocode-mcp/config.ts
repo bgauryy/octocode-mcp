@@ -22,8 +22,9 @@ export interface MCPConfig {
 
   // Tool Management
   tools: {
-    enableTools?: string[];
-    disableTools?: string[];
+    toolsToRun?: string[];     // TOOLS_TO_RUN - run ONLY these tools (exclusive)
+    enableTools?: string[];    // ENABLE_TOOLS - add these tools to defaults (additive)
+    disableTools?: string[];   // DISABLE_TOOLS - remove these tools (takes priority)
   };
 
   // Logging & Debugging
@@ -111,11 +112,10 @@ export function loadConfig(): MCPConfig {
 
     // Tool Management
     tools: {
-      // Support legacy TOOLS_TO_RUN environment variable for backward compatibility
-      // If TOOLS_TO_RUN exists, use it; otherwise fall back to ENABLE_TOOLS
-      enableTools: parseStringArray(
-        process.env.TOOLS_TO_RUN || process.env.ENABLE_TOOLS
-      ),
+      // TOOLS_TO_RUN means "run ONLY these tools" (exclusive mode)
+      toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
+      // ENABLE_TOOLS means "add these tools to defaults" (additive mode)
+      enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
     },
 
@@ -227,6 +227,10 @@ export function getAppVersion(): string {
   return getConfig().app.version;
 }
 
+export function getToolsToRun(): string[] | undefined {
+  return getConfig().tools.toolsToRun;
+}
+
 export function getEnableTools(): string[] | undefined {
   return getConfig().tools.enableTools;
 }
@@ -323,6 +327,7 @@ export default {
   getGitHubToken,
   getGitHubApiUrl,
   getAppVersion,
+  getToolsToRun,
   getEnableTools,
   getDisableTools,
   // Config section getters
