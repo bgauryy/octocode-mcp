@@ -3,7 +3,7 @@ import { executeNpmCommand } from './exec';
 import {
   NpmPackageSearchBuilder,
   NpmPackageViewBuilder,
-} from './NpmCommandBuilder';
+} from '../../npm/NpmCommandBuilder';
 import { generateCacheKey, withCache } from './cache';
 import {
   toDDMMYYYY,
@@ -26,7 +26,7 @@ import {
   PythonPackageQuery,
 } from '../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { isNPMEnabled } from './npmAPI';
+import { isNPMEnabled } from '../../npm/npmAPI';
 
 const MAX_DESCRIPTION_LENGTH = 100;
 const MAX_KEYWORDS = 10;

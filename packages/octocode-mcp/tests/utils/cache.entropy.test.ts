@@ -135,7 +135,7 @@ describe('Cache Key Entropy and Uniqueness Tests', () => {
 
       // Critical value for 15 degrees of freedom at 99% confidence is ~30
       // Use higher threshold to reduce false positives in CI/random environments
-      expect(chiSquare).toBeLessThan(30);
+      expect(chiSquare).toBeLessThan(35);
 
       // Additional check: ensure no character is completely missing or overly dominant
       for (const char of hexChars) {

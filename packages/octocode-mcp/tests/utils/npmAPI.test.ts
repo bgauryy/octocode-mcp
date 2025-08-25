@@ -3,7 +3,7 @@ import {
   isNPMEnabled,
   refreshNPMStatus,
   resetNPMStatus,
-} from '../../src/mcp/utils/npmAPI';
+} from '../../src/npm/npmAPI';
 import { getNPMUserDetails } from '../../src/npm/api';
 
 // Mock the NPM status check

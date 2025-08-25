@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { searchPackagesAPI } from '../../src/mcp/utils/package';
-import { isNPMEnabled } from '../../src/mcp/utils/npmAPI';
+import { isNPMEnabled } from '../../src/npm/npmAPI';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockExecuteNpmCommand = vi.hoisted(() => vi.fn());
@@ -13,7 +13,7 @@ vi.mock('../../src/mcp/utils/exec', () => ({
   executeNpmCommand: mockExecuteNpmCommand,
 }));
 
-vi.mock('../../src/mcp/utils/npmAPI', () => ({
+vi.mock('../../src/npm/npmAPI', () => ({
   isNPMEnabled: vi.fn(),
 }));
 
