@@ -177,7 +177,10 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        const apiResult = await viewGitHubRepositoryStructureAPI(query, authInfo);
+        const apiResult = await viewGitHubRepositoryStructureAPI(
+          query,
+          authInfo
+        );
 
         // Check if result is an error
         if ('error' in apiResult) {

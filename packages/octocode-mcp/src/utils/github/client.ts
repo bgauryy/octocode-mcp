@@ -38,9 +38,9 @@ const createThrottleOptions = () => ({
  * Initialize Octokit with centralized token management and rotation support
  * Token resolution is delegated to tokenManager - single source of truth
  */
-export async function getOctokit(authInfo?: AuthInfo): Promise<
-  InstanceType<typeof OctokitWithThrottling>
-> {
+export async function getOctokit(
+  authInfo?: AuthInfo
+): Promise<InstanceType<typeof OctokitWithThrottling>> {
   if (!octokitInstance || authInfo) {
     const token = authInfo?.token || (await getGitHubToken());
     const baseUrl = ConfigManager.getGitHubBaseURL();

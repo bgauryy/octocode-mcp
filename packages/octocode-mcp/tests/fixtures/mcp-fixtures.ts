@@ -52,7 +52,10 @@ export function createMockMcpServer(): MockMcpServer {
       },
     };
 
-    return await handler(request.params.arguments, { authInfo: undefined, sessionId: undefined });
+    return await handler(request.params.arguments, {
+      authInfo: undefined,
+      sessionId: undefined,
+    });
   };
 
   const cleanup = () => {

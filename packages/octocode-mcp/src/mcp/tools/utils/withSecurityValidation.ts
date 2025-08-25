@@ -25,8 +25,14 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
     authInfo?: AuthInfo,
     userContext?: UserContext
   ) => Promise<CallToolResult>
-): (args: unknown, { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }) => Promise<CallToolResult> {
-  return async (args: unknown, { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }): Promise<CallToolResult> => {
+): (
+  args: unknown,
+  { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }
+) => Promise<CallToolResult> {
+  return async (
+    args: unknown,
+    { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }
+  ): Promise<CallToolResult> => {
     try {
       // 1. Validate and sanitize input parameters for security
       const validation = ContentSanitizer.validateInputParameters(
@@ -111,7 +117,11 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
       }
 
       // 5. Call the actual tool handler with sanitized parameters and user context
-      return await toolHandler(validation.sanitizedParams as T, authInfo, userContext);
+      return await toolHandler(
+        validation.sanitizedParams as T,
+        authInfo,
+        userContext
+      );
     } catch (error) {
       return createResult({
         error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,

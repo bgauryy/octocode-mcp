@@ -690,7 +690,11 @@ async function viewNpmPackage(
   match?: string | string[],
   sessionId?: string
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('npm-view', { packageName, field, match }, sessionId);
+  const cacheKey = generateCacheKey(
+    'npm-view',
+    { packageName, field, match },
+    sessionId
+  );
 
   return withCache(cacheKey, async () => {
     try {

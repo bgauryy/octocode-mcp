@@ -608,13 +608,17 @@ export async function fetchGitHubPullRequestByNumberAPI(
   sessionId?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-api-prs', {
-    owner: params.owner,
-    repo: params.repo,
-    prNumber: params.prNumber,
-    getFileChanges: params.getFileChanges,
-    withComments: params.withComments,
-  }, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-api-prs',
+    {
+      owner: params.owner,
+      repo: params.repo,
+      prNumber: params.prNumber,
+      getFileChanges: params.getFileChanges,
+      withComments: params.withComments,
+    },
+    sessionId
+  );
 
   // Create a wrapper function that returns CallToolResult for the cache
   const fetchOperation = async (): Promise<CallToolResult> => {

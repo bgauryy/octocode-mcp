@@ -104,7 +104,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           });
         }
 
-        return searchMultipleGitHubRepos(args.queries, args.verbose || false, authInfo, userContext);
+        return searchMultipleGitHubRepos(
+          args.queries,
+          args.verbose || false,
+          authInfo,
+          userContext
+        );
       }
     )
   );

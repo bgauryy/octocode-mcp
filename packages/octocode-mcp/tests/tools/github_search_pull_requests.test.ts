@@ -552,7 +552,10 @@ describe('GitHub Search Pull Requests Tool', () => {
         queries: [args],
       });
 
-      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(args, undefined);
+      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
+        args,
+        undefined
+      );
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data).toEqual(mockResponse);

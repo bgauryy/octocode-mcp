@@ -67,15 +67,24 @@ export type CachePrefix = keyof typeof CACHE_TTL_CONFIG | string;
  * Generate a simple, robust cache key
  * SHA-256 hashes are collision-resistant enough for our use case
  */
-export function generateCacheKey(prefix: string, params: unknown, sessionId?: string): string {
+export function generateCacheKey(
+  prefix: string,
+  params: unknown,
+  sessionId?: string
+): string {
   // Create a stable parameter string
   const paramString = createStableParamString(params);
-  
+
   // Include session ID in the parameter string if provided
-  const finalParamString = sessionId ? `${sessionId}:${paramString}` : paramString;
+  const finalParamString = sessionId
+    ? `${sessionId}:${paramString}`
+    : paramString;
 
   // Use SHA-256 hash for security (64 chars)
-  const hash = crypto.createHash('sha256').update(finalParamString).digest('hex');
+  const hash = crypto
+    .createHash('sha256')
+    .update(finalParamString)
+    .digest('hex');
 
   return `${VERSION}-${prefix}:${hash}`;
 }

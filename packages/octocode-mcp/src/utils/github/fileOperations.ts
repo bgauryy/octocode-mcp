@@ -33,18 +33,22 @@ export async function fetchGitHubFileContentAPI(
   sessionId?: string
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
   // Generate cache key based on request parameters
-  const cacheKey = generateCacheKey('gh-api-file-content', {
-    owner: params.owner,
-    repo: params.repo,
-    filePath: params.filePath,
-    branch: params.branch,
-    // Include other parameters that affect the content
-    startLine: params.startLine,
-    endLine: params.endLine,
-    matchString: params.matchString,
-    minified: params.minified,
-    matchStringContextLines: params.matchStringContextLines,
-  }, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-api-file-content',
+    {
+      owner: params.owner,
+      repo: params.repo,
+      filePath: params.filePath,
+      branch: params.branch,
+      // Include other parameters that affect the content
+      startLine: params.startLine,
+      endLine: params.endLine,
+      matchString: params.matchString,
+      minified: params.minified,
+      matchStringContextLines: params.matchStringContextLines,
+    },
+    sessionId
+  );
 
   // Create a wrapper function that returns CallToolResult for the cache
   const fetchOperation = async (): Promise<CallToolResult> => {
@@ -399,7 +403,10 @@ export async function viewGitHubRepositoryStructureAPI(
 
   // Create a wrapper function that returns CallToolResult for the cache
   const structureOperation = async (): Promise<CallToolResult> => {
-    const result = await viewGitHubRepositoryStructureAPIInternal(params, authInfo);
+    const result = await viewGitHubRepositoryStructureAPIInternal(
+      params,
+      authInfo
+    );
 
     // Convert to CallToolResult for caching
     if ('error' in result) {

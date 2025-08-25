@@ -81,7 +81,6 @@ async function startServer() {
 
     // Define MCP handler function - this creates the MCP server
     const mcpHandler = async (req: express.Request, res: express.Response) => {
-
       // Check for existing session ID
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
       let transport: StreamableHTTPServerTransport;
@@ -93,7 +92,7 @@ async function startServer() {
         // Create new transport
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (sessionId) => {
+          onsessioninitialized: sessionId => {
             console.log(`New MCP session initialized: ${sessionId}`);
             transports[sessionId] = transport;
           },
@@ -139,13 +138,11 @@ async function startServer() {
     const mcpOAuth = McpOAuth(config, mcpHandler);
 
     // Mount MCP OAuth middleware
-    app.use("/", mcpOAuth.router);
+    app.use('/', mcpOAuth.router);
 
     const port = parseInt(process.env.PORT || '3000');
     const server = app.listen(port, () => {
-      console.log(
-        `🚀 Octocode MCP Server running on http://localhost:${port}`
-      );
+      console.log(`🚀 Octocode MCP Server running on http://localhost:${port}`);
     });
 
     const gracefulShutdown = async (_signal?: string) => {
@@ -172,7 +169,7 @@ async function startServer() {
 
         // Close all MCP transports
         await Promise.all(
-          Object.values(transports).map((transport) => {
+          Object.values(transports).map(transport => {
             try {
               transport.close?.();
               return Promise.resolve();
@@ -209,7 +206,7 @@ async function startServer() {
         // Close Express server
         server.close(() => {
           console.log('Server closed.');
-          
+
           // Clear the timeout since we completed successfully
           if (shutdownTimeout) {
             clearTimeout(shutdownTimeout);
@@ -331,7 +328,7 @@ export async function registerAllTools(server: McpServer) {
 
 // Start server if this file is run directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  startServer().catch((error) => {
+  startServer().catch(error => {
     console.error('Failed to start Octocode MCP OAuth server:', error);
     process.exit(1);
   });

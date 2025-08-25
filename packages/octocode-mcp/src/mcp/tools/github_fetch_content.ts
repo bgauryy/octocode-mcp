@@ -93,7 +93,12 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           });
         }
 
-        return fetchMultipleGitHubFileContents(server, args.queries, authInfo, userContext);
+        return fetchMultipleGitHubFileContents(
+          server,
+          args.queries,
+          authInfo,
+          userContext
+        );
       }
     )
   );

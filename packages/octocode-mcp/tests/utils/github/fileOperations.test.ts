@@ -583,17 +583,21 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       await fetchGitHubFileContentAPI(params);
 
-      expect(mockGenerateCacheKey).toHaveBeenCalledWith('gh-api-file-content', {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
-        branch: 'feature',
-        startLine: 5,
-        endLine: 10,
-        matchString: 'search term',
-        minified: true,
-        matchStringContextLines: 3,
-      }, undefined);
+      expect(mockGenerateCacheKey).toHaveBeenCalledWith(
+        'gh-api-file-content',
+        {
+          owner: 'test',
+          repo: 'repo',
+          filePath: 'test.txt',
+          branch: 'feature',
+          startLine: 5,
+          endLine: 10,
+          matchString: 'search term',
+          minified: true,
+          matchStringContextLines: 3,
+        },
+        undefined
+      );
     });
 
     it('should generate different cache keys for different parameters', async () => {
