@@ -15,12 +15,12 @@ export function withZodValidation<T extends z.ZodTypeAny>(
     try {
       // 1. First validate with Zod schema
       const parseResult = schema.safeParse(args);
-      
+
       if (!parseResult.success) {
         const errors = parseResult.error.errors
           .map(e => `${e.path.join('.')}: ${e.message}`)
           .join('; ');
-        
+
         return createResult({
           error: `Schema validation failed: ${errors}`,
           isError: true,
@@ -53,7 +53,7 @@ export function withZodValidation<T extends z.ZodTypeAny>(
 
 /**
  * Example usage:
- * 
+ *
  * server.registerTool(
  *   'tool-name',
  *   { inputSchema: MyZodSchema.shape },

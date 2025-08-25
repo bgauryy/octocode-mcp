@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
-import { 
-  withSmartValidation, 
-  withValidation 
+import {
+  withSmartValidation,
+  withValidation,
 } from '../../../src/mcp/utils/withSecurityValidation';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 describe('Smart Unified Validation System', () => {
-  const mockHandler = vi.fn(async (args: any) => {
-    return { 
-      content: [{ type: 'text', text: `Processed: ${JSON.stringify(args)}` }] 
+  const mockHandler = vi.fn(async (args: Record<string, unknown>) => {
+    return {
+      content: [{ type: 'text', text: `Processed: ${JSON.stringify(args)}` }],
     } as CallToolResult;
   });
 
@@ -40,7 +40,8 @@ describe('Smart Unified Validation System', () => {
       const result = await handler(invalidInput);
 
       expect(result).toHaveProperty('isError', true);
-      const content = (result as any).content[0]?.text;
+      const content = (result as { content: Array<{ text: string }> })
+        .content[0]?.text;
       expect(content).toContain('Invalid parameters');
       expect(content).toContain('String must contain at least 1 character');
       expect(mockHandler).not.toHaveBeenCalled();
@@ -58,10 +59,11 @@ describe('Smart Unified Validation System', () => {
       const handler = withSmartValidation(complexSchema, mockHandler);
 
       const result = await handler({ a: '1', b: '2', c: '3', d: '4', e: '5' });
-      const content = (result as any).content[0]?.text;
-      
+      const content = (result as { content: Array<{ text: string }> })
+        .content[0]?.text;
+
       // Should limit to 3 errors max
-      const errorCount = (content.match(/String must contain/g) || []).length;
+      const errorCount = (content?.match(/String must contain/g) || []).length;
       expect(errorCount).toBeLessThanOrEqual(3);
     });
   });
@@ -88,7 +90,7 @@ describe('Smart Unified Validation System', () => {
       for (const input of searchInputs) {
         mockHandler.mockClear();
         await handler(input);
-        
+
         // Should pass through completely unchanged
         expect(mockHandler).toHaveBeenCalledWith(input);
       }
@@ -110,7 +112,7 @@ describe('Smart Unified Validation System', () => {
       for (const input of structuralInputs) {
         mockHandler.mockClear();
         await handler(input);
-        
+
         // Should pass through completely unchanged
         expect(mockHandler).toHaveBeenCalledWith(input);
       }
@@ -127,19 +129,24 @@ describe('Smart Unified Validation System', () => {
       };
 
       await handler(dangerousCommandInput);
-      const sanitizedArgs = mockHandler.mock.calls[0][0];
+      expect(mockHandler).toHaveBeenCalled();
+      const sanitizedArgs = mockHandler.mock.calls[0]?.[0];
+      expect(sanitizedArgs).toBeDefined();
+      if (!sanitizedArgs) return;
 
       // Search content unchanged
       expect(sanitizedArgs.query).toBe('find dangerous rm examples');
-      
+
       // Command parameters sanitized
       expect(sanitizedArgs.command).toContain('[BLOCKED]');
       expect(sanitizedArgs.shellScript).toContain('[BLOCKED]');
       expect(sanitizedArgs.systemCommand).toContain('[BLOCKED]');
-      
+
       // Original dangerous parts should be blocked
       expect(sanitizedArgs.command).toBe('ls files; [BLOCKED] -rf /');
-      expect(sanitizedArgs.shellScript).toBe('backup && [BLOCKED] critical_data');
+      expect(sanitizedArgs.shellScript).toBe(
+        'backup && [BLOCKED] critical_data'
+      );
       expect(sanitizedArgs.systemCommand).toBe('echo hello | [BLOCKED] temp');
     });
 
@@ -153,7 +160,10 @@ describe('Smart Unified Validation System', () => {
       };
 
       await handler(benignCommandInput);
-      const sanitizedArgs = mockHandler.mock.calls[0][0];
+      expect(mockHandler).toHaveBeenCalled();
+      const sanitizedArgs = mockHandler.mock.calls[0]?.[0];
+      expect(sanitizedArgs).toBeDefined();
+      if (!sanitizedArgs) return;
 
       // Should pass through unchanged (no dangerous patterns)
       expect(sanitizedArgs.command).toBe('echo hello world');
@@ -165,15 +175,19 @@ describe('Smart Unified Validation System', () => {
       // Set NODE_ENV to development for this test
       const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'development';
-      
+
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       try {
-        const handler = withSmartValidation(flexibleSchema, mockHandler, 'smart');
+        const handler = withSmartValidation(
+          flexibleSchema,
+          mockHandler,
+          'smart'
+        );
 
         await handler({
           query: 'safe search content',
-          command: 'dangerous; rm -rf /'
+          command: 'dangerous; rm -rf /',
         });
 
         // Should log smart decisions about sanitization
@@ -183,8 +197,8 @@ describe('Smart Unified Validation System', () => {
             expect.objectContaining({
               key: 'command',
               action: 'sanitized',
-              reason: 'Command parameter with dangerous injection patterns'
-            })
+              reason: 'Command parameter with dangerous injection patterns',
+            }),
           ])
         );
       } finally {
@@ -203,13 +217,13 @@ describe('Smart Unified Validation System', () => {
     it('should use minimal intelligence (schema only)', async () => {
       const handler = withSmartValidation(testSchema, mockHandler, 'minimal');
 
-      const input = { 
-        query: 'test', 
-        command: 'rm -rf dangerous; sudo kill' 
+      const input = {
+        query: 'test',
+        command: 'rm -rf dangerous; sudo kill',
       };
-      
+
       await handler(input);
-      
+
       // Minimal mode: no sanitization at all, just schema validation
       expect(mockHandler).toHaveBeenCalledWith(input);
     });
@@ -217,14 +231,17 @@ describe('Smart Unified Validation System', () => {
     it('should use smart intelligence (context-aware)', async () => {
       const handler = withSmartValidation(testSchema, mockHandler, 'smart');
 
-      const input = { 
-        query: 'find rm examples', 
-        command: 'echo hello; rm -rf /' 
+      const input = {
+        query: 'find rm examples',
+        command: 'echo hello; rm -rf /',
       };
-      
+
       await handler(input);
-      const result = mockHandler.mock.calls[0][0];
-      
+      expect(mockHandler).toHaveBeenCalled();
+      const result = mockHandler.mock.calls[0]?.[0];
+      expect(result).toBeDefined();
+      if (!result) return;
+
       // Smart mode: query unchanged, command sanitized
       expect(result.query).toBe('find rm examples');
       expect(result.command).toContain('[BLOCKED]');
@@ -233,13 +250,13 @@ describe('Smart Unified Validation System', () => {
     it('should use strict intelligence (comprehensive sanitization)', async () => {
       const handler = withSmartValidation(testSchema, mockHandler, 'strict');
 
-      const input = { 
+      const input = {
         query: 'test query',
-        command: 'normal command'
+        command: 'normal command',
       };
-      
+
       await handler(input);
-      
+
       // Strict mode uses ContentSanitizer - should still pass for normal content
       expect(mockHandler).toHaveBeenCalled();
     });
@@ -253,13 +270,13 @@ describe('Smart Unified Validation System', () => {
         }
       );
 
-      const input = { 
+      const input = {
         name: 'test',
-        query: 'find rm -rf examples' // Should not be sanitized
+        query: 'find rm -rf examples', // Should not be sanitized
       };
-      
+
       const result = await legacyHandler(input);
-      expect(result.content[0].text).toContain('Legacy: test');
+      expect(result.content[0]?.text).toContain('Legacy: test');
     });
   });
 
@@ -272,9 +289,10 @@ describe('Smart Unified Validation System', () => {
       const handler = withSmartValidation(z.record(z.unknown()), errorHandler);
 
       const result = await handler({ test: 'data' });
-      
+
       expect(result).toHaveProperty('isError', true);
-      const content = (result as any).content[0]?.text;
+      const content = (result as { content: Array<{ text: string }> })
+        .content[0]?.text;
       expect(content).toContain('Validation error');
       expect(content).toContain('Handler failed');
     });
@@ -300,22 +318,29 @@ describe('Smart Unified Validation System', () => {
     });
 
     it('should handle GitHub search tool perfectly', async () => {
-      const handler = withSmartValidation(githubSearchSchema, mockHandler, 'smart');
+      const handler = withSmartValidation(
+        githubSearchSchema,
+        mockHandler,
+        'smart'
+      );
 
       const realSearchInput = {
         queryTerms: [
-          'rm -rf', 
-          'dangerous commands', 
+          'rm -rf',
+          'dangerous commands',
           'sudo access',
-          'shell injection; rm files'
+          'shell injection; rm files',
         ],
         owner: 'facebook',
         repo: 'dangerous-rm-toolkit',
-        language: 'shell'
+        language: 'shell',
       };
 
       await handler(realSearchInput);
-      const result = mockHandler.mock.calls[0][0];
+      expect(mockHandler).toHaveBeenCalled();
+      const result = mockHandler.mock.calls[0]?.[0];
+      expect(result).toBeDefined();
+      if (!result) return;
 
       // ALL parameters should pass through unchanged
       // Smart system recognizes this as search/structural content
@@ -329,24 +354,33 @@ describe('Smart Unified Validation System', () => {
     });
 
     it('should handle build tool with mixed content types', async () => {
-      const handler = withSmartValidation(buildToolSchema, mockHandler, 'smart');
+      const handler = withSmartValidation(
+        buildToolSchema,
+        mockHandler,
+        'smart'
+      );
 
       const buildInput = {
         searchQuery: 'find rm -rf usage in build scripts',
         buildCommand: 'npm build && rm -rf dist; rm node_modules',
-        description: 'Clean build that uses rm to delete old files'
+        description: 'Clean build that uses rm to delete old files',
       };
 
       await handler(buildInput);
-      const result = mockHandler.mock.calls[0][0];
+      expect(mockHandler).toHaveBeenCalled();
+      const result = mockHandler.mock.calls[0]?.[0];
+      expect(result).toBeDefined();
+      if (!result) return;
 
       // Search query and description should be unchanged
       expect(result.searchQuery).toBe(buildInput.searchQuery);
       expect(result.description).toBe(buildInput.description);
-      
+
       // Build command should be sanitized for dangerous parts
       expect(result.buildCommand).toContain('[BLOCKED]');
-      expect(result.buildCommand).toBe('npm build && [BLOCKED] -rf dist; [BLOCKED] node_modules');
+      expect(result.buildCommand).toBe(
+        'npm build && [BLOCKED] -rf dist; [BLOCKED] node_modules'
+      );
     });
   });
 });

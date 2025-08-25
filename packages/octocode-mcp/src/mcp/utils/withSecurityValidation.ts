@@ -94,13 +94,13 @@ function analyzeParameterIntent(
   let riskLevel: 'low' | 'medium' | 'high' = 'low';
   if (isCommandLike && typeof value === 'string') {
     // Look for actual command injection patterns, not just presence of dangerous commands
-    const hasCommandInjection = 
-      /;\s*(rm|del|format|shutdown|kill|sudo|su)\s/i.test(value) ||  // ; rm
-      /\|\s*(rm|del|format|shutdown|kill|sudo|su)\s/i.test(value) ||  // | sudo  
-      /&&\s*(rm|del|format|shutdown|kill|sudo|su)\s/i.test(value) ||  // && kill
-      /`.*(?:rm|del|sudo|kill).*`/i.test(value) ||                    // `rm files`
-      /\$\(.*(?:rm|del|sudo|kill).*\)/i.test(value);                  // $(rm files)
-    
+    const hasCommandInjection =
+      /;\s*(rm|del|format|shutdown|kill|sudo|su)\s/i.test(value) || // ; rm
+      /\|\s*(rm|del|format|shutdown|kill|sudo|su)\s/i.test(value) || // | sudo
+      /&&\s*(rm|del|format|shutdown|kill|sudo|su)\s/i.test(value) || // && kill
+      /`.*(?:rm|del|sudo|kill).*`/i.test(value) || // `rm files`
+      /\$\(.*(?:rm|del|sudo|kill).*\)/i.test(value); // $(rm files)
+
     // More nuanced risk assessment
     if (hasCommandInjection) {
       riskLevel = 'high';
@@ -136,19 +136,26 @@ function smartSanitize(params: Record<string, unknown>): {
     const analysis = analyzeParameterIntent(key, value);
 
     // Smart override: If parameter name suggests command but content looks like documentation
-    const looksLikeDocumentation = 
-      typeof value === 'string' && 
+    const looksLikeDocumentation =
+      typeof value === 'string' &&
       value.length > 50 && // Longer text is likely documentation
-      (value.includes('how to') || 
-       value.includes('example') || 
-       value.includes('documentation') ||
-       value.includes('description') ||
-       /^(The|This|Here|When|Use)/.test(value.trim())); // Starts like documentation
+      (value.includes('how to') ||
+        value.includes('example') ||
+        value.includes('documentation') ||
+        value.includes('description') ||
+        /^(The|This|Here|When|Use)/.test(value.trim())); // Starts like documentation
 
-    if (analysis.isSearchContent || analysis.isStructural || looksLikeDocumentation) {
+    if (
+      analysis.isSearchContent ||
+      analysis.isStructural ||
+      looksLikeDocumentation
+    ) {
       // NEVER sanitize search queries, structural parameters, or documentation-like content
-      const contentType = analysis.isSearchContent ? 'search' : 
-                         analysis.isStructural ? 'structural' : 'documentation';
+      const contentType = analysis.isSearchContent
+        ? 'search'
+        : analysis.isStructural
+          ? 'structural'
+          : 'documentation';
       decisions.push({
         key,
         action: 'allowed',
@@ -161,23 +168,44 @@ function smartSanitize(params: Record<string, unknown>): {
       // Only sanitize actual dangerous command injection - be very precise
       const originalValue = value;
       let cleaned = value;
-      
+
       // More precise replacements that preserve legitimate commands
       const injectionPatterns = [
         // Command chaining with dangerous commands
-        { pattern: /;\s*(rm|del|format|shutdown|kill|sudo|su)\s+/gi, replacement: '; [BLOCKED] ' },
-        { pattern: /\|\s*(rm|del|format|shutdown|kill|sudo|su)\s+/gi, replacement: '| [BLOCKED] ' },
-        { pattern: /&&\s*(rm|del|format|shutdown|kill|sudo|su)\s+/gi, replacement: '&& [BLOCKED] ' },
-        
+        {
+          pattern: /;\s*(rm|del|format|shutdown|kill|sudo|su)\s+/gi,
+          replacement: '; [BLOCKED] ',
+        },
+        {
+          pattern: /\|\s*(rm|del|format|shutdown|kill|sudo|su)\s+/gi,
+          replacement: '| [BLOCKED] ',
+        },
+        {
+          pattern: /&&\s*(rm|del|format|shutdown|kill|sudo|su)\s+/gi,
+          replacement: '&& [BLOCKED] ',
+        },
+
         // Command substitution with dangerous commands
-        { pattern: /`[^`]*(?:rm|del|sudo|kill)[^`]*`/gi, replacement: '[BLOCKED_SUBSTITUTION]' },
-        { pattern: /\$\([^)]*(?:rm|del|sudo|kill)[^)]*\)/gi, replacement: '[BLOCKED_SUBSTITUTION]' },
-        
+        {
+          pattern: /`[^`]*(?:rm|del|sudo|kill)[^`]*`/gi,
+          replacement: '[BLOCKED_SUBSTITUTION]',
+        },
+        {
+          pattern: /\$\([^)]*(?:rm|del|sudo|kill)[^)]*\)/gi,
+          replacement: '[BLOCKED_SUBSTITUTION]',
+        },
+
         // Standalone dangerous commands at string boundaries
-        { pattern: /^(rm|del|format|shutdown|kill|sudo|su)\s+/gi, replacement: '[BLOCKED] ' },
-        { pattern: /\s(rm|del|format|shutdown|kill|sudo|su)\s*$/gi, replacement: ' [BLOCKED]' },
+        {
+          pattern: /^(rm|del|format|shutdown|kill|sudo|su)\s+/gi,
+          replacement: '[BLOCKED] ',
+        },
+        {
+          pattern: /\s(rm|del|format|shutdown|kill|sudo|su)\s*$/gi,
+          replacement: ' [BLOCKED]',
+        },
       ];
-      
+
       for (const { pattern, replacement } of injectionPatterns) {
         cleaned = cleaned.replace(pattern, replacement);
       }

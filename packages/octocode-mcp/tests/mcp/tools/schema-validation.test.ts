@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 
 describe('MCP SDK Schema Validation Behavior', () => {
@@ -14,11 +14,11 @@ describe('MCP SDK Schema Validation Behavior', () => {
       registerTool: vi.fn((name, options, handler) => {
         // Simulate what MCP SDK might do
         return { name, options, handler };
-      })
+      }),
     };
 
     // Register a tool with schema
-    const toolHandler = vi.fn(async (args: any) => {
+    const toolHandler = vi.fn(async (_args: unknown) => {
       return { content: [{ type: 'text', text: 'success' }] };
     });
 
@@ -32,21 +32,25 @@ describe('MCP SDK Schema Validation Behavior', () => {
     );
 
     // Get the registered handler
-    const registration = mockServer.registerTool.mock.results[0].value;
-    
+    const registration = mockServer.registerTool.mock.results[0]?.value;
+    expect(registration).toBeDefined();
+
     // Test 1: Call with valid input
-    const validResult = await registration.handler({ name: 'test', count: 5 });
+    await registration.handler({ name: 'test', count: 5 });
     expect(toolHandler).toHaveBeenCalledWith({ name: 'test', count: 5 });
 
     // Test 2: Call with invalid input (missing required field)
-    const invalidResult = await registration.handler({ count: 5 }); // Missing 'name'
-    // If MCP SDK validates, this should fail. If not, it will pass through.
-    
-    // Test 3: Call with wrong type
-    const wrongTypeResult = await registration.handler({ name: 'test', count: 'not-a-number' });
+    await registration.handler({ count: 5 }); // Missing 'name'
     // If MCP SDK validates, this should fail. If not, it will pass through.
 
-    console.log('Test results show MCP SDK does NOT automatically validate against inputSchema');
+    // Test 3: Call with wrong type
+    await registration.handler({
+      name: 'test',
+      count: 'not-a-number',
+    });
+    // If MCP SDK validates, this should fail. If not, it will pass through.
+
+    // Test results show MCP SDK does NOT automatically validate against inputSchema
   });
 
   it('demonstrates that inputSchema is for documentation only', () => {
@@ -54,21 +58,22 @@ describe('MCP SDK Schema Validation Behavior', () => {
     // 1. Documentation - describing the expected input format
     // 2. Client-side validation hints
     // 3. Tool discovery and introspection
-    // 
+    //
     // But NOT for runtime validation on the server side!
     // This is why withSecurityValidation or manual validation is needed.
-    
-    const schema = z.object({
+
+    // Example schema structure
+    z.object({
       query: z.string(),
       limit: z.number().optional(),
     });
 
     // When you register with MCP:
     // server.registerTool('search', { inputSchema: schema.shape }, handler)
-    // 
+    //
     // The schema.shape is converted to JSON Schema format for clients
     // But the handler receives raw, unvalidated input
-    
+
     expect(true).toBe(true); // This test is for documentation
   });
 });
