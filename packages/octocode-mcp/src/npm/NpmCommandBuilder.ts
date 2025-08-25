@@ -1,7 +1,7 @@
 import {
   BaseCommandBuilder,
   BaseCommandParams,
-} from '../mcp/utils/BaseCommandBuilder';
+} from '../utils/BaseCommandBuilder';
 
 /**
  * NPM-specific command builder

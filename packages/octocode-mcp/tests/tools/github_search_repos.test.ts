@@ -12,26 +12,26 @@ const mockWithCache = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/mcp/utils/exec.js', () => ({
+vi.mock('../../src/utils/exec.js', () => ({
   executeGitHubCommand: mockExecuteGitHubCommand,
 }));
 
-vi.mock('../../src/mcp/utils/cache.js', () => ({
+vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withCache: mockWithCache,
 }));
 
-vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
+vi.mock('../../src/utils/githubAPI.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
 }));
 
-vi.mock('../../src/mcp/utils/tokenManager.js', () => ({
+vi.mock('../../src/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
-import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
-import { TOOL_NAMES } from '../../src/mcp/utils/toolConstants.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { TOOL_NAMES } from '../../src/utils/toolConstants.js';
 // import { GitHubReposSearchParams } from '../../src/types.js'; // Type removed
 // GitHubCommandBuilder was removed - using direct API calls now
 

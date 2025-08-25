@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { generateCacheKey, clearAllCache } from '../../src/mcp/utils/cache';
+import { generateCacheKey, clearAllCache } from '../../src/utils/cache';
 
 describe('Cache Key Entropy and Uniqueness Tests', () => {
   beforeEach(() => {

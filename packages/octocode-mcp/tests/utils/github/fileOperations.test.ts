@@ -37,12 +37,12 @@ vi.mock('octocode-utils', () => ({
   minifyContent: mockminifyContent,
 }));
 
-vi.mock('../../../src/mcp/utils/cache.js', () => ({
+vi.mock('../../../src/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
   withCache: mockWithCache,
 }));
 
-vi.mock('../../../src/mcp/responses.js', () => ({
+vi.mock('../../../src/responses.js', () => ({
   createResult: mockCreateResult,
 }));
 

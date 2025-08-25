@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   withSmartValidation,
   withValidation,
-} from '../../../src/mcp/utils/withSecurityValidation';
+} from '../../../src/utils/withSecurityValidation';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 describe('Smart Unified Validation System', () => {

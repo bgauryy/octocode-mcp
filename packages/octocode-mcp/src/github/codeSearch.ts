@@ -4,15 +4,15 @@ import type {
   CodeSearchResultItem,
   OptimizedCodeSearchResult,
 } from './types';
-import { GitHubCodeSearchQuery } from '../mcp/scheme/github_search_code';
+import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
-import { generateCacheKey, withCache } from '../mcp/utils/cache';
+import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../mcp/responses';
+import { createResult } from '../responses';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching

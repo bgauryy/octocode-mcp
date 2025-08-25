@@ -8,7 +8,7 @@ import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
 } from '../scheme/package_search';
-import { searchPackagesAPI } from '../../npm/package';
+import { searchPackagesAPI } from '../npm/package';
 
 const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.
 

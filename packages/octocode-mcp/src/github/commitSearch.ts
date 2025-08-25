@@ -7,9 +7,9 @@ import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCommitSearchQuery } from './queryBuilders';
-import { generateCacheKey, withCache } from '../mcp/utils/cache';
+import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../mcp/responses';
+import { createResult } from '../responses';
 
 /**
  * Search GitHub commits using Octokit API with caching

@@ -6,11 +6,11 @@ import {
 
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
+vi.mock('../../src/utils/githubAPI.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
-import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;

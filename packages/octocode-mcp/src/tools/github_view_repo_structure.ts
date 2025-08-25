@@ -195,7 +195,12 @@ async function exploreMultipleRepositoryStructures(
           queryId: query.id!,
           data: {
             repository: `${query.owner}/${query.repo}`,
-            structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
+            structure: apiResult.files.map(
+              (file: { path: string; size?: number; url: string }) => ({
+                ...file,
+                type: 'file',
+              })
+            ),
             totalCount: apiResult.files.length,
           },
           metadata: {

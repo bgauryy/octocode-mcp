@@ -9,21 +9,21 @@ const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
+vi.mock('../../src/utils/githubAPI.js', () => ({
   searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
 }));
 
-vi.mock('../../src/mcp/utils/cache.js', () => ({
+vi.mock('../../src/utils/cache.js', () => ({
   generateCacheKey: vi.fn(),
   withCache: vi.fn(),
 }));
 
-vi.mock('../../src/mcp/utils/tokenManager.js', () => ({
+vi.mock('../../src/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
-import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
+import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
 
 // Helper function to create standard mock response in CallToolResult format
 function createMockPRResponse(overrides: Record<string, unknown> = {}) {

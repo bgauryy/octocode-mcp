@@ -9,7 +9,7 @@ const mockAxios = vi.hoisted(() => ({
 }));
 
 // Mock dependencies
-vi.mock('../../src/mcp/utils/exec', () => ({
+vi.mock('../../src/utils/exec', () => ({
   executeNpmCommand: mockExecuteNpmCommand,
 }));
 

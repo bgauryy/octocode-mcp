@@ -6,22 +6,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // Mock all tool registration functions
-vi.mock('../../src/mcp/tools/github_search_code.js');
-vi.mock('../../src/mcp/tools/github_fetch_content.js');
-vi.mock('../../src/mcp/tools/github_search_repos.js');
-vi.mock('../../src/mcp/tools/github_search_commits.js');
-vi.mock('../../src/mcp/tools/github_search_pull_requests.js');
-vi.mock('../../src/mcp/tools/package_search.js');
-vi.mock('../../src/mcp/tools/github_view_repo_structure.js');
+vi.mock('../../src/tools/github_search_code.js');
+vi.mock('../../src/tools/github_fetch_content.js');
+vi.mock('../../src/tools/github_search_repos.js');
+vi.mock('../../src/tools/github_search_commits.js');
+vi.mock('../../src/tools/github_search_pull_requests.js');
+vi.mock('../../src/tools/package_search.js');
+vi.mock('../../src/tools/github_view_repo_structure.js');
 
 // Import the mocked functions
-import { registerGitHubSearchCodeTool } from '../../src/mcp/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from '../../src/mcp/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from '../../src/mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../../src/mcp/tools/package_search.js';
-import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from '../../src/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
+import { registerPackageSearchTool } from '../../src/tools/package_search.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
   registerGitHubSearchCodeTool
@@ -105,9 +105,7 @@ describe('Advanced Functionality', () => {
   });
 
   it('should enable advanced toolset when audit configured', async () => {
-    const { registerTools } = await import(
-      '../../src/mcp/tools/toolsManager.js'
-    );
+    const { registerTools } = await import('../../src/tools/toolsManager.js');
 
     const mockServer = {
       setRequestHandler: vi.fn(),

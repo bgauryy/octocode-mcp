@@ -7,7 +7,7 @@ import {
   clearAllCache,
   getCacheStats,
   CACHE_TTL_CONFIG,
-} from '../../src/mcp/utils/cache';
+} from '../../src/utils/cache';
 
 describe('Cache Security Tests', () => {
   beforeEach(() => {

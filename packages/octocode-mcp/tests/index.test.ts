@@ -5,43 +5,43 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 // Mock all dependencies before importing index
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
-vi.mock('../src/mcp/utils/cache.js');
-vi.mock('../src/mcp/prompts.js'); // Add missing mock for prompts
-vi.mock('../src/mcp/resources.js'); // Add missing mock for resources
-vi.mock('../src/mcp/sampling.js');
-vi.mock('../src/mcp/tools/github_search_code.js');
-vi.mock('../src/mcp/tools/github_fetch_content.js');
-vi.mock('../src/mcp/tools/github_search_repos.js');
-vi.mock('../src/mcp/tools/github_search_commits.js');
-vi.mock('../src/mcp/tools/github_search_pull_requests.js');
-vi.mock('../src/mcp/tools/package_search.js');
-vi.mock('../src/mcp/tools/github_view_repo_structure.js');
+vi.mock('../src/utils/cache.js');
+vi.mock('../src/prompts.js'); // Add missing mock for prompts
+vi.mock('../src/resources.js'); // Add missing mock for resources
+vi.mock('../src/sampling.js');
+vi.mock('../src/tools/github_search_code.js');
+vi.mock('../src/tools/github_fetch_content.js');
+vi.mock('../src/tools/github_search_repos.js');
+vi.mock('../src/tools/github_search_commits.js');
+vi.mock('../src/tools/github_search_pull_requests.js');
+vi.mock('../src/tools/package_search.js');
+vi.mock('../src/tools/github_view_repo_structure.js');
 vi.mock('../src/npm/api.js');
-vi.mock('../src/mcp/utils/exec.js');
+vi.mock('../src/utils/exec.js');
 
 vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
-vi.mock('../src/mcp/tools/toolsManager.js');
+vi.mock('../src/tools/toolsManager.js');
 vi.mock('../src/translations/translationManager.js');
 // Import mocked functions
-import { clearAllCache } from '../src/mcp/utils/cache.js';
-import { registerPrompts } from '../src/mcp/prompts.js';
-import { registerResources } from '../src/mcp/resources.js';
-import { registerSampling } from '../src/mcp/sampling.js';
-import { registerGitHubSearchCodeTool } from '../src/mcp/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from '../src/mcp/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from '../src/mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from '../src/mcp/tools/github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from '../src/mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../src/mcp/tools/package_search.js';
-import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_view_repo_structure.js';
+import { clearAllCache } from '../src/utils/cache.js';
+import { registerPrompts } from '../src/prompts.js';
+import { registerResources } from '../src/resources.js';
+import { registerSampling } from '../src/sampling.js';
+import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from '../src/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
+import { registerPackageSearchTool } from '../src/tools/package_search.js';
+import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/npm/api.js';
-import { getGithubCLIToken } from '../src/mcp/utils/exec.js';
+import { getGithubCLIToken } from '../src/utils/exec.js';
 
 import { ConfigManager } from '../src/config/serverConfig.js';
-import { registerTools } from '../src/mcp/tools/toolsManager.js';
+import { registerTools } from '../src/tools/toolsManager.js';
 import { getGitHubToken } from '../config.js';
-import { TOOL_NAMES } from '../src/mcp/utils/toolConstants.js';
+import { TOOL_NAMES } from '../src/utils/toolConstants.js';
 import { isBetaEnabled } from '../config.js';
 
 // Mock implementations

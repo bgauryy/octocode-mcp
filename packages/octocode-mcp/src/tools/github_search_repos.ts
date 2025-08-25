@@ -9,7 +9,7 @@ import {
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from '../scheme/github_search_repos';
-import type { Repository } from '../../github/types';
+import type { Repository } from '../github/types';
 import { ensureUniqueQueryIds } from '../utils/queryUtils';
 import {
   processBulkQueries,

@@ -9,7 +9,7 @@ const mockAxios = vi.hoisted(() => ({
 }));
 
 // Mock dependencies
-vi.mock('../../src/mcp/utils/exec', () => ({
+vi.mock('../../src/utils/exec', () => ({
   executeNpmCommand: mockExecuteNpmCommand,
 }));
 
@@ -17,7 +17,7 @@ vi.mock('../../src/npm/npmAPI', () => ({
   isNPMEnabled: vi.fn(),
 }));
 
-vi.mock('../../src/mcp/utils/APIStatus', () => ({
+vi.mock('../../src/utils/APIStatus', () => ({
   getNPMUserDetails: vi.fn(),
 }));
 

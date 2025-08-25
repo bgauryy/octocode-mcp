@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { withSecurityValidation } from '../../../src/mcp/utils/withSecurityValidation';
+import { withSecurityValidation } from '../../../src/utils/withSecurityValidation';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 describe('withSecurityValidation Type Safety', () => {

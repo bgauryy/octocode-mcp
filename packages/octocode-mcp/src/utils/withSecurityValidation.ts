@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { z } from 'zod';
 import { createResult } from '../responses';
-import { ContentSanitizer } from '../../security/contentSanitizer';
+import { ContentSanitizer } from '../security/contentSanitizer';
 
 /**
  * UNIFIED SMART VALIDATION SYSTEM

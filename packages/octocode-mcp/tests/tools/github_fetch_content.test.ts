@@ -6,11 +6,11 @@ import {
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/mcp/utils/githubAPI.js', () => ({
+vi.mock('../../src/utils/githubAPI.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
 }));
 
-import { registerFetchGitHubFileContentTool } from '../../src/mcp/tools/github_fetch_content.js';
+import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
 
 describe('GitHub Fetch Content Tool', () => {
   let mockServer: MockMcpServer;

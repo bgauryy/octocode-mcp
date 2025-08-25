@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
-import { withSmartValidation } from '../../../src/mcp/utils/withSecurityValidation';
+import { withSmartValidation } from '../../../src/utils/withSecurityValidation';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 describe('Enhanced Smart Validation - False Positive Prevention', () => {

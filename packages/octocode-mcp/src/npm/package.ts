@@ -1,16 +1,16 @@
 import axios from 'axios';
-import { executeNpmCommand } from '../mcp/utils/exec';
+import { executeNpmCommand } from '../utils/exec';
 import {
   NpmPackageSearchBuilder,
   NpmPackageViewBuilder,
 } from './NpmCommandBuilder';
-import { generateCacheKey, withCache } from '../mcp/utils/cache';
+import { generateCacheKey, withCache } from '../utils/cache';
 import {
   toDDMMYYYY,
   humanizeBytes,
   simplifyRepoUrl,
   createResult,
-} from '../mcp/responses';
+} from '../responses';
 import {
   PackageSearchResult,
   PackageSearchError,
@@ -18,13 +18,13 @@ import {
   EnhancedPackageMetadata,
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
-} from '../mcp/scheme/package_search';
-import { NpmPackage, PythonPackage } from '../mcp/types';
+} from '../scheme/package_search';
+import { NpmPackage, PythonPackage } from '../types';
 import {
   PackageSearchBulkParams,
   NpmPackageQuery,
   PythonPackageQuery,
-} from '../mcp/types';
+} from '../types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { isNPMEnabled } from './npmAPI';
 

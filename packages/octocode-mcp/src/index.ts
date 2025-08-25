@@ -1,11 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Implementation } from '@modelcontextprotocol/sdk/types.js';
-import { registerPrompts } from './mcp/prompts.js';
-import { registerResources } from './mcp/resources.js';
-import { registerSampling } from './mcp/sampling.js';
-import { clearAllCache } from './mcp/utils/cache.js';
-import { registerTools } from './mcp/tools/toolsManager.js';
+import { registerPrompts } from './prompts.js';
+import { registerResources } from './resources.js';
+import { registerSampling } from './sampling.js';
+import { clearAllCache } from './utils/cache.js';
+import { registerTools } from './tools/toolsManager.js';
 import {
   isBetaEnabled,
   initialize,
