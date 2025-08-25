@@ -5,14 +5,17 @@ import json from '@rollup/plugin-json';
 import { terser } from 'rollup-plugin-terser';
 
 export default {
-  input: 'src/index.ts',
+  input: {
+    index: 'src/index.ts',
+    server: 'src/server.ts'
+  },
   output: {
     dir: 'dist',
     format: 'es',
     sourcemap: false, // Disable source maps for production
     minifyInternalExports: true,
     banner: '#!/usr/bin/env node',
-    entryFileNames: 'index.js',
+    entryFileNames: '[name].js',
     // Control chunk naming to preserve predictable paths for dynamic imports
     chunkFileNames: (chunkInfo) => {
       // For enterprise modules, use predictable names
