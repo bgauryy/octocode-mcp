@@ -24,7 +24,6 @@ Octocode resolves your token in the following priority order:
 1. `GITHUB_TOKEN` environment variable
 2. `GH_TOKEN` environment variable  
 3. GitHub CLI token (`gh auth token`)
-4. `Authorization` environment variable (with Bearer or token prefix)
 
 ## Available Tools
 
@@ -211,20 +210,6 @@ curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user | jq .l
 - `read:org` (for organization repositories)
 - `read:user` (for user information)
 
-### Method 3: Authorization Header
-
-Alternative environment variable format:
-
-```bash
-# With Bearer prefix
-export Authorization="Bearer ghp_your_token_here"
-
-# With token prefix  
-export Authorization="token ghp_your_token_here"
-
-# Without prefix (automatically detected)
-export Authorization="ghp_your_token_here"
-```
 
 ## Complete Configuration Reference
 
@@ -235,7 +220,6 @@ export Authorization="ghp_your_token_here"
 export GITHUB_TOKEN="your_github_token"        # Highest priority
 export GH_TOKEN="your_github_token"            # Alternative env var
 # GitHub CLI: gh auth token                     # Automatic fallback
-export Authorization="Bearer your_token"       # Alternative format
 ```
 
 ### Tool Management Variables

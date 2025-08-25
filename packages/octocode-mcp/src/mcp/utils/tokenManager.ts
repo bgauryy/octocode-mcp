@@ -17,7 +17,7 @@ let cachedToken: string | null = null;
 let lastTokenSource: TokenSource = 'unknown';
 
 // Token sources
-type TokenSource = 'env' | 'cli' | 'authorization' | 'unknown';
+type TokenSource = 'env' | 'cli' | 'unknown';
 
 // Token Resolution Result
 interface TokenResolutionResult {
@@ -47,67 +47,12 @@ function isAuditEnabled(): boolean {
   );
 }
 
-/**
- * Extract token from Authorization header
- * Moved from client.ts to centralize token handling
- */
-function extractBearerToken(tokenInput: string): string | null {
-  if (!tokenInput) return null;
-
-  // Start by trimming the entire input
-  const originalToken = tokenInput.trim();
-  let token = originalToken;
-
-  // Track if we made any changes
-  let wasModified = false;
-
-  // Remove "Bearer " prefix (CASE-SENSITIVE) - MUST have space after Bearer
-  const bearerMatch = token.match(/^Bearer\s+(.+)/);
-  if (bearerMatch) {
-    token = bearerMatch[1]!;
-    wasModified = true;
-  }
-
-  // Remove "bearer/BEARER/BeaRer " prefix (any case) - MUST have space after
-  // This handles non-standard Bearer formats
-  if (!wasModified) {
-    const anyBearerMatch = token.match(/^bearer\s+(.+)/i);
-    if (anyBearerMatch) {
-      token = anyBearerMatch[1]!;
-      wasModified = true;
-    }
-  }
-
-  // Remove "token " prefix (case insensitive) - MUST have space after token
-  const tokenMatch = token.match(/^token\s+(.+)/i);
-  if (tokenMatch) {
-    token = tokenMatch[1]!;
-    wasModified = true;
-  }
-
-  // Handle template format {{token}} - extract the actual token
-  const templateMatch = token.match(/^\{\{(.+)\}\}$/);
-  if (templateMatch) {
-    token = templateMatch[1]!;
-    wasModified = true;
-  }
-
-  // Final trim to clean up any remaining whitespace
-  const finalToken = token.trim();
-
-  // If no modifications were made, return original string
-  if (!wasModified) {
-    return originalToken;
-  }
-
-  return finalToken || null;
-}
 
 /**
- * Token resolution with environment variables, CLI, and authorization header
+ * Token resolution with environment variables and CLI
  */
 async function resolveToken(): Promise<TokenResolutionResult> {
-  // Priority order: GITHUB_TOKEN → GH_TOKEN → GH CLI → Authorization header
+  // Priority order: GITHUB_TOKEN → GH_TOKEN → GH CLI
   // Note: CLI may be disabled in advanced mode for security reasons
 
   if (process.env.GITHUB_TOKEN) {
@@ -124,11 +69,6 @@ async function resolveToken(): Promise<TokenResolutionResult> {
     if (cliToken) {
       return { token: cliToken, source: 'cli' };
     }
-  }
-
-  const authToken = extractBearerToken(process.env.Authorization ?? '');
-  if (authToken && authToken.trim() !== 'Bearer') {
-    return { token: authToken, source: 'authorization' };
   }
 
   return { token: null, source: 'unknown' };
@@ -273,8 +213,3 @@ export function isAdvancedTokenManager(): boolean {
   return isAuditEnabled();
 }
 
-/**
- * Export extractBearerToken for testing purposes
- * @internal
- */
-export { extractBearerToken };

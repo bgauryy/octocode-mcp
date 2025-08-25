@@ -17,7 +17,6 @@ export interface MCPConfig {
   github: {
     token?: string;
     ghToken?: string;
-    authorizationToken?: string;
   };
 
   // Tool Management
@@ -106,7 +105,6 @@ export function loadConfig(): MCPConfig {
     github: {
       token: process.env.GITHUB_TOKEN,
       ghToken: process.env.GH_TOKEN,
-      authorizationToken: process.env.Authorization,
     },
 
     // Tool Management
@@ -188,9 +186,6 @@ export function getRedactedConfig(config: MCPConfig): Record<string, unknown> {
       ...config.github,
       token: config.github.token ? '[REDACTED]' : undefined,
       ghToken: config.github.ghToken ? '[REDACTED]' : undefined,
-      authorizationToken: config.github.authorizationToken
-        ? '[REDACTED]'
-        : undefined,
     },
     tools: config.tools,
 
@@ -212,8 +207,7 @@ export function getGitHubToken(): string | undefined {
   const config = getConfig();
   return (
     config.github.token ||
-    config.github.ghToken ||
-    config.github.authorizationToken
+    config.github.ghToken
   );
 }
 
@@ -260,8 +254,7 @@ export const ConfigHelpers = {
   isBetaEnabled: (config: MCPConfig) => config.beta.enabled,
   getGitHubToken: (config: MCPConfig) =>
     config.github.token ||
-    config.github.ghToken ||
-    config.github.authorizationToken,
+    config.github.ghToken,
   getGitHubApiUrl: () => 'https://api.github.com',
 };
 
