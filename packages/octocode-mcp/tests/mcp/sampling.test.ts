@@ -5,7 +5,7 @@ import {
   createTextSamplingRequest,
   SamplingUtils,
   type SamplingRequest,
-} from '../../src/mcp/sampling.js';
+} from '../../src/sampling.js';
 
 describe('Sampling', () => {
   let mockServer: McpServer;

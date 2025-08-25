@@ -20,7 +20,7 @@ vi.mock('axios', () => ({
 }));
 
 // Import after mocking
-import { registerPackageSearchTool } from '../../src/mcp/tools/package_search/package_search.js';
+import { registerPackageSearchTool } from '../../src/tools/package_search.js';
 
 describe('Package Search Tool (NPM & Python)', () => {
   let mockServer: MockMcpServer;
@@ -603,19 +603,18 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       const result = await mockServer.callTool('packageSearch', {
         npmPackages: [{ name: 'lodash' }], // No searchLimit specified
-        searchLimit: 15, // Global default
+        searchLimit: 10, // Global default (max allowed)
       });
-
       expect(result.isError).toBe(false);
       // Verify global default was applied
       expect(mockExecuteNpmCommand).toHaveBeenCalledWith(
         'search',
-        expect.arrayContaining(['lodash', '--searchlimit=15', '--json']),
+        expect.arrayContaining(['lodash', '--searchlimit=10', '--json']),
         { cache: true }
       );
     });
 
-    it.skip('should handle NPM metadata fetching for specific queries', async () => {
+    it('should handle NPM metadata fetching for specific queries', async () => {
       const mockSearchResponse = {
         result: [
           {

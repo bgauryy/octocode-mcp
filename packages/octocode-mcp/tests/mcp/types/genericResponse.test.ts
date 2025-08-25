@@ -3,7 +3,7 @@ import {
   BaseToolMeta,
   GenericToolResponse,
   SimpleToolResponse,
-} from '../../../src/mcp/types/genericResponse';
+} from '../../../src/types';
 
 describe('Generic Response Types', () => {
   describe('BaseToolMeta', () => {

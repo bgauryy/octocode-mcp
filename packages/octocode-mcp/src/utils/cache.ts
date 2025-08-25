@@ -230,6 +230,7 @@ export async function withDataCache<T>(
 
 /**
  * Clear all cache entries and reset statistics
+ * SECURITY: Used for token rotation to prevent data leakage between users
  */
 export function clearAllCache(): void {
   // Clear main cache
@@ -241,6 +242,14 @@ export function clearAllCache(): void {
   cacheStats.sets = 0;
   cacheStats.totalKeys = 0;
   cacheStats.lastReset = new Date();
+}
+
+/**
+ * SECURITY: Clear all caches on token rotation
+ * Prevents cached data from being shared between different tokens/users
+ */
+export function clearCacheForTokenRotation(): void {
+  clearAllCache();
 }
 
 /**

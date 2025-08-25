@@ -63,7 +63,7 @@ const aiProviderPatterns: SensitiveDataPattern[] = [
   {
     name: 'anthropicApiKey',
     description: 'Anthropic API key',
-    regex: /\b(sk-ant-(?:admin01|api03)-[\w-]{93}AA)\b/g,
+    regex: /\b(sk-ant-(?:admin01|api03)-[\w-]+AA)\b/g,
     matchAccuracy: 'high',
   },
 ];
@@ -899,7 +899,7 @@ const versionControlPatterns: SensitiveDataPattern[] = [
   },
   {
     name: 'githubAppInstallationToken',
-    description: 'GitHub App installation token',
+    description: 'GitHub installation token',
     regex: /\bghs_[0-9a-zA-Z]{37}\b/g,
     matchAccuracy: 'high',
   },

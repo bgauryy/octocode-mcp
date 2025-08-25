@@ -1,6 +1,6 @@
 # Octocode MCP Installation Guide
 
-Comprehensive installation and configuration guide for Octocode MCP Server. Supports individual developers, teams, and enterprise deployments with advanced security features.
+Comprehensive installation and configuration guide for Octocode MCP Server.
 
 ## Quick Start
 
@@ -12,149 +12,368 @@ npm install -g octocode-mcp
 npx octocode-mcp
 
 # With Docker
-docker run -i --rm -e GITHUB_TOKEN octocode/octocode-mcp:latest
+docker run -i --rm -e GITHUB_TOKEN=your_token octocode/octocode-mcp:latest
 ```
 
 Octocode requires a GitHub token at startup. If no token is available, it will fail fast during initialization.
 
-How Octocode resolves your token (priority order):
-- `GITHUB_TOKEN`
-- `GH_TOKEN`
-- GitHub CLI token from `gh auth token` (**disabled in Enterprise mode**)
-- `Authorization` environment variable (Bearer or token prefix)
+## Authentication Methods
 
-Implementation reference: `src/mcp/tools/utils/tokenManager.ts` (`resolveToken`, `getToken`) and `src/index.ts` (bootstrap and enterprise initialization).
+Octocode resolves your token in the following priority order:
 
-## 1) Individual Developers
+1. `GITHUB_TOKEN` environment variable
+2. `GH_TOKEN` environment variable  
+3. GitHub CLI token (`gh auth token`)
 
-Goal: Make a token available to Octocode locally.
+## Available Tools
 
-Recommended: GitHub CLI (Individual developers only)
+Octocode MCP provides 7 tools organized into default and optional categories:
+
+### Default Tools (Enabled Automatically)
+
+These tools are enabled by default and require no configuration:
+
+- ✅ **`githubSearchCode`** - Semantic code search across repositories
+- ✅ **`githubGetFileContent`** - File content retrieval with partial access  
+- ✅ **`githubViewRepoStructure`** - Repository structure exploration
+- ✅ **`githubSearchRepositories`** - Repository discovery and exploration
+
+### Optional Tools (Disabled by Default)
+
+These tools can be enabled using `ENABLE_TOOLS`:
+
+- ➕ **`githubSearchCommits`** - Commit history and change analysis
+- ➕ **`githubSearchPullRequests`** - Pull request analysis with diff content
+- ➕ **`packageSearch`** - NPM and Python package discovery
+
+## Tool Configuration
+
+Octocode MCP supports three distinct configuration modes for controlling which tools are active:
+
+### Configuration Modes
+
+#### Mode 1: Default Configuration (No Custom Settings)
+When no tool configuration is provided, only default tools are enabled:
+
 ```bash
-# Install GitHub CLI (examples)
-# macOS: brew install gh
-# Ubuntu/Debian: sudo apt install gh
-# Windows: winget install GitHub.cli
+# No configuration needed - runs default tools automatically
+# Active: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchRepositories
+```
 
-# Authenticate
+#### Mode 2: Exclusive Mode (TOOLS_TO_RUN)
+Run ONLY the specified tools, ignoring all defaults and other settings:
+
+```bash
+# Run ONLY these tools (truly exclusive)
+export TOOLS_TO_RUN="githubSearchCode,packageSearch"
+# Active: ONLY githubSearchCode and packageSearch
+# Note: ENABLE_TOOLS and DISABLE_TOOLS are completely ignored in this mode
+```
+
+#### Mode 3: Additive/Subtractive Mode (ENABLE_TOOLS/DISABLE_TOOLS)
+Modify the default tool set by adding or removing specific tools:
+
+```bash
+# Add tools to defaults
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"
+# Active: all default tools + githubSearchCommits + packageSearch
+
+# Remove tools from defaults
+export DISABLE_TOOLS="githubViewRepoStructure"
+# Active: all default tools except githubViewRepoStructure
+
+# Combined: add some, remove others
+export ENABLE_TOOLS="githubSearchCommits"
+export DISABLE_TOOLS="githubSearchRepositories"
+# Active: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchCommits
+```
+
+### Configuration Examples
+
+```bash
+# Example 1: Default setup
+# (no environment variables)
+# Result: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchRepositories
+
+# Example 2: Exclusive mode - only code search and package search
+export TOOLS_TO_RUN="githubSearchCode,packageSearch"
+# Result: ONLY githubSearchCode, packageSearch
+
+# Example 3: Exclusive mode - minimal setup
+export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"
+# Result: ONLY githubSearchCode, githubGetFileContent
+
+# Example 4: Additive mode - add commit search
+export ENABLE_TOOLS="githubSearchCommits"
+# Result: all defaults + githubSearchCommits
+
+# Example 5: Subtractive mode - remove repo structure
+export DISABLE_TOOLS="githubViewRepoStructure"
+# Result: all defaults except githubViewRepoStructure
+
+# Example 6: Combined additive/subtractive
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"
+export DISABLE_TOOLS="githubSearchRepositories"
+# Result: githubSearchCode, githubGetFileContent, githubViewRepoStructure, githubSearchCommits, packageSearch
+
+# Example 7: Full feature set (additive mode)
+export ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests,packageSearch"
+# Result: all 7 tools enabled
+```
+
+### Configuration Mode Priority
+
+1. **TOOLS_TO_RUN** (Mode 2): If set, runs ONLY these tools. All other configuration is ignored.
+2. **ENABLE_TOOLS/DISABLE_TOOLS** (Mode 3): If TOOLS_TO_RUN is not set, modifies default tools.
+3. **Default Mode** (Mode 1): If no configuration is provided, runs default tools only.
+
+### Important Notes
+
+- **Mode 2 is truly exclusive**: When `TOOLS_TO_RUN` is set, `ENABLE_TOOLS` and `DISABLE_TOOLS` are completely ignored.
+- **Tool names must be exact**: Use the exact tool names listed in the Available Tools section.
+- **Configuration changes require restart**: Tool configuration is read at server startup.
+- **Invalid tool names are ignored**: Misspelled or non-existent tool names are silently ignored.
+
+## Setup Methods
+
+### Method 1: GitHub CLI (Recommended for Development)
+
+The GitHub CLI provides the easiest authentication for local development:
+
+**Installation:**
+```bash
+# macOS
+brew install gh
+
+# Ubuntu/Debian  
+sudo apt update && sudo apt install gh
+
+# Windows (winget)
+winget install GitHub.cli
+
+# Windows (scoop)
+scoop install gh
+
+# Other platforms: https://github.com/cli/cli#installation
+```
+
+**Authentication:**
+```bash
+# Authenticate with GitHub
 gh auth login
+# Choose: GitHub.com → HTTPS → Yes (Git credential helper) → Login via web browser
 
-# Verify token is available
+# Verify authentication
 gh auth status
+# Should show: ✓ Logged in to github.com as <username>
+
+# Test token (shows first 5 characters)
 gh auth token | head -c 5 && echo '*****'
+
+# Verify API access
+gh api user --jq '.login'
 ```
 
-**⚠️ Note**: GitHub CLI token resolution is **disabled in Enterprise mode** for security reasons. Enterprise deployments must use environment variables.
-
-Alternative: Environment variable
+**Complete CLI Setup:**
 ```bash
-# macOS/Linux (bash/zsh)
-export GITHUB_TOKEN="<your_personal_access_token>"
+# 1. Install and authenticate GitHub CLI
+gh auth login && gh auth status
 
-# Windows PowerShell
-$env:GITHUB_TOKEN = "<your_personal_access_token>"
-```
+# 2. Optional: Enable additional tools  
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"
 
-Notes that match the code:
-- Octocode will first read `GITHUB_TOKEN`, then `GH_TOKEN`, then fall back to the GitHub CLI token.
-- Tokens may be provided with prefixes like "Bearer" or "token"; Octocode normalizes them internally.
-- On startup, Octocode calls `getToken()` and will exit if no token is found.
+# 3. Optional: Enable beta features
+export BETA=true
 
-## 2) Organizations (Enterprise)
-
-Goal: Provide a token with the right scopes and identify your organization so Octocode can enable org-aware features.
-
-Required token scopes for private org work:
-```
-repo, read:org, read:user
-```
-
-Create a Personal Access Token (PAT):
-1. Go to GitHub Settings → Developer settings → Personal access tokens (classic)
-2. Generate a new token with scopes: `repo`, `read:org`, `read:user`
-3. Copy the token (store it securely)
-
-Provide the token via environment variables (CLI is disabled in enterprise mode):
-```bash
-# Required: environment variable (CLI authentication disabled for security)
-export GITHUB_TOKEN="<enterprise_pat_with_scopes>"
-```
-
-**🔒 Enterprise Security**: CLI token resolution is disabled in enterprise mode. You must use environment variables (`GITHUB_TOKEN` or `GH_TOKEN`) for authentication.
-
-Identify your organization to enable enterprise features:
-```bash
-export GITHUB_ORGANIZATION="your-org"
-```
-
-What this does (per implementation in `src/index.ts`):
-- If `GITHUB_ORGANIZATION` is set: initializes `OrganizationManager` and `PolicyManager`, and configures `tokenManager.initialize` with org context.
-- If `AUDIT_ALL_ACCESS=true`: initializes `AuditLogger` with periodic flush and secure JSONL logging.
-- If any `RATE_LIMIT_*` env is set: initializes `RateLimiter` with configured per-hour limits.
-- All these are progressive: only enabled when their envs are present. Core behavior continues without them.
-
-Optional enterprise environment variables:
-```bash
-# Organization identity (enables org validation)
-export GITHUB_ORGANIZATION="your-org"                 # REQUIRED to enable org-aware features
-export GITHUB_ORGANIZATION_NAME="Your Organization"   # Optional display name
-
-# Access controls (enforced by Policy/Organization Managers)
-export GITHUB_ALLOWED_USERS="user1,user2"             # Limit to specific usernames (optional)
-export GITHUB_REQUIRED_TEAMS="developers,security"     # Require membership in ALL listed teams (optional)
-export GITHUB_ADMIN_USERS="admin1,admin2"             # Admin users with elevated allowances (optional)
-
-# Security policies
-export RESTRICT_TO_MEMBERS=true                        # Deny non-org members (optional)
-export REQUIRE_MFA=true                                # Enforce MFA requirement (optional)
-
-# Audit logging
-export AUDIT_ALL_ACCESS=true                           # Enable comprehensive audit logging (optional)
-export AUDIT_LOG_DIR=./logs/audit                      # Custom log directory (optional)
-
-# Per-user rate limits (per hour)
-export RATE_LIMIT_API_HOUR=1000
-export RATE_LIMIT_AUTH_HOUR=10
-export RATE_LIMIT_TOKEN_HOUR=50
-```
-
-Step-by-step (enterprise):
-```bash
-# 1) Create PAT with scopes: repo, read:org, read:user
-export GITHUB_TOKEN="<enterprise_pat>"
-
-# 2) Set your organization
-export GITHUB_ORGANIZATION="your-org"
-
-# 3) (Optional) Enable enterprise modules
-export AUDIT_ALL_ACCESS=true
-export GITHUB_REQUIRED_TEAMS="developers,security"
-export RATE_LIMIT_API_HOUR=1000
-
-# 4) Run Octocode (from your assistant or shell)
+# 4. Run Octocode MCP
 npx octocode-mcp
 ```
 
-Verification tips:
+### Method 2: Environment Variables
+
+For production deployments and advanced use cases:
+
 ```bash
-# Confirm your token works with GitHub
+# Create Personal Access Token at:
+# GitHub Settings → Developer settings → Personal access tokens (classic)
+
+# Set environment variable
+export GITHUB_TOKEN="ghp_your_personal_access_token_here"
+
+# Verify token works
 curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user | jq .login
-
-# Confirm org membership endpoint is accessible with your scopes
-curl -I -H "Authorization: token $GITHUB_TOKEN" \
-  https://api.github.com/orgs/<your-org>/members/<your-username>
-
-# If using required teams, verify team membership via GitHub UI/API
-# Ensure the PAT owner is a member of ALL teams in GITHUB_REQUIRED_TEAMS
 ```
 
-Security behavior (aligned with code):
-- Token is resolved once and cached in memory; if present, it is stored via the in-memory credential store (`SecureCredentialStore`).
-- Source tracking is kept (`env`, `cli`, or `authorization`).
-- If you rotate tokens, restart Octocode or use internal rotation APIs if integrated.
+**Required Token Scopes:**
+- `public_repo` (for public repositories)
+- `repo` (for private repositories)  
+- `read:org` (for organization repositories)
+- `read:user` (for user information)
 
-Troubleshooting (org auth):
-- 403/404 on org membership endpoint: token missing `read:org` or membership is private; use a PAT with `read:org`.
-- No enterprise features active: confirm `GITHUB_ORGANIZATION` is set (and `AUDIT_ALL_ACCESS`, `RATE_LIMIT_*` if desired).
-- Required teams failing: user must be in ALL teams listed in `GITHUB_REQUIRED_TEAMS`.
-- Check logs directory when `AUDIT_ALL_ACCESS=true` and ensure write permissions to `AUDIT_LOG_DIR`.
+
+## Complete Configuration Reference
+
+### Authentication Variables
+
+```bash
+# Primary token sources (priority order)
+export GITHUB_TOKEN="your_github_token"        # Highest priority
+export GH_TOKEN="your_github_token"            # Alternative env var
+# GitHub CLI: gh auth token                     # Automatic fallback
+```
+
+### Tool Management Variables
+
+```bash
+# Mode 2: Exclusive mode - run ONLY these tools (ignores all other configuration)
+export TOOLS_TO_RUN="githubSearchCode,packageSearch"             # Exclusive tool list
+
+# Mode 3: Additive/subtractive mode - modify default tools (only works when TOOLS_TO_RUN is not set)
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"           # Add tools to defaults
+export DISABLE_TOOLS="githubViewRepoStructure"                    # Remove tools from defaults
+```
+
+### Performance & Reliability Variables
+
+```bash
+# Request configuration
+export REQUEST_TIMEOUT=30000                   # Request timeout in ms (1000-300000)
+export MAX_RETRIES=3                          # Max retry attempts (0-10)
+```
+
+### Logging & Debugging Variables
+
+```bash
+# Logging
+export ENABLE_LOGGING=true                    # Enable logging
+```
+
+### Beta Features Variables
+
+```bash
+# Experimental features
+export BETA=true                              # Enable all beta features
+# When enabled provides:
+# - Advanced sampling capabilities  
+# - Experimental tool features
+# - Enhanced debugging information
+```
+
+### Application Variables
+
+```bash
+# Environment control
+export NODE_ENV="production"                  # Node.js environment
+```
+
+## Validation & Troubleshooting
+
+### Token Validation
+
+```bash
+# Test GitHub API access
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+
+# Test CLI token
+gh auth status && gh api user --jq '.login'
+
+# Check token scopes
+curl -I -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user \
+  | grep -i x-oauth-scopes
+```
+
+### Configuration Validation
+
+Invalid configurations are automatically corrected with warnings:
+- Request timeout below 1000ms → reset to 30000ms
+- Max retries outside 0-10 range → reset to 3
+- Invalid tool names → ignored with warnings
+
+### Common Issues
+
+**Authentication Errors:**
+```bash
+# 401 Unauthorized - Invalid token
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+
+# 403 Forbidden - Insufficient scopes  
+# Solution: Regenerate token with required scopes
+
+# No token found
+# Solution: Set GITHUB_TOKEN or authenticate with GitHub CLI
+```
+
+**Tool Registration Errors:**
+```bash
+# Check tool configuration
+echo "Enabled: $ENABLE_TOOLS"  
+echo "Disabled: $DISABLE_TOOLS"
+
+# Valid tool names:
+# githubSearchCode, githubGetFileContent, githubViewRepoStructure,
+# githubSearchRepositories, githubSearchCommits, githubSearchPullRequests, packageSearch
+```
+
+**Performance Issues:**
+```bash
+# Increase timeout for slow connections
+export REQUEST_TIMEOUT=60000
+
+# Adjust retry behavior
+export MAX_RETRIES=5
+```
+
+## Production Deployment
+
+### Docker
+
+```bash
+# Basic container
+docker run -i --rm \
+  -e GITHUB_TOKEN=your_token \
+  octocode/octocode-mcp:latest
+
+# With custom configuration
+docker run -i --rm \
+  -e GITHUB_TOKEN=your_token \
+  -e ENABLE_TOOLS="githubSearchCommits,packageSearch" \
+  -e REQUEST_TIMEOUT=60000 \
+  -e BETA=true \
+  octocode/octocode-mcp:latest
+```
+
+### Environment Files
+
+```bash
+# .env file
+GITHUB_TOKEN=your_github_token_here
+ENABLE_TOOLS=githubSearchCommits,packageSearch
+REQUEST_TIMEOUT=45000
+MAX_RETRIES=5
+BETA=true
+ENABLE_LOGGING=true
+
+# Load and run
+set -a && source .env && set +a
+npx octocode-mcp
+```
+
+### Recommended Production Settings
+
+```bash
+# Security
+export GITHUB_TOKEN="your_production_token"    # Use environment variable, not CLI
+                                               
+# Performance  
+export REQUEST_TIMEOUT=45000                   # 45 second timeout
+export MAX_RETRIES=5                          # Higher retry count
+
+# Monitoring
+export ENABLE_LOGGING=true                    # Enable logs
+
+# Features (optional)
+export ENABLE_TOOLS="githubSearchCommits,packageSearch"
+export BETA=false                            # Disable experimental features
+```
+
+This configuration provides comprehensive coverage of all available options based on the actual source code implementation.

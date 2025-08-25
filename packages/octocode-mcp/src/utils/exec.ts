@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../mcp/responses';
+import { createResult } from '../responses';
 
 const ALLOWED_NPM_COMMANDS = [
   'view',

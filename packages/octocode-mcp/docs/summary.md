@@ -1,8 +1,8 @@
-# OctoCode MCP: Enterprise-Grade AI-Powered Code Research Platform
+# OctoCode MCP: AI-Powered Code Research Platform
 
 ## 🚀 Revolutionary AI Research Orchestration
 
-**OctoCode MCP** is a sophisticated Model Context Protocol (MCP) server that transforms how AI assistants interact with code ecosystems. Unlike basic MCP servers that provide simple API wrappers, OctoCode MCP delivers an **intelligent research assistant** with enterprise-grade capabilities for comprehensive GitHub and package ecosystem analysis.
+**OctoCode MCP** is a sophisticated Model Context Protocol (MCP) server that transforms how AI assistants interact with code ecosystems. Unlike basic MCP servers that provide simple API wrappers, OctoCode MCP delivers an **intelligent research assistant** with advanced capabilities for comprehensive GitHub and package ecosystem analysis.
 
 ## 📊 Platform Comparison
 
@@ -14,7 +14,7 @@
 | **Tool Orchestration** | Individual tools | **Strategic workflow chains with relationship mapping** |
 | **Data Optimization** | Raw API responses | **Token-optimized with 50+ file type minification** |
 | **Research Capability** | Single queries | **Progressive refinement with cross-validation** |
-| **Production Readiness** | Demo quality | **Enterprise security with 1,157+ secret detection patterns** |
+| **Production Readiness** | Demo quality | **Advanced security with 1,157+ secret detection patterns** |
 
 ## 🏗️ Technical Architecture
 
@@ -41,7 +41,7 @@
 - **Graceful Shutdown**: Signal handling with 5-second timeout protection
 - **NPM Integration**: Optional package ecosystem support detection
 
-#### 2. Schema Foundation Layer (`src/mcp/tools/scheme/baseSchema.ts`)
+#### 2. Schema Foundation Layer (`src/mcp/scheme/baseSchema.ts`)
 **Unified Schema Architecture** - The foundation of all tool operations:
 
 ```typescript
@@ -337,7 +337,7 @@ interface FileQuery {
 - **Repository Integration**: Direct GitHub repository connections
 - **Metadata Enrichment**: Versions, dependencies, popularity metrics
 
-## 🔒 Enterprise Security Architecture
+## 🔒 Security Architecture
 
 ### Multi-Layer Secret Detection System
 **Comprehensive Pattern Coverage** (`src/security/regexes.ts`):
@@ -430,7 +430,7 @@ export async function executeWithErrorIsolation<T>(
 ): Promise<Array<ExecutionResult<T>>>
 ```
 
-### 4. Bulk Operations Framework (`src/mcp/tools/utils/bulkOperations.ts`)
+### 4. Bulk Operations Framework (`src/mcp/utils/bulkOperations.ts`)
 ```typescript
 // Unified bulk processing with intelligent error recovery
 export async function processBulkQueries<T extends BulkQuery, R extends ProcessedBulkResult>(
@@ -442,7 +442,7 @@ export async function processBulkQueries<T extends BulkQuery, R extends Processe
 }>
 ```
 
-## 🧠 Intelligent Hints System (`src/mcp/tools/utils/hints_consolidated.ts`)
+## 🧠 Intelligent Hints System (`src/mcp/utils/hints_consolidated.ts`)
 
 ### Advanced AI Guidance
 **700+ lines of consolidated hint generation logic with**:
@@ -728,7 +728,7 @@ class GitHubIntegration {
 - **Stream Processing**: Large files processed in chunks to prevent memory spikes
 - **Cleanup**: Automatic expired entry removal with configurable intervals
 
-## 🏢 Enterprise Features
+## 🏢 Advanced Features
 
 ### 1. Organization Repository Access
 - **Private Repository Support**: Full access to organizational private repos
@@ -799,7 +799,7 @@ const RESEARCH_GUIDANCE_PATTERNS: Record<ResearchGoal, (context: HintGenerationC
 ### 🎯 Production-Grade Architecture
 - **Token Optimization**: Minifies content across 50+ programming languages while preserving semantic meaning
 - **Dual Execution**: CLI + API with intelligent fallback preference and reliability scoring
-- **Enterprise Security**: Content sanitization, input validation, and secret detection at every layer
+- **Advanced Security**: Content sanitization, input validation, and secret detection at every layer
 
 ### 💡 Beyond Standard MCP Capabilities
 - **Bulk Operations**: Parallel processing with context aggregation across multiple queries
@@ -1039,4 +1039,4 @@ interface HintGenerationPipeline {
 - **Layer 3**: Response sanitization and secret masking
 - **Layer 4**: Security event logging and monitoring
 
-*OctoCode MCP represents the next generation of intelligent code research tools, combining the power of AI with enterprise-grade security, performance, and scalability.*
+*OctoCode MCP represents the next generation of intelligent code research tools, combining the power of AI with advanced security, performance, and scalability.*

@@ -7,7 +7,7 @@ import {
   humanizeBytes,
   simplifyGitHubUrl,
   optimizeTextMatch,
-} from '../../src/mcp/responses';
+} from '../../src/responses';
 
 describe('Response Utilities', () => {
   describe('createResult', () => {

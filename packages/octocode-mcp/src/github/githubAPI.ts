@@ -1,0 +1,93 @@
+// Re-export all functions from the modular structure for backward compatibility
+export {
+  // Core client and utilities
+  getOctokit,
+  OctokitWithThrottling,
+  getDefaultBranch,
+  clearCachedToken,
+  // Error handling
+  handleGitHubAPIError,
+  generateFileAccessHints,
+
+  // Query builders
+  getOwnerQualifier,
+  buildCodeSearchQuery,
+  buildRepoSearchQuery,
+  buildPullRequestSearchQuery,
+  buildCommitSearchQuery,
+  shouldUseSearchForPRs,
+  // Search operations
+  searchGitHubCodeAPI,
+  searchGitHubReposAPI,
+  searchGitHubPullRequestsAPI,
+  fetchGitHubPullRequestByNumberAPI,
+  transformPullRequestItemFromREST,
+  searchGitHubCommitsAPI,
+  // File operations
+  fetchGitHubFileContentAPI,
+  viewGitHubRepositoryStructureAPI,
+  // Authentication
+} from '.';
+
+// Re-export OpenAPI types for backward compatibility
+export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
+
+// Export new OpenAPI types
+export type {
+  Repository,
+  RepositorySimple,
+  PullRequest,
+  PullRequestReview,
+  PullRequestReviewComment,
+  Commit,
+  CommitComment,
+  WorkflowRun,
+  Workflow,
+  CheckRun,
+  CheckSuite,
+  CodeSearchResultItem,
+  RepoSearchResultItem,
+  CommitSearchResultItem,
+  SearchCodeParameters,
+  SearchCodeResponse,
+  SearchReposParameters,
+  SearchReposResponse,
+  SearchCommitsParameters,
+  SearchCommitsResponse,
+  GetContentParameters,
+  GetContentResponse,
+  GetRepoParameters,
+  GetRepoResponse,
+  GetPullRequestParameters,
+  GetPullRequestResponse,
+  ListPullRequestsParameters,
+  ListPullRequestsResponse,
+  ListWorkflowRunsParameters,
+  ListWorkflowRunsResponse,
+  GetWorkflowRunParameters,
+  GetWorkflowRunResponse,
+  ListCheckRunsForRefParameters,
+  ListCheckRunsForRefResponse,
+  CreateCheckRunParameters,
+  CreateCheckRunResponse,
+  SortOrder,
+  SearchCodeSort,
+  SearchReposSort,
+  SearchCommitsSort,
+  WorkflowRunStatus,
+  CheckConclusion,
+  CheckStatus,
+  PullRequestState,
+  RepositoryVisibility,
+  ContentType,
+  GitHubID,
+  GitHubSHA,
+  GitHubURL,
+  GitHubDate,
+  RepositoryReference,
+  isRepository,
+  isSearchResultItem,
+  isPullRequest,
+  isWorkflowRun,
+  isCheckRun,
+} from './types';

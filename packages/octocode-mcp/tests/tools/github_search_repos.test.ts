@@ -5,33 +5,16 @@ import {
 } from '../fixtures/mcp-fixtures.js';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
-const mockExecuteGitHubCommand = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
-const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
-const mockWithCache = vi.hoisted(() => vi.fn());
-const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/exec.js', () => ({
-  executeGitHubCommand: mockExecuteGitHubCommand,
-}));
-
-vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
-}));
-
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
 }));
 
-vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
-  getGitHubToken: mockGetGitHubToken,
-}));
-
 // Import after mocking
-import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
-import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { TOOL_NAMES } from '../../src/utils/toolConstants.js';
 // import { GitHubReposSearchParams } from '../../src/types.js'; // Type removed
 // GitHubCommandBuilder was removed - using direct API calls now
 
@@ -44,14 +27,6 @@ describe('GitHub Search Repositories Tool', () => {
 
     // Clear all mocks
     vi.clearAllMocks();
-
-    // Default cache behavior
-    // @ts-expect-error - mockWithCache is not typed
-    mockWithCache.mockImplementation(async (key, fn) => await fn());
-    mockGenerateCacheKey.mockReturnValue('test-cache-key');
-
-    // Mock token manager to return test token
-    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Default GitHub CLI mock behavior - return successful results
     const defaultMockResponse = createMockRepositoryResponse([
@@ -307,14 +282,19 @@ describe('GitHub Search Repositories Tool', () => {
       // Make sure both CLI and API fail
       mockSearchGitHubReposAPI.mockResolvedValue({
         isError: true,
-        content: [{ text: 'Command failed' }],
-      });
-
-      // Ensure API also fails
-      mockSearchGitHubReposAPI.mockResolvedValue({
-        error: 'API failed',
-        type: 'http',
-        status: 500,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'API failed',
+              meta: {
+                error: 'API failed',
+                type: 'http',
+                status: 500,
+              },
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool(
@@ -339,10 +319,8 @@ describe('GitHub Search Repositories Tool', () => {
     it('should handle unexpected errors in query processing', async () => {
       registerSearchGitHubReposTool(mockServer.server);
 
-      // Mock withCache to throw the error directly without wrapping
-      mockWithCache.mockImplementation(async (_key, _fn) => {
-        throw new Error('Network timeout');
-      });
+      // Mock API to throw the error directly
+      mockSearchGitHubReposAPI.mockRejectedValue(new Error('Network timeout'));
 
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
@@ -478,16 +456,27 @@ describe('GitHub Search Repositories Tool', () => {
 
       mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
       mockSearchGitHubReposAPI.mockResolvedValue({
-        total_count: 1,
-        repositories: [
+        isError: false,
+        content: [
           {
-            name: 'test-repo',
-            stars: 100,
-            language: 'JavaScript',
-            url: 'https://github.com/test/repo',
-            forks: 0,
-            updatedAt: '01/01/2023',
-            owner: 'test',
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                total_count: 1,
+                repositories: [
+                  {
+                    name: 'test-repo',
+                    stars: 100,
+                    language: 'JavaScript',
+                    url: 'https://github.com/test/repo',
+                    forks: 0,
+                    updatedAt: '01/01/2023',
+                    owner: 'test',
+                  },
+                ],
+              },
+              meta: { status: 200 },
+            }),
           },
         ],
       });
@@ -516,22 +505,31 @@ describe('GitHub Search Repositories Tool', () => {
   // Helper function to create mock repository response
   function createMockRepositoryResponse(repos: Array<Record<string, unknown>>) {
     return {
-      data: {
-        total_count: repos.length,
-        repositories: repos.map(repo => ({
-          name: repo.name || 'test-repo',
-          full_name: repo.fullName || `owner/${repo.name || 'test-repo'}`,
-          stargazers_count: repo.stars || 0,
-          language: repo.language || 'JavaScript',
-          description: repo.description || 'Test repository',
-          forks_count: repo.forks || 0,
-          updated_at: repo.updatedAt || '2023-12-01T10:00:00Z',
-          owner: repo.owner || { login: 'owner' },
-          html_url:
-            repo.url || `https://github.com/owner/${repo.name || 'test-repo'}`,
-        })),
-      },
-      status: 200,
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            data: {
+              total_count: repos.length,
+              repositories: repos.map(repo => ({
+                name: repo.name || 'test-repo',
+                full_name: repo.fullName || `owner/${repo.name || 'test-repo'}`,
+                stargazers_count: repo.stars || 0,
+                language: repo.language || 'JavaScript',
+                description: repo.description || 'Test repository',
+                forks_count: repo.forks || 0,
+                updated_at: repo.updatedAt || '2023-12-01T10:00:00Z',
+                owner: repo.owner || { login: 'owner' },
+                html_url:
+                  repo.url ||
+                  `https://github.com/owner/${repo.name || 'test-repo'}`,
+              })),
+            },
+            meta: { status: 200 },
+          }),
+        },
+      ],
     };
   }
 });

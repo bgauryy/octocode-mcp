@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 
 describe('GitHub User Information Module', () => {
   it('should export required functions', async () => {
-    const module = await import('../../../src/utils/github/userInfo');
+    const module = await import('../../../src/github/userInfo');
 
     expect(typeof module.getAuthenticatedUser).toBe('function');
     expect(typeof module.getRateLimitStatus).toBe('function');

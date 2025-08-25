@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GitHubCodeSearchQuerySchema } from '../../src/mcp/tools/scheme/github_search_code.js';
-import { ensureUniqueQueryIds } from '../../src/mcp/tools/utils/queryUtils.js';
+import { GitHubCodeSearchQuerySchema } from '../../src/scheme/github_search_code.js';
+import { ensureUniqueQueryIds } from '../../src/utils/queryUtils.js';
 
 // Mock the GitHub client
 const mockOctokit = vi.hoisted(() => ({
@@ -11,12 +11,12 @@ const mockOctokit = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../src/utils/github/client.js', () => ({
+vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => mockOctokit),
 }));
 
 // Import after mocking
-import { searchGitHubCodeAPI } from '../../src/utils/github/codeSearch.js';
+import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 
 describe('GitHubCodeSearchQuerySchema', () => {
   describe('new qualifiers validation', () => {

@@ -6,26 +6,14 @@ import {
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubCommitsAPI = vi.hoisted(() => vi.fn());
-const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
-const mockWithCache = vi.hoisted(() => vi.fn());
-const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubCommitsAPI: mockSearchGitHubCommitsAPI,
 }));
 
-vi.mock('../../src/utils/cache.js', () => ({
-  generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
-}));
-
-vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
-  getGitHubToken: mockGetGitHubToken,
-}));
-
 // Import after mocking
-import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
+import { registerSearchGitHubCommitsTool } from '../../src/tools/github_search_commits.js';
 
 describe('GitHub Search Commits Tool', () => {
   let mockServer: MockMcpServer;
@@ -37,48 +25,51 @@ describe('GitHub Search Commits Tool', () => {
     // Clear all mocks
     vi.clearAllMocks();
 
-    // Default cache behavior
-    // @ts-expect-error - mockWithCache is not typed
-    mockWithCache.mockImplementation(async (key, fn) => await fn());
-    mockGenerateCacheKey.mockReturnValue('test-cache-key');
-
-    // Mock token manager to return test token
-    mockGetGitHubToken.mockResolvedValue('test-token');
-
-    // Default successful API mock behavior - return GitHubCommitSearchResult
+    // Default successful API mock behavior - return CallToolResult
     mockSearchGitHubCommitsAPI.mockResolvedValue({
-      commits: [
+      isError: false,
+      content: [
         {
-          sha: 'abc123',
-          commit: {
-            message: 'Test commit',
-            author: {
-              name: 'testuser',
-              email: 'test@example.com',
-              date: '2023-01-01T00:00:00Z',
+          type: 'text',
+          text: JSON.stringify({
+            data: {
+              commits: [
+                {
+                  sha: 'abc123',
+                  commit: {
+                    message: 'Test commit',
+                    author: {
+                      name: 'testuser',
+                      email: 'test@example.com',
+                      date: '2023-01-01T00:00:00Z',
+                    },
+                    committer: {
+                      name: 'testuser',
+                      email: 'test@example.com',
+                      date: '2023-01-01T00:00:00Z',
+                    },
+                  },
+                  author: {
+                    login: 'testuser',
+                    id: '12345',
+                    type: 'User',
+                    url: 'https://github.com/testuser',
+                  },
+                  repository: {
+                    name: 'test-repo',
+                    fullName: 'test/test-repo',
+                    url: 'https://github.com/test/test-repo',
+                  },
+                  url: 'https://github.com/test/test-repo/commit/abc123',
+                },
+              ],
+              total_count: 1,
+              incomplete_results: false,
             },
-            committer: {
-              name: 'testuser',
-              email: 'test@example.com',
-              date: '2023-01-01T00:00:00Z',
-            },
-          },
-          author: {
-            login: 'testuser',
-            id: '12345',
-            type: 'User',
-            url: 'https://github.com/testuser',
-          },
-          repository: {
-            name: 'test-repo',
-            fullName: 'test/test-repo',
-            url: 'https://github.com/test/test-repo',
-          },
-          url: 'https://github.com/test/test-repo/commit/abc123',
+            meta: { status: 200 },
+          }),
         },
       ],
-      total_count: 1,
-      incomplete_results: false,
     });
 
     // Register tool with API options
@@ -191,9 +182,20 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle no results found', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        commits: [],
-        total_count: 0,
-        incomplete_results: false,
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                commits: [],
+                total_count: 0,
+                incomplete_results: false,
+              },
+              meta: { status: 200 },
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
@@ -207,9 +209,20 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle search errors', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        error: 'API error',
-        type: 'http',
-        status: 500,
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'API error',
+              meta: {
+                error: 'API error',
+                type: 'http',
+                status: 500,
+              },
+            }),
+          },
+        ],
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
@@ -318,38 +331,49 @@ describe('GitHub Search Commits Tool', () => {
   describe('Content Sanitization', () => {
     it('should sanitize GitHub tokens from commit messages', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        commits: [
+        isError: false,
+        content: [
           {
-            sha: 'abc123',
-            commit: {
-              message: 'Fix auth with token [REDACTED-GITHUBTOKENS]',
-              author: {
-                name: 'testuser',
-                email: 'test@example.com',
-                date: '2023-01-01T00:00:00Z',
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                commits: [
+                  {
+                    sha: 'abc123',
+                    commit: {
+                      message: 'Fix auth with token [REDACTED-GITHUBTOKENS]',
+                      author: {
+                        name: 'testuser',
+                        email: 'test@example.com',
+                        date: '2023-01-01T00:00:00Z',
+                      },
+                      committer: {
+                        name: 'testuser',
+                        email: 'test@example.com',
+                        date: '2023-01-01T00:00:00Z',
+                      },
+                    },
+                    author: {
+                      login: 'testuser',
+                      id: '12345',
+                      type: 'User',
+                      url: 'https://github.com/testuser',
+                    },
+                    repository: {
+                      name: 'test-repo',
+                      fullName: 'test/test-repo',
+                      url: 'https://github.com/test/test-repo',
+                    },
+                    url: 'https://github.com/test/test-repo/commit/abc123',
+                  },
+                ],
+                total_count: 1,
+                incomplete_results: false,
               },
-              committer: {
-                name: 'testuser',
-                email: 'test@example.com',
-                date: '2023-01-01T00:00:00Z',
-              },
-            },
-            author: {
-              login: 'testuser',
-              id: '12345',
-              type: 'User',
-              url: 'https://github.com/testuser',
-            },
-            repository: {
-              name: 'test-repo',
-              fullName: 'test/test-repo',
-              url: 'https://github.com/test/test-repo',
-            },
-            url: 'https://github.com/test/test-repo/commit/abc123',
+              meta: { status: 200 },
+            }),
           },
         ],
-        total_count: 1,
-        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
@@ -366,38 +390,49 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should sanitize API keys from commit messages', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        commits: [
+        isError: false,
+        content: [
           {
-            sha: 'def456',
-            commit: {
-              message: 'Update API key: [REDACTED-OPENAIAPIKEY]',
-              author: {
-                name: 'developer',
-                email: 'dev@example.com',
-                date: '2023-01-02T00:00:00Z',
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                commits: [
+                  {
+                    sha: 'def456',
+                    commit: {
+                      message: 'Update API key: [REDACTED-OPENAIAPIKEY]',
+                      author: {
+                        name: 'developer',
+                        email: 'dev@example.com',
+                        date: '2023-01-02T00:00:00Z',
+                      },
+                      committer: {
+                        name: 'developer',
+                        email: 'dev@example.com',
+                        date: '2023-01-02T00:00:00Z',
+                      },
+                    },
+                    author: {
+                      login: 'developer',
+                      id: '67890',
+                      type: 'User',
+                      url: 'https://github.com/developer',
+                    },
+                    repository: {
+                      name: 'test-repo',
+                      fullName: 'test/test-repo',
+                      url: 'https://github.com/test/test-repo',
+                    },
+                    url: 'https://github.com/test/test-repo/commit/def456',
+                  },
+                ],
+                total_count: 1,
+                incomplete_results: false,
               },
-              committer: {
-                name: 'developer',
-                email: 'dev@example.com',
-                date: '2023-01-02T00:00:00Z',
-              },
-            },
-            author: {
-              login: 'developer',
-              id: '67890',
-              type: 'User',
-              url: 'https://github.com/developer',
-            },
-            repository: {
-              name: 'test-repo',
-              fullName: 'test/test-repo',
-              url: 'https://github.com/test/test-repo',
-            },
-            url: 'https://github.com/test/test-repo/commit/def456',
+              meta: { status: 200 },
+            }),
           },
         ],
-        total_count: 1,
-        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
@@ -413,38 +448,49 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should preserve clean commit content without secrets', async () => {
       mockSearchGitHubCommitsAPI.mockResolvedValue({
-        commits: [
+        isError: false,
+        content: [
           {
-            sha: 'clean123',
-            commit: {
-              message: 'Add user profile feature',
-              author: {
-                name: 'developer',
-                email: 'dev@example.com',
-                date: '2023-01-03T00:00:00Z',
+            type: 'text',
+            text: JSON.stringify({
+              data: {
+                commits: [
+                  {
+                    sha: 'clean123',
+                    commit: {
+                      message: 'Add user profile feature',
+                      author: {
+                        name: 'developer',
+                        email: 'dev@example.com',
+                        date: '2023-01-03T00:00:00Z',
+                      },
+                      committer: {
+                        name: 'developer',
+                        email: 'dev@example.com',
+                        date: '2023-01-03T00:00:00Z',
+                      },
+                    },
+                    author: {
+                      login: 'developer',
+                      id: '22222',
+                      type: 'User',
+                      url: 'https://github.com/developer',
+                    },
+                    repository: {
+                      name: 'test-repo',
+                      fullName: 'test/test-repo',
+                      url: 'https://github.com/test/test-repo',
+                    },
+                    url: 'https://github.com/test/test-repo/commit/clean123',
+                  },
+                ],
+                total_count: 1,
+                incomplete_results: false,
               },
-              committer: {
-                name: 'developer',
-                email: 'dev@example.com',
-                date: '2023-01-03T00:00:00Z',
-              },
-            },
-            author: {
-              login: 'developer',
-              id: '22222',
-              type: 'User',
-              url: 'https://github.com/developer',
-            },
-            repository: {
-              name: 'test-repo',
-              fullName: 'test/test-repo',
-              url: 'https://github.com/test/test-repo',
-            },
-            url: 'https://github.com/test/test-repo/commit/clean123',
+              meta: { status: 200 },
+            }),
           },
         ],
-        total_count: 1,
-        incomplete_results: false,
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
