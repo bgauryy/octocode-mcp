@@ -46,8 +46,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
     withSecurityValidation(
       async (
         args: GitHubCommitSearchQuery,
-        authInfo,
-        userContext
+        authInfo?: AuthInfo
       ): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
         const hasSearchTerms = args.queryTerms?.length || args.orTerms?.length;

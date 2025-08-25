@@ -18,6 +18,7 @@ import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_rep
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import { ConfigManager } from './config/serverConfig.js';
+import { AuditLogger } from './security/auditLogger.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
 import { isBetaEnabled } from './utils/betaFeatures.js';
 import { version, name } from '../package.json';
@@ -93,7 +94,12 @@ async function startServer() {
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: sessionId => {
-            console.log(`New MCP session initialized: ${sessionId}`);
+            AuditLogger.logEvent({
+              action: 'mcp_session_initialized',
+              outcome: 'success',
+              source: 'system',
+              details: { sessionId },
+            });
             transports[sessionId] = transport;
           },
         });
@@ -101,7 +107,12 @@ async function startServer() {
         // Clean up transport when closed
         transport.onclose = () => {
           if (transport.sessionId) {
-            console.log(`MCP session closed: ${transport.sessionId}`);
+            AuditLogger.logEvent({
+              action: 'mcp_session_closed',
+              outcome: 'success',
+              source: 'system',
+              details: { sessionId: transport.sessionId },
+            });
             delete transports[transport.sessionId];
           }
         };
@@ -142,7 +153,12 @@ async function startServer() {
 
     const port = parseInt(process.env.PORT || '3000');
     const server = app.listen(port, () => {
-      console.log(`🚀 Octocode MCP Server running on http://localhost:${port}`);
+      AuditLogger.logEvent({
+        action: 'server_started',
+        outcome: 'success',
+        source: 'system',
+        details: { port },
+      });
     });
 
     const gracefulShutdown = async (_signal?: string) => {
@@ -165,7 +181,12 @@ async function startServer() {
           process.exit(1);
         }, 5000);
 
-        console.log('\nShutting down Octocode MCP OAuth server...');
+        AuditLogger.logEvent({
+          action: 'server_shutting_down',
+          outcome: 'success',
+          source: 'system',
+          details: { port },
+        });
 
         // Close all MCP transports
         await Promise.all(
@@ -174,7 +195,14 @@ async function startServer() {
               transport.close?.();
               return Promise.resolve();
             } catch (error) {
-              console.error('Error closing transport:', error);
+              AuditLogger.logEvent({
+                action: 'transport_close_error',
+                outcome: 'failure',
+                source: 'system',
+                details: {
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              });
               return Promise.resolve();
             }
           })
@@ -205,7 +233,12 @@ async function startServer() {
 
         // Close Express server
         server.close(() => {
-          console.log('Server closed.');
+          AuditLogger.logEvent({
+            action: 'server_closed',
+            outcome: 'success',
+            source: 'system',
+            details: { port },
+          });
 
           // Clear the timeout since we completed successfully
           if (shutdownTimeout) {
@@ -329,7 +362,14 @@ export async function registerAllTools(server: McpServer) {
 // Start server if this file is run directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   startServer().catch(error => {
-    console.error('Failed to start Octocode MCP OAuth server:', error);
+    AuditLogger.logEvent({
+      action: 'server_startup_error',
+      outcome: 'failure',
+      source: 'system',
+      details: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
     process.exit(1);
   });
 }
