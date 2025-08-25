@@ -20,20 +20,23 @@ import {
 import { generateCacheKey, withCache } from '../cache';
 import { createResult } from '../../mcp/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**
  * Search GitHub pull requests using Octokit API with caching
  * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubPullRequestsAPI(
-  params: GitHubPullRequestsSearchParams
+  params: GitHubPullRequestsSearchParams,
+  authInfo?: AuthInfo,
+  sessionId?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-api-prs', params);
+  const cacheKey = generateCacheKey('gh-api-prs', params, sessionId);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubPullRequestsAPIInternal(params);
+    const result = await searchGitHubPullRequestsAPIInternal(params, authInfo);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -69,7 +72,8 @@ export async function searchGitHubPullRequestsAPI(
  * Internal implementation of searchGitHubPullRequestsAPI without caching
  */
 async function searchGitHubPullRequestsAPIInternal(
-  params: GitHubPullRequestsSearchParams
+  params: GitHubPullRequestsSearchParams,
+  authInfo?: AuthInfo
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
     // If prNumber is provided with owner/repo, fetch specific PR by number
@@ -80,10 +84,10 @@ async function searchGitHubPullRequestsAPIInternal(
       !Array.isArray(params.owner) &&
       !Array.isArray(params.repo)
     ) {
-      return await fetchGitHubPullRequestByNumberAPIInternal(params);
+      return await fetchGitHubPullRequestByNumberAPIInternal(params, authInfo);
     }
 
-    const octokit = await getOctokit();
+    const octokit = await getOctokit(authInfo);
 
     // Decide between search and list based on filters
     const shouldUseSearch = shouldUseSearchForPRs(params);
@@ -455,10 +459,11 @@ async function transformPullRequestItem(
 async function fetchPRFileChangesAPI(
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  authInfo?: AuthInfo
 ): Promise<{ total_count: number; files: DiffEntry[] } | null> {
   try {
-    const octokit = await getOctokit();
+    const octokit = await getOctokit(authInfo);
     const result = await octokit.rest.pulls.listFiles({
       owner,
       repo,
@@ -484,7 +489,8 @@ async function fetchPRFileChangesAPI(
 export async function transformPullRequestItemFromREST(
   item: Record<string, unknown>,
   params: GitHubPullRequestsSearchParams,
-  octokit: InstanceType<typeof OctokitWithThrottling>
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  authInfo?: AuthInfo
 ): Promise<GitHubPullRequestItem> {
   // Sanitize title and body content
   const titleSanitized = ContentSanitizer.sanitizeContent(
@@ -551,7 +557,8 @@ export async function transformPullRequestItemFromREST(
     const fileChanges = await fetchPRFileChangesAPI(
       params.owner as string,
       params.repo as string,
-      item.number as number
+      item.number as number,
+      authInfo
     );
     if (fileChanges) {
       result.file_changes = fileChanges;
@@ -596,7 +603,9 @@ export async function transformPullRequestItemFromREST(
  * More efficient than search when we know the exact PR number
  */
 export async function fetchGitHubPullRequestByNumberAPI(
-  params: GitHubPullRequestsSearchParams
+  params: GitHubPullRequestsSearchParams,
+  authInfo?: AuthInfo,
+  sessionId?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey('gh-api-prs', {
@@ -605,11 +614,14 @@ export async function fetchGitHubPullRequestByNumberAPI(
     prNumber: params.prNumber,
     getFileChanges: params.getFileChanges,
     withComments: params.withComments,
-  });
+  }, sessionId);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubPullRequestByNumberAPIInternal(params);
+    const result = await fetchGitHubPullRequestByNumberAPIInternal(
+      params,
+      authInfo
+    );
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -645,10 +657,11 @@ export async function fetchGitHubPullRequestByNumberAPI(
  * Internal implementation of fetchGitHubPullRequestByNumberAPI without caching
  */
 async function fetchGitHubPullRequestByNumberAPIInternal(
-  params: GitHubPullRequestsSearchParams
+  params: GitHubPullRequestsSearchParams,
+  authInfo?: AuthInfo
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
-    const octokit = await getOctokit();
+    const octokit = await getOctokit(authInfo);
 
     // Extract values from params
     const owner = params.owner as string;
@@ -666,7 +679,7 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
 
     // Transform to our expected format
     const transformedPR: GitHubPullRequestItem =
-      await transformPullRequestItemFromREST(pr, params, octokit);
+      await transformPullRequestItemFromREST(pr, params, octokit, authInfo);
 
     // Transform to expected GitHub API format
     const formattedPR = {

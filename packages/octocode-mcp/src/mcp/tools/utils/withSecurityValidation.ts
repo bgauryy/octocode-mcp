@@ -5,12 +5,14 @@ import { getUserContext } from '../../../utils/github/userInfo';
 import { RateLimiter } from '../../../security/rateLimiter';
 import { OrganizationManager } from '../../../security/organizationManager';
 import { isEnterpriseMode } from '../../../utils/enterpriseUtils';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 export interface UserContext {
   userId: string;
   userLogin: string;
   organizationId?: string;
   isEnterpriseMode: boolean;
+  sessionId?: string;
 }
 
 /**
@@ -20,10 +22,11 @@ export interface UserContext {
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolHandler: (
     sanitizedArgs: T,
+    authInfo?: AuthInfo,
     userContext?: UserContext
   ) => Promise<CallToolResult>
-): (args: unknown) => Promise<CallToolResult> {
-  return async (args: unknown): Promise<CallToolResult> => {
+): (args: unknown, { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }) => Promise<CallToolResult> {
+  return async (args: unknown, { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }): Promise<CallToolResult> => {
     try {
       // 1. Validate and sanitize input parameters for security
       const validation = ContentSanitizer.validateInputParameters(
@@ -50,6 +53,7 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
               userLogin: context.user.login,
               organizationId: context.organizationId,
               isEnterpriseMode: true,
+              sessionId,
             };
 
             // 3. Enterprise rate limiting (if configured)
@@ -96,10 +100,18 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
           // If we can't get user context, continue with basic validation only
           // This maintains backward compatibility for non-enterprise usage
         }
+      } else {
+        // Even in non-enterprise mode, provide basic session context
+        userContext = {
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId,
+        };
       }
 
       // 5. Call the actual tool handler with sanitized parameters and user context
-      return await toolHandler(validation.sanitizedParams as T, userContext);
+      return await toolHandler(validation.sanitizedParams as T, authInfo, userContext);
     } catch (error) {
       return createResult({
         error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,

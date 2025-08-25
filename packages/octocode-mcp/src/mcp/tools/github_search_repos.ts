@@ -17,6 +17,7 @@ import {
   type BulkResponseConfig,
 } from './utils/bulkOperations';
 import { generateHints } from './utils/hints_consolidated';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
 
@@ -57,10 +58,14 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: {
-        queries: GitHubReposSearchQuery[];
-        verbose?: boolean;
-      }): Promise<CallToolResult> => {
+      async (
+        args: {
+          queries: GitHubReposSearchQuery[];
+          verbose?: boolean;
+        },
+        authInfo,
+        userContext
+      ): Promise<CallToolResult> => {
         if (
           !args.queries ||
           !Array.isArray(args.queries) ||
@@ -99,7 +104,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           });
         }
 
-        return searchMultipleGitHubRepos(args.queries, args.verbose || false);
+        return searchMultipleGitHubRepos(args.queries, args.verbose || false, authInfo, userContext);
       }
     )
   );
@@ -107,7 +112,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  authInfo?: AuthInfo,
+  _userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-search');
 
@@ -117,7 +124,7 @@ async function searchMultipleGitHubRepos(
       query: GitHubReposSearchQuery
     ): Promise<ProcessedRepoSearchResult> => {
       try {
-        const apiResult = await searchGitHubReposAPI(query);
+        const apiResult = await searchGitHubReposAPI(query, authInfo);
 
         if ('error' in apiResult) {
           // Generate hints for this specific query error

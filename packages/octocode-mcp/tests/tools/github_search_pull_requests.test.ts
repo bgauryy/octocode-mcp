@@ -132,7 +132,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: 'facebook',
           repo: 'react',
           state: 'open',
-        })
+        }),
+        undefined
       );
     });
 
@@ -171,7 +172,8 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           query: 'bug fix',
-        })
+        }),
+        undefined
       );
     });
 
@@ -221,7 +223,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           query: 'feature',
           owner: 'test',
           repo: 'repo',
-        })
+        }),
+        undefined
       );
     });
 
@@ -242,7 +245,8 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
-        expect.objectContaining(searchParams)
+        expect.objectContaining(searchParams),
+        undefined
       );
     });
 
@@ -263,7 +267,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: ['facebook', 'microsoft'],
           repo: ['react', 'vscode'],
           label: ['bug', 'enhancement'],
-        })
+        }),
+        undefined
       );
     });
 
@@ -288,7 +293,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           draft: true,
           merged: false,
           locked: false,
-        })
+        }),
+        undefined
       );
     });
 
@@ -313,7 +319,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           created: '>2023-01-01',
           updated: '2023-01-01..2023-12-31',
           closed: '<2023-06-01',
-        })
+        }),
+        undefined
       );
     });
 
@@ -338,7 +345,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           comments: '>5',
           reactions: '10..50',
           interactions: '<100',
-        })
+        }),
+        undefined
       );
     });
 
@@ -361,7 +369,8 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: 'repo',
           getCommitData: true,
           withComments: true,
-        })
+        }),
+        undefined
       );
     });
   });
@@ -381,11 +390,13 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledTimes(2);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         1,
-        expect.objectContaining(queries[0])
+        expect.objectContaining(queries[0]),
+        undefined
       );
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining(queries[1])
+        expect.objectContaining(queries[1]),
+        undefined
       );
     });
 
@@ -541,7 +552,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         queries: [args],
       });
 
-      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(args);
+      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(args, undefined);
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       expect(response.data[0].data).toEqual(mockResponse);

@@ -593,7 +593,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         matchString: 'search term',
         minified: true,
         matchStringContextLines: 3,
-      });
+      }, undefined);
     });
 
     it('should generate different cache keys for different parameters', async () => {
@@ -639,7 +639,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: undefined,
           minified: false,
           matchStringContextLines: undefined,
-        }
+        },
+        undefined
       );
       expect(mockGenerateCacheKey).toHaveBeenNthCalledWith(
         2,
@@ -654,7 +655,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: undefined,
           minified: false,
           matchStringContextLines: undefined,
-        }
+        },
+        undefined
       );
     });
   });

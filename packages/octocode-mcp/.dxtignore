@@ -41,3 +41,6 @@ temp/
 
 # Test fixtures
 test/ 
+
+# sqlite DB
+mcp.sqlite
