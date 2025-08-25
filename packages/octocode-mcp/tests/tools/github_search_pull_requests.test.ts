@@ -103,8 +103,6 @@ describe('GitHub Search Pull Requests Tool', () => {
     // Reset all mocks
     vi.clearAllMocks();
 
-
-
     // Setup default successful API response using helper
     mockSearchGitHubPullRequestsAPI.mockResolvedValue(createMockPRResponse());
   });
