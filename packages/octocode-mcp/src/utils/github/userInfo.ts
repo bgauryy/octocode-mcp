@@ -49,8 +49,10 @@ export interface GitHubRateLimitInfo {
  * Get authenticated user information from GitHub API
  * Caches result for 15 minutes to avoid unnecessary API calls
  */
-export async function getAuthenticatedUser(): Promise<GitHubUserInfo | null> {
-  const cacheKey = generateCacheKey('github-user', {});
+export async function getAuthenticatedUser(
+  sessionId?: string
+): Promise<GitHubUserInfo | null> {
+  const cacheKey = generateCacheKey('github-user', {}, sessionId);
 
   const userOperation = async (): Promise<CallToolResult> => {
     try {

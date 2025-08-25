@@ -12,22 +12,25 @@ import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../cache';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
  * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubCodeAPI(
-  params: GitHubCodeSearchQuery
+  params: GitHubCodeSearchQuery,
+  authInfo?: AuthInfo,
+  sessionId?: string
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  const cacheKey = generateCacheKey('gh-api-code', params);
+  const cacheKey = generateCacheKey('gh-api-code', params, sessionId);
 
   const result = await withDataCache<
     GitHubAPIResponse<OptimizedCodeSearchResult>
   >(
     cacheKey,
     async () => {
-      return await searchGitHubCodeAPIInternal(params);
+      return await searchGitHubCodeAPIInternal(params, authInfo);
     },
     {
       // Only cache successful responses
@@ -44,10 +47,11 @@ export async function searchGitHubCodeAPI(
  * Token management is handled internally by the GitHub client
  */
 async function searchGitHubCodeAPIInternal(
-  params: GitHubCodeSearchQuery
+  params: GitHubCodeSearchQuery,
+  authInfo?: AuthInfo
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
   try {
-    const octokit = await getOctokit();
+    const octokit = await getOctokit(authInfo);
 
     // Apply quality boosting for better relevance
     const enhancedParams = applyQualityBoost(params);

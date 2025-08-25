@@ -14,20 +14,23 @@ import { buildCommitSearchQuery } from './queryBuilders';
 import { generateCacheKey, withCache } from '../cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../mcp/responses';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**
  * Search GitHub commits using Octokit API with caching
  * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubCommitsAPI(
-  params: GitHubCommitSearchParams
+  params: GitHubCommitSearchParams,
+  authInfo?: AuthInfo,
+  sessionId?: string
 ): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-commits-api', params);
+  const cacheKey = generateCacheKey('gh-commits-api', params, sessionId);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubCommitsAPIInternal(params);
+    const result = await searchGitHubCommitsAPIInternal(params, authInfo);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -63,10 +66,11 @@ export async function searchGitHubCommitsAPI(
  * Internal implementation of searchGitHubCommitsAPI without caching
  */
 async function searchGitHubCommitsAPIInternal(
-  params: GitHubCommitSearchParams
+  params: GitHubCommitSearchParams,
+  authInfo?: AuthInfo
 ): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
   try {
-    const octokit = await getOctokit();
+    const octokit = await getOctokit(authInfo);
 
     // Build search query
     const searchQuery = buildCommitSearchQuery(params);

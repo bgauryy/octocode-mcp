@@ -43,7 +43,10 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     }));
 
     const wrapped = withSecurityValidation(handler);
-    const result = await wrapped({ a: 1 });
+    const result = await wrapped(
+      { a: 1 },
+      { authInfo: undefined, sessionId: undefined }
+    );
 
     expect(handler).toHaveBeenCalledOnce();
     expect(result.isError).toBe(false);
@@ -68,7 +71,10 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     }));
 
     const wrapped = withSecurityValidation(handler);
-    const result = await wrapped({ a: 2 });
+    const result = await wrapped(
+      { a: 2 },
+      { authInfo: undefined, sessionId: undefined }
+    );
 
     expect(handler).toHaveBeenCalledOnce();
     expect(result.isError).toBe(false);

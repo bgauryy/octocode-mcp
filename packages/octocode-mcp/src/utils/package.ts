@@ -687,9 +687,14 @@ function createPythonMetadataResults(
 async function viewNpmPackage(
   packageName: string,
   field?: string,
-  match?: string | string[]
+  match?: string | string[],
+  sessionId?: string
 ): Promise<CallToolResult> {
-  const cacheKey = generateCacheKey('npm-view', { packageName, field, match });
+  const cacheKey = generateCacheKey(
+    'npm-view',
+    { packageName, field, match },
+    sessionId
+  );
 
   return withCache(cacheKey, async () => {
     try {

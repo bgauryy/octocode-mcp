@@ -17,6 +17,7 @@ import {
   createBulkResponse,
   type BulkResponseConfig,
 } from './utils/bulkOperations';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Explore GitHub repository structure and validate repository access with intelligent navigation.
 
@@ -54,10 +55,14 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: {
-        queries: GitHubViewRepoStructureQuery[];
-        verbose?: boolean;
-      }): Promise<CallToolResult> => {
+      async (
+        args: {
+          queries: GitHubViewRepoStructureQuery[];
+          verbose?: boolean;
+        },
+        authInfo,
+        userContext
+      ): Promise<CallToolResult> => {
         if (
           !args.queries ||
           !Array.isArray(args.queries) ||
@@ -98,7 +103,9 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
 
         return exploreMultipleRepositoryStructures(
           args.queries,
-          args.verbose || false
+          args.verbose || false,
+          authInfo,
+          userContext
         );
       }
     )
@@ -107,10 +114,11 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
 
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
-  verbose: boolean = false
+  verbose: boolean = false,
+  authInfo?: AuthInfo,
+  _userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-structure');
-
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
     async (
@@ -169,7 +177,10 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        const apiResult = await viewGitHubRepositoryStructureAPI(query);
+        const apiResult = await viewGitHubRepositoryStructureAPI(
+          query,
+          authInfo
+        );
 
         // Check if result is an error
         if ('error' in apiResult) {

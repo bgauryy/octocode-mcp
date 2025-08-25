@@ -9,6 +9,7 @@ import {
   GitHubCommitSearchQuerySchema,
 } from './scheme/github_search_commits';
 import { generateHints } from './utils/hints_consolidated';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
 
@@ -43,7 +44,10 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: GitHubCommitSearchQuery): Promise<CallToolResult> => {
+      async (
+        args: GitHubCommitSearchQuery,
+        authInfo?: AuthInfo
+      ): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
         const hasSearchTerms = args.queryTerms?.length || args.orTerms?.length;
         const hasFilters =
@@ -102,7 +106,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         }
 
         try {
-          const result = await searchGitHubCommitsAPI(args);
+          const result = await searchGitHubCommitsAPI(args, authInfo);
 
           // Check if result is an error
           if ('error' in result) {

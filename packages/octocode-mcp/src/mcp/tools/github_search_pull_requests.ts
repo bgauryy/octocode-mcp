@@ -9,6 +9,7 @@ import {
   GitHubPullRequestSearchBulkQuerySchema,
 } from './scheme/github_search_pull_requests';
 import { generateHints } from './utils/hints_consolidated';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
 
@@ -45,10 +46,14 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: {
-        queries: GitHubPullRequestSearchQuery[];
-        verbose?: boolean;
-      }): Promise<CallToolResult> => {
+      async (
+        args: {
+          queries: GitHubPullRequestSearchQuery[];
+          verbose?: boolean;
+        },
+        authInfo,
+        userContext
+      ): Promise<CallToolResult> => {
         if (
           !args.queries ||
           !Array.isArray(args.queries) ||
@@ -134,7 +139,9 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         try {
           return await searchMultipleGitHubPullRequests(
             args.queries,
-            args.verbose || false
+            args.verbose || false,
+            authInfo,
+            userContext
           );
         } catch (error) {
           const errorMessage =
@@ -163,12 +170,14 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
  */
 async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
-  _verbose: boolean = false
+  _verbose: boolean = false,
+  authInfo?: AuthInfo,
+  _userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       try {
-        const result = await searchGitHubPullRequestsAPI(query);
+        const result = await searchGitHubPullRequestsAPI(query, authInfo);
         return {
           queryId: `pr-search_${index + 1}`,
           data: result,

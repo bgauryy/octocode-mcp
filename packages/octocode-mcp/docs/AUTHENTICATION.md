@@ -5,10 +5,11 @@
 ## 📋 Table of Contents
 
 - [Quick Start](#quick-start)
+- [Server Modes](#server-modes)
 - [Authentication Flow](#authentication-flow)
 - [Token Sources & Priority](#token-sources--priority)
-- [Local Development Setup](#local-development-setup)
-- [Production/Hosted Setup](#productionhosted-setup)
+- [Local Development Setup (Stdio)](#local-development-setup-stdio)
+- [Production/Hosted Setup (HTTP)](#productionhosted-setup-http)
 - [Enterprise Features](#enterprise-features)
 - [OAuth 2.0 Integration](#oauth-20-integration)
 - [GitHub App Authentication](#github-app-authentication)
@@ -16,9 +17,11 @@
 - [Troubleshooting](#troubleshooting)
 - [Security Best Practices](#security-best-practices)
 
+> For the complete HTTP server flow, OAuth routes, and session lifecycle, see [SERVER.md](./SERVER.md).
+
 ## 🚀 Quick Start
 
-### For Local Development
+### For Local Development (Stdio Mode)
 ```bash
 # Option 1: Using GitHub CLI (Recommended for local dev)
 gh auth login
@@ -28,14 +31,17 @@ export GITHUB_TOKEN="your_github_token_here"
 
 # Option 3: Using GH_TOKEN (alternative)
 export GH_TOKEN="your_github_token_here"
+
+# Start stdio server
+npx octocode-mcp
 ```
 
-### For Production/Hosted
+### For Production/Hosted (HTTP Mode)
 ```bash
-# Option 1: OAuth (Recommended for hosted services)
-export GITHUB_OAUTH_CLIENT_ID="your_client_id"
-export GITHUB_OAUTH_CLIENT_SECRET="your_client_secret"
-export GITHUB_OAUTH_ENABLED="true"
+# Option 1: OAuth with mcp-s-oauth (Recommended for hosted services)
+export GITHUB_CLIENT_ID="your_client_id"
+export GITHUB_CLIENT_SECRET="your_client_secret"
+export BASE_URL="https://yourapp.com"
 
 # Option 2: GitHub App (Enterprise)
 export GITHUB_APP_ID="your_app_id"
@@ -43,9 +49,47 @@ export GITHUB_APP_PRIVATE_KEY="your_private_key"
 export GITHUB_APP_INSTALLATION_ID="installation_id"
 export GITHUB_APP_ENABLED="true"
 
-# Option 3: Environment Token (Simple)
-export GITHUB_TOKEN="your_github_token_here"
+# Start HTTP server
+npx octocode-mcp-server
+# or
+node dist/server.js
 ```
+
+## 🖥️ Server Modes
+
+Octocode-MCP supports **two distinct server modes**, each optimized for different use cases:
+
+### 📡 **Stdio Mode** (`index.ts`)
+- **Transport**: `StdioServerTransport` - communicates via stdin/stdout
+- **Best for**: Local development, CLI tools, desktop applications
+- **Authentication**: Token Manager with comprehensive fallback chain
+- **Usage**: `npx octocode-mcp` or direct Node.js execution
+- **Benefits**: 
+  - Simple setup for local development
+  - Works with GitHub CLI authentication
+  - No network configuration required
+  - Perfect for MCP client integrations
+
+### 🌐 **HTTP Mode** (`server.ts`)
+- **Transport**: `StreamableHTTPServerTransport` - HTTP/WebSocket server
+- **Best for**: Web applications, hosted services, production deployments
+- **Authentication**: `mcp-s-oauth` with GitHub OAuth 2.0 flow
+- **Usage**: `npx octocode-mcp-server`
+
+> 📖 **Complete HTTP Server Guide**: For setup, OAuth configuration, session management, and deployment, see **[SERVER.md](./SERVER.md)**
+
+### 🔄 **Mode Selection**
+
+| Feature | Stdio Mode | HTTP Mode |
+|---------|------------|-----------|
+| **Setup Complexity** | ⭐ Simple | ⭐⭐⭐ Moderate |
+| **Authentication** | Token fallback chain | OAuth 2.0 flow |
+| **User Experience** | CLI-based | Web-based |
+| **Scalability** | Single user | Multi-user |
+| **Production Ready** | Local/Desktop | Web/Cloud |
+| **Network Requirements** | None | HTTP server |
+
+Both modes share the **same tool ecosystem** and security features, ensuring consistent functionality regardless of transport method.
 
 ## 🔐 Required GitHub Scopes (and Why)
 
@@ -68,26 +112,43 @@ Notes:
 
 ## 🔄 Authentication Flow
 
-Octocode-MCP uses a **unified authentication system** with the following initialization flow:
+Octocode-MCP uses a **unified authentication system** that adapts to both server modes:
 
+### Stdio Mode Flow (`index.ts`)
 ```mermaid
 graph TD
-    A[Server Startup] --> B[Initialize Authentication Manager]
-    B --> C[Initialize Auth Protocols]
+    A[Stdio Server Startup] --> B[Initialize Authentication Manager]
+    B --> C[Initialize Token Manager]
     C --> D[Initialize Enterprise Features]
-    D --> E[Initialize Token Management]
-    E --> F[Register Tools]
-    F --> G[Server Ready]
+    D --> E[Register Tools]
+    E --> F[Connect StdioServerTransport]
+    F --> G[Server Ready - stdin/stdout]
     
-    C --> C1[OAuth Manager]
-    C --> C2[GitHub App Manager]
-    C --> C3[MCP Auth Protocol]
-    
-    D --> D1[Audit Logger]
-    D --> D2[Rate Limiter]
-    D --> D3[Organization Manager]
-    D --> D4[Policy Manager]
+    C --> C1[OAuth Token Check]
+    C --> C2[GitHub App Token Check]
+    C --> C3[Environment Variables]
+    C --> C4[GitHub CLI Token]
+    C --> C5[Authorization Header]
 ```
+
+### HTTP Mode Flow (`server.ts`)
+```mermaid
+graph TD
+    A[HTTP Server Startup] --> B[Initialize Express App]
+    B --> C[Configure mcp-s-oauth]
+    C --> D[Initialize Enterprise Features]
+    D --> E[Create MCP Handler]
+    E --> F[Register Tools per Session]
+    F --> G[Start HTTP Server]
+    G --> H[Server Ready - OAuth Flow]
+    
+    C --> C1[GitHub OAuth Connector]
+    C --> C2[Session Management]
+    C --> C3[Token Storage]
+    C --> C4[Automatic Refresh]
+```
+
+> 📖 **Complete HTTP Flow Details**: For detailed sequence diagrams, session management, and token flow explanations, see **[SERVER.md - Complete Request Flow](./SERVER.md#complete-request-flow)**
 
 ### Key Components
 
@@ -133,10 +194,22 @@ Octocode-MCP resolves tokens in the following **priority order**:
 flowchart TD
     Start([Start Token Resolution]) --> CheckOAuth{OAuth token
 available?}
-    CheckOAuth -- Yes --> UseOAuth[Use OAuth access token]
+    CheckOAuth -- Yes --> ValidateOAuth{Token expired?}
+    ValidateOAuth -- No --> UseOAuth[Use OAuth access token]
+    ValidateOAuth -- Yes --> RefreshOAuth{Refresh token
+available?}
+    RefreshOAuth -- Yes --> DoRefresh[Refresh OAuth token]
+    RefreshOAuth -- No --> ClearOAuth[Clear expired token]
+    DoRefresh --> UseOAuth
+    ClearOAuth --> CheckApp
+    
     CheckOAuth -- No --> CheckApp{GitHub App token
 available?}
-    CheckApp -- Yes --> UseApp[Use GitHub App installation token]
+    CheckApp -- Yes --> ValidateApp{Token expired?}
+    ValidateApp -- No --> UseApp[Use GitHub App installation token]
+    ValidateApp -- Yes --> RefreshApp[Refresh GitHub App token]
+    RefreshApp --> UseApp
+    
     CheckApp -- No --> CheckEnv{Env token
 available?}
     CheckEnv -- GITHUB_TOKEN --> UseEnv1[Use GITHUB_TOKEN]
@@ -153,12 +226,13 @@ available?}
     CheckAuthHeader -- No --> Fail[No token found → error]
 
     %% Success nodes converge
-    UseOAuth --> Done([Token ready])
-    UseApp --> Done
-    UseEnv1 --> Done
-    UseEnv2 --> Done
-    UseCLI --> Done
-    UseHeader --> Done
+    UseOAuth --> CacheToken[Cache token with metadata]
+    UseApp --> CacheToken
+    UseEnv1 --> CacheToken
+    UseEnv2 --> CacheToken
+    UseCLI --> CacheToken
+    UseHeader --> CacheToken
+    CacheToken --> Done([Token ready])
 ```
 
 ### Enterprise-Aware Fallback Decision
@@ -171,7 +245,7 @@ flowchart LR
     B -- Yes --> E[Allow CLI for local/dev only]
 ```
 
-## 💻 Local Development Setup
+## 💻 Local Development Setup (Stdio)
 
 ### Method 1: GitHub CLI (Recommended)
 
@@ -190,7 +264,7 @@ gh auth login
 gh auth status
 
 # Start Octocode-MCP
-npx @octocode/mcp
+npx octocode-mcp
 ```
 
 ### Method 2: Personal Access Token
@@ -226,92 +300,37 @@ GITHUB_HOST=github.com  # Optional: for GitHub Enterprise
 GITHUB_ORGANIZATION=my-org  # Optional: for organization access
 ```
 
-## 🏢 Production/Hosted Setup
+## 🏢 Production/Hosted Setup (HTTP)
 
-### OAuth 2.0 Setup (Recommended)
+For web applications and hosted services:
 
-Perfect for web applications and hosted services:
+> 📖 **Complete HTTP Server Setup Guide**: For detailed OAuth configuration, deployment instructions, and production best practices, see **[SERVER.md](./SERVER.md)**
 
-1. **Register GitHub OAuth App**:
-   - Go to [GitHub Settings > Developer settings > OAuth Apps](https://github.com/settings/developers)
-   - Click "New OAuth App"
-   - Fill in details:
-     - **Application name**: Your app name
-     - **Homepage URL**: `https://yourapp.com`
-     - **Authorization callback URL**: `https://yourapp.com/auth/callback`
-
-2. **Configure Environment Variables** (recommended scopes shown):
+**Quick Start:**
 ```bash
-export GITHUB_OAUTH_CLIENT_ID="your_client_id"
-export GITHUB_OAUTH_CLIENT_SECRET="your_client_secret"
-export GITHUB_OAUTH_REDIRECT_URI="https://yourapp.com/auth/callback"
-export GITHUB_OAUTH_SCOPES="repo,read:user,read:org"
-export GITHUB_OAUTH_ENABLED="true"
+# Required OAuth credentials
+export GITHUB_CLIENT_ID="your_client_id"
+export GITHUB_CLIENT_SECRET="your_client_secret"
+export BASE_URL="https://yourapp.com"
+
+# Start HTTP server
+npx octocode-mcp-server
 ```
 
-3. **Implement OAuth Flow**:
-```javascript
-// Example OAuth flow
-const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&scope=repo,read:user&redirect_uri=${redirectUri}`;
-
-// After user authorizes, exchange code for token
-const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-  method: 'POST',
-  headers: { 'Accept': 'application/json' },
-  body: new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    code: authorizationCode,
-  }),
-});
-```
-
-#### OAuth Authorization Code with PKCE Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Client (Your App)
-    participant G as GitHub OAuth Server
-
-    C->>C: Generate state + PKCE (code_verifier, code_challenge)
-    C->>U: Redirect to GitHub authorize URL
-    U->>G: Authorize application
-    G-->>U: Redirect back with code (+ state)
-    U-->>C: Browser sends code to redirect_uri
-    C->>C: Validate state
-    C->>G: Exchange code + code_verifier for tokens
-    G-->>C: Access token (+ refresh token)
-    C->>C: Store tokens securely (SecureCredentialStore)
-    C->>GitHub API: Call API with Bearer access_token
-    GitHub API-->>C: Protected resources
-    C-->>U: Operation successful
-```
+The HTTP server uses the `mcp-s-oauth` package for seamless OAuth 2.0 integration with automatic token management and session handling.
 
 ### GitHub App Setup (Enterprise)
 
-Best for organization-wide installations:
+For organization-wide installations:
 
-1. **Create GitHub App**:
-   - Go to [GitHub Settings > Developer settings > GitHub Apps](https://github.com/settings/apps)
-   - Click "New GitHub App"
-   - Configure permissions and events
-
-2. **Generate Private Key**:
-   - In your GitHub App settings, click "Generate a private key"
-   - Download the `.pem` file
-
-3. **Install App**:
-   - Install the app on your organization/repositories
-   - Note the Installation ID from the URL
-
-4. **Configure Environment Variables**:
 ```bash
 export GITHUB_APP_ID="123456"
 export GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
 export GITHUB_APP_INSTALLATION_ID="12345678"
 export GITHUB_APP_ENABLED="true"
 ```
+
+> 📖 **Complete GitHub App Setup**: For detailed GitHub App creation, private key generation, and configuration steps, see **[SERVER.md - GitHub App Configuration](./SERVER.md#github-app-configuration-enterprise)**
 
 ### Simple Token Setup
 
@@ -321,9 +340,9 @@ For basic production environments:
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
 ```
 
-**⚠️ Security Note**: Store tokens securely using secrets management (AWS Secrets Manager, Azure Key Vault, etc.)
-
 ## 🏢 Enterprise Features
+
+> 📖 **Enterprise Deployment Guide**: For complete enterprise setup, security configuration, and monitoring, see **[SERVER.md - Security](./SERVER.md#security)** and **[SERVER.md - Monitoring & Logging](./SERVER.md#monitoring--logging)**
 
 Enable enterprise features for enhanced security and compliance:
 
@@ -440,96 +459,29 @@ grep 'rate_limit' logs/audit/*.jsonl | jq '.details.rateLimitRemaining'
 
 ## 🔐 OAuth 2.0 Integration
 
-### Complete OAuth Flow
+> 📖 **Complete OAuth Implementation**: For detailed OAuth 2.0 implementation, token management, session handling, and security features, see **[SERVER.md - OAuth 2.0 Integration](./SERVER.md#oauth-20-integration)**
 
-```javascript
-// 1. Redirect user to GitHub
-const authUrl = new URL('https://github.com/login/oauth/authorize');
-authUrl.searchParams.set('client_id', process.env.GITHUB_OAUTH_CLIENT_ID);
-authUrl.searchParams.set('scope', 'repo,read:user,read:org');
-authUrl.searchParams.set('redirect_uri', process.env.GITHUB_OAUTH_REDIRECT_URI);
-
-// 2. Handle callback and exchange code for token
-app.get('/auth/callback', async (req, res) => {
-  const { code } = req.query;
-  
-  const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      client_id: process.env.GITHUB_OAUTH_CLIENT_ID,
-      client_secret: process.env.GITHUB_OAUTH_CLIENT_SECRET,
-      code,
-    }),
-  });
-  
-  const tokenData = await tokenResponse.json();
-  
-  // Store token securely
-  // Octocode-MCP will automatically use OAuth tokens when available
-});
-```
-
-### OAuth Token Refresh
-
-Octocode-MCP automatically handles token refresh:
-
-```javascript
-// Tokens are automatically refreshed 5 minutes before expiration
-// Manual refresh is also available:
-import { refreshCurrentToken } from '@octocode/mcp/tokenManager';
-
-try {
-  const newToken = await refreshCurrentToken();
-  console.log('Token refreshed successfully');
-} catch (error) {
-  console.error('Token refresh failed:', error);
-}
-```
+OAuth 2.0 is used in HTTP server mode for web-based authentication. The `mcp-s-oauth` package provides automatic token management, secure storage, and session handling.
 
 ## 📱 GitHub App Authentication
 
-### JWT Generation for GitHub Apps
+### GitHub App Tokens
 
-Octocode-MCP handles JWT generation automatically, but here's how it works:
-
-```javascript
-// Automatic JWT generation and token refresh
-// No manual implementation needed
-
-// Get current token metadata
-import { getTokenMetadata } from '@octocode/mcp/tokenManager';
-
-const metadata = await getTokenMetadata();
-console.log('Token source:', metadata.source);
-console.log('Expires at:', metadata.expiresAt);
-console.log('Permissions:', metadata.permissions);
-```
+Installation tokens are generated and refreshed automatically. Internal implementation: `src/auth/githubAppManager.ts` and `src/mcp/tools/utils/tokenManager.ts`.
 
 ## 🔧 Environment Variables Reference
 
-### Core Authentication
+### Core Authentication (Both Modes)
 | Variable | Description | Required | Example |
 |----------|-------------|----------|---------|
 | `GITHUB_TOKEN` | Personal Access Token | No* | `ghp_xxxxxxxxxxxx` |
 | `GH_TOKEN` | Alternative PAT | No* | `ghp_xxxxxxxxxxxx` |
 | `GITHUB_HOST` | GitHub Enterprise URL | No | `github.company.com` |
 
-*At least one authentication method required
+*At least one authentication method required for Stdio mode
 
-### OAuth Configuration
-| Variable | Description | Required | Example |
-|----------|-------------|----------|---------|
-| `GITHUB_OAUTH_CLIENT_ID` | OAuth App Client ID | Yes† | `Iv1.a629723d4c8a5678` |
-| `GITHUB_OAUTH_CLIENT_SECRET` | OAuth App Secret | Yes† | `abc123...` |
-| `GITHUB_OAUTH_REDIRECT_URI` | Callback URL | No | `http://localhost:3000/callback` |
-| `GITHUB_OAUTH_SCOPES` | Requested scopes | No | `repo,read:user,read:org` |
-| `GITHUB_OAUTH_ENABLED` | Enable OAuth | No | `true` |
-
-†Required for OAuth
+### HTTP Server Configuration
+> For complete HTTP server environment variables, see **[SERVER.md - Configuration](./SERVER.md#configuration)**
 
 ### GitHub App Configuration
 | Variable | Description | Required | Example |

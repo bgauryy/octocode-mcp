@@ -11,22 +11,25 @@ import { buildRepoSearchQuery } from './queryBuilders';
 import { generateCacheKey, withCache } from '../cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../mcp/responses';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**
  * Search GitHub repositories using Octokit API with proper TypeScript types and caching
  * Token management is handled internally by the GitHub client
  */
 export async function searchGitHubReposAPI(
-  params: GitHubReposSearchQuery
+  params: GitHubReposSearchQuery,
+  authInfo?: AuthInfo,
+  sessionId?: string
 ): Promise<
   GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
 > {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-api-repos', params);
+  const cacheKey = generateCacheKey('gh-api-repos', params, sessionId);
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubReposAPIInternal(params);
+    const result = await searchGitHubReposAPIInternal(params, authInfo);
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -68,12 +71,13 @@ export async function searchGitHubReposAPI(
  * Internal implementation of searchGitHubReposAPI without caching
  */
 async function searchGitHubReposAPIInternal(
-  params: GitHubReposSearchQuery
+  params: GitHubReposSearchQuery,
+  authInfo?: AuthInfo
 ): Promise<
   GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
 > {
   try {
-    const octokit = await getOctokit();
+    const octokit = await getOctokit(authInfo);
     const query = buildRepoSearchQuery(params);
 
     if (!query.trim()) {

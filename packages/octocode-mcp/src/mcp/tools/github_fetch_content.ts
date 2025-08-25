@@ -13,6 +13,7 @@ import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { generateHints } from './utils/hints_consolidated';
 import { isSamplingEnabled } from '../../utils/betaFeatures';
 import { SamplingUtils, performSampling } from '../sampling';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
 
@@ -55,9 +56,13 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
       },
     },
     withSecurityValidation(
-      async (args: {
-        queries: FileContentQuery[];
-      }): Promise<CallToolResult> => {
+      async (
+        args: {
+          queries: FileContentQuery[];
+        },
+        authInfo,
+        userContext
+      ): Promise<CallToolResult> => {
         const emptyQueries =
           !args.queries ||
           !Array.isArray(args.queries) ||
@@ -88,7 +93,12 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           });
         }
 
-        return fetchMultipleGitHubFileContents(server, args.queries);
+        return fetchMultipleGitHubFileContents(
+          server,
+          args.queries,
+          authInfo,
+          userContext
+        );
       }
     )
   );
@@ -96,7 +106,9 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
 
 async function fetchMultipleGitHubFileContents(
   server: McpServer,
-  queries: FileContentQuery[]
+  queries: FileContentQuery[],
+  authInfo?: AuthInfo,
+  _userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'file-content');
   const results: FileContentQueryResult[] = [];
@@ -104,7 +116,7 @@ async function fetchMultipleGitHubFileContents(
   // Execute all queries
   for (const query of uniqueQueries) {
     try {
-      const apiResult = await fetchGitHubFileContentAPI(query);
+      const apiResult = await fetchGitHubFileContentAPI(query, authInfo);
 
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
