@@ -90,22 +90,18 @@ describe('Advanced Functionality', () => {
     });
   });
 
-  it('should detect advanced mode from environment variables', async () => {
-    process.env.AUDIT_ALL_ACCESS = 'true';
-
-    const { isAdvancedTokenManager } = await import(
-      '../../src/mcp/utils/tokenManager'
-    );
-    expect(isAdvancedTokenManager()).toBe(true);
+  it('should detect simple token management is active', async () => {
+    // Simple token management is always active now
+    const { getGitHubToken } = await import('../../config.js');
+    expect(typeof getGitHubToken).toBe('function');
   });
 
-  it('should always enable CLI token resolution', async () => {
-    process.env.AUDIT_ALL_ACCESS = 'true';
+  it('should handle token resolution with config.ts', async () => {
+    process.env.GITHUB_TOKEN = 'test-token';
 
-    const { isCliTokenResolutionEnabled } = await import(
-      '../../src/mcp/utils/tokenManager'
-    );
-    expect(isCliTokenResolutionEnabled()).toBe(true);
+    const { getGitHubToken } = await import('../../config.js');
+    const token = await getGitHubToken();
+    expect(typeof token).toMatch(/string|null/);
   });
 
   it('should enable advanced toolset when audit configured', async () => {

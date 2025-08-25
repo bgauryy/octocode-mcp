@@ -6,8 +6,12 @@ import { registerResources } from './mcp/resources.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './mcp/utils/cache.js';
 import { registerTools } from './mcp/tools/toolsManager.js';
-import { getToken, isAdvancedTokenManager } from './mcp/utils/tokenManager.js';
-import { isBetaEnabled } from '../config.js';
+import {
+  isBetaEnabled,
+  initialize,
+  cleanup,
+  getGitHubToken,
+} from '../config.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -21,6 +25,8 @@ async function startServer() {
   let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
+    // Initialize configuration and token management
+    await initialize();
     const server = new McpServer(SERVER_CONFIG, {
       capabilities: {
         prompts: {},
@@ -81,6 +87,9 @@ async function startServer() {
 
         // Clear cache and credentials (fastest operations)
         clearAllCache();
+
+        // Cleanup configuration and token management
+        cleanup();
 
         // Shutdown advanced modules gracefully
         try {
@@ -143,12 +152,12 @@ async function startServer() {
 }
 
 export async function registerAllTools(server: McpServer) {
-  // Ensure token exists and is stored securely (existing behavior)
-  await getToken();
-
-  // Info message for audit logging
-  if (isAdvancedTokenManager()) {
-    process.stderr.write('📊 Audit logging enabled\n');
+  // Ensure token is available (simple check)
+  const token = await getGitHubToken();
+  if (!token) {
+    process.stderr.write(
+      '⚠️  No GitHub token available - some features may be limited\n'
+    );
   }
 
   const { successCount } = registerTools(server);

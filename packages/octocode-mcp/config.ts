@@ -3,7 +3,14 @@
  *
  * This file consolidates all environment variable reading and provides
  * a clean, typed interface for configuration across the entire MCP system.
+ * 
+ * INCLUDES SIMPLE TOKEN MANAGEMENT:
+ * - Gets token once on initialization
+ * - Refreshes token every hour automatically  
+ * - Priority: GH CLI → GITHUB_TOKEN env var
  */
+
+import { spawn } from 'child_process';
 
 // Core Configuration Types
 export interface MCPConfig {
@@ -49,6 +56,128 @@ export interface MCPConfig {
     inputValidation: boolean;
     secretDetection: boolean;
   };
+}
+
+// ===== SIMPLE TOKEN MANAGEMENT =====
+
+// Simple token state - refreshed every hour
+let currentToken: string | null = null;
+let lastTokenCheck: number = 0;
+const TOKEN_REFRESH_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
+
+/**
+ * Get GitHub CLI token using safe spawn method
+ * Returns the value from 'gh auth token' command
+ */
+async function getGithubCLIToken(): Promise<string | null> {
+  return new Promise(resolve => {
+    const childProcess = spawn('gh', ['auth', 'token'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10000, // 10 second timeout
+      env: {
+        ...process.env,
+        NODE_OPTIONS: undefined, // Remove potentially dangerous env vars
+      },
+    });
+
+    let stdout = '';
+
+    childProcess.stdout?.on('data', data => {
+      stdout += data.toString();
+    });
+
+    childProcess.stderr?.on('data', _data => {
+      // Ignore stderr for token retrieval
+    });
+
+    childProcess.on('close', code => {
+      if (code === 0) {
+        const token = stdout.trim();
+        resolve(token || null);
+      } else {
+        resolve(null);
+      }
+    });
+
+    childProcess.on('error', () => {
+      resolve(null);
+    });
+
+    // Handle timeout
+    const timeoutHandle = setTimeout(() => {
+      childProcess.kill('SIGTERM');
+      resolve(null);
+    }, 10000);
+
+    childProcess.on('close', () => {
+      clearTimeout(timeoutHandle);
+    });
+  });
+}
+
+/**
+ * SIMPLE TOKEN CHECK - Priority: GH CLI → GITHUB_TOKEN env var
+ * Gets fresh token and caches for 1 hour
+ */
+async function checkToken(): Promise<string | null> {
+  const now = Date.now();
+  
+  // Return cached token if still valid (less than 1 hour old)
+  if (currentToken && (now - lastTokenCheck) < TOKEN_REFRESH_INTERVAL) {
+    return currentToken;
+  }
+
+  // Try GH CLI first (most up-to-date)
+  const cliToken = await getGithubCLIToken();
+  if (cliToken) {
+    currentToken = cliToken;
+    lastTokenCheck = now;
+    return currentToken;
+  }
+
+  // Fallback to environment variables
+  const envToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (envToken) {
+    currentToken = envToken;
+    lastTokenCheck = now;
+    return currentToken;
+  }
+
+  // No token available
+  currentToken = null;
+  lastTokenCheck = now;
+  return null;
+}
+
+/**
+ * Initialize token management - gets initial token
+ */
+async function initializeTokenManager(): Promise<void> {
+  await checkToken(); // Initial token check
+}
+
+// Auto-refresh token every hour
+let tokenRefreshTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Start automatic token refresh every hour
+ */
+function startTokenRefresh(): void {
+  if (tokenRefreshTimer) return; // Already started
+  
+  tokenRefreshTimer = setInterval(async () => {
+    await checkToken();
+  }, TOKEN_REFRESH_INTERVAL);
+}
+
+/**
+ * Stop automatic token refresh (for cleanup)
+ */
+function stopTokenRefresh(): void {
+  if (tokenRefreshTimer) {
+    clearInterval(tokenRefreshTimer);
+    tokenRefreshTimer = null;
+  }
 }
 
 /**
@@ -203,12 +332,12 @@ export function isBetaEnabled(): boolean {
   return getConfig().beta.enabled;
 }
 
-export function getGitHubToken(): string | undefined {
-  const config = getConfig();
-  return (
-    config.github.token ||
-    config.github.ghToken
-  );
+/**
+ * Get current GitHub token (refreshes every hour automatically)
+ * SIMPLE TOKEN MANAGEMENT - Priority: GH CLI → GITHUB_TOKEN env var
+ */
+export async function getGitHubToken(): Promise<string | null> {
+  return await checkToken();
 }
 
 export function getGitHubApiUrl(): string {
@@ -244,6 +373,29 @@ export function getPerformanceConfig() {
     requestTimeout: config.performance.requestTimeout,
     maxRetries: config.performance.maxRetries,
   };
+}
+
+/**
+ * Initialize the configuration system and token management
+ * MUST be called at application startup
+ */
+export async function initialize(): Promise<void> {
+  // Load config 
+  getConfig();
+  
+  // Initialize token management
+  await initializeTokenManager();
+  
+  // Start automatic token refresh
+  startTokenRefresh();
+}
+
+/**
+ * Cleanup function for graceful shutdown
+ * Stops token refresh timer
+ */
+export function cleanup(): void {
+  stopTokenRefresh();
 }
 
 /**
@@ -311,6 +463,9 @@ export default {
   updateConfig,
   loadConfig,
   getRedactedConfig,
+  // System management
+  initialize,
+  cleanup,
   // Boolean helpers
   isBetaEnabled,
   // Value getters

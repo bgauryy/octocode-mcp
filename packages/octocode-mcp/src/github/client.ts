@@ -2,15 +2,15 @@ import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
 import type { GetRepoResponse } from './types';
-import { getGitHubToken, onTokenRotated } from '../mcp/utils/tokenManager.js';
+import { getGitHubToken } from '../../config.js';
 import { ConfigManager } from '../config/serverConfig.js';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Octokit instance management with token rotation support
+// Simple Octokit instance management
 let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
-let tokenRotationCleanup: (() => void) | null = null;
+let lastTokenUsed: string | null = null;
 
 /**
  * Throttle options following official Octokit.js best practices
@@ -31,14 +31,16 @@ const createThrottleOptions = () => ({
 });
 
 /**
- * Initialize Octokit with centralized token management and rotation support
- * Token resolution is delegated to tokenManager - single source of truth
+ * Initialize Octokit with simple token management
+ * Automatically reinitializes if token changes (config.ts handles token refresh)
  */
 export async function getOctokit(): Promise<
   InstanceType<typeof OctokitWithThrottling>
 > {
-  if (!octokitInstance) {
-    const token = await getGitHubToken();
+  const token = await getGitHubToken();
+
+  // Reinitialize if token changed or no instance exists
+  if (!octokitInstance || lastTokenUsed !== token) {
     const config = ConfigManager.getConfig();
     const baseUrl = 'https://api.github.com';
     const options: OctokitOptions & {
@@ -52,28 +54,28 @@ export async function getOctokit(): Promise<
     };
 
     octokitInstance = new OctokitWithThrottling(options);
+    lastTokenUsed = token;
 
-    // Subscribe to token rotation events for automatic re-initialization
-    tokenRotationCleanup = onTokenRotated(async () => {
-      // Force re-initialization with the new token on next call
-      // Note: existing lightweight caches such as default branch values are token-agnostic
-      // and can remain intact. Only Octokit authentication must refresh.
-      octokitInstance = null;
-    });
+    // Clear default branch cache when token changes for security
+    if (lastTokenUsed !== token) {
+      defaultBranchCache.clear();
+    }
   }
+
   return octokitInstance;
 }
 
 /**
- * Clear cached token - delegates to centralized token manager
- * Maintains backward compatibility
+ * Clear cached client instance
+ * Forces re-initialization on next call
  */
 export function clearCachedToken(): void {
   // Clear local Octokit instance
   octokitInstance = null;
+  lastTokenUsed = null;
 
-  // The actual token clearing is handled by tokenManager
-  // This function is kept for backward compatibility but doesn't manage tokens directly
+  // Clear default branch cache for security
+  defaultBranchCache.clear();
 }
 
 // Simple in-memory cache for default branch results
@@ -108,9 +110,4 @@ export async function getDefaultBranch(
   }
 }
 
-// Clean up on process exit
-process.on('exit', () => {
-  if (tokenRotationCleanup) {
-    tokenRotationCleanup();
-  }
-});
+// Clean up on process exit - handled by config.ts cleanup()

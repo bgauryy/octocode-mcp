@@ -23,8 +23,6 @@ vi.mock('../src/config/serverConfig.js');
 vi.mock('../config.js');
 vi.mock('../src/mcp/tools/toolsManager.js');
 vi.mock('../src/translations/translationManager.js');
-vi.mock('../src/mcp/utils/tokenManager.js');
-
 // Import mocked functions
 import { clearAllCache } from '../src/mcp/utils/cache.js';
 import { registerPrompts } from '../src/mcp/prompts.js';
@@ -42,7 +40,7 @@ import { getGithubCLIToken } from '../src/mcp/utils/exec.js';
 
 import { ConfigManager } from '../src/config/serverConfig.js';
 import { registerTools } from '../src/mcp/tools/toolsManager.js';
-import { getToken } from '../src/mcp/utils/tokenManager.js';
+import { getGitHubToken } from '../config.js';
 import { TOOL_NAMES } from '../src/mcp/utils/toolConstants.js';
 import { isBetaEnabled } from '../config.js';
 
@@ -67,7 +65,7 @@ const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockConfigManager = vi.mocked(ConfigManager);
 
 const mockRegisterTools = vi.mocked(registerTools);
-const mockGetToken = vi.mocked(getToken);
+const mockGetGitHubToken = vi.mocked(getGitHubToken);
 
 // Config function mocks
 const mockIsBetaEnabled = vi.mocked(isBetaEnabled);
@@ -225,7 +223,7 @@ describe('Index Module', () => {
       failedTools: [],
     });
 
-    mockGetToken.mockResolvedValue('test-token');
+    mockGetGitHubToken.mockResolvedValue('test-token');
 
     // Mock resources and prompts registration
     mockRegisterResources.mockImplementation(() => {});
@@ -338,26 +336,19 @@ describe('Index Module', () => {
       expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
 
-    it('should exit when no token is available', async () => {
+    it('should continue running when no token is available (graceful degradation)', async () => {
       delete process.env.GITHUB_TOKEN;
       delete process.env.GH_TOKEN;
       mockGetGithubCLIToken.mockResolvedValue(null);
 
-      // Mock getToken to throw when no token is available
-      mockGetToken.mockRejectedValue(new Error('No token available'));
+      // Mock getGitHubToken to return null when no token is available
+      mockGetGitHubToken.mockResolvedValue(null);
 
-      // Override the mock to track the exit call without throwing
+      // Track if exit was called (shouldn't be)
       let exitCalled = false;
-      let exitCode: number | undefined;
       processExitSpy.mockImplementation(
-        (code?: string | number | null | undefined) => {
+        (_code?: string | number | null | undefined) => {
           exitCalled = true;
-          exitCode =
-            typeof code === 'number'
-              ? code
-              : code
-                ? parseInt(String(code))
-                : undefined;
           return undefined as never;
         }
       );
@@ -371,8 +362,9 @@ describe('Index Module', () => {
         // Ignore any errors from module loading
       }
 
-      expect(exitCalled).toBe(true);
-      expect(exitCode).toBe(1);
+      // Should NOT exit - graceful degradation with warning
+      expect(exitCalled).toBe(false);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
     });
   });
 
