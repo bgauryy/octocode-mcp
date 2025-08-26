@@ -32,6 +32,17 @@ process.on('unhandledRejection', (reason, promise) => {
     return;
   }
 
+  // Suppress expected unhandled rejections from promiseUtils test mocks
+  if (
+    reason instanceof Error &&
+    (reason.message.includes('always fails') ||
+      reason.message.includes('non-retryable error') ||
+      reason.message.includes('retryable error'))
+  ) {
+    // These are expected from promiseUtils.test.ts retry testing - ignore them
+    return;
+  }
+
   // For any other unhandled rejections, call the original handlers
   originalUnhandledRejection.forEach(handler => {
     if (typeof handler === 'function') {

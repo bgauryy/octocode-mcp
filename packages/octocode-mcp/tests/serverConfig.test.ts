@@ -306,13 +306,18 @@ describe('ServerConfig - Simplified Version', () => {
     });
 
     it('should parse toolsToRun correctly', async () => {
-      process.env.TOOLS_TO_RUN = 'github_search_code,package_search , github_fetch_content';
+      process.env.TOOLS_TO_RUN =
+        'github_search_code,package_search , github_fetch_content';
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
       const config = getServerConfig();
 
-      expect(config.toolsToRun).toEqual(['github_search_code', 'package_search', 'github_fetch_content']);
+      expect(config.toolsToRun).toEqual([
+        'github_search_code',
+        'package_search',
+        'github_fetch_content',
+      ]);
     });
 
     it('should handle toolsToRun with single tool', async () => {

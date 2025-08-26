@@ -43,13 +43,13 @@ describe('ToolsManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Mock server
     mockServer = {} as McpServer;
-    
+
     // Mock stderr to capture warnings
     process.stderr.write = vi.fn();
-    
+
     // Reset all tool function mocks
     DEFAULT_TOOLS.forEach(tool => {
       vi.mocked(tool.fn).mockReset();
@@ -374,7 +374,10 @@ describe('ToolsManager', () => {
 
       // Should register 2 successful tools, 2 failed
       expect(result.successCount).toBe(2);
-      expect(result.failedTools).toEqual(['githubSearchCode', 'githubViewRepoStructure']);
+      expect(result.failedTools).toEqual([
+        'githubSearchCode',
+        'githubViewRepoStructure',
+      ]);
 
       // Verify successful tools were still called
       expect(DEFAULT_TOOLS[1].fn).toHaveBeenCalled(); // githubGetFileContent

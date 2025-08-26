@@ -25,8 +25,13 @@ export function registerTools(server: McpServer): {
   logToolEvent('registration_start');
 
   // Check for conflicting configurations
-  if (toolsToRun.length > 0 && (enableTools.length > 0 || disableTools.length > 0)) {
-    process.stderr.write('Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n');
+  if (
+    toolsToRun.length > 0 &&
+    (enableTools.length > 0 || disableTools.length > 0)
+  ) {
+    process.stderr.write(
+      'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
+    );
   }
 
   // Register tools based on configuration

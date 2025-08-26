@@ -239,8 +239,8 @@ export function createBulkResponse<
     meta.aggregatedContext = context;
   }
 
-  // Include errors if requested and present
-  if (config.includeErrors && errors.length > 0) {
+  // Include errors if requested
+  if (config.includeErrors) {
     meta.errors = errors;
   }
 

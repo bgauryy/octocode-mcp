@@ -25,7 +25,8 @@ type ExecOptions = {
 export function parseExecResult(
   stdout: string,
   stderr: string,
-  error?: Error | null
+  error?: Error | null,
+  exitCode?: number
 ): CallToolResult {
   if (error) {
     return createResult({
@@ -34,15 +35,23 @@ export function parseExecResult(
     });
   }
 
-  if (stderr && stderr.trim()) {
+  // If exit code is 0 (success), treat stderr as warnings, not errors
+  if (stderr && stderr.trim() && exitCode !== 0) {
     return createResult({
       isError: true,
       hints: [`Command error: ${stderr.trim()}`],
     });
   }
 
+  // Include stderr as warnings if present but command succeeded
+  const hints =
+    stderr && stderr.trim() && exitCode === 0
+      ? [`Warning: ${stderr.trim()}`]
+      : undefined;
+
   return createResult({
     data: stdout,
+    hints,
   });
 }
 
@@ -154,13 +163,14 @@ export async function executeNpmCommand(
 
     childProcess.on('close', code => {
       if (code === 0) {
-        resolve(parseExecResult(stdout, stderr));
+        resolve(parseExecResult(stdout, stderr, null, 0));
       } else {
         resolve(
           parseExecResult(
             stdout,
             stderr,
-            new Error(`Process exited with code ${code}`)
+            new Error(`Process exited with code ${code}`),
+            code
           )
         );
       }
