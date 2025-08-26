@@ -1,10 +1,10 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../responses';
-import { ContentSanitizer } from '../../../security/contentSanitizer';
-import { getUserContext } from '../../../github/userInfo';
-import { RateLimiter } from '../../../security/rateLimiter';
-import { OrganizationManager } from '../../../security/organizationManager';
-import { isEnterpriseMode } from '../../../utils/enterpriseUtils';
+import { createResult } from '../../mcp/responses.js';
+import { ContentSanitizer } from '../../security/contentSanitizer.js';
+import { getUserContext } from '../../github/userInfo.js';
+import { RateLimiter } from '../../security/rateLimiter.js';
+import { OrganizationManager } from '../../security/organizationManager.js';
+import { isEnterpriseMode } from '../../utils/enterpriseUtils.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 export interface UserContext {

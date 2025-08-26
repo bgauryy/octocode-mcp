@@ -1,16 +1,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { createResult } from '../responses';
-import { searchGitHubReposAPI } from '../../github/githubAPI';
+import { createResult } from '../mcp/responses';
+import { searchGitHubReposAPI } from '../github/index';
 import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from './scheme/github_search_repos';
-import type { Repository } from '../../types/github-openapi';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
+import type { Repository } from '../types/github-openapi';
+import { ensureUniqueQueryIds } from './utils/bulkOperations';
 import {
   processBulkQueries,
   createBulkResponse,

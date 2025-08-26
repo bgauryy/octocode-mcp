@@ -11,7 +11,7 @@ const mockWithCache = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/github/githubAPI.js', () => ({
+vi.mock('../../src/github/index.js', () => ({
   searchGitHubCommitsAPI: mockSearchGitHubCommitsAPI,
 }));
 
@@ -20,12 +20,12 @@ vi.mock('../../src/utils/cache.js', () => ({
   withCache: mockWithCache,
 }));
 
-vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+vi.mock('../../src/tools/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
-import { registerSearchGitHubCommitsTool } from '../../src/mcp/tools/github_search_commits.js';
+import { registerSearchGitHubCommitsTool } from '../../src/tools/github_search_commits.js';
 
 describe('GitHub Search Commits Tool', () => {
   let mockServer: MockMcpServer;

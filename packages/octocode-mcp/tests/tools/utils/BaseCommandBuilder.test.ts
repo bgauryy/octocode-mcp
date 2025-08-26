@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   BaseCommandBuilder,
   BaseCommandParams,
-} from '../../../src/mcp/tools/utils/BaseCommandBuilder.js';
+} from '../../../src/tools/utils/BaseCommandBuilder.js';
 
 // Concrete implementation for testing
 class TestCommandBuilder extends BaseCommandBuilder<BaseCommandParams> {

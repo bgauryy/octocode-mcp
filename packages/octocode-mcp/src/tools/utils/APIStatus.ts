@@ -1,4 +1,4 @@
-import { executeNpmCommand } from '../../../utils/exec';
+import { executeNpmCommand } from '../../utils/exec.js';
 
 export async function getNPMUserDetails(): Promise<{
   npmConnected: boolean;

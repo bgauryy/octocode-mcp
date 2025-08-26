@@ -1,14 +1,14 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
-import { createResult } from '../responses.js';
+import { createResult } from '../mcp/responses.js';
 import { TOOL_NAMES } from './utils/toolConstants.js';
 import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
 } from './scheme/github_search_code.js';
-import { searchGitHubCodeAPI } from '../../github/githubAPI.js';
+import { searchGitHubCodeAPI } from '../github/index.js';
 import {
   createBulkResponse,
   BulkResponseConfig,
@@ -18,29 +18,30 @@ import {
   generateHints,
   generateBulkHints,
   consolidateHints,
-} from './utils/hints_consolidated';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { ProcessedCodeSearchResult } from './scheme/github_search_code';
+} from './utils/hints_consolidated.js';
+import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
+import { ProcessedCodeSearchResult } from './scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import type { OptimizedCodeSearchResult } from '../types/github-openapi.js';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
-SEARCH STRATEGY:
-  SEMANTIC: Natural language terms describing functionality, concepts, business logic
-  TECHNICAL: Actual code terms, function names, class names, file patterns
-  Use bulk queries from different angles. Start narrow, broaden if needed
-  SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
-  USE STRINGS WITH ONE WORD ONLY FOR EXPLORETORY SEARCH.
-    EXAMPLE:
-      queryTerms: [
-          term1,
-          term2
-        ]
-FOR MORE CONTEXT AFTER GOOD FINDINGS:
-      Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
-      Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to find the repository structure for relevant files after search
+  SEARCH STRATEGY:
+    SEMANTIC: Natural language terms describing functionality, concepts, business logic
+    TECHNICAL: Actual code terms, function names, class names, file patterns
+    Use bulk queries from different angles. Start narrow, broaden if needed
+    SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
+    USE STRINGS WITH ONE WORD ONLY FOR EXPLORETORY SEARCH.
+      EXAMPLE:
+        queryTerms: [
+            term1,
+            term2
+          ]
+  FOR MORE CONTEXT AFTER GOOD FINDINGS:
+        Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
+        Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to find the repository structure for relevant files after search
 
-Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
+  Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
 interface GitHubCodeAggregatedContext {
   totalQueries: number;
@@ -119,9 +120,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         // Log enterprise access if configured
         if (userContext?.isEnterpriseMode) {
           try {
-            const { logToolEvent } = await import(
-              '../../security/auditLogger.js'
-            );
+            const { logToolEvent } = await import('../security/auditLogger.js');
             logToolEvent(TOOL_NAMES.GITHUB_SEARCH_CODE, 'success', {
               userId: userContext.userId,
               userLogin: userContext.userLogin,
@@ -193,7 +192,8 @@ async function searchMultipleGitHubCode(
 
         // Count total matches across all files
         const totalMatches = apiResult.data.items.reduce(
-          (sum, item) => sum + item.matches.length,
+          (sum: number, item: OptimizedCodeSearchResult['items'][0]) =>
+            sum + item.matches.length,
           0
         );
 
@@ -204,12 +204,18 @@ async function searchMultipleGitHubCode(
           queryId: query.id!,
           data: {
             repository,
-            files: apiResult.data.items.map(item => ({
-              path: item.path,
-              // text_matches contain actual file content processed through the same
-              // content optimization pipeline as file fetching (sanitization, minification)
-              text_matches: item.matches.map(match => match.context),
-            })),
+            files: apiResult.data.items.map(
+              (item: OptimizedCodeSearchResult['items'][0]) => ({
+                path: item.path,
+                // text_matches contain actual file content processed through the same
+                // content optimization pipeline as file fetching (sanitization, minification)
+                text_matches: item.matches.map(
+                  (
+                    match: OptimizedCodeSearchResult['items'][0]['matches'][0]
+                  ) => match.context
+                ),
+              })
+            ),
             totalCount: apiResult.data.total_count,
           },
           metadata: {

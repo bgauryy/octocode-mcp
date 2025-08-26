@@ -21,17 +21,17 @@ vi.mock('../../src/utils/cache.js', () => ({
   withCache: mockWithCache,
 }));
 
-vi.mock('../../src/github/githubAPI.js', () => ({
+vi.mock('../../src/github/index.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
 }));
 
-vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+vi.mock('../../src/tools/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
-import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
-import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { TOOL_NAMES } from '../../src/tools/utils/toolConstants.js';
 // import { GitHubReposSearchParams } from '../../src/types.js'; // Type removed
 // GitHubCommandBuilder was removed - using direct API calls now
 

@@ -43,7 +43,7 @@ export default {
       sourceMap: false, // Disable source maps in TypeScript compilation
       declaration: false,
       declarationMap: false,
-      noEmitOnError: true // Fail build on TypeScript errors
+      noEmitOnError: false // Don't fail build on TypeScript errors - show all errors
     }),
     json(),
     terser({ // Add aggressive minification

@@ -10,11 +10,14 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../responses';
+import { createResult } from '../../mcp/responses.js';
 // Hints are now provided by the consolidated hints system
 import { ToolName } from './toolConstants';
 import { generateBulkHints, BulkHintContext } from './hints_consolidated';
-import { executeWithErrorIsolation } from '../../../utils/promiseUtils';
+import {
+  executeWithErrorIsolation,
+  PromiseResult,
+} from '../../utils/promiseUtils.js';
 
 /**
  * Base interface for bulk query operations
@@ -131,7 +134,7 @@ export async function processBulkQueries<
     {
       timeout: 60000, // 60 second timeout per query
       continueOnError: true,
-      onError: (error, index) => {
+      onError: (error: Error, index: number) => {
         errors.push({
           queryId: `query-${index}`,
           error: error.message,
@@ -141,11 +144,13 @@ export async function processBulkQueries<
   );
 
   // Collect successful results
-  queryResults.forEach(result => {
-    if (result.success && result.data) {
-      results.push(result.data);
+  queryResults.forEach(
+    (result: PromiseResult<{ queryId: string; result: R } | null>) => {
+      if (result.success && result.data) {
+        results.push(result.data);
+      }
     }
-  });
+  );
 
   return { results, errors };
 }

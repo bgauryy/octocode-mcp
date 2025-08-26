@@ -4,7 +4,7 @@ import {
   CreateMessageResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { ToolName } from './tools/utils/toolConstants';
+import { ToolName } from '../tools/utils/toolConstants.js';
 
 /**
  * Sampling request schema for input validation

@@ -10,7 +10,7 @@ vi.mock('../../src/github/githubAPI.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
-import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;

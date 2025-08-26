@@ -1,18 +1,18 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { createResult } from '../responses';
-import { fetchGitHubFileContentAPI } from '../../github/githubAPI';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { createResult } from '../mcp/responses.js';
+import { fetchGitHubFileContentAPI } from '../github/index.js';
+import { TOOL_NAMES } from './utils/toolConstants.js';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
   FileContentQueryResult,
 } from './scheme/github_fetch_content';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
-import { generateHints } from './utils/hints_consolidated';
-import { isSamplingEnabled } from '../../serverConfig';
-import { SamplingUtils, performSampling } from '../sampling';
+import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
+import { generateHints } from './utils/hints_consolidated.js';
+import { isSamplingEnabled } from '../serverConfig.js';
+import { SamplingUtils, performSampling } from '../mcp/sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.

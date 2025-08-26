@@ -6,7 +6,7 @@ import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestSearchResult,
   GitHubPullRequestSearchError,
-} from '../mcp/tools/scheme/github_search_pull_requests';
+} from '../tools/scheme/github_search_pull_requests';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];

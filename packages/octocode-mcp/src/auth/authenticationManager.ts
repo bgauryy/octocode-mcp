@@ -137,7 +137,7 @@ export class AuthenticationManager {
       : undefined;
 
     const { initialize: initializeTokenManager } = await import(
-      '../mcp/tools/utils/tokenManager.js'
+      '../tools/utils/tokenManager.js'
     );
     await initializeTokenManager(tokenConfig);
   }

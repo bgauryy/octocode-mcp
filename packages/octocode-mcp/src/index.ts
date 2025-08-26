@@ -4,22 +4,22 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { registerPrompts } from './mcp/prompts.js';
 import { registerSampling } from './mcp/sampling.js';
 import { clearAllCache } from './utils/cache.js';
-import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from './mcp/tools/package_search/package_search.js';
-import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
-import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
+import { registerGitHubSearchCodeTool } from './tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from './tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from './tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from './tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from './tools/github_search_pull_requests.js';
+import { registerPackageSearchTool } from './tools/package_search/package_search.js';
+import { registerViewGitHubRepoStructureTool } from './tools/github_view_repo_structure.js';
+import { TOOL_NAMES } from './tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import {
   getToken,
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
-} from './mcp/tools/utils/tokenManager.js';
+} from './tools/utils/tokenManager.js';
 import { ConfigManager } from './serverConfig.js';
-import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
+import { ToolsetManager } from './tools/toolsets/toolsetManager.js';
 import { isBetaEnabled } from './serverConfig.js';
 import { version, name } from '../package.json';
 

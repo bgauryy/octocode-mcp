@@ -9,7 +9,7 @@ import {
   rotateToken,
   getConfig,
   clearConfig,
-} from '../../../src/mcp/tools/utils/tokenManager';
+} from '../../../src/tools/utils/tokenManager';
 
 // Mock dependencies
 vi.mock('../../../src/utils/exec.js', () => ({

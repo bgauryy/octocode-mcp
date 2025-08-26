@@ -17,7 +17,7 @@ vi.mock('../../src/utils/npmAPI', () => ({
   isNPMEnabled: vi.fn(),
 }));
 
-vi.mock('../../src/mcp/tools/utils/APIStatus', () => ({
+vi.mock('../../src/tools/utils/APIStatus', () => ({
   getNPMUserDetails: vi.fn(),
 }));
 

@@ -43,7 +43,7 @@ describe('Enterprise Functionality', () => {
     process.env.RATE_LIMIT_API_HOUR = '1000';
 
     const { isEnterpriseTokenManager } = await import(
-      '../../src/mcp/tools/utils/tokenManager'
+      '../../src/tools/utils/tokenManager'
     );
     expect(isEnterpriseTokenManager()).toBe(true);
   });
@@ -52,7 +52,7 @@ describe('Enterprise Functionality', () => {
     process.env.GITHUB_ORGANIZATION = 'test-org';
 
     const { isCliTokenResolutionEnabled } = await import(
-      '../../src/mcp/tools/utils/tokenManager'
+      '../../src/tools/utils/tokenManager'
     );
     expect(isCliTokenResolutionEnabled()).toBe(false);
   });
@@ -61,7 +61,7 @@ describe('Enterprise Functionality', () => {
     process.env.GITHUB_ORGANIZATION = 'test-org';
 
     const { ToolsetManager } = await import(
-      '../../src/mcp/tools/toolsets/toolsetManager'
+      '../../src/tools/toolsets/toolsetManager'
     );
     ToolsetManager.initialize(['all']);
 

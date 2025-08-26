@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GitHubCodeSearchQuerySchema } from '../../src/mcp/tools/scheme/github_search_code.js';
-import { ensureUniqueQueryIds } from '../../src/mcp/tools/utils/queryUtils.js';
+import { GitHubCodeSearchQuerySchema } from '../../src/tools/scheme/github_search_code.js';
+import { ensureUniqueQueryIds } from '../../src/tools/utils/queryUtils.js';
 
 // Mock the GitHub client
 const mockOctokit = vi.hoisted(() => ({

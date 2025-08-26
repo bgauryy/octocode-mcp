@@ -4,7 +4,7 @@ import type {
   GitHubAPIResponse,
   Repository,
 } from '../types/github-openapi';
-import { GitHubReposSearchQuery } from '../mcp/tools/scheme/github_search_repos';
+import { GitHubReposSearchQuery } from '../tools/scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';

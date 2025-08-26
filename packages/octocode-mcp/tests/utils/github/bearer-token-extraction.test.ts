@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractBearerToken } from '../../../src/mcp/tools/utils/tokenManager';
+import { extractBearerToken } from '../../../src/tools/utils/tokenManager';
 
 describe('Bearer Token Extraction - Case Sensitive', () => {
   describe('Bearer prefix handling (case-sensitive)', () => {

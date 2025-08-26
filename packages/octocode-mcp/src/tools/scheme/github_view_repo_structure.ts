@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { GenericToolResponse, BaseToolMeta } from '../../types/genericResponse';
+import {
+  GenericToolResponse,
+  BaseToolMeta,
+} from '../../mcp/types/genericResponse.js';
 import {
   extendBaseQuerySchema,
   createBulkQuerySchema,
