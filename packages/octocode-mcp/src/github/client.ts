@@ -5,6 +5,7 @@ import type { GetRepoResponse } from './github-openapi';
 import { getGitHubToken } from '../serverConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { version } from '../../package.json';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
@@ -45,7 +46,7 @@ export async function getOctokit(
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
     } = {
-      userAgent: 'octocode-mcp/1.0.0',
+      userAgent: `octocode-mcp/${version}`,
       baseUrl,
       request: { timeout: config.timeout || 30000 },
       throttle: createThrottleOptions(),
