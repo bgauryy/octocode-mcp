@@ -1,10 +1,10 @@
 import axios from 'axios';
-import { executeNpmCommand } from './exec';
+import { executeNpmCommand } from '../utils/exec';
 import {
   NpmPackageSearchBuilder,
   NpmPackageViewBuilder,
-} from '../tools/utils/NpmCommandBuilder';
-import { generateCacheKey, withCache } from './cache';
+} from './NpmCommandBuilder';
+import { generateCacheKey, withCache } from '../utils/cache';
 import {
   toDDMMYYYY,
   humanizeBytes,

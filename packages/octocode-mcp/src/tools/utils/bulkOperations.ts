@@ -17,7 +17,7 @@ import { generateBulkHints, BulkHintContext } from './hints_consolidated';
 import {
   executeWithErrorIsolation,
   PromiseResult,
-} from '../../utils/promiseUtils.js';
+} from '../../utils/promiseUtils';
 
 /**
  * Smart type constraint - handles schema-inferred types and unknown fields

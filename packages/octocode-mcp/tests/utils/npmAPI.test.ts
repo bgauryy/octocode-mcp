@@ -3,14 +3,14 @@ import {
   isNPMEnabled,
   refreshNPMStatus,
   resetNPMStatus,
-} from '../../src/utils/npmAPI';
-import { getNPMUserDetails } from '../../src/tools/utils/APIStatus';
+} from '../../src/npm/npmAPI';
 
-// Mock the NPM status check
-vi.mock('../../src/tools/utils/APIStatus', () => ({
+// Mock the getNPMUserDetails function
+vi.mock('../../src/npm/getNPMUserDetails', () => ({
   getNPMUserDetails: vi.fn(),
 }));
 
+import { getNPMUserDetails } from '../../src/npm/getNPMUserDetails';
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 
 describe('NPM API', () => {

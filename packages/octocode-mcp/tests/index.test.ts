@@ -15,7 +15,7 @@ vi.mock('../src/tools/github_search_commits.js');
 vi.mock('../src/tools/github_search_pull_requests.js');
 vi.mock('../src/tools/package_search.js');
 vi.mock('../src/tools/github_view_repo_structure.js');
-vi.mock('../src/tools/utils/APIStatus.js');
+vi.mock('../src/npm/getNPMUserDetails.js');
 vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/serverConfig.js');
@@ -31,7 +31,7 @@ import { registerSearchGitHubCommitsTool } from '../src/tools/github_search_comm
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
 import { registerPackageSearchTool } from '../src/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
-import { getNPMUserDetails } from '../src/tools/utils/APIStatus.js';
+import { getNPMUserDetails } from '../src/npm/getNPMUserDetails.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import {
   isBetaEnabled,
