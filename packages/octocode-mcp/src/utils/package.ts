@@ -10,7 +10,7 @@ import {
   humanizeBytes,
   simplifyRepoUrl,
   createResult,
-} from '../mcp/responses';
+} from '../responses';
 import {
   PackageSearchResult,
   PackageSearchError,

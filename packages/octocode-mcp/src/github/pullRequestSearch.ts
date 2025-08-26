@@ -18,7 +18,7 @@ import {
   shouldUseSearchForPRs,
 } from './queryBuilders';
 import { generateCacheKey, withCache } from '../utils/cache';
-import { createResult } from '../mcp/responses';
+import { createResult } from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 

@@ -1,6 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { maskSensitiveData } from '../security/mask';
-import { ContentSanitizer } from '../security/contentSanitizer';
+import { maskSensitiveData } from './security/mask';
+import { ContentSanitizer } from './security/contentSanitizer';
 
 /**
  * Standardized response format for all tool responses

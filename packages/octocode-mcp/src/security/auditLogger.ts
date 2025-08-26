@@ -10,6 +10,10 @@ export interface AuditEvent {
   eventId: string;
   timestamp: Date;
   action: string;
+  outcome?: string;
+  source?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  details?: any;
 }
 
 export class AuditLogger {

@@ -6,28 +6,25 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js');
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js');
 vi.mock('../src/utils/cache.js');
-vi.mock('../src/mcp/prompts.js'); // Add missing mock for prompts
-vi.mock('../src/mcp/sampling.js');
+vi.mock('../src/prompts.js');
+vi.mock('../src/sampling.js');
 vi.mock('../src/tools/github_search_code.js');
 vi.mock('../src/tools/github_fetch_content.js');
 vi.mock('../src/tools/github_search_repos.js');
 vi.mock('../src/tools/github_search_commits.js');
 vi.mock('../src/tools/github_search_pull_requests.js');
-vi.mock('../src/tools/package_search/package_search.js');
+vi.mock('../src/tools/package_search.js');
 vi.mock('../src/tools/github_view_repo_structure.js');
 vi.mock('../src/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/serverConfig.js');
-vi.mock('../src/tools/toolsets/toolsetManager.js');
-vi.mock('../src/translations/translationManager.js');
-vi.mock('../src/tools/utils/tokenManager.js');
-vi.mock('../src/auth/authenticationManager.js'); // Add missing mock for authentication
+vi.mock('../src/tools/toolsManager.js');
 
 // Import mocked functions
 import { clearAllCache } from '../src/utils/cache.js';
-import { registerPrompts } from '../src/mcp/prompts.js';
-import { registerSampling } from '../src/mcp/sampling.js';
+import { registerPrompts } from '../src/prompts.js';
+import { registerSampling } from '../src/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
@@ -38,9 +35,9 @@ import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_re
 import { getNPMUserDetails } from '../src/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
-import { ConfigManager, isBetaEnabled } from '../src/serverConfig.js';
-import { ToolsetManager } from '../src/tools/toolsetManager.js';
-import { getToken } from '../src/tools/utils/tokenManager.js';
+import { isBetaEnabled } from '../src/serverConfig.js';
+import { registerTools } from '../src/tools/toolsManager.js';
+import { getToken } from '../src/serverConfig.js';
 import { TOOL_NAMES } from '../src/tools/utils/toolConstants.js';
 
 // Mock implementations
@@ -60,8 +57,7 @@ const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
-const mockConfigManager = vi.mocked(ConfigManager);
-const mockToolsetManager = vi.mocked(ToolsetManager);
+const mockRegisterTools = vi.mocked(registerTools);
 const mockGetToken = vi.mocked(getToken);
 const mockIsBetaEnabled = vi.mocked(isBetaEnabled);
 
@@ -157,47 +153,42 @@ describe('Index Module', () => {
     mockMcpServer.close.mockResolvedValue(undefined);
 
     // Mock all tool registration functions to succeed by default
-    mockRegisterPrompts.mockImplementation(() => {});
-    mockRegisterGitHubSearchCodeTool.mockImplementation(() => {});
-    mockRegisterFetchGitHubFileContentTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubReposTool.mockImplementation(() => {});
-    mockRegisterGitHubSearchCommitsTool.mockImplementation(() => {});
-    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(() => {});
-    mockRegisterPackageSearchTool.mockImplementation(() => {});
-    mockRegisterViewGitHubRepoStructureTool.mockImplementation(() => {});
+    const mockRegisteredTool = {
+      name: 'mock-tool',
+      description: 'Mock tool',
+      callback: vi.fn(),
+      enabled: true,
+      enable: vi.fn(),
+      disable: vi.fn(),
+      getStatus: vi.fn(),
+      getMetrics: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+    };
+    mockRegisterPrompts.mockImplementation(() => mockRegisteredTool);
+    mockRegisterGitHubSearchCodeTool.mockImplementation(
+      () => mockRegisteredTool
+    );
+    mockRegisterFetchGitHubFileContentTool.mockImplementation(
+      () => mockRegisteredTool
+    );
+    mockRegisterSearchGitHubReposTool.mockImplementation(
+      () => mockRegisteredTool
+    );
+    mockRegisterGitHubSearchCommitsTool.mockImplementation(
+      () => mockRegisteredTool
+    );
+    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
+      () => mockRegisteredTool
+    );
+    mockRegisterPackageSearchTool.mockImplementation(() => mockRegisteredTool);
+    mockRegisterViewGitHubRepoStructureTool.mockImplementation(
+      () => mockRegisteredTool
+    );
 
-    // Mock new dependencies
-    mockConfigManager.initialize.mockReturnValue({
-      version: '1.0.0',
-      beta: {
-        enabled: false,
-      },
-      enabledToolsets: [],
-      dynamicToolsets: false,
-      readOnly: false,
-      enterprise: {
-        organizationId: undefined,
-        ssoEnforcement: false,
-        auditLogging: false,
-        rateLimiting: false,
-        tokenValidation: false,
-        permissionValidation: false,
-      },
-      oauth: undefined,
-      githubApp: undefined,
-      enableCommandLogging: false,
-      logFilePath: undefined,
-      githubHost: undefined,
-      timeout: 30000,
-      maxRetries: 3,
-    });
-
-    // Default mock for isBetaEnabled
+    // Mock simplified dependencies
     mockIsBetaEnabled.mockReturnValue(false);
-
-    mockToolsetManager.initialize.mockImplementation(() => {});
-    mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default
-
+    mockRegisterTools.mockReturnValue({ successCount: 8, failedTools: [] });
     mockGetToken.mockResolvedValue('test-token');
   });
 
@@ -920,35 +911,6 @@ describe('Index Module', () => {
       );
 
       // Verify other tools were NOT registered (including invalid one)
-      expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
-      expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
-      expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();
-      expect(mockRegisterPackageSearchTool).not.toHaveBeenCalled();
-      expect(mockRegisterViewGitHubRepoStructureTool).not.toHaveBeenCalled();
-    });
-
-    it('should still respect toolset configuration when using TOOLS_TO_RUN', async () => {
-      process.env.TOOLS_TO_RUN = 'githubSearchCode,githubGetFileContent';
-
-      // Mock toolset manager to disable one of the requested tools
-      mockToolsetManager.isToolEnabled.mockImplementation(
-        (toolName: string) => {
-          return toolName !== 'githubGetFileContent'; // Disable this tool
-        }
-      );
-
-      await import('../src/index.js');
-      await waitForAsyncOperations();
-
-      // Verify only the enabled tool was registered
-      expect(mockRegisterGitHubSearchCodeTool).toHaveBeenCalledWith(
-        mockMcpServer
-      );
-
-      // Verify the disabled tool was NOT registered, even though it was in TOOLS_TO_RUN
-      expect(mockRegisterFetchGitHubFileContentTool).not.toHaveBeenCalled();
-
-      // Verify other tools were NOT registered
       expect(mockRegisterSearchGitHubReposTool).not.toHaveBeenCalled();
       expect(mockRegisterGitHubSearchCommitsTool).not.toHaveBeenCalled();
       expect(mockRegisterSearchGitHubPullRequestsTool).not.toHaveBeenCalled();

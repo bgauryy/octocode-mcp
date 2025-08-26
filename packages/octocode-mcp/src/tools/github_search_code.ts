@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
-import { createResult } from '../mcp/responses.js';
+import { createResult } from '../responses.js';
 import { TOOL_NAMES } from './utils/toolConstants.js';
 import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
@@ -116,23 +116,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
             hints,
           });
         }
-
-        // Log enterprise access if configured
-        if (userContext?.isEnterpriseMode) {
-          try {
-            const { logToolEvent } = await import('../security/auditLogger.js');
-            logToolEvent(TOOL_NAMES.GITHUB_SEARCH_CODE, 'success', {
-              userId: userContext.userId,
-              userLogin: userContext.userLogin,
-              organizationId: userContext.organizationId,
-              queryCount: args.queries.length,
-              queryTerms: args.queries.map(q => q.queryTerms).flat(),
-            });
-          } catch {
-            // Ignore audit logging errors
-          }
-        }
-
         return searchMultipleGitHubCode(
           args.queries,
           args.verbose || false,

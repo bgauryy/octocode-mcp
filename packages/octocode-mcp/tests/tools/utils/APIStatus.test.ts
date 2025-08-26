@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getNPMUserDetails } from '../../../src/tools/utils/APIStatus';
 import { executeNpmCommand } from '../../../src/utils/exec';
-import { createResult } from '../../../src/mcp/responses';
+import { createResult } from '../../../src/responses';
 
 // Mock the exec module
 vi.mock('../../../src/utils/exec', () => ({

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { PROMPT_SYSTEM_PROMPT } from './systemPrompts';
+import { PROMPT_SYSTEM_PROMPT } from './mcp/systemPrompts';
 
 // Define prompt names as constants (following your project's pattern)
 export const PROMPT_NAMES = {

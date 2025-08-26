@@ -102,11 +102,11 @@ describe('Advanced Functionality', () => {
     const { getServerConfig } = await import('../../src/serverConfig.js');
     const config = getServerConfig();
     expect(typeof config).toBe('object');
-    expect(config.token).toBe('test-token');
+    // Token is managed separately from ServerConfig
   });
 
   it('should enable advanced toolset when audit configured', async () => {
-    const { registerTools } = await import('../../src/tools/toolsetManager.js');
+    const { registerTools } = await import('../../src/tools/toolsManager.js');
 
     const mockServer = {
       setRequestHandler: vi.fn(),
@@ -129,15 +129,15 @@ describe('Advanced Functionality', () => {
   });
 
   it('should load basic configuration correctly', async () => {
-    const { ConfigManager } = await import('../../src/serverConfig');
+    const { initialize, getServerConfig, cleanup } = await import(
+      '../../src/serverConfig'
+    );
 
-    // Reset the singleton state to force re-initialization
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).initialized = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).config = null;
+    // Reset config state
+    cleanup();
 
-    const config = ConfigManager.initialize();
+    await initialize();
+    const config = getServerConfig();
 
     expect(config.version).toBeDefined();
     expect(config.timeout).toBe(30000);
@@ -145,15 +145,15 @@ describe('Advanced Functionality', () => {
   });
 
   it('should handle configuration initialization correctly', async () => {
-    const { ConfigManager } = await import('../../src/serverConfig');
+    const { initialize, getServerConfig, cleanup } = await import(
+      '../../src/serverConfig'
+    );
 
-    // Reset the singleton state to force re-initialization
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).initialized = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).config = null;
+    // Reset config state
+    cleanup();
 
-    const config = ConfigManager.initialize(); // Initialize with new env vars
+    await initialize(); // Initialize with new env vars
+    const config = getServerConfig();
     expect(config.version).toBeDefined();
   });
 

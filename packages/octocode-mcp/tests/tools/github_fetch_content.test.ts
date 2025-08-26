@@ -30,13 +30,16 @@ describe('GitHub Fetch Content Tool', () => {
     it('should handle single valid file request', async () => {
       // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
-        filePath: 'README.md',
-        owner: 'test',
-        repo: 'repo',
-        branch: 'main',
-        content: '# Hello World\n\nThis is a test file.',
-        totalLines: 3,
-        minified: false,
+        data: {
+          filePath: 'README.md',
+          owner: 'test',
+          repo: 'repo',
+          branch: 'main',
+          content: '# Hello World\n\nThis is a test file.',
+          totalLines: 3,
+          minified: false,
+        },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -72,20 +75,26 @@ describe('GitHub Fetch Content Tool', () => {
       // Mock successful API responses
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
-          filePath: 'README.md',
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-          content: '# README',
-          totalLines: 1,
+          data: {
+            filePath: 'README.md',
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            content: '# README',
+            totalLines: 1,
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          filePath: 'package.json',
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-          content: '{"name": "test"}',
-          totalLines: 1,
+          data: {
+            filePath: 'package.json',
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            content: '{"name": "test"}',
+            totalLines: 1,
+          },
+          status: 200,
         });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -150,7 +159,7 @@ describe('GitHub Fetch Content Tool', () => {
       const errorResult = data.data[0];
       expect(errorResult.queryId).toBe('error-test');
       expect(errorResult.researchGoal).toBe('exploration');
-      expect(errorResult.originalQuery).toBeUndefined(); // Not included for API errors (not exceptions)
+      expect(errorResult.originalQuery).toBeDefined(); // Query included on API errors
       expect(errorResult.result.error).toContain('not found');
       expect(errorResult.error).toBeUndefined(); // No wrapper error for API errors
     });

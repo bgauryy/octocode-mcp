@@ -2,16 +2,15 @@ import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
 import type { GetRepoResponse } from '../types/github-openapi';
-import { getGitHubToken, onTokenRotated } from '../tools/utils/tokenManager.js';
-import { ConfigManager } from '../serverConfig.js';
+import { getGitHubToken } from '../serverConfig.js';
+import { getServerConfig } from '../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 // Create Octokit class with throttling plugin
 export const OctokitWithThrottling = Octokit.plugin(throttling);
 
-// Octokit instance management with token rotation support
+// Octokit instance management
 let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
-let tokenRotationCleanup: (() => void) | null = null;
 
 /**
  * Throttle options following official Octokit.js best practices
@@ -32,16 +31,16 @@ const createThrottleOptions = () => ({
 });
 
 /**
- * Initialize Octokit with centralized token management and rotation support
- * Token resolution is delegated to tokenManager - single source of truth
+ * Initialize Octokit with centralized token management
+ * Token resolution is delegated to serverConfig - single source of truth
  */
 export async function getOctokit(
   authInfo?: AuthInfo
 ): Promise<InstanceType<typeof OctokitWithThrottling>> {
   if (!octokitInstance || authInfo) {
     const token = authInfo?.token || (await getGitHubToken());
-    const baseUrl = ConfigManager.getGitHubBaseURL();
-    const config = ConfigManager.getConfig();
+    const baseUrl = 'https://api.github.com'; // Default GitHub API URL
+    const config = getServerConfig();
 
     const options: OctokitOptions & {
       throttle: ReturnType<typeof createThrottleOptions>;
@@ -54,27 +53,19 @@ export async function getOctokit(
     };
 
     octokitInstance = new OctokitWithThrottling(options);
-
-    // Subscribe to token rotation events for automatic re-initialization
-    tokenRotationCleanup = onTokenRotated(async () => {
-      // Force re-initialization with the new token on next call
-      // Note: existing lightweight caches such as default branch values are token-agnostic
-      // and can remain intact. Only Octokit authentication must refresh.
-      octokitInstance = null;
-    });
   }
   return octokitInstance;
 }
 
 /**
- * Clear cached token - delegates to centralized token manager
+ * Clear cached token - delegates to serverConfig
  * Maintains backward compatibility
  */
 export function clearCachedToken(): void {
   // Clear local Octokit instance
   octokitInstance = null;
 
-  // The actual token clearing is handled by tokenManager
+  // The actual token clearing is handled by serverConfig
   // This function is kept for backward compatibility but doesn't manage tokens directly
 }
 
@@ -110,9 +101,4 @@ export async function getDefaultBranch(
   }
 }
 
-// Clean up on process exit
-process.on('exit', () => {
-  if (tokenRotationCleanup) {
-    tokenRotationCleanup();
-  }
-});
+// No cleanup needed for simplified token management

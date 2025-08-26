@@ -7,7 +7,7 @@
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withCache } from '../utils/cache';
-import { createResult } from '../mcp/responses';
+import { createResult } from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 export interface GitHubUserInfo {

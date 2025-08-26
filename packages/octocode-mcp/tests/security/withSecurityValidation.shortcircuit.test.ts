@@ -56,7 +56,7 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     expect(mockRateLimiterCheck).not.toHaveBeenCalled();
     expect(mockOrgValidate).not.toHaveBeenCalled();
   });
-  it('fetches user context and may perform enterprise checks in enterprise mode', async () => {
+  it.skip('fetches user context and may perform enterprise checks in enterprise mode (DISABLED: enterprise features removed)', async () => {
     mockIsEnterpriseMode.mockReturnValue(true);
     mockGetUserContext.mockResolvedValue({
       user: { id: 123, login: 'tester' },

@@ -92,6 +92,11 @@ vi.mock('octocode-utils', () => ({
   minifyContent: mockminifyContent,
 }));
 
+vi.mock('../../src/github/client.js', () => ({
+  getOctokit: vi.fn(() => Promise.resolve(mockOctokit)),
+  clearCachedToken: vi.fn(),
+}));
+
 // Import after mocking
 import {
   searchGitHubCodeAPI,
@@ -101,11 +106,15 @@ import {
   searchGitHubPullRequestsAPI,
   searchGitHubCommitsAPI,
 } from '../../src/github/githubAPI.js';
+import { initialize, cleanup } from '../../src/serverConfig.js';
 
 describe('GitHub API Utils', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // Clear all mocks
     vi.clearAllMocks();
+
+    // Initialize config
+    await initialize();
 
     // Reset Octokit mock implementation
     mockOctokitWithThrottling.mockImplementation(() => mockOctokit);
@@ -139,6 +148,7 @@ describe('GitHub API Utils', () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    cleanup();
     delete process.env.GITHUB_TOKEN;
     delete process.env.GH_TOKEN;
   });
@@ -324,7 +334,7 @@ describe('GitHub API Utils', () => {
 
       expect(result).toEqual(
         expect.objectContaining({
-          error: expect.stringContaining('authentication'),
+          error: 'GitHub authentication required',
           status: 401,
           type: 'http',
         })

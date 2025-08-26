@@ -10,7 +10,7 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../mcp/responses.js';
+import { createResult } from '../../responses.js';
 // Hints are now provided by the consolidated hints system
 import { ToolName } from './toolConstants';
 import { generateBulkHints, BulkHintContext } from './hints_consolidated';

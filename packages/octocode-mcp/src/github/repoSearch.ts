@@ -10,7 +10,7 @@ import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
 import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../mcp/responses';
+import { createResult } from '../responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**

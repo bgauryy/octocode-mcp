@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
-import { createResult } from '../mcp/responses.js';
+import { createResult } from '../responses.js';
 import { fetchGitHubFileContentAPI } from '../github/index.js';
 import { TOOL_NAMES } from './utils/toolConstants.js';
 import {
@@ -12,7 +12,7 @@ import {
 import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
 import { generateHints } from './utils/hints_consolidated.js';
 import { isSamplingEnabled } from '../serverConfig.js';
-import { SamplingUtils, performSampling } from '../mcp/sampling.js';
+import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
