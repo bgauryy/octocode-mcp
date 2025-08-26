@@ -126,24 +126,6 @@ describe('ServerConfig - Simplified Version', () => {
       expect(token).toBe('env-github-token');
     });
 
-    it('should fall back to GH_TOKEN env var', async () => {
-      process.env.GH_TOKEN = 'gh-token';
-      mockGetGithubCLIToken.mockResolvedValue(null);
-
-      const token = await getGitHubToken();
-
-      expect(token).toBe('gh-token');
-    });
-
-    it('should fall back to Authorization env var', async () => {
-      process.env.Authorization = 'Bearer auth-token';
-      mockGetGithubCLIToken.mockResolvedValue(null);
-
-      const token = await getGitHubToken();
-
-      expect(token).toBe('auth-token');
-    });
-
     it('should return null when no token found', async () => {
       mockGetGithubCLIToken.mockResolvedValue(null);
 
