@@ -3,14 +3,14 @@ import type {
   RepoSearchResultItem,
   GitHubAPIResponse,
   Repository,
-} from '../../types/github-openapi';
-import { GitHubReposSearchQuery } from '../../mcp/tools/scheme/github_search_repos';
+} from '../types/github-openapi';
+import { GitHubReposSearchQuery } from '../mcp/tools/scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
-import { generateCacheKey, withCache } from '../cache';
+import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../mcp/responses';
+import { createResult } from '../mcp/responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**

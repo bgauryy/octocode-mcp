@@ -1,24 +1,24 @@
 import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
-} from '../../types/github-openapi';
+} from '../types/github-openapi';
 import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestSearchResult,
   GitHubPullRequestSearchError,
-} from '../../mcp/tools/scheme/github_search_pull_requests';
+} from '../mcp/tools/scheme/github_search_pull_requests';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
-import { ContentSanitizer } from '../../security/contentSanitizer';
+import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
-import { generateCacheKey, withCache } from '../cache';
-import { createResult } from '../../mcp/responses';
+import { generateCacheKey, withCache } from '../utils/cache';
+import { createResult } from '../mcp/responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 

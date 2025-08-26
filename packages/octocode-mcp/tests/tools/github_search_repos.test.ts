@@ -21,7 +21,7 @@ vi.mock('../../src/utils/cache.js', () => ({
   withCache: mockWithCache,
 }));
 
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
 }));
 

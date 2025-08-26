@@ -11,7 +11,7 @@ const mockWithCache = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/githubAPI.js', () => ({
   searchGitHubCommitsAPI: mockSearchGitHubCommitsAPI,
 }));
 

@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../responses';
 import { ContentSanitizer } from '../../../security/contentSanitizer';
-import { getUserContext } from '../../../utils/github/userInfo';
+import { getUserContext } from '../../../github/userInfo';
 import { RateLimiter } from '../../../security/rateLimiter';
 import { OrganizationManager } from '../../../security/organizationManager';
 import { isEnterpriseMode } from '../../../utils/enterpriseUtils';

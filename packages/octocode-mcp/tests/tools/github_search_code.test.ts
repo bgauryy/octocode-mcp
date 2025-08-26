@@ -11,12 +11,12 @@ const mockOctokit = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('../../src/utils/github/client.js', () => ({
+vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => mockOctokit),
 }));
 
 // Import after mocking
-import { searchGitHubCodeAPI } from '../../src/utils/github/codeSearch.js';
+import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 
 describe('GitHubCodeSearchQuerySchema', () => {
   describe('new qualifiers validation', () => {

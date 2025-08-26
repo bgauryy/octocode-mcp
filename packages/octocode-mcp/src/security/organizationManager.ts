@@ -305,7 +305,7 @@ export class OrganizationManager {
 
     try {
       // Use dynamic import to avoid circular dependency
-      const { getOctokit } = await import('../utils/github/client.js');
+      const { getOctokit } = await import('../github/githubAPI.js');
       const octokit = await getOctokit();
 
       // GET /orgs/{org}/members/{username}

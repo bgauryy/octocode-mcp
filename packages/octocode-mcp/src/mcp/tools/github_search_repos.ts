@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { withSecurityValidation } from './utils/withSecurityValidation';
 import { createResult } from '../responses';
-import { searchGitHubReposAPI } from '../../utils/githubAPI';
+import { searchGitHubReposAPI } from '../../github/githubAPI';
 import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubReposSearchQuery,

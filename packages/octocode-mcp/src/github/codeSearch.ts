@@ -4,14 +4,14 @@ import type {
   CodeSearchResultItem,
   GitHubAPIResponse,
   OptimizedCodeSearchResult,
-} from '../../types/github-openapi';
-import { GitHubCodeSearchQuery } from '../../mcp/tools/scheme/github_search_code';
-import { ContentSanitizer } from '../../security/contentSanitizer';
+} from '../types/github-openapi';
+import { GitHubCodeSearchQuery } from '../mcp/tools/scheme/github_search_code';
+import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
-import { generateCacheKey, withDataCache } from '../cache';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**

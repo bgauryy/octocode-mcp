@@ -27,7 +27,7 @@ export {
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
   // Authentication
-} from './github';
+} from '.';
 
 // Re-export OpenAPI types for backward compatibility
 export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';

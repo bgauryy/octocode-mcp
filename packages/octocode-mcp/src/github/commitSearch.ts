@@ -2,18 +2,18 @@ import {
   GitHubCommitSearchParams,
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
-} from '../../types/github-openapi';
+} from '../types/github-openapi';
 import {
   GitHubCommitSearchResult,
   GitHubCommitSearchError,
-} from '../../mcp/tools/scheme/github_search_commits';
-import { ContentSanitizer } from '../../security/contentSanitizer';
+} from '../mcp/tools/scheme/github_search_commits';
+import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildCommitSearchQuery } from './queryBuilders';
-import { generateCacheKey, withCache } from '../cache';
+import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../mcp/responses';
+import { createResult } from '../mcp/responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 /**
