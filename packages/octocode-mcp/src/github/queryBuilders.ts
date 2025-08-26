@@ -3,7 +3,7 @@ import { GitHubReposSearchQuery } from '../scheme/github_search_repos';
 import {
   GitHubPullRequestsSearchParams,
   GitHubCommitSearchParams,
-} from '../types/github-openapi';
+} from './github-openapi';
 
 /**
  * Helper function to intelligently detect if an owner is a user or organization

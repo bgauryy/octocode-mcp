@@ -79,7 +79,10 @@ export async function initialize(): Promise<void> {
     enableLogging: process.env.ENABLE_LOGGING === 'true',
     betaEnabled:
       process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
-    timeout: Math.max(30000, parseInt(process.env.REQUEST_TIMEOUT || '0')),
+    timeout: Math.max(
+      30000,
+      parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
+    ),
     maxRetries: Math.max(
       0,
       Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)

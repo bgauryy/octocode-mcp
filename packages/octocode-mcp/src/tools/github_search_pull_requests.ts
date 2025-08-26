@@ -8,7 +8,7 @@ import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
 } from '../scheme/github_search_pull_requests';
-import { GitHubPullRequestsSearchParams } from '../types/github-openapi';
+import { GitHubPullRequestsSearchParams } from '../github/github-openapi';
 import { generateHints } from './utils/hints_consolidated';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
@@ -183,14 +183,15 @@ async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
   _verbose: boolean = false,
   authInfo?: AuthInfo,
-  _userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       try {
         const result = await searchGitHubPullRequestsAPI(
           query as GitHubPullRequestsSearchParams,
-          authInfo
+          authInfo,
+          userContext
         );
         return {
           queryId: `pr-search_${index + 1}`,

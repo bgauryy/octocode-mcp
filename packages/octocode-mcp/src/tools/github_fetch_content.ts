@@ -1,6 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import {
+  UserContext,
+  withSecurityValidation,
+} from './utils/withSecurityValidation';
 import { createResult } from '../responses.js';
 import { fetchGitHubFileContentAPI } from '../github/index.js';
 import { TOOL_NAMES } from './utils/toolConstants.js';
@@ -108,7 +111,7 @@ async function fetchMultipleGitHubFileContents(
   server: McpServer,
   queries: FileContentQuery[],
   authInfo?: AuthInfo,
-  _userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'file-content');
   const results: FileContentQueryResult[] = [];
@@ -133,7 +136,11 @@ async function fetchMultipleGitHubFileContents(
         minified: typeof query.minified === 'boolean' ? query.minified : true,
       };
 
-      const apiResult = await fetchGitHubFileContentAPI(apiRequest, authInfo);
+      const apiResult = await fetchGitHubFileContentAPI(
+        apiRequest,
+        authInfo,
+        userContext?.sessionId
+      );
 
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;

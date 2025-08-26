@@ -1,7 +1,7 @@
 import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
-} from '../types/github-openapi';
+} from './github-openapi';
 import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestSearchResult,
@@ -21,6 +21,7 @@ import { generateCacheKey, withCache } from '../utils/cache';
 import { createResult } from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { UserContext } from '../tools/utils/withSecurityValidation';
 
 /**
  * Search GitHub pull requests using Octokit API with caching
@@ -29,14 +30,22 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-api-prs', params, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-api-prs',
+    params,
+    userContext?.sessionId
+  );
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubPullRequestsAPIInternal(params, authInfo);
+    const result = await searchGitHubPullRequestsAPIInternal(
+      params,
+      authInfo,
+      userContext?.sessionId
+    );
 
     // Convert to CallToolResult for caching
     if ('error' in result) {
@@ -73,7 +82,8 @@ export async function searchGitHubPullRequestsAPI(
  */
 async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams,
-  authInfo?: AuthInfo
+  authInfo?: AuthInfo,
+  _sessionId?: string
 ): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
   try {
     // If prNumber is provided with owner/repo, fetch specific PR by number

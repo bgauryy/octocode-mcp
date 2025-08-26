@@ -99,14 +99,21 @@ describe('Advanced Functionality', () => {
   it('should handle token resolution with config.ts', async () => {
     process.env.GITHUB_TOKEN = 'test-token';
 
-    const { getServerConfig } = await import('../../src/serverConfig.js');
+    const { initialize, getServerConfig } = await import(
+      '../../src/serverConfig.js'
+    );
+    await initialize();
     const config = getServerConfig();
     expect(typeof config).toBe('object');
     // Token is managed separately from ServerConfig
   });
 
   it('should enable advanced toolset when audit configured', async () => {
+    const { initialize } = await import('../../src/serverConfig.js');
     const { registerTools } = await import('../../src/tools/toolsManager.js');
+
+    // Initialize config first
+    await initialize();
 
     const mockServer = {
       setRequestHandler: vi.fn(),

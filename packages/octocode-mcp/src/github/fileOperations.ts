@@ -1,8 +1,5 @@
 import { RequestError } from 'octokit';
-import type {
-  GetContentParameters,
-  GitHubAPIResponse,
-} from '../types/github-openapi';
+import type { GetContentParameters, GitHubAPIResponse } from './github-openapi';
 import {
   GithubFetchRequestParams,
   GitHubFileContentResponse,
@@ -22,6 +19,7 @@ import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { UserContext } from '../tools/utils/withSecurityValidation';
 
 /**
  * Fetch GitHub file content using Octokit API with proper TypeScript types and caching
@@ -396,10 +394,14 @@ async function processFileContentAPI(
 export async function viewGitHubRepositoryStructureAPI(
   params: GitHubRepositoryStructureParams,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
   // Generate cache key based on structure parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-repo-structure-api', params, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-repo-structure-api',
+    params,
+    userContext?.sessionId
+  );
 
   // Create a wrapper function that returns CallToolResult for the cache
   const structureOperation = async (): Promise<CallToolResult> => {

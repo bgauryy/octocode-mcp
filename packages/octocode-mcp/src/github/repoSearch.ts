@@ -3,7 +3,7 @@ import type {
   RepoSearchResultItem,
   GitHubAPIResponse,
   Repository,
-} from '../types/github-openapi';
+} from './github-openapi';
 import { GitHubReposSearchQuery } from '../scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -12,6 +12,7 @@ import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { UserContext } from '../tools/utils/withSecurityValidation';
 
 /**
  * Search GitHub repositories using Octokit API with proper TypeScript types and caching
@@ -20,12 +21,16 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 export async function searchGitHubReposAPI(
   params: GitHubReposSearchQuery,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<
   GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
 > {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-api-repos', params, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-api-repos',
+    params,
+    userContext?.sessionId
+  );
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {

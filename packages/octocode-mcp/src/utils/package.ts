@@ -19,12 +19,12 @@ import {
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
 } from '../scheme/package_search';
-import { NpmPackage, PythonPackage } from '../tools/package_search/types';
+import { NpmPackage, PythonPackage } from '../tools/types';
 import {
   PackageSearchBulkParams,
   NpmPackageQuery,
   PythonPackageQuery,
-} from '../tools/package_search/types';
+} from '../tools/types';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { isNPMEnabled } from './npmAPI';
 

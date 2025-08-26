@@ -139,7 +139,12 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'facebook',
           repo: 'react',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
   });
@@ -155,7 +160,12 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           queryTerms: ['readme', 'typo'],
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
 
@@ -169,7 +179,12 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           orTerms: ['fix', 'bug', 'parser'],
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
   });
@@ -185,7 +200,12 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           queryTerms: ['fix'],
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
 
       const response = JSON.parse(result.content[0]?.text as string);
@@ -253,8 +273,38 @@ describe('GitHub Search Commits Tool', () => {
           repo: 'repo',
           getChangesContent: true,
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
+    });
+
+    it('should pass authInfo and userContext to GitHub API', async () => {
+      const result = await mockServer.callTool('githubSearchCommits', {
+        queryTerms: ['auth-test'],
+        owner: 'test-owner',
+        repo: 'test-repo',
+      });
+
+      expect(result.isError).toBe(false);
+
+      // Verify the API was called with authInfo and userContext
+      expect(mockSearchGitHubCommitsAPI).toHaveBeenCalledTimes(1);
+      const apiCall = mockSearchGitHubCommitsAPI.mock.calls[0];
+
+      // Should be called with (queryArgs, authInfo, userContext)
+      expect(apiCall).toBeDefined();
+      expect(apiCall).toHaveLength(3);
+      expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+      expect(apiCall?.[2]).toEqual({
+        userId: 'anonymous',
+        userLogin: 'anonymous',
+        isEnterpriseMode: false,
+        sessionId: undefined,
+      }); // userContext
     });
 
     it('should handle filter-only search without query', async () => {
@@ -269,7 +319,12 @@ describe('GitHub Search Commits Tool', () => {
           author: 'testuser',
           'committer-date': '>2023-01-01',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
 
@@ -287,7 +342,12 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'facebook',
           repo: 'react',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
 
@@ -301,7 +361,12 @@ describe('GitHub Search Commits Tool', () => {
         expect.objectContaining({
           hash: 'abc123def456',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
 
@@ -319,7 +384,12 @@ describe('GitHub Search Commits Tool', () => {
           owner: 'facebook',
           repo: 'react',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          isEnterpriseMode: false,
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+        })
       );
     });
   });

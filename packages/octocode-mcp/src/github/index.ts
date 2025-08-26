@@ -43,7 +43,7 @@ export type {
   isGitHubAPISuccess,
   isRepository,
   isSearchResultItem,
-} from '../types/github-openapi';
+} from './github-openapi';
 
 // Query builders
 export {

@@ -1,7 +1,7 @@
 import { Octokit } from 'octokit';
 import { throttling } from '@octokit/plugin-throttling';
 import type { OctokitOptions } from '@octokit/core';
-import type { GetRepoResponse } from '../types/github-openapi';
+import type { GetRepoResponse } from './github-openapi';
 import { getGitHubToken } from '../serverConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';

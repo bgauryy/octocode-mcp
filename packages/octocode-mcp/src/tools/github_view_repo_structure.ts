@@ -1,6 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import {
+  UserContext,
+  withSecurityValidation,
+} from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { viewGitHubRepositoryStructureAPI } from '../github/index';
 import { TOOL_NAMES } from './utils/toolConstants';
@@ -116,7 +119,7 @@ async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
   verbose: boolean = false,
   authInfo?: AuthInfo,
-  _userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-structure');
   const { results, errors } = await processBulkQueries(
@@ -150,7 +153,8 @@ async function exploreMultipleRepositoryStructures(
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
           apiRequest,
-          authInfo
+          authInfo,
+          userContext
         );
 
         // Check if result is an error

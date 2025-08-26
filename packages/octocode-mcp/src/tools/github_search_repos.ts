@@ -1,6 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import {
+  UserContext,
+  withSecurityValidation,
+} from './utils/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubReposAPI } from '../github/index';
 import { TOOL_NAMES } from './utils/toolConstants';
@@ -9,7 +12,7 @@ import {
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from '../scheme/github_search_repos';
-import type { Repository } from '../types/github-openapi';
+import type { Repository } from '../github/github-openapi';
 import { ensureUniqueQueryIds } from './utils/bulkOperations';
 import {
   processBulkQueries,
@@ -119,7 +122,7 @@ async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
   verbose: boolean = false,
   authInfo?: AuthInfo,
-  _userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-search');
 
@@ -129,7 +132,11 @@ async function searchMultipleGitHubRepos(
       query: GitHubReposSearchQuery
     ): Promise<ProcessedRepoSearchResult> => {
       try {
-        const apiResult = await searchGitHubReposAPI(query, authInfo);
+        const apiResult = await searchGitHubReposAPI(
+          query,
+          authInfo,
+          userContext
+        );
 
         if ('error' in apiResult) {
           // Generate hints for this specific query error

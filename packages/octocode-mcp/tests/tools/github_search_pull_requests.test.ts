@@ -133,8 +133,43 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: 'react',
           state: 'open',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
+    });
+
+    it('should pass authInfo and userContext to GitHub API', async () => {
+      const result = await mockServer.callTool('githubSearchPullRequests', {
+        queries: [
+          {
+            owner: 'auth-test-owner',
+            repo: 'auth-test-repo',
+            state: 'open',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+
+      // Verify the API was called with authInfo and userContext
+      expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledTimes(1);
+      const apiCall = mockSearchGitHubPullRequestsAPI.mock.calls[0];
+
+      // Should be called with (queryArgs, authInfo, userContext)
+      expect(apiCall).toBeDefined();
+      expect(apiCall).toHaveLength(3);
+      expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+      expect(apiCall?.[2]).toEqual({
+        userId: 'anonymous',
+        userLogin: 'anonymous',
+        isEnterpriseMode: false,
+        sessionId: undefined,
+      }); // userContext
     });
 
     it('should reject empty queries array', async () => {
@@ -173,7 +208,13 @@ describe('GitHub Search Pull Requests Tool', () => {
         expect.objectContaining({
           query: 'bug fix',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -224,7 +265,13 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: 'test',
           repo: 'repo',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -246,7 +293,13 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining(searchParams),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -268,7 +321,13 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: ['react', 'vscode'],
           label: ['bug', 'enhancement'],
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -294,7 +353,13 @@ describe('GitHub Search Pull Requests Tool', () => {
           merged: false,
           locked: false,
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -320,7 +385,13 @@ describe('GitHub Search Pull Requests Tool', () => {
           updated: '2023-01-01..2023-12-31',
           closed: '<2023-06-01',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -346,7 +417,13 @@ describe('GitHub Search Pull Requests Tool', () => {
           reactions: '10..50',
           interactions: '<100',
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -370,7 +447,13 @@ describe('GitHub Search Pull Requests Tool', () => {
           getCommitData: true,
           withComments: true,
         }),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
   });
@@ -391,12 +474,24 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining(queries[0]),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining(queries[1]),
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -554,7 +649,13 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         args,
-        undefined
+        undefined,
+        expect.objectContaining({
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);

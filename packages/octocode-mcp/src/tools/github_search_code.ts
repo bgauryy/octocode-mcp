@@ -22,7 +22,7 @@ import {
 import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
 import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import type { OptimizedCodeSearchResult } from '../types/github-openapi.js';
+import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 
 const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
 
@@ -131,7 +131,7 @@ async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
   authInfo?: AuthInfo,
-  _userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: import('./utils/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
 
@@ -141,7 +141,11 @@ async function searchMultipleGitHubCode(
       query: GitHubCodeSearchQuery & { id: string }
     ): Promise<ProcessedCodeSearchResult> => {
       try {
-        const apiResult = await searchGitHubCodeAPI(query, authInfo);
+        const apiResult = await searchGitHubCodeAPI(
+          query,
+          authInfo,
+          userContext?.sessionId
+        );
 
         if ('error' in apiResult) {
           // Generate smart suggestions for this specific query error

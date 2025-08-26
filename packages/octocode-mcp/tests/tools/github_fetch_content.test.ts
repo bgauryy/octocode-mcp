@@ -10,6 +10,16 @@ vi.mock('../../src/github/index.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
 }));
 
+const mockInitialize = vi.hoisted(() => vi.fn());
+const mockGetServerConfig = vi.hoisted(() => vi.fn());
+const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
+
+vi.mock('../../src/serverConfig.js', () => ({
+  initialize: mockInitialize,
+  getServerConfig: mockGetServerConfig,
+  isSamplingEnabled: mockIsSamplingEnabled,
+}));
+
 import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
 
 describe('GitHub Fetch Content Tool', () => {
@@ -18,6 +28,20 @@ describe('GitHub Fetch Content Tool', () => {
   beforeEach(() => {
     mockServer = createMockMcpServer();
     vi.clearAllMocks();
+
+    // Mock server configuration
+    mockGetServerConfig.mockReturnValue({
+      version: '4.0.5',
+      enableTools: [],
+      disableTools: [],
+      enableLogging: false,
+      betaEnabled: false,
+      timeout: 30000,
+      maxRetries: 3,
+    });
+    mockInitialize.mockResolvedValue(undefined);
+    mockIsSamplingEnabled.mockReturnValue(false);
+
     registerFetchGitHubFileContentTool(mockServer.server);
   });
 
@@ -69,6 +93,44 @@ describe('GitHub Fetch Content Tool', () => {
       expect(fileResult.result.filePath).toBe('README.md');
       expect(fileResult.result.content).toContain('Hello World');
       expect(fileResult.originalQuery).toBeUndefined(); // Only on error
+    });
+
+    it('should pass authInfo and userContext to GitHub API', async () => {
+      // Mock successful API response
+      mockFetchGitHubFileContentAPI.mockResolvedValue({
+        data: {
+          filePath: 'test.js',
+          owner: 'testowner',
+          repo: 'testrepo',
+          branch: 'main',
+          content: 'console.log("test");',
+          totalLines: 1,
+          minified: false,
+        },
+        status: 200,
+      });
+
+      await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            owner: 'testowner',
+            repo: 'testrepo',
+            filePath: 'test.js',
+            branch: 'main',
+            id: 'auth-test-query',
+          },
+        ],
+      });
+
+      // Verify the API was called with authInfo and userContext
+      expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledTimes(1);
+      const apiCall = mockFetchGitHubFileContentAPI.mock.calls[0];
+
+      // Should be called with (apiRequest, authInfo, userContext)
+      expect(apiCall).toBeDefined();
+      expect(apiCall).toHaveLength(3);
+      expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+      expect(apiCall?.[2]).toEqual(undefined); // userContext.sessionId (undefined)
     });
 
     it('should handle multiple file requests', async () => {
@@ -159,7 +221,7 @@ describe('GitHub Fetch Content Tool', () => {
       const errorResult = data.data[0];
       expect(errorResult.queryId).toBe('error-test');
       expect(errorResult.researchGoal).toBe('exploration');
-      expect(errorResult.originalQuery).toBeDefined(); // Query included on API errors
+      expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
       expect(errorResult.result.error).toContain('not found');
       expect(errorResult.error).toBeUndefined(); // No wrapper error for API errors
     });
@@ -187,7 +249,12 @@ describe('GitHub Fetch Content Tool', () => {
 
       const errorResult = data.data[0];
       expect(errorResult.queryId).toBe('exception-test');
-      expect(errorResult.originalQuery).toBeDefined(); // Included on error
+      expect(errorResult.originalQuery).toEqual({
+        owner: 'test',
+        repo: 'repo',
+        filePath: 'test.md',
+        id: 'exception-test',
+      }); // originalQuery is included in error responses
       expect(errorResult.result.error).toBe('Network error');
       expect(errorResult.error).toBe('Network error');
     });

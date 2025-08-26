@@ -4,7 +4,7 @@ import type {
   CodeSearchResultItem,
   GitHubAPIResponse,
   OptimizedCodeSearchResult,
-} from '../types/github-openapi';
+} from './github-openapi';
 import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';

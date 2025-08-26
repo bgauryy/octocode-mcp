@@ -8,7 +8,7 @@ import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
 } from '../scheme/github_search_commits';
-import { GitHubCommitSearchParams } from '../types/github-openapi';
+import { GitHubCommitSearchParams } from '../github/github-openapi';
 import { generateHints } from './utils/hints_consolidated';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
@@ -47,7 +47,8 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
     withSecurityValidation(
       async (
         args: GitHubCommitSearchQuery,
-        authInfo?: AuthInfo
+        authInfo?: AuthInfo,
+        userContext?: import('./utils/withSecurityValidation').UserContext
       ): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
         const hasSearchTerms =
@@ -111,7 +112,8 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         try {
           const result = await searchGitHubCommitsAPI(
             args as GitHubCommitSearchParams,
-            authInfo
+            authInfo,
+            userContext
           );
 
           // Check if result is an error

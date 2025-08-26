@@ -2,7 +2,7 @@ import {
   GitHubCommitSearchParams,
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
-} from '../types/github-openapi';
+} from './github-openapi';
 import {
   GitHubCommitSearchResult,
   GitHubCommitSearchError,
@@ -15,6 +15,7 @@ import { generateCacheKey, withCache } from '../utils/cache';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { UserContext } from '../tools/utils/withSecurityValidation';
 
 /**
  * Search GitHub commits using Octokit API with caching
@@ -23,10 +24,14 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 export async function searchGitHubCommitsAPI(
   params: GitHubCommitSearchParams,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
-  const cacheKey = generateCacheKey('gh-commits-api', params, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-commits-api',
+    params,
+    userContext?.sessionId
+  );
 
   // Create a wrapper function that returns CallToolResult for the cache
   const searchOperation = async (): Promise<CallToolResult> => {

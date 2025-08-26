@@ -94,4 +94,4 @@ export type {
   isPullRequest,
   isWorkflowRun,
   isCheckRun,
-} from '../types/github-openapi';
+} from './github-openapi';
