@@ -217,7 +217,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'Button language:typescript repo:facebook/react',
+        q: 'Button repo:facebook/react language:typescript',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -400,7 +400,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export language:JavaScript repo:microsoft/vscode filename:index.js extension:js path:src size:>1000 in:file',
+        q: 'function export repo:microsoft/vscode language:JavaScript filename:index.js extension:js path:src size:>1000 in:file',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -670,7 +670,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function language:JavaScript user:octocat user:github',
+        q: 'function user:octocat user:github language:JavaScript',
         per_page: 30,
         page: 1,
         order: 'desc',
@@ -787,7 +787,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning language:python user:google user:microsoft topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 is:not-archived is:not-fork license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description';
+          'machine learning user:google user:microsoft language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description is:not-archived is:not-fork';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,

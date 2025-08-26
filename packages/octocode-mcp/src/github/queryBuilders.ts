@@ -24,6 +24,135 @@ export function getOwnerQualifier(owner: string): string {
 }
 
 /**
+ * Base query builder class with shared utilities
+ */
+abstract class BaseQueryBuilder {
+  protected queryParts: string[] = [];
+
+  /**
+   * Add owner/repo filters to the query
+   */
+  addOwnerRepo(params: {
+    owner?: string | string[] | null;
+    repo?: string | string[] | null;
+  }): this {
+    if (params.owner && params.repo) {
+      const owners = Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner];
+      const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
+
+      owners.forEach(owner => {
+        repos.forEach(repo => {
+          this.queryParts.push(`repo:${owner}/${repo}`);
+        });
+      });
+    } else if (params.owner) {
+      const owners = Array.isArray(params.owner)
+        ? params.owner
+        : [params.owner];
+      owners.forEach(owner => {
+        this.queryParts.push(getOwnerQualifier(owner));
+      });
+    }
+    return this;
+  }
+
+  /**
+   * Add date filters to the query
+   */
+  addDateFilters(
+    params:
+      | Record<string, unknown>
+      | GitHubPullRequestsSearchParams
+      | GitHubCommitSearchParams
+  ): this {
+    const dateFields: Record<string, string> = {
+      created: 'created',
+      updated: 'updated',
+      pushed: 'pushed',
+      'author-date': 'author-date',
+      'committer-date': 'committer-date',
+      'merged-at': 'merged',
+      closed: 'closed',
+    };
+
+    Object.entries(dateFields).forEach(([paramKey, queryKey]) => {
+      const value = (params as Record<string, unknown>)[paramKey];
+      if (value) {
+        this.queryParts.push(`${queryKey}:${value}`);
+      }
+    });
+    return this;
+  }
+
+  /**
+   * Add language filter
+   */
+  addLanguageFilter(language?: string | null | undefined): this {
+    if (language && language !== null) {
+      const mappedLanguage = mapLanguageToGitHub(language);
+      this.queryParts.push(`language:${mappedLanguage}`);
+    }
+    return this;
+  }
+
+  /**
+   * Add array-based filters
+   */
+  addArrayFilter(
+    values: string | string[] | null | undefined,
+    prefix: string,
+    quoted = false
+  ): this {
+    if (values && values !== null) {
+      const valueArray = Array.isArray(values) ? values : [values];
+      valueArray.forEach(value => {
+        const formattedValue = quoted ? `"${value}"` : value;
+        this.queryParts.push(`${prefix}:${formattedValue}`);
+      });
+    }
+    return this;
+  }
+
+  /**
+   * Add boolean filters
+   */
+  addBooleanFilter(
+    value: boolean | undefined,
+    trueQuery: string,
+    falseQuery: string
+  ): this {
+    if (value === true) {
+      this.queryParts.push(trueQuery);
+    } else if (value === false) {
+      this.queryParts.push(falseQuery);
+    }
+    return this;
+  }
+
+  /**
+   * Add simple filters
+   */
+  addSimpleFilter(
+    value: string | number | null | undefined,
+    key: string
+  ): this {
+    if (value !== undefined && value !== null) {
+      this.queryParts.push(`${key}:${value}`);
+    }
+    return this;
+  }
+
+  /**
+   * Build the final query string
+   */
+  build(): string {
+    return this.queryParts.join(' ').trim();
+  }
+}
+
+/**
  * Automatically apply quality boosting parameters for better search relevance
  * This function enhances search queries with quality filters when qualityBoost is enabled
  */
@@ -54,6 +183,230 @@ export function applyQualityBoost(
   }
 
   return enhancedParams;
+}
+
+/**
+ * Code search query builder
+ */
+class CodeSearchQueryBuilder extends BaseQueryBuilder {
+  addQueryTerms(params: GitHubCodeSearchQuery): this {
+    if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
+      this.queryParts.push(...params.queryTerms);
+    }
+    return this;
+  }
+
+  addSearchFilters(params: GitHubCodeSearchQuery): this {
+    this.addLanguageFilter(params.language);
+    this.addSimpleFilter(params.filename, 'filename');
+    this.addSimpleFilter(params.extension, 'extension');
+    this.addSimpleFilter(params.path, 'path');
+    this.addSimpleFilter(params.size, 'size');
+    this.addSimpleFilter(params.stars, 'stars');
+    this.addSimpleFilter(params.pushed, 'pushed');
+    this.addSimpleFilter(params.created, 'created');
+    return this;
+  }
+
+  addMatchFilters(params: GitHubCodeSearchQuery): this {
+    if (params.match) {
+      const matches = Array.isArray(params.match)
+        ? params.match
+        : [params.match];
+      matches.forEach(match => {
+        if (match === 'file') {
+          this.queryParts.push('in:file');
+        } else if (match === 'path') {
+          this.queryParts.push('in:path');
+        }
+      });
+    }
+    return this;
+  }
+}
+
+/**
+ * Repository search query builder
+ */
+class RepoSearchQueryBuilder extends BaseQueryBuilder {
+  addQueryTerms(params: GitHubReposSearchQuery): this {
+    if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
+      this.queryParts.push(...params.queryTerms);
+    }
+    return this;
+  }
+
+  addRepoFilters(params: GitHubReposSearchQuery): this {
+    this.addLanguageFilter(params.language);
+    this.addArrayFilter(params.topic, 'topic');
+    this.addSimpleFilter(params.stars, 'stars');
+    this.addSimpleFilter(params.size, 'size');
+    this.addSimpleFilter(params.created, 'created');
+
+    if (params.updated) {
+      this.queryParts.push(`pushed:${params.updated}`);
+    }
+
+    this.addArrayFilter(params.license, 'license');
+    this.addSimpleFilter(params['good-first-issues'], 'good-first-issues');
+    this.addSimpleFilter(params['help-wanted-issues'], 'help-wanted-issues');
+    this.addSimpleFilter(params.followers, 'followers');
+    this.addSimpleFilter(params['number-topics'], 'topics');
+    return this;
+  }
+
+  addMatchFilters(params: GitHubReposSearchQuery): this {
+    if (params.match) {
+      const matches = Array.isArray(params.match)
+        ? params.match
+        : [params.match];
+      matches.forEach(match => {
+        if (match === 'name') {
+          this.queryParts.push('in:name');
+        } else if (match === 'description') {
+          this.queryParts.push('in:description');
+        } else if (match === 'readme') {
+          this.queryParts.push('in:readme');
+        }
+      });
+    }
+    return this;
+  }
+
+  addQualityFilters(): this {
+    this.queryParts.push('is:not-archived');
+    this.queryParts.push('is:not-fork');
+    return this;
+  }
+}
+
+/**
+ * Pull request search query builder
+ */
+class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
+  addBasicFilters(params: GitHubPullRequestsSearchParams): this {
+    if (params.query && params.query.trim()) {
+      this.queryParts.push(params.query.trim());
+    }
+
+    this.queryParts.push('is:pr');
+    return this;
+  }
+
+  addStateFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addSimpleFilter(params.state, 'is');
+    this.addBooleanFilter(params.draft, 'is:draft', '-is:draft');
+    this.addBooleanFilter(params.merged, 'is:merged', 'is:unmerged');
+    this.addBooleanFilter(params.locked, 'is:locked', '-is:locked');
+    return this;
+  }
+
+  addUserFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addSimpleFilter(params.author, 'author');
+    this.addSimpleFilter(params.assignee, 'assignee');
+    this.addSimpleFilter(params.mentions, 'mentions');
+    this.addSimpleFilter(params.commenter, 'commenter');
+    this.addSimpleFilter(params.involves, 'involves');
+    this.addSimpleFilter(params['reviewed-by'], 'reviewed-by');
+    this.addSimpleFilter(params['review-requested'], 'review-requested');
+    return this;
+  }
+
+  addBranchFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addSimpleFilter(params.head, 'head');
+    this.addSimpleFilter(params.base, 'base');
+    return this;
+  }
+
+  addEngagementFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addSimpleFilter(params.comments, 'comments');
+    this.addSimpleFilter(params.reactions, 'reactions');
+    this.addSimpleFilter(params.interactions, 'interactions');
+    return this;
+  }
+
+  addReviewFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addSimpleFilter(params.review, 'review');
+    if (params.checks) {
+      this.queryParts.push(`status:${params.checks}`);
+    }
+    return this;
+  }
+
+  addOrganizationFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addArrayFilter(params.label, 'label', true);
+    if (params.milestone) {
+      this.queryParts.push(`milestone:"${params.milestone}"`);
+    }
+    if (params['team-mentions']) {
+      this.queryParts.push(`team:${params['team-mentions']}`);
+    }
+    this.addSimpleFilter(params.project, 'project');
+    this.addSimpleFilter(params.app, 'app');
+    return this;
+  }
+
+  addNegativeFilters(params: GitHubPullRequestsSearchParams): this {
+    if (params['no-assignee']) this.queryParts.push('no:assignee');
+    if (params['no-label']) this.queryParts.push('no:label');
+    if (params['no-milestone']) this.queryParts.push('no:milestone');
+    if (params['no-project']) this.queryParts.push('no:project');
+    return this;
+  }
+
+  addMiscFilters(params: GitHubPullRequestsSearchParams): this {
+    this.addLanguageFilter(params.language);
+    this.addArrayFilter(params.visibility, 'is');
+    this.queryParts.push('archived:false');
+    return this;
+  }
+}
+
+/**
+ * Commit search query builder
+ */
+class CommitSearchQueryBuilder extends BaseQueryBuilder {
+  addQueryTerms(params: GitHubCommitSearchParams): this {
+    if (params.exactQuery) {
+      this.queryParts.push(`"${params.exactQuery}"`);
+    } else if (params.queryTerms && params.queryTerms.length > 0) {
+      this.queryParts.push(params.queryTerms.join(' '));
+    } else if (params.orTerms && params.orTerms.length > 0) {
+      this.queryParts.push(params.orTerms.join(' OR '));
+    }
+    return this;
+  }
+
+  addAuthorFilters(params: GitHubCommitSearchParams): this {
+    this.addSimpleFilter(params.author, 'author');
+    if (params['author-name']) {
+      this.queryParts.push(`author-name:"${params['author-name']}"`);
+    }
+    this.addSimpleFilter(params['author-email'], 'author-email');
+    return this;
+  }
+
+  addCommitterFilters(params: GitHubCommitSearchParams): this {
+    this.addSimpleFilter(params.committer, 'committer');
+    if (params['committer-name']) {
+      this.queryParts.push(`committer-name:"${params['committer-name']}"`);
+    }
+    this.addSimpleFilter(params['committer-email'], 'committer-email');
+    return this;
+  }
+
+  addHashFilters(params: GitHubCommitSearchParams): this {
+    this.addSimpleFilter(params.hash, 'hash');
+    this.addSimpleFilter(params.parent, 'parent');
+    this.addSimpleFilter(params.tree, 'tree');
+    return this;
+  }
+
+  addMiscFilters(params: GitHubCommitSearchParams): this {
+    this.addBooleanFilter(params.merge, 'merge:true', 'merge:false');
+    this.addSimpleFilter(params.visibility, 'is');
+    return this;
+  }
 }
 
 /**
@@ -135,168 +488,25 @@ function mapLanguageToGitHub(language: string): string {
  * Build search query string for GitHub API from parameters
  */
 export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
-  const queryParts: string[] = [];
-
-  // Add main search terms
-  if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
-    queryParts.push(...params.queryTerms);
-  }
-
-  // GitHub API allows searches with just filters, so we don't require queryTerms
-  // If no queryTerms provided, we can still search with filters like language:, repo:, etc.
-
-  // Add filters as qualifiers
-  if (typeof params.language === 'string') {
-    const mappedLanguage = mapLanguageToGitHub(params.language);
-    queryParts.push(`language:${mappedLanguage}`);
-  }
-
-  // Repository filters - prioritize specific repo, then owner
-  if (params.owner && params.repo) {
-    const owner = Array.isArray(params.owner) ? params.owner[0] : params.owner;
-    const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
-    queryParts.push(`repo:${owner}/${repo}`);
-  } else if (params.owner) {
-    // For owner parameter, intelligently detect user vs organization
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => {
-      queryParts.push(getOwnerQualifier(owner));
-    });
-  }
-
-  if (params.filename) {
-    queryParts.push(`filename:${params.filename}`);
-  }
-
-  if (params.extension) {
-    queryParts.push(`extension:${params.extension}`);
-  }
-
-  if (params.path) {
-    queryParts.push(`path:${params.path}`);
-  }
-
-  if (params.size) {
-    queryParts.push(`size:${params.size}`);
-  }
-
-  // NEW: Repository quality filters for better relevance
-  if (params.stars) {
-    queryParts.push(`stars:${params.stars}`);
-  }
-
-  if (params.pushed) {
-    queryParts.push(`pushed:${params.pushed}`);
-  }
-
-  if (params.created) {
-    queryParts.push(`created:${params.created}`);
-  }
-
-  // Note: GitHub code search API doesn't support is:fork or archived filters
-  // These are only valid for repository search, not code search
-
-  if (params.match) {
-    const matches = Array.isArray(params.match) ? params.match : [params.match];
-    matches.forEach(match => {
-      if (match === 'file') {
-        queryParts.push('in:file');
-      } else if (match === 'path') {
-        queryParts.push('in:path');
-      }
-    });
-  }
-
-  return queryParts.join(' ');
+  return new CodeSearchQueryBuilder()
+    .addQueryTerms(params)
+    .addOwnerRepo(params)
+    .addSearchFilters(params)
+    .addMatchFilters(params)
+    .build();
 }
 
 /**
  * Build search query string for repository search
  */
 export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
-  const queryParts: string[] = [];
-
-  // Add queryTerms for specific text matching in repository names and descriptions
-  // This is used for targeted searches like "todo app", "authentication", etc.
-  if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
-    queryParts.push(...params.queryTerms);
-  }
-
-  // Add filters as qualifiers
-  if (typeof params.language === 'string') {
-    const mappedLanguage = mapLanguageToGitHub(params.language);
-    queryParts.push(`language:${mappedLanguage}`);
-  }
-
-  if (params.owner) {
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => queryParts.push(getOwnerQualifier(owner)));
-  }
-
-  // Add topics for exploratory discovery by technology/framework/domain
-  // This is used for broad technology searches like "react", "typescript", "machine-learning"
-  if (params.topic) {
-    const topics = Array.isArray(params.topic) ? params.topic : [params.topic];
-    topics.forEach(topic => queryParts.push(`topic:${topic}`));
-  }
-
-  if (params.stars) {
-    queryParts.push(`stars:${params.stars}`);
-  }
-
-  if (params.size) {
-    queryParts.push(`size:${params.size}`);
-  }
-
-  if (params.created) {
-    queryParts.push(`created:${params.created}`);
-  }
-
-  if (params.updated) {
-    queryParts.push(`pushed:${params.updated}`);
-  }
-
-  // Always exclude archived repositories and forks for better quality results
-  queryParts.push('is:not-archived');
-  queryParts.push('is:not-fork');
-
-  if (params.license) {
-    const licenses = Array.isArray(params.license)
-      ? params.license
-      : [params.license];
-    licenses.forEach(license => queryParts.push(`license:${license}`));
-  }
-
-  if (params['good-first-issues']) {
-    queryParts.push(`good-first-issues:${params['good-first-issues']}`);
-  }
-
-  if (params['help-wanted-issues']) {
-    queryParts.push(`help-wanted-issues:${params['help-wanted-issues']}`);
-  }
-
-  if (params.followers) {
-    queryParts.push(`followers:${params.followers}`);
-  }
-
-  if (params['number-topics']) {
-    queryParts.push(`topics:${params['number-topics']}`);
-  }
-
-  if (params.match) {
-    const matches = Array.isArray(params.match) ? params.match : [params.match];
-    matches.forEach(match => {
-      if (match === 'name') {
-        queryParts.push('in:name');
-      } else if (match === 'description') {
-        queryParts.push('in:description');
-      } else if (match === 'readme') {
-        queryParts.push('in:readme');
-      }
-    });
-  }
-
-  return queryParts.join(' ');
+  return new RepoSearchQueryBuilder()
+    .addQueryTerms(params)
+    .addOwnerRepo(params)
+    .addRepoFilters(params)
+    .addMatchFilters(params)
+    .addQualityFilters()
+    .build();
 }
 
 /**
@@ -306,167 +516,19 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
 export function buildPullRequestSearchQuery(
   params: GitHubPullRequestsSearchParams
 ): string {
-  const queryParts: string[] = [];
-
-  // Add main query if provided (keywords)
-  if (params.query && params.query.trim()) {
-    queryParts.push(params.query.trim());
-  }
-
-  // Always add is:pr to ensure we only get pull requests
-  queryParts.push('is:pr');
-
-  // Repository filters - handle arrays properly
-  if (params.owner && params.repo) {
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    const repos = Array.isArray(params.repo) ? params.repo : [params.repo];
-
-    // Create repo combinations
-    owners.forEach(owner => {
-      repos.forEach(repo => {
-        queryParts.push(`repo:${owner}/${repo}`);
-      });
-    });
-  } else if (params.owner) {
-    const owners = Array.isArray(params.owner) ? params.owner : [params.owner];
-    owners.forEach(owner => {
-      queryParts.push(getOwnerQualifier(owner));
-    });
-  }
-
-  // State filters
-  if (params.state) {
-    queryParts.push(`is:${params.state}`);
-  }
-  if (params.draft !== undefined) {
-    queryParts.push(params.draft ? 'is:draft' : '-is:draft');
-  }
-  if (params.merged !== undefined) {
-    queryParts.push(params.merged ? 'is:merged' : 'is:unmerged');
-  }
-  if (params.locked !== undefined) {
-    queryParts.push(params.locked ? 'is:locked' : '-is:locked');
-  }
-
-  // User involvement filters
-  if (params.author) {
-    queryParts.push(`author:${params.author}`);
-  }
-  if (params.assignee) {
-    queryParts.push(`assignee:${params.assignee}`);
-  }
-  if (params.mentions) {
-    queryParts.push(`mentions:${params.mentions}`);
-  }
-  if (params.commenter) {
-    queryParts.push(`commenter:${params.commenter}`);
-  }
-  if (params.involves) {
-    queryParts.push(`involves:${params.involves}`);
-  }
-  if (params['reviewed-by']) {
-    queryParts.push(`reviewed-by:${params['reviewed-by']}`);
-  }
-  if (params['review-requested']) {
-    queryParts.push(`review-requested:${params['review-requested']}`);
-  }
-
-  // Branch filters
-  if (params.head) {
-    queryParts.push(`head:${params.head}`);
-  }
-  if (params.base) {
-    queryParts.push(`base:${params.base}`);
-  }
-
-  // Date filters
-  if (params.created) {
-    queryParts.push(`created:${params.created}`);
-  }
-  if (params.updated) {
-    queryParts.push(`updated:${params.updated}`);
-  }
-  if (params['merged-at']) {
-    queryParts.push(`merged:${params['merged-at']}`);
-  }
-  if (params.closed) {
-    queryParts.push(`closed:${params.closed}`);
-  }
-
-  // Engagement filters
-  if (params.comments !== undefined) {
-    queryParts.push(`comments:${params.comments}`);
-  }
-  if (params.reactions !== undefined) {
-    queryParts.push(`reactions:${params.reactions}`);
-  }
-  if (params.interactions !== undefined) {
-    queryParts.push(`interactions:${params.interactions}`);
-  }
-
-  // Review and CI filters
-  if (params.review) {
-    queryParts.push(`review:${params.review}`);
-  }
-  if (params.checks) {
-    queryParts.push(`status:${params.checks}`);
-  }
-
-  // Label filters (handle arrays)
-  if (params.label) {
-    const labels = Array.isArray(params.label) ? params.label : [params.label];
-    labels.forEach(label => {
-      queryParts.push(`label:"${label}"`);
-    });
-  }
-
-  // Organization filters
-  if (params.milestone) {
-    queryParts.push(`milestone:"${params.milestone}"`);
-  }
-  if (params['team-mentions']) {
-    queryParts.push(`team:${params['team-mentions']}`);
-  }
-  if (params.project) {
-    queryParts.push(`project:${params.project}`);
-  }
-  if (params.app) {
-    queryParts.push(`app:${params.app}`);
-  }
-
-  // Boolean "missing" filters
-  if (params['no-assignee']) {
-    queryParts.push('no:assignee');
-  }
-  if (params['no-label']) {
-    queryParts.push('no:label');
-  }
-  if (params['no-milestone']) {
-    queryParts.push('no:milestone');
-  }
-  if (params['no-project']) {
-    queryParts.push('no:project');
-  }
-
-  // Language filter
-  if (params.language) {
-    queryParts.push(`language:${params.language}`);
-  }
-
-  // Visibility filter (handle arrays)
-  if (params.visibility) {
-    const visibilities = Array.isArray(params.visibility)
-      ? params.visibility
-      : [params.visibility];
-    visibilities.forEach(vis => {
-      queryParts.push(`is:${vis}`);
-    });
-  }
-
-  // Always exclude archived repositories and forks for better quality results
-  queryParts.push('archived:false');
-
-  return queryParts.join(' ').trim();
+  return new PullRequestSearchQueryBuilder()
+    .addBasicFilters(params)
+    .addOwnerRepo(params)
+    .addStateFilters(params)
+    .addUserFilters(params)
+    .addBranchFilters(params)
+    .addDateFilters(params)
+    .addEngagementFilters(params)
+    .addReviewFilters(params)
+    .addOrganizationFilters(params)
+    .addNegativeFilters(params)
+    .addMiscFilters(params)
+    .build();
 }
 
 /**
@@ -476,81 +538,15 @@ export function buildPullRequestSearchQuery(
 export function buildCommitSearchQuery(
   params: GitHubCommitSearchParams
 ): string {
-  const queryParts: string[] = [];
-
-  // Handle different query types
-  if (params.exactQuery) {
-    // Exact phrase search
-    queryParts.push(`"${params.exactQuery}"`);
-  } else if (params.queryTerms && params.queryTerms.length > 0) {
-    // AND logic - terms are space separated (GitHub default)
-    queryParts.push(params.queryTerms.join(' '));
-  } else if (params.orTerms && params.orTerms.length > 0) {
-    // OR logic - explicit OR operator
-    queryParts.push(params.orTerms.join(' OR '));
-  }
-
-  // Repository filters
-  if (params.owner && params.repo) {
-    queryParts.push(`repo:${params.owner}/${params.repo}`);
-  } else if (params.owner) {
-    queryParts.push(getOwnerQualifier(params.owner));
-  }
-
-  // Author filters
-  if (params.author) {
-    queryParts.push(`author:${params.author}`);
-  }
-  if (params['author-name']) {
-    queryParts.push(`author-name:"${params['author-name']}"`);
-  }
-  if (params['author-email']) {
-    queryParts.push(`author-email:${params['author-email']}`);
-  }
-
-  // Committer filters
-  if (params.committer) {
-    queryParts.push(`committer:${params.committer}`);
-  }
-  if (params['committer-name']) {
-    queryParts.push(`committer-name:"${params['committer-name']}"`);
-  }
-  if (params['committer-email']) {
-    queryParts.push(`committer-email:${params['committer-email']}`);
-  }
-
-  // Date filters
-  if (params['author-date']) {
-    queryParts.push(`author-date:${params['author-date']}`);
-  }
-  if (params['committer-date']) {
-    queryParts.push(`committer-date:${params['committer-date']}`);
-  }
-
-  // Hash filters
-  if (params.hash) {
-    queryParts.push(`hash:${params.hash}`);
-  }
-  if (params.parent) {
-    queryParts.push(`parent:${params.parent}`);
-  }
-  if (params.tree) {
-    queryParts.push(`tree:${params.tree}`);
-  }
-
-  // Merge filter
-  if (params.merge === true) {
-    queryParts.push('merge:true');
-  } else if (params.merge === false) {
-    queryParts.push('merge:false');
-  }
-
-  // Visibility filter
-  if (params.visibility) {
-    queryParts.push(`is:${params.visibility}`);
-  }
-
-  return queryParts.join(' ').trim();
+  return new CommitSearchQueryBuilder()
+    .addQueryTerms(params)
+    .addOwnerRepo(params)
+    .addAuthorFilters(params)
+    .addCommitterFilters(params)
+    .addDateFilters(params)
+    .addHashFilters(params)
+    .addMiscFilters(params)
+    .build();
 }
 
 /**
