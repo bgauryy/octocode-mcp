@@ -1,10 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../../../responses';
 import { ContentSanitizer } from '../../../security/contentSanitizer';
-import { getUserContext } from '../../../github/userInfo';
-import { RateLimiter } from '../../../security/rateLimiter';
-import { OrganizationManager } from '../../../security/organizationManager';
-// Enterprise mode functionality removed in simplified implementation
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 export interface UserContext {
@@ -16,8 +12,8 @@ export interface UserContext {
 }
 
 /**
- * Enhanced security validation decorator with enterprise features
- * Provides both input sanitization and enterprise access controls
+ * Security validation decorator with input sanitization
+ * Provides basic security validation and user context
  */
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolHandler: (
@@ -47,78 +43,14 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
         });
       }
 
-      // 2. Load user context ONLY in enterprise mode to avoid overhead otherwise
-      let userContext: UserContext | undefined;
+      // 2. Provide basic session context
+      const userContext: UserContext = {
+        userId: 'anonymous',
+        userLogin: 'anonymous',
+        sessionId,
+      };
 
-      // eslint-disable-next-line no-constant-condition
-      if (false) {
-        // Enterprise mode disabled in simplified implementation
-        try {
-          const context = await getUserContext();
-          if (context.user) {
-            userContext = {
-              userId: context.user.id.toString(),
-              userLogin: context.user.login,
-              organizationId: context.organizationId,
-
-              sessionId,
-            };
-
-            // 3. Enterprise rate limiting (if configured)
-            try {
-              const rateLimitResult = await RateLimiter.checkLimit(
-                userContext.userId,
-                'api',
-                { increment: true }
-              );
-
-              if (!rateLimitResult.allowed) {
-                return createResult({
-                  error: `Rate limit exceeded. Try again in ${Math.ceil((rateLimitResult.resetTime?.getTime() || Date.now()) - Date.now()) / 1000} seconds.`,
-                  isError: true,
-                  hints: ['Rate limiting is active in enterprise mode'],
-                });
-              }
-            } catch (rateLimitError) {
-              // Rate limiter not initialized - continue without rate limiting
-            }
-
-            // 4. Organization validation (if configured)
-            if (userContext.organizationId) {
-              try {
-                const orgValidation =
-                  await OrganizationManager.validateOrganizationAccess(
-                    userContext.organizationId,
-                    userContext.userLogin
-                  );
-
-                if (!orgValidation.valid) {
-                  return createResult({
-                    error: `Organization access denied: ${orgValidation.errors.join('; ')}`,
-                    isError: true,
-                    hints: ['Enterprise organization validation failed'],
-                  });
-                }
-              } catch (orgError) {
-                // Organization manager not initialized - continue without org validation
-              }
-            }
-          }
-        } catch (contextError) {
-          // If we can't get user context, continue with basic validation only
-          // This maintains backward compatibility for non-enterprise usage
-        }
-      } else {
-        // Even in non-enterprise mode, provide basic session context
-        userContext = {
-          userId: 'anonymous',
-          userLogin: 'anonymous',
-
-          sessionId,
-        };
-      }
-
-      // 5. Call the actual tool handler with sanitized parameters and user context
+      // 3. Call the actual tool handler with sanitized parameters and user context
       return await toolHandler(
         validation.sanitizedParams as T,
         authInfo,
