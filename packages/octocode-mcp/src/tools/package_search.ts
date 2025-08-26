@@ -1,15 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from '../utils/withSecurityValidation';
-import { createResult } from '../../mcp/responses';
-import { TOOL_NAMES } from '../utils/toolConstants';
-import { generateHints } from '../utils/hints_consolidated';
+import { withSecurityValidation } from './utils/withSecurityValidation';
+import { createResult } from '../mcp/responses';
+import { TOOL_NAMES } from './utils/toolConstants';
+import { generateHints } from './utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
-} from '../../scheme/package_search';
-import { searchPackagesAPI } from '../../utils/package';
-import { PackageSearchBulkParams } from './types';
+} from '../scheme/package_search';
+import { searchPackagesAPI } from '../utils/package';
+import { PackageSearchBulkParams } from './package_search/types';
 
 const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.
 
@@ -32,7 +32,7 @@ BEST PRACTICES:
 - Leverage bulk operations to compare multiple package alternatives`;
 
 export function registerPackageSearchTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTION,

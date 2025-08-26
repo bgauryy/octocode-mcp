@@ -47,7 +47,7 @@ interface AggregatedRepoContext {
 }
 
 export function registerSearchGitHubReposTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTION,

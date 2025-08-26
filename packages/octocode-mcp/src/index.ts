@@ -9,7 +9,7 @@ import { registerFetchGitHubFileContentTool } from './tools/github_fetch_content
 import { registerSearchGitHubReposTool } from './tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from './tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from './tools/package_search/package_search.js';
+import { registerPackageSearchTool } from './tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from './tools/github_view_repo_structure.js';
 import { TOOL_NAMES } from './tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
@@ -19,7 +19,7 @@ import {
   isCliTokenResolutionEnabled,
 } from './tools/utils/tokenManager.js';
 import { ConfigManager } from './serverConfig.js';
-import { ToolsetManager } from './tools/toolsets/toolsetManager.js';
+import { ToolsetManager } from './tools/toolsetManager.js';
 import { isBetaEnabled } from './serverConfig.js';
 import { version, name } from '../package.json';
 

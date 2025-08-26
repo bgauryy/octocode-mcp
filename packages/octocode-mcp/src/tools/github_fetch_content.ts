@@ -42,7 +42,7 @@ BETA FEATURES (BETA=1):
 - sampling: Automatic code explanation via MCP sampling protocol`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
       description: DESCRIPTION,

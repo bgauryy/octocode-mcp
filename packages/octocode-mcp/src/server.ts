@@ -18,7 +18,7 @@ import { TOOL_NAMES } from './tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
 import { ConfigManager } from './serverConfig.js';
 import { AuditLogger } from './security/auditLogger.js';
-import { ToolsetManager } from './tools/toolsets/toolsetManager.js';
+import { ToolsetManager } from './tools/toolsetManager.js';
 import { isBetaEnabled } from './serverConfig.js';
 import { version, name } from '../package.json';
 

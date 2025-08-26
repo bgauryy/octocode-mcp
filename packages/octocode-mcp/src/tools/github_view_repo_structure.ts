@@ -41,7 +41,7 @@ BEST PRACTICES:
 - Use bulk operations to compare structures across multiple repositories`;
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
-  server.registerTool(
+  return server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
       description: DESCRIPTION,

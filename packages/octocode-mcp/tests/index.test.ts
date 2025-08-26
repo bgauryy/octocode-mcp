@@ -33,13 +33,13 @@ import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_co
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from '../src/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../src/tools/package_search/package_search.js';
+import { registerPackageSearchTool } from '../src/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
 import { getNPMUserDetails } from '../src/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
 import { ConfigManager, isBetaEnabled } from '../src/serverConfig.js';
-import { ToolsetManager } from '../src/tools/toolsets/toolsetManager.js';
+import { ToolsetManager } from '../src/tools/toolsetManager.js';
 import { getToken } from '../src/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/tools/utils/toolConstants.js';
 
