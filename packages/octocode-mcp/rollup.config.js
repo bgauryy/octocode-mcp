@@ -31,7 +31,7 @@ export default {
   },
   external: [
     // Only externalize Node.js built-ins - users expect dependencies to be bundled
-    'fs', 'path', 'os', 'crypto', 'util', 'stream', 'events', 'http', 'https', 'url', 'zlib', 'buffer', 'child_process'
+    'fs', 'path', 'os', 'crypto', 'util', 'stream', 'events', 'http', 'https', 'url', 'zlib', 'buffer', 'child_process', 'better-sqlite3'
   ],
   plugins: [
     nodeResolve({
