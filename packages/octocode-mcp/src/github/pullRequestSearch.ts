@@ -1,8 +1,8 @@
+import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from './github-openapi';
-import type { components } from '@octokit/openapi-types';
 import {
   GitHubPullRequestSearchResult,
   GitHubPullRequestSearchError,

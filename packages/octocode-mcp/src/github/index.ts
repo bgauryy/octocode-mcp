@@ -7,43 +7,37 @@ export {
 } from './client';
 export { handleGitHubAPIError, generateFileAccessHints } from './errors';
 
-// Export OpenAPI types
+// Export enhanced/custom types and utilities
 export type {
   GitHubAPIError,
   GitHubAPIResponse,
   GitHubAPISuccess,
   Repository,
-  PullRequest,
-  Commit,
-  CodeSearchResultItem,
-  RepoSearchResultItem,
-  CommitSearchResultItem,
-  SearchCodeParameters,
-  SearchCodeResponse,
-  SearchReposParameters,
-  SearchReposResponse,
-  SearchCommitsParameters,
-  SearchCommitsResponse,
+  WorkflowRun,
+  CheckRun,
+  OptimizedCodeSearchResult,
+  OptimizedCommitSearchResult,
+  GitHubPullRequestItem,
+  GitHubCommitSearchParams,
+  GitHubPullRequestsSearchParams,
+  RepositoryReference,
+  GitHubCommitDiff,
+  GitHubPullRequestDiff,
+  EnhancedSearchResult,
   GetContentParameters,
-  GetContentResponse,
-  GetRepoParameters,
   GetRepoResponse,
-  GetPullRequestParameters,
-  GetPullRequestResponse,
-  ListPullRequestsParameters,
-  ListPullRequestsResponse,
-  SortOrder,
-  SearchCodeSort,
-  SearchReposSort,
-  SearchCommitsSort,
-  PullRequestState,
-  RepositoryVisibility,
-  ContentType,
   isGitHubAPIError,
   isGitHubAPISuccess,
   isRepository,
   isSearchResultItem,
+  isPullRequest,
+  isWorkflowRun,
+  isCheckRun,
 } from './github-openapi';
+
+// Re-export direct Octokit types for convenience
+export type { components } from '@octokit/openapi-types';
+export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 
 // Query builders
 export {
