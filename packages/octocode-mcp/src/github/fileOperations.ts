@@ -7,13 +7,13 @@ import {
   GithubFetchRequestParams,
   GitHubFileContentResponse,
   GitHubFileContentError,
-} from '../tools/scheme/github_fetch_content';
+} from '../scheme/github_fetch_content';
 import {
   GitHubRepositoryStructureParams,
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
-} from '../tools/scheme/github_view_repo_structure';
+} from '../scheme/github_view_repo_structure';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit, OctokitWithThrottling } from './client';

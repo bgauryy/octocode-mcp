@@ -8,7 +8,7 @@ import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
-} from './scheme/github_search_repos';
+} from '../scheme/github_search_repos';
 import type { Repository } from '../types/github-openapi';
 import { ensureUniqueQueryIds } from './utils/bulkOperations';
 import {
@@ -137,17 +137,23 @@ async function searchMultipleGitHubRepos(
             toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
             hasResults: false,
             errorMessage: apiResult.error,
-            researchGoal: query.researchGoal,
+            researchGoal:
+              typeof query.researchGoal === 'string'
+                ? query.researchGoal
+                : undefined,
           });
 
           return {
-            queryId: query.id!,
+            queryId: String(query.id),
             error: apiResult.error,
             hints,
             metadata: {
               queryArgs: { ...query },
               error: apiResult.error,
-              researchGoal: query.researchGoal || 'discovery',
+              researchGoal:
+                typeof query.researchGoal === 'string'
+                  ? query.researchGoal
+                  : 'discovery',
             },
           };
         }
@@ -160,7 +166,7 @@ async function searchMultipleGitHubRepos(
         const typedRepositories = repositories as unknown as Repository[];
 
         return {
-          queryId: query.id!,
+          queryId: String(query.id),
           data: {
             repositories: typedRepositories,
             total_count: apiResult.data.total_count,
@@ -169,7 +175,10 @@ async function searchMultipleGitHubRepos(
             // Only include queryArgs for no-result cases
             ...(hasResults ? {} : { queryArgs: { ...query } }),
             searchType: 'success',
-            researchGoal: query.researchGoal || 'discovery',
+            researchGoal:
+              typeof query.researchGoal === 'string'
+                ? query.researchGoal
+                : 'discovery',
           },
         };
       } catch (error) {
@@ -180,17 +189,23 @@ async function searchMultipleGitHubRepos(
           toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           hasResults: false,
           errorMessage,
-          researchGoal: query.researchGoal,
+          researchGoal:
+            typeof query.researchGoal === 'string'
+              ? query.researchGoal
+              : undefined,
         });
 
         return {
-          queryId: query.id!,
+          queryId: String(query.id),
           error: errorMessage,
           hints,
           metadata: {
             queryArgs: { ...query },
             error: errorMessage,
-            researchGoal: query.researchGoal || 'discovery',
+            researchGoal:
+              typeof query.researchGoal === 'string'
+                ? query.researchGoal
+                : 'discovery',
           },
         };
       }

@@ -5,7 +5,7 @@ import type {
   GitHubAPIResponse,
   OptimizedCodeSearchResult,
 } from '../types/github-openapi';
-import { GitHubCodeSearchQuery } from '../tools/scheme/github_search_code';
+import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
@@ -68,7 +68,10 @@ async function searchGitHubCodeAPIInternal(
     // Optimized search parameters with better defaults
     const searchParams: SearchCodeParameters = {
       q: query,
-      per_page: Math.min(enhancedParams.limit || 30, 100),
+      per_page: Math.min(
+        typeof enhancedParams.limit === 'number' ? enhancedParams.limit : 30,
+        100
+      ),
       page: 1,
       // Always request text matches for better context
       headers: {
@@ -77,10 +80,17 @@ async function searchGitHubCodeAPIInternal(
     };
 
     // Add sorting parameters for better relevance
-    if (enhancedParams.sort && enhancedParams.sort !== 'best-match') {
+    if (
+      typeof enhancedParams.sort === 'string' &&
+      enhancedParams.sort !== 'best-match' &&
+      enhancedParams.sort === 'indexed'
+    ) {
       searchParams.sort = enhancedParams.sort;
     }
-    if (enhancedParams.order) {
+    if (
+      typeof enhancedParams.order === 'string' &&
+      (enhancedParams.order === 'asc' || enhancedParams.order === 'desc')
+    ) {
       searchParams.order = enhancedParams.order;
     }
 

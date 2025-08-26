@@ -8,7 +8,7 @@ import {
   FileContentQuery,
   FileContentBulkQuerySchema,
   FileContentQueryResult,
-} from './scheme/github_fetch_content';
+} from '../scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
 import { generateHints } from './utils/hints_consolidated.js';
 import { isSamplingEnabled } from '../serverConfig.js';
@@ -116,15 +116,34 @@ async function fetchMultipleGitHubFileContents(
   // Execute all queries
   for (const query of uniqueQueries) {
     try {
-      const apiResult = await fetchGitHubFileContentAPI(query, authInfo);
+      // Create properly typed request using smart type conversion
+      const apiRequest = {
+        owner: String(query.owner),
+        repo: String(query.repo),
+        filePath: String(query.filePath),
+        branch: query.branch ? String(query.branch) : undefined,
+        startLine:
+          typeof query.startLine === 'number' ? query.startLine : undefined,
+        endLine: typeof query.endLine === 'number' ? query.endLine : undefined,
+        matchString: query.matchString ? String(query.matchString) : undefined,
+        matchStringContextLines:
+          typeof query.matchStringContextLines === 'number'
+            ? query.matchStringContextLines
+            : undefined,
+        minified: typeof query.minified === 'boolean' ? query.minified : true,
+      };
+
+      const apiResult = await fetchGitHubFileContentAPI(apiRequest, authInfo);
 
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
       // Build the result object
       const resultObj: FileContentQueryResult = {
-        queryId: query.id,
-        researchGoal: query.researchGoal,
+        queryId: String(query.id),
+        researchGoal: query.researchGoal
+          ? String(query.researchGoal)
+          : undefined,
         result: result,
       };
 
@@ -154,8 +173,8 @@ async function fetchMultipleGitHubFileContents(
 
           resultObj.sampling = {
             codeExplanation: samplingResponse.content,
-            filePath: query.filePath,
-            repo: `${query.owner}/${query.repo}`,
+            filePath: String(query.filePath),
+            repo: `${String(query.owner)}/${String(query.repo)}`,
             usage: samplingResponse.usage,
             stopReason: samplingResponse.stopReason,
           };
@@ -177,8 +196,10 @@ async function fetchMultipleGitHubFileContents(
         error instanceof Error ? error.message : 'Unknown error occurred';
 
       results.push({
-        queryId: query.id!,
-        researchGoal: query.researchGoal,
+        queryId: String(query.id),
+        researchGoal: query.researchGoal
+          ? String(query.researchGoal)
+          : undefined,
         originalQuery: query, // Only include on error
         result: { error: errorMessage },
         error: errorMessage,
@@ -193,8 +214,8 @@ async function fetchMultipleGitHubFileContents(
 
   // Extract common research goal from queries
   const researchGoals = uniqueQueries
-    .map(q => q.researchGoal)
-    .filter(goal => !!goal);
+    .map(q => (q.researchGoal ? String(q.researchGoal) : undefined))
+    .filter((goal): goal is string => !!goal);
   const commonResearchGoal =
     researchGoals.length > 0 ? researchGoals[0] : undefined;
 

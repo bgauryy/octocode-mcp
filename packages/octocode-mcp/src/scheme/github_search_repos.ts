@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { extendBaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import type { Repository } from '../../types/github-openapi.js';
+import type { Repository } from '../types/github-openapi.js';
 
 // ============================================================================
 // REPOSITORY SEARCH QUERY SCHEMA

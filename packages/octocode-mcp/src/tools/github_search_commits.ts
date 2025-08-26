@@ -7,7 +7,8 @@ import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
-} from './scheme/github_search_commits';
+} from '../scheme/github_search_commits';
+import { GitHubCommitSearchParams } from '../types/github-openapi';
 import { generateHints } from './utils/hints_consolidated';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
@@ -49,7 +50,9 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         authInfo?: AuthInfo
       ): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
-        const hasSearchTerms = args.queryTerms?.length || args.orTerms?.length;
+        const hasSearchTerms =
+          (Array.isArray(args.queryTerms) && args.queryTerms.length > 0) ||
+          (Array.isArray(args.orTerms) && args.orTerms.length > 0);
         const hasFilters =
           args.author ||
           args['author-name'] ||
@@ -106,7 +109,10 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
         }
 
         try {
-          const result = await searchGitHubCommitsAPI(args, authInfo);
+          const result = await searchGitHubCommitsAPI(
+            args as GitHubCommitSearchParams,
+            authInfo
+          );
 
           // Check if result is an error
           if ('error' in result) {
@@ -116,7 +122,9 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
               totalItems: 0,
               errorMessage: result.error,
               customHints: result.hints || [],
-              researchGoal: args.researchGoal,
+              researchGoal: args.researchGoal
+                ? String(args.researchGoal)
+                : undefined,
             });
             return createResult({
               error: result.error,
@@ -127,18 +135,28 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           // Success - generate intelligent hints
 
           const searchTerms = [
-            ...(args.queryTerms || []),
-            ...(args.orTerms || []),
+            ...(Array.isArray(args.queryTerms) ? args.queryTerms : []),
+            ...(Array.isArray(args.orTerms) ? args.orTerms : []),
           ];
 
           const baseHints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: result.commits.length > 0,
             totalItems: result.commits.length,
-            researchGoal: args.researchGoal,
+            researchGoal: args.researchGoal
+              ? String(args.researchGoal)
+              : undefined,
             queryContext: {
-              owner: args.owner,
-              repo: args.repo,
+              owner: args.owner
+                ? Array.isArray(args.owner)
+                  ? args.owner.map(String)
+                  : String(args.owner)
+                : undefined,
+              repo: args.repo
+                ? Array.isArray(args.repo)
+                  ? args.repo.map(String)
+                  : String(args.repo)
+                : undefined,
               queryTerms: searchTerms,
             },
           });
@@ -187,7 +205,9 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
             hasResults: false,
             totalItems: 0,
             errorMessage,
-            researchGoal: args.researchGoal,
+            researchGoal: args.researchGoal
+              ? String(args.researchGoal)
+              : undefined,
           });
 
           return createResult({

@@ -9,10 +9,10 @@ import {
   GitHubViewRepoStructureBulkQuerySchema,
   ProcessedRepositoryStructureResult,
   AggregatedRepositoryContext,
-} from './scheme/github_view_repo_structure';
+} from '../scheme/github_view_repo_structure';
 import { generateHints } from './utils/hints_consolidated';
-import { ensureUniqueQueryIds } from './utils/queryUtils';
 import {
+  ensureUniqueQueryIds,
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
@@ -125,67 +125,38 @@ async function exploreMultipleRepositoryStructures(
       query: GitHubViewRepoStructureQuery
     ): Promise<ProcessedRepositoryStructureResult> => {
       try {
-        // Validate required parameters for each query
-        if (!query.owner?.trim()) {
-          return {
-            queryId: query.id!,
-            error: 'Repository owner is required',
-            hints: [
-              'Repository owner is required',
-              'Provide repository owner (organization or username)',
-              'Example: owner: "facebook" for Facebook repositories',
-            ],
-            metadata: {
-              queryArgs: { ...query },
-              error: 'Repository owner is required',
-              searchType: 'validation_error',
-            },
-          };
-        }
+        // TypeScript and Zod validation ensure all required fields are properly typed
+        // No manual validation needed - trust the type system!
 
-        if (!query.repo?.trim()) {
-          return {
-            queryId: query.id!,
-            error: 'Repository name is required',
-            hints: [
-              'Repository name is required',
-              'Provide repository name',
-              'Example: repo: "react" for the React repository',
-            ],
-            metadata: {
-              queryArgs: { ...query },
-              error: 'Repository name is required',
-              searchType: 'validation_error',
-            },
-          };
-        }
-
-        if (!query.branch?.trim()) {
-          return {
-            queryId: query.id!,
-            error: 'Branch name is required',
-            hints: [
-              'Branch name is required',
-              'Provide branch name (usually "main" or "master")',
-              'Example: branch: "main"',
-            ],
-            metadata: {
-              queryArgs: { ...query },
-              error: 'Branch name is required',
-              searchType: 'validation_error',
-            },
-          };
-        }
+        // Create API request with properly typed fields
+        const apiRequest: GitHubViewRepoStructureQuery = {
+          id: String(query.id),
+          owner: String(query.owner),
+          repo: String(query.repo),
+          branch: String(query.branch),
+          path: query.path ? String(query.path) : undefined,
+          depth: typeof query.depth === 'number' ? query.depth : undefined,
+          includeIgnored:
+            typeof query.includeIgnored === 'boolean'
+              ? query.includeIgnored
+              : undefined,
+          showMedia:
+            typeof query.showMedia === 'boolean' ? query.showMedia : undefined,
+          researchGoal:
+            typeof query.researchGoal === 'string'
+              ? query.researchGoal
+              : undefined,
+        };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
-          query,
+          apiRequest,
           authInfo
         );
 
         // Check if result is an error
         if ('error' in apiResult) {
           return {
-            queryId: query.id!,
+            queryId: String(query.id),
             error: apiResult.error,
             hints: [
               'Verify repository owner and name are correct',
@@ -200,21 +171,21 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        // Success case
+        // Success case - use properly typed apiRequest
         return {
-          queryId: query.id!,
+          queryId: String(query.id),
           data: {
-            repository: `${query.owner}/${query.repo}`,
+            repository: `${apiRequest.owner}/${apiRequest.repo}`,
             structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
             totalCount: apiResult.files.length,
           },
           metadata: {
-            branch: query.branch,
-            path: query.path || '/',
+            branch: apiRequest.branch,
+            path: apiRequest.path || '/',
             folders: apiResult.folders,
             summary: apiResult.summary,
-            researchGoal: query.researchGoal,
-            queryArgs: { ...query },
+            researchGoal: apiRequest.researchGoal,
+            queryArgs: { ...apiRequest },
             searchType: 'success',
           },
         };
@@ -223,7 +194,7 @@ async function exploreMultipleRepositoryStructures(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
-          queryId: query.id!,
+          queryId: String(query.id),
           error: `Failed to explore repository structure: ${errorMessage}`,
           hints: [
             'Verify repository owner and name are correct',
@@ -274,8 +245,8 @@ async function exploreMultipleRepositoryStructures(
       if (result.data.repository) {
         aggregatedContext.repositoryContexts.add(result.data.repository);
       }
-      if (typeof result.metadata?.path === 'string') {
-        aggregatedContext.exploredPaths.add(result.metadata.path);
+      if (result.metadata?.path) {
+        aggregatedContext.exploredPaths.add(String(result.metadata.path));
       }
 
       // Extract file types and directories

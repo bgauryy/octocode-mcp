@@ -7,8 +7,9 @@ import { generateHints } from '../utils/hints_consolidated';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,
-} from '../scheme/package_search';
+} from '../../scheme/package_search';
 import { searchPackagesAPI } from '../../utils/package';
+import { PackageSearchBulkParams } from './types';
 
 const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.
 
@@ -47,9 +48,10 @@ export function registerPackageSearchTool(server: McpServer) {
     withSecurityValidation(
       async (args: BulkPackageSearchParams): Promise<CallToolResult> => {
         // Validate that at least one type of query is provided
-        const hasNpmQueries = args.npmPackages && args.npmPackages.length > 0;
+        const hasNpmQueries =
+          Array.isArray(args.npmPackages) && args.npmPackages.length > 0;
         const hasPythonQueries =
-          args.pythonPackages && args.pythonPackages.length > 0;
+          Array.isArray(args.pythonPackages) && args.pythonPackages.length > 0;
 
         if (!hasNpmQueries && !hasPythonQueries) {
           const hints = generateHints({
@@ -71,7 +73,8 @@ export function registerPackageSearchTool(server: McpServer) {
         }
 
         const totalQueries =
-          (args.npmPackages?.length || 0) + (args.pythonPackages?.length || 0);
+          (Array.isArray(args.npmPackages) ? args.npmPackages.length : 0) +
+          (Array.isArray(args.pythonPackages) ? args.pythonPackages.length : 0);
 
         if (totalQueries > 10) {
           const hints = generateHints({
@@ -93,7 +96,9 @@ export function registerPackageSearchTool(server: McpServer) {
         try {
           // Use the unified searchPackagesAPI function
           // NPM enablement is now handled internally by searchPackagesAPI
-          const searchResult = await searchPackagesAPI(args);
+          const searchResult = await searchPackagesAPI(
+            args as PackageSearchBulkParams
+          );
 
           // Handle the result based on its type
           if ('error' in searchResult) {
@@ -103,7 +108,9 @@ export function registerPackageSearchTool(server: McpServer) {
               totalItems: 0,
               errorMessage: searchResult.error,
               customHints: searchResult.hints || [],
-              researchGoal: args.researchGoal,
+              researchGoal: args.researchGoal
+                ? String(args.researchGoal)
+                : undefined,
             });
 
             return createResult({
@@ -186,7 +193,9 @@ export function registerPackageSearchTool(server: McpServer) {
             toolName: TOOL_NAMES.PACKAGE_SEARCH,
             hasResults: totalPackages > 0,
             totalItems: totalPackages,
-            researchGoal: args.researchGoal,
+            researchGoal: args.researchGoal
+              ? String(args.researchGoal)
+              : undefined,
             customHints:
               responseContext.repositoryLinks.length > 0
                 ? [
@@ -206,7 +215,9 @@ export function registerPackageSearchTool(server: McpServer) {
               ecosystems: responseContext.foundEcosystems,
               repositoryCount: responseContext.repositoryLinks.length,
               hasMetadata: responseContext.dataQuality.hasMetadata,
-              researchGoal: args.researchGoal,
+              researchGoal: args.researchGoal
+                ? String(args.researchGoal)
+                : undefined,
             },
             hints,
           });
@@ -219,7 +230,9 @@ export function registerPackageSearchTool(server: McpServer) {
             hasResults: false,
             totalItems: 0,
             errorMessage,
-            researchGoal: args.researchGoal,
+            researchGoal: args.researchGoal
+              ? String(args.researchGoal)
+              : undefined,
             customHints: [
               'Check package names for typos or alternative spellings',
               'Try broader search terms if specific packages are not found',

@@ -7,7 +7,7 @@ import { withSecurityValidation } from './utils/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
-} from './scheme/github_search_code.js';
+} from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/index.js';
 import {
   createBulkResponse,
@@ -20,7 +20,7 @@ import {
   consolidateHints,
 } from './utils/hints_consolidated.js';
 import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
-import { ProcessedCodeSearchResult } from './scheme/github_search_code.js';
+import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../types/github-openapi.js';
 
@@ -155,7 +155,7 @@ async function searchMultipleGitHubCode(
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
     async (
-      query: GitHubCodeSearchQuery
+      query: GitHubCodeSearchQuery & { id: string }
     ): Promise<ProcessedCodeSearchResult> => {
       try {
         const apiResult = await searchGitHubCodeAPI(query, authInfo);
@@ -166,18 +166,22 @@ async function searchMultipleGitHubCode(
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
             errorMessage: apiResult.error,
-            researchGoal: query.researchGoal,
+            researchGoal: query.researchGoal
+              ? String(query.researchGoal)
+              : undefined,
           });
 
           return {
-            queryId: query.id!,
+            queryId: query.id,
             error: apiResult.error,
             hints: hints,
             metadata: {
               queryArgs: { ...query },
               error: apiResult.error,
               hints: hints,
-              researchGoal: query.researchGoal || 'discovery',
+              researchGoal: query.researchGoal
+                ? String(query.researchGoal)
+                : 'discovery',
             },
           };
         }
@@ -201,7 +205,7 @@ async function searchMultipleGitHubCode(
         const hasNoResults = apiResult.data.items.length === 0;
 
         const result = {
-          queryId: query.id!,
+          queryId: query.id,
           data: {
             repository,
             files: apiResult.data.items.map(
@@ -219,7 +223,9 @@ async function searchMultipleGitHubCode(
             totalCount: apiResult.data.total_count,
           },
           metadata: {
-            researchGoal: query.researchGoal || 'discovery',
+            researchGoal: query.researchGoal
+              ? String(query.researchGoal)
+              : 'discovery',
             resultCount: apiResult.data.items.length,
             hasMatches: totalMatches > 0,
             repositories: repository ? [repository] : [],
@@ -258,18 +264,22 @@ async function searchMultipleGitHubCode(
           toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
           hasResults: false,
           errorMessage: errorMessage,
-          researchGoal: query.researchGoal,
+          researchGoal: query.researchGoal
+            ? String(query.researchGoal)
+            : undefined,
         });
 
         return {
-          queryId: query.id!,
+          queryId: String(query.id),
           error: errorMessage,
           hints: hints,
           metadata: {
             queryArgs: { ...query },
             error: errorMessage,
             hints: hints,
-            researchGoal: query.researchGoal || 'discovery',
+            researchGoal: query.researchGoal
+              ? String(query.researchGoal)
+              : 'discovery',
           },
         };
       }

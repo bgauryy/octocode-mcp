@@ -3,7 +3,7 @@ export {
   PackageSearchResult,
   PackageSearchError,
   BasicPackageSearchResult,
-} from '../scheme/package_search';
+} from '../../scheme/package_search';
 
 export interface NpmPackage {
   name: string;

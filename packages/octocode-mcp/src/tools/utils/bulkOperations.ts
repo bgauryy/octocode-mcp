@@ -20,11 +20,19 @@ import {
 } from '../../utils/promiseUtils.js';
 
 /**
- * Base interface for bulk query operations
+ * Smart type constraint - handles schema-inferred types and unknown fields
  */
-export interface BulkQuery {
-  id?: string;
-  researchGoal?: string;
+type HasOptionalId = { id?: string | unknown } & Record<string, unknown>;
+
+/**
+ * Helper to safely extract string property from unknown object
+ */
+function safeExtractString(
+  obj: Record<string, unknown>,
+  key: string
+): string | undefined {
+  const value = obj[key];
+  return typeof value === 'string' ? value : undefined;
 }
 
 /**
@@ -72,40 +80,45 @@ export interface BulkResponseConfig {
 
 /**
  * Ensure unique query IDs for bulk operations using efficient O(n) algorithm
+ * Works with any object that has optional id field - no rigid type constraints
  *
  * @param queries Array of queries that may have duplicate or missing IDs
  * @returns Array of queries with guaranteed unique IDs
  */
-export function ensureUniqueQueryIds<T extends BulkQuery>(
+export function ensureUniqueQueryIds<T extends HasOptionalId>(
   queries: T[],
   defaultPrefix: string = 'query'
 ): Array<T & { id: string }> {
   const idCounts = new Map<string, number>();
 
   return queries.map((query, index) => {
-    const baseId = query.id || `${defaultPrefix}_${index + 1}`;
+    // Safely extract id field, handling unknown types from schema inference
+    const baseId =
+      safeExtractString(query, 'id') || `${defaultPrefix}_${index + 1}`;
     const count = idCounts.get(baseId) || 0;
     idCounts.set(baseId, count + 1);
 
     const uniqueId = count === 0 ? baseId : `${baseId}_${count}`;
 
-    return { ...query, id: uniqueId } as T & { id: string };
+    // Create result with properly typed id field
+    return { ...query, id: uniqueId };
   });
 }
 
 /**
  * Process bulk queries in parallel with error isolation
+ * Works with any object type - no rigid constraints needed
  *
  * @param queries Array of queries to process
  * @param processor Function that processes a single query
  * @returns Object containing successful results and errors
  */
 export async function processBulkQueries<
-  T extends BulkQuery,
+  T extends HasOptionalId,
   R extends ProcessedBulkResult,
 >(
-  queries: T[],
-  processor: (query: T) => Promise<R>
+  queries: Array<T & { id: string }>,
+  processor: (query: T & { id: string }) => Promise<R>
 ): Promise<{
   results: Array<{ queryId: string; result: R }>;
   errors: QueryError[];
@@ -117,11 +130,11 @@ export async function processBulkQueries<
   const queryPromises = queries.map(async query => {
     try {
       const result = await processor(query);
-      return { queryId: query.id!, result };
+      return { queryId: query.id, result };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push({
-        queryId: query.id!,
+        queryId: query.id,
         error: errorMsg,
       });
       return null;
@@ -157,16 +170,17 @@ export async function processBulkQueries<
 
 /**
  * Create bulk hints context for the consolidated hints system
+ * Works with any object type - extracts researchGoal safely
  */
-function createBulkHintsContext<T extends BulkQuery>(
+function createBulkHintsContext<T extends HasOptionalId>(
   config: BulkResponseConfig,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: T[]
+  queries: Array<T & { id: string }>
 ): BulkHintContext {
-  // Extract common researchGoal from queries
+  // Extract common researchGoal from queries - safely handle any object type
   const researchGoals = queries
-    .map(q => q.researchGoal)
+    .map(q => safeExtractString(q, 'researchGoal'))
     .filter((goal): goal is string => !!goal);
   const commonResearchGoal =
     researchGoals.length > 0 ? researchGoals[0] : undefined;
@@ -183,6 +197,7 @@ function createBulkHintsContext<T extends BulkQuery>(
 
 /**
  * Create standardized bulk response with consistent structure
+ * Works with any object type - no rigid constraints needed
  *
  * @param config Response configuration
  * @param results Successful query results
@@ -192,14 +207,14 @@ function createBulkHintsContext<T extends BulkQuery>(
  * @returns Standardized CallToolResult
  */
 export function createBulkResponse<
-  T extends BulkQuery,
+  T extends HasOptionalId,
   R extends ProcessedBulkResult,
 >(
   config: BulkResponseConfig,
   results: Array<{ queryId: string; result: R }>,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: T[]
+  queries: Array<T & { id: string }>
 ): CallToolResult {
   // Generate smart hints using consolidated hints system
   const hintContext = createBulkHintsContext(config, context, errors, queries);
@@ -208,9 +223,9 @@ export function createBulkResponse<
   // Build standardized response with {data, meta, hints} format
   const data = results.map(r => r.result);
 
-  // Extract common researchGoal from queries for LLM context
+  // Extract common researchGoal from queries for LLM context - safely handle any object type
   const researchGoals = queries
-    .map(q => q.researchGoal)
+    .map(q => safeExtractString(q, 'researchGoal'))
     .filter((goal): goal is string => !!goal);
   const commonResearchGoal =
     researchGoals.length > 0 ? researchGoals[0] : undefined;
@@ -323,25 +338,28 @@ export function buildAggregatedContext<
   // Use custom context builder for tool-specific aggregation
   const customContext = contextBuilder(results);
 
-  // Merge base context with custom context
-  return {
+  // Merge base context with custom context - TypeScript should infer correctly
+  const mergedContext: C = {
     ...baseContext,
     ...customContext,
     dataQuality: {
       ...baseContext.dataQuality,
       ...customContext.dataQuality,
     },
-  } as C;
+  } as C; // This cast is needed because of complex intersection type merging
+
+  return mergedContext;
 }
 
 /**
  * Validate bulk query parameters with common patterns
+ * Works with any object type - no rigid constraints needed
  *
  * @param queries Array of queries to validate
  * @param validator Function to validate individual queries
  * @returns Validation result with errors
  */
-export function validateBulkQueries<T extends BulkQuery>(
+export function validateBulkQueries<T extends HasOptionalId>(
   queries: T[],
   validator: (query: T) => { valid: boolean; error?: string }
 ): { valid: boolean; errors: string[] } {

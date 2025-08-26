@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   GenericToolResponse,
   BaseToolMeta,
-} from '../../mcp/types/genericResponse.js';
+} from '../mcp/types/genericResponse.js';
 import {
   extendBaseQuerySchema,
   createBulkQuerySchema,
@@ -57,22 +57,9 @@ export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   'Array of 1-5 repository structure queries for bulk execution'
 );
 
-// Single repository structure query (used in bulk operations)
-export interface GitHubRepositoryStructureQuery {
-  id?: string; // Optional identifier for the query
-  owner: string;
-  repo: string;
-  branch: string;
-  path?: string;
-  depth?: number;
-  includeIgnored?: boolean; // If true, show all files/folders including normally ignored ones
-  showMedia?: boolean; // If true, show media files (images, videos, audio). Default: false
-  researchGoal?: string; // Research goal to guide tool behavior and hint generation
-}
-
-// Legacy interface for backward compatibility
-export interface GitHubRepositoryStructureParams
-  extends GitHubRepositoryStructureQuery {}
+// Legacy interfaces - all point to the schema-derived type for consistency
+export type GitHubRepositoryStructureQuery = GitHubViewRepoStructureQuery;
+export type GitHubRepositoryStructureParams = GitHubViewRepoStructureQuery;
 
 export interface GitHubApiFileItem {
   name: string;

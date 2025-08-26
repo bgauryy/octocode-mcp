@@ -1,5 +1,5 @@
-import { GitHubCodeSearchQuery } from '../tools/scheme/github_search_code';
-import { GitHubReposSearchQuery } from '../tools/scheme/github_search_repos';
+import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
+import { GitHubReposSearchQuery } from '../scheme/github_search_repos';
 import {
   GitHubPullRequestsSearchParams,
   GitHubCommitSearchParams,
@@ -138,7 +138,7 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   const queryParts: string[] = [];
 
   // Add main search terms
-  if (params.queryTerms && params.queryTerms.length > 0) {
+  if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
     queryParts.push(...params.queryTerms);
   }
 
@@ -146,7 +146,7 @@ export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   // If no queryTerms provided, we can still search with filters like language:, repo:, etc.
 
   // Add filters as qualifiers
-  if (params.language) {
+  if (typeof params.language === 'string') {
     const mappedLanguage = mapLanguageToGitHub(params.language);
     queryParts.push(`language:${mappedLanguage}`);
   }
@@ -218,12 +218,12 @@ export function buildRepoSearchQuery(params: GitHubReposSearchQuery): string {
 
   // Add queryTerms for specific text matching in repository names and descriptions
   // This is used for targeted searches like "todo app", "authentication", etc.
-  if (params.queryTerms && params.queryTerms.length > 0) {
+  if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
     queryParts.push(...params.queryTerms);
   }
 
   // Add filters as qualifiers
-  if (params.language) {
+  if (typeof params.language === 'string') {
     const mappedLanguage = mapLanguageToGitHub(params.language);
     queryParts.push(`language:${mappedLanguage}`);
   }

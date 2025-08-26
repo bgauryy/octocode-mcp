@@ -7,7 +7,8 @@ import { TOOL_NAMES } from './utils/toolConstants';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
-} from './scheme/github_search_pull_requests';
+} from '../scheme/github_search_pull_requests';
+import { GitHubPullRequestsSearchParams } from '../types/github-openapi';
 import { generateHints } from './utils/hints_consolidated';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
@@ -93,47 +94,57 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           });
         }
 
-        // Validate each query
-        for (let i = 0; i < args.queries.length; i++) {
-          const query = args.queries[i];
-          const hasQuery = query?.query && query.query.trim();
-          const hasFilters =
-            query?.owner || query?.repo || query?.author || query?.assignee;
-          const hasPrNumber = query?.prNumber && query?.owner && query?.repo;
+        // Check for overly long queries (business logic validation)
+        const longQuery = args.queries.find(
+          query => query?.query && String(query.query).length > 256
+        );
+        if (longQuery) {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: 'Query too long',
+            customHints: [
+              'Use shorter, more focused search terms',
+              'Maximum query length is 256 characters',
+            ],
+          });
 
-          if (!hasQuery && !hasFilters && !hasPrNumber) {
-            const hints = generateHints({
-              toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-              hasResults: false,
-              totalItems: 0,
-              errorMessage: `Query ${i + 1} has no valid parameters`,
-              customHints: [
-                'Each query must have: query terms, filters (owner/repo), or prNumber with owner/repo',
-                `Query ${i + 1} is missing required parameters`,
-              ],
-            });
+          return createResult({
+            isError: true,
+            error: 'Query too long. Maximum 256 characters allowed.',
+            hints,
+          });
+        }
 
-            return createResult({
-              isError: true,
-              error: `Query ${i + 1} has no valid parameters. At least one search parameter, filter, or PR number is required.`,
-              hints,
-            });
-          }
+        // Basic validation - schema handles detailed validation
+        const hasValidQueries = args.queries.some(
+          query =>
+            query?.query?.trim() ||
+            query?.owner ||
+            query?.repo ||
+            query?.author ||
+            query?.assignee ||
+            (query?.prNumber && query?.owner && query?.repo)
+        );
 
-          if (query?.query && query.query.length > 256) {
-            const hints = generateHints({
-              toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-              hasResults: false,
-              errorMessage: `Query ${i + 1} query too long`,
-              customHints: ['Use shorter, more focused search terms'],
-            });
+        if (!hasValidQueries) {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+            hasResults: false,
+            totalItems: 0,
+            errorMessage: 'No valid queries provided',
+            customHints: [
+              'Each query must have: query terms, filters (owner/repo), or prNumber with owner/repo',
+            ],
+          });
 
-            return createResult({
-              isError: true,
-              error: `Query ${i + 1} query too long. Please use a shorter search query.`,
-              hints,
-            });
-          }
+          return createResult({
+            isError: true,
+            error:
+              'At least one valid search parameter, filter, or PR number is required.',
+            hints,
+          });
         }
 
         try {
@@ -177,7 +188,10 @@ async function searchMultipleGitHubPullRequests(
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       try {
-        const result = await searchGitHubPullRequestsAPI(query, authInfo);
+        const result = await searchGitHubPullRequestsAPI(
+          query as GitHubPullRequestsSearchParams,
+          authInfo
+        );
         return {
           queryId: `pr-search_${index + 1}`,
           data: result,
@@ -259,11 +273,21 @@ async function searchMultipleGitHubPullRequests(
       (sum, r) => sum + r.metadata.resultCount,
       0
     ),
-    researchGoal: queries[0]?.researchGoal,
+    researchGoal: queries[0]?.researchGoal
+      ? String(queries[0].researchGoal)
+      : undefined,
     queryContext: {
-      owner: queries[0]?.owner,
-      repo: queries[0]?.repo,
-      queryTerms: queries[0]?.query ? [queries[0].query] : [],
+      owner: queries[0]?.owner
+        ? Array.isArray(queries[0].owner)
+          ? queries[0].owner.map(String)
+          : String(queries[0].owner)
+        : undefined,
+      repo: queries[0]?.repo
+        ? Array.isArray(queries[0].repo)
+          ? queries[0].repo.map(String)
+          : String(queries[0].repo)
+        : undefined,
+      queryTerms: queries[0]?.query ? [String(queries[0].query)] : [],
     },
   });
 

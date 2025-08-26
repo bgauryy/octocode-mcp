@@ -18,7 +18,7 @@ import {
   EnhancedPackageMetadata,
   PythonPackageMetadata,
   OptimizedNpmPackageResult,
-} from '../tools/scheme/package_search';
+} from '../scheme/package_search';
 import { NpmPackage, PythonPackage } from '../tools/package_search/types';
 import {
   PackageSearchBulkParams,
