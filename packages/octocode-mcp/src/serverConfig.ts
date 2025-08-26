@@ -39,26 +39,10 @@ async function resolveGitHubToken(): Promise<string | null> {
   } catch {
     // CLI failed, continue
   }
-
   // 2. Try environment variables
   if (process.env.GITHUB_TOKEN) {
     return process.env.GITHUB_TOKEN;
   }
-  if (process.env.GH_TOKEN) {
-    return process.env.GH_TOKEN;
-  }
-
-  // 3. Try Authorization header (basic cleanup)
-  const authHeader = process.env.Authorization;
-  if (authHeader) {
-    const token = authHeader
-      .replace(/^bearer\s+/i, '')
-      .replace(/^token\s+/i, '')
-      .replace(/^\{\{(.+)\}\}$/, '$1')
-      .trim();
-    if (token) return token;
-  }
-
   return null;
 }
 
