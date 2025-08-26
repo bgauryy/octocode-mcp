@@ -18,9 +18,9 @@ import {
   isEnterpriseTokenManager,
   isCliTokenResolutionEnabled,
 } from './mcp/tools/utils/tokenManager.js';
-import { ConfigManager } from './config/serverConfig.js';
+import { ConfigManager } from './serverConfig.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { isBetaEnabled } from './utils/betaFeatures.js';
+import { isBetaEnabled } from './serverConfig.js';
 import { version, name } from '../package.json';
 
 const inclusiveTools =

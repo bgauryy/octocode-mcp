@@ -76,7 +76,7 @@ describe('Enterprise Functionality', () => {
     process.env.AUDIT_ALL_ACCESS = 'true';
     process.env.RATE_LIMIT_API_HOUR = '1000';
 
-    const { ConfigManager } = await import('../../src/config/serverConfig');
+    const { ConfigManager } = await import('../../src/serverConfig');
 
     // Reset the singleton state to force re-initialization
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,7 +95,7 @@ describe('Enterprise Functionality', () => {
   it('should handle GitHub Enterprise Server URL configuration', async () => {
     process.env.GITHUB_HOST = 'github.enterprise.com';
 
-    const { ConfigManager } = await import('../../src/config/serverConfig');
+    const { ConfigManager } = await import('../../src/serverConfig');
 
     // Reset the singleton state to force re-initialization
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

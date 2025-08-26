@@ -11,6 +11,11 @@ export interface ServerConfig {
   host?: string; // For GitHub Enterprise Server
   token?: string; // Optional - will be resolved by tokenManager
 
+  // Beta features
+  beta: {
+    enabled: boolean;
+  };
+
   // Tool management
   enabledToolsets: string[];
   dynamicToolsets: boolean;
@@ -63,6 +68,24 @@ export class ConfigManager {
   /**
    * Initialize configuration from environment variables
    */
+  /**
+   * Asynchronously initialize configuration from environment variables
+   * and perform any necessary async operations
+   */
+  static async initializeAsync(): Promise<ServerConfig> {
+    if (this.initialized && this.config) {
+      return this.config;
+    }
+
+    // Perform any async operations here if needed in the future
+    // For example: fetching remote config, reading files, etc.
+
+    return this.initialize();
+  }
+
+  /**
+   * Initialize configuration from environment variables
+   */
   static initialize(): ServerConfig {
     if (this.initialized && this.config) {
       return this.config;
@@ -72,6 +95,13 @@ export class ConfigManager {
       // Core settings
       version: process.env.npm_package_version || '4.0.5',
       host: process.env.GITHUB_HOST,
+
+      // Beta features
+      beta: {
+        enabled:
+          process.env.BETA === '1' ||
+          process.env.BETA?.toLowerCase() === 'true',
+      },
 
       // Tool management (GitHub MCP compatible)
       enabledToolsets: this.parseStringArray(process.env.GITHUB_TOOLSETS) || [
@@ -149,6 +179,20 @@ export class ConfigManager {
   }
 
   /**
+   * Check if BETA features are enabled
+   */
+  static isBetaEnabled(): boolean {
+    return this.getConfig().beta.enabled;
+  }
+
+  /**
+   * Check if sampling features are enabled (requires BETA=1)
+   */
+  static isSamplingEnabled(): boolean {
+    return this.getConfig().beta.enabled;
+  }
+
+  /**
    * Get enterprise configuration
    */
   static getEnterpriseConfig(): ServerConfig['enterprise'] {
@@ -191,6 +235,14 @@ export class ConfigManager {
           }
         : undefined,
     };
+  }
+
+  /**
+   * Reset configuration (for testing)
+   */
+  static reset(): void {
+    this.config = null;
+    this.initialized = false;
   }
 
   // Private methods
@@ -314,10 +366,26 @@ export function getServerConfig(): ServerConfig {
   return ConfigManager.getConfig();
 }
 
+export async function initializeServerConfig(): Promise<ServerConfig> {
+  return ConfigManager.initializeAsync();
+}
+
 export function isEnterpriseMode(): boolean {
   return ConfigManager.isEnterpriseMode();
 }
 
 export function getGitHubBaseURL(): string {
   return ConfigManager.getGitHubBaseURL();
+}
+
+export function isBetaEnabled(): boolean {
+  return ConfigManager.isBetaEnabled();
+}
+
+export function isSamplingEnabled(): boolean {
+  return ConfigManager.isSamplingEnabled();
+}
+
+export function resetConfig(): void {
+  ConfigManager.reset();
 }

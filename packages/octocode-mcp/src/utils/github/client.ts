@@ -6,7 +6,7 @@ import {
   getGitHubToken,
   onTokenRotated,
 } from '../../mcp/tools/utils/tokenManager.js';
-import { ConfigManager } from '../../config/serverConfig.js';
+import { ConfigManager } from '../../serverConfig.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 // Create Octokit class with throttling plugin

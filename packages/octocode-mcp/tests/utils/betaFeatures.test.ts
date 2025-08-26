@@ -1,8 +1,17 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { isBetaEnabled, isSamplingEnabled } from '../../src/utils/betaFeatures';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import {
+  isBetaEnabled,
+  isSamplingEnabled,
+  resetConfig,
+} from '../../src/serverConfig';
 
 describe('Beta Features', () => {
   const originalBeta = process.env.BETA;
+
+  beforeEach(() => {
+    // Reset config before each test
+    resetConfig();
+  });
 
   afterEach(() => {
     // Restore original environment
@@ -11,6 +20,8 @@ describe('Beta Features', () => {
     } else {
       delete process.env.BETA;
     }
+    // Reset config after each test
+    resetConfig();
   });
 
   describe('isBetaEnabled', () => {

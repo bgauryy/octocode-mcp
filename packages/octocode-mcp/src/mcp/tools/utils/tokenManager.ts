@@ -191,7 +191,7 @@ async function tryGetOAuthToken(): Promise<OAuthTokenInfo | null> {
  */
 async function tryGetGitHubAppToken(): Promise<GitHubAppTokenInfo | null> {
   try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
+    const { ConfigManager } = await import('../../../serverConfig.js');
     const config = ConfigManager.getConfig();
 
     if (!config.githubApp?.enabled) return null;
@@ -523,7 +523,7 @@ async function refreshOAuthToken(
   clientId?: string
 ): Promise<OAuthTokenInfo | null> {
   try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
+    const { ConfigManager } = await import('../../../serverConfig.js');
     const config = ConfigManager.getConfig();
 
     if (!config.oauth?.enabled || !config.oauth.clientSecret) {
@@ -623,7 +623,7 @@ async function refreshGitHubAppToken(
   installationId: number
 ): Promise<GitHubAppTokenInfo | null> {
   try {
-    const { ConfigManager } = await import('../../../config/serverConfig.js');
+    const { ConfigManager } = await import('../../../serverConfig.js');
     const config = ConfigManager.getConfig();
 
     if (!config.githubApp?.enabled) {

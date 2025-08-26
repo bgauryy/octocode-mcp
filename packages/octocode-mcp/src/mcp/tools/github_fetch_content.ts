@@ -11,7 +11,7 @@ import {
 } from './scheme/github_fetch_content';
 import { ensureUniqueQueryIds } from './utils/queryUtils';
 import { generateHints } from './utils/hints_consolidated';
-import { isSamplingEnabled } from '../../utils/betaFeatures';
+import { isSamplingEnabled } from '../../serverConfig';
 import { SamplingUtils, performSampling } from '../sampling';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 

@@ -18,7 +18,7 @@ vi.mock('../src/mcp/tools/github_view_repo_structure.js');
 vi.mock('../src/mcp/tools/utils/APIStatus.js');
 vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
-vi.mock('../src/config/serverConfig.js');
+vi.mock('../src/serverConfig.js');
 vi.mock('../src/mcp/tools/toolsets/toolsetManager.js');
 vi.mock('../src/translations/translationManager.js');
 vi.mock('../src/mcp/tools/utils/tokenManager.js');
@@ -38,7 +38,7 @@ import { registerViewGitHubRepoStructureTool } from '../src/mcp/tools/github_vie
 import { getNPMUserDetails } from '../src/mcp/tools/utils/APIStatus.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import { SecureCredentialStore } from '../src/security/credentialStore.js';
-import { ConfigManager } from '../src/config/serverConfig.js';
+import { ConfigManager, isBetaEnabled } from '../src/serverConfig.js';
 import { ToolsetManager } from '../src/mcp/tools/toolsets/toolsetManager.js';
 import { getToken } from '../src/mcp/tools/utils/tokenManager.js';
 import { TOOL_NAMES } from '../src/mcp/tools/utils/toolConstants.js';
@@ -63,6 +63,7 @@ const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockConfigManager = vi.mocked(ConfigManager);
 const mockToolsetManager = vi.mocked(ToolsetManager);
 const mockGetToken = vi.mocked(getToken);
+const mockIsBetaEnabled = vi.mocked(isBetaEnabled);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -168,6 +169,9 @@ describe('Index Module', () => {
     // Mock new dependencies
     mockConfigManager.initialize.mockReturnValue({
       version: '1.0.0',
+      beta: {
+        enabled: false,
+      },
       enabledToolsets: [],
       dynamicToolsets: false,
       readOnly: false,
@@ -187,6 +191,9 @@ describe('Index Module', () => {
       timeout: 30000,
       maxRetries: 3,
     });
+
+    // Default mock for isBetaEnabled
+    mockIsBetaEnabled.mockReturnValue(false);
 
     mockToolsetManager.initialize.mockImplementation(() => {});
     mockToolsetManager.isToolEnabled.mockReturnValue(true); // Enable all tools by default
@@ -1025,6 +1032,7 @@ describe('Index Module', () => {
       originalBeta = process.env.BETA;
       mockRegisterSampling = vi.mocked(registerSampling);
       mockRegisterSampling.mockClear();
+      mockIsBetaEnabled.mockClear();
     });
 
     afterEach(() => {
@@ -1033,10 +1041,12 @@ describe('Index Module', () => {
       } else {
         delete process.env.BETA;
       }
+      mockIsBetaEnabled.mockReturnValue(false); // Reset to default
     });
 
     it('should register sampling when BETA=1', async () => {
       process.env.BETA = '1';
+      mockIsBetaEnabled.mockReturnValue(true);
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -1047,6 +1057,7 @@ describe('Index Module', () => {
 
     it('should register sampling when BETA=true', async () => {
       process.env.BETA = 'true';
+      mockIsBetaEnabled.mockReturnValue(true);
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -1087,6 +1098,7 @@ describe('Index Module', () => {
 
     it('should configure server capabilities correctly when BETA=1', async () => {
       process.env.BETA = '1';
+      mockIsBetaEnabled.mockReturnValue(true);
 
       await import('../src/index.js');
       await waitForAsyncOperations();

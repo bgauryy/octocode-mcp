@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { ConfigManager } from '../config/serverConfig.js';
+import { ConfigManager } from '../serverConfig.js';
 
 /**
  * OAuth 2.0/2.1 Flow Manager

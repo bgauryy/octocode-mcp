@@ -8,7 +8,7 @@
  * - Proper error handling
  */
 
-import { ConfigManager } from '../config/serverConfig.js';
+import { ConfigManager } from '../serverConfig.js';
 import {
   isEnterpriseMode,
   getEnterpriseConfig,

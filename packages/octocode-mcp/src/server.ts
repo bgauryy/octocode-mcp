@@ -16,10 +16,10 @@ import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_
 import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
 import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
 import { SecureCredentialStore } from './security/credentialStore.js';
-import { ConfigManager } from './config/serverConfig.js';
+import { ConfigManager } from './serverConfig.js';
 import { AuditLogger } from './security/auditLogger.js';
 import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { isBetaEnabled } from './utils/betaFeatures.js';
+import { isBetaEnabled } from './serverConfig.js';
 import { version, name } from '../package.json';
 
 // Load environment variables

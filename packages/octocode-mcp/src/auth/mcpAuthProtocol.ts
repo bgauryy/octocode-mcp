@@ -16,7 +16,7 @@
  * - Enterprise GitHub Server support
  */
 
-import { ConfigManager } from '../config/serverConfig.js';
+import { ConfigManager } from '../serverConfig.js';
 import { OAuthManager } from './oauthManager.js';
 import { GitHubAppManager } from './githubAppManager.js';
 

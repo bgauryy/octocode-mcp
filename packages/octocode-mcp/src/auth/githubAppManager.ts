@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { ConfigManager } from '../config/serverConfig.js';
+import { ConfigManager } from '../serverConfig.js';
 
 /**
  * GitHub App Manager
