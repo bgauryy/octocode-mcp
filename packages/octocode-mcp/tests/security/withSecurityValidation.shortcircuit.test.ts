@@ -17,18 +17,6 @@ vi.mock('../../src/github/userInfo.js', () => ({
   getUserContext: mockGetUserContext,
 }));
 
-vi.mock('../../src/security/rateLimiter.js', () => ({
-  RateLimiter: {
-    checkLimit: mockRateLimiterCheck,
-  },
-}));
-
-vi.mock('../../src/security/organizationManager.js', () => ({
-  OrganizationManager: {
-    validateOrganizationAccess: mockOrgValidate,
-  },
-}));
-
 describe('withSecurityValidation enterprise short-circuit', () => {
   beforeEach(() => {
     vi.clearAllMocks();

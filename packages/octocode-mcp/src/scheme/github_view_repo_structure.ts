@@ -1,14 +1,11 @@
 import { z } from 'zod';
 import {
-  GenericToolResponse,
-  BaseToolMeta,
-} from '../mcp/types/genericResponse.js';
-import {
   extendBaseQuerySchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
   GitHubBranchSchema,
+  BaseToolMeta,
 } from './baseSchema';
 
 export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
@@ -160,12 +157,6 @@ export interface GitHubRepositoryStructureMeta extends BaseToolMeta {
     repositoryContexts: string[];
   };
 }
-
-export interface GitHubRepositoryStructureResponse
-  extends GenericToolResponse<
-    ProcessedRepositoryStructureResult,
-    GitHubRepositoryStructureMeta
-  > {}
 
 // Aggregated context for bulk operations
 export interface AggregatedRepositoryContext {

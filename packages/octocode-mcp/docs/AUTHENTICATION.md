@@ -156,7 +156,7 @@ graph TD
 2. **[TokenManager](../src/mcp/tools/utils/tokenManager.ts)** - Handles token resolution and caching
 3. **[ServerConfig](../src/config/serverConfig.ts)** - Configuration management
 4. **[EnterpriseUtils](../src/utils/enterpriseUtils.ts)** - Enterprise feature detection
-5. **[SecurityValidation](../src/mcp/tools/utils/withSecurityValidation.ts)** - Request validation
+5. **[SecurityValidation](../src/tools/utils/withSecurityValidation.ts)** - Request validation
 
 ## 🔑 Token Sources & Priority
 
