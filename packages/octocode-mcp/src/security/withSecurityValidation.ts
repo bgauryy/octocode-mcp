@@ -1,6 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../responses.js';
-import { ContentSanitizer } from '../../security/contentSanitizer.js';
+import { createResult } from '../responses.js';
+import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 export interface UserContext {

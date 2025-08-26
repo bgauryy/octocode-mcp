@@ -31,7 +31,7 @@ vi.mock('../../src/tools/utils/tokenManager.js', () => ({
 
 // Import after mocking
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
-import { TOOL_NAMES } from '../../src/tools/utils/toolConstants.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 // import { GitHubReposSearchParams } from '../../src/types.js'; // Type removed
 // GitHubCommandBuilder was removed - using direct API calls now
 

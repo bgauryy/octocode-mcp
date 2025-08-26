@@ -1,8 +1,4 @@
 /**
- * Filters for GitHub repository structure viewing to reduce noise
- */
-
-/**
  * Folder patterns to ignore
  */
 export const IGNORED_FOLDER_PATTERNS = [

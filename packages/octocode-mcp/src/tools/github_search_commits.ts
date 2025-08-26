@@ -1,15 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../security/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubCommitsAPI } from '../github/index';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from '../constants';
 import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchQuerySchema,
 } from '../scheme/github_search_commits';
 import { GitHubCommitSearchParams } from '../github/github-openapi';
-import { generateHints } from './utils/hints_consolidated';
+import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
@@ -48,7 +48,7 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
       async (
         args: GitHubCommitSearchQuery,
         authInfo?: AuthInfo,
-        userContext?: import('./utils/withSecurityValidation').UserContext
+        userContext?: import('../security/withSecurityValidation').UserContext
       ): Promise<CallToolResult> => {
         // Validate that at least one search parameter is provided
         const hasSearchTerms =

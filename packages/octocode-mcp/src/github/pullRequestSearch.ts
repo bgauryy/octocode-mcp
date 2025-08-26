@@ -21,7 +21,7 @@ import { generateCacheKey, withCache } from '../utils/cache';
 import { createResult } from '../responses';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { UserContext } from '../tools/utils/withSecurityValidation';
+import { UserContext } from '../security/withSecurityValidation';
 
 /**
  * Search GitHub pull requests using Octokit API with caching

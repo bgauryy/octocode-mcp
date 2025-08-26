@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../security/withSecurityValidation';
 import { createResult } from '../responses';
-import { TOOL_NAMES } from './utils/toolConstants';
-import { generateHints } from './utils/hints_consolidated';
+import { TOOL_NAMES } from '../constants';
+import { generateHints } from './hints';
 import {
   BulkPackageSearchSchema,
   BulkPackageSearchParams,

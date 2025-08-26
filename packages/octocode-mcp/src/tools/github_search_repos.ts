@@ -3,23 +3,23 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
   withSecurityValidation,
-} from './utils/withSecurityValidation';
+} from '../security/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubReposAPI } from '../github/index';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from '../constants';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
 } from '../scheme/github_search_repos';
 import type { Repository } from '../github/github-openapi';
-import { ensureUniqueQueryIds } from './utils/bulkOperations';
+import { ensureUniqueQueryIds } from '../utils/bulkOperations';
 import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
-} from './utils/bulkOperations';
-import { generateHints } from './utils/hints_consolidated';
+} from '../utils/bulkOperations';
+import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.

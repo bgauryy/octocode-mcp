@@ -1,15 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { withSecurityValidation } from './utils/withSecurityValidation';
+import { withSecurityValidation } from '../security/withSecurityValidation';
 import { createResult } from '../responses';
 import { searchGitHubPullRequestsAPI } from '../github/index';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from '../constants';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
 } from '../scheme/github_search_pull_requests';
 import { GitHubPullRequestsSearchParams } from '../github/github-openapi';
-import { generateHints } from './utils/hints_consolidated';
+import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
@@ -183,7 +183,7 @@ async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
   _verbose: boolean = false,
   authInfo?: AuthInfo,
-  userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: import('../security/withSecurityValidation').UserContext
 ): Promise<CallToolResult> {
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {

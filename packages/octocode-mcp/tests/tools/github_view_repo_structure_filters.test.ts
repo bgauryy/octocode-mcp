@@ -7,7 +7,7 @@ import {
   shouldIgnoreFolder,
   shouldIgnoreFile,
   filterItems,
-} from '../../src/tools/utils/github_view_repo_structure_filters';
+} from '../../src/utils/fileFilters';
 
 describe('GitHub View Repo Structure Filters', () => {
   describe('IGNORED_FOLDER_PATTERNS', () => {

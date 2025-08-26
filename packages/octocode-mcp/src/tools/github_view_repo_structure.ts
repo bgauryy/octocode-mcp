@@ -3,23 +3,23 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
   withSecurityValidation,
-} from './utils/withSecurityValidation';
+} from '../security/withSecurityValidation';
 import { createResult } from '../responses';
 import { viewGitHubRepositoryStructureAPI } from '../github/index';
-import { TOOL_NAMES } from './utils/toolConstants';
+import { TOOL_NAMES } from '../constants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
   ProcessedRepositoryStructureResult,
   AggregatedRepositoryContext,
 } from '../scheme/github_view_repo_structure';
-import { generateHints } from './utils/hints_consolidated';
+import { generateHints } from './hints';
 import {
   ensureUniqueQueryIds,
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
-} from './utils/bulkOperations';
+} from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
 const DESCRIPTION = `Explore GitHub repository structure and validate repository access with intelligent navigation.

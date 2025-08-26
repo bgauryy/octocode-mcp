@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ResearchGoalEnum } from '../tools/utils/toolConstants';
+import { ResearchGoalEnum } from '../constants';
 
 // NPM package field enum for validation
 const NpmFieldEnum = [

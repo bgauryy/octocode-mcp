@@ -3,17 +3,17 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
   withSecurityValidation,
-} from './utils/withSecurityValidation';
+} from '../security/withSecurityValidation';
 import { createResult } from '../responses.js';
 import { fetchGitHubFileContentAPI } from '../github/index.js';
-import { TOOL_NAMES } from './utils/toolConstants.js';
+import { TOOL_NAMES } from '../constants.js';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
   FileContentQueryResult,
 } from '../scheme/github_fetch_content';
-import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
-import { generateHints } from './utils/hints_consolidated.js';
+import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
+import { generateHints } from './hints.js';
 import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';

@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
-import { TOOL_NAMES } from './utils/toolConstants.js';
-import { withSecurityValidation } from './utils/withSecurityValidation.js';
+import { TOOL_NAMES } from '../constants.js';
+import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
@@ -13,13 +13,9 @@ import {
   createBulkResponse,
   BulkResponseConfig,
   processBulkQueries,
-} from './utils/bulkOperations.js';
-import {
-  generateHints,
-  generateBulkHints,
-  consolidateHints,
-} from './utils/hints_consolidated.js';
-import { ensureUniqueQueryIds } from './utils/bulkOperations.js';
+} from '../utils/bulkOperations.js';
+import { generateHints, generateBulkHints, consolidateHints } from './hints.js';
+import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
 import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
@@ -131,7 +127,7 @@ async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   verbose: boolean = false,
   authInfo?: AuthInfo,
-  userContext?: import('./utils/withSecurityValidation').UserContext
+  userContext?: import('../security/withSecurityValidation.js').UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
 

@@ -7,8 +7,8 @@ import {
   generateHints,
   generateBulkHints,
   consolidateHints,
-} from '../../../src/tools/utils/hints_consolidated';
-import { TOOL_NAMES } from '../../../src/tools/utils/toolConstants';
+} from '../../../src/tools/hints';
+import { TOOL_NAMES } from '../../../src/constants';
 
 describe('Consolidated Hints System', () => {
   describe('Error Recovery', () => {

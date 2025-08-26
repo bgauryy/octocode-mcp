@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Import the wrapper under test
-import { withSecurityValidation } from '../../src/tools/utils/withSecurityValidation.js';
+import { withSecurityValidation } from '../../src/security/withSecurityValidation.js';
 
 // Mocks
 const mockIsEnterpriseMode = vi.hoisted(() => vi.fn());

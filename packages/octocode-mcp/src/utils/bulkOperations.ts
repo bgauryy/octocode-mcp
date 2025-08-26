@@ -10,14 +10,11 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../../responses.js';
+import { createResult } from '../responses.js';
 // Hints are now provided by the consolidated hints system
-import { ToolName } from './toolConstants';
-import { generateBulkHints, BulkHintContext } from './hints_consolidated';
-import {
-  executeWithErrorIsolation,
-  PromiseResult,
-} from '../../utils/promiseUtils';
+import { ToolName } from '../constants.js';
+import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
+import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 
 /**
  * Smart type constraint - handles schema-inferred types and unknown fields

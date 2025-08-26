@@ -12,7 +12,7 @@
  * - 86% memory usage reduction (2.3MB → 320KB)
  */
 
-import { TOOL_NAMES, ToolName, ResearchGoal } from './toolConstants';
+import { TOOL_NAMES, ToolName, ResearchGoal } from '../constants';
 
 // ============================================================================
 // CORE TYPES & INTERFACES
