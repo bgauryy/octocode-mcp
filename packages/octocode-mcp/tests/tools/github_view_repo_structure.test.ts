@@ -6,11 +6,11 @@ import {
 
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/index.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
-import { registerViewGitHubRepoStructureTool } from '../../src/mcp/tools/github_view_repo_structure.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;
@@ -48,6 +48,55 @@ describe('GitHub View Repository Structure Tool', () => {
     });
 
     expect(result.isError).toBe(false);
+  });
+
+  it('should pass authInfo and userContext to GitHub API', async () => {
+    // Mock successful API response
+    mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+      files: [
+        {
+          path: 'README.md',
+          size: 1024,
+          type: 'file',
+        },
+      ],
+      folders: [
+        {
+          path: 'src',
+          type: 'dir',
+        },
+      ],
+      summary: {
+        totalFiles: 1,
+        totalDirectories: 1,
+      },
+    });
+
+    await mockServer.callTool('githubViewRepoStructure', {
+      queries: [
+        {
+          owner: 'test-owner',
+          repo: 'test-repo',
+          branch: 'main',
+          id: 'structure-auth-test',
+        },
+      ],
+    });
+
+    // Verify the API was called with authInfo and userContext
+    expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalledTimes(1);
+    const apiCall = mockViewGitHubRepositoryStructureAPI.mock.calls[0];
+
+    // Should be called with (apiRequest, authInfo, userContext)
+    expect(apiCall).toBeDefined();
+    expect(apiCall).toHaveLength(3);
+    expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+    expect(apiCall?.[2]).toEqual({
+      userId: 'anonymous',
+      userLogin: 'anonymous',
+      isEnterpriseMode: false,
+      sessionId: undefined,
+    }); // userContext
   });
 
   it('should handle API errors', async () => {

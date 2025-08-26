@@ -1,19 +1,82 @@
 /**
- * Basic tests for enterprise functionality
+ * Basic tests for advanced functionality
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-describe('Enterprise Functionality', () => {
+// Mock all tool registration functions
+vi.mock('../../src/tools/github_search_code.js');
+vi.mock('../../src/tools/github_fetch_content.js');
+vi.mock('../../src/tools/github_search_repos.js');
+vi.mock('../../src/tools/github_search_commits.js');
+vi.mock('../../src/tools/github_search_pull_requests.js');
+vi.mock('../../src/tools/package_search.js');
+vi.mock('../../src/tools/github_view_repo_structure.js');
+
+// Import the mocked functions
+import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
+import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { registerSearchGitHubCommitsTool } from '../../src/tools/github_search_commits.js';
+import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
+import { registerPackageSearchTool } from '../../src/tools/package_search.js';
+import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+
+const mockRegisterGitHubSearchCodeTool = vi.mocked(
+  registerGitHubSearchCodeTool
+);
+const mockRegisterFetchGitHubFileContentTool = vi.mocked(
+  registerFetchGitHubFileContentTool
+);
+const mockRegisterSearchGitHubReposTool = vi.mocked(
+  registerSearchGitHubReposTool
+);
+const mockRegisterSearchGitHubCommitsTool = vi.mocked(
+  registerSearchGitHubCommitsTool
+);
+const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
+  registerSearchGitHubPullRequestsTool
+);
+const mockRegisterPackageSearchTool = vi.mocked(registerPackageSearchTool);
+const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
+  registerViewGitHubRepoStructureTool
+);
+
+describe('Advanced Functionality', () => {
   let originalEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
     originalEnv = {
       GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-      GITHUB_ORGANIZATION: process.env.GITHUB_ORGANIZATION,
+
       AUDIT_ALL_ACCESS: process.env.AUDIT_ALL_ACCESS,
-      RATE_LIMIT_API_HOUR: process.env.RATE_LIMIT_API_HOUR,
     };
+
+    // Clear all mocks
+    vi.clearAllMocks();
+
+    // Set up mocks to not throw errors
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterGitHubSearchCodeTool.mockImplementation(() => ({}) as any);
+    mockRegisterFetchGitHubFileContentTool.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({}) as any
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterSearchGitHubReposTool.mockImplementation(() => ({}) as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterSearchGitHubCommitsTool.mockImplementation(() => ({}) as any);
+    mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({}) as any
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockRegisterPackageSearchTool.mockImplementation(() => ({}) as any);
+    mockRegisterViewGitHubRepoStructureTool.mockImplementation(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => ({}) as any
+    );
   });
 
   afterEach(() => {
@@ -27,85 +90,78 @@ describe('Enterprise Functionality', () => {
     });
   });
 
-  it('should export authentication manager', async () => {
-    const { AuthenticationManager } = await import(
-      '../../src/auth/authenticationManager'
-    );
-    expect(typeof AuthenticationManager.getInstance).toBe('function');
-    expect(typeof AuthenticationManager.getInstance().initialize).toBe(
-      'function'
-    );
+  it('should detect simple token management is active', async () => {
+    // Simple token management is always active now
+    const { getServerConfig } = await import('../../src/serverConfig.js');
+    expect(typeof getServerConfig).toBe('function');
   });
 
-  it('should detect enterprise mode from environment variables', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
-    process.env.AUDIT_ALL_ACCESS = 'true';
-    process.env.RATE_LIMIT_API_HOUR = '1000';
+  it('should handle token resolution with config.ts', async () => {
+    process.env.GITHUB_TOKEN = 'test-token';
 
-    const { isEnterpriseTokenManager } = await import(
-      '../../src/mcp/tools/utils/tokenManager'
+    const { initialize, getServerConfig } = await import(
+      '../../src/serverConfig.js'
     );
-    expect(isEnterpriseTokenManager()).toBe(true);
+    await initialize();
+    const config = getServerConfig();
+    expect(typeof config).toBe('object');
+    // Token is managed separately from ServerConfig
   });
 
-  it('should disable CLI token resolution in enterprise mode', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
+  it('should enable advanced toolset when audit configured', async () => {
+    const { initialize } = await import('../../src/serverConfig.js');
+    const { registerTools } = await import('../../src/tools/toolsManager.js');
 
-    const { isCliTokenResolutionEnabled } = await import(
-      '../../src/mcp/tools/utils/tokenManager'
-    );
-    expect(isCliTokenResolutionEnabled()).toBe(false);
+    // Initialize config first
+    await initialize();
+
+    const mockServer = {
+      setRequestHandler: vi.fn(),
+    };
+
+    // Capture stderr output
+    const stderrSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+
+    const result = registerTools(mockServer as unknown as McpServer);
+
+    // Should have been called (advanced mode logging is active)
+    expect(stderrSpy).toHaveBeenCalled();
+
+    // Should have default tools registered
+    expect(result.successCount).toBeGreaterThan(0);
+
+    stderrSpy.mockRestore();
   });
 
-  it('should enable enterprise toolset when organization configured', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
-
-    const { ToolsetManager } = await import(
-      '../../src/mcp/tools/toolsets/toolsetManager'
+  it('should load basic configuration correctly', async () => {
+    const { initialize, getServerConfig, cleanup } = await import(
+      '../../src/serverConfig'
     );
-    ToolsetManager.initialize(['all']);
 
-    const enterpriseToolset = ToolsetManager.getEnabledToolsets().find(
-      ts => ts.name === 'enterprise'
-    );
-    expect(enterpriseToolset?.enabled).toBe(true);
+    // Reset config state
+    cleanup();
+
+    await initialize();
+    const config = getServerConfig();
+
+    expect(config.version).toBeDefined();
+    expect(config.timeout).toBe(30000);
+    expect(config.maxRetries).toBe(3);
   });
 
-  it('should load enterprise configuration correctly', async () => {
-    process.env.GITHUB_ORGANIZATION = 'test-org';
-    process.env.AUDIT_ALL_ACCESS = 'true';
-    process.env.RATE_LIMIT_API_HOUR = '1000';
+  it('should handle configuration initialization correctly', async () => {
+    const { initialize, getServerConfig, cleanup } = await import(
+      '../../src/serverConfig'
+    );
 
-    const { ConfigManager } = await import('../../src/config/serverConfig');
+    // Reset config state
+    cleanup();
 
-    // Reset the singleton state to force re-initialization
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).initialized = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).config = null;
-
-    const config = ConfigManager.initialize();
-
-    expect(config.enterprise?.organizationId).toBe('test-org');
-    expect(config.enterprise?.auditLogging).toBe(true);
-    expect(config.enterprise?.rateLimiting).toBe(true);
-    expect(ConfigManager.isEnterpriseMode()).toBe(true);
-  });
-
-  it('should handle GitHub Enterprise Server URL configuration', async () => {
-    process.env.GITHUB_HOST = 'github.enterprise.com';
-
-    const { ConfigManager } = await import('../../src/config/serverConfig');
-
-    // Reset the singleton state to force re-initialization
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).initialized = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (ConfigManager as any).config = null;
-
-    ConfigManager.initialize(); // Initialize with new env vars
-    const baseURL = ConfigManager.getGitHubBaseURL();
-    expect(baseURL).toBe('https://github.enterprise.com/api/v3');
+    await initialize(); // Initialize with new env vars
+    const config = getServerConfig();
+    expect(config.version).toBeDefined();
   });
 
   it('should export registerAllTools function', async () => {

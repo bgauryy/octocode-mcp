@@ -24,7 +24,7 @@ const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
 
 // Set up mocks
-vi.mock('../../../src/utils/github/client.js', () => ({
+vi.mock('../../../src/github/client.js', () => ({
   getOctokit: mockGetOctokit,
   OctokitWithThrottling: class MockOctokit {},
 }));
@@ -47,7 +47,7 @@ vi.mock('../../../src/mcp/responses.js', () => ({
 }));
 
 // Import after mocks are set up
-import { fetchGitHubFileContentAPI } from '../../../src/utils/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../../src/github/fileOperations.js';
 
 describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
   let mockOctokit: {

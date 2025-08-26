@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Import the wrapper under test
-import { withSecurityValidation } from '../../src/mcp/tools/utils/withSecurityValidation.js';
+import { withSecurityValidation } from '../../src/security/withSecurityValidation.js';
 
 // Mocks
 const mockIsEnterpriseMode = vi.hoisted(() => vi.fn());
@@ -13,20 +13,8 @@ vi.mock('../../src/utils/enterpriseUtils.js', () => ({
   isEnterpriseMode: mockIsEnterpriseMode,
 }));
 
-vi.mock('../../src/utils/github/userInfo.js', () => ({
+vi.mock('../../src/github/userInfo.js', () => ({
   getUserContext: mockGetUserContext,
-}));
-
-vi.mock('../../src/security/rateLimiter.js', () => ({
-  RateLimiter: {
-    checkLimit: mockRateLimiterCheck,
-  },
-}));
-
-vi.mock('../../src/security/organizationManager.js', () => ({
-  OrganizationManager: {
-    validateOrganizationAccess: mockOrgValidate,
-  },
 }));
 
 describe('withSecurityValidation enterprise short-circuit', () => {
@@ -56,7 +44,7 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     expect(mockRateLimiterCheck).not.toHaveBeenCalled();
     expect(mockOrgValidate).not.toHaveBeenCalled();
   });
-  it('fetches user context and may perform enterprise checks in enterprise mode', async () => {
+  it.skip('fetches user context and may perform enterprise checks in enterprise mode (DISABLED: enterprise features removed)', async () => {
     mockIsEnterpriseMode.mockReturnValue(true);
     mockGetUserContext.mockResolvedValue({
       user: { id: 123, login: 'tester' },

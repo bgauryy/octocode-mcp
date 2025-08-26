@@ -5,30 +5,19 @@ import { Implementation } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import { McpOAuth, type McpOAuthConfig, githubConnector } from 'mcp-s-oauth';
 import dotenv from 'dotenv';
-import { registerPrompts } from './mcp/prompts.js';
-import { registerSampling } from './mcp/sampling.js';
+import { registerPrompts } from './prompts.js';
+import { registerSampling } from './sampling.js';
 import { clearAllCache } from './utils/cache.js';
-import { registerGitHubSearchCodeTool } from './mcp/tools/github_search_code.js';
-import { registerFetchGitHubFileContentTool } from './mcp/tools/github_fetch_content.js';
-import { registerSearchGitHubReposTool } from './mcp/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from './mcp/tools/github_search_commits.js';
-import { registerSearchGitHubPullRequestsTool } from './mcp/tools/github_search_pull_requests.js';
-import { registerViewGitHubRepoStructureTool } from './mcp/tools/github_view_repo_structure.js';
-import { TOOL_NAMES } from './mcp/tools/utils/toolConstants.js';
+
 import { SecureCredentialStore } from './security/credentialStore.js';
-import { ConfigManager } from './config/serverConfig.js';
+import { initialize } from './serverConfig.js';
 import { AuditLogger } from './security/auditLogger.js';
-import { ToolsetManager } from './mcp/tools/toolsets/toolsetManager.js';
-import { isBetaEnabled } from './utils/betaFeatures.js';
+import { registerTools } from './tools/toolsManager.js';
+import { isBetaEnabled } from './serverConfig.js';
 import { version, name } from '../package.json';
 
 // Load environment variables
 dotenv.config();
-
-const inclusiveTools =
-  process.env.TOOLS_TO_RUN?.split(',')
-    .map(tool => tool.trim())
-    .filter(tool => tool.length > 0) || [];
 
 const SERVER_CONFIG: Implementation = {
   name: `${name}_${version}`,
@@ -281,82 +270,23 @@ async function startServer() {
 
 export async function registerAllTools(server: McpServer) {
   // Initialize configuration system
-  const config = ConfigManager.initialize();
+  await initialize();
 
-  // Initialize toolset management
-  ToolsetManager.initialize(config.enabledToolsets, config.readOnly);
+  // Register tools using simplified manager
+  const result = registerTools(server);
 
-  // Determine if we should run all tools or only specific ones
-  const runAllTools = inclusiveTools.length === 0;
-
-  const toolRegistrations = [
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-      fn: registerGitHubSearchCodeTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      fn: registerSearchGitHubReposTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-      fn: registerFetchGitHubFileContentTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      fn: registerViewGitHubRepoStructureTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-      fn: registerSearchGitHubCommitsTool,
-    },
-    {
-      name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-      fn: registerSearchGitHubPullRequestsTool,
-    },
-    // DO NOT RUN PACKAGE SEARCH TOOL IN SERVER MODE
-    // {
-    //   name: TOOL_NAMES.PACKAGE_SEARCH,
-    //   fn: registerPackageSearchTool,
-    // },
-  ];
-
-  let successCount = 0;
-  const failedTools: string[] = [];
-
-  for (const tool of toolRegistrations) {
-    try {
-      // Check if tool should be registered based on inclusiveTools configuration
-      const shouldRegisterTool =
-        runAllTools || inclusiveTools.includes(tool.name);
-
-      if (shouldRegisterTool && ToolsetManager.isToolEnabled(tool.name)) {
-        tool.fn(server);
-        successCount++;
-      } else if (!shouldRegisterTool) {
-        // Use stderr for selective tool messages to avoid console linter issues
-        process.stderr.write(
-          `Tool ${tool.name} excluded by TOOLS_TO_RUN configuration\n`
-        );
-      } else {
-        // Use stderr for toolset configuration messages to avoid console linter issues
-        process.stderr.write(
-          `Tool ${tool.name} disabled by toolset configuration\n`
-        );
-      }
-    } catch (error) {
-      // Log the error but continue with other tools
-      failedTools.push(tool.name);
-    }
-  }
-
-  if (failedTools.length > 0) {
-    // Tools failed to register
-  }
-
-  if (successCount === 0) {
+  // Validate that at least one tool was registered
+  if (result.successCount === 0) {
     throw new Error('No tools were successfully registered');
   }
+
+  process.stderr.write(
+    `✅ Registered ${result.successCount} tools successfully${
+      result.failedTools.length > 0
+        ? ` (${result.failedTools.length} failed)`
+        : ''
+    }\n`
+  );
 }
 
 // Start server if this file is run directly

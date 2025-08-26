@@ -21,17 +21,17 @@ vi.mock('../../src/utils/cache.js', () => ({
   withCache: mockWithCache,
 }));
 
-vi.mock('../../src/utils/githubAPI.js', () => ({
+vi.mock('../../src/github/index.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
 }));
 
-vi.mock('../../src/mcp/tools/utils/tokenManager.js', () => ({
+vi.mock('../../src/tools/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
 // Import after mocking
-import { registerSearchGitHubReposTool } from '../../src/mcp/tools/github_search_repos.js';
-import { TOOL_NAMES } from '../../src/mcp/tools/utils/toolConstants.js';
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 // import { GitHubReposSearchParams } from '../../src/types.js'; // Type removed
 // GitHubCommandBuilder was removed - using direct API calls now
 
@@ -276,6 +276,45 @@ describe('GitHub Search Repositories Tool', () => {
         owner: { login: 'owner' },
       });
       expect(response.hints.length).toBeGreaterThan(0);
+    });
+
+    it('should pass authInfo and userContext to GitHub API', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([
+        {
+          name: 'auth-test-repo',
+          fullName: 'owner/auth-test-repo',
+          stars: 50,
+          language: 'JavaScript',
+          description: 'Repository for testing auth parameters',
+          forks: 5,
+          updatedAt: '2023-12-01T10:00:00Z',
+          owner: { login: 'owner' },
+          url: 'https://github.com/owner/auth-test-repo',
+        },
+      ]);
+
+      mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
+        queries: [{ queryTerms: ['auth-test'], id: 'auth-test-query' }],
+      });
+
+      // Verify the API was called with authInfo and userContext
+      expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(1);
+      const apiCall = mockSearchGitHubReposAPI.mock.calls[0];
+
+      // Should be called with (query, authInfo, userContext)
+      expect(apiCall).toBeDefined();
+      expect(apiCall).toHaveLength(3);
+      expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+      expect(apiCall?.[2]).toEqual({
+        userId: 'anonymous',
+        userLogin: 'anonymous',
+        isEnterpriseMode: false,
+        sessionId: undefined,
+      }); // userContext
     });
 
     it('should handle query with no results', async () => {
