@@ -44,6 +44,9 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.Authorization;
     delete process.env.BETA;
     delete process.env.ENABLE_LOGGING;
+    delete process.env.TOOLS_TO_RUN;
+    delete process.env.ENABLE_TOOLS;
+    delete process.env.DISABLE_TOOLS;
 
     // Setup default secure store behavior
     mockSecureCredentialStore.setToken.mockReturnValue('token-id-123');
@@ -277,6 +280,7 @@ describe('ServerConfig - Simplified Version', () => {
     it('should parse tool arrays correctly', async () => {
       process.env.ENABLE_TOOLS = 'tool1,tool2,tool3';
       process.env.DISABLE_TOOLS = 'tool4, tool5 , tool6';
+      process.env.TOOLS_TO_RUN = 'onlyTool1, onlyTool2';
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
@@ -284,11 +288,13 @@ describe('ServerConfig - Simplified Version', () => {
 
       expect(config.enableTools).toEqual(['tool1', 'tool2', 'tool3']);
       expect(config.disableTools).toEqual(['tool4', 'tool5', 'tool6']);
+      expect(config.toolsToRun).toEqual(['onlyTool1', 'onlyTool2']);
     });
 
     it('should handle empty tool arrays', async () => {
       process.env.ENABLE_TOOLS = '';
       process.env.DISABLE_TOOLS = '   ';
+      process.env.TOOLS_TO_RUN = '';
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
@@ -296,6 +302,37 @@ describe('ServerConfig - Simplified Version', () => {
 
       expect(config.enableTools).toBeUndefined();
       expect(config.disableTools).toBeUndefined();
+      expect(config.toolsToRun).toBeUndefined();
+    });
+
+    it('should parse toolsToRun correctly', async () => {
+      process.env.TOOLS_TO_RUN = 'github_search_code,package_search , github_fetch_content';
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.toolsToRun).toEqual(['github_search_code', 'package_search', 'github_fetch_content']);
+    });
+
+    it('should handle toolsToRun with single tool', async () => {
+      process.env.TOOLS_TO_RUN = 'github_search_code';
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.toolsToRun).toEqual(['github_search_code']);
+    });
+
+    it('should filter out empty strings from toolsToRun', async () => {
+      process.env.TOOLS_TO_RUN = 'tool1,,tool2, ,tool3';
+      mockGetGithubCLIToken.mockResolvedValue(null);
+
+      await initialize();
+      const config = getServerConfig();
+
+      expect(config.toolsToRun).toEqual(['tool1', 'tool2', 'tool3']);
     });
 
     it('should handle malformed numbers gracefully', async () => {

@@ -153,14 +153,32 @@ Octocode works with any MCP-compatible AI assistant.
 For organizations: audit logging, access controls, rate limiting, and compliance features.
 **→ [Enterprise Setup Guide](./docs/AUTHENTICATION.md)**
 
+## 🛠️ Available Tools
+
+| Tool Name | Description | Default | Type |
+|-----------|-------------|---------|------|
+| `githubSearchCode` | Search code across GitHub repositories | ✅ Yes | Search |
+| `githubGetFileContent` | Fetch file content from GitHub repositories | ✅ Yes | Content |  
+| `githubViewRepoStructure` | View GitHub repository structure and navigation | ✅ Yes | Content |
+| `githubSearchRepositories` | Search and discover GitHub repositories | ✅ Yes | Search |
+| `githubSearchCommits` | Search GitHub commits and change history | ❌ No | History |
+| `githubSearchPullRequests` | Search GitHub pull requests and code reviews | ❌ No | History |
+| `packageSearch` | Search NPM and Python package registries | ❌ No | NPM |
+
+**Default tools** are automatically enabled and provide core GitHub research functionality. **Non-default tools** can be enabled using the configuration options below.
+
 ## ⚙️ Configuration & Advanced Setup
 
 **Most common settings:**
 ```bash
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"              # GitHub token
-export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Enable specific tools
+export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Run ONLY these tools (exclusive)
+export ENABLE_TOOLS="additionalTool1,additionalTool2" # Add non-default tools  
+export DISABLE_TOOLS="unwantedTool1,unwantedTool2"    # Disable default tools
 export BETA="1"                                      # Enable experimental features
 ```
+
+**⚠️ Important:** `TOOLS_TO_RUN` cannot be used together with `ENABLE_TOOLS`/`DISABLE_TOOLS`. When `TOOLS_TO_RUN` is set, it runs ONLY the specified tools, ignoring all other tool configuration.
 
 **📚 For complete configuration options:**
 - **[Environment Variables Reference](./docs/AUTHENTICATION.md)** - All settings, OAuth, enterprise features
