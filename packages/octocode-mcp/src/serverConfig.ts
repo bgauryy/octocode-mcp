@@ -1,4 +1,5 @@
 import { getGithubCLIToken } from './utils/exec.js';
+import { version } from '../package.json';
 
 export interface ServerConfig {
   version: string;
@@ -57,7 +58,7 @@ export async function initialize(): Promise<void> {
 
   // Build config
   config = {
-    version: process.env.npm_package_version || '4.0.5',
+    version: version,
     enableTools: parseStringArray(process.env.ENABLE_TOOLS),
     disableTools: parseStringArray(process.env.DISABLE_TOOLS),
     enableLogging: process.env.ENABLE_LOGGING === 'true',
