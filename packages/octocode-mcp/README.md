@@ -1,6 +1,12 @@
-# Octocode MCP - Enterprise-Ready GitHub Intelligence
+# Octocode MCP - AI-Powered GitHub Intelligence
 
-**AI-Powered GitHub Analysis for Developers and Organizations**
+**Transform your AI assistant into a code research expert**
+
+<div align="center">
+  <a href="https://octocode.ai" style="font-size: 1.1em; font-weight: bold; text-decoration: none;">
+    🌐 Visit octocode.ai for guides, examples & community →
+  </a>
+</div>
 
 <div align="center">
   <a href="https://github.com/modelcontextprotocol/servers">
@@ -23,63 +29,31 @@
 
 </div>
 
-<div align="center">
-  <a href="https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/USAGE_GUIDE.md" 
-  style="font-size: 1.2em; font-weight: bold; text-decoration: none;">
-    📚 Complete User Guide →
-  </a>
-</div>
+## ⚡ Quick Start
 
-## What is Octocode?
+### Option 1: Hosted (No Prerequisites!)
 
-**Octocode transforms your AI assistant into a code research expert.** Built for both individual developers and enterprise organizations, it provides:
+The absolute fastest way - no installation needed:
 
-### 🏠 For Individual Developers
-- **🔍 Search millions of repositories** for real implementations
-- **📈 Analyze code patterns** from production codebases
-- **📚 Extract knowledge** from commits, PRs, and issues
-- **🔗 Connect packages** to their source code automatically
-- **⚡ Zero-config setup** with GitHub CLI integration
-
-### 🏢 For Organizations & Enterprises
-- **🔒 Enterprise security** with comprehensive audit logging
-- **👥 Organization access controls** with team-based permissions
-- **📊 Rate limiting** and security monitoring
-- **📋 Compliance-ready** features (SOC 2, GDPR)
-- **🔄 Progressive enhancement** - enterprise features activate only when configured
-- **⬆️ 100% backward compatibility** - no breaking changes for existing users
-
-Built on the **Model Context Protocol (MCP)**, Octocode provides AI assistants with 8 specialized tools for GitHub repository analysis, code discovery, and package exploration.
-
-## 📋 Prerequisites
-
-- **Node.js** >= 18.12.0 (required) - [Download here](https://nodejs.org/)
-- **GitHub Authentication** (choose one):
-  - **GitHub CLI** (recommended for local development) - [Install here](https://cli.github.com/)
-  - **GitHub Personal Access Token** (required for enterprise/CI) - [Create here](https://github.com/settings/tokens)
-- **AI Assistant** (Claude Desktop, or any MCP-compatible assistant)
-
-## 🚀 Quick Start (Simple)
-
-```bash
-# 1) Authenticate with GitHub (recommended)
-gh auth login
-
-# 2) Run Octocode
-npx octocode-mcp
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "url": "https://octocode-mcp.onrender.com/mcp"
+    }
+  }
+}
 ```
 
-For complete authentication setup including OAuth, GitHub Apps, and enterprise features, see the authentication guides below.
+### Option 2: Local Setup
 
-## 🔐 Authentication & Configuration
+For local development:
 
-Octocode is an **MCP Server** that requires GitHub authentication. Choose your setup:
-
-### 🍎 Local Development (macOS with GitHub CLI)
 ```bash
-# 1. Install and authenticate with [GitHub CLI](https://cli.github.com/)
+# 1. Authenticate with GitHub
 gh auth login
 
+# 2. Add to your MCP configuration
 ```
 
 ```json
@@ -93,13 +67,29 @@ gh auth login
 }
 ```
 
-### 🌐 Hosted/Production & Windows (GitHub Token)
-```bash
-# 1. Create Personal Access Token at: https://github.com/settings/tokens
-# Scopes needed: repo, read:user, read:org
+**That's it!** Start asking your AI assistant about GitHub repositories and code.
 
-# 2. Add to your MCP configuration:
-```
+<div align="center">
+  <a href="./docs/USAGE_GUIDE.md" 
+  style="font-size: 1.1em; font-weight: bold; text-decoration: none;">
+    📚 View Usage Examples & Best Practices →
+  </a>
+</div>
+
+## What can Octocode do?
+
+**Search & analyze millions of GitHub repositories** - Find real implementations, analyze code patterns, extract knowledge from commits and PRs, and connect packages to their source code automatically.
+
+## 📋 Requirements
+
+- **Node.js** >= 18.12.0 - [Download here](https://nodejs.org/)
+- **GitHub Authentication** - GitHub CLI (recommended) or Personal Access Token
+
+## 🔧 Alternative Setup Options
+
+**Need a different setup?** Choose your preferred method:
+
+### GitHub Token (for Windows/CI/Production)
 ```json
 {
   "mcpServers": {
@@ -114,9 +104,7 @@ gh auth login
 }
 ```
 
-### 🏢 Enterprise Setup
-For organizations with advanced security, audit logging, and OAuth 2.0 authentication:
-
+### Enterprise Setup
 ```json
 {
   "mcpServers": {
@@ -125,268 +113,82 @@ For organizations with advanced security, audit logging, and OAuth 2.0 authentic
       "args": ["octocode-mcp"],
       "env": {
         "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
-        "GITHUB_ORGANIZATION": "your-org",
-        "AUDIT_ALL_ACCESS": "true",
-        "RATE_LIMIT_API_HOUR": "5000"
+        "GITHUB_ORGANIZATION": "your-org"
       }
     }
   }
 }
 ```
 
-**Enterprise Features:**
-- **Organization Controls** - Restrict access to organization members
-- **OAuth 2.0 & GitHub Apps** - Advanced authentication workflows
-- **Audit Logging** - Complete compliance and security tracking
-- **Rate Limiting** - Configurable API usage limits
-
-📚 **Enterprise Documentation:**
-- **[Enterprise Setup Guide](./docs/AUTHENTICATION.md#-enterprise-features)** - Organization policies, audit logging, and security configuration
-- **[OAuth 2.0 Integration](./docs/AUTHENTICATION.md#-oauth-20-integration)** - How OAuth authentication works for organizations
-
-### 🧪 Beta Features (Experimental)
-
-Enable experimental features by setting `BETA=1` in your environment:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
-        "BETA": "1"
-      }
-    }
-  }
-}
-```
-
-**Current Beta Features:**
-- **🤖 Code Explanation Sampling** - When fetching file contents, automatically generates prompts asking the LLM to explain what the code is doing
-- **📊 Enhanced Context Injection** - Provides additional context through MCP sampling protocol to improve response quality
-
-**Note:** Beta features are experimental and may change. Enable only for testing and development.
-
-### 📚 Complete Setup Guides
-- **[Installation Guide](./docs/INSTALLATION.md)** - Quick setup for all environments and deployment types
-- **[Complete Authentication Guide](./docs/AUTHENTICATION.md)** - Detailed setup for OAuth, GitHub Apps, and enterprise features
+**📚 Need detailed setup help?**
+- **[Complete Authentication Guide](./docs/AUTHENTICATION.md)** - All authentication methods, OAuth, GitHub Apps, and enterprise features
+- **[Installation Guide](./docs/INSTALLATION.md)** - Step-by-step setup for all environments
 
 ## 🔗 AI Assistant Integration
 
-**Quick Setup with Claude CLI:**
+**Claude Desktop setup:**
 ```bash
 claude mcp add -s user octocode npx 'octocode-mcp@latest'
 ```
 
-**Other MCP-Compatible Assistants:**
-Octocode follows the standard Model Context Protocol, making it compatible with any MCP-enabled AI assistant.
+Octocode works with any MCP-compatible AI assistant.
 
-## 🔍 Core Features
+## 🚀 What You Can Do
 
-### GitHub Analysis Tools
-- **🔍 Code Search** - Semantic code discovery across repositories with bulk operations
-- **📁 Repository Analysis** - Structure exploration and metadata extraction
-- **🔄 Pull Request Search** - Find PRs by criteria with optional diff analysis
-- **📝 Commit Search** - Track changes and development history
-- **📄 File Content Retrieval** - Access files with context and smart minification
-- **🏗️ Repository Structure** - Explore directory trees with intelligent filtering
+### 🔍 Code Research & Discovery
+- **Search millions of repositories** for real implementations and patterns
+- **Analyze code structure** and explore directory trees  
+- **Track development history** through commits and pull requests
+- **Connect packages to source** - bridge NPM/PyPI packages to their repositories
 
-### Package Discovery
-- **📦 NPM Package Search** - Comprehensive npm registry exploration
-- **🐍 Python Package Search** - PyPI package discovery with repository links
-- **🔗 Repository Linking** - Automatic connection between packages and source code
+### 🎯 Example Use Cases
+```
+"Show me authentication patterns in React applications"
+"Find TypeScript implementations of rate limiting"
+"How does Stripe handle webhooks in their SDK?"
+"Compare database migration patterns across frameworks"
+```
 
-### Enterprise Security
-- **📊 Audit Logging** - Comprehensive event tracking and compliance reporting
-- **👥 Organization Controls** - Team-based access and membership validation
-- **⚡ Rate Limiting** - Configurable limits for API, auth, and token requests
-- **🔐 Token Security** - Encrypted storage and automatic rotation support
-- **📋 Policy Enforcement** - MFA requirements and repository access controls
+### 🏢 Enterprise Features
+For organizations: audit logging, access controls, rate limiting, and compliance features.
+**→ [Enterprise Setup Guide](./docs/AUTHENTICATION.md)**
 
-## 🚨 Troubleshooting & Help
+## ⚙️ Configuration & Advanced Setup
+
+**Most common settings:**
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"              # GitHub token
+export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Enable specific tools
+export BETA="1"                                      # Enable experimental features
+```
+
+**📚 For complete configuration options:**
+- **[Environment Variables Reference](./docs/AUTHENTICATION.md)** - All settings, OAuth, enterprise features
+- **[Tool Configuration Guide](./docs/TOOL_SCHEMAS.md)** - Available tools and parameters
+
+## 🚨 Troubleshooting
 
 **Common Issues:**
-- **"No GitHub token found"** → See [Installation Guide](./docs/INSTALLATION.md)
-- **Rate limiting/Enterprise setup** → See [Complete Authentication Guide](./docs/AUTHENTICATION.md)
-- **MCP configuration help** → See examples above or [Complete Authentication Guide](./docs/AUTHENTICATION.md)
+- **"No GitHub token found"** → [Setup GitHub authentication](./docs/AUTHENTICATION.md)
+- **Rate limiting** → [Configure rate limits](./docs/AUTHENTICATION.md)
+- **Enterprise setup** → [Enterprise guide](./docs/AUTHENTICATION.md)
 
-## 🔧 Environment Variables
+## 📚 Documentation & Help
 
-Octocode-MCP supports extensive configuration through environment variables. Here's a complete reference:
+| Resource | Purpose |
+|----------|---------|
+| **[🌐 octocode.ai](https://octocode.ai)** | Tutorials, community & latest updates |
+| **[📚 Usage Guide](./docs/USAGE_GUIDE.md)** | Examples and best practices |
+| **[🔐 Authentication](./docs/AUTHENTICATION.md)** | Setup for all auth methods |
+| **[🛠️ Tool Reference](./docs/TOOL_SCHEMAS.md)** | Complete API reference |
+| **[🏗️ Architecture](./docs/SUMMARY.md)** | System design overview |
 
-### 🔑 Authentication & Core Settings
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token | - | `ghp_xxxxxxxxxxxx` |
-| `GH_TOKEN` | Alternative GitHub token (GitHub CLI format) | - | `ghp_xxxxxxxxxxxx` |
-| `GITHUB_HOST` | GitHub Enterprise Server URL | `github.com` | `github.company.com` |
-| `TOOLS_TO_RUN` | Comma-separated list of tools to enable | All tools | `githubSearchCode,githubGetFileContent` |
-
-#### 🛠️ Available Tools
-
-| Tool Name | Description | Use Case |
-|-----------|-------------|----------|
-| `githubSearchCode` | Search code across GitHub repositories | Find implementations, patterns, examples |
-| `githubSearchRepositories` | Search and discover GitHub repositories | Find relevant projects, libraries, frameworks |
-| `githubGetFileContent` | Fetch file contents from repositories | Read specific files, documentation, configs |
-| `githubViewRepoStructure` | Explore repository directory structure | Understand project organization, find entry points |
-| `githubSearchCommits` | Search commit history and changes | Track development, find bug fixes, analyze changes |
-| `githubSearchPullRequests` | Search pull requests and reviews | Understand features, review processes, discussions |
-| `packageSearch` | Search NPM and Python packages | Find libraries, check versions, get repository links |
-
-**Example Configurations:**
-```bash
-# Enable only code search and file content tools
-export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"
-
-# Enable repository exploration tools
-export TOOLS_TO_RUN="githubSearchRepositories,githubViewRepoStructure,packageSearch"
-
-# Enable all GitHub tools (exclude package search)
-export TOOLS_TO_RUN="githubSearchCode,githubSearchRepositories,githubGetFileContent,githubViewRepoStructure,githubSearchCommits,githubSearchPullRequests"
-
-# Enable single tool for specific use case
-export TOOLS_TO_RUN="githubSearchCode"
-```
-
-### 🏢 Enterprise & Organization Settings
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `GITHUB_ORGANIZATION` | Organization ID for access control | - | `my-company` |
-| `GITHUB_ORGANIZATION_NAME` | Display name for organization | Same as ID | `My Company Inc` |
-| `GITHUB_ALLOWED_USERS` | Comma-separated list of allowed users | - | `user1,user2,user3` |
-| `GITHUB_REQUIRED_TEAMS` | Required team memberships | - | `developers,admins` |
-| `GITHUB_ADMIN_USERS` | Admin users with elevated privileges | - | `admin1,admin2` |
-| `RESTRICT_TO_MEMBERS` | Restrict access to org members only | `false` | `true` |
-| `REQUIRE_MFA` | Require multi-factor authentication | `false` | `true` |
-
-### 🔐 OAuth 2.0 Configuration
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `GITHUB_OAUTH_CLIENT_ID` | OAuth application client ID | - | `Iv1.a629723bfced6b0c` |
-| `GITHUB_OAUTH_CLIENT_SECRET` | OAuth application client secret | - | `secret_value_here` |
-| `GITHUB_OAUTH_REDIRECT_URI` | OAuth callback URL | `http://localhost:3000/auth/callback` | `https://app.com/callback` |
-| `GITHUB_OAUTH_SCOPES` | Comma-separated OAuth scopes | `repo,read:user` | `repo,read:user,read:org` |
-| `GITHUB_OAUTH_ENABLED` | Enable OAuth authentication | `true` | `false` |
-| `GITHUB_OAUTH_AUTH_URL` | Custom authorization URL | Auto-detected | `https://github.com/login/oauth/authorize` |
-| `GITHUB_OAUTH_TOKEN_URL` | Custom token exchange URL | Auto-detected | `https://github.com/login/oauth/access_token` |
-
-### 🤖 GitHub App Configuration
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `GITHUB_APP_ID` | GitHub App ID | - | `123456` |
-| `GITHUB_APP_PRIVATE_KEY` | GitHub App private key (PEM format) | - | `-----BEGIN RSA PRIVATE KEY-----\n...` |
-| `GITHUB_APP_INSTALLATION_ID` | Installation ID for the app | - | `12345678` |
-| `GITHUB_APP_ENABLED` | Enable GitHub App authentication | `true` | `false` |
-
-### 📊 Rate Limiting & Performance
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `RATE_LIMIT_API_HOUR` | API requests per hour per user | `1000` | `5000` |
-| `RATE_LIMIT_AUTH_HOUR` | Authentication attempts per hour | `10` | `50` |
-| `RATE_LIMIT_TOKEN_HOUR` | Token requests per hour | `50` | `100` |
-| `REQUEST_TIMEOUT` | Request timeout in milliseconds | `30000` | `60000` |
-| `MAX_RETRIES` | Maximum retry attempts | `3` | `5` |
-
-### 🔍 Tool Management
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `GITHUB_TOOLSETS` | Comma-separated enabled toolsets | `all` | `core,enterprise` |
-| `GITHUB_DYNAMIC_TOOLSETS` | Enable dynamic toolset loading | `false` | `true` |
-| `GITHUB_READ_ONLY` | Enable read-only mode | `false` | `true` |
-
-### 🛡️ Security & Validation
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `GITHUB_SSO_ENFORCEMENT` | Enforce SSO authentication | `false` | `true` |
-| `GITHUB_TOKEN_VALIDATION` | Enable token validation | `false` | `true` |
-| `GITHUB_PERMISSION_VALIDATION` | Enable permission validation | `false` | `true` |
-
-### 📝 Audit Logging
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `AUDIT_ALL_ACCESS` | Enable comprehensive audit logging | `false` | `true` |
-| `AUDIT_LOG_DIR` | Directory for audit log files | `./logs/audit` | `/var/log/octocode` |
-| `ENABLE_COMMAND_LOGGING` | Log all command executions | `false` | `true` |
-| `LOG_FILE_PATH` | Custom log file path | - | `/var/log/octocode.log` |
-
-### 🔧 Development & Debugging
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `NODE_ENV` | Node.js environment | `production` | `development` |
-| `npm_package_version` | Package version (auto-set by npm) | Auto-detected | `4.0.5` |
-
-### 📋 Configuration Examples
-
-**Basic Setup:**
-```bash
-export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
-```
-
-**Enterprise Setup:**
-```bash
-export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
-export GITHUB_ORGANIZATION="my-company"
-export AUDIT_ALL_ACCESS="true"
-export RATE_LIMIT_API_HOUR="5000"
-export RESTRICT_TO_MEMBERS="true"
-```
-
-**OAuth Setup:**
-```bash
-export GITHUB_OAUTH_CLIENT_ID="Iv1.a629723bfced6b0c"
-export GITHUB_OAUTH_CLIENT_SECRET="your_client_secret"
-export GITHUB_OAUTH_REDIRECT_URI="https://yourapp.com/auth/callback"
-```
-
-**GitHub App Setup:**
-```bash
-export GITHUB_APP_ID="123456"
-export GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----..."
-export GITHUB_APP_INSTALLATION_ID="12345678"
-```
-
-**Selective Tool Usage:**
-```bash
-export TOOLS_TO_RUN="githubSearchCode,githubGetFileContent,githubViewRepoStructure"
-```
-
-## 📚 Documentation
-
-### Quick Links
-- 🚀 **[Installation Guide](./docs/INSTALLATION.md)** - Quick start and setup for all environments
-- 📚 **[Complete User Guide](./docs/USAGE_GUIDE.md)** - Examples and best practices
-- 🔐 **[Authentication Guide](./docs/AUTHENTICATION.md)** - Complete setup for all authentication methods
-- 🌐 **[HTTP Server Guide](./docs/SERVER.md)** - Production deployment and OAuth setup
-- 🏗️ **[Technical Architecture](./docs/SUMMARY.md)** - System design and implementation
-- 🛠️ **[Tool Schemas](./docs/TOOL_SCHEMAS.md)** - Complete API reference
-
-## 📄 License
-
-MIT License - see [LICENSE.md](LICENSE.md) for details.
-
-## 📞 Support
-
-- **📚 Documentation**: [Complete guides and API reference](./docs/)
-- **🐛 Issues**: [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
-- **🏢 Enterprise Support**: [Contact us](mailto:enterprise@octocode.ai)
-- **💬 Community**: [Discord](https://discord.gg/octocode)
+**Need help?** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues) • [Discord](https://discord.gg/octocode) • [octocode.ai](https://octocode.ai)
 
 ---
 
 <div align="center">
-  <p>Built with ❤️ for the developer community</p>
+  <p>Built with ❤️ for developers</p>
   <p>
     <a href="https://octocode.ai">Website</a> •
     <a href="https://github.com/bgauryy/octocode-mcp">GitHub</a> •
