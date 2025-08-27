@@ -5,18 +5,12 @@ import json from '@rollup/plugin-json';
 import { terser } from 'rollup-plugin-terser';
 
 export default {
-  input: {
-    index: 'src/index.ts',
-    server: 'src/server.ts'
-  },
+  input: 'src/index.ts',
   output: {
-    dir: 'dist',
+    file: 'dist/index.js',
     format: 'es',
     sourcemap: false, // Disable source maps for production
-    minifyInternalExports: true,
-    banner: '#!/usr/bin/env node',
-    entryFileNames: '[name].js',
-    chunkFileNames: '[name].js'
+    banner: '#!/usr/bin/env node'
   },
   external: [
     // Only externalize Node.js built-ins - users expect dependencies to be bundled

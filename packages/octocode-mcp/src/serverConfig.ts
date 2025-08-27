@@ -3,6 +3,7 @@ import { version } from '../package.json';
 
 export interface ServerConfig {
   version: string;
+  toolsToRun?: string[];
   enableTools?: string[];
   disableTools?: string[];
   enableLogging: boolean;
@@ -59,6 +60,7 @@ export async function initialize(): Promise<void> {
   // Build config
   config = {
     version: version,
+    toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
     enableTools: parseStringArray(process.env.ENABLE_TOOLS),
     disableTools: parseStringArray(process.env.DISABLE_TOOLS),
     enableLogging: process.env.ENABLE_LOGGING === 'true',
