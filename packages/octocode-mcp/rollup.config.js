@@ -24,7 +24,7 @@ export default {
     typescript({
       tsconfig: './tsconfig.json',
       sourceMap: false, // Disable source maps in TypeScript compilation
-      declaration: false,
+      declaration: true,
       declarationMap: false,
       noEmitOnError: false // Don't fail build on TypeScript errors - show all errors
     }),

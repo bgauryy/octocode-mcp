@@ -97,6 +97,10 @@ vi.mock('../../src/github/client.js', () => ({
   clearCachedToken: vi.fn(),
 }));
 
+vi.mock('../../src/utils/exec.js', () => ({
+  getGithubCLIToken: vi.fn().mockResolvedValue('mocked-cli-token'),
+}));
+
 // Import after mocking
 import {
   searchGitHubCodeAPI,
@@ -144,7 +148,7 @@ describe('GitHub API Utils', () => {
 
     // Set up environment
     process.env.GITHUB_TOKEN = 'test-token';
-  });
+  }, 15000); // Increase timeout to 15 seconds to handle slow GitHub CLI calls
 
   afterEach(() => {
     vi.resetAllMocks();

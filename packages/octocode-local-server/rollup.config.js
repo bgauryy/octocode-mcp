@@ -7,11 +7,12 @@ import { terser } from 'rollup-plugin-terser';
 const isProduction = process.env.NODE_ENV === 'production';
 
 export default {
-  input: 'src/server.ts',
+  input: 'api/index.ts',
   output: {
-    file: 'dist/server.js',
-    format: 'esm',
-    sourcemap: !isProduction
+    file: 'dist/index.js',
+    format: 'es',
+    sourcemap: !isProduction, // Enable source maps for development
+    banner: '#!/usr/bin/env node'
   },
   plugins: [
     nodeResolve({
@@ -23,14 +24,14 @@ export default {
     typescript({
       tsconfig: './tsconfig.json',
       sourceMap: !isProduction,
-      declaration: true,
-      declarationDir: './dist'
+      declaration: false,
+      outputToFilesystem: true
     }),
     ...(isProduction ? [terser()] : [])
   ],
   external: (id) => {
     // Never externalize the entry module or relative imports
-    if (id === 'src/server.ts' || id.startsWith('./') || id.startsWith('../')) {
+    if (id === 'api/index.ts' || id.startsWith('./') || id.startsWith('../')) {
       return false;
     }
     
