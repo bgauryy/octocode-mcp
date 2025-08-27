@@ -35,9 +35,10 @@
   "private": true,
   "scripts": {
     "align-deps": "syncpack fix && syncpack format && yarn install",
-    "build": "wsrun --parallel build",
-    "build:dev": "wsrun --parallel build:dev",
+    "build": "wsrun --stages build",
+    "build:dev": "wsrun --stages build:dev",
     "build:watch": "wsrun --parallel build:watch",
+    "build:incremental": "wsrun --stages --exclude-missing build",
     "clean": "wsrun --parallel clean",
     "dev": "wsrun --parallel dev",
     "format": "wsrun --parallel format",

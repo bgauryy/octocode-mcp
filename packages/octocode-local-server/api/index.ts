@@ -48,6 +48,23 @@ const SERVER_CONFIG: Implementation = {
 // Store transports by session ID
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
+// Create and configure the Express app instance that will be exported
+const app = express();
+let appConfigured = false;
+
+// Function to configure the app (called once)
+function configureApp() {
+  if (appConfigured) return;
+
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',') || [
+    'http://localhost:3000',
+  ];
+
+  // Setup middleware
+  setupMiddleware(app, corsOrigins);
+  appConfigured = true;
+}
+
 // Register all tools function - delegates to octocode-mcp
 export async function registerAllTools(server: McpServer) {
   console.log('Starting MCP tools registration...');
@@ -223,13 +240,20 @@ function setupAdditionalRoutes(
 }
 
 async function startServer() {
+  // Don't start server in Vercel environment
+  if (process.env.VERCEL === '1') {
+    console.log('Running in Vercel environment, server.listen() not needed');
+    return;
+  }
+
   let shutdownInProgress = false;
   let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
 
   try {
     console.log('Starting Octocode Local Server...');
 
-    const app = express();
+    // Ensure app is configured
+    configureApp();
 
     // Server configuration
     const port = parseInt(process.env.PORT || '3000');
@@ -249,9 +273,6 @@ async function startServer() {
     console.log(`API Explorer enabled: ${enableApiExplorer}`);
     console.log(`Metrics enabled: ${enableMetrics}`);
 
-    // Setup middleware
-    console.log('Setting up Express middleware...');
-    setupMiddleware(app, corsOrigins);
     console.log('Express middleware configured');
 
     // Define MCP handler function - this creates the MCP server
@@ -610,13 +631,88 @@ export class OctocodeLocalServer {
   }
 }
 
-// Start server if this file is run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Configure app on import
+configureApp();
+
+// Setup routes for Vercel environment
+if (process.env.VERCEL === '1') {
+  // Initialize the MCP handler directly for Vercel
+  const setupVercelRoutes = async () => {
+    try {
+      const mcpHandler = async (
+        req: express.Request,
+        res: express.Response
+      ) => {
+        const sessionId = req.headers['mcp-session-id'] as string | undefined;
+        let transport: StreamableHTTPServerTransport;
+
+        if (sessionId && transports[sessionId]) {
+          transport = transports[sessionId];
+        } else {
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: sessionId => {
+              transports[sessionId] = transport;
+            },
+          });
+
+          transport.onclose = () => {
+            if (transport.sessionId) {
+              delete transports[transport.sessionId];
+            }
+          };
+
+          const mcpServer = new McpServer(SERVER_CONFIG, {
+            capabilities: {
+              tools: {},
+            },
+          });
+
+          await registerAllTools(mcpServer);
+          await mcpServer.connect(transport);
+        }
+
+        await transport.handleRequest(req, res, req.body);
+      };
+
+      // Setup routes without OAuth for simplicity in Vercel
+      app.post('/', (req, res) => {
+        mcpHandler(req, res).catch(error => {
+          console.error('MCP handler error:', error);
+          res.status(500).json({ error: 'Internal server error' });
+        });
+      });
+
+      // Setup additional routes
+      const config = {
+        port: parseInt(process.env.PORT || '3000'),
+        host: process.env.HOST || 'localhost',
+        enableApiExplorer: process.env.ENABLE_API_EXPLORER === 'true',
+        enableMetrics: process.env.ENABLE_METRICS === 'true',
+        hasOAuthCredentials: false,
+      };
+      setupAdditionalRoutes(app, config);
+    } catch (error) {
+      console.error('Failed to setup Vercel routes:', error);
+    }
+  };
+
+  // Initialize routes for Vercel
+  setupVercelRoutes();
+}
+
+// Check if running in Vercel environment
+const isVercel = process.env.VERCEL === '1';
+
+// Start server if this file is run directly (not in Vercel)
+if (!isVercel && import.meta.url === `file://${process.argv[1]}`) {
   startServer().catch(error => {
     console.log('Server startup error:', error);
     process.exit(1);
   });
 }
 
-export { startServer };
-export default OctocodeLocalServer;
+// Export the Express app using both ES module and CommonJS syntax
+export { startServer, app };
+// For Vercel, export the configured app as default
+export default app;
