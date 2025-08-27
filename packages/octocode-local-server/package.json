@@ -1,6 +1,7 @@
 {
   "name": "octocode-local-server",
   "version": "1.0.0",
+  "private": true,
   "description": "Local server implementation for Octocode MCP with enhanced local development features",
   "keywords": [
     "mcp",

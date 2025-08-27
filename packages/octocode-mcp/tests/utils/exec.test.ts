@@ -84,7 +84,8 @@ describe('exec utilities', () => {
       expect(result.content).toHaveLength(1);
 
       // Parse the JSON response format
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const text = (result.content[0]?.text || '{}') as string;
+      const responseData = JSON.parse(text);
       expect(responseData.data).toBe('success output');
       expect(responseData.hints).toEqual([]);
       expect(responseData.meta).toEqual({});
@@ -97,7 +98,8 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
 
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const text = (result.content[0]?.text || '{}') as string;
+      const responseData = JSON.parse(text);
       expect(responseData.data).toBeNull();
       expect(responseData.hints).toContain('Command failed: Command failed');
       expect(responseData.meta.error).toBe(true);
@@ -109,7 +111,8 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
 
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const text = (result.content[0]?.text || '{}') as string;
+      const responseData = JSON.parse(text);
       expect(responseData.data).toBeNull();
       expect(responseData.hints).toContain('Command error: error in stderr');
       expect(responseData.meta.error).toBe(true);
@@ -121,7 +124,8 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
 
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const text = (result.content[0]?.text || '{}') as string;
+      const responseData = JSON.parse(text);
       expect(responseData.data).toBe('output');
       expect(responseData.hints).toEqual([]);
       expect(responseData.meta).toEqual({});
@@ -134,7 +138,8 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
 
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const text = (result.content[0]?.text || '{}') as string;
+      const responseData = JSON.parse(text);
       expect(responseData.data).toBeNull();
       expect(responseData.hints).toContain('Command failed: Main error');
       expect(responseData.meta.error).toBe(true);
@@ -268,7 +273,8 @@ describe('exec utilities', () => {
         const result = await promise;
 
         expect(result.isError).toBe(false);
-        const responseData = JSON.parse(result.content?.[0]?.text || '{}');
+        const text = (result.content?.[0]?.text || '{}') as string;
+        const responseData = JSON.parse(text);
         expect(responseData.data).toBe(
           '{"name":"test-package","version":"1.0.0"}'
         );
@@ -385,7 +391,8 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        const responseData = JSON.parse(result.content?.[0]?.text || '{}');
+        const text = (result.content?.[0]?.text || '{}') as string;
+        const responseData = JSON.parse(text);
         expect(responseData.data).toBe('first second third');
       });
 
@@ -418,7 +425,8 @@ describe('exec utilities', () => {
         const result = await promise;
 
         expect(result.isError).toBe(false);
-        const responseData = JSON.parse(result.content?.[0]?.text || '{}');
+        const text = (result.content?.[0]?.text || '{}') as string;
+        const responseData = JSON.parse(text);
         expect(responseData.data).toBe('output data');
       });
     });
@@ -569,7 +577,8 @@ describe('exec utilities', () => {
 
       results.forEach((result, i) => {
         expect(result.isError).toBe(false);
-        const responseData = JSON.parse(result.content?.[0]?.text || '{}');
+        const text = (result.content?.[0]?.text || '{}') as string;
+        const responseData = JSON.parse(text);
         expect(responseData.data).toBe(`result${i}`);
       });
     });
@@ -591,7 +600,8 @@ describe('exec utilities', () => {
       const [result1, result2] = await Promise.all([promise1, promise2]);
 
       expect(result1.isError).toBe(false);
-      const responseData1 = JSON.parse(result1.content?.[0]?.text || '{}');
+      const text1 = (result1.content?.[0]?.text || '{}') as string;
+      const responseData1 = JSON.parse(text1);
       expect(responseData1.data).toBe('success data');
 
       expect(result2.isError).toBe(true);

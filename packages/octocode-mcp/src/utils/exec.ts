@@ -170,7 +170,7 @@ export async function executeNpmCommand(
             stdout,
             stderr,
             new Error(`Process exited with code ${code}`),
-            code
+            code ?? undefined
           )
         );
       }

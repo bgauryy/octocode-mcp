@@ -27,7 +27,9 @@ vi.mock('octokit', () => {
   const mockOctokitClass = vi
     .fn()
     .mockImplementation(() => mockOctokitInstance);
-  mockOctokitClass.plugin = vi.fn(() => mockOctokitClass);
+  (mockOctokitClass as unknown as { plugin: typeof vi.fn }).plugin = vi.fn(
+    () => mockOctokitClass
+  );
 
   return {
     Octokit: mockOctokitClass,
@@ -101,7 +103,11 @@ describe('GitHub Client', () => {
 
     it('should use provided auth token over config token', async () => {
       mockGetGitHubToken.mockResolvedValue('config-token');
-      const authInfo = { token: 'auth-token' };
+      const authInfo = {
+        token: 'auth-token',
+        clientId: 'test-client',
+        scopes: [],
+      };
 
       await getOctokit(authInfo);
 
@@ -131,7 +137,11 @@ describe('GitHub Client', () => {
       mockGetGitHubToken.mockResolvedValue('config-token');
 
       await getOctokit();
-      await getOctokit({ token: 'new-token' });
+      await getOctokit({
+        token: 'new-token',
+        clientId: 'test-client',
+        scopes: [],
+      });
 
       expect(mockOctokit).toHaveBeenCalledTimes(2);
     });

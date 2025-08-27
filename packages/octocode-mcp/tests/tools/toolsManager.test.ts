@@ -81,15 +81,15 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify default tools were called
-      expect(DEFAULT_TOOLS[0].fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[1].fn).toHaveBeenCalledWith(mockServer); // githubGetFileContent
-      expect(DEFAULT_TOOLS[2].fn).toHaveBeenCalledWith(mockServer); // githubViewRepoStructure
-      expect(DEFAULT_TOOLS[3].fn).toHaveBeenCalledWith(mockServer); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
+      expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalledWith(mockServer); // githubGetFileContent
+      expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalledWith(mockServer); // githubViewRepoStructure
+      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchRepositories
 
       // Verify non-default tools were NOT called
-      expect(DEFAULT_TOOLS[4].fn).not.toHaveBeenCalled(); // githubSearchCommits
-      expect(DEFAULT_TOOLS[5].fn).not.toHaveBeenCalled(); // githubSearchPullRequests
-      expect(DEFAULT_TOOLS[6].fn).not.toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchCommits
+      expect(DEFAULT_TOOLS[5]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[6]?.fn).not.toHaveBeenCalled(); // packageSearch
     });
   });
 
@@ -110,15 +110,15 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify only specified tools were called
-      expect(DEFAULT_TOOLS[0].fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[6].fn).toHaveBeenCalledWith(mockServer); // packageSearch
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
+      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalledWith(mockServer); // packageSearch
 
       // Verify other tools were NOT called
-      expect(DEFAULT_TOOLS[1].fn).not.toHaveBeenCalled(); // githubGetFileContent
-      expect(DEFAULT_TOOLS[2].fn).not.toHaveBeenCalled(); // githubViewRepoStructure
-      expect(DEFAULT_TOOLS[3].fn).not.toHaveBeenCalled(); // githubSearchRepositories
-      expect(DEFAULT_TOOLS[4].fn).not.toHaveBeenCalled(); // githubSearchCommits
-      expect(DEFAULT_TOOLS[5].fn).not.toHaveBeenCalled(); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[1]?.fn).not.toHaveBeenCalled(); // githubGetFileContent
+      expect(DEFAULT_TOOLS[2]?.fn).not.toHaveBeenCalled(); // githubViewRepoStructure
+      expect(DEFAULT_TOOLS[3]?.fn).not.toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchCommits
+      expect(DEFAULT_TOOLS[5]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
     });
 
     it('should handle non-existent tools in TOOLS_TO_RUN gracefully', () => {
@@ -137,8 +137,8 @@ describe('ToolsManager', () => {
       expect(result.successCount).toBe(2);
       expect(result.failedTools).toEqual([]);
 
-      expect(DEFAULT_TOOLS[0].fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[6].fn).toHaveBeenCalledWith(mockServer); // packageSearch
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
+      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalledWith(mockServer); // packageSearch
     });
 
     it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', () => {
@@ -182,8 +182,8 @@ describe('ToolsManager', () => {
       );
 
       // Should use TOOLS_TO_RUN exclusively
-      expect(DEFAULT_TOOLS[0].fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[6].fn).not.toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
+      expect(DEFAULT_TOOLS[6]?.fn).not.toHaveBeenCalled(); // packageSearch
     });
 
     it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
@@ -242,17 +242,17 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify all default tools were called
-      expect(DEFAULT_TOOLS[0].fn).toHaveBeenCalled(); // githubSearchCode
-      expect(DEFAULT_TOOLS[1].fn).toHaveBeenCalled(); // githubGetFileContent
-      expect(DEFAULT_TOOLS[2].fn).toHaveBeenCalled(); // githubViewRepoStructure
-      expect(DEFAULT_TOOLS[3].fn).toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalled(); // githubSearchCode
+      expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
+      expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalled(); // githubViewRepoStructure
+      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
 
       // Verify enabled tools were called
-      expect(DEFAULT_TOOLS[4].fn).toHaveBeenCalled(); // githubSearchCommits
-      expect(DEFAULT_TOOLS[6].fn).toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchCommits
+      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalled(); // packageSearch
 
       // Verify non-enabled tool was NOT called
-      expect(DEFAULT_TOOLS[5].fn).not.toHaveBeenCalled(); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[5]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
     });
 
     it('should remove default tools with DISABLE_TOOLS', () => {
@@ -272,12 +272,12 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify disabled tools were NOT called
-      expect(DEFAULT_TOOLS[0].fn).not.toHaveBeenCalled(); // githubSearchCode
-      expect(DEFAULT_TOOLS[1].fn).not.toHaveBeenCalled(); // githubGetFileContent
+      expect(DEFAULT_TOOLS[0]?.fn).not.toHaveBeenCalled(); // githubSearchCode
+      expect(DEFAULT_TOOLS[1]?.fn).not.toHaveBeenCalled(); // githubGetFileContent
 
       // Verify remaining default tools were called
-      expect(DEFAULT_TOOLS[2].fn).toHaveBeenCalled(); // githubViewRepoStructure
-      expect(DEFAULT_TOOLS[3].fn).toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalled(); // githubViewRepoStructure
+      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
     });
 
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', () => {
@@ -298,15 +298,15 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify disabled default tool was NOT called
-      expect(DEFAULT_TOOLS[0].fn).not.toHaveBeenCalled(); // githubSearchCode
+      expect(DEFAULT_TOOLS[0]?.fn).not.toHaveBeenCalled(); // githubSearchCode
 
       // Verify remaining default tools were called
-      expect(DEFAULT_TOOLS[1].fn).toHaveBeenCalled(); // githubGetFileContent
-      expect(DEFAULT_TOOLS[2].fn).toHaveBeenCalled(); // githubViewRepoStructure
-      expect(DEFAULT_TOOLS[3].fn).toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
+      expect(DEFAULT_TOOLS[2]?.fn).toHaveBeenCalled(); // githubViewRepoStructure
+      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
 
       // Verify enabled tool was called
-      expect(DEFAULT_TOOLS[6].fn).toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalled(); // packageSearch
     });
 
     it('should handle disabling enabled tools (DISABLE_TOOLS takes precedence)', () => {
@@ -327,7 +327,7 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       // Verify packageSearch was NOT called (disabled takes precedence)
-      expect(DEFAULT_TOOLS[6].fn).not.toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[6]?.fn).not.toHaveBeenCalled(); // packageSearch
     });
   });
 
@@ -342,7 +342,7 @@ describe('ToolsManager', () => {
       });
 
       // Make first tool throw error
-      vi.mocked(DEFAULT_TOOLS[0].fn).mockImplementation(() => {
+      vi.mocked(DEFAULT_TOOLS[0]?.fn!).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 
@@ -363,10 +363,10 @@ describe('ToolsManager', () => {
       });
 
       // Make multiple tools throw errors
-      vi.mocked(DEFAULT_TOOLS[0].fn).mockImplementation(() => {
+      vi.mocked(DEFAULT_TOOLS[0]?.fn!).mockImplementation(() => {
         throw new Error('Registration failed');
       });
-      vi.mocked(DEFAULT_TOOLS[2].fn).mockImplementation(() => {
+      vi.mocked(DEFAULT_TOOLS[2]?.fn!).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 
@@ -380,8 +380,8 @@ describe('ToolsManager', () => {
       ]);
 
       // Verify successful tools were still called
-      expect(DEFAULT_TOOLS[1].fn).toHaveBeenCalled(); // githubGetFileContent
-      expect(DEFAULT_TOOLS[3].fn).toHaveBeenCalled(); // githubSearchRepositories
+      expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
+      expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
     });
   });
 
@@ -441,7 +441,7 @@ describe('ToolsManager', () => {
         maxRetries: 3,
       });
 
-      vi.mocked(DEFAULT_TOOLS[0].fn).mockImplementation(() => {
+      vi.mocked(DEFAULT_TOOLS[0]?.fn!).mockImplementation(() => {
         throw new Error('Registration failed');
       });
 

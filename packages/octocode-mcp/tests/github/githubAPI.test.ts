@@ -108,8 +108,10 @@ describe('GitHub API Re-exports', () => {
       ];
 
       coreFunctions.forEach(funcName => {
-        expect(githubAPI[funcName]).toBeDefined();
-        expect(typeof githubAPI[funcName]).toBe('function');
+        expect((githubAPI as Record<string, unknown>)[funcName]).toBeDefined();
+        expect(typeof (githubAPI as Record<string, unknown>)[funcName]).toBe(
+          'function'
+        );
       });
     });
 

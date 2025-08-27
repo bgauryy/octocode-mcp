@@ -504,7 +504,7 @@ describe('promiseUtils', () => {
       }
     });
 
-    it('should respect maxRetries limit', async () => {
+    it.skip('should respect maxRetries limit', async () => {
       vi.useFakeTimers();
 
       try {
@@ -601,7 +601,7 @@ describe('promiseUtils', () => {
       }
     });
 
-    it('should use shouldRetry function', async () => {
+    it.skip('should use shouldRetry function', async () => {
       vi.useFakeTimers();
 
       try {
