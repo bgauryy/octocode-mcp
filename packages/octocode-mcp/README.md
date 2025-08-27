@@ -29,23 +29,8 @@
 
 </div>
 
-## ⚡ Quick Start
 
-### Option 1: Hosted (No Prerequisites!)
-
-The absolute fastest way - no installation needed:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "url": "https://octocode-mcp.onrender.com/mcp"
-    }
-  }
-}
-```
-
-### Option 2: Local Setup
+### Local Setup
 
 For local development:
 

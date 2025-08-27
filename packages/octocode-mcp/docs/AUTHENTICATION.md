@@ -73,17 +73,3 @@ Add to your MCP client configuration:
   }
 }
 ```
-
-## 🌐 Hosted (No Local Installation Needed!)
-
-Simply authenticate with GitHub in your browser:
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "url": "https://octocode-mcp.onrender.com/mcp"
-    }
-  }
-}
-```
