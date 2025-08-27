@@ -12,7 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": false,
     "declarationMap": false,
-    "outDir": "./api",
+    "outDir": "./dist",
     "rootDir": "./api",
     "resolveJsonModule": true,
     "noEmitOnError": true,
