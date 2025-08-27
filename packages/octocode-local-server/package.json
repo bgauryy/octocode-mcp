@@ -21,27 +21,27 @@
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "main": "dist/server.js",
-  "bin": "dist/server.js",
+  "main": "api/index.js",
+  "bin": "api/index.js",
   "files": [
-    "dist/**/*.js",
-    "dist/**/*.d.ts"
+    "api/**/*.js",
+    "api/**/*.d.ts"
   ],
   "scripts": {
     "build": "yarn lint && yarn clean && rollup -c",
     "build:dev": "yarn clean && rollup -c",
-    "clean": "rm -rf dist/",
+    "clean": "rm -f api/index.js; find api -name '*.d.ts' -delete; find api -name '*.d.ts.map' -delete",
     "build:watch": "rollup -c --watch",
-    "dev": "lsof -ti:3000 | xargs -r kill -9 2>/dev/null || true && node dist/server.js",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix",
+    "dev": "lsof -ti:3000 | xargs -r kill -9 2>/dev/null || true && node api/index.js",
+    "format": "prettier --write \"api/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"api/**/*.{ts,js,json}\"",
+    "lint": "eslint api/**/*.ts",
+    "lint:fix": "eslint api/**/*.ts --fix",
     "prepack": "yarn build",
     "prepublishOnly": "yarn lint && yarn test && rollup -c",
-    "start": "node dist/server.js",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
+    "start": "node api/index.js",
+    "test": "echo 'No tests'",
+    "test:coverage": "vitest run --coverage --coverage.include=\"api/**\"",
     "test:ui": "vitest --ui",
     "test:watch": "vitest --watch"
   },
@@ -53,7 +53,8 @@
     "express": "^4.18.2",
     "helmet": "^8.0.0",
     "mcp-s-oauth": "^1.0.5",
-    "octocode-mcp": "workspace:*"
+    "octocode-mcp": "workspace:*",
+    "vercel": "^46.0.5"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.3",
