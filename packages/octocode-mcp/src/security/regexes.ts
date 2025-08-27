@@ -1060,6 +1060,14 @@ const genericSecretPatterns: SensitiveDataPattern[] = [
     regex: /\b[a-zA-Z]{3,10}:\/\/[^\\/\s:@]{3,20}:[^\\/\s:@]{3,20}@[^\s'"]+\b/g,
     matchAccuracy: 'high',
   },
+  // Generic environment variable secrets
+  {
+    name: 'envVarSecrets',
+    description: 'Environment variable secrets with quotes',
+    regex:
+      /\b(?:SECRET|secret|password|key|token|jwt_secret)[_a-zA-Z]*\s*=\s*["'][^"']{16,}["']/gi,
+    matchAccuracy: 'medium',
+  },
 ];
 
 const slackPatterns: SensitiveDataPattern[] = [
