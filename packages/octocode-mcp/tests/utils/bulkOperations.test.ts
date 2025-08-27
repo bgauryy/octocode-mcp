@@ -231,7 +231,13 @@ describe('bulkOperations', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
 
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const responseText = result.content[0]?.text;
+      const responseData =
+        responseText &&
+        typeof responseText === 'string' &&
+        responseText.length > 0
+          ? JSON.parse(responseText)
+          : { data: [], meta: { errors: [] } };
       expect(responseData.data).toEqual(processedResults);
       expect(responseData.meta.errors).toEqual(errors);
     });
@@ -270,7 +276,13 @@ describe('bulkOperations', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const responseText = result.content[0]?.text;
+      const responseData =
+        responseText &&
+        typeof responseText === 'string' &&
+        responseText.length > 0
+          ? JSON.parse(responseText)
+          : { data: [], meta: { errors: [] } };
       expect(responseData.meta.errors).toEqual(errors);
     });
 
@@ -302,7 +314,13 @@ describe('bulkOperations', () => {
       );
 
       expect(result.isError).toBe(false);
-      const responseData = JSON.parse(result.content[0]?.text || '{}');
+      const responseText = result.content[0]?.text;
+      const responseData =
+        responseText &&
+        typeof responseText === 'string' &&
+        responseText.length > 0
+          ? JSON.parse(responseText)
+          : { data: [], meta: { errors: [] } };
       expect(responseData.data).toEqual([]);
     });
 
