@@ -9,6 +9,10 @@ import {
   applyQualityBoost,
 } from '../../src/github/queryBuilders.js';
 
+// Type assertion helper for test data
+const toCodeSearchQuery = (params: Record<string, unknown>) =>
+  params as Parameters<typeof buildCodeSearchQuery>[0];
+
 describe('Query Builders', () => {
   describe('getOwnerQualifier', () => {
     it('should use org: for organization-style names with hyphens', () => {
@@ -37,10 +41,14 @@ describe('Query Builders', () => {
 
   describe('applyQualityBoost', () => {
     it('should apply quality boost by default', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         qualityBoost: true,
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+      });
 
       const result = applyQualityBoost(params);
 
@@ -50,12 +58,16 @@ describe('Query Builders', () => {
     });
 
     it('should not apply quality boost when disabled', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         qualityBoost: false,
         stars: '5',
         pushed: '2020-01-01',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+      });
 
       const result = applyQualityBoost(params);
 
@@ -65,13 +77,16 @@ describe('Query Builders', () => {
     });
 
     it('should not override existing filters when quality boost is enabled', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         stars: '>100',
         pushed: '>2023-01-01',
-        sort: 'indexed' as const,
+        sort: 'indexed',
         qualityBoost: true,
-      };
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+      });
 
       const result = applyQualityBoost(params);
 
@@ -81,11 +96,15 @@ describe('Query Builders', () => {
     });
 
     it('should not apply filters when owner/repo is specified', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         owner: 'microsoft',
         qualityBoost: true,
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+      });
 
       const result = applyQualityBoost(params);
 
@@ -97,41 +116,61 @@ describe('Query Builders', () => {
 
   describe('buildCodeSearchQuery', () => {
     it('should build basic query with terms', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['function', 'auth'],
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('function auth');
     });
 
     it('should build query with owner and repo', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         owner: 'microsoft',
         repo: 'vscode',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('test repo:microsoft/vscode');
     });
 
     it('should build query with owner only', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         owner: 'google',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('test user:google');
     });
 
     it('should build query with multiple owners and repos', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         owner: ['microsoft', 'google'],
         repo: ['vscode', 'typescript'],
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe(
@@ -140,23 +179,33 @@ describe('Query Builders', () => {
     });
 
     it('should build query with language filter', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['function'],
         language: 'ts',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('function language:TypeScript');
     });
 
     it('should build query with file filters', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         filename: 'package.json',
         extension: 'ts',
         path: 'src/',
         size: '>1000',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe(
@@ -165,32 +214,47 @@ describe('Query Builders', () => {
     });
 
     it('should build query with match filters', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         match: ['file', 'path'],
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('test in:file in:path');
     });
 
     it('should build query with single match filter', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['test'],
         match: 'file',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('test in:file');
     });
 
     it('should build query with stars and date filters', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: ['react'],
         stars: '>100',
         pushed: '>2023-01-01',
         created: '2020-01-01..2023-12-31',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe(
@@ -199,10 +263,15 @@ describe('Query Builders', () => {
     });
 
     it('should handle empty query terms', () => {
-      const params = {
+      const params = toCodeSearchQuery({
         queryTerms: [],
         owner: 'microsoft',
-      };
+        sort: 'best-match',
+        order: 'desc',
+        minify: true,
+        sanitize: true,
+        qualityBoost: true,
+      });
 
       const query = buildCodeSearchQuery(params);
       expect(query).toBe('user:microsoft');
@@ -276,7 +345,7 @@ describe('Query Builders', () => {
       const params = {
         queryTerms: ['awesome'],
         match: ['name', 'description'],
-      };
+      } as Parameters<typeof buildRepoSearchQuery>[0];
 
       const query = buildRepoSearchQuery(params);
       expect(query).toBe(
