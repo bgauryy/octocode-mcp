@@ -1,0 +1,82 @@
+{
+  "name": "octocode-local-server",
+  "version": "1.0.0",
+  "description": "Local server implementation for Octocode MCP with enhanced local development features",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "local-server",
+    "github",
+    "code-analysis",
+    "developer-tools",
+    "typescript",
+    "nodejs"
+  ],
+  "author": "Guy Bary <bgauryy@gmail.com>",
+  "homepage": "https://octocode.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgauryy/octocode-mcp.git"
+  },
+  "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
+  "license": "MIT",
+  "main": "dist/server.js",
+  "bin": "dist/server.js",
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts"
+  ],
+  "scripts": {
+    "build": "yarn lint && yarn clean && rollup -c",
+    "build:dev": "yarn clean && rollup -c",
+    "clean": "rm -rf dist/",
+    "build:watch": "rollup -c --watch",
+    "dev": "lsof -ti:3000 | xargs -r kill -9 2>/dev/null || true && node dist/server.js",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "prepack": "yarn build",
+    "prepublishOnly": "yarn lint && yarn test && rollup -c",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.include=\"src/**\"",
+    "test:ui": "vitest --ui",
+    "test:watch": "vitest --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.16.0",
+    "compression": "^1.7.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "helmet": "^8.0.0",
+    "mcp-s-oauth": "^1.0.5",
+    "octocode-mcp": "workspace:*"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.3",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.2",
+    "@types/compression": "^1.7.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.29",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.4.1",
+    "prettier": "^3.5.3",
+    "rollup": "^4.46.2",
+    "rollup-plugin-terser": "^7.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.12.0"
+  },
+  "type": "module"
+}
