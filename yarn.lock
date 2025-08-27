@@ -5492,7 +5492,7 @@ __metadata:
     vercel: "npm:^46.0.5"
     vitest: "npm:^3.2.4"
   bin:
-    octocode-local-server: dist/server.js
+    octocode-local-server: api/index.js
   languageName: unknown
   linkType: soft
 
