@@ -19,6 +19,14 @@ export const BaseQuerySchema = z.object({
     .describe(
       'Research goal to guide tool behavior and hint generation for enhanced LLM reasoning and context-aware responses'
     ),
+
+  verbose: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Include detailed metadata for debugging or deep analysis. Default: false for cleaner responses'
+    ),
 });
 
 /**
@@ -27,6 +35,7 @@ export const BaseQuerySchema = z.object({
 export interface BaseQuery {
   id?: string;
   researchGoal?: (typeof ResearchGoalEnum)[number];
+  verbose?: boolean;
 }
 
 /**
@@ -37,14 +46,6 @@ export const BaseBulkQuerySchema = z.object({
     .array(BaseQuerySchema)
     .min(1)
     .describe('Array of queries for bulk execution'),
-
-  verbose: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Include detailed metadata for debugging. Default: false for cleaner responses'
-    ),
 });
 
 /**
@@ -52,7 +53,6 @@ export const BaseBulkQuerySchema = z.object({
  */
 export interface BaseBulkQuery {
   queries: BaseQuery[];
-  verbose?: boolean;
 }
 
 /**
