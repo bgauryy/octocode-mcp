@@ -255,17 +255,14 @@ describe('GitHub Search Repositories Tool', () => {
       // Find the result with repositories
       const queryResult = response.results.find(
         (r: Record<string, unknown>) => {
-          const repositories = (r.data as Record<string, unknown>)
-            ?.repositories;
+          const repositories = r.repositories;
           return Array.isArray(repositories) && repositories.length > 0;
         }
       );
       expect(queryResult).toBeDefined();
 
       const repo = (
-        (queryResult.data as Record<string, unknown>)?.repositories as Array<
-          Record<string, unknown>
-        >
+        queryResult.repositories as Array<Record<string, unknown>>
       )?.find(
         (r: Record<string, unknown>) => r.full_name === 'owner/awesome-repo'
       );
@@ -340,7 +337,7 @@ describe('GitHub Search Repositories Tool', () => {
       // With bulk format, we expect at least one query result, but it may have no repositories
       expect(response.results.length).toBeGreaterThan(0);
       const queryResult = response.results[0];
-      expect(queryResult.data?.repositories || []).toHaveLength(0);
+      expect(queryResult.repositories || []).toHaveLength(0);
       expect(response.hints.length).toBeGreaterThan(0);
     });
 
@@ -374,7 +371,7 @@ describe('GitHub Search Repositories Tool', () => {
       const queryResult = response.results[0];
       // The result should be an error or have no repositories
       if (!queryResult.error) {
-        expect(queryResult.data?.repositories || []).toHaveLength(0);
+        expect(queryResult.repositories || []).toHaveLength(0);
       }
       expect(response.hints.length).toBeGreaterThan(0);
     });
@@ -438,8 +435,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       // Look for specific repositories from our mocks in the query results
       const allRepos = response.results.flatMap(
-        (queryResult: Record<string, unknown>) =>
-          (queryResult.data as Record<string, unknown>)?.repositories || []
+        (queryResult: Record<string, unknown>) => queryResult.repositories || []
       );
       const repo1 = allRepos.find(
         (r: Record<string, unknown>) =>

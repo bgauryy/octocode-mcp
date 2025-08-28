@@ -36,7 +36,7 @@ describe('bulkOperations', () => {
       expect(uniqueIds.size).toBe(3);
     });
 
-    it('should preserve existing IDs', () => {
+    it('should generate sequential IDs regardless of existing IDs', () => {
       const queries = [
         { id: 'custom-id-1', name: 'query1' },
         { name: 'query2' },
@@ -45,9 +45,9 @@ describe('bulkOperations', () => {
 
       const result = ensureUniqueQueryIds(queries);
 
-      expect(result[0]?.id).toBe('custom-id-1');
-      expect(result[1]?.id).toBeDefined();
-      expect(result[2]?.id).toBe('custom-id-3');
+      expect(result[0]?.id).toBe('query_1');
+      expect(result[1]?.id).toBe('query_2');
+      expect(result[2]?.id).toBe('query_3');
     });
 
     it('should handle empty query array', () => {
@@ -65,9 +65,9 @@ describe('bulkOperations', () => {
       const result = ensureUniqueQueryIds(queries);
 
       expect(result).toHaveLength(3);
-      expect(result[0]?.id).toBe('string-id');
-      expect(result[1]?.id).toBeDefined();
-      expect(result[2]?.id).toBeDefined();
+      expect(result[0]?.id).toBe('query_1');
+      expect(result[1]?.id).toBe('query_2');
+      expect(result[2]?.id).toBe('query_3');
     });
 
     it('should use custom default prefix', () => {
@@ -79,7 +79,7 @@ describe('bulkOperations', () => {
       expect(result[1]?.id).toBe('custom_2');
     });
 
-    it('should handle duplicate IDs by making them unique', () => {
+    it('should generate sequential IDs even with duplicate input IDs', () => {
       const queries = [
         { id: 'duplicate', name: 'query1' },
         { id: 'duplicate', name: 'query2' },
@@ -88,9 +88,9 @@ describe('bulkOperations', () => {
 
       const result = ensureUniqueQueryIds(queries);
 
-      expect(result[0]?.id).toBe('duplicate');
-      expect(result[1]?.id).toBe('duplicate_1');
-      expect(result[2]?.id).toBe('duplicate_2');
+      expect(result[0]?.id).toBe('query_1');
+      expect(result[1]?.id).toBe('query_2');
+      expect(result[2]?.id).toBe('query_3');
     });
   });
 

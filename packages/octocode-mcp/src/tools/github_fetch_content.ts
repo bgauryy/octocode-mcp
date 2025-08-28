@@ -145,9 +145,10 @@ async function fetchMultipleGitHubFileContents(
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-      // Build the result object with new format (no queryId, add queryDescription)
+      // Build the result object with new format (add queryDescription and queryId)
       const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       const resultObj: FileContentQueryResult = {
+        queryId: query.id, // Add sequential query ID
         queryDescription,
         researchGoal: query.researchGoal
           ? String(query.researchGoal)
@@ -205,6 +206,7 @@ async function fetchMultipleGitHubFileContents(
 
       const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       results.push({
+        queryId: query.id, // Add sequential query ID
         queryDescription,
         researchGoal: query.researchGoal
           ? String(query.researchGoal)

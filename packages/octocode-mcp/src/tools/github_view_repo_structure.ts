@@ -176,6 +176,8 @@ async function exploreMultipleRepositoryStructures(
         }
 
         // Success case - use flatter structure as requested
+        const hasResults = apiResult.files && apiResult.files.length > 0;
+
         const result: ProcessedRepositoryStructureResult = {
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
           branch: apiRequest.branch,
@@ -187,7 +189,8 @@ async function exploreMultipleRepositoryStructures(
             folders: apiResult.folders,
             summary: apiResult.summary,
             researchGoal: apiRequest.researchGoal,
-            queryArgs: { ...apiRequest },
+            // Always include queryArgs for no-result cases (handled by bulk operations)
+            ...(hasResults ? {} : { queryArgs: { ...apiRequest } }),
             searchType: 'success',
           },
         };

@@ -140,10 +140,8 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
 
 export interface ProcessedRepoSearchResult {
   queryDescription?: string;
-  data?: {
-    repositories?: Repository[];
-    total_count?: number;
-  };
+  repositories?: Repository[];
+  total_count?: number;
   error?: string;
   hints?: string[];
   metadata: Record<string, unknown>; // Required for processing, removed later if not verbose

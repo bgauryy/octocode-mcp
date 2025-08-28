@@ -67,6 +67,7 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
 );
 
 export interface FileContentQueryResult {
+  queryId?: string; // Sequential query ID (file-content_1, file-content_2, etc.)
   queryDescription?: string;
   researchGoal?: string;
   originalQuery?: FileContentQuery; // Only included on error or not found

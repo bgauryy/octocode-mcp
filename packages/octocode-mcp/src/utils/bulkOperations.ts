@@ -74,29 +74,23 @@ export interface BulkResponseConfig {
 }
 
 /**
- * Ensure unique query IDs for bulk operations using efficient O(n) algorithm
- * Works with any object that has optional id field - no rigid type constraints
+ * Generate sequential query IDs for bulk operations
+ * Always generates sequential IDs regardless of existing id field
  *
- * @param queries Array of queries that may have duplicate or missing IDs
- * @returns Array of queries with guaranteed unique IDs
+ * @param queries Array of queries to assign sequential IDs
+ * @param defaultPrefix Prefix for generated IDs (default: 'query')
+ * @returns Array of queries with sequential IDs (query_1, query_2, etc.)
  */
 export function ensureUniqueQueryIds<T extends HasOptionalId>(
   queries: T[],
   defaultPrefix: string = 'query'
 ): Array<T & { id: string }> {
-  const idCounts = new Map<string, number>();
-
   return queries.map((query, index) => {
-    // Safely extract id field, handling unknown types from schema inference
-    const baseId =
-      safeExtractString(query, 'id') || `${defaultPrefix}_${index + 1}`;
-    const count = idCounts.get(baseId) || 0;
-    idCounts.set(baseId, count + 1);
+    // Always generate sequential ID: query_1, query_2, query_3, etc.
+    const sequentialId = `${defaultPrefix}_${index + 1}`;
 
-    const uniqueId = count === 0 ? baseId : `${baseId}_${count}`;
-
-    // Create result with properly typed id field
-    return { ...query, id: uniqueId };
+    // Create result with sequential ID
+    return { ...query, id: sequentialId };
   });
 }
 
@@ -256,14 +250,37 @@ export function createBulkResponse<
   // Process results to match new format requirements
   const processedResults = results.map((r, index) => {
     const result = { ...r.result } as Record<string, unknown>;
+    const query = queries[index];
 
-    // Remove metadata if not verbose
-    if (!verbose && 'metadata' in result) {
+    // Always add queryId to results
+    if (query?.id) {
+      result.queryId = query.id;
+    }
+
+    // For no-results cases or errors, always include metadata with query args
+    const hasNoResults =
+      (!result.data &&
+        !result.repositories &&
+        !result.files &&
+        !result.structure) ||
+      (result.files as unknown[] | undefined)?.length === 0 ||
+      (result.repositories as unknown[] | undefined)?.length === 0 ||
+      (result.structure as unknown[] | undefined)?.length === 0;
+
+    const hasError = !!result.error;
+
+    if (hasNoResults || hasError || verbose) {
+      // Ensure metadata exists and includes query args
+      if (!result.metadata || typeof result.metadata !== 'object') {
+        result.metadata = {};
+      }
+      (result.metadata as Record<string, unknown>).queryArgs = { ...query };
+    } else if (!verbose && 'metadata' in result) {
+      // Remove metadata only if not verbose and has results
       delete result.metadata;
     }
 
     // Add queryDescription to top layer - use LLM-provided description from schema or generate one
-    const query = queries[index]; // Use index since we don't have queryId anymore
     if (query) {
       // First try to use LLM-provided description from schema
       let queryDescription = safeExtractString(query, 'queryDescription');

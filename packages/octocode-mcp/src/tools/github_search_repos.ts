@@ -172,12 +172,10 @@ async function searchMultipleGitHubRepos(
         const typedRepositories = repositories as unknown as Repository[];
 
         return {
-          data: {
-            repositories: typedRepositories,
-            total_count: apiResult.data.total_count,
-          },
+          repositories: typedRepositories,
+          total_count: apiResult.data.total_count,
           metadata: {
-            // Only include queryArgs for no-result cases
+            // Always include queryArgs for no-result cases (handled by bulk operations)
             ...(hasResults ? {} : { queryArgs: { ...query } }),
             searchType: 'success',
             researchGoal:
@@ -228,9 +226,9 @@ async function searchMultipleGitHubRepos(
     totalStars: 0,
     dataQuality: {
       hasResults: results.some(r => {
-        if (r.result.error || !r.result.data) return false;
-        const data = r.result.data as { repositories?: Repository[] };
-        return data.repositories && data.repositories.length > 0;
+        if (r.result.error) return false;
+        const result = r.result as { repositories?: Repository[] };
+        return result.repositories && result.repositories.length > 0;
       }),
       hasPopularRepos: false,
     },
@@ -238,10 +236,10 @@ async function searchMultipleGitHubRepos(
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.error && result.data) {
-      const data = result.data as { repositories?: Repository[] };
-      if (data.repositories && Array.isArray(data.repositories)) {
-        const repositories = data.repositories;
+    if (!result.error) {
+      const res = result as { repositories?: Repository[] };
+      if (res.repositories && Array.isArray(res.repositories)) {
+        const repositories = res.repositories;
         repositories.forEach((repo: Repository) => {
           aggregatedContext.foundOwners.add(repo.owner.login);
           if (repo.language) {

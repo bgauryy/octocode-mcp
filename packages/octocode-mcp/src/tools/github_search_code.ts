@@ -210,14 +210,15 @@ async function searchMultipleGitHubCode(
             resultCount: apiResult.data.items.length,
             hasMatches: totalMatches > 0,
             repositories: repository ? [repository] : [],
+            // Always include queryArgs for no-results cases (handled by bulk operations)
+            ...(hasNoResults && { queryArgs: { ...query } }),
           },
         };
 
-        // Add searchType and hints for no results case
+        // Add searchType for no results case
         if (hasNoResults) {
           (result.metadata as Record<string, unknown>).searchType =
             'no_results';
-          (result.metadata as Record<string, unknown>).queryArgs = { ...query };
 
           // Generate specific hints for no results
           const noResultsHints = [
