@@ -11,7 +11,7 @@
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 // Hints are now provided by the consolidated hints system
-import { ToolName } from '../constants.js';
+import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 
@@ -162,6 +162,44 @@ export async function processBulkQueries<
 }
 
 /**
+ * Generate a query description from query parameters
+ *
+ * @param query The query object to generate description for
+ * @returns Generated description or undefined
+ */
+function generateQueryDescription(
+  query: Record<string, unknown>
+): string | undefined {
+  const parts: string[] = [];
+
+  // Repository context
+  const owner = safeExtractString(query, 'owner');
+  const repo = safeExtractString(query, 'repo');
+  if (owner && repo) {
+    parts.push(`${owner}/${repo}`);
+  } else if (owner) {
+    parts.push(`owner:${owner}`);
+  }
+
+  // Search terms or path
+  const queryTerms = query.queryTerms as string[] | undefined;
+  const path = safeExtractString(query, 'path');
+  if (queryTerms && queryTerms.length > 0) {
+    parts.push(`search: ${queryTerms.join(', ')}`);
+  } else if (path) {
+    parts.push(`path: ${path}`);
+  }
+
+  // Language filter
+  const language = safeExtractString(query, 'language');
+  if (language) {
+    parts.push(`language:${language}`);
+  }
+
+  return parts.length > 0 ? parts.join(' - ') : undefined;
+}
+
+/**
  * Create bulk hints context for the consolidated hints system
  * Works with any object type - extracts researchGoal safely
  */
@@ -224,11 +262,31 @@ export function createBulkResponse<
       delete result.metadata;
     }
 
-    // Add queryDescription to top layer - extract from query or generate
+    // Add queryDescription to top layer - use LLM-provided description from schema or generate one
     const query = queries[index]; // Use index since we don't have queryId anymore
-    const queryDescription = generateQueryDescription(query);
-    if (queryDescription) {
-      result.queryDescription = queryDescription;
+    if (query) {
+      // First try to use LLM-provided description from schema
+      let queryDescription = safeExtractString(query, 'queryDescription');
+
+      // If not provided, generate one from query parameters
+      if (!queryDescription) {
+        queryDescription = generateQueryDescription(query);
+      }
+
+      if (queryDescription) {
+        result.queryDescription = queryDescription;
+      }
+    }
+
+    // For repository structure tool, add summary and queryArgs to top level if verbose
+    if (verbose && config.toolName === TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE) {
+      const metadata = result.metadata as Record<string, unknown> | undefined;
+      if (metadata?.summary) {
+        result.summary = metadata.summary;
+      }
+      if (metadata?.queryArgs) {
+        result.queryArgs = metadata.queryArgs;
+      }
     }
 
     return result;
@@ -241,9 +299,9 @@ export function createBulkResponse<
   const commonResearchGoal =
     researchGoals.length > 0 ? researchGoals[0] : undefined;
 
-  // Build response object
+  // Build response object with consistent format: {results: [], hints: [], meta: []}
   const responseData: Record<string, unknown> = {
-    results: processedResults, // Changed from 'data' to 'results'
+    results: processedResults,
     hints,
   };
 
@@ -279,46 +337,6 @@ export function createBulkResponse<
     ],
     isError: false,
   };
-}
-
-/**
- * Generate a query description based on query parameters
- */
-function generateQueryDescription(
-  query: Record<string, unknown> | undefined
-): string | undefined {
-  if (!query) return undefined;
-
-  const queryTerms = query.queryTerms as string[] | undefined;
-  const topic = query.topic as string | string[] | undefined;
-  const owner = query.owner as string | string[] | undefined;
-  const language = query.language as string | undefined;
-
-  const parts: string[] = [];
-
-  if (queryTerms && Array.isArray(queryTerms) && queryTerms.length > 0) {
-    parts.push(`searching for "${queryTerms.join(', ')}"`);
-  }
-
-  if (topic) {
-    const topicStr = Array.isArray(topic) ? topic.join(', ') : topic;
-    parts.push(`topic: ${topicStr}`);
-  }
-
-  if (owner) {
-    const ownerStr = Array.isArray(owner) ? owner.join(', ') : owner;
-    parts.push(`owner: ${ownerStr}`);
-  }
-
-  if (language) {
-    parts.push(`language: ${language}`);
-  }
-
-  if (parts.length === 0) {
-    return 'general repository search';
-  }
-
-  return parts.join(' | ');
 }
 
 /**

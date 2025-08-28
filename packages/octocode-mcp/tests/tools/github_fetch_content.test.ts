@@ -84,11 +84,11 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content[0]?.type).toBe('text');
 
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(Array.isArray(data.data)).toBe(true);
-      expect(data.data).toHaveLength(1);
+      expect(Array.isArray(data.results)).toBe(true);
+      expect(data.results).toHaveLength(1);
 
-      const fileResult = data.data[0];
-      expect(fileResult.queryId).toBe('test-query');
+      const fileResult = data.results[0];
+      expect(fileResult.queryDescription).toBeDefined(); // queryId was removed, queryDescription added
       expect(fileResult.researchGoal).toBe('exploration');
       expect(fileResult.result.filePath).toBe('README.md');
       expect(fileResult.result.content).toContain('Hello World');
@@ -178,13 +178,13 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(2);
+      expect(data.results).toHaveLength(2);
 
-      const readmeResult = data.data.find(
-        (r: Record<string, unknown>) => r.queryId === 'readme'
+      const readmeResult = data.results.find((r: Record<string, unknown>) =>
+        r.queryDescription?.toString().includes('README.md')
       );
-      const packageResult = data.data.find(
-        (r: Record<string, unknown>) => r.queryId === 'package'
+      const packageResult = data.results.find((r: Record<string, unknown>) =>
+        r.queryDescription?.toString().includes('package.json')
       );
 
       expect(readmeResult.result.filePath).toBe('README.md');
@@ -216,10 +216,10 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false); // Tool doesn't error, but result contains error
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(1);
+      expect(data.results).toHaveLength(1);
 
-      const errorResult = data.data[0];
-      expect(errorResult.queryId).toBe('error-test');
+      const errorResult = data.results[0];
+      expect(errorResult.queryDescription).toContain('test/repo');
       expect(errorResult.researchGoal).toBe('exploration');
       expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
       expect(errorResult.result.error).toContain('not found');
@@ -245,10 +245,10 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(1);
+      expect(data.results).toHaveLength(1);
 
-      const errorResult = data.data[0];
-      expect(errorResult.queryId).toBe('exception-test');
+      const errorResult = data.results[0];
+      expect(errorResult.queryDescription).toContain('test/repo');
       expect(errorResult.originalQuery).toEqual({
         owner: 'test',
         repo: 'repo',

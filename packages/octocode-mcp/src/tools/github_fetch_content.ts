@@ -145,9 +145,10 @@ async function fetchMultipleGitHubFileContents(
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-      // Build the result object
+      // Build the result object with new format (no queryId, add queryDescription)
+      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       const resultObj: FileContentQueryResult = {
-        queryId: String(query.id),
+        queryDescription,
         researchGoal: query.researchGoal
           ? String(query.researchGoal)
           : undefined,
@@ -202,8 +203,9 @@ async function fetchMultipleGitHubFileContents(
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
 
+      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       results.push({
-        queryId: String(query.id),
+        queryDescription,
         researchGoal: query.researchGoal
           ? String(query.researchGoal)
           : undefined,
@@ -236,8 +238,19 @@ async function fetchMultipleGitHubFileContents(
     customHints: [],
   });
 
-  return createResult({
-    data: results, // Flat array of results
+  // Use consistent bulk response format: {results: [], hints: []}
+  const responseData = {
+    results: results, // Use 'results' field for consistency with other bulk tools
     hints,
-  });
+  };
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(responseData, null, 2),
+      },
+    ],
+    isError: false,
+  };
 }

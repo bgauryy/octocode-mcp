@@ -13,6 +13,13 @@ import { ResearchGoalEnum } from '../constants';
 export const BaseQuerySchema = z.object({
   id: z.string().optional().describe('Optional identifier for the query'),
 
+  queryDescription: z
+    .string()
+    .optional()
+    .describe(
+      'Brief description of what this query is trying to accomplish in your research. Help the system understand the purpose and context of this specific query.'
+    ),
+
   researchGoal: z
     .enum(ResearchGoalEnum)
     .optional()
@@ -34,6 +41,7 @@ export const BaseQuerySchema = z.object({
  */
 export interface BaseQuery {
   id?: string;
+  queryDescription?: string;
   researchGoal?: (typeof ResearchGoalEnum)[number];
   verbose?: boolean;
 }

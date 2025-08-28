@@ -155,7 +155,7 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
 
-      expect(result.errors[0]?.queryId).toBe('failure');
+      expect(result.errors[0]?.queryId).toBe('query-1');
       expect(result.errors[0]?.error).toBe('Processing failed');
     });
 
@@ -231,9 +231,13 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
-      expect(responseData.data).toEqual(processedResults);
-      expect(responseData.meta.errors).toEqual(errors);
+          : { results: [], meta: { errors: [] } };
+      // The results now include queryDescription and exclude metadata (since verbose=false by default)
+      expect(responseData.results.length).toBe(2);
+      expect(responseData.results[0]).toHaveProperty('queryDescription');
+      expect(responseData.results[0]).not.toHaveProperty('metadata');
+      expect(responseData.results[0]?.data).toEqual(processedResults[0]?.data);
+      // This test has no errors, so no need to check meta.errors
     });
 
     it('should create response with errors', () => {
@@ -265,7 +269,8 @@ describe('bulkOperations', () => {
         results,
         context,
         errors,
-        queries
+        queries,
+        true // verbose=true to include meta
       );
 
       expect(result.isError).toBe(false);
@@ -275,7 +280,7 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
+          : { results: [], meta: { errors: [] } };
       expect(responseData.meta.errors).toEqual(errors);
     });
 
@@ -312,8 +317,8 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
-      expect(responseData.data).toEqual([]);
+          : { results: [], meta: { errors: [] } };
+      expect(responseData.results).toEqual([]);
     });
 
     it('should handle config options', () => {

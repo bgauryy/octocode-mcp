@@ -67,7 +67,7 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
 );
 
 export interface FileContentQueryResult {
-  queryId?: string;
+  queryDescription?: string;
   researchGoal?: string;
   originalQuery?: FileContentQuery; // Only included on error or not found
   result: GitHubFileContentResponse | { error: string; hints?: string[] };

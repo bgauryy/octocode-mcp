@@ -24,6 +24,12 @@ const NpmFieldEnum = [
 // NPM Package Query Schema
 const NpmPackageQuerySchema = z.object({
   name: z.string().describe('NPM package name to search for'),
+  queryDescription: z
+    .string()
+    .optional()
+    .describe(
+      'Brief description of what this NPM package query is trying to accomplish in your research'
+    ),
   searchLimit: z
     .number()
     .int()
@@ -54,6 +60,12 @@ const NpmPackageQuerySchema = z.object({
 // Python Package Query Schema
 const PythonPackageQuerySchema = z.object({
   name: z.string().describe('Python package name to search for'),
+  queryDescription: z
+    .string()
+    .optional()
+    .describe(
+      'Brief description of what this Python package query is trying to accomplish in your research'
+    ),
   searchLimit: z
     .number()
     .int()

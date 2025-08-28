@@ -128,20 +128,20 @@ export interface GitHubRepositoryStructureError {
 
 // Bulk operations types
 export interface ProcessedRepoStructureResult {
-  queryId: string;
-  data?: {
-    repository?: string;
-    structure?: Array<{
-      path: string;
-      type: 'file' | 'dir' | 'symlink' | 'submodule';
-      size?: number;
-      sha?: string;
-    }>;
-    totalCount?: number;
-  };
+  queryDescription?: string;
+  repository?: string;
+  branch?: string;
+  path?: string;
+  structure?: Array<{
+    path: string;
+    type: 'file' | 'dir' | 'symlink' | 'submodule';
+    size?: number;
+    sha?: string;
+  }>;
+  data?: unknown;
   error?: string;
   hints?: string[];
-  metadata: Record<string, unknown>;
+  metadata: Record<string, unknown>; // Required for processing, removed later if not verbose
 }
 
 // Legacy interface for backward compatibility

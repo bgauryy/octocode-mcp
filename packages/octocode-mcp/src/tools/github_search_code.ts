@@ -376,13 +376,26 @@ async function searchMultipleGitHubCode(
       8
     );
 
-    // Create new response with enhanced hints
-    return createResult({
-      data: responseData.data,
-      meta: responseData.meta as Record<string, unknown> | undefined,
+    // Create new response with enhanced hints using consistent bulk format
+    const newResponseData: Record<string, unknown> = {
+      results: responseData.results, // Use 'results' field from bulk response
       hints: combinedHints,
+    };
+
+    // Add meta if it exists
+    if (responseData.meta) {
+      newResponseData.meta = responseData.meta;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(newResponseData, null, 2),
+        },
+      ],
       isError: response.isError,
-    });
+    };
   }
 
   return response;

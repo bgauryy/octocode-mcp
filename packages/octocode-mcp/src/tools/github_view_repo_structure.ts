@@ -161,7 +161,6 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
-            queryId: String(query.id),
             error: apiResult.error,
             hints: [
               'Verify repository owner and name are correct',
@@ -176,14 +175,12 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        // Success case - use properly typed apiRequest
-        return {
-          queryId: String(query.id),
-          data: {
-            repository: `${apiRequest.owner}/${apiRequest.repo}`,
-            structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
-            totalCount: apiResult.files.length,
-          },
+        // Success case - use flatter structure as requested
+        const result: ProcessedRepositoryStructureResult = {
+          repository: `${apiRequest.owner}/${apiRequest.repo}`,
+          branch: apiRequest.branch,
+          path: apiRequest.path || '/',
+          structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
           metadata: {
             branch: apiRequest.branch,
             path: apiRequest.path || '/',
@@ -194,12 +191,16 @@ async function exploreMultipleRepositoryStructures(
             searchType: 'success',
           },
         };
+
+        // Add summary and queryArgs to top level only if verbose (handled by bulk operations)
+        // These will be conditionally included by the bulk response processor
+
+        return result;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
-          queryId: String(query.id),
           error: `Failed to explore repository structure: ${errorMessage}`,
           hints: [
             'Verify repository owner and name are correct',
@@ -232,31 +233,31 @@ async function exploreMultipleRepositoryStructures(
       hasContent: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.data?.structure) &&
-          r.result.data.structure.length > 0
+          Array.isArray(r.result.structure) &&
+          r.result.structure.length > 0
       ),
       hasStructure: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.data?.structure) &&
-          r.result.data.structure.length > 0
+          Array.isArray(r.result.structure) &&
+          r.result.structure.length > 0
       ),
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.error && result.data?.structure) {
-      if (result.data.repository) {
-        aggregatedContext.repositoryContexts.add(result.data.repository);
+    if (!result.error && result.structure) {
+      if (result.repository) {
+        aggregatedContext.repositoryContexts.add(result.repository);
       }
-      if (result.metadata?.path) {
-        aggregatedContext.exploredPaths.add(String(result.metadata.path));
+      if (result.path) {
+        aggregatedContext.exploredPaths.add(String(result.path));
       }
 
       // Extract file types and directories
-      if (Array.isArray(result.data?.structure)) {
-        result.data.structure.forEach(file => {
+      if (Array.isArray(result.structure)) {
+        result.structure.forEach(file => {
           const extension = file.path.split('.').pop();
           if (extension) {
             aggregatedContext.foundFileTypes.add(extension);
@@ -292,6 +293,7 @@ async function exploreMultipleRepositoryStructures(
     results,
     aggregatedContext,
     errors,
-    uniqueQueries
+    uniqueQueries,
+    verbose
   );
 }
