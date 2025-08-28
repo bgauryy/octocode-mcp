@@ -155,7 +155,6 @@ async function searchMultipleGitHubCode(
           });
 
           return {
-            queryId: query.id,
             error: apiResult.error,
             hints: hints,
             metadata: {
@@ -188,7 +187,6 @@ async function searchMultipleGitHubCode(
         const hasNoResults = apiResult.data.items.length === 0;
 
         const result = {
-          queryId: query.id,
           data: {
             repository,
             files: apiResult.data.items.map(
@@ -253,7 +251,6 @@ async function searchMultipleGitHubCode(
         });
 
         return {
-          queryId: String(query.id),
           error: errorMessage,
           hints: hints,
           metadata: {
@@ -335,28 +332,29 @@ async function searchMultipleGitHubCode(
   };
 
   // Add queryArgs to metadata for failed queries, no results cases, or when verbose is true
-  const processedResults = results.map(({ queryId, result }) => {
+  const processedResults = results.map(({ result }, index) => {
     const hasError = !!result.error;
     const hasNoResults = result.metadata?.searchType === 'no_results';
 
     if (hasError || hasNoResults || verbose) {
       // Find the original query for this result
-      const originalQuery = uniqueQueries.find(q => q.id === queryId);
+      const originalQuery = uniqueQueries[index]; // Use index since we removed queryId
       if (originalQuery && result.metadata) {
         // Ensure we're setting the actual object, not a stringified version
         result.metadata.queryArgs = { ...originalQuery };
       }
     }
-    return { queryId, result };
+    return result;
   });
 
   // Create response with enhanced hints
   const response = createBulkResponse(
     config,
-    processedResults,
+    processedResults.map(result => ({ result })),
     aggregatedContext,
     errors,
-    uniqueQueries
+    uniqueQueries,
+    verbose
   );
 
   // Enhance hints with research-specific guidance

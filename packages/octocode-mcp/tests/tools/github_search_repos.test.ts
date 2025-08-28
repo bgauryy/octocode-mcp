@@ -248,14 +248,18 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      // With the new bulk search implementation, response.data is an array containing results from all queries
-      expect(response.data.length).toBeGreaterThan(0);
+      // With the new bulk search implementation, response.results is an array containing results from all queries
+      expect(response.results).toBeDefined();
+      expect(response.results.length).toBeGreaterThan(0);
 
       // Find the result with repositories
-      const queryResult = response.data.find((r: Record<string, unknown>) => {
-        const repositories = (r.data as Record<string, unknown>)?.repositories;
-        return Array.isArray(repositories) && repositories.length > 0;
-      });
+      const queryResult = response.results.find(
+        (r: Record<string, unknown>) => {
+          const repositories = (r.data as Record<string, unknown>)
+            ?.repositories;
+          return Array.isArray(repositories) && repositories.length > 0;
+        }
+      );
       expect(queryResult).toBeDefined();
 
       const repo = (
@@ -334,8 +338,8 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may have no repositories
-      expect(response.data.length).toBeGreaterThan(0);
-      const queryResult = response.data[0];
+      expect(response.results.length).toBeGreaterThan(0);
+      const queryResult = response.results[0];
       expect(queryResult.data?.repositories || []).toHaveLength(0);
       expect(response.hints.length).toBeGreaterThan(0);
     });
@@ -366,8 +370,8 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may be an error
-      expect(response.data.length).toBeGreaterThan(0);
-      const queryResult = response.data[0];
+      expect(response.results.length).toBeGreaterThan(0);
+      const queryResult = response.results[0];
       // The result should be an error or have no repositories
       if (!queryResult.error) {
         expect(queryResult.data?.repositories || []).toHaveLength(0);
@@ -429,11 +433,11 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk processing, expect 2 query results
-      expect(response.data.length).toBeGreaterThanOrEqual(2);
+      expect(response.results.length).toBeGreaterThanOrEqual(2);
       expect(response.hints.length).toBeGreaterThan(0);
 
       // Look for specific repositories from our mocks in the query results
-      const allRepos = response.data.flatMap(
+      const allRepos = response.results.flatMap(
         (queryResult: Record<string, unknown>) =>
           (queryResult.data as Record<string, unknown>)?.repositories || []
       );
@@ -476,8 +480,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data.length).toBeGreaterThan(0); // Successful query results
-      expect(data.hints.length).toBeGreaterThan(0);
+      expect(data.results.length).toBeGreaterThan(0); // Successful query results
       expect(data.hints.length).toBeGreaterThan(0);
     });
 
@@ -503,9 +506,8 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data.length).toBeGreaterThan(2); // Repositories from 3 queries
+      expect(data.results.length).toBeGreaterThan(2); // Repositories from 3 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
-      expect(data.hints.length).toBeGreaterThan(0);
     });
 
     it('should process maximum 5 queries', async () => {
@@ -544,11 +546,43 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data.length).toBeGreaterThan(4); // Repositories from 5 queries
+      expect(data.results.length).toBeGreaterThan(4); // Repositories from 5 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
-      expect(data.hints.length).toBeGreaterThan(0);
       // The implementation might use API calls instead of CLI commands
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(5);
+    });
+
+    it('should include meta and metadata when verbose is true', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([
+        { name: 'test-repo', stars: 100, language: 'JavaScript' },
+      ]);
+
+      mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ queryTerms: ['test'], id: 'verbose-test' }],
+          verbose: true,
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should include meta when verbose is true
+      expect(data.meta).toBeDefined();
+      expect(data.meta.totalOperations).toBeDefined();
+      expect(data.meta.successfulOperations).toBeDefined();
+      expect(data.meta.failedOperations).toBeDefined();
+
+      // Should include metadata in query results when verbose is true
+      expect(data.results.length).toBeGreaterThan(0);
+      const queryResult = data.results[0];
+      expect(queryResult.metadata).toBeDefined(); // Should have metadata when verbose
+      expect(queryResult.queryDescription).toBeDefined(); // Should still have queryDescription
     });
   });
 

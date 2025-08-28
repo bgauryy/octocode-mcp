@@ -151,7 +151,6 @@ async function searchMultipleGitHubRepos(
           });
 
           return {
-            queryId: String(query.id),
             error: apiResult.error,
             hints,
             metadata: {
@@ -173,7 +172,6 @@ async function searchMultipleGitHubRepos(
         const typedRepositories = repositories as unknown as Repository[];
 
         return {
-          queryId: String(query.id),
           data: {
             repositories: typedRepositories,
             total_count: apiResult.data.total_count,
@@ -203,7 +201,6 @@ async function searchMultipleGitHubRepos(
         });
 
         return {
-          queryId: String(query.id),
           error: errorMessage,
           hints,
           metadata: {
@@ -230,31 +227,34 @@ async function searchMultipleGitHubRepos(
     searchPatterns: new Set<string>(),
     totalStars: 0,
     dataQuality: {
-      hasResults: results.some(
-        r =>
-          !r.result.error &&
-          r.result.data?.repositories &&
-          r.result.data.repositories.length > 0
-      ),
+      hasResults: results.some(r => {
+        if (r.result.error || !r.result.data) return false;
+        const data = r.result.data as { repositories?: Repository[] };
+        return data.repositories && data.repositories.length > 0;
+      }),
       hasPopularRepos: false,
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.error && result.data?.repositories) {
-      result.data.repositories.forEach((repo: Repository) => {
-        aggregatedContext.foundOwners.add(repo.owner.login);
-        if (repo.language) {
-          aggregatedContext.foundLanguages.add(repo.language);
-        }
-        aggregatedContext.totalStars += repo.stargazers_count || 0;
+    if (!result.error && result.data) {
+      const data = result.data as { repositories?: Repository[] };
+      if (data.repositories && Array.isArray(data.repositories)) {
+        const repositories = data.repositories;
+        repositories.forEach((repo: Repository) => {
+          aggregatedContext.foundOwners.add(repo.owner.login);
+          if (repo.language) {
+            aggregatedContext.foundLanguages.add(repo.language);
+          }
+          aggregatedContext.totalStars += repo.stargazers_count || 0;
 
-        // Check for popular repositories (>1000 stars)
-        if (repo.stargazers_count > 1000) {
-          aggregatedContext.dataQuality.hasPopularRepos = true;
-        }
-      });
+          // Check for popular repositories (>1000 stars)
+          if (repo.stargazers_count > 1000) {
+            aggregatedContext.dataQuality.hasPopularRepos = true;
+          }
+        });
+      }
 
       // Extract search patterns from query terms
       const queryArgs = result.metadata?.queryArgs as
@@ -283,7 +283,8 @@ async function searchMultipleGitHubRepos(
     results,
     aggregatedContext,
     errors,
-    uniqueQueries
+    uniqueQueries,
+    verbose
   );
 }
 

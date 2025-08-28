@@ -10,7 +10,6 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses.js';
 // Hints are now provided by the consolidated hints system
 import { ToolName } from '../constants.js';
 import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
@@ -36,7 +35,6 @@ function safeExtractString(
  * Base interface for processed results from bulk operations
  */
 export interface ProcessedBulkResult {
-  queryId: string;
   data?: unknown;
   error?: string;
   hints?: string[];
@@ -117,21 +115,21 @@ export async function processBulkQueries<
   queries: Array<T & { id: string }>,
   processor: (query: T & { id: string }) => Promise<R>
 ): Promise<{
-  results: Array<{ queryId: string; result: R }>;
+  results: Array<{ result: R }>;
   errors: QueryError[];
 }> {
-  const results: Array<{ queryId: string; result: R }> = [];
+  const results: Array<{ result: R }> = [];
   const errors: QueryError[] = [];
 
   // Process queries in parallel with error isolation
-  const queryPromises = queries.map(async query => {
+  const queryPromises = queries.map(async (query, index) => {
     try {
       const result = await processor(query);
-      return { queryId: query.id, result };
+      return { result };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push({
-        queryId: query.id,
+        queryId: `query-${index}`,
         error: errorMsg,
       });
       return null;
@@ -154,13 +152,11 @@ export async function processBulkQueries<
   );
 
   // Collect successful results
-  queryResults.forEach(
-    (result: PromiseResult<{ queryId: string; result: R } | null>) => {
-      if (result.success && result.data) {
-        results.push(result.data);
-      }
+  queryResults.forEach((result: PromiseResult<{ result: R } | null>) => {
+    if (result.success && result.data) {
+      results.push(result.data);
     }
-  );
+  });
 
   return { results, errors };
 }
@@ -201,6 +197,7 @@ function createBulkHintsContext<T extends HasOptionalId>(
  * @param context Aggregated context
  * @param errors Query errors
  * @param queries Original queries
+ * @param verbose Whether to include verbose metadata
  * @returns Standardized CallToolResult
  */
 export function createBulkResponse<
@@ -208,17 +205,34 @@ export function createBulkResponse<
   R extends ProcessedBulkResult,
 >(
   config: BulkResponseConfig,
-  results: Array<{ queryId: string; result: R }>,
+  results: Array<{ result: R }>,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: Array<T & { id: string }>
+  queries: Array<T & { id: string }>,
+  verbose: boolean = false
 ): CallToolResult {
   // Generate smart hints using consolidated hints system
   const hintContext = createBulkHintsContext(config, context, errors, queries);
   const hints = generateBulkHints(hintContext);
 
-  // Build standardized response with {data, meta, hints} format
-  const data = results.map(r => r.result);
+  // Process results to match new format requirements
+  const processedResults = results.map((r, index) => {
+    const result = { ...r.result } as Record<string, unknown>;
+
+    // Remove metadata if not verbose
+    if (!verbose && 'metadata' in result) {
+      delete result.metadata;
+    }
+
+    // Add queryDescription to top layer - extract from query or generate
+    const query = queries[index]; // Use index since we don't have queryId anymore
+    const queryDescription = generateQueryDescription(query);
+    if (queryDescription) {
+      result.queryDescription = queryDescription;
+    }
+
+    return result;
+  });
 
   // Extract common researchGoal from queries for LLM context - safely handle any object type
   const researchGoals = queries
@@ -227,28 +241,84 @@ export function createBulkResponse<
   const commonResearchGoal =
     researchGoals.length > 0 ? researchGoals[0] : undefined;
 
-  const meta: Record<string, unknown> = {
-    totalOperations: results.length,
-    successfulOperations: results.filter(r => !r.result.error).length,
-    failedOperations: results.filter(r => !!r.result.error).length,
-    ...(commonResearchGoal && { researchGoal: commonResearchGoal }),
+  // Build response object
+  const responseData: Record<string, unknown> = {
+    results: processedResults, // Changed from 'data' to 'results'
+    hints,
   };
 
-  // Include aggregated context if requested
-  if (config.includeAggregatedContext) {
-    meta.aggregatedContext = context;
+  // Only include meta if verbose is true
+  if (verbose) {
+    const meta: Record<string, unknown> = {
+      totalOperations: results.length,
+      successfulOperations: results.filter(r => !r.result.error).length,
+      failedOperations: results.filter(r => !!r.result.error).length,
+      ...(commonResearchGoal && { researchGoal: commonResearchGoal }),
+    };
+
+    // Include aggregated context if requested
+    if (config.includeAggregatedContext) {
+      meta.aggregatedContext = context;
+    }
+
+    // Include errors if requested
+    if (config.includeErrors) {
+      meta.errors = errors;
+    }
+
+    responseData.meta = meta;
   }
 
-  // Include errors if requested
-  if (config.includeErrors) {
-    meta.errors = errors;
+  // Create the result directly with the custom structure
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(responseData, null, 2),
+      },
+    ],
+    isError: false,
+  };
+}
+
+/**
+ * Generate a query description based on query parameters
+ */
+function generateQueryDescription(
+  query: Record<string, unknown> | undefined
+): string | undefined {
+  if (!query) return undefined;
+
+  const queryTerms = query.queryTerms as string[] | undefined;
+  const topic = query.topic as string | string[] | undefined;
+  const owner = query.owner as string | string[] | undefined;
+  const language = query.language as string | undefined;
+
+  const parts: string[] = [];
+
+  if (queryTerms && Array.isArray(queryTerms) && queryTerms.length > 0) {
+    parts.push(`searching for "${queryTerms.join(', ')}"`);
   }
 
-  return createResult({
-    data,
-    meta,
-    hints,
-  });
+  if (topic) {
+    const topicStr = Array.isArray(topic) ? topic.join(', ') : topic;
+    parts.push(`topic: ${topicStr}`);
+  }
+
+  if (owner) {
+    const ownerStr = Array.isArray(owner) ? owner.join(', ') : owner;
+    parts.push(`owner: ${ownerStr}`);
+  }
+
+  if (language) {
+    parts.push(`language: ${language}`);
+  }
+
+  if (parts.length === 0) {
+    return 'general repository search';
+  }
+
+  return parts.join(' | ');
 }
 
 /**

@@ -155,7 +155,6 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
 // ============================================================================
 
 export interface ProcessedCodeSearchResult {
-  queryId: string;
   data?: {
     files?: Array<{
       path: string;

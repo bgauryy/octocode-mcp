@@ -120,12 +120,10 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(2);
       expect(result.errors).toHaveLength(0);
 
-      expect(result.results[0]?.queryId).toBe('q1');
       expect(result.results[0]?.result.data).toEqual({
         result: 'processed-test1',
       });
 
-      expect(result.results[1]?.queryId).toBe('q2');
       expect(result.results[1]?.result.data).toEqual({
         result: 'processed-test2',
       });
@@ -157,7 +155,6 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
 
-      expect(result.results[0]?.queryId).toBe('success');
       expect(result.errors[0]?.queryId).toBe('failure');
       expect(result.errors[0]?.error).toBe('Processing failed');
     });
@@ -187,19 +184,16 @@ describe('bulkOperations', () => {
     it('should create response with successful results', () => {
       const processedResults: ProcessedBulkResult[] = [
         {
-          queryId: 'q1',
           data: { items: [{ name: 'item1' }] },
           metadata: { type: 'success', count: 1 },
         },
         {
-          queryId: 'q2',
           data: { items: [{ name: 'item2' }] },
           metadata: { type: 'success', count: 1 },
         },
       ];
 
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [];
@@ -245,7 +239,6 @@ describe('bulkOperations', () => {
     it('should create response with errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [
@@ -289,7 +282,6 @@ describe('bulkOperations', () => {
     it('should handle empty results and errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [];
@@ -327,14 +319,12 @@ describe('bulkOperations', () => {
     it('should handle config options', () => {
       const processedResults: ProcessedBulkResult[] = [
         {
-          queryId: 'q1',
           data: { test: true },
           metadata: { processed: true },
         },
       ];
 
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [];
