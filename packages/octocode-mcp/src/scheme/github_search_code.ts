@@ -110,15 +110,6 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .default('desc')
     .describe('Sort order: "desc" (default), "asc"'),
 
-  // NEW: Quality boost parameters
-  qualityBoost: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe(
-      'Enable quality boosting: prioritize popular, well-maintained repositories (default: true)'
-    ),
-
   // Result control
   limit: z
     .number()

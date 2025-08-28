@@ -10,7 +10,7 @@ import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
-import { buildCodeSearchQuery, applyQualityBoost } from './queryBuilders';
+import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
@@ -53,9 +53,21 @@ async function searchGitHubCodeAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    // Apply quality boosting for better relevance
-    const enhancedParams = applyQualityBoost(params);
-    const query = buildCodeSearchQuery(enhancedParams);
+    // Check if queryTerms are empty before processing
+    if (
+      params.queryTerms &&
+      params.queryTerms.length > 0 &&
+      !params.queryTerms.some(term => term && term.trim())
+    ) {
+      return {
+        error: 'Search query cannot be empty',
+        type: 'http',
+        status: 400,
+      };
+    }
+
+    // Build the search query directly from parameters
+    const query = buildCodeSearchQuery(params);
 
     if (!query.trim()) {
       return {
@@ -69,7 +81,7 @@ async function searchGitHubCodeAPIInternal(
     const searchParams: SearchCodeParameters = {
       q: query,
       per_page: Math.min(
-        typeof enhancedParams.limit === 'number' ? enhancedParams.limit : 30,
+        typeof params.limit === 'number' ? params.limit : 30,
         100
       ),
       page: 1,
@@ -81,17 +93,17 @@ async function searchGitHubCodeAPIInternal(
 
     // Add sorting parameters for better relevance
     if (
-      typeof enhancedParams.sort === 'string' &&
-      enhancedParams.sort !== 'best-match' &&
-      enhancedParams.sort === 'indexed'
+      typeof params.sort === 'string' &&
+      params.sort !== 'best-match' &&
+      params.sort === 'indexed'
     ) {
-      searchParams.sort = enhancedParams.sort;
+      searchParams.sort = params.sort;
     }
     if (
-      typeof enhancedParams.order === 'string' &&
-      (enhancedParams.order === 'asc' || enhancedParams.order === 'desc')
+      typeof params.order === 'string' &&
+      (params.order === 'asc' || params.order === 'desc')
     ) {
-      searchParams.order = enhancedParams.order;
+      searchParams.order = params.order;
     }
 
     // Direct API call with optimized parameters
@@ -99,8 +111,8 @@ async function searchGitHubCodeAPIInternal(
 
     const optimizedResult = await convertCodeSearchResult(
       result,
-      enhancedParams.minify !== false,
-      enhancedParams.sanitize !== false
+      params.minify !== false,
+      params.sanitize !== false
     );
 
     return {

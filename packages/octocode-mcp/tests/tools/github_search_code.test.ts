@@ -129,7 +129,7 @@ describe('Quality Boosting and Research Goals', () => {
     vi.clearAllMocks();
   });
 
-  it('should apply quality boost by default', async () => {
+  it('should search code without quality boost filters', async () => {
     const mockResponse = {
       data: {
         total_count: 1,
@@ -179,15 +179,16 @@ describe('Quality Boosting and Research Goals', () => {
       limit: 5,
       sort: 'best-match',
       order: 'desc',
-      qualityBoost: true,
+      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
+    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).not.toMatch(/stars:>10/);
+    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
     expect(callArgs.order).toBe('desc');
   });
 
@@ -208,15 +209,16 @@ describe('Quality Boosting and Research Goals', () => {
       limit: 5,
       sort: 'best-match',
       order: 'desc',
-      qualityBoost: true,
+      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
+    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).not.toMatch(/stars:>10/);
+    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
   it('should apply code_review research goal correctly', async () => {
@@ -236,18 +238,19 @@ describe('Quality Boosting and Research Goals', () => {
       limit: 5,
       sort: 'best-match',
       order: 'desc',
-      qualityBoost: true,
+      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
+    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).not.toMatch(/stars:>10/);
+    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
-  it('should disable quality boost when explicitly set to false', async () => {
+  it('should disable quality boost for specific repo searches', async () => {
     const mockResponse = {
       data: {
         total_count: 1,
@@ -259,19 +262,23 @@ describe('Quality Boosting and Research Goals', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
+      owner: 'facebook',
+      repo: 'react',
       language: 'javascript',
-      qualityBoost: false,
       limit: 5,
       sort: 'best-match',
       order: 'desc',
       minify: true,
       sanitize: true,
+      verbose: false,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
+    expect(callArgs).toBeDefined();
+    expect(callArgs!.q).not.toMatch(/stars:>10/);
+    expect(callArgs!.q).not.toMatch(/pushed:>2022-01-01/);
+    expect(callArgs!.q).toMatch(/repo:facebook\/react/);
   });
 
   it('should handle manual quality filters correctly', async () => {
@@ -292,7 +299,7 @@ describe('Quality Boosting and Research Goals', () => {
       limit: 5,
       sort: 'best-match',
       order: 'desc',
-      qualityBoost: true,
+      verbose: false,
       minify: true,
       sanitize: true,
     });
