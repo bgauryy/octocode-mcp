@@ -178,11 +178,30 @@ async function exploreMultipleRepositoryStructures(
         // Success case - use flatter structure as requested
         const hasResults = apiResult.files && apiResult.files.length > 0;
 
+        // Combine files and folders into structure array
+        const structureItems: Array<{
+          path: string;
+          type: 'file' | 'dir' | 'symlink' | 'submodule';
+          size?: number;
+          url?: string;
+          sha?: string;
+        }> = [
+          ...apiResult.files.map(file => ({
+            ...file,
+            type: 'file' as 'file' | 'dir' | 'symlink' | 'submodule',
+          })),
+          ...(apiResult.folders?.folders || []).map(folder => ({
+            path: folder.path,
+            url: folder.url,
+            type: 'dir' as 'file' | 'dir' | 'symlink' | 'submodule',
+          })),
+        ];
+
         const result: ProcessedRepositoryStructureResult = {
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
           branch: apiRequest.branch,
           path: apiRequest.path || '/',
-          structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
+          structure: structureItems,
           metadata: {
             branch: apiRequest.branch,
             path: apiRequest.path || '/',
