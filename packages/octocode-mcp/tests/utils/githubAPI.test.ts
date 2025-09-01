@@ -737,11 +737,6 @@ describe('GitHub API Utils', () => {
           updated: '<2023-12-31',
           archived: false,
           'include-forks': 'false' as const,
-          license: 'mit',
-          'good-first-issues': '>5',
-          'help-wanted-issues': '>0',
-          followers: '>1000',
-          'number-topics': '>=3',
           match: ['name', 'description'] as (
             | 'name'
             | 'description'
@@ -754,7 +749,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning user:google user:microsoft language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 license:mit good-first-issues:>5 help-wanted-issues:>0 followers:>1000 topics:>=3 in:name in:description is:not-archived is:not-fork';
+          'machine learning user:google user:microsoft language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived is:not-fork';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,

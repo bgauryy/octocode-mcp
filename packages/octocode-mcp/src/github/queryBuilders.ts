@@ -218,11 +218,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
       this.queryParts.push(`pushed:${params.updated}`);
     }
 
-    this.addArrayFilter(params.license, 'license');
-    this.addSimpleFilter(params['good-first-issues'], 'good-first-issues');
-    this.addSimpleFilter(params['help-wanted-issues'], 'help-wanted-issues');
-    this.addSimpleFilter(params.followers, 'followers');
-    this.addSimpleFilter(params['number-topics'], 'topics');
     return this;
   }
 

@@ -2,18 +2,11 @@ import { z } from 'zod';
 import { extendBaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import type { Repository } from '../github/github-openapi.js';
 
-// ============================================================================
-// REPOSITORY SEARCH QUERY SCHEMA
-// ============================================================================
-
 const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
-  // Query terms (for name/description search)
   queryTerms: z
     .array(z.string())
     .optional()
     .describe('Search terms for repository names/descriptions'),
-
-  // Repository filters
   owner: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
@@ -21,20 +14,8 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   topic: z
     .union([z.string(), z.array(z.string()), z.null()])
     .optional()
-    .describe(
-      'Find repos by topic/technology (e.g., ["react", "typescript"], ["machine-learning"])'
-    ),
-  language: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Programming language filter (e.g., "typescript", "python")'),
-  license: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional()
-    .describe('License filter'),
-
-  // Quality and activity filters
+    .describe('Find repository by topic search - best for exploration'),
+  language: z.string().nullable().optional().describe('Github language filter'),
   stars: z
     .union([z.number().min(0), z.string(), z.null()])
     .optional()
@@ -62,34 +43,6 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     .describe(
       'Updated date filter (e.g., ">2024-01-01", "2023-01-01..2024-12-31")'
     ),
-
-  // Community and contribution filters
-  followers: z
-    .union([z.number().min(0), z.string(), z.null()])
-    .optional()
-    .describe('Repository owner followers count'),
-  'good-first-issues': z
-    .union([z.number().min(0), z.string(), z.null()])
-    .optional()
-    .describe('Good first issues count'),
-  'help-wanted-issues': z
-    .union([z.number().min(0), z.string(), z.null()])
-    .optional()
-    .describe('Help wanted issues count'),
-  'number-topics': z
-    .union([z.number().min(0), z.string(), z.null()])
-    .optional()
-    .describe('Number of topics filter'),
-
-  // Repository characteristics
-  // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
-  visibility: z
-    .enum(['public', 'private', 'internal'])
-    .nullable()
-    .optional()
-    .describe('Repository visibility'),
-
-  // Search configuration
   match: z
     .union([
       z.enum(['name', 'description', 'readme']),
@@ -98,10 +51,8 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     ])
     .optional()
     .describe('Search scope'),
-
-  // Result configuration
   sort: z
-    .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
+    .enum(['forks', 'stars', 'updated', 'best-match'])
     .nullable()
     .optional()
     .describe('Sort criteria'),

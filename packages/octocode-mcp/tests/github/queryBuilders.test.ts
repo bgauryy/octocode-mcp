@@ -218,29 +218,12 @@ describe('Query Builders', () => {
         queryTerms: ['library'],
         stars: '>1000',
         size: '<10000',
-        'good-first-issues': '>5',
-        'help-wanted-issues': '>10',
-        followers: '>100',
-        'number-topics': '>3',
         verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
       expect(query).toBe(
-        'library stars:>1000 size:<10000 good-first-issues:>5 help-wanted-issues:>10 followers:>100 topics:>3 is:not-archived is:not-fork'
-      );
-    });
-
-    it('should build query with license filter', () => {
-      const params = {
-        queryTerms: ['project'],
-        license: ['mit', 'apache-2.0'],
-        verbose: false,
-      };
-
-      const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'project license:mit license:apache-2.0 is:not-archived is:not-fork'
+        'library stars:>1000 size:<10000 is:not-archived is:not-fork'
       );
     });
 
