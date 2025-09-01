@@ -36,7 +36,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       sort?: "best-match" | "indexed", // Sort method
       order?: "asc" | "desc",         // Sort order
       limit?: number,                 // Results limit (1-20)
-      researchGoal?: ResearchGoal     // Research context
     }
   ],
   verbose?: boolean
@@ -75,7 +74,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       matchString?: string,             // Exact string to find
       matchStringContextLines?: number, // Context lines around match
       minified?: boolean,               // Content optimization
-      researchGoal?: ResearchGoal
     }
   ],
   verbose?: boolean
@@ -121,7 +119,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       sort?: "forks" | "stars" | "updated" | "best-match",
       order?: "asc" | "desc",
       limit?: number,                  // Results limit (1-100)
-      researchGoal?: ResearchGoal
     }
   ],
   verbose?: boolean
@@ -157,7 +154,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       depth?: number,                  // Directory depth (1-2)
       includeIgnored?: boolean,        // Include config/hidden files
       showMedia?: boolean,             // Include media files
-      researchGoal?: ResearchGoal
     }
   ],
   verbose?: boolean
@@ -205,7 +201,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       limit?: number,                  // Results limit (1-100)
       withComments?: boolean,          // Include comments (expensive)
       getFileChanges?: boolean,        // Include diffs (expensive)
-      researchGoal?: ResearchGoal
     }
   ],
   verbose?: boolean
@@ -252,7 +247,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
   getChangesContent?: boolean,       // Include diffs (expensive)
   sort?: "author-date" | "committer-date",
   order?: "asc" | "desc",
-  researchGoal?: ResearchGoal
 }
 ```
 
@@ -296,7 +290,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
   searchLimit?: number,                // Global default limit
   npmSearchStrategy?: "individual" | "combined",
   npmFetchMetadata?: boolean,          // Global metadata setting
-  researchGoal?: ResearchGoal
 }
 ```
 
@@ -315,24 +308,7 @@ All tools extend the base query schema:
 ```typescript
 {
   id?: string,                       // Optional query identifier
-  researchGoal?: ResearchGoal        // Research context for LLM
 }
-```
-
-### Research Goals
-```typescript
-type ResearchGoal = 
-  | "discovery"           // Broad exploration
-  | "analysis"           // Deep dive analysis  
-  | "debugging"          // Problem solving
-  | "exploration"        // General exploration
-  | "context_generation" // Context building
-  | "code_generation"    // Code examples
-  | "docs_generation"    // Documentation
-  | "code_analysis"      // Code review
-  | "code_review"        // Review process
-  | "code_refactoring"   // Refactoring support
-  | "code_optimization"  // Performance optimization
 ```
 
 ### Bulk Operations

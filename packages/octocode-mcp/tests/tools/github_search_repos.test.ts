@@ -248,20 +248,21 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      // With the new bulk search implementation, response.data is an array containing results from all queries
-      expect(response.data.length).toBeGreaterThan(0);
+      // With the new bulk search implementation, response.results is an array containing results from all queries
+      expect(response.results).toBeDefined();
+      expect(response.results.length).toBeGreaterThan(0);
 
       // Find the result with repositories
-      const queryResult = response.data.find((r: Record<string, unknown>) => {
-        const repositories = (r.data as Record<string, unknown>)?.repositories;
-        return Array.isArray(repositories) && repositories.length > 0;
-      });
+      const queryResult = response.results.find(
+        (r: Record<string, unknown>) => {
+          const repositories = r.repositories;
+          return Array.isArray(repositories) && repositories.length > 0;
+        }
+      );
       expect(queryResult).toBeDefined();
 
       const repo = (
-        (queryResult.data as Record<string, unknown>)?.repositories as Array<
-          Record<string, unknown>
-        >
+        queryResult.repositories as Array<Record<string, unknown>>
       )?.find(
         (r: Record<string, unknown>) => r.full_name === 'owner/awesome-repo'
       );
@@ -334,9 +335,9 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may have no repositories
-      expect(response.data.length).toBeGreaterThan(0);
-      const queryResult = response.data[0];
-      expect(queryResult.data?.repositories || []).toHaveLength(0);
+      expect(response.results.length).toBeGreaterThan(0);
+      const queryResult = response.results[0];
+      expect(queryResult.repositories || []).toHaveLength(0);
       expect(response.hints.length).toBeGreaterThan(0);
     });
 
@@ -366,11 +367,11 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may be an error
-      expect(response.data.length).toBeGreaterThan(0);
-      const queryResult = response.data[0];
+      expect(response.results.length).toBeGreaterThan(0);
+      const queryResult = response.results[0];
       // The result should be an error or have no repositories
       if (!queryResult.error) {
-        expect(queryResult.data?.repositories || []).toHaveLength(0);
+        expect(queryResult.repositories || []).toHaveLength(0);
       }
       expect(response.hints.length).toBeGreaterThan(0);
     });
@@ -429,13 +430,12 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk processing, expect 2 query results
-      expect(response.data.length).toBeGreaterThanOrEqual(2);
+      expect(response.results.length).toBeGreaterThanOrEqual(2);
       expect(response.hints.length).toBeGreaterThan(0);
 
       // Look for specific repositories from our mocks in the query results
-      const allRepos = response.data.flatMap(
-        (queryResult: Record<string, unknown>) =>
-          (queryResult.data as Record<string, unknown>)?.repositories || []
+      const allRepos = response.results.flatMap(
+        (queryResult: Record<string, unknown>) => queryResult.repositories || []
       );
       const repo1 = allRepos.find(
         (r: Record<string, unknown>) =>
@@ -476,8 +476,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data.length).toBeGreaterThan(0); // Successful query results
-      expect(data.hints.length).toBeGreaterThan(0);
+      expect(data.results.length).toBeGreaterThan(0); // Successful query results
       expect(data.hints.length).toBeGreaterThan(0);
     });
 
@@ -503,9 +502,8 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data.length).toBeGreaterThan(2); // Repositories from 3 queries
+      expect(data.results.length).toBeGreaterThan(2); // Repositories from 3 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
-      expect(data.hints.length).toBeGreaterThan(0);
     });
 
     it('should process maximum 5 queries', async () => {
@@ -544,11 +542,272 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data.length).toBeGreaterThan(4); // Repositories from 5 queries
+      expect(data.results.length).toBeGreaterThan(4); // Repositories from 5 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
-      expect(data.hints.length).toBeGreaterThan(0);
       // The implementation might use API calls instead of CLI commands
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(5);
+    });
+
+    it('should include meta and metadata when verbose is true', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = createMockRepositoryResponse([
+        { name: 'test-repo', stars: 100, language: 'JavaScript' },
+      ]);
+
+      mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ queryTerms: ['test'], id: 'verbose-test' }],
+          verbose: true,
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should include meta when verbose is true
+      expect(data.meta).toBeDefined();
+      expect(data.meta.totalOperations).toBeDefined();
+      expect(data.meta.successfulOperations).toBeDefined();
+      expect(data.meta.failedOperations).toBeDefined();
+
+      // Should include metadata in query results when verbose is true
+      expect(data.results.length).toBeGreaterThan(0);
+      const queryResult = data.results[0];
+      expect(queryResult.metadata).toBeDefined(); // Should have metadata when verbose
+      expect(queryResult.queryDescription).toBeDefined(); // Should still have queryDescription
+    });
+  });
+
+  describe('Repository Search Flows', () => {
+    it('should handle successful search with flattened results structure', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = {
+        data: {
+          total_count: 2,
+          repositories: [
+            {
+              name: 'awesome-lib',
+              full_name: 'owner/awesome-lib',
+              stargazers_count: 1500,
+              language: 'TypeScript',
+              description: 'An awesome library',
+              forks_count: 200,
+              owner: { login: 'owner' },
+              html_url: 'https://github.com/owner/awesome-lib',
+            },
+          ],
+        },
+        status: 200,
+      };
+
+      mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        { queries: [{ queryTerms: ['awesome'] }] }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should have flattened structure
+      expect(data.results[0]).toHaveProperty('repositories');
+      expect(data.results[0]).toHaveProperty('total_count');
+      expect(data.results[0]).not.toHaveProperty('data'); // No nested data field
+      expect(data.results[0].repositories).toHaveLength(1);
+      expect(data.results[0].total_count).toBe(2);
+    });
+
+    it('should include query field when no results are found', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = {
+        data: { total_count: 0, repositories: [] },
+        status: 200,
+      };
+
+      mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        { queries: [{ queryTerms: ['nonexistent123'], limit: 1 }] }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should include query field for no results case
+      const noResultQuery = data.results.find(
+        (r: Record<string, unknown>) =>
+          Array.isArray(r.repositories) && r.repositories.length === 0
+      );
+      expect(noResultQuery).toBeDefined();
+      expect(noResultQuery.query).toBeDefined();
+      expect(noResultQuery.query.queryTerms).toEqual(['nonexistent123']);
+    });
+
+    it('should include query field when verbose is true', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse = {
+        data: {
+          total_count: 1,
+          repositories: [
+            {
+              name: 'test-repo',
+              full_name: 'owner/test-repo',
+              stargazers_count: 100,
+              language: 'JavaScript',
+              description: 'Test repository',
+              forks_count: 10,
+              owner: { login: 'owner' },
+              html_url: 'https://github.com/owner/test-repo',
+            },
+          ],
+        },
+        status: 200,
+      };
+
+      mockSearchGitHubReposAPI.mockResolvedValue(mockResponse);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [{ queryTerms: ['test'], limit: 1 }],
+          verbose: true,
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should include query field when verbose is true
+      expect(data.results[0].query).toBeDefined();
+      expect(data.results[0].query.queryTerms).toEqual(['test']);
+    });
+
+    it('should handle API errors gracefully', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        error: 'API rate limit exceeded',
+        type: 'http',
+        status: 403,
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        { queries: [{ queryTerms: ['test'] }] }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should have error in results but not fail overall
+      const errorResult = data.results.find(
+        (r: Record<string, unknown>) => r.error
+      );
+      expect(errorResult).toBeDefined();
+      expect(errorResult.error).toMatch(/rate limit/i);
+      expect(data.hints).toBeDefined();
+      expect(data.hints.length).toBeGreaterThan(0);
+    });
+
+    it('should process bulk queries efficiently', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const mockResponse1 = {
+        data: {
+          total_count: 1,
+          repositories: [
+            {
+              name: 'react-lib',
+              stargazers_count: 2000,
+              language: 'JavaScript',
+              owner: { login: 'facebook' },
+              full_name: 'facebook/react-lib',
+              html_url: 'https://github.com/facebook/react-lib',
+            },
+          ],
+        },
+        status: 200,
+      };
+
+      const mockResponse2 = {
+        data: {
+          total_count: 1,
+          repositories: [
+            {
+              name: 'vue-lib',
+              stargazers_count: 1500,
+              language: 'JavaScript',
+              owner: { login: 'vuejs' },
+              full_name: 'vuejs/vue-lib',
+              html_url: 'https://github.com/vuejs/vue-lib',
+            },
+          ],
+        },
+        status: 200,
+      };
+
+      mockSearchGitHubReposAPI
+        .mockResolvedValueOnce(mockResponse1)
+        .mockResolvedValueOnce(mockResponse2);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { queryTerms: ['react'], topic: 'frontend' },
+            { queryTerms: ['vue'], topic: 'frontend' },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const data = JSON.parse(result.content[0]?.text as string);
+
+      // Should process both queries
+      expect(data.results.length).toBe(2);
+      expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(2);
+
+      // Should have aggregated hints
+      expect(data.hints).toBeDefined();
+      expect(data.hints.length).toBeGreaterThan(0);
+    });
+
+    it('should validate query limits', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      // Try to search with more than 5 queries
+      const queries = Array.from({ length: 6 }, (_, i) => ({
+        queryTerms: [`test${i}`],
+      }));
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        { queries }
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/Maximum 5 queries/);
+    });
+
+    it('should handle empty queries array', async () => {
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        { queries: [] }
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/cannot be empty/);
     });
   });
 

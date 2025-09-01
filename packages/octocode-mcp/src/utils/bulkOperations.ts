@@ -10,9 +10,8 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses.js';
 // Hints are now provided by the consolidated hints system
-import { ToolName } from '../constants.js';
+import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 
@@ -36,7 +35,6 @@ function safeExtractString(
  * Base interface for processed results from bulk operations
  */
 export interface ProcessedBulkResult {
-  queryId: string;
   data?: unknown;
   error?: string;
   hints?: string[];
@@ -76,29 +74,23 @@ export interface BulkResponseConfig {
 }
 
 /**
- * Ensure unique query IDs for bulk operations using efficient O(n) algorithm
- * Works with any object that has optional id field - no rigid type constraints
+ * Generate sequential query IDs for bulk operations
+ * Always generates sequential IDs regardless of existing id field
  *
- * @param queries Array of queries that may have duplicate or missing IDs
- * @returns Array of queries with guaranteed unique IDs
+ * @param queries Array of queries to assign sequential IDs
+ * @param defaultPrefix Prefix for generated IDs (default: 'query')
+ * @returns Array of queries with sequential IDs (query_1, query_2, etc.)
  */
 export function ensureUniqueQueryIds<T extends HasOptionalId>(
   queries: T[],
   defaultPrefix: string = 'query'
 ): Array<T & { id: string }> {
-  const idCounts = new Map<string, number>();
-
   return queries.map((query, index) => {
-    // Safely extract id field, handling unknown types from schema inference
-    const baseId =
-      safeExtractString(query, 'id') || `${defaultPrefix}_${index + 1}`;
-    const count = idCounts.get(baseId) || 0;
-    idCounts.set(baseId, count + 1);
+    // Always generate sequential ID: query_1, query_2, query_3, etc.
+    const sequentialId = `${defaultPrefix}_${index + 1}`;
 
-    const uniqueId = count === 0 ? baseId : `${baseId}_${count}`;
-
-    // Create result with properly typed id field
-    return { ...query, id: uniqueId };
+    // Create result with sequential ID
+    return { ...query, id: sequentialId };
   });
 }
 
@@ -117,21 +109,21 @@ export async function processBulkQueries<
   queries: Array<T & { id: string }>,
   processor: (query: T & { id: string }) => Promise<R>
 ): Promise<{
-  results: Array<{ queryId: string; result: R }>;
+  results: Array<{ result: R }>;
   errors: QueryError[];
 }> {
-  const results: Array<{ queryId: string; result: R }> = [];
+  const results: Array<{ result: R }> = [];
   const errors: QueryError[] = [];
 
   // Process queries in parallel with error isolation
-  const queryPromises = queries.map(async query => {
+  const queryPromises = queries.map(async (query, index) => {
     try {
       const result = await processor(query);
-      return { queryId: query.id, result };
+      return { result };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push({
-        queryId: query.id,
+        queryId: `query-${index}`,
         error: errorMsg,
       });
       return null;
@@ -154,41 +146,65 @@ export async function processBulkQueries<
   );
 
   // Collect successful results
-  queryResults.forEach(
-    (result: PromiseResult<{ queryId: string; result: R } | null>) => {
-      if (result.success && result.data) {
-        results.push(result.data);
-      }
+  queryResults.forEach((result: PromiseResult<{ result: R } | null>) => {
+    if (result.success && result.data) {
+      results.push(result.data);
     }
-  );
+  });
 
   return { results, errors };
 }
 
 /**
- * Create bulk hints context for the consolidated hints system
- * Works with any object type - extracts researchGoal safely
+ * Generate a query description from query parameters
+ *
+ * @param query The query object to generate description for
+ * @returns Generated description or undefined
  */
+function generateQueryDescription(
+  query: Record<string, unknown>
+): string | undefined {
+  const parts: string[] = [];
+
+  // Repository context
+  const owner = safeExtractString(query, 'owner');
+  const repo = safeExtractString(query, 'repo');
+  if (owner && repo) {
+    parts.push(`${owner}/${repo}`);
+  } else if (owner) {
+    parts.push(`owner:${owner}`);
+  }
+
+  // Search terms or path
+  const queryTerms = query.queryTerms as string[] | undefined;
+  const path = safeExtractString(query, 'path');
+  if (queryTerms && queryTerms.length > 0) {
+    parts.push(`search: ${queryTerms.join(', ')}`);
+  } else if (path) {
+    parts.push(`path: ${path}`);
+  }
+
+  // Language filter
+  const language = safeExtractString(query, 'language');
+  if (language) {
+    parts.push(`language:${language}`);
+  }
+
+  return parts.length > 0 ? parts.join(' - ') : undefined;
+}
+
 function createBulkHintsContext<T extends HasOptionalId>(
   config: BulkResponseConfig,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: Array<T & { id: string }>
+  _queries: Array<T & { id: string }>
 ): BulkHintContext {
-  // Extract common researchGoal from queries - safely handle any object type
-  const researchGoals = queries
-    .map(q => safeExtractString(q, 'researchGoal'))
-    .filter((goal): goal is string => !!goal);
-  const commonResearchGoal =
-    researchGoals.length > 0 ? researchGoals[0] : undefined;
-
   return {
     toolName: config.toolName,
     hasResults: context.dataQuality.hasResults,
     errorCount: errors.length,
     totalCount: context.totalQueries,
     successCount: context.successfulQueries,
-    researchGoal: commonResearchGoal,
   };
 }
 
@@ -201,6 +217,7 @@ function createBulkHintsContext<T extends HasOptionalId>(
  * @param context Aggregated context
  * @param errors Query errors
  * @param queries Original queries
+ * @param verbose Whether to include verbose metadata
  * @returns Standardized CallToolResult
  */
 export function createBulkResponse<
@@ -208,47 +225,115 @@ export function createBulkResponse<
   R extends ProcessedBulkResult,
 >(
   config: BulkResponseConfig,
-  results: Array<{ queryId: string; result: R }>,
+  results: Array<{ result: R }>,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: Array<T & { id: string }>
+  queries: Array<T & { id: string }>,
+  verbose: boolean = false
 ): CallToolResult {
   // Generate smart hints using consolidated hints system
   const hintContext = createBulkHintsContext(config, context, errors, queries);
   const hints = generateBulkHints(hintContext);
 
-  // Build standardized response with {data, meta, hints} format
-  const data = results.map(r => r.result);
+  // Process results to match new format requirements
+  const processedResults = results.map((r, index) => {
+    const result = { ...r.result } as Record<string, unknown>;
+    const query = queries[index];
 
-  // Extract common researchGoal from queries for LLM context - safely handle any object type
-  const researchGoals = queries
-    .map(q => safeExtractString(q, 'researchGoal'))
-    .filter((goal): goal is string => !!goal);
-  const commonResearchGoal =
-    researchGoals.length > 0 ? researchGoals[0] : undefined;
+    // Always add queryId to results
+    if (query?.id) {
+      result.queryId = query.id;
+    }
 
-  const meta: Record<string, unknown> = {
-    totalOperations: results.length,
-    successfulOperations: results.filter(r => !r.result.error).length,
-    failedOperations: results.filter(r => !!r.result.error).length,
-    ...(commonResearchGoal && { researchGoal: commonResearchGoal }),
+    // For no-results cases or errors, always include metadata with query args
+    const hasNoResults =
+      (!result.data &&
+        !result.repositories &&
+        !result.files &&
+        !result.structure) ||
+      (result.files as unknown[] | undefined)?.length === 0 ||
+      (result.repositories as unknown[] | undefined)?.length === 0 ||
+      (result.structure as unknown[] | undefined)?.length === 0;
+
+    const hasError = !!result.error;
+
+    if (hasNoResults || hasError || verbose) {
+      // Ensure metadata exists and includes query args
+      if (!result.metadata || typeof result.metadata !== 'object') {
+        result.metadata = {};
+      }
+      (result.metadata as Record<string, unknown>).queryArgs = { ...query };
+    } else if (!verbose && 'metadata' in result) {
+      // Remove metadata only if not verbose and has results
+      delete result.metadata;
+    }
+
+    // Add queryDescription to top layer - use LLM-provided description from schema or generate one
+    if (query) {
+      // First try to use LLM-provided description from schema
+      let queryDescription = safeExtractString(query, 'queryDescription');
+
+      // If not provided, generate one from query parameters
+      if (!queryDescription) {
+        queryDescription = generateQueryDescription(query);
+      }
+
+      if (queryDescription) {
+        result.queryDescription = queryDescription;
+      }
+    }
+
+    // For repository structure tool, add summary and queryArgs to top level if verbose
+    if (verbose && config.toolName === TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE) {
+      const metadata = result.metadata as Record<string, unknown> | undefined;
+      if (metadata?.summary) {
+        result.summary = metadata.summary;
+      }
+      if (metadata?.queryArgs) {
+        result.queryArgs = metadata.queryArgs;
+      }
+    }
+
+    return result;
+  });
+
+  // Build response object with consistent format: {results: [], hints: [], meta: []}
+  const responseData: Record<string, unknown> = {
+    results: processedResults,
+    hints,
   };
 
-  // Include aggregated context if requested
-  if (config.includeAggregatedContext) {
-    meta.aggregatedContext = context;
+  // Only include meta if verbose is true
+  if (verbose) {
+    const meta: Record<string, unknown> = {
+      totalOperations: results.length,
+      successfulOperations: results.filter(r => !r.result.error).length,
+      failedOperations: results.filter(r => !!r.result.error).length,
+    };
+
+    // Include aggregated context if requested
+    if (config.includeAggregatedContext) {
+      meta.aggregatedContext = context;
+    }
+
+    // Include errors if requested
+    if (config.includeErrors) {
+      meta.errors = errors;
+    }
+
+    responseData.meta = meta;
   }
 
-  // Include errors if requested
-  if (config.includeErrors) {
-    meta.errors = errors;
-  }
-
-  return createResult({
-    data,
-    meta,
-    hints,
-  });
+  // Create the result directly with the custom structure
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(responseData, null, 2),
+      },
+    ],
+    isError: false,
+  };
 }
 
 /**

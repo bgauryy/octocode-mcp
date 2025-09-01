@@ -1346,7 +1346,6 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       const result = await mockServer.callTool('packageSearch', {
         npmPackages: [{ name: 'xyz123nonexistentpackage456' }],
-        researchGoal: 'debugging',
       });
 
       expect(result.isError).toBe(true);
@@ -1385,7 +1384,6 @@ describe('Package Search Tool (NPM & Python)', () => {
 
       const result = await mockServer.callTool('packageSearch', {
         npmPackages: [{ name: 'react' }],
-        researchGoal: 'analysis',
       });
 
       expect(result.isError).toBe(false);

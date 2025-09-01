@@ -211,12 +211,9 @@ Research patterns and intelligence will be injected via MCP sampling protocol.`;
    */
   createSynthesisSamplingRequest: (
     discoveries: string[],
-    researchGoal: string,
     options?: { maxTokens?: number; temperature?: number }
   ): SamplingRequest => {
     const prompt = `# Research Synthesis Task
-
-Research Goal: ${researchGoal}
 
 Key Discoveries:
 ${discoveries.map((d, i) => `${i + 1}. ${d}`).join('\n')}

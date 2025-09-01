@@ -22,26 +22,29 @@ import {
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access with intelligent navigation.
+const DESCRIPTION = `Explore GitHub repository structure and validate access
 
-Provides comprehensive repository exploration with smart filtering, error recovery,
-and context-aware suggestions. Perfect for understanding project organization, discovering
-key files, and validating repository accessibility. Supports bulk operations for efficient
-multi-repository analysis.
+GOAL:
+Understand project organization, discover key files, and validate repository accessibility for research context.
 
 FEATURES:
-- Bulk operations: Explore multiple repositories simultaneously for comparative analysis
-- Comprehensive structure exploration: Navigate directories and understand project layout
-- Smart filtering: Focus on relevant files while excluding noise (build artifacts, etc.)
-- Access validation: Verify repository existence and permissions
-- Research optimization: Tailored hints based on research goals
+- Bulk operations (explore multiple repos simultaneously)
+- Directory navigation and project layout understanding  
+- Smart filtering (excludes build artifacts, focuses on relevant files)
+- Access validation and error recovery
 
-BEST PRACTICES:
-- Start with root directory to understand overall project structure
-- Use depth control to balance detail with performance
+USAGE:
+- Start with root directory for overall structure
+- Use depth control (max 2) for performance vs detail balance
 - Include ignored files only when needed for complete analysis
-- Specify research goals for optimized navigation suggestions
-- Use bulk operations to compare structures across multiple repositories`;
+- Bulk operations for comparative analysis across repos
+
+STRATEGY:
+- Root first → key directories → specific files
+- Validate access before deep exploration
+- Filter noise, focus on source/docs/config files
+- Use findings to guide further searches/fetches
+- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(
@@ -134,6 +137,7 @@ async function exploreMultipleRepositoryStructures(
         // Create API request with properly typed fields
         const apiRequest: GitHubViewRepoStructureQuery = {
           id: String(query.id),
+          verbose: query.verbose,
           owner: String(query.owner),
           repo: String(query.repo),
           branch: String(query.branch),
@@ -145,10 +149,6 @@ async function exploreMultipleRepositoryStructures(
               : undefined,
           showMedia:
             typeof query.showMedia === 'boolean' ? query.showMedia : undefined,
-          researchGoal:
-            typeof query.researchGoal === 'string'
-              ? query.researchGoal
-              : undefined,
         };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
@@ -160,7 +160,6 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
-            queryId: String(query.id),
             error: apiResult.error,
             hints: [
               'Verify repository owner and name are correct',
@@ -175,30 +174,53 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        // Success case - use properly typed apiRequest
-        return {
-          queryId: String(query.id),
-          data: {
-            repository: `${apiRequest.owner}/${apiRequest.repo}`,
-            structure: apiResult.files.map(file => ({ ...file, type: 'file' })),
-            totalCount: apiResult.files.length,
-          },
+        // Success case - use flatter structure as requested
+        const hasResults = apiResult.files && apiResult.files.length > 0;
+
+        // Combine files and folders into structure array
+        const structureItems: Array<{
+          path: string;
+          type: 'file' | 'dir' | 'symlink' | 'submodule';
+          size?: number;
+          url?: string;
+          sha?: string;
+        }> = [
+          ...apiResult.files.map(file => ({
+            ...file,
+            type: 'file' as 'file' | 'dir' | 'symlink' | 'submodule',
+          })),
+          ...(apiResult.folders?.folders || []).map(folder => ({
+            path: folder.path,
+            url: folder.url,
+            type: 'dir' as 'file' | 'dir' | 'symlink' | 'submodule',
+          })),
+        ];
+
+        const result: ProcessedRepositoryStructureResult = {
+          repository: `${apiRequest.owner}/${apiRequest.repo}`,
+          branch: apiRequest.branch,
+          path: apiRequest.path || '/',
+          structure: structureItems,
           metadata: {
             branch: apiRequest.branch,
             path: apiRequest.path || '/',
             folders: apiResult.folders,
             summary: apiResult.summary,
-            researchGoal: apiRequest.researchGoal,
-            queryArgs: { ...apiRequest },
+            // Always include queryArgs for no-result cases (handled by bulk operations)
+            ...(hasResults ? {} : { queryArgs: { ...apiRequest } }),
             searchType: 'success',
           },
         };
+
+        // Add summary and queryArgs to top level only if verbose (handled by bulk operations)
+        // These will be conditionally included by the bulk response processor
+
+        return result;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
-          queryId: String(query.id),
           error: `Failed to explore repository structure: ${errorMessage}`,
           hints: [
             'Verify repository owner and name are correct',
@@ -231,31 +253,31 @@ async function exploreMultipleRepositoryStructures(
       hasContent: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.data?.structure) &&
-          r.result.data.structure.length > 0
+          Array.isArray(r.result.structure) &&
+          r.result.structure.length > 0
       ),
       hasStructure: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.data?.structure) &&
-          r.result.data.structure.length > 0
+          Array.isArray(r.result.structure) &&
+          r.result.structure.length > 0
       ),
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.error && result.data?.structure) {
-      if (result.data.repository) {
-        aggregatedContext.repositoryContexts.add(result.data.repository);
+    if (!result.error && result.structure) {
+      if (result.repository) {
+        aggregatedContext.repositoryContexts.add(result.repository);
       }
-      if (result.metadata?.path) {
-        aggregatedContext.exploredPaths.add(String(result.metadata.path));
+      if (result.path) {
+        aggregatedContext.exploredPaths.add(String(result.path));
       }
 
       // Extract file types and directories
-      if (Array.isArray(result.data?.structure)) {
-        result.data.structure.forEach(file => {
+      if (Array.isArray(result.structure)) {
+        result.structure.forEach(file => {
           const extension = file.path.split('.').pop();
           if (extension) {
             aggregatedContext.foundFileTypes.add(extension);
@@ -291,6 +313,7 @@ async function exploreMultipleRepositoryStructures(
     results,
     aggregatedContext,
     errors,
-    uniqueQueries
+    uniqueQueries,
+    verbose
   );
 }

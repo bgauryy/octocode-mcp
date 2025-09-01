@@ -231,7 +231,6 @@ describe('Types', () => {
         searchLimit: 20,
         npmSearchStrategy: 'combined',
         npmFetchMetadata: true,
-        researchGoal: 'discovery',
       };
 
       expect(bulkParams.npmPackages).toHaveLength(2);
@@ -239,7 +238,6 @@ describe('Types', () => {
       expect(bulkParams.searchLimit).toBe(20);
       expect(bulkParams.npmSearchStrategy).toBe('combined');
       expect(bulkParams.npmFetchMetadata).toBe(true);
-      expect(bulkParams.researchGoal).toBe('discovery');
     });
 
     it('should allow minimal structure', () => {

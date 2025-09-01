@@ -18,34 +18,39 @@ import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
+  ProcessedBulkResult,
 } from '../utils/bulkOperations';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
+const DESCRIPTION = `Search GitHub repositories with smart filtering
 
-KEY FEATURES:
-- Bulk queries: Execute up to 5 searches in parallel for comprehensive discovery
-- use both topics specific query and terms specific query for better results
-- query with both topics and terms is not good for exploration
-- Quality filters: Stars, forks, activity (commits, issues, pull requests),last updated, update frequency
+GOAL:
+Find repositories containing relevant implementations, examples, or documentation for research.
 
-SEARCH STRATEGIES:
-- for specific repositorry search with limit of 1 and get most relevant repository
-- Exploration: Use bulk search with several search directions`;
+FEATURES:
+- Bulk queries (up to 5 parallel searches)
+- Quality filters: stars, forks, activity, last updated
+- Topic and term-based discovery
 
+STRATEGY:
+- Use topics OR terms (not both together for exploration)
+- Specific repo: limit=1 for most relevant match
+- Exploration: bulk search from multiple angles
+- Filter by quality metrics for better results
+
+USAGE:
+- Topic search: ["react", "typescript"] 
+- Term search: ["authentication", "middleware"]
+- Quality filter: stars>100, updated>2024-01-01`;
+
+// Simplified aggregated context
 interface AggregatedRepoContext {
   totalQueries: number;
   successfulQueries: number;
   failedQueries: number;
-  foundOwners: Set<string>;
-  foundLanguages: Set<string>;
-  foundTopics: Set<string>;
-  searchPatterns: Set<string>;
-  totalStars: number;
   dataQuality: {
     hasResults: boolean;
-    hasPopularRepos: boolean;
   };
 }
 
@@ -128,9 +133,7 @@ async function searchMultipleGitHubRepos(
 
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
-    async (
-      query: GitHubReposSearchQuery
-    ): Promise<ProcessedRepoSearchResult> => {
+    async (query: GitHubReposSearchQuery): Promise<ProcessedBulkResult> => {
       try {
         const apiResult = await searchGitHubReposAPI(
           query,
@@ -144,50 +147,24 @@ async function searchMultipleGitHubRepos(
             toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
             hasResults: false,
             errorMessage: apiResult.error,
-            researchGoal:
-              typeof query.researchGoal === 'string'
-                ? query.researchGoal
-                : undefined,
           });
 
           return {
-            queryId: String(query.id),
             error: apiResult.error,
             hints,
-            metadata: {
-              queryArgs: { ...query },
-              error: apiResult.error,
-              researchGoal:
-                typeof query.researchGoal === 'string'
-                  ? query.researchGoal
-                  : 'discovery',
-            },
-          };
+            metadata: {},
+          } as ProcessedBulkResult;
         }
 
         // Extract repository data
         const repositories = apiResult.data.repositories || [];
-        const hasResults =
-          repositories.length > 0 && (apiResult.data.total_count || 0) > 0;
-
         const typedRepositories = repositories as unknown as Repository[];
 
         return {
-          queryId: String(query.id),
-          data: {
-            repositories: typedRepositories,
-            total_count: apiResult.data.total_count,
-          },
-          metadata: {
-            // Only include queryArgs for no-result cases
-            ...(hasResults ? {} : { queryArgs: { ...query } }),
-            searchType: 'success',
-            researchGoal:
-              typeof query.researchGoal === 'string'
-                ? query.researchGoal
-                : 'discovery',
-          },
-        };
+          repositories: typedRepositories,
+          total_count: apiResult.data.total_count,
+          metadata: {},
+        } as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
@@ -196,78 +173,35 @@ async function searchMultipleGitHubRepos(
           toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           hasResults: false,
           errorMessage,
-          researchGoal:
-            typeof query.researchGoal === 'string'
-              ? query.researchGoal
-              : undefined,
         });
 
         return {
-          queryId: String(query.id),
           error: errorMessage,
           hints,
-          metadata: {
-            queryArgs: { ...query },
-            error: errorMessage,
-            researchGoal:
-              typeof query.researchGoal === 'string'
-                ? query.researchGoal
-                : 'discovery',
-          },
-        };
+          metadata: {},
+        } as ProcessedBulkResult;
       }
     }
   );
 
-  // Build aggregated context for intelligent hints
+  const successfulCount = results.filter(r => !r.result.error).length;
   const aggregatedContext: AggregatedRepoContext = {
     totalQueries: results.length,
-    successfulQueries: results.filter(r => !r.result.error).length,
-    failedQueries: results.filter(r => !!r.result.error).length,
-    foundOwners: new Set<string>(),
-    foundLanguages: new Set<string>(),
-    foundTopics: new Set<string>(),
-    searchPatterns: new Set<string>(),
-    totalStars: 0,
+    successfulQueries: successfulCount,
+    failedQueries: results.length - successfulCount,
     dataQuality: {
-      hasResults: results.some(
-        r =>
-          !r.result.error &&
-          r.result.data?.repositories &&
-          r.result.data.repositories.length > 0
-      ),
-      hasPopularRepos: false,
+      hasResults: results.some(r => {
+        const repoResult = r.result as ProcessedRepoSearchResult;
+        return (
+          !repoResult.error &&
+          repoResult.repositories &&
+          repoResult.repositories.length > 0
+        );
+      }),
     },
   };
 
-  // Extract context from successful results
-  results.forEach(({ result }) => {
-    if (!result.error && result.data?.repositories) {
-      result.data.repositories.forEach((repo: Repository) => {
-        aggregatedContext.foundOwners.add(repo.owner.login);
-        if (repo.language) {
-          aggregatedContext.foundLanguages.add(repo.language);
-        }
-        aggregatedContext.totalStars += repo.stargazers_count || 0;
-
-        // Check for popular repositories (>1000 stars)
-        if (repo.stargazers_count > 1000) {
-          aggregatedContext.dataQuality.hasPopularRepos = true;
-        }
-      });
-
-      // Extract search patterns from query terms
-      const queryArgs = result.metadata?.queryArgs as
-        | { queryTerms?: string[] }
-        | undefined;
-      const queryTerms = queryArgs?.queryTerms || [];
-      if (Array.isArray(queryTerms)) {
-        queryTerms.forEach((term: string) =>
-          aggregatedContext.searchPatterns.add(term)
-        );
-      }
-    }
-  });
+  // No need to extract detailed context - keep it simple
 
   // Hints are now generated automatically by createBulkResponse
 
@@ -278,12 +212,31 @@ async function searchMultipleGitHubRepos(
     maxHints: 8,
   };
 
+  // Add query field for failed queries, no results cases, or when verbose is true
+  const processedResults = results.map(({ result }, index) => {
+    const repoResult = result as ProcessedRepoSearchResult;
+    const hasError = !!repoResult.error;
+    const hasNoResults =
+      repoResult.repositories && repoResult.repositories.length === 0;
+
+    if (hasError || hasNoResults || verbose) {
+      // Find the original query for this result
+      const originalQuery = uniqueQueries[index];
+      if (originalQuery) {
+        // Add query field to the result itself
+        repoResult.query = { ...originalQuery };
+      }
+    }
+    return repoResult;
+  });
+
   return createBulkResponse(
     config,
-    results,
+    processedResults.map(result => ({ result })),
     aggregatedContext,
     errors,
-    uniqueQueries
+    uniqueQueries,
+    verbose
   );
 }
 

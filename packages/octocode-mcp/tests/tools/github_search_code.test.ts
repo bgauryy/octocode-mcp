@@ -14,6 +14,15 @@ vi.mock('../../src/github/client.js', () => ({
   getOctokit: vi.fn(() => mockOctokit),
 }));
 
+// Mock the cache to prevent interference
+vi.mock('../../src/utils/cache.js', () => ({
+  generateCacheKey: vi.fn(() => 'test-cache-key'),
+  withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
+    // Always execute the function, don't use cache
+    return await fn();
+  }),
+}));
+
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 
@@ -23,7 +32,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOwnerQuery = {
         queryTerms: ['function'],
         owner: 'octocat',
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOwnerQuery);
@@ -37,7 +45,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOrgOwnerQuery = {
         queryTerms: ['function'],
         owner: 'wix-private',
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOrgOwnerQuery);
@@ -51,7 +58,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const pathQuery = {
         queryTerms: ['function'],
         path: 'src/components',
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(pathQuery);
@@ -70,11 +76,8 @@ describe('GitHubCodeSearchQuerySchema', () => {
         path: 'src/components',
         filename: 'App.js',
         extension: 'js',
-        size: '>100',
-        visibility: 'public',
         match: 'file',
         limit: 10,
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(complexQuery);
@@ -86,8 +89,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         expect(result.data.path).toBe('src/components');
         expect(result.data.filename).toBe('App.js');
         expect(result.data.extension).toBe('js');
-        expect(result.data.size).toBe('>100');
-        expect(result.data.visibility).toBe('public');
         expect(result.data.match).toBe('file');
         expect(result.data.limit).toBe(10);
       }
@@ -97,7 +98,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const arrayOwnerQuery = {
         queryTerms: ['function'],
         owner: ['facebook', 'microsoft'],
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(arrayOwnerQuery);
@@ -111,16 +111,196 @@ describe('GitHubCodeSearchQuerySchema', () => {
     it('should maintain backward compatibility with existing fields', () => {
       const basicQuery = {
         queryTerms: ['function'],
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(basicQuery);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.queryTerms).toEqual(['function']);
-        expect(result.data.researchGoal).toBe('code_analysis');
       }
     });
+  });
+});
+
+describe('Code Search Flows', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should handle successful search with results', async () => {
+    const mockResponse = {
+      data: {
+        total_count: 2,
+        items: [
+          {
+            name: 'component.js',
+            path: 'src/component.js',
+            repository: {
+              full_name: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            text_matches: [
+              {
+                fragment: 'function test() {}',
+                matches: [{ indices: [0, 8] }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      queryTerms: ['function'],
+      limit: 5,
+
+      verbose: false,
+      minify: true,
+      sanitize: true,
+    });
+
+    if ('data' in result) {
+      expect(result.data.items).toHaveLength(1);
+      expect(result.data.total_count).toBe(2);
+      expect(result.data.items[0]?.path).toBe('src/component.js');
+    } else {
+      expect.fail('Expected successful result with data');
+    }
+  });
+
+  it('should handle search with no results', async () => {
+    const mockResponse = {
+      data: {
+        total_count: 0,
+        items: [],
+      },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      queryTerms: ['nonexistent'],
+      limit: 5,
+
+      verbose: false,
+      minify: true,
+      sanitize: true,
+    });
+
+    if ('data' in result) {
+      expect(result.data.items).toHaveLength(0);
+      expect(result.data.total_count).toBe(0);
+    } else {
+      expect.fail('Expected successful result with data');
+    }
+  });
+
+  it('should handle API errors gracefully', async () => {
+    // Clear all mocks first
+    vi.clearAllMocks();
+
+    // Create a proper RequestError-like error for proper handling
+    interface MockRequestError extends Error {
+      status: number;
+      response: {
+        headers: {
+          'x-ratelimit-remaining': string;
+          'x-ratelimit-reset': string;
+        };
+      };
+    }
+
+    const apiError = new Error('API rate limit exceeded') as MockRequestError;
+    apiError.status = 403;
+    apiError.response = {
+      headers: {
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': Math.floor(Date.now() / 1000 + 3600).toString(),
+      },
+    };
+
+    mockOctokit.rest.search.code.mockRejectedValue(apiError);
+
+    const result = await searchGitHubCodeAPI({
+      queryTerms: ['function'],
+      limit: 5,
+
+      verbose: false,
+      minify: true,
+      sanitize: true,
+    });
+
+    // When there's an error, the result should be a GitHubAPIError object
+    expect(result).toHaveProperty('error');
+    if ('error' in result) {
+      expect(result.error).toMatch(/rate limit/i);
+      expect(result).toHaveProperty('type');
+    }
+  });
+
+  it('should flatten results structure correctly', async () => {
+    const mockResponse = {
+      data: {
+        total_count: 1,
+        items: [
+          {
+            name: 'test.js',
+            path: 'src/test.js',
+            repository: {
+              full_name: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            text_matches: [{ fragment: 'const x = 1', matches: [] }],
+          },
+        ],
+      },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      queryTerms: ['const'],
+      limit: 1,
+
+      verbose: false,
+      minify: true,
+      sanitize: true,
+    });
+
+    // Should have flattened structure
+    if ('data' in result) {
+      expect(result.data).toHaveProperty('items');
+      expect(result.data).toHaveProperty('total_count');
+      expect(result.data).not.toHaveProperty('data'); // No nested data field
+    } else {
+      expect.fail('Expected successful result with data');
+    }
+  });
+
+  it('should include query field when verbose is true', async () => {
+    const mockResponse = {
+      data: { total_count: 0, items: [] },
+    };
+
+    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
+
+    const result = await searchGitHubCodeAPI({
+      queryTerms: ['test'],
+      verbose: true,
+      limit: 1,
+
+      minify: true,
+      sanitize: true,
+    });
+
+    // This test is more about the tool wrapper, but verifies API compatibility
+    if ('data' in result) {
+      expect(result.data.total_count).toBe(0);
+    } else {
+      expect.fail('Expected successful result with data');
+    }
   });
 });
 
@@ -129,7 +309,7 @@ describe('Quality Boosting and Research Goals', () => {
     vi.clearAllMocks();
   });
 
-  it('should apply quality boost by default', async () => {
+  it('should search code without quality boost filters', async () => {
     const mockResponse = {
       data: {
         total_count: 1,
@@ -177,18 +357,18 @@ describe('Quality Boosting and Research Goals', () => {
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
-      qualityBoost: true,
+
+      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
-    expect(callArgs.order).toBe('desc');
+    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).not.toMatch(/stars:>10/);
+    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
+    // Note: order parameter was deprecated by GitHub in April 2023
   });
 
   it('should apply analysis research goal correctly', async () => {
@@ -204,19 +384,18 @@ describe('Quality Boosting and Research Goals', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
-      researchGoal: 'analysis',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
-      qualityBoost: true,
+
+      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
+    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).not.toMatch(/stars:>10/);
+    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
   it('should apply code_review research goal correctly', async () => {
@@ -232,22 +411,21 @@ describe('Quality Boosting and Research Goals', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
-      researchGoal: 'code_review',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
-      qualityBoost: true,
+
+      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toMatch(/stars:>10/);
-    expect(callArgs.q).toMatch(/pushed:>2022-01-01/);
+    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).not.toMatch(/stars:>10/);
+    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
-  it('should disable quality boost when explicitly set to false', async () => {
+  it('should disable quality boost for specific repo searches', async () => {
     const mockResponse = {
       data: {
         total_count: 1,
@@ -259,19 +437,22 @@ describe('Quality Boosting and Research Goals', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
+      owner: 'facebook',
+      repo: 'react',
       language: 'javascript',
-      qualityBoost: false,
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
+
       minify: true,
       sanitize: true,
+      verbose: false,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
+    expect(callArgs).toBeDefined();
+    expect(callArgs!.q).not.toMatch(/stars:>10/);
+    expect(callArgs!.q).not.toMatch(/pushed:>2022-01-01/);
+    expect(callArgs!.q).toMatch(/repo:facebook\/react/);
   });
 
   it('should handle manual quality filters correctly', async () => {
@@ -290,9 +471,8 @@ describe('Quality Boosting and Research Goals', () => {
       stars: '>1000',
       pushed: '>2024-01-01',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
-      qualityBoost: true,
+
+      verbose: false,
       minify: true,
       sanitize: true,
     });

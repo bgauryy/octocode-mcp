@@ -18,31 +18,28 @@ import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Fetch file contents from GitHub repositories with intelligent context extraction.
+const DESCRIPTION = `Fetch file content from GitHub repositories
 
-Retrieves complete file contents with smart context handling, partial access capabilities,
-and research-oriented guidance. Perfect for examining implementations, documentation, and configuration files.
-
-PRECISION INTEGRATION: Uses same content processing pipeline as code search results,
-ensuring consistent precision, security, and optimization.
+GOAL:
+To get more research CONTEXT data from real implementations, documentation, and configuration files.
 
 FEATURES:
-- Content Precision: Same processing pipeline as code search text_matches
-- Complete file retrieval: Full file contents with proper formatting
-- Partial access: Specify line ranges for targeted content extraction
-- Context extraction: Smart matching with surrounding context using matchString
-- Security & Optimization: Same sanitization and minification as search results
-- Research optimization: Tailored hints based on research goals
+- Complete file retrieval
+- Partial file retrieval
+  - startLine / endLine
+  - matchString / matchStringContextLines
 
-BEST PRACTICES:
-- Use line ranges for large files to focus on relevant sections
-- Leverage matchString for finding specific code patterns from search results
-- Results processed identically to code search text_matches for consistency
-- Combine with repository structure exploration for navigation
-- Specify research goals for optimized next-step suggestions
+USAGE:
+- Use line ranges for large files
+- Use matchString to find specific patterns from search results
+- Specify research goals for optimized suggestions
+- Combine with repository structure exploration
 
-BETA FEATURES (BETA=1):
-- sampling: Automatic code explanation via MCP sampling protocol`;
+HINTS:
+- Validate documentation from implementation usign search and fetch tools
+- Use fetched content to find more research data to search (using search tools)
+- If needed fetch more files or content from retrived content
+- Use structure tool to understand the repository structure better for better context fetching`;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   return server.registerTool(
@@ -145,12 +142,11 @@ async function fetchMultipleGitHubFileContents(
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-      // Build the result object
+      // Build the result object with new format (add queryDescription and queryId)
+      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       const resultObj: FileContentQueryResult = {
-        queryId: String(query.id),
-        researchGoal: query.researchGoal
-          ? String(query.researchGoal)
-          : undefined,
+        queryId: query.id, // Add sequential query ID
+        queryDescription,
         result: result,
       };
 
@@ -202,11 +198,10 @@ async function fetchMultipleGitHubFileContents(
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
 
+      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       results.push({
-        queryId: String(query.id),
-        researchGoal: query.researchGoal
-          ? String(query.researchGoal)
-          : undefined,
+        queryId: query.id, // Add sequential query ID
+        queryDescription,
         originalQuery: query, // Only include on error
         result: { error: errorMessage },
         error: errorMessage,
@@ -219,25 +214,28 @@ async function fetchMultipleGitHubFileContents(
     r => !('error' in r.result) && !r.error
   ).length;
 
-  // Extract common research goal from queries
-  const researchGoals = uniqueQueries
-    .map(q => (q.researchGoal ? String(q.researchGoal) : undefined))
-    .filter((goal): goal is string => !!goal);
-  const commonResearchGoal =
-    researchGoals.length > 0 ? researchGoals[0] : undefined;
-
   const hints = generateHints({
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     hasResults: successfulQueries > 0,
     totalItems: successfulQueries,
-    researchGoal: commonResearchGoal,
     // Don't try to extract hints from results - they don't exist in error objects
     // This prevents potential loops and undefined behavior
     customHints: [],
   });
 
-  return createResult({
-    data: results, // Flat array of results
+  // Use consistent bulk response format: {results: [], hints: []}
+  const responseData = {
+    results: results, // Use 'results' field for consistency with other bulk tools
     hints,
-  });
+  };
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(responseData, null, 2),
+      },
+    ],
+    isError: false,
+  };
 }
