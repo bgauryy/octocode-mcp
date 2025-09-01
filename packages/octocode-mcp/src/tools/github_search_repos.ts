@@ -23,17 +23,26 @@ import {
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Search GitHub repositories with smart filtering and bulk operations.
+const DESCRIPTION = `Search GitHub repositories with smart filtering
 
-KEY FEATURES:
-- Bulk queries: Execute up to 5 searches in parallel for comprehensive discovery
-- use both topics specific query and terms specific query for better results
-- query with both topics and terms is not good for exploration
-- Quality filters: Stars, forks, activity (commits, issues, pull requests),last updated, update frequency
+GOAL:
+Find repositories containing relevant implementations, examples, or documentation for research.
 
-SEARCH STRATEGIES:
-- for specific repositorry search with limit of 1 and get most relevant repository
-- Exploration: Use bulk search with several search directions`;
+FEATURES:
+- Bulk queries (up to 5 parallel searches)
+- Quality filters: stars, forks, activity, last updated
+- Topic and term-based discovery
+
+STRATEGY:
+- Use topics OR terms (not both together for exploration)
+- Specific repo: limit=1 for most relevant match
+- Exploration: bulk search from multiple angles
+- Filter by quality metrics for better results
+
+USAGE:
+- Topic search: ["react", "typescript"] 
+- Term search: ["authentication", "middleware"]
+- Quality filter: stars>100, updated>2024-01-01`;
 
 // Simplified aggregated context
 interface AggregatedRepoContext {

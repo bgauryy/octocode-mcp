@@ -21,24 +21,27 @@ import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 
-const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
+const DESCRIPTION = `Search code across GitHub repositories
 
-  SEARCH STRATEGY:
-    SEMANTIC: Natural language terms describing functionality, concepts, business logic
-    TECHNICAL: Actual code terms, function names, class names, file patterns
-    Use bulk queries from different angles. Start narrow, broaden if needed
-    SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
-    USE STRINGS WITH ONE WORD ONLY FOR EXPLORETORY SEARCH.
-      EXAMPLE:
-        queryTerms: [
-            term1,
-            term2
-          ]
-  FOR MORE CONTEXT AFTER GOOD FINDINGS:
-        Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
-        Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to find the repository structure for relevant files after search
+GOAL:
+Find actual code implementations, functions, classes, and patterns for research context.
 
-  Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
+STRATEGY:
+- SEMANTIC: Natural language (functionality, concepts)
+- TECHNICAL: Code terms (function names, classes, patterns)
+- Use bulk queries from different angles
+- Use single-word terms for exploration
+
+USAGE:
+- Start with broad terms, then narrow down
+- Use multiple queries in bulk for better coverage
+- Progress: Core terms → Specific patterns → Documentation
+
+NEXT STEPS:
+- Use fetch tool with matchString for context after findings  
+- Use structure tool to explore repository layout
+- Validate findings with additional searches
+- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(

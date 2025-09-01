@@ -22,26 +22,29 @@ import {
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Explore GitHub repository structure and validate repository access with intelligent navigation.
+const DESCRIPTION = `Explore GitHub repository structure and validate access
 
-Provides comprehensive repository exploration with smart filtering, error recovery,
-and context-aware suggestions. Perfect for understanding project organization, discovering
-key files, and validating repository accessibility. Supports bulk operations for efficient
-multi-repository analysis.
+GOAL:
+Understand project organization, discover key files, and validate repository accessibility for research context.
 
 FEATURES:
-- Bulk operations: Explore multiple repositories simultaneously for comparative analysis
-- Comprehensive structure exploration: Navigate directories and understand project layout
-- Smart filtering: Focus on relevant files while excluding noise (build artifacts, etc.)
-- Access validation: Verify repository existence and permissions
-- Research optimization: Tailored hints based on research goals
+- Bulk operations (explore multiple repos simultaneously)
+- Directory navigation and project layout understanding  
+- Smart filtering (excludes build artifacts, focuses on relevant files)
+- Access validation and error recovery
 
-BEST PRACTICES:
-- Start with root directory to understand overall project structure
-- Use depth control to balance detail with performance
+USAGE:
+- Start with root directory for overall structure
+- Use depth control (max 2) for performance vs detail balance
 - Include ignored files only when needed for complete analysis
-- Specify research goals for optimized navigation suggestions
-- Use bulk operations to compare structures across multiple repositories`;
+- Bulk operations for comparative analysis across repos
+
+STRATEGY:
+- Root first → key directories → specific files
+- Validate access before deep exploration
+- Filter noise, focus on source/docs/config files
+- Use findings to guide further searches/fetches
+- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(

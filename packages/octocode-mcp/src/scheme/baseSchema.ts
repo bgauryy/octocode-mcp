@@ -11,18 +11,13 @@ import { ResearchGoalEnum } from '../constants';
  * Ensures consistent research goal integration across all tools
  */
 export const BaseQuerySchema = z.object({
-  id: z
-    .string()
-    .optional()
-    .describe(
-      'Optional identifier for the query. If not provided, sequential IDs will be generated (query_1, query_2, etc.)'
-    ),
+  id: z.string().optional().describe('query identifier. 1, 2, 3, etc.'),
 
   queryDescription: z
     .string()
     .optional()
     .describe(
-      'Brief description of what this query is trying to accomplish in your research. Help the system understand the purpose and context of this specific query.'
+      'query description- what this query is trying to accomplish in your research'
     ),
 
   researchGoal: z
@@ -274,7 +269,7 @@ export const LimitSchema = z
   .number()
   .int()
   .min(1)
-  .max(100)
+  .max(20)
   .optional()
   .describe('Maximum number of results to return');
 
@@ -294,6 +289,38 @@ export const OptimizationFlagsSchema = z.object({
     .default(true)
     .describe('Remove secrets and malicious content (default: true)'),
 });
+
+/**
+ * Minified schema - commonly used across file content and search tools
+ */
+export const MinifiedSchema = z
+  .boolean()
+  .default(true)
+  .describe('Optimize content for token efficiency (enabled by default)');
+
+/**
+ * Common match scope schemas for different search types
+ */
+export const FileMatchScopeSchema = z
+  .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
+  .optional()
+  .describe(
+    'Search scope: "file" (content search - default), "path" (filename search)'
+  );
+
+export const PRMatchScopeSchema = z
+  .array(z.enum(['title', 'body', 'comments']))
+  .optional()
+  .describe('Restrict search to specific fields');
+
+export const RepoMatchScopeSchema = z
+  .union([
+    z.enum(['name', 'description', 'readme']),
+    z.array(z.enum(['name', 'description', 'readme'])),
+    z.null(),
+  ])
+  .optional()
+  .describe('Search scope');
 
 /**
  * Common date range filter schema

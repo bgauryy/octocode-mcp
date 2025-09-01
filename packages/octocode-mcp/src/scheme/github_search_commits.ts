@@ -1,7 +1,11 @@
 import { z } from 'zod';
-import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import {
+  extendBaseQuerySchema,
+  createBulkQuerySchema,
+  SortingSchema,
+} from './baseSchema';
 
-export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
+export const GitHubCommitSearchQuerySchema = extendBaseQuerySchema({
   queryTerms: z
     .array(z.string())
     .optional()
@@ -24,12 +28,18 @@ export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
 
   'author-date': z
     .string()
+    .regex(
+      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+    )
     .optional()
     .describe(
       'Filter by author date (e.g., ">2022-01-01", "2020-01-01..2021-01-01")'
     ),
   'committer-date': z
     .string()
+    .regex(
+      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+    )
     .optional()
     .describe(
       'Filter by commit date (e.g., ">2022-01-01", "2020-01-01..2021-01-01")'
@@ -68,11 +78,7 @@ export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
     .enum(['author-date', 'committer-date'])
     .optional()
     .describe('Sort by date field'),
-  order: z
-    .enum(['asc', 'desc'])
-    .default('desc')
-    .optional()
-    .describe('Sort order direction'),
+  order: SortingSchema.shape.order,
 });
 
 export type GitHubCommitSearchQuery = z.infer<

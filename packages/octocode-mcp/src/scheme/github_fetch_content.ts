@@ -6,6 +6,7 @@ import {
   GitHubRepoSchema,
   GitHubFilePathSchema,
   GitHubBranchSchema,
+  MinifiedSchema,
 } from './baseSchema';
 
 export const FileContentQuerySchema = extendBaseQuerySchema({
@@ -42,10 +43,7 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
     .describe(
       'Number of lines to include above and below a matched string. Only used when matchString is provided.'
     ),
-  minified: z
-    .boolean()
-    .default(true)
-    .describe(`Optimize content for token efficiency`),
+  minified: MinifiedSchema,
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;

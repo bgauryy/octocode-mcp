@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { extendBaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import {
+  extendBaseQuerySchema,
+  createBulkQuerySchema,
+  FlexibleArraySchema,
+  LimitSchema,
+  DateRangeSchema,
+  RepoMatchScopeSchema,
+  SortingSchema,
+} from './baseSchema';
 import type { Repository } from '../github/github-openapi.js';
 
 const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
@@ -7,68 +15,30 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
     .array(z.string())
     .optional()
     .describe('Search terms for repository names/descriptions'),
-  owner: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional()
-    .describe('Repository owner/organization name(s)'),
-  topic: z
-    .union([z.string(), z.array(z.string()), z.null()])
-    .optional()
-    .describe('Find repository by topic search - best for exploration'),
+  owner: FlexibleArraySchema.stringOrArrayOrNull.describe(
+    'Repository owner/organization name(s)'
+  ),
+  topic: FlexibleArraySchema.stringOrArrayOrNull.describe(
+    'Find repository by topic search - best for exploration'
+  ),
   language: z.string().nullable().optional().describe('Github language filter'),
-  stars: z
-    .union([z.number().min(0), z.string(), z.null()])
-    .optional()
-    .describe('Star count filter'),
+  stars:
+    FlexibleArraySchema.numberOrStringRangeOrNull.describe('Star count filter'),
   size: z
     .string()
     .nullable()
     .optional()
     .describe('Repository size filter in KB'),
-  created: z
-    .string()
-    .regex(
-      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
-    )
-    .optional()
-    .describe(
-      'Created date filter (e.g., ">2020-01-01", "2020-01-01..2023-12-31")'
-    ),
-  updated: z
-    .string()
-    .regex(
-      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
-    )
-    .optional()
-    .describe(
-      'Updated date filter (e.g., ">2024-01-01", "2023-01-01..2024-12-31")'
-    ),
-  match: z
-    .union([
-      z.enum(['name', 'description', 'readme']),
-      z.array(z.enum(['name', 'description', 'readme'])),
-      z.null(),
-    ])
-    .optional()
-    .describe('Search scope'),
+  created: DateRangeSchema.shape.created,
+  updated: DateRangeSchema.shape.updated,
+  match: RepoMatchScopeSchema,
   sort: z
-    .enum(['forks', 'stars', 'updated', 'best-match'])
+    .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
     .nullable()
     .optional()
     .describe('Sort criteria'),
-  order: z
-    .enum(['asc', 'desc'])
-    .nullable()
-    .optional()
-    .describe('Sort order direction'),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .nullable()
-    .optional()
-    .describe('Maximum number of repositories to return (1-100)'),
+  order: SortingSchema.shape.order.nullable().optional(),
+  limit: LimitSchema.nullable().optional(),
 });
 
 export type GitHubReposSearchQuery = z.infer<
