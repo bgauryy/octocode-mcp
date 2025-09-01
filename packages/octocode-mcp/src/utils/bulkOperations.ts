@@ -193,30 +193,18 @@ function generateQueryDescription(
   return parts.length > 0 ? parts.join(' - ') : undefined;
 }
 
-/**
- * Create bulk hints context for the consolidated hints system
- * Works with any object type - extracts researchGoal safely
- */
 function createBulkHintsContext<T extends HasOptionalId>(
   config: BulkResponseConfig,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: Array<T & { id: string }>
+  _queries: Array<T & { id: string }>
 ): BulkHintContext {
-  // Extract common researchGoal from queries - safely handle any object type
-  const researchGoals = queries
-    .map(q => safeExtractString(q, 'researchGoal'))
-    .filter((goal): goal is string => !!goal);
-  const commonResearchGoal =
-    researchGoals.length > 0 ? researchGoals[0] : undefined;
-
   return {
     toolName: config.toolName,
     hasResults: context.dataQuality.hasResults,
     errorCount: errors.length,
     totalCount: context.totalQueries,
     successCount: context.successfulQueries,
-    researchGoal: commonResearchGoal,
   };
 }
 
@@ -309,13 +297,6 @@ export function createBulkResponse<
     return result;
   });
 
-  // Extract common researchGoal from queries for LLM context - safely handle any object type
-  const researchGoals = queries
-    .map(q => safeExtractString(q, 'researchGoal'))
-    .filter((goal): goal is string => !!goal);
-  const commonResearchGoal =
-    researchGoals.length > 0 ? researchGoals[0] : undefined;
-
   // Build response object with consistent format: {results: [], hints: [], meta: []}
   const responseData: Record<string, unknown> = {
     results: processedResults,
@@ -328,7 +309,6 @@ export function createBulkResponse<
       totalOperations: results.length,
       successfulOperations: results.filter(r => !r.result.error).length,
       failedOperations: results.filter(r => !!r.result.error).length,
-      ...(commonResearchGoal && { researchGoal: commonResearchGoal }),
     };
 
     // Include aggregated context if requested

@@ -149,10 +149,6 @@ async function exploreMultipleRepositoryStructures(
               : undefined,
           showMedia:
             typeof query.showMedia === 'boolean' ? query.showMedia : undefined,
-          researchGoal:
-            typeof query.researchGoal === 'string'
-              ? query.researchGoal
-              : undefined,
         };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
@@ -210,7 +206,6 @@ async function exploreMultipleRepositoryStructures(
             path: apiRequest.path || '/',
             folders: apiResult.folders,
             summary: apiResult.summary,
-            researchGoal: apiRequest.researchGoal,
             // Always include queryArgs for no-result cases (handled by bulk operations)
             ...(hasResults ? {} : { queryArgs: { ...apiRequest } }),
             searchType: 'success',

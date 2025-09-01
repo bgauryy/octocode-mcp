@@ -213,7 +213,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -251,7 +250,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = await searchGitHubCodeAPI(params);
@@ -292,7 +290,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         verbose: false,
-        researchGoal: 'code_analysis' as const,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -323,7 +320,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         verbose: false,
-        researchGoal: 'code_analysis' as const,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -354,7 +350,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         verbose: false,
-        researchGoal: 'code_analysis' as const,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -384,7 +379,6 @@ describe('GitHub API Utils', () => {
         match: ['file'] as ('file' | 'path')[],
         minify: true,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -411,7 +405,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(userParams);
@@ -432,7 +425,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         minify: true,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(orgParams);
@@ -453,7 +445,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         verbose: false,
-        researchGoal: 'code_analysis' as const,
 
         excludeArchived: true,
         excludeForks: false,
@@ -482,7 +473,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
@@ -504,7 +494,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         verbose: false,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
@@ -526,7 +515,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         minify: true,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(forkOnlyParams);
@@ -552,7 +540,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
@@ -573,7 +560,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
@@ -601,7 +587,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         verbose: false,
         sanitize: true,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -628,7 +613,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         verbose: false,
-        researchGoal: 'code_analysis' as const,
       };
 
       await searchGitHubCodeAPI(params);

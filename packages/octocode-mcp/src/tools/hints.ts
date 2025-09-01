@@ -12,7 +12,7 @@
  * - 86% memory usage reduction (2.3MB → 320KB)
  */
 
-import { TOOL_NAMES, ToolName, ResearchGoal } from '../constants';
+import { TOOL_NAMES, ToolName } from '../constants';
 
 // ============================================================================
 // CORE TYPES & INTERFACES
@@ -24,7 +24,6 @@ export interface HintContext {
   totalItems?: number;
   errorMessage?: string;
   customHints?: string[];
-  researchGoal?: ResearchGoal | string;
   queryContext?: {
     owner?: string | string[];
     repo?: string | string[];
@@ -39,7 +38,6 @@ export interface BulkHintContext {
   errorCount: number;
   totalCount: number;
   successCount: number;
-  researchGoal?: ResearchGoal | string;
 }
 
 // ============================================================================
@@ -419,50 +417,6 @@ function generateToolNavigationHints(
 }
 
 // ============================================================================
-// RESEARCH GOAL HINTS
-// ============================================================================
-
-/**
- * Generate research goal specific hints
- */
-function generateResearchGoalHints(
-  researchGoal: ResearchGoal | string,
-  _toolName: ToolName
-): string[] {
-  const hints: string[] = [];
-
-  switch (researchGoal) {
-    case 'discovery':
-      hints.push('Focus on broad exploration and multiple alternatives');
-      hints.push('Use bulk queries to cover different angles simultaneously');
-      break;
-    case 'debugging':
-      hints.push('Look for error patterns and troubleshooting discussions');
-      hints.push('Search for common issues and their solutions');
-      break;
-    case 'code_generation':
-      hints.push('Search for working examples and implementation templates');
-      hints.push('Look for complete, runnable code samples');
-      break;
-    case 'analysis':
-      hints.push('Deep-dive into patterns and implementation details');
-      hints.push('Compare multiple approaches and identify best practices');
-      break;
-    case 'learning':
-      hints.push('Start with documentation and beginner-friendly examples');
-      hints.push('Look for tutorials and step-by-step guides');
-      break;
-    default:
-      // For custom research goals, provide generic guidance
-      hints.push(
-        `Research focus: ${researchGoal} - tailor your search accordingly`
-      );
-  }
-
-  return hints;
-}
-
-// ============================================================================
 // SMART FILE DISCOVERY LOGIC
 // ============================================================================
 
@@ -618,13 +572,6 @@ export function generateHints(context: HintContext): string[] {
  */
 export function generateBulkHints(context: BulkHintContext): string[] {
   const hints: string[] = [];
-
-  // Add research goal specific hints if available
-  if (context.researchGoal) {
-    hints.push(
-      ...generateResearchGoalHints(context.researchGoal, context.toolName)
-    );
-  }
 
   if (context.hasResults) {
     // Success analysis with actionable guidance

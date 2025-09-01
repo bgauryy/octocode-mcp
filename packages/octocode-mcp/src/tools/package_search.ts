@@ -108,9 +108,6 @@ export function registerPackageSearchTool(server: McpServer) {
               totalItems: 0,
               errorMessage: searchResult.error,
               customHints: searchResult.hints || [],
-              researchGoal: args.researchGoal
-                ? String(args.researchGoal)
-                : undefined,
             });
 
             return createResult({
@@ -193,9 +190,6 @@ export function registerPackageSearchTool(server: McpServer) {
             toolName: TOOL_NAMES.PACKAGE_SEARCH,
             hasResults: totalPackages > 0,
             totalItems: totalPackages,
-            researchGoal: args.researchGoal
-              ? String(args.researchGoal)
-              : undefined,
             customHints:
               responseContext.repositoryLinks.length > 0
                 ? [
@@ -215,9 +209,6 @@ export function registerPackageSearchTool(server: McpServer) {
               ecosystems: responseContext.foundEcosystems,
               repositoryCount: responseContext.repositoryLinks.length,
               hasMetadata: responseContext.dataQuality.hasMetadata,
-              researchGoal: args.researchGoal
-                ? String(args.researchGoal)
-                : undefined,
             },
             hints,
           });
@@ -230,9 +221,6 @@ export function registerPackageSearchTool(server: McpServer) {
             hasResults: false,
             totalItems: 0,
             errorMessage,
-            researchGoal: args.researchGoal
-              ? String(args.researchGoal)
-              : undefined,
             customHints: [
               'Check package names for typos or alternative spellings',
               'Try broader search terms if specific packages are not found',

@@ -147,9 +147,6 @@ async function fetchMultipleGitHubFileContents(
       const resultObj: FileContentQueryResult = {
         queryId: query.id, // Add sequential query ID
         queryDescription,
-        researchGoal: query.researchGoal
-          ? String(query.researchGoal)
-          : undefined,
         result: result,
       };
 
@@ -205,9 +202,6 @@ async function fetchMultipleGitHubFileContents(
       results.push({
         queryId: query.id, // Add sequential query ID
         queryDescription,
-        researchGoal: query.researchGoal
-          ? String(query.researchGoal)
-          : undefined,
         originalQuery: query, // Only include on error
         result: { error: errorMessage },
         error: errorMessage,
@@ -220,18 +214,10 @@ async function fetchMultipleGitHubFileContents(
     r => !('error' in r.result) && !r.error
   ).length;
 
-  // Extract common research goal from queries
-  const researchGoals = uniqueQueries
-    .map(q => (q.researchGoal ? String(q.researchGoal) : undefined))
-    .filter((goal): goal is string => !!goal);
-  const commonResearchGoal =
-    researchGoals.length > 0 ? researchGoals[0] : undefined;
-
   const hints = generateHints({
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     hasResults: successfulQueries > 0,
     totalItems: successfulQueries,
-    researchGoal: commonResearchGoal,
     // Don't try to extract hints from results - they don't exist in error objects
     // This prevents potential loops and undefined behavior
     customHints: [],

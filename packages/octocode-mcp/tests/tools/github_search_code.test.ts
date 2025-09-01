@@ -32,7 +32,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOwnerQuery = {
         queryTerms: ['function'],
         owner: 'octocat',
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOwnerQuery);
@@ -46,7 +45,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOrgOwnerQuery = {
         queryTerms: ['function'],
         owner: 'wix-private',
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOrgOwnerQuery);
@@ -60,7 +58,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const pathQuery = {
         queryTerms: ['function'],
         path: 'src/components',
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(pathQuery);
@@ -81,7 +78,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         extension: 'js',
         match: 'file',
         limit: 10,
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(complexQuery);
@@ -102,7 +98,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const arrayOwnerQuery = {
         queryTerms: ['function'],
         owner: ['facebook', 'microsoft'],
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(arrayOwnerQuery);
@@ -116,14 +111,12 @@ describe('GitHubCodeSearchQuerySchema', () => {
     it('should maintain backward compatibility with existing fields', () => {
       const basicQuery = {
         queryTerms: ['function'],
-        researchGoal: 'code_analysis' as const,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(basicQuery);
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.queryTerms).toEqual(['function']);
-        expect(result.data.researchGoal).toBe('code_analysis');
       }
     });
   });
@@ -391,7 +384,6 @@ describe('Quality Boosting and Research Goals', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
-      researchGoal: 'analysis',
       limit: 5,
 
       verbose: false,
@@ -419,7 +411,6 @@ describe('Quality Boosting and Research Goals', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
-      researchGoal: 'code_review',
       limit: 5,
 
       verbose: false,

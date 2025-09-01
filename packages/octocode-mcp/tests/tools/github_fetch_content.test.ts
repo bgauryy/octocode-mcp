@@ -74,7 +74,6 @@ describe('GitHub Fetch Content Tool', () => {
             filePath: 'README.md',
             branch: 'main',
             id: 'test-query',
-            researchGoal: 'exploration',
           },
         ],
       });
@@ -89,7 +88,6 @@ describe('GitHub Fetch Content Tool', () => {
 
       const fileResult = data.results[0];
       expect(fileResult.queryDescription).toBeDefined(); // queryId was removed, queryDescription added
-      expect(fileResult.researchGoal).toBe('exploration');
       expect(fileResult.result.filePath).toBe('README.md');
       expect(fileResult.result.content).toContain('Hello World');
       expect(fileResult.originalQuery).toBeUndefined(); // Only on error
@@ -209,7 +207,6 @@ describe('GitHub Fetch Content Tool', () => {
             repo: 'repo',
             filePath: 'nonexistent.md',
             id: 'error-test',
-            researchGoal: 'exploration',
           },
         ],
       });
@@ -220,7 +217,6 @@ describe('GitHub Fetch Content Tool', () => {
 
       const errorResult = data.results[0];
       expect(errorResult.queryDescription).toContain('test/repo');
-      expect(errorResult.researchGoal).toBe('exploration');
       expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
       expect(errorResult.result.error).toContain('not found');
       expect(errorResult.error).toBeUndefined(); // No wrapper error for API errors

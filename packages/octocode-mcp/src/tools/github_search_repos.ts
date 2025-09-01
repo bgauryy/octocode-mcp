@@ -147,10 +147,6 @@ async function searchMultipleGitHubRepos(
             toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
             hasResults: false,
             errorMessage: apiResult.error,
-            researchGoal:
-              typeof query.researchGoal === 'string'
-                ? query.researchGoal
-                : undefined,
           });
 
           return {
@@ -177,10 +173,6 @@ async function searchMultipleGitHubRepos(
           toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
           hasResults: false,
           errorMessage,
-          researchGoal:
-            typeof query.researchGoal === 'string'
-              ? query.researchGoal
-              : undefined,
         });
 
         return {

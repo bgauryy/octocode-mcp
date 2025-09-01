@@ -124,9 +124,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
               totalItems: 0,
               errorMessage: result.error,
               customHints: result.hints || [],
-              researchGoal: args.researchGoal
-                ? String(args.researchGoal)
-                : undefined,
             });
             return createResult({
               error: result.error,
@@ -145,9 +142,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
             toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: result.commits.length > 0,
             totalItems: result.commits.length,
-            researchGoal: args.researchGoal
-              ? String(args.researchGoal)
-              : undefined,
             queryContext: {
               owner: args.owner
                 ? Array.isArray(args.owner)
@@ -194,7 +188,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
               totalAvailable: result.total_count || 0,
               showingLimited:
                 (result.total_count || 0) > (result.commits?.length || 0),
-              researchGoal: args.researchGoal,
             },
             hints,
           });
@@ -207,9 +200,6 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
             hasResults: false,
             totalItems: 0,
             errorMessage,
-            researchGoal: args.researchGoal
-              ? String(args.researchGoal)
-              : undefined,
           });
 
           return createResult({

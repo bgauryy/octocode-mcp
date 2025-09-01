@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { extendBaseQuerySchema, BaseResult } from './baseSchema';
-import { ResearchGoalEnum } from '../constants';
 
 // NPM package field enum for validation
 const NpmFieldEnum = [
@@ -95,11 +94,6 @@ export const BulkPackageSearchSchema = z.object({
     .describe(
       'Global default for NPM metadata fetching. Can be overridden per query. Default: false'
     ),
-
-  researchGoal: z
-    .enum(ResearchGoalEnum)
-    .optional()
-    .describe('Research goal to guide tool behavior and hint generation'),
 
   // Package arrays for bulk search
   npmPackages: z
@@ -202,7 +196,6 @@ export interface AggregatedPackageContext {
 export interface PackageSearchResponse {
   data: ProcessedPackageResult[];
   meta: {
-    researchGoal: string;
     totalOperations: number;
     successfulOperations: number;
     failedOperations: number;

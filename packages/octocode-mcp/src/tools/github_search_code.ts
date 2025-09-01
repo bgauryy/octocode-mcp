@@ -138,9 +138,6 @@ async function searchMultipleGitHubCode(
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
             errorMessage: apiResult.error,
-            researchGoal: query.researchGoal
-              ? String(query.researchGoal)
-              : undefined,
           });
 
           return {
@@ -206,9 +203,6 @@ async function searchMultipleGitHubCode(
           toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
           hasResults: false,
           errorMessage: errorMessage,
-          researchGoal: query.researchGoal
-            ? String(query.researchGoal)
-            : undefined,
         });
 
         return {
