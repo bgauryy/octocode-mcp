@@ -12,34 +12,24 @@ export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
   branch: GitHubBranchSchema,
-  path: z
-    .string()
-    .default('')
-    .optional()
-    .describe(
-      'Directory path within repository. Start empty for root exploration'
-    ),
+  path: z.string().default('').optional().describe('Path'),
   depth: z
     .number()
     .min(1)
     .max(2)
     .default(1)
     .optional()
-    .describe(
-      'Directory depth to explore. Default 1 (preferred). Max 2. Use sparingly.'
-    ),
+    .describe('Depth to expolore'),
   includeIgnored: z
     .boolean()
     .default(false)
     .optional()
-    .describe(
-      'Include config files, lock files, hidden directories. Default false for optimization'
-    ),
+    .describe('Include ignored files'),
   showMedia: z
     .boolean()
     .default(false)
     .optional()
-    .describe('Include media files. Default false for optimization'),
+    .describe('Include meida files'),
 });
 
 export type GitHubViewRepoStructureQuery = z.infer<
@@ -51,7 +41,7 @@ export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   GitHubViewRepoStructureQuerySchema,
   1,
   5,
-  'Array of 1-5 repository structure queries for bulk execution'
+  'Queries'
 );
 
 // Legacy interfaces - all point to the schema-derived type for consistency

@@ -104,9 +104,6 @@ async function searchGitHubReposAPIInternal(
     if (params.sort && params.sort !== 'best-match') {
       searchParams.sort = params.sort as SearchReposParameters['sort'];
     }
-    if (params.order) {
-      searchParams.order = params.order as SearchReposParameters['order'];
-    }
 
     const result = await octokit.rest.search.repos(searchParams);
 

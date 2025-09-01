@@ -23,28 +23,14 @@ const NpmFieldEnum = [
 
 // NPM Package Query Schema
 const NpmPackageQuerySchema = extendBaseQuerySchema({
-  name: z.string().describe('NPM package name to search for'),
-  searchLimit: z
-    .number()
-    .int()
-    .min(1)
-    .max(10)
-    .optional()
-    .describe(
-      'Results limit for this query (1-10). Default: 1 for specific packages, up to 10 for exploration'
-    ),
+  name: z.string().describe('Package name'),
+  searchLimit: z.number().int().min(1).max(10).optional().describe('Limit'),
   npmSearchStrategy: z
     .enum(['individual', 'combined'])
     .optional()
-    .describe('Search strategy for this query'),
-  npmFetchMetadata: z
-    .boolean()
-    .optional()
-    .describe('Whether to fetch detailed metadata for this package'),
-  npmField: z
-    .string()
-    .optional()
-    .describe('Specific field to retrieve from this NPM package'),
+    .describe('Strategy'),
+  npmFetchMetadata: z.boolean().optional().describe('Fetch metadata'),
+  npmField: z.string().optional().describe('Field'),
   npmMatch: z
     .union([z.enum(NpmFieldEnum), z.array(z.enum(NpmFieldEnum)), z.string()])
     .optional()

@@ -16,32 +16,16 @@ import {
 
 export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
   // Search terms (required)
-  queryTerms: z
-    .array(z.string())
-    .min(1)
-    .max(4)
-    .describe(
-      `Search terms for code content in a file (AND logic). Use single term for exploration and several terms for specific search
-      Use in bulk for better research data from different angles`
-    ),
-  owner: FlexibleArraySchema.stringOrArray.describe(
-    'Repository owner name (user or organization)'
-  ),
-  repo: FlexibleArraySchema.stringOrArray.describe(
-    'Repository name (use with owner for specific repo)'
-  ),
+  queryTerms: z.array(z.string()).min(1).max(4).describe('Terms (AND)'),
+  owner: FlexibleArraySchema.stringOrArray.describe('Owner'),
+  repo: FlexibleArraySchema.stringOrArray.describe('Repo'),
 
-  language: z.string().optional().describe('Programming language filter'),
-  extension: z.string().optional().describe('File extension filter'),
-  filename: z
-    .string()
-    .optional()
-    .describe('Target specific filename or pattern'),
-  path: z.string().optional().describe('Filter on file path pattern'),
+  language: z.string().optional().describe('Language'),
+  extension: z.string().optional().describe('Extension'),
+  filename: z.string().optional().describe('Filename'),
+  path: z.string().optional().describe('Path'),
   stars: NumericRangeSchema.shape.stars,
-  pushed: DateRangeSchema.shape.updated.describe(
-    'Last pushed date filter for active repositories (e.g., ">2023-01-01", ">=2024-01-01")'
-  ),
+  pushed: DateRangeSchema.shape.updated.describe('Pushed'),
   match: FileMatchScopeSchema,
   limit: LimitSchema,
   minify: OptimizationFlagsSchema.shape.minify,
@@ -58,7 +42,7 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubCodeSearchQuerySchema,
   1,
   5,
-  'Array of search queries. use several queries for better research data from different angles (use filters and queryTerms using semantic words and patterns searching)'
+  'Queries'
 );
 
 // ============================================================================

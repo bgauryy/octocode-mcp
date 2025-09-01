@@ -12,37 +12,18 @@ import {
 export const FileContentQuerySchema = extendBaseQuerySchema({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
-  filePath: GitHubFilePathSchema.describe(
-    `File path to fetch relative to the repository root. Do NOT start with slash (e.g., 'src/index.js', 'README.md', 'docs/api.md'). path must be verified before fetching`
-  ),
+  filePath: GitHubFilePathSchema.describe('Path'),
   branch: GitHubBranchSchema.optional(),
-  startLine: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe(`Starting line number for partial file access.`),
-  endLine: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe(`Ending line number for partial file access.`),
-  matchString: z
-    .string()
-    .optional()
-    .describe(
-      `Exact string to find in file. Returns surrounding context with matchStringContextLines.`
-    ),
+  startLine: z.number().int().min(1).optional().describe('Start line'),
+  endLine: z.number().int().min(1).optional().describe('End line'),
+  matchString: z.string().optional().describe('Match string'),
   matchStringContextLines: z
     .number()
     .int()
     .min(0)
     .max(50)
     .default(5)
-    .describe(
-      'Number of lines to include above and below a matched string. Only used when matchString is provided.'
-    ),
+    .describe('Context lines'),
   minified: MinifiedSchema,
 });
 
@@ -53,7 +34,7 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
   FileContentQuerySchema,
   1,
   10,
-  'Array of up to 10 file content queries for parallel execution'
+  'Queries'
 );
 
 export interface FileContentQueryResult {

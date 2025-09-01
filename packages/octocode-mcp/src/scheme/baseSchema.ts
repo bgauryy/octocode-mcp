@@ -10,22 +10,11 @@ import { z } from 'zod';
  * Ensures consistent research goal integration across all tools
  */
 export const BaseQuerySchema = z.object({
-  id: z.string().optional().describe('query identifier. 1, 2, 3, etc.'),
+  id: z.string().optional().describe('generate query id (1,2,3, etc.)'),
 
-  queryDescription: z
-    .string()
-    .optional()
-    .describe(
-      'query description- what this query is trying to accomplish in your research'
-    ),
+  queryDescription: z.string().optional().describe('Query research purpose'),
 
-  verbose: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Include detailed metadata for debugging or deep analysis. Default: false for cleaner responses'
-    ),
+  verbose: z.boolean().optional().default(false).describe('Add debug info'),
 });
 
 /**
@@ -41,10 +30,7 @@ export interface BaseQuery {
  * Base bulk operation schema for tools supporting multiple queries
  */
 export const BaseBulkQuerySchema = z.object({
-  queries: z
-    .array(BaseQuerySchema)
-    .min(1)
-    .describe('Array of queries for bulk execution'),
+  queries: z.array(BaseQuerySchema).min(1).describe('Queries'),
 });
 
 /**
@@ -107,11 +93,7 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
       .min(minQueries)
       .max(maxQueries)
       .describe(description),
-    verbose: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe('Include detailed metadata for debugging'),
+    verbose: z.boolean().optional().default(false).describe('Add debug info'),
   });
 }
 
@@ -119,45 +101,27 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
  * Common pagination schema for tools that support it
  */
 export const PaginationSchema = z.object({
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .optional()
-    .describe('Maximum number of results to return'),
+  limit: z.number().int().min(1).max(20).optional().describe('Max results'),
 
-  offset: z
-    .number()
-    .int()
-    .min(0)
-    .optional()
-    .describe('Number of results to skip'),
+  offset: z.number().int().min(0).optional().describe('Skip count'),
 });
 
 /**
  * Common sorting schema
  */
 export const SortingSchema = z.object({
-  sort: z.string().optional().describe('Field to sort by'),
+  sort: z.string().optional().describe('Sort field'),
 
-  order: z
-    .enum(['asc', 'desc'])
-    .optional()
-    .default('desc')
-    .describe('Sort order direction'),
+  order: z.enum(['asc', 'desc']).optional().default('desc').describe('Order'),
 });
 
 /**
  * Common filter schema for text search
  */
 export const TextSearchSchema = z.object({
-  query: z.string().min(1).optional().describe('Search query text'),
+  query: z.string().min(1).optional().describe('Query'),
 
-  queryTerms: z
-    .array(z.string())
-    .optional()
-    .describe('Search terms with AND logic'),
+  queryTerms: z.array(z.string()).optional().describe('Terms (AND)'),
 });
 
 /**
@@ -167,19 +131,19 @@ export const RepositoryFilterSchema = z.object({
   owner: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository owner/organization name(s)'),
+    .describe('Owner(s)'),
 
   repo: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Repository name(s)'),
+    .describe('Repo(s)'),
 
-  language: z.string().optional().describe('Programming language filter'),
+  language: z.string().optional().describe('Language'),
 
   visibility: z
     .enum(['public', 'private', 'internal'])
     .optional()
-    .describe('Repository visibility'),
+    .describe('Visibility'),
 });
 
 /**
@@ -190,9 +154,7 @@ export const GitHubOwnerSchema = z
   .min(1)
   .max(150)
   .regex(/^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/)
-  .describe(
-    'Repository owner/organization name (e.g., "facebook", "microsoft"). Do NOT include repository name here.'
-  );
+  .describe('Owner/org');
 
 /**
  * Common GitHub repository name validation schema
@@ -202,9 +164,7 @@ export const GitHubRepoSchema = z
   .min(1)
   .max(150)
   .regex(/^[a-zA-Z0-9._-]+$/)
-  .describe(
-    'Repository name only (e.g., "react", "vscode"). Do NOT include owner/org prefix.'
-  );
+  .describe('Repo name');
 
 /**
  * Common GitHub branch validation schema
@@ -214,19 +174,12 @@ export const GitHubBranchSchema = z
   .min(1)
   .max(255)
   .regex(/^[^\s]+$/)
-  .describe(
-    'Branch name, tag name, OR commit SHA. Uses default branch if not provided.'
-  );
+  .describe('Branch/tag/SHA');
 
 /**
  * Common file path validation schema
  */
-export const GitHubFilePathSchema = z
-  .string()
-  .min(1)
-  .describe(
-    'File path from repository root (e.g., "src/index.js", "README.md", "docs/api.md"). Do NOT start with slash.'
-  );
+export const GitHubFilePathSchema = z.string().min(1).describe('Path (no /)');
 
 /**
  * Common limit schema for pagination
@@ -237,32 +190,21 @@ export const LimitSchema = z
   .min(1)
   .max(20)
   .optional()
-  .describe('Maximum number of results to return');
+  .describe('Max');
 
 /**
  * Common boolean optimization flags
  */
 export const OptimizationFlagsSchema = z.object({
-  minify: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe('Optimize content for token efficiency (default: true)'),
+  minify: z.boolean().optional().default(true).describe('Minify'),
 
-  sanitize: z
-    .boolean()
-    .optional()
-    .default(true)
-    .describe('Remove secrets and malicious content (default: true)'),
+  sanitize: z.boolean().optional().default(true).describe('Sanitize'),
 });
 
 /**
  * Minified schema - commonly used across file content and search tools
  */
-export const MinifiedSchema = z
-  .boolean()
-  .default(true)
-  .describe('Optimize content for token efficiency (enabled by default)');
+export const MinifiedSchema = z.boolean().default(true).describe('Minify');
 
 /**
  * Common match scope schemas for different search types
@@ -270,14 +212,12 @@ export const MinifiedSchema = z
 export const FileMatchScopeSchema = z
   .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
   .optional()
-  .describe(
-    'Search scope: "file" (content search - default), "path" (filename search)'
-  );
+  .describe('Scope');
 
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
   .optional()
-  .describe('Restrict search to specific fields');
+  .describe('Fields');
 
 export const RepoMatchScopeSchema = z
   .union([
@@ -286,7 +226,7 @@ export const RepoMatchScopeSchema = z
     z.null(),
   ])
   .optional()
-  .describe('Search scope');
+  .describe('Scope');
 
 /**
  * Common date range filter schema
@@ -298,9 +238,7 @@ export const DateRangeSchema = z.object({
       /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
     )
     .optional()
-    .describe(
-      'Creation date filter. Format: ">2020-01-01", ">=2020-01-01", "<2023-12-31", "2020-01-01..2023-12-31"'
-    ),
+    .describe('Created'),
 
   updated: z
     .string()
@@ -308,9 +246,7 @@ export const DateRangeSchema = z.object({
       /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
     )
     .optional()
-    .describe(
-      'Last updated date filter. Format: ">2024-01-01", ">=2024-01-01", "<2022-01-01", "2023-01-01..2024-12-31"'
-    ),
+    .describe('Updated'),
 });
 
 /**
@@ -323,7 +259,7 @@ export const NumericRangeSchema = z.object({
       z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
     ])
     .optional()
-    .describe('Star count filter. Format: ">N", "<N", "N..M", or exact number'),
+    .describe('Stars'),
 });
 
 /**
@@ -331,9 +267,9 @@ export const NumericRangeSchema = z.object({
  */
 export const StateFilterSchema = z.object({
   // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
-  locked: z.boolean().optional().describe('Conversation locked status'),
+  locked: z.boolean().optional().describe('Locked'),
 
-  draft: z.boolean().optional().describe('Draft state filter'),
+  draft: z.boolean().optional().describe('Draft'),
 });
 
 /**
