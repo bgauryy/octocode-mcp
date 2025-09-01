@@ -12,9 +12,7 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
   filePath: GitHubFilePathSchema.describe(
-    `File path from repository root (e.g., 'src/index.js', 'README.md', 'docs/api.md'). Do NOT start with slash.
-        
-        CRITICAL: Always verify file paths using githubViewRepoStructure and githubSearchCode before fetching to ensure accurate research results.`
+    `File path to fetch relative to the repository root. Do NOT start with slash (e.g., 'src/index.js', 'README.md', 'docs/api.md'). path must be verified before fetching`
   ),
   branch: GitHubBranchSchema.optional(),
   startLine: z
@@ -22,22 +20,18 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
     .int()
     .min(1)
     .optional()
-    .describe(
-      `Starting line number (1-based) for partial file access. Recommended to save tokens.`
-    ),
+    .describe(`Starting line number for partial file access.`),
   endLine: z
     .number()
     .int()
     .min(1)
     .optional()
-    .describe(
-      `Ending line number (1-based) for partial file access. Use with startLine to fetch only specific sections and save tokens.`
-    ),
+    .describe(`Ending line number for partial file access.`),
   matchString: z
     .string()
     .optional()
     .describe(
-      `Exact string to find in file. Returns surrounding context with matchStringContextLines. Perfect for locating specific code patterns found in search results text_matches. Content is processed through the same pipeline as code search for consistency.`
+      `Exact string to find in file. Returns surrounding context with matchStringContextLines.`
     ),
   matchStringContextLines: z
     .number()
@@ -46,14 +40,12 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
     .max(50)
     .default(5)
     .describe(
-      `Number of lines to include above and below a matched string. For example, 5 means 5 lines above + the matching line + 5 lines below. Only used when matchString is provided. Default: 5.`
+      'Number of lines to include above and below a matched string. Only used when matchString is provided.'
     ),
   minified: z
     .boolean()
     .default(true)
-    .describe(
-      `Optimize content for token efficiency (enabled by default). Applies basic formatting optimizations that may reduce token usage. Set to false only when exact formatting is required.`
-    ),
+    .describe(`Optimize content for token efficiency`),
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
