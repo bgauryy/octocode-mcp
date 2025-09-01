@@ -727,7 +727,6 @@ describe('GitHub API Utils', () => {
             | 'readme'
           )[],
           sort: 'stars' as const,
-          order: 'desc' as const,
         };
 
         await searchGitHubReposAPI(params);
@@ -740,7 +739,6 @@ describe('GitHub API Utils', () => {
           per_page: 30,
           page: 1,
           sort: 'stars',
-          order: 'desc',
         });
       });
 
