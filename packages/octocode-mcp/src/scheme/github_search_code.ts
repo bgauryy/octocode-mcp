@@ -155,15 +155,14 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
 // ============================================================================
 
 export interface ProcessedCodeSearchResult {
-  data?: {
-    files?: Array<{
-      path: string;
-      text_matches: string[]; // Array of fragment strings only
-    }>;
-    totalCount?: number;
-    repository?: string;
-  };
+  files?: Array<{
+    path: string;
+    text_matches: string[]; // Array of fragment strings only
+  }>;
+  totalCount?: number;
+  repository?: string;
+  query?: Record<string, unknown>; // Include original query when verbose or no results
   error?: string;
   hints?: string[];
-  metadata: Record<string, unknown>;
+  metadata: Record<string, unknown>; // Required for bulk operations compatibility
 }

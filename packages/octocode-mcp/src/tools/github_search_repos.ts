@@ -18,6 +18,7 @@ import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
+  ProcessedBulkResult,
 } from '../utils/bulkOperations';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
@@ -34,18 +35,13 @@ SEARCH STRATEGIES:
 - for specific repositorry search with limit of 1 and get most relevant repository
 - Exploration: Use bulk search with several search directions`;
 
+// Simplified aggregated context
 interface AggregatedRepoContext {
   totalQueries: number;
   successfulQueries: number;
   failedQueries: number;
-  foundOwners: Set<string>;
-  foundLanguages: Set<string>;
-  foundTopics: Set<string>;
-  searchPatterns: Set<string>;
-  totalStars: number;
   dataQuality: {
     hasResults: boolean;
-    hasPopularRepos: boolean;
   };
 }
 
@@ -128,9 +124,7 @@ async function searchMultipleGitHubRepos(
 
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
-    async (
-      query: GitHubReposSearchQuery
-    ): Promise<ProcessedRepoSearchResult> => {
+    async (query: GitHubReposSearchQuery): Promise<ProcessedBulkResult> => {
       try {
         const apiResult = await searchGitHubReposAPI(
           query,
@@ -153,37 +147,19 @@ async function searchMultipleGitHubRepos(
           return {
             error: apiResult.error,
             hints,
-            metadata: {
-              queryArgs: { ...query },
-              error: apiResult.error,
-              researchGoal:
-                typeof query.researchGoal === 'string'
-                  ? query.researchGoal
-                  : 'discovery',
-            },
-          };
+            metadata: {},
+          } as ProcessedBulkResult;
         }
 
         // Extract repository data
         const repositories = apiResult.data.repositories || [];
-        const hasResults =
-          repositories.length > 0 && (apiResult.data.total_count || 0) > 0;
-
         const typedRepositories = repositories as unknown as Repository[];
 
         return {
           repositories: typedRepositories,
           total_count: apiResult.data.total_count,
-          metadata: {
-            // Always include queryArgs for no-result cases (handled by bulk operations)
-            ...(hasResults ? {} : { queryArgs: { ...query } }),
-            searchType: 'success',
-            researchGoal:
-              typeof query.researchGoal === 'string'
-                ? query.researchGoal
-                : 'discovery',
-          },
-        };
+          metadata: {},
+        } as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
@@ -201,71 +177,30 @@ async function searchMultipleGitHubRepos(
         return {
           error: errorMessage,
           hints,
-          metadata: {
-            queryArgs: { ...query },
-            error: errorMessage,
-            researchGoal:
-              typeof query.researchGoal === 'string'
-                ? query.researchGoal
-                : 'discovery',
-          },
-        };
+          metadata: {},
+        } as ProcessedBulkResult;
       }
     }
   );
 
-  // Build aggregated context for intelligent hints
+  const successfulCount = results.filter(r => !r.result.error).length;
   const aggregatedContext: AggregatedRepoContext = {
     totalQueries: results.length,
-    successfulQueries: results.filter(r => !r.result.error).length,
-    failedQueries: results.filter(r => !!r.result.error).length,
-    foundOwners: new Set<string>(),
-    foundLanguages: new Set<string>(),
-    foundTopics: new Set<string>(),
-    searchPatterns: new Set<string>(),
-    totalStars: 0,
+    successfulQueries: successfulCount,
+    failedQueries: results.length - successfulCount,
     dataQuality: {
       hasResults: results.some(r => {
-        if (r.result.error) return false;
-        const result = r.result as { repositories?: Repository[] };
-        return result.repositories && result.repositories.length > 0;
+        const repoResult = r.result as ProcessedRepoSearchResult;
+        return (
+          !repoResult.error &&
+          repoResult.repositories &&
+          repoResult.repositories.length > 0
+        );
       }),
-      hasPopularRepos: false,
     },
   };
 
-  // Extract context from successful results
-  results.forEach(({ result }) => {
-    if (!result.error) {
-      const res = result as { repositories?: Repository[] };
-      if (res.repositories && Array.isArray(res.repositories)) {
-        const repositories = res.repositories;
-        repositories.forEach((repo: Repository) => {
-          aggregatedContext.foundOwners.add(repo.owner.login);
-          if (repo.language) {
-            aggregatedContext.foundLanguages.add(repo.language);
-          }
-          aggregatedContext.totalStars += repo.stargazers_count || 0;
-
-          // Check for popular repositories (>1000 stars)
-          if (repo.stargazers_count > 1000) {
-            aggregatedContext.dataQuality.hasPopularRepos = true;
-          }
-        });
-      }
-
-      // Extract search patterns from query terms
-      const queryArgs = result.metadata?.queryArgs as
-        | { queryTerms?: string[] }
-        | undefined;
-      const queryTerms = queryArgs?.queryTerms || [];
-      if (Array.isArray(queryTerms)) {
-        queryTerms.forEach((term: string) =>
-          aggregatedContext.searchPatterns.add(term)
-        );
-      }
-    }
-  });
+  // No need to extract detailed context - keep it simple
 
   // Hints are now generated automatically by createBulkResponse
 
@@ -276,9 +211,27 @@ async function searchMultipleGitHubRepos(
     maxHints: 8,
   };
 
+  // Add query field for failed queries, no results cases, or when verbose is true
+  const processedResults = results.map(({ result }, index) => {
+    const repoResult = result as ProcessedRepoSearchResult;
+    const hasError = !!repoResult.error;
+    const hasNoResults =
+      repoResult.repositories && repoResult.repositories.length === 0;
+
+    if (hasError || hasNoResults || verbose) {
+      // Find the original query for this result
+      const originalQuery = uniqueQueries[index];
+      if (originalQuery) {
+        // Add query field to the result itself
+        repoResult.query = { ...originalQuery };
+      }
+    }
+    return repoResult;
+  });
+
   return createBulkResponse(
     config,
-    results,
+    processedResults.map(result => ({ result })),
     aggregatedContext,
     errors,
     uniqueQueries,

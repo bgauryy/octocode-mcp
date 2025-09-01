@@ -139,10 +139,10 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
 // ============================================================================
 
 export interface ProcessedRepoSearchResult {
-  queryDescription?: string;
   repositories?: Repository[];
   total_count?: number;
+  query?: Record<string, unknown>; // Include original query when verbose or no results
   error?: string;
   hints?: string[];
-  metadata: Record<string, unknown>; // Required for processing, removed later if not verbose
+  metadata: Record<string, unknown>; // Required for bulk operations compatibility
 }
