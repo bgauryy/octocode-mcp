@@ -153,45 +153,18 @@ abstract class BaseQueryBuilder {
 }
 
 /**
- * Automatically apply quality boosting parameters for better search relevance
- * This function enhances search queries with quality filters when qualityBoost is enabled
- */
-export function applyQualityBoost(
-  params: GitHubCodeSearchQuery
-): GitHubCodeSearchQuery {
-  // If quality boost is disabled, return params as-is
-  if (params.qualityBoost === false) {
-    return params;
-  }
-
-  const enhancedParams = { ...params };
-
-  // Apply default quality filters if not explicitly set
-  if (!enhancedParams.stars && !enhancedParams.owner && !enhancedParams.repo) {
-    // For broad searches, require at least some popularity
-    enhancedParams.stars = '>10';
-  }
-
-  if (!enhancedParams.pushed && !enhancedParams.owner && !enhancedParams.repo) {
-    // For broad searches, require recent activity
-    enhancedParams.pushed = '>2022-01-01';
-  }
-
-  // Ensure we're using best-match sorting for relevance
-  if (!enhancedParams.sort) {
-    enhancedParams.sort = 'best-match';
-  }
-
-  return enhancedParams;
-}
-
-/**
  * Code search query builder
  */
 class CodeSearchQueryBuilder extends BaseQueryBuilder {
   addQueryTerms(params: GitHubCodeSearchQuery): this {
     if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
-      this.queryParts.push(...params.queryTerms);
+      // Filter out empty strings
+      const nonEmptyTerms = params.queryTerms.filter(
+        term => term && term.trim()
+      );
+      if (nonEmptyTerms.length > 0) {
+        this.queryParts.push(...nonEmptyTerms);
+      }
     }
     return this;
   }
@@ -201,10 +174,8 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
     this.addSimpleFilter(params.filename, 'filename');
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');
-    this.addSimpleFilter(params.size, 'size');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.pushed, 'pushed');
-    this.addSimpleFilter(params.created, 'created');
     return this;
   }
 
@@ -247,11 +218,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
       this.queryParts.push(`pushed:${params.updated}`);
     }
 
-    this.addArrayFilter(params.license, 'license');
-    this.addSimpleFilter(params['good-first-issues'], 'good-first-issues');
-    this.addSimpleFilter(params['help-wanted-issues'], 'help-wanted-issues');
-    this.addSimpleFilter(params.followers, 'followers');
-    this.addSimpleFilter(params['number-topics'], 'topics');
     return this;
   }
 

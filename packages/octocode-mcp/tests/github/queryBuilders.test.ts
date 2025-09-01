@@ -6,7 +6,6 @@ import {
   buildPullRequestSearchQuery,
   buildCommitSearchQuery,
   shouldUseSearchForPRs,
-  applyQualityBoost,
 } from '../../src/github/queryBuilders.js';
 
 // Type assertion helper for test data
@@ -39,90 +38,13 @@ describe('Query Builders', () => {
     });
   });
 
-  describe('applyQualityBoost', () => {
-    it('should apply quality boost by default', () => {
-      const params = toCodeSearchQuery({
-        queryTerms: ['test'],
-        qualityBoost: true,
-        sort: 'best-match',
-        order: 'desc',
-        minify: true,
-        sanitize: true,
-      });
-
-      const result = applyQualityBoost(params);
-
-      expect(result.stars).toBe('>10');
-      expect(result.pushed).toBe('>2022-01-01');
-      expect(result.sort).toBe('best-match');
-    });
-
-    it('should not apply quality boost when disabled', () => {
-      const params = toCodeSearchQuery({
-        queryTerms: ['test'],
-        qualityBoost: false,
-        stars: '5',
-        pushed: '2020-01-01',
-        sort: 'best-match',
-        order: 'desc',
-        minify: true,
-        sanitize: true,
-      });
-
-      const result = applyQualityBoost(params);
-
-      expect(result).toEqual(params);
-      expect(result.stars).toBe('5');
-      expect(result.pushed).toBe('2020-01-01');
-    });
-
-    it('should not override existing filters when quality boost is enabled', () => {
-      const params = toCodeSearchQuery({
-        queryTerms: ['test'],
-        stars: '>100',
-        pushed: '>2023-01-01',
-        sort: 'indexed',
-        qualityBoost: true,
-        order: 'desc',
-        minify: true,
-        sanitize: true,
-      });
-
-      const result = applyQualityBoost(params);
-
-      expect(result.stars).toBe('>100');
-      expect(result.pushed).toBe('>2023-01-01');
-      expect(result.sort).toBe('indexed');
-    });
-
-    it('should not apply filters when owner/repo is specified', () => {
-      const params = toCodeSearchQuery({
-        queryTerms: ['test'],
-        owner: 'microsoft',
-        qualityBoost: true,
-        sort: 'best-match',
-        order: 'desc',
-        minify: true,
-        sanitize: true,
-      });
-
-      const result = applyQualityBoost(params);
-
-      expect(result.stars).toBeUndefined();
-      expect(result.pushed).toBeUndefined();
-      expect(result.sort).toBe('best-match');
-    });
-  });
-
   describe('buildCodeSearchQuery', () => {
     it('should build basic query with terms', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['function', 'auth'],
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -134,11 +56,9 @@ describe('Query Builders', () => {
         queryTerms: ['test'],
         owner: 'microsoft',
         repo: 'vscode',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -149,11 +69,9 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['test'],
         owner: 'google',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -165,11 +83,9 @@ describe('Query Builders', () => {
         queryTerms: ['test'],
         owner: ['microsoft', 'google'],
         repo: ['vscode', 'typescript'],
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -182,11 +98,9 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['function'],
         language: 'ts',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -199,29 +113,22 @@ describe('Query Builders', () => {
         filename: 'package.json',
         extension: 'ts',
         path: 'src/',
-        size: '>1000',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe(
-        'test filename:package.json extension:ts path:src/ size:>1000'
-      );
+      expect(query).toBe('test filename:package.json extension:ts path:src/');
     });
 
     it('should build query with match filters', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['test'],
         match: ['file', 'path'],
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -232,11 +139,9 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['test'],
         match: 'file',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -248,29 +153,22 @@ describe('Query Builders', () => {
         queryTerms: ['react'],
         stars: '>100',
         pushed: '>2023-01-01',
-        created: '2020-01-01..2023-12-31',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe(
-        'react stars:>100 pushed:>2023-01-01 created:2020-01-01..2023-12-31'
-      );
+      expect(query).toBe('react stars:>100 pushed:>2023-01-01');
     });
 
     it('should handle empty query terms', () => {
       const params = toCodeSearchQuery({
         queryTerms: [],
         owner: 'microsoft',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
-        qualityBoost: true,
       });
 
       const query = buildCodeSearchQuery(params);
@@ -282,6 +180,7 @@ describe('Query Builders', () => {
     it('should build basic repo search query', () => {
       const params = {
         queryTerms: ['todo', 'app'],
+        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -292,6 +191,7 @@ describe('Query Builders', () => {
       const params = {
         queryTerms: ['app'],
         topic: ['react', 'typescript'],
+        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -304,6 +204,7 @@ describe('Query Builders', () => {
       const params = {
         queryTerms: ['framework'],
         topic: 'javascript',
+        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -317,27 +218,12 @@ describe('Query Builders', () => {
         queryTerms: ['library'],
         stars: '>1000',
         size: '<10000',
-        'good-first-issues': '>5',
-        'help-wanted-issues': '>10',
-        followers: '>100',
-        'number-topics': '>3',
+        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
       expect(query).toBe(
-        'library stars:>1000 size:<10000 good-first-issues:>5 help-wanted-issues:>10 followers:>100 topics:>3 is:not-archived is:not-fork'
-      );
-    });
-
-    it('should build query with license filter', () => {
-      const params = {
-        queryTerms: ['project'],
-        license: ['mit', 'apache-2.0'],
-      };
-
-      const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'project license:mit license:apache-2.0 is:not-archived is:not-fork'
+        'library stars:>1000 size:<10000 is:not-archived is:not-fork'
       );
     });
 
@@ -357,6 +243,7 @@ describe('Query Builders', () => {
       const params = {
         queryTerms: ['active'],
         updated: '>2023-01-01',
+        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);

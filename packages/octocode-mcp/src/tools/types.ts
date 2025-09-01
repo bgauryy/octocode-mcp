@@ -86,5 +86,4 @@ export interface PackageSearchBulkParams {
   searchLimit?: number;
   npmSearchStrategy?: 'individual' | 'combined';
   npmFetchMetadata?: boolean;
-  researchGoal?: string; // Research goal to guide tool behavior and hint generation
 }

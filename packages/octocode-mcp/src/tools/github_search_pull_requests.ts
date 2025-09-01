@@ -197,7 +197,6 @@ async function searchMultipleGitHubPullRequests(
           queryId: `pr-search_${index + 1}`,
           data: result,
           metadata: {
-            researchGoal: query.researchGoal,
             resultCount:
               'error' in result ? 0 : result.pull_requests?.length || 0,
             hasResults:
@@ -221,7 +220,6 @@ async function searchMultipleGitHubPullRequests(
             hints: ['Internal error occurred during search'],
           },
           metadata: {
-            researchGoal: query.researchGoal,
             resultCount: 0,
             hasResults: false,
             searchType: 'error',
@@ -274,9 +272,6 @@ async function searchMultipleGitHubPullRequests(
       (sum, r) => sum + r.metadata.resultCount,
       0
     ),
-    researchGoal: queries[0]?.researchGoal
-      ? String(queries[0].researchGoal)
-      : undefined,
     queryContext: {
       owner: queries[0]?.owner
         ? Array.isArray(queries[0].owner)
@@ -298,7 +293,6 @@ async function searchMultipleGitHubPullRequests(
       totalOperations: queries.length,
       successfulOperations: successfulResults.length,
       failedOperations: failedResults.length,
-      researchGoal: queries[0]?.researchGoal,
     },
     hints,
   });

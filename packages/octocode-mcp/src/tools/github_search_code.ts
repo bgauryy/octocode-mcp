@@ -13,6 +13,7 @@ import {
   createBulkResponse,
   BulkResponseConfig,
   processBulkQueries,
+  ProcessedBulkResult,
 } from '../utils/bulkOperations.js';
 import { generateHints, generateBulkHints, consolidateHints } from './hints.js';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
@@ -20,39 +21,27 @@ import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 
-const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strategic query planning.
+const DESCRIPTION = `Search code across GitHub repositories
 
-  SEARCH STRATEGY:
-    SEMANTIC: Natural language terms describing functionality, concepts, business logic
-    TECHNICAL: Actual code terms, function names, class names, file patterns
-    Use bulk queries from different angles. Start narrow, broaden if needed
-    SEPERATE SEARCH SMART USING SEVERAL QUERIES IN BULK
-    USE STRINGS WITH ONE WORD ONLY FOR EXPLORETORY SEARCH.
-      EXAMPLE:
-        queryTerms: [
-            term1,
-            term2
-          ]
-  FOR MORE CONTEXT AFTER GOOD FINDINGS:
-        Use ${TOOL_NAMES.GITHUB_FETCH_CONTENT} with matchString for context.
-        Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to find the repository structure for relevant files after search
+GOAL:
+Find actual code implementations, functions, classes, and patterns for research context.
 
-  Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
+STRATEGY:
+- SEMANTIC: Natural language (functionality, concepts)
+- TECHNICAL: Code terms (function names, classes, patterns)
+- Use bulk queries from different angles
+- Use single-word terms for exploration
 
-interface GitHubCodeAggregatedContext {
-  totalQueries: number;
-  successfulQueries: number;
-  failedQueries: number;
-  foundPackages: Set<string>;
-  foundFiles: Set<string>;
-  repositoryContexts: Set<string>;
-  searchPatterns: Set<string>;
-  dataQuality: {
-    hasResults: boolean;
-    hasContent: boolean;
-    hasMatches: boolean;
-  };
-}
+USAGE:
+- Start with broad terms, then narrow down
+- Use multiple queries in bulk for better coverage
+- Progress: Core terms → Specific patterns → Documentation
+
+NEXT STEPS:
+- Use fetch tool with matchString for context after findings  
+- Use structure tool to explore repository layout
+- Validate findings with additional searches
+- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
@@ -135,7 +124,7 @@ async function searchMultipleGitHubCode(
     uniqueQueries,
     async (
       query: GitHubCodeSearchQuery & { id: string }
-    ): Promise<ProcessedCodeSearchResult> => {
+    ): Promise<ProcessedBulkResult> => {
       try {
         const apiResult = await searchGitHubCodeAPI(
           query,
@@ -149,24 +138,13 @@ async function searchMultipleGitHubCode(
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
             errorMessage: apiResult.error,
-            researchGoal: query.researchGoal
-              ? String(query.researchGoal)
-              : undefined,
           });
 
           return {
-            queryId: query.id,
             error: apiResult.error,
             hints: hints,
-            metadata: {
-              queryArgs: { ...query },
-              error: apiResult.error,
-              hints: hints,
-              researchGoal: query.researchGoal
-                ? String(query.researchGoal)
-                : 'discovery',
-            },
-          };
+            metadata: {},
+          } as ProcessedBulkResult;
         }
 
         // Extract repository context
@@ -177,50 +155,28 @@ async function searchMultipleGitHubCode(
             ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
 
-        // Count total matches across all files
-        const totalMatches = apiResult.data.items.reduce(
-          (sum: number, item: OptimizedCodeSearchResult['items'][0]) =>
-            sum + item.matches.length,
-          0
-        );
-
         // Check if there are no results
         const hasNoResults = apiResult.data.items.length === 0;
 
-        const result = {
-          queryId: query.id,
-          data: {
-            repository,
-            files: apiResult.data.items.map(
-              (item: OptimizedCodeSearchResult['items'][0]) => ({
-                path: item.path,
-                // text_matches contain actual file content processed through the same
-                // content optimization pipeline as file fetching (sanitization, minification)
-                text_matches: item.matches.map(
-                  (
-                    match: OptimizedCodeSearchResult['items'][0]['matches'][0]
-                  ) => match.context
-                ),
-              })
-            ),
-            totalCount: apiResult.data.total_count,
-          },
-          metadata: {
-            researchGoal: query.researchGoal
-              ? String(query.researchGoal)
-              : 'discovery',
-            resultCount: apiResult.data.items.length,
-            hasMatches: totalMatches > 0,
-            repositories: repository ? [repository] : [],
-          },
+        const result: ProcessedCodeSearchResult = {
+          repository,
+          files: apiResult.data.items.map(
+            (item: OptimizedCodeSearchResult['items'][0]) => ({
+              path: item.path,
+              // text_matches contain actual file content processed through the same
+              // content optimization pipeline as file fetching (sanitization, minification)
+              text_matches: item.matches.map(
+                (match: OptimizedCodeSearchResult['items'][0]['matches'][0]) =>
+                  match.context
+              ),
+            })
+          ),
+          totalCount: apiResult.data.total_count,
+          metadata: {}, // Always include metadata for bulk operations compatibility
         };
 
-        // Add searchType and hints for no results case
+        // Add hints for no results case
         if (hasNoResults) {
-          (result.metadata as Record<string, unknown>).searchType =
-            'no_results';
-          (result.metadata as Record<string, unknown>).queryArgs = { ...query };
-
           // Generate specific hints for no results
           const noResultsHints = [
             'Use broader search terms',
@@ -235,10 +191,10 @@ async function searchMultipleGitHubCode(
             );
           }
 
-          (result as Record<string, unknown>).hints = noResultsHints;
+          result.hints = noResultsHints;
         }
 
-        return result;
+        return result as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
@@ -247,78 +203,28 @@ async function searchMultipleGitHubCode(
           toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
           hasResults: false,
           errorMessage: errorMessage,
-          researchGoal: query.researchGoal
-            ? String(query.researchGoal)
-            : undefined,
         });
 
         return {
-          queryId: String(query.id),
           error: errorMessage,
           hints: hints,
-          metadata: {
-            queryArgs: { ...query },
-            error: errorMessage,
-            hints: hints,
-            researchGoal: query.researchGoal
-              ? String(query.researchGoal)
-              : 'discovery',
-          },
-        };
+          metadata: {},
+        } as ProcessedBulkResult;
       }
     }
   );
 
-  // Build aggregated context for intelligent hints
   const successfulCount = results.filter(r => !r.result.error).length;
-  const aggregatedContext: GitHubCodeAggregatedContext = {
+  const aggregatedContext = {
     totalQueries: results.length,
     successfulQueries: successfulCount,
     failedQueries: results.length - successfulCount,
-    foundPackages: new Set<string>(),
-    foundFiles: new Set<string>(),
-    repositoryContexts: new Set<string>(),
-    searchPatterns: new Set<string>(),
-    dataQuality: {
-      hasResults: successfulCount > 0,
-      hasContent: results.some(
-        r =>
-          !r.result.error &&
-          r.result.data?.files &&
-          r.result.data.files.length > 0
-      ),
-      hasMatches: results.some(
-        r => !r.result.error && r.result.metadata?.hasMatches
-      ),
-    },
+    dataQuality: { hasResults: successfulCount > 0 },
   };
 
-  // Extract context from successful results
-  results.forEach(({ result }) => {
-    if (!result.error) {
-      if (result.data?.repository) {
-        aggregatedContext.repositoryContexts.add(result.data.repository);
-      }
+  // No need to extract detailed context - keep it simple
 
-      // Extract file paths for structure hints
-      if (result.data?.files) {
-        result.data.files.forEach(file => {
-          aggregatedContext.foundFiles.add(file.path);
-        });
-      }
-
-      // Extract search patterns from query terms
-      const queryArgs = result.metadata?.queryArgs as
-        | Record<string, unknown>
-        | undefined;
-      const queryTerms = (queryArgs?.queryTerms as string[]) || [];
-      queryTerms.forEach((term: string) =>
-        aggregatedContext.searchPatterns.add(term)
-      );
-    }
-  });
-
-  // Generate enhanced hints for research capabilities
+  // Generate simple bulk hints
   const enhancedHints = generateBulkHints({
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
     hasResults: successfulCount > 0,
@@ -334,29 +240,31 @@ async function searchMultipleGitHubCode(
     maxHints: 8,
   };
 
-  // Add queryArgs to metadata for failed queries, no results cases, or when verbose is true
-  const processedResults = results.map(({ queryId, result }) => {
-    const hasError = !!result.error;
-    const hasNoResults = result.metadata?.searchType === 'no_results';
+  // Add query field for failed queries, no results cases, or when verbose is true
+  const processedResults = results.map(({ result }, index) => {
+    const codeResult = result as ProcessedCodeSearchResult;
+    const hasError = !!codeResult.error;
+    const hasNoResults = codeResult.files && codeResult.files.length === 0;
 
     if (hasError || hasNoResults || verbose) {
       // Find the original query for this result
-      const originalQuery = uniqueQueries.find(q => q.id === queryId);
-      if (originalQuery && result.metadata) {
-        // Ensure we're setting the actual object, not a stringified version
-        result.metadata.queryArgs = { ...originalQuery };
+      const originalQuery = uniqueQueries[index]; // Use index since we removed queryId
+      if (originalQuery) {
+        // Add query field to the result itself
+        codeResult.query = { ...originalQuery };
       }
     }
-    return { queryId, result };
+    return codeResult;
   });
 
   // Create response with enhanced hints
   const response = createBulkResponse(
     config,
-    processedResults,
+    processedResults.map(result => ({ result })),
     aggregatedContext,
     errors,
-    uniqueQueries
+    uniqueQueries,
+    verbose
   );
 
   // Enhance hints with research-specific guidance
@@ -378,13 +286,26 @@ async function searchMultipleGitHubCode(
       8
     );
 
-    // Create new response with enhanced hints
-    return createResult({
-      data: responseData.data,
-      meta: responseData.meta as Record<string, unknown> | undefined,
+    // Create new response with enhanced hints using consistent bulk format
+    const newResponseData: Record<string, unknown> = {
+      results: responseData.results, // Use 'results' field from bulk response
       hints: combinedHints,
+    };
+
+    // Add meta if it exists
+    if (responseData.meta) {
+      newResponseData.meta = responseData.meta;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(newResponseData, null, 2),
+        },
+      ],
       isError: response.isError,
-    });
+    };
   }
 
   return response;

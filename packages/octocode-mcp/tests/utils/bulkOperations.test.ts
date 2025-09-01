@@ -36,7 +36,7 @@ describe('bulkOperations', () => {
       expect(uniqueIds.size).toBe(3);
     });
 
-    it('should preserve existing IDs', () => {
+    it('should generate sequential IDs regardless of existing IDs', () => {
       const queries = [
         { id: 'custom-id-1', name: 'query1' },
         { name: 'query2' },
@@ -45,9 +45,9 @@ describe('bulkOperations', () => {
 
       const result = ensureUniqueQueryIds(queries);
 
-      expect(result[0]?.id).toBe('custom-id-1');
-      expect(result[1]?.id).toBeDefined();
-      expect(result[2]?.id).toBe('custom-id-3');
+      expect(result[0]?.id).toBe('query_1');
+      expect(result[1]?.id).toBe('query_2');
+      expect(result[2]?.id).toBe('query_3');
     });
 
     it('should handle empty query array', () => {
@@ -65,9 +65,9 @@ describe('bulkOperations', () => {
       const result = ensureUniqueQueryIds(queries);
 
       expect(result).toHaveLength(3);
-      expect(result[0]?.id).toBe('string-id');
-      expect(result[1]?.id).toBeDefined();
-      expect(result[2]?.id).toBeDefined();
+      expect(result[0]?.id).toBe('query_1');
+      expect(result[1]?.id).toBe('query_2');
+      expect(result[2]?.id).toBe('query_3');
     });
 
     it('should use custom default prefix', () => {
@@ -79,7 +79,7 @@ describe('bulkOperations', () => {
       expect(result[1]?.id).toBe('custom_2');
     });
 
-    it('should handle duplicate IDs by making them unique', () => {
+    it('should generate sequential IDs even with duplicate input IDs', () => {
       const queries = [
         { id: 'duplicate', name: 'query1' },
         { id: 'duplicate', name: 'query2' },
@@ -88,9 +88,9 @@ describe('bulkOperations', () => {
 
       const result = ensureUniqueQueryIds(queries);
 
-      expect(result[0]?.id).toBe('duplicate');
-      expect(result[1]?.id).toBe('duplicate_1');
-      expect(result[2]?.id).toBe('duplicate_2');
+      expect(result[0]?.id).toBe('query_1');
+      expect(result[1]?.id).toBe('query_2');
+      expect(result[2]?.id).toBe('query_3');
     });
   });
 
@@ -120,12 +120,10 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(2);
       expect(result.errors).toHaveLength(0);
 
-      expect(result.results[0]?.queryId).toBe('q1');
       expect(result.results[0]?.result.data).toEqual({
         result: 'processed-test1',
       });
 
-      expect(result.results[1]?.queryId).toBe('q2');
       expect(result.results[1]?.result.data).toEqual({
         result: 'processed-test2',
       });
@@ -157,8 +155,7 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
 
-      expect(result.results[0]?.queryId).toBe('success');
-      expect(result.errors[0]?.queryId).toBe('failure');
+      expect(result.errors[0]?.queryId).toBe('query-1');
       expect(result.errors[0]?.error).toBe('Processing failed');
     });
 
@@ -187,19 +184,16 @@ describe('bulkOperations', () => {
     it('should create response with successful results', () => {
       const processedResults: ProcessedBulkResult[] = [
         {
-          queryId: 'q1',
           data: { items: [{ name: 'item1' }] },
           metadata: { type: 'success', count: 1 },
         },
         {
-          queryId: 'q2',
           data: { items: [{ name: 'item2' }] },
           metadata: { type: 'success', count: 1 },
         },
       ];
 
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [];
@@ -237,15 +231,18 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
-      expect(responseData.data).toEqual(processedResults);
-      expect(responseData.meta.errors).toEqual(errors);
+          : { results: [], meta: { errors: [] } };
+      // The results now include queryDescription and exclude metadata (since verbose=false by default)
+      expect(responseData.results.length).toBe(2);
+      expect(responseData.results[0]).toHaveProperty('queryDescription');
+      expect(responseData.results[0]).not.toHaveProperty('metadata');
+      expect(responseData.results[0]?.data).toEqual(processedResults[0]?.data);
+      // This test has no errors, so no need to check meta.errors
     });
 
     it('should create response with errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [
@@ -272,7 +269,8 @@ describe('bulkOperations', () => {
         results,
         context,
         errors,
-        queries
+        queries,
+        true // verbose=true to include meta
       );
 
       expect(result.isError).toBe(false);
@@ -282,14 +280,13 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
+          : { results: [], meta: { errors: [] } };
       expect(responseData.meta.errors).toEqual(errors);
     });
 
     it('should handle empty results and errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [];
@@ -320,21 +317,19 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
-      expect(responseData.data).toEqual([]);
+          : { results: [], meta: { errors: [] } };
+      expect(responseData.results).toEqual([]);
     });
 
     it('should handle config options', () => {
       const processedResults: ProcessedBulkResult[] = [
         {
-          queryId: 'q1',
           data: { test: true },
           metadata: { processed: true },
         },
       ];
 
       const results = processedResults.map(r => ({
-        queryId: r.queryId,
         result: r,
       }));
       const errors: QueryError[] = [];

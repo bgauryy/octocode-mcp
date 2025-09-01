@@ -269,7 +269,6 @@ export interface GitHubCommitSearchParams {
   page?: number;
 
   // Our custom fields
-  researchGoal?: string;
   queryTerms?: string[];
   orTerms?: string[];
   exactQuery?: string;
@@ -315,8 +314,6 @@ export interface GitHubPullRequestsSearchParams {
   per_page?: number;
   page?: number;
 
-  // Our custom fields
-  researchGoal?: string;
   query?: string;
   owner?: string | string[];
   repo?: string | string[];

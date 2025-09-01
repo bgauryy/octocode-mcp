@@ -1,17 +1,23 @@
 import { z } from 'zod';
-import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import {
+  extendBaseQuerySchema,
+  createBulkQuerySchema,
+  FlexibleArraySchema,
+  DateRangeSchema,
+  PRMatchScopeSchema,
+  SortingSchema,
+  StateFilterSchema,
+} from './baseSchema';
 
-export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
+export const GitHubPullRequestSearchQuerySchema = extendBaseQuerySchema({
   query: z.string().optional().describe('Search query for PR content'),
 
-  owner: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe('Repository owner - single owner or array'),
-  repo: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe('Repository name - single repo or array'),
+  owner: FlexibleArraySchema.stringOrArray.describe(
+    'Repository owner - single owner or array'
+  ),
+  repo: FlexibleArraySchema.stringOrArray.describe(
+    'Repository name - single repo or array'
+  ),
 
   // New parameter for fetching specific PR by number
   prNumber: z
@@ -43,10 +49,9 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Team mentions (@org/team-name)'),
 
-  label: z
-    .union([z.string(), z.array(z.string())])
-    .optional()
-    .describe('Labels. Single label or array for OR logic'),
+  label: FlexibleArraySchema.stringOrArray.describe(
+    'Labels. Single label or array for OR logic'
+  ),
   'no-label': z.boolean().optional().describe('PRs without labels'),
 
   milestone: z.string().optional().describe('Milestone title'),
@@ -60,18 +65,8 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   head: z.string().optional().describe('Filter on head branch name'),
   base: z.string().optional().describe('Filter on base branch name'),
 
-  created: z
-    .string()
-    .optional()
-    .describe(
-      'Created date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
-    ),
-  updated: z
-    .string()
-    .optional()
-    .describe(
-      'Updated date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
-    ),
+  created: DateRangeSchema.shape.created,
+  updated: DateRangeSchema.shape.updated,
   closed: z
     .string()
     .optional()
@@ -81,28 +76,19 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Merged date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'),
 
-  comments: z
-    .union([z.number(), z.string()])
-    .optional()
-    .describe(
-      'Comment count. Use ">10", ">=5", "<20", "5..10", or exact number'
-    ),
-  reactions: z
-    .union([z.number(), z.string()])
-    .optional()
-    .describe(
-      'Reaction count. Use ">100", ">=10", "<50", "10..50", or exact number'
-    ),
-  interactions: z
-    .union([z.number(), z.string()])
-    .optional()
-    .describe(
-      'Total interactions (reactions + comments). Use ">50", "10..100", etc.'
-    ),
+  comments: FlexibleArraySchema.numberOrStringRange.describe(
+    'Comment count. Use ">10", ">=5", "<20", "5..10", or exact number'
+  ),
+  reactions: FlexibleArraySchema.numberOrStringRange.describe(
+    'Reaction count. Use ">100", ">=10", "<50", "10..50", or exact number'
+  ),
+  interactions: FlexibleArraySchema.numberOrStringRange.describe(
+    'Total interactions (reactions + comments). Use ">50", "10..100", etc.'
+  ),
 
   merged: z.boolean().optional().describe('Merged state'),
-  draft: z.boolean().optional().describe('Draft state'),
-  locked: z.boolean().optional().describe('Locked conversation status'),
+  draft: StateFilterSchema.shape.draft,
+  locked: StateFilterSchema.shape.locked,
 
   review: z
     .enum(['none', 'required', 'approved', 'changes_requested'])
@@ -127,10 +113,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
 
   app: z.string().optional().describe('GitHub App author'),
 
-  match: z
-    .array(z.enum(['title', 'body', 'comments']))
-    .optional()
-    .describe('Restrict search to specific fields'),
+  match: PRMatchScopeSchema,
 
   sort: z
     .enum([
@@ -149,11 +132,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     ])
     .optional()
     .describe('Sort fetched results'),
-  order: z
-    .enum(['asc', 'desc'])
-    .default('desc')
-    .optional()
-    .describe('Order of results, requires --sort'),
+  order: SortingSchema.shape.order,
 
   limit: z
     .number()

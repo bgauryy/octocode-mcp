@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ResearchGoalEnum } from '../constants';
+import { extendBaseQuerySchema, BaseResult } from './baseSchema';
 
 // NPM package field enum for validation
 const NpmFieldEnum = [
@@ -22,29 +22,15 @@ const NpmFieldEnum = [
 ] as const;
 
 // NPM Package Query Schema
-const NpmPackageQuerySchema = z.object({
-  name: z.string().describe('NPM package name to search for'),
-  searchLimit: z
-    .number()
-    .int()
-    .min(1)
-    .max(10)
-    .optional()
-    .describe(
-      'Results limit for this query (1-10). Default: 1 for specific packages, up to 10 for exploration'
-    ),
+const NpmPackageQuerySchema = extendBaseQuerySchema({
+  name: z.string().describe('Package name'),
+  searchLimit: z.number().int().min(1).max(10).optional().describe('Limit'),
   npmSearchStrategy: z
     .enum(['individual', 'combined'])
     .optional()
-    .describe('Search strategy for this query'),
-  npmFetchMetadata: z
-    .boolean()
-    .optional()
-    .describe('Whether to fetch detailed metadata for this package'),
-  npmField: z
-    .string()
-    .optional()
-    .describe('Specific field to retrieve from this NPM package'),
+    .describe('Strategy'),
+  npmFetchMetadata: z.boolean().optional().describe('Fetch metadata'),
+  npmField: z.string().optional().describe('Field'),
   npmMatch: z
     .union([z.enum(NpmFieldEnum), z.array(z.enum(NpmFieldEnum)), z.string()])
     .optional()
@@ -52,7 +38,7 @@ const NpmPackageQuerySchema = z.object({
 });
 
 // Python Package Query Schema
-const PythonPackageQuerySchema = z.object({
+const PythonPackageQuerySchema = extendBaseQuerySchema({
   name: z.string().describe('Python package name to search for'),
   searchLimit: z
     .number()
@@ -94,11 +80,6 @@ export const BulkPackageSearchSchema = z.object({
     .describe(
       'Global default for NPM metadata fetching. Can be overridden per query. Default: false'
     ),
-
-  researchGoal: z
-    .enum(ResearchGoalEnum)
-    .optional()
-    .describe('Research goal to guide tool behavior and hint generation'),
 
   // Package arrays for bulk search
   npmPackages: z
@@ -160,15 +141,10 @@ export interface EnhancedPackageMetadata {
 }
 
 // Result types following github_search_code pattern
-export interface ProcessedPackageResult {
-  queryId: string;
+export interface ProcessedPackageResult extends BaseResult {
   packageName: string;
   ecosystem: 'npm' | 'python';
   data?: Record<string, unknown>;
-  error?: string;
-  failed?: boolean;
-  hints?: string[];
-  researchGoal?: string;
   metadata: {
     resultCount: number;
     hasRepositoryUrl: boolean;
@@ -206,7 +182,6 @@ export interface AggregatedPackageContext {
 export interface PackageSearchResponse {
   data: ProcessedPackageResult[];
   meta: {
-    researchGoal: string;
     totalOperations: number;
     successfulOperations: number;
     failedOperations: number;
