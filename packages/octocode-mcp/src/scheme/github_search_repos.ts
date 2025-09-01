@@ -11,9 +11,7 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe(
-      'Search terms for repo names/descriptions (e.g., ["todo app"], ["authentication"])'
-    ),
+    .describe('Search terms for repository names/descriptions'),
 
   // Repository filters
   owner: z

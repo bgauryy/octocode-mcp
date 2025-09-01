@@ -79,8 +79,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         path: 'src/components',
         filename: 'App.js',
         extension: 'js',
-        size: '>100',
-        visibility: 'public',
         match: 'file',
         limit: 10,
         researchGoal: 'code_analysis' as const,
@@ -95,8 +93,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         expect(result.data.path).toBe('src/components');
         expect(result.data.filename).toBe('App.js');
         expect(result.data.extension).toBe('js');
-        expect(result.data.size).toBe('>100');
-        expect(result.data.visibility).toBe('public');
         expect(result.data.match).toBe('file');
         expect(result.data.limit).toBe(10);
       }
@@ -166,8 +162,7 @@ describe('Code Search Flows', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['function'],
       limit: 5,
-      sort: 'best-match' as const,
-      order: 'desc' as const,
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -195,8 +190,7 @@ describe('Code Search Flows', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['nonexistent'],
       limit: 5,
-      sort: 'best-match' as const,
-      order: 'desc' as const,
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -239,8 +233,7 @@ describe('Code Search Flows', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['function'],
       limit: 5,
-      sort: 'best-match' as const,
-      order: 'desc' as const,
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -277,8 +270,7 @@ describe('Code Search Flows', () => {
     const result = await searchGitHubCodeAPI({
       queryTerms: ['const'],
       limit: 1,
-      sort: 'best-match' as const,
-      order: 'desc' as const,
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -305,8 +297,7 @@ describe('Code Search Flows', () => {
       queryTerms: ['test'],
       verbose: true,
       limit: 1,
-      sort: 'best-match' as const,
-      order: 'desc' as const,
+
       minify: true,
       sanitize: true,
     });
@@ -373,8 +364,7 @@ describe('Quality Boosting and Research Goals', () => {
       queryTerms: ['useMemo', 'React'],
       language: 'javascript',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -385,7 +375,7 @@ describe('Quality Boosting and Research Goals', () => {
     expect(callArgs.q).toBe('useMemo React language:JavaScript');
     expect(callArgs.q).not.toMatch(/stars:>10/);
     expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
-    expect(callArgs.order).toBe('desc');
+    // Note: order parameter was deprecated by GitHub in April 2023
   });
 
   it('should apply analysis research goal correctly', async () => {
@@ -403,8 +393,7 @@ describe('Quality Boosting and Research Goals', () => {
       language: 'javascript',
       researchGoal: 'analysis',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -432,8 +421,7 @@ describe('Quality Boosting and Research Goals', () => {
       language: 'javascript',
       researchGoal: 'code_review',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
+
       verbose: false,
       minify: true,
       sanitize: true,
@@ -462,8 +450,7 @@ describe('Quality Boosting and Research Goals', () => {
       repo: 'react',
       language: 'javascript',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
+
       minify: true,
       sanitize: true,
       verbose: false,
@@ -493,8 +480,7 @@ describe('Quality Boosting and Research Goals', () => {
       stars: '>1000',
       pushed: '>2024-01-01',
       limit: 5,
-      sort: 'best-match',
-      order: 'desc',
+
       verbose: false,
       minify: true,
       sanitize: true,

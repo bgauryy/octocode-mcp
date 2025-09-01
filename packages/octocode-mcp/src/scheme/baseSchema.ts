@@ -115,25 +115,19 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
   singleQuerySchema: T,
   minQueries: number = 1,
   maxQueries: number = 10,
-  description?: string
+  description: string
 ) {
   return z.object({
     queries: z
       .array(singleQuerySchema)
       .min(minQueries)
       .max(maxQueries)
-      .describe(
-        description ||
-          `Array of ${minQueries}-${maxQueries} queries for bulk execution`
-      ),
-
+      .describe(description),
     verbose: z
       .boolean()
       .optional()
       .default(false)
-      .describe(
-        'Include detailed metadata for debugging. Default: false for cleaner responses'
-      ),
+      .describe('Include detailed metadata for debugging'),
   });
 }
 
@@ -202,7 +196,7 @@ export const TextSearchSchema = z.object({
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe('Multiple search terms with AND logic'),
+    .describe('Search terms with AND logic'),
 });
 
 /**

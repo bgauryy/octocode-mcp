@@ -5,7 +5,7 @@ export const GitHubCommitSearchQuerySchema = BaseQuerySchema.extend({
   queryTerms: z
     .array(z.string())
     .optional()
-    .describe('Array of search terms (AND logic)'),
+    .describe('Search terms for commit messages (AND logic)'),
   orTerms: z
     .array(z.string())
     .optional()

@@ -42,8 +42,7 @@ describe('Query Builders', () => {
     it('should build basic query with terms', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['function', 'auth'],
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -57,8 +56,7 @@ describe('Query Builders', () => {
         queryTerms: ['test'],
         owner: 'microsoft',
         repo: 'vscode',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -71,8 +69,7 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['test'],
         owner: 'google',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -86,8 +83,7 @@ describe('Query Builders', () => {
         queryTerms: ['test'],
         owner: ['microsoft', 'google'],
         repo: ['vscode', 'typescript'],
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -102,8 +98,7 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['function'],
         language: 'ts',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -118,25 +113,20 @@ describe('Query Builders', () => {
         filename: 'package.json',
         extension: 'ts',
         path: 'src/',
-        size: '>1000',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe(
-        'test filename:package.json extension:ts path:src/ size:>1000'
-      );
+      expect(query).toBe('test filename:package.json extension:ts path:src/');
     });
 
     it('should build query with match filters', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['test'],
         match: ['file', 'path'],
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -149,8 +139,7 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['test'],
         match: 'file',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
@@ -164,25 +153,20 @@ describe('Query Builders', () => {
         queryTerms: ['react'],
         stars: '>100',
         pushed: '>2023-01-01',
-        created: '2020-01-01..2023-12-31',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe(
-        'react stars:>100 pushed:>2023-01-01 created:2020-01-01..2023-12-31'
-      );
+      expect(query).toBe('react stars:>100 pushed:>2023-01-01');
     });
 
     it('should handle empty query terms', () => {
       const params = toCodeSearchQuery({
         queryTerms: [],
         owner: 'microsoft',
-        sort: 'best-match',
-        order: 'desc',
+
         minify: true,
         sanitize: true,
       });

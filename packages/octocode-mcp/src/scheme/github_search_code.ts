@@ -12,11 +12,9 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .min(1)
     .max(4)
     .describe(
-      `Search terms (AND logic in a file). Returns actual code snippets with context. Prefer one word only for exploratory search. Use specific code terms for better results (e.g., ["functionName"], ["className"]) rather than semantic words (e.g., ["implementation"])
-      Prefer using several queries in bulk for better research data from different angles`
+      `Search terms for code content in a file (AND logic). Use single term for exploration and several terms for specific search
+      Use in bulk for better research data from different angles`
     ),
-
-  // Repository filters
   owner: z
     .union([z.string(), z.array(z.string())])
     .optional()
@@ -26,43 +24,13 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .optional()
     .describe('Repository name (use with owner for specific repo)'),
 
-  // File filters
-  language: z
-    .string()
-    .optional()
-    .describe(
-      'Programming language filter (e.g., "language-name", "script-language", "compiled-language")'
-    ),
-  extension: z
-    .string()
-    .optional()
-    .describe('File extension filter (e.g., "md", "js", "yml")'),
+  language: z.string().optional().describe('Programming language filter'),
+  extension: z.string().optional().describe('File extension filter'),
   filename: z
     .string()
     .optional()
-    .describe(
-      'Target specific filename or pattern (e.g., "README", "test", ".env")'
-    ),
-  path: z
-    .string()
-    .optional()
-    .describe('Filter on file path pattern (e.g., "src/", "docs/", "config/")'),
-  size: z
-    .string()
-    .regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/)
-    .optional()
-    .describe(
-      'File size filter in KB. Use ">50" for substantial files, "<10" for simple examples'
-    ),
-
-  // Repository properties
-  // fork and archived parameters removed - always optimized to exclude forks and archived repositories for better quality
-  visibility: z
-    .enum(['public', 'private', 'internal'])
-    .optional()
-    .describe('Repository visibility'),
-
-  // NEW: Repository quality filters for better relevance
+    .describe('Target specific filename or pattern'),
+  path: z.string().optional().describe('Filter on file path pattern'),
   stars: z
     .union([z.number(), z.string()])
     .optional()
@@ -78,48 +46,19 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .describe(
       'Last pushed date filter for active repositories (e.g., ">2023-01-01", ">=2024-01-01")'
     ),
-  created: z
-    .string()
-    .regex(
-      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
-    )
-    .optional()
-    .describe(
-      'Repository creation date filter (e.g., ">2020-01-01", ">=2018-01-01")'
-    ),
-
-  // NEW: Search scope and relevance controls
   match: z
     .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
     .optional()
     .describe(
       'Search scope: "file" (content search - default), "path" (filename search)'
     ),
-
-  // NEW: Sort and order for better relevance
-  sort: z
-    .enum(['indexed', 'best-match'])
-    .optional()
-    .default('best-match')
-    .describe(
-      'Sort results: "best-match" (relevance - default), "indexed" (recently indexed)'
-    ),
-  order: z
-    .enum(['asc', 'desc'])
-    .optional()
-    .default('desc')
-    .describe('Sort order: "desc" (default), "asc"'),
-
-  // Result control
   limit: z
     .number()
     .int()
     .min(1)
     .max(20)
     .optional()
-    .describe(
-      'Maximum results per query (1-20). Higher limits for discovery, lower for targeted searches'
-    ),
+    .describe('Maximum results per query (1-20)'),
   minify: z
     .boolean()
     .optional()
@@ -131,13 +70,8 @@ export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
     .default(true)
     .describe('Remove secrets and malicious content (default: true)'),
 
-  // Advanced options
-  branch: z
-    .string()
-    .optional()
-    .describe(
-      'Branch name, tag name, OR commit SHA. Uses default branch if not provided.'
-    ),
+  // Note: GitHub code search only searches the default branch
+  // branch parameter is not supported by the GitHub API
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
@@ -147,7 +81,7 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubCodeSearchQuerySchema,
   1,
   5,
-  'Array of 1-5 progressive refinement queries, starting broad then narrowing. PROGRESSIVE STRATEGY: Query 1 should be broad (queryTerms + owner/repo only), then progressively add filters based on initial findings.'
+  'Array of search queries. use several queries for better research data from different angles (use filters and queryTerms using semantic words and patterns searching)'
 );
 
 // ============================================================================

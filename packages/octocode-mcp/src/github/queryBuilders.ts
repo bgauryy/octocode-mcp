@@ -174,10 +174,8 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
     this.addSimpleFilter(params.filename, 'filename');
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');
-    this.addSimpleFilter(params.size, 'size');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.pushed, 'pushed');
-    this.addSimpleFilter(params.created, 'created');
     return this;
   }
 

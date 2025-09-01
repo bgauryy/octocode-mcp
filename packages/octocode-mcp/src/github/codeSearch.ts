@@ -85,26 +85,15 @@ async function searchGitHubCodeAPIInternal(
         100
       ),
       page: 1,
+      // Note: GitHub deprecated sort parameter for code search in April 2023
+      // All results are now automatically sorted by best-match
       // Always request text matches for better context
       headers: {
         Accept: 'application/vnd.github.v3.text-match+json',
       },
     };
-
-    // Add sorting parameters for better relevance
-    if (
-      typeof params.sort === 'string' &&
-      params.sort !== 'best-match' &&
-      params.sort === 'indexed'
-    ) {
-      searchParams.sort = params.sort;
-    }
-    if (
-      typeof params.order === 'string' &&
-      (params.order === 'asc' || params.order === 'desc')
-    ) {
-      searchParams.order = params.order;
-    }
+    // Note: GitHub deprecated sort and order parameters in April 2023
+    // All results are now automatically sorted by best-match
 
     // Direct API call with optimized parameters
     const result = await octokit.rest.search.code(searchParams);

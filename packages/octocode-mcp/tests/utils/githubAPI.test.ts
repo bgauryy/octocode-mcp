@@ -214,8 +214,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -224,7 +222,6 @@ describe('GitHub API Utils', () => {
         q: 'Button repo:facebook/react language:typescript',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -255,8 +252,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       const result = await searchGitHubCodeAPI(params);
@@ -298,8 +293,6 @@ describe('GitHub API Utils', () => {
         sanitize: true,
         verbose: false,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -331,8 +324,6 @@ describe('GitHub API Utils', () => {
         sanitize: true,
         verbose: false,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -364,8 +355,6 @@ describe('GitHub API Utils', () => {
         sanitize: true,
         verbose: false,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -392,22 +381,18 @@ describe('GitHub API Utils', () => {
         extension: 'js',
         path: 'src',
         verbose: false,
-        size: '>1000',
         match: ['file'] as ('file' | 'path')[],
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export repo:microsoft/vscode language:JavaScript filename:index.js extension:js path:src size:>1000 in:file',
+        q: 'function export repo:microsoft/vscode language:JavaScript filename:index.js extension:js path:src in:file',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -427,8 +412,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(userParams);
@@ -437,7 +420,6 @@ describe('GitHub API Utils', () => {
         q: 'function user:octocat',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -451,8 +433,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(orgParams);
@@ -461,7 +441,6 @@ describe('GitHub API Utils', () => {
         q: 'function user:github', // Implementation uses user: for all owners by default
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -475,8 +454,6 @@ describe('GitHub API Utils', () => {
         sanitize: true,
         verbose: false,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
 
         excludeArchived: true,
         excludeForks: false,
@@ -488,7 +465,6 @@ describe('GitHub API Utils', () => {
         q: 'function user:octocat user:github', // Implementation adds user: for each owner
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -507,8 +483,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
@@ -517,7 +491,6 @@ describe('GitHub API Utils', () => {
         q: 'function',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -532,8 +505,6 @@ describe('GitHub API Utils', () => {
         sanitize: true,
         verbose: false,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
@@ -542,7 +513,6 @@ describe('GitHub API Utils', () => {
         q: 'function repo:facebook/react',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -557,8 +527,6 @@ describe('GitHub API Utils', () => {
         minify: true,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(forkOnlyParams);
@@ -567,7 +535,6 @@ describe('GitHub API Utils', () => {
         q: 'function stars:>100 pushed:>2023-01-01',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -586,8 +553,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
@@ -596,7 +561,6 @@ describe('GitHub API Utils', () => {
         q: 'function',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -610,8 +574,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
@@ -620,7 +582,6 @@ describe('GitHub API Utils', () => {
         q: 'function user:microsoft',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -641,8 +602,6 @@ describe('GitHub API Utils', () => {
         verbose: false,
         sanitize: true,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -651,7 +610,6 @@ describe('GitHub API Utils', () => {
         q: 'function repo:facebook/react',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },
@@ -671,8 +629,6 @@ describe('GitHub API Utils', () => {
         sanitize: true,
         verbose: false,
         researchGoal: 'code_analysis' as const,
-        sort: 'best-match' as const,
-        order: 'desc' as const,
       };
 
       await searchGitHubCodeAPI(params);
@@ -681,7 +637,6 @@ describe('GitHub API Utils', () => {
         q: 'function user:octocat user:github language:JavaScript',
         per_page: 30,
         page: 1,
-        order: 'desc',
         headers: {
           Accept: 'application/vnd.github.v3.text-match+json',
         },

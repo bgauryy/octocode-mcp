@@ -40,8 +40,6 @@ const DESCRIPTION = `PURPOSE: Search code across GitHub repositories with strate
 
   Progressive queries: Core terms → Specific patterns → Documentation → Configuration → Alternatives`;
 
-// Simple aggregated context interface
-
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
