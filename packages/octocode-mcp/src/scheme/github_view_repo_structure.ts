@@ -30,6 +30,7 @@ export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
     .default(false)
     .optional()
     .describe('Include meida files'),
+  queryDescription: z.string().optional().describe('Research purpose'),
 });
 
 export type GitHubViewRepoStructureQuery = z.infer<
@@ -118,16 +119,13 @@ export interface GitHubRepositoryStructureError {
 
 // Bulk operations types
 export interface ProcessedRepoStructureResult {
+  queryId?: string;
   queryDescription?: string;
   repository?: string;
   branch?: string;
   path?: string;
-  structure?: Array<{
-    path: string;
-    type: 'file' | 'dir' | 'symlink' | 'submodule';
-    size?: number;
-    sha?: string;
-  }>;
+  files?: string[];
+  folders?: string[];
   data?: unknown;
   error?: string;
   hints?: string[];

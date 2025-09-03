@@ -11,8 +11,8 @@ import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
+  SimplifiedRepository,
 } from '../scheme/github_search_repos';
-import type { Repository } from '../github/github-openapi';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations';
 import {
   processBulkQueries,
@@ -157,7 +157,8 @@ async function searchMultipleGitHubRepos(
 
         // Extract repository data
         const repositories = apiResult.data.repositories || [];
-        const typedRepositories = repositories as unknown as Repository[];
+        const typedRepositories =
+          repositories as unknown as SimplifiedRepository[];
 
         return {
           repositories: typedRepositories,

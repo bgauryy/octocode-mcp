@@ -2,9 +2,11 @@ import type {
   SearchReposParameters,
   RepoSearchResultItem,
   GitHubAPIResponse,
-  Repository,
 } from './github-openapi';
-import { GitHubReposSearchQuery } from '../scheme/github_search_repos';
+import {
+  GitHubReposSearchQuery,
+  SimplifiedRepository,
+} from '../scheme/github_search_repos';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
@@ -23,7 +25,10 @@ export async function searchGitHubReposAPI(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<
-  GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
+  GitHubAPIResponse<{
+    total_count: number;
+    repositories: SimplifiedRepository[];
+  }>
 > {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
@@ -59,7 +64,7 @@ export async function searchGitHubReposAPI(
     const parsedData = JSON.parse(jsonText);
     return parsedData.data as GitHubAPIResponse<{
       total_count: number;
-      repositories: Repository[];
+      repositories: SimplifiedRepository[];
     }>;
   } else {
     // Extract the actual success data from the CallToolResult
@@ -67,7 +72,7 @@ export async function searchGitHubReposAPI(
     const parsedData = JSON.parse(jsonText);
     return parsedData.data as GitHubAPIResponse<{
       total_count: number;
-      repositories: Repository[];
+      repositories: SimplifiedRepository[];
     }>;
   }
 }
@@ -79,7 +84,10 @@ async function searchGitHubReposAPIInternal(
   params: GitHubReposSearchQuery,
   authInfo?: AuthInfo
 ): Promise<
-  GitHubAPIResponse<{ total_count: number; repositories: Repository[] }>
+  GitHubAPIResponse<{
+    total_count: number;
+    repositories: SimplifiedRepository[];
+  }>
 > {
   try {
     const octokit = await getOctokit(authInfo);
@@ -110,7 +118,7 @@ async function searchGitHubReposAPIInternal(
     // Transform repository results to match CLI format with proper typing
     const repositories = result.data.items.map(
       (repo: RepoSearchResultItem) => ({
-        name: repo.full_name,
+        owner_repo: repo.full_name,
         stars: repo.stargazers_count || 0,
         description: repo.description
           ? repo.description.length > 150
@@ -121,7 +129,6 @@ async function searchGitHubReposAPIInternal(
         url: repo.html_url,
         forks: repo.forks || 0,
         updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
-        owner: repo.owner?.login || 'Unknown',
       })
     );
 

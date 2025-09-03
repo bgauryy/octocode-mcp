@@ -168,33 +168,23 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        // Success case - use flatter structure as requested
+        // Success case - use simplified structure
         const hasResults = apiResult.files && apiResult.files.length > 0;
 
-        // Combine files and folders into structure array
-        const structureItems: Array<{
-          path: string;
-          type: 'file' | 'dir' | 'symlink' | 'submodule';
-          size?: number;
-          url?: string;
-          sha?: string;
-        }> = [
-          ...apiResult.files.map(file => ({
-            ...file,
-            type: 'file' as 'file' | 'dir' | 'symlink' | 'submodule',
-          })),
-          ...(apiResult.folders?.folders || []).map(folder => ({
-            path: folder.path,
-            url: folder.url,
-            type: 'dir' as 'file' | 'dir' | 'symlink' | 'submodule',
-          })),
-        ];
+        // Extract file paths and folder paths separately
+        const filePaths = apiResult.files.map(file => file.path);
+        const folderPaths = (apiResult.folders?.folders || []).map(
+          folder => folder.path
+        );
 
         const result: ProcessedRepositoryStructureResult = {
+          queryId: String(query.id),
+          queryDescription: query.queryDescription,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
           branch: apiRequest.branch,
           path: apiRequest.path || '/',
-          structure: structureItems,
+          files: filePaths,
+          folders: folderPaths,
           metadata: {
             branch: apiRequest.branch,
             path: apiRequest.path || '/',
@@ -247,21 +237,21 @@ async function exploreMultipleRepositoryStructures(
       hasContent: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.structure) &&
-          r.result.structure.length > 0
+          ((Array.isArray(r.result.files) && r.result.files.length > 0) ||
+            (Array.isArray(r.result.folders) && r.result.folders.length > 0))
       ),
       hasStructure: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.structure) &&
-          r.result.structure.length > 0
+          ((Array.isArray(r.result.files) && r.result.files.length > 0) ||
+            (Array.isArray(r.result.folders) && r.result.folders.length > 0))
       ),
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.error && result.structure) {
+    if (!result.error && (result.files || result.folders)) {
       if (result.repository) {
         aggregatedContext.repositoryContexts.add(result.repository);
       }
@@ -270,26 +260,24 @@ async function exploreMultipleRepositoryStructures(
       }
 
       // Extract file types and directories
-      if (Array.isArray(result.structure)) {
-        result.structure.forEach(file => {
-          const extension = file.path.split('.').pop();
+      if (Array.isArray(result.files)) {
+        result.files.forEach((filePath: string) => {
+          const extension = filePath.split('.').pop();
           if (extension) {
             aggregatedContext.foundFileTypes.add(extension);
           }
 
-          const directory = file.path.split('/').slice(0, -1).join('/');
+          const directory = filePath.split('/').slice(0, -1).join('/');
           if (directory) {
             aggregatedContext.foundDirectories.add(directory);
           }
         });
       }
 
-      const foldersMeta = result.metadata?.folders as
-        | { folders?: Array<{ path: string }> }
-        | undefined;
-      if (foldersMeta?.folders) {
-        foldersMeta.folders.forEach(folder => {
-          aggregatedContext.foundDirectories.add(folder.path);
+      // Add folders directly to foundDirectories
+      if (Array.isArray(result.folders)) {
+        result.folders.forEach((folderPath: string) => {
+          aggregatedContext.foundDirectories.add(folderPath);
         });
       }
     }

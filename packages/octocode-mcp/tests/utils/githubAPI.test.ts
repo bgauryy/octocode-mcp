@@ -672,7 +672,7 @@ describe('GitHub API Utils', () => {
             total_count: 1,
             repositories: [
               {
-                name: 'facebook/react',
+                owner_repo: 'facebook/react',
                 stars: 50000,
                 description:
                   'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
@@ -680,7 +680,6 @@ describe('GitHub API Utils', () => {
                 url: 'https://github.com/facebook/react',
                 forks: 15000,
                 updatedAt: '01/12/2023',
-                owner: 'facebook',
               },
             ],
           },

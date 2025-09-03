@@ -7,7 +7,17 @@ import {
   DateRangeSchema,
   RepoMatchScopeSchema,
 } from './baseSchema';
-import type { Repository } from '../github/github-openapi.js';
+
+// Simplified repository type for search results
+export interface SimplifiedRepository {
+  owner_repo: string;
+  stars: number;
+  description: string;
+  language: string;
+  url: string;
+  forks: number;
+  updatedAt: string;
+}
 
 const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   queryTerms: z.array(z.string()).optional().describe('Terms'),
@@ -45,7 +55,7 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
 // ============================================================================
 
 export interface ProcessedRepoSearchResult {
-  repositories?: Repository[];
+  repositories?: SimplifiedRepository[];
   total_count?: number;
   query?: Record<string, unknown>; // Include original query when verbose or no results
   error?: string;
