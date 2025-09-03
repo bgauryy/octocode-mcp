@@ -28,15 +28,16 @@ Find relevant files content for research context.
 
 FEATURES:
 - use Github search API
+- use bulk queries to research different angles
+- validate schemas and plan research properly
 
-STRATEGY:
-- SEMANTIC: use natural language to find concepts
-- TECHNICAL: search for code terms and patterns
-- Use bulk queries for better results (different angles)
-- Start with broad queries for exploration, narrow down based on findings
-- Search both implementation and documentation files
-- Use structure tool to explore repository layout for more research context
-- ALWAYS use fetch tool to get content of quality findings (using matchString and matchStringContextLines)`;
+HINTS:
+- query SEMANTIC search with Natural language (functionality, concepts, docs)
+- query TECHNICAL search with Code terms and patterns (code and config files)
+- separate semantic and technical queries
+- Use structure tool to explore repository
+- Validate findings with additional searches
+- Quality search results should be fetched. ALWAYS use fetch tool with matchString after findings relevant results for research`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(

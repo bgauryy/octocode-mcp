@@ -21,17 +21,19 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 const DESCRIPTION = `Octocode Fetch file content
 
 GOAL:
-To get more CONTEXT from real implementations, documentation, and configuration files.
+To get more research CONTEXT data from real implementations, documentation, and configuration files.
 
 FEATURES:
 - Complete file retrieval
-- Partial file retrieval (startLine + endLine OR matchString + matchStringContextLines)
+- Partial file retrieval(startLine + endLine OR matchString + matchStringContextLines)
+- use bulk queries to research different angles
+- validate schemas and plan research properly
 
-STRATEGY:
-- Validate documentation from implementation files
-- Use fetched content to find more research data
+HINTS:
+- Validate documentation from implementation usign search and fetch tools  
+- Use fetched content to find more research data to search (using search tools)
+- If needed fetch more files or content from retrived content
 - Use structure tool to understand the repository structure better for better context fetching
-- Use bulk queries to research several queries for better results (different angles)
 `;
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {

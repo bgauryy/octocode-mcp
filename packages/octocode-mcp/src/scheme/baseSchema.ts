@@ -12,7 +12,7 @@ import { z } from 'zod';
 export const BaseQuerySchema = z.object({
   id: z.string().optional().describe('generate query id (1,2,3, etc.)'),
 
-  queryDescription: z.string().optional().describe('Query research purpose'),
+  queryDescription: z.string().optional().describe('Research purpose'),
 
   verbose: z.boolean().optional().default(false).describe('Add debug info'),
 });

@@ -23,26 +23,22 @@ import {
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Search GitHub repositories with smart filtering
+const DESCRIPTION = `Octocode Search repositories
 
 GOAL:
-Find repositories containing relevant implementations, examples, or documentation for research.
+Find repositories for research
 
 FEATURES:
-- Bulk queries (up to 5 parallel searches)
-- Quality filters: stars, forks, activity, last updated
-- Topic and term-based discovery
+- use Github search API
+- use bulk queries to research different angles
+- validate schemas and plan research properly
 
-STRATEGY:
-- Use topics OR terms (not both together for exploration)
+HINTS:
+- Use topics for exploration
+- Use terms for specific matches
+- separate topics and terms queries
 - Specific repo: limit=1 for most relevant match
-- Exploration: bulk search from multiple angles
-- Filter by quality metrics for better results
-
-USAGE:
-- Topic search: ["react", "typescript"] 
-- Term search: ["authentication", "middleware"]
-- Quality filter: stars>100, updated>2024-01-01`;
+- Get most relevant repos by stars, updated, forks, activity, etc`;
 
 // Simplified aggregated context
 interface AggregatedRepoContext {

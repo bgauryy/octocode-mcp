@@ -22,29 +22,23 @@ import {
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-const DESCRIPTION = `Explore GitHub repository structure and validate access
+const DESCRIPTION = `Octocode Explore repository structure
 
 GOAL:
-Understand project organization, discover key files, and validate repository accessibility for research context.
+Understand repository structure (files, folders) for better research context
+
 
 FEATURES:
-- Bulk operations (explore multiple repos simultaneously)
-- Directory navigation and project layout understanding  
-- Smart filtering (excludes build artifacts, focuses on relevant files)
-- Access validation and error recovery
+- use Github search API
 
-USAGE:
-- Start with root directory for overall structure
+HINTS:
+- use bulk queries to research different angles
+- validate schemas and plan research properly
+- Start with root directory for overall structure (or specific paths for better context understanding)
 - Use depth control (max 2) for performance vs detail balance
-- Include ignored files only when needed for complete analysis
-- Bulk operations for comparative analysis across repos
-
-STRATEGY:
-- Root first → key directories → specific files
-- Validate access before deep exploration
-- Filter noise, focus on source/docs/config files
 - Use findings to guide further searches/fetches
-- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
+- Use search tool to find relevant files/folders or to check their relvance 
+- Fetch files content  if needed  (partially) to understand their context`;
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(
