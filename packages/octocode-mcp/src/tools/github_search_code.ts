@@ -21,27 +21,22 @@ import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 
-const DESCRIPTION = `Search code across GitHub repositories
+const DESCRIPTION = `Octocode Search code
 
 GOAL:
-Find actual code implementations, functions, classes, and patterns for research context.
+Find relevant files content for research context.
+
+FEATURES:
+- use Github search API
 
 STRATEGY:
-- SEMANTIC: Natural language (functionality, concepts)
-- TECHNICAL: Code terms (function names, classes, patterns)
-- Use bulk queries from different angles
-- Use single-word terms for exploration
-
-USAGE:
-- Start with broad terms, then narrow down
-- Use multiple queries in bulk for better coverage
-- Progress: Core terms → Specific patterns → Documentation
-
-NEXT STEPS:
-- Use fetch tool with matchString for context after findings  
-- Use structure tool to explore repository layout
-- Validate findings with additional searches
-- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
+- SEMANTIC: use natural language to find concepts
+- TECHNICAL: search for code terms and patterns
+- Use bulk queries for better results (different angles)
+- Start with broad queries for exploration, narrow down based on findings
+- Search both implementation and documentation files
+- Use structure tool to explore repository layout for more research context
+- ALWAYS use fetch tool to get content of quality findings (using matchString and matchStringContextLines)`;
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
