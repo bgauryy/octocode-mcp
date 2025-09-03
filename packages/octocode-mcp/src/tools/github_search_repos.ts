@@ -57,8 +57,11 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       description: DESCRIPTION,
       inputSchema: GitHubReposSearchQuerySchema.shape,
       annotations: {
-        idempotent: true,
-        openWorld: true,
+        title: 'GitHub Repository Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
       },
     },
     withSecurityValidation(
