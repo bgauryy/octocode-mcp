@@ -1,12 +1,12 @@
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './github-openapi';
 import {
-  GithubFetchRequestParams,
+  FileContentQuery,
   GitHubFileContentResponse,
   GitHubFileContentError,
 } from '../scheme/github_fetch_content';
 import {
-  GitHubRepositoryStructureParams,
+  GitHubViewRepoStructureQuery,
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
@@ -26,7 +26,7 @@ import { UserContext } from '../security/withSecurityValidation';
  * Token management is handled internally by the GitHub client
  */
 export async function fetchGitHubFileContentAPI(
-  params: GithubFetchRequestParams,
+  params: FileContentQuery,
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
@@ -39,6 +39,7 @@ export async function fetchGitHubFileContentAPI(
       filePath: params.filePath,
       branch: params.branch,
       // Include other parameters that affect the content
+      ...(params.fullContent && { fullContent: params.fullContent }),
       startLine: params.startLine,
       endLine: params.endLine,
       matchString: params.matchString,
@@ -90,7 +91,7 @@ export async function fetchGitHubFileContentAPI(
  * Token management is handled internally by the GitHub client
  */
 async function fetchGitHubFileContentAPIInternal(
-  params: GithubFetchRequestParams,
+  params: FileContentQuery,
   authInfo?: AuthInfo
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
   try {
@@ -188,9 +189,10 @@ async function fetchGitHubFileContentAPIInternal(
         branch || data.sha,
         filePath,
         params.minified !== false,
+        params.fullContent || false,
         params.startLine,
         params.endLine,
-        params.matchStringContextLines || 5,
+        params.matchStringContextLines ?? 5,
         params.matchString
       );
 
@@ -231,6 +233,7 @@ async function processFileContentAPI(
   branch: string,
   filePath: string,
   minified: boolean,
+  fullContent: boolean,
   startLine?: number,
   endLine?: number,
   matchStringContextLines: number = 5,
@@ -274,8 +277,14 @@ async function processFileContentAPI(
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
+  // If fullContent is true, return the entire file and ignore other parameters
+  if (fullContent) {
+    finalContent = decodedContent;
+    // Don't set actualStartLine/actualEndLine for full content
+    // Don't set isPartial for full content
+  }
   // SMART MATCH FINDER: If matchString is provided, find it and set line range
-  if (matchString) {
+  else if (matchString) {
     const matchingLines: number[] = [];
 
     // Find all lines that contain the match string
@@ -306,13 +315,22 @@ async function processFileContentAPI(
     startLine = matchStartLine;
     endLine = matchEndLine;
 
+    // Extract the matching lines with context
+    const selectedLines = lines.slice(matchStartLine - 1, matchEndLine);
+    finalContent = selectedLines.join('\n');
+
+    // Set the actual line boundaries for the response
+    actualStartLine = matchStartLine;
+    actualEndLine = matchEndLine;
+    isPartial = true;
+
     // Add info about the match for user context
     securityWarnings.push(
       `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
     );
   }
-
-  if (startLine !== undefined || endLine !== undefined) {
+  // Handle startLine/endLine selection (only if not fullContent and no matchString)
+  else if (startLine !== undefined || endLine !== undefined) {
     // When only endLine is provided, default startLine to 1
     const effectiveStartLine = startLine || 1;
 
@@ -349,6 +367,8 @@ async function processFileContentAPI(
       }
     }
   }
+  // If no content selection parameters are set (fullContent=false, no matchString, no startLine/endLine),
+  // finalContent remains as decodedContent (full file) for backward compatibility
 
   // Apply minification to final content (both partial and full files)
   let minificationFailed = false;
@@ -392,7 +412,7 @@ async function processFileContentAPI(
  * View GitHub repository structure using Octokit API with caching
  */
 export async function viewGitHubRepositoryStructureAPI(
-  params: GitHubRepositoryStructureParams,
+  params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
@@ -445,7 +465,7 @@ export async function viewGitHubRepositoryStructureAPI(
  * Token management is handled internally by the GitHub client
  */
 async function viewGitHubRepositoryStructureAPIInternal(
-  params: GitHubRepositoryStructureParams,
+  params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
   try {

@@ -7,14 +7,13 @@ GOAL:
 Get implementation details from real code, docs, and config files.
 
 FEATURES:
-- Complete/partial retrieval (startLine-endLine OR matchString+context)
-- Minification for token efficiency
+- Fetching types: fullContent, specific line range (startLine+endLine), pattern-based extraction (matchString+matchStringContextLines)
 - Bulk queries for comparative analysis across files
 
 HINTS:
-- Use matchString for targeted content extraction
-- Combine with search tools for discovery→fetch workflow
-- Specify branch for non-default branches`,
+- Fetch content in a smart way (token efficient while getting the most relevant context)
+- Combine with search and strcuture tools after fetching for discovery and better research context
+- Quality data should be fetched for better research context`,
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code
 
 GOAL:

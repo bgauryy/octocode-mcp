@@ -6,25 +6,28 @@ import {
   GitHubRepoSchema,
   GitHubFilePathSchema,
   GitHubBranchSchema,
-  MinifiedSchema,
+  MinifySchema,
+  SanitizeSchema,
 } from './baseSchema';
 
 export const FileContentQuerySchema = extendBaseQuerySchema({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
-  filePath: GitHubFilePathSchema.describe('Path'),
+  filePath: GitHubFilePathSchema,
   branch: GitHubBranchSchema.optional(),
-  startLine: z.number().int().min(1).optional().describe('Start line'),
-  endLine: z.number().int().min(1).optional().describe('End line'),
-  matchString: z.string().optional().describe('Match string'),
+  fullContent: z.boolean().default(false).describe('Return entire file'),
+  startLine: z.number().int().min(1).optional().describe('Start line in file'),
+  endLine: z.number().int().min(1).optional().describe('End line in file'),
+  matchString: z.string().optional().describe('Pattern to search in file'),
   matchStringContextLines: z
     .number()
     .int()
     .min(0)
     .max(50)
     .default(5)
-    .describe('Context lines'),
-  minified: MinifiedSchema,
+    .describe('Lines before and after matchString'),
+  minified: MinifySchema,
+  sanitize: SanitizeSchema,
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
@@ -32,15 +35,13 @@ export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 // Bulk schema for multiple file content queries
 export const FileContentBulkQuerySchema = createBulkQuerySchema(
   FileContentQuerySchema,
-  1,
-  10,
-  'Queries'
+  'File content fetch queries'
 );
 
 export interface FileContentQueryResult {
-  queryId?: string; // Sequential query ID (file-content_1, file-content_2, etc.)
+  queryId?: string;
   queryDescription?: string;
-  originalQuery?: FileContentQuery; // Only included on error or not found
+  originalQuery?: FileContentQuery;
   result: GitHubFileContentResponse | { error: string; hints?: string[] };
   error?: string;
   sampling?: {
@@ -53,7 +54,7 @@ export interface FileContentQueryResult {
       totalTokens: number;
     };
     stopReason?: string;
-  }; // Beta feature: LLM explanation of what the code is doing
+  };
 }
 export interface GitHubFileContentResponse {
   filePath: string;
@@ -79,18 +80,6 @@ export interface GitHubFileContentResponse {
     | 'none';
   // Security metadata
   securityWarnings?: string[];
-}
-
-export interface GithubFetchRequestParams {
-  owner: string;
-  repo: string;
-  branch?: string;
-  filePath: string;
-  startLine?: number;
-  endLine?: number;
-  matchString?: string;
-  matchStringContextLines?: number;
-  minified: boolean;
 }
 
 export interface GitHubFileContentError {

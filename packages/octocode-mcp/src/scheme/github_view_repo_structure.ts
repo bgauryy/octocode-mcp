@@ -5,7 +5,6 @@ import {
   GitHubOwnerSchema,
   GitHubRepoSchema,
   GitHubBranchSchema,
-  BaseToolMeta,
 } from './baseSchema';
 
 export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
@@ -40,14 +39,8 @@ export type GitHubViewRepoStructureQuery = z.infer<
 // Bulk schema for multiple repository structure queries
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   GitHubViewRepoStructureQuerySchema,
-  1,
-  5,
-  'Queries'
+  'Repository structure exploration queries'
 );
-
-// Legacy interfaces - all point to the schema-derived type for consistency
-export type GitHubRepositoryStructureQuery = GitHubViewRepoStructureQuery;
-export type GitHubRepositoryStructureParams = GitHubViewRepoStructureQuery;
 
 export interface GitHubApiFileItem {
   name: string;
@@ -118,7 +111,7 @@ export interface GitHubRepositoryStructureError {
 }
 
 // Bulk operations types
-export interface ProcessedRepoStructureResult {
+export interface ProcessedRepositoryStructureResult {
   queryId?: string;
   queryDescription?: string;
   repository?: string;
@@ -132,21 +125,6 @@ export interface ProcessedRepoStructureResult {
   metadata: Record<string, unknown>; // Required for processing, removed later if not verbose
 }
 
-// Legacy interface for backward compatibility
-export interface ProcessedRepositoryStructureResult
-  extends ProcessedRepoStructureResult {}
-
-export interface GitHubRepositoryStructureMeta extends BaseToolMeta {
-  repositories: Array<{ nameWithOwner: string; branch: string; path: string }>;
-  totalRepositories: number;
-  researchContext?: {
-    foundDirectories: string[];
-    foundFileTypes: string[];
-    repositoryContexts: string[];
-  };
-}
-
-// Aggregated context for bulk operations
 export interface AggregatedRepositoryContext {
   totalQueries: number;
   successfulQueries: number;
@@ -161,9 +139,3 @@ export interface AggregatedRepositoryContext {
     hasStructure: boolean;
   };
 }
-
-// Legacy schema for backward compatibility - now points to the main schema
-export const GitHubRepositoryStructureQuerySchema =
-  GitHubViewRepoStructureQuerySchema;
-export const GitHubRepositoryStructureParamsSchema =
-  GitHubViewRepoStructureQuerySchema;

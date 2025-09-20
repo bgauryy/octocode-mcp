@@ -112,6 +112,21 @@ import {
 } from '../../src/github/githubAPI.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
+// Helper function to create properly formatted test parameters
+function createTestParams(overrides: Record<string, unknown> = {}) {
+  return {
+    owner: 'test',
+    repo: 'repo',
+    filePath: 'test.txt',
+    fullContent: false,
+    minified: false,
+    sanitize: true,
+    verbose: false,
+    matchStringContextLines: 5,
+    ...overrides,
+  };
+}
+
 describe('GitHub API Utils', () => {
   beforeEach(async () => {
     // Clear all mocks
@@ -835,13 +850,7 @@ describe('GitHub API Utils', () => {
 
           mockOctokit.rest.repos.getContent.mockResolvedValue(mockFileResponse);
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'src/index.js',
-            branch: 'main',
-            minified: true,
-          };
+          const params = createTestParams({ branch: 'main', minified: true });
 
           const result = await fetchGitHubFileContentAPI(params);
 
@@ -879,12 +888,7 @@ describe('GitHub API Utils', () => {
             mockDirectoryResponse
           );
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'src',
-            minified: true,
-          };
+          const params = createTestParams({ minified: true });
 
           await fetchGitHubFileContentAPI(params);
 
@@ -910,12 +914,7 @@ describe('GitHub API Utils', () => {
             mockLargeFileResponse
           );
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'large-file.js',
-            minified: true,
-          };
+          const params = createTestParams({ minified: true });
 
           await fetchGitHubFileContentAPI(params);
 
@@ -943,12 +942,7 @@ describe('GitHub API Utils', () => {
             mockBinaryResponse
           );
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'binary-file.png',
-            minified: true,
-          };
+          const params = createTestParams({ minified: true });
 
           await fetchGitHubFileContentAPI(params);
 
@@ -975,15 +969,12 @@ describe('GitHub API Utils', () => {
 
           mockOctokit.rest.repos.getContent.mockResolvedValue(mockFileResponse);
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'src/index.js',
+          const params = createTestParams({
             startLine: 2,
             endLine: 4,
             contextLines: 1,
             minified: true,
-          };
+          });
 
           await fetchGitHubFileContentAPI(params);
 
@@ -1016,14 +1007,11 @@ describe('GitHub API Utils', () => {
 
           mockOctokit.rest.repos.getContent.mockResolvedValue(mockFileResponse);
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'src/test.js',
+          const params = createTestParams({
             matchString: 'console.log',
             contextLines: 2,
             minified: true,
-          };
+          });
 
           await fetchGitHubFileContentAPI(params);
 
@@ -1052,13 +1040,10 @@ describe('GitHub API Utils', () => {
 
           mockOctokit.rest.repos.getContent.mockResolvedValue(mockFileResponse);
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'src/test.js',
+          const params = createTestParams({
             matchString: 'nonexistent',
             minified: true,
-          };
+          });
 
           await fetchGitHubFileContentAPI(params);
 
@@ -1083,12 +1068,7 @@ describe('GitHub API Utils', () => {
 
           mockOctokit.rest.repos.getContent.mockRejectedValue(notFoundError);
 
-          const params = {
-            owner: 'facebook',
-            repo: 'react',
-            filePath: 'nonexistent.js',
-            minified: true,
-          };
+          const params = createTestParams({ minified: true });
 
           await fetchGitHubFileContentAPI(params);
 

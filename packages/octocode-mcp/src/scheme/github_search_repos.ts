@@ -5,7 +5,6 @@ import {
   FlexibleArraySchema,
   LimitSchema,
   DateRangeSchema,
-  RepoMatchScopeSchema,
 } from './baseSchema';
 
 // Simplified repository type for search results
@@ -28,7 +27,14 @@ const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
   size: z.string().nullable().optional().describe('Size KB'),
   created: DateRangeSchema.shape.created,
   updated: DateRangeSchema.shape.updated,
-  match: RepoMatchScopeSchema,
+  match: z
+    .union([
+      z.enum(['name', 'description', 'readme']),
+      z.array(z.enum(['name', 'description', 'readme'])),
+      z.null(),
+    ])
+    .optional()
+    .describe('Scope'),
   sort: z
     .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
     .nullable()
@@ -45,9 +51,7 @@ export type GitHubReposSearchQuery = z.infer<
 // Bulk schema for tool registration
 export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
   GitHubReposSearchSingleQuerySchema,
-  1,
-  5,
-  'Queries'
+  'Repository search queries'
 );
 
 // ============================================================================

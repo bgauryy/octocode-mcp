@@ -88,9 +88,7 @@ export type GitHubCommitSearchQuery = z.infer<
 // Bulk schema for multiple commit searches
 export const GitHubCommitSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubCommitSearchQuerySchema,
-  1,
-  5,
-  'Array of 1-5 commit search queries for bulk execution'
+  'Commit search queries'
 );
 
 export interface GitHubCommitSearchResult {

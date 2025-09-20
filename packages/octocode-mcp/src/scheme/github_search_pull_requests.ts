@@ -6,7 +6,8 @@ import {
   DateRangeSchema,
   PRMatchScopeSchema,
   SortingSchema,
-  StateFilterSchema,
+  lockedSchema,
+  draftSchema,
 } from './baseSchema';
 
 export const GitHubPullRequestSearchQuerySchema = extendBaseQuerySchema({
@@ -87,8 +88,8 @@ export const GitHubPullRequestSearchQuerySchema = extendBaseQuerySchema({
   ),
 
   merged: z.boolean().optional().describe('Merged state'),
-  draft: StateFilterSchema.shape.draft,
-  locked: StateFilterSchema.shape.locked,
+  draft: draftSchema,
+  locked: lockedSchema,
 
   review: z
     .enum(['none', 'required', 'approved', 'changes_requested'])
@@ -165,9 +166,7 @@ export type GitHubPullRequestSearchQuery = z.infer<
 // Bulk schema for multiple pull request searches
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubPullRequestSearchQuerySchema,
-  1,
-  5,
-  'Array of 1-5 pull request search queries for bulk execution'
+  'Pull request search queries'
 );
 
 export interface GitHubPullRequestSearchResult {

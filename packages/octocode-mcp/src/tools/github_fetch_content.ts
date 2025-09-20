@@ -95,20 +95,39 @@ async function fetchMultipleGitHubFileContents(
   for (const query of uniqueQueries) {
     try {
       // Create properly typed request using smart type conversion
+      // Handle fullContent parameter - if true, ignore other content selection parameters
+      const fullContent =
+        typeof query.fullContent === 'boolean' ? query.fullContent : false;
+
       const apiRequest = {
         owner: String(query.owner),
         repo: String(query.repo),
         filePath: String(query.filePath),
         branch: query.branch ? String(query.branch) : undefined,
-        startLine:
-          typeof query.startLine === 'number' ? query.startLine : undefined,
-        endLine: typeof query.endLine === 'number' ? query.endLine : undefined,
-        matchString: query.matchString ? String(query.matchString) : undefined,
+        fullContent: fullContent,
+        // If fullContent is true, don't pass startLine/endLine/matchString
+        startLine: fullContent
+          ? undefined
+          : typeof query.startLine === 'number'
+            ? query.startLine
+            : undefined,
+        endLine: fullContent
+          ? undefined
+          : typeof query.endLine === 'number'
+            ? query.endLine
+            : undefined,
+        matchString: fullContent
+          ? undefined
+          : query.matchString
+            ? String(query.matchString)
+            : undefined,
         matchStringContextLines:
           typeof query.matchStringContextLines === 'number'
             ? query.matchStringContextLines
-            : undefined,
+            : 5,
         minified: typeof query.minified === 'boolean' ? query.minified : true,
+        sanitize: typeof query.sanitize === 'boolean' ? query.sanitize : true,
+        verbose: typeof query.verbose === 'boolean' ? query.verbose : false,
       };
 
       const apiResult = await fetchGitHubFileContentAPI(

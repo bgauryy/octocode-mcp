@@ -82,11 +82,14 @@ describe('GitHub Search Repositories Tool', () => {
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         expect.objectContaining({
-          description: expect.stringContaining('Octocode Search repositories'),
+          description: expect.stringContaining('Search repositories'),
           inputSchema: expect.objectContaining({
             queries: expect.any(Object),
           }),
           annotations: expect.objectContaining({
+            title: 'GitHub Repository Search',
+            readOnlyHint: true,
+            destructiveHint: false,
             idempotentHint: true,
             openWorldHint: true,
           }),

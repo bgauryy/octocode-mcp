@@ -4,50 +4,35 @@ import {
   createBulkQuerySchema,
   FlexibleArraySchema,
   LimitSchema,
-  OptimizationFlagsSchema,
   FileMatchScopeSchema,
   DateRangeSchema,
   NumericRangeSchema,
+  MinifySchema,
+  SanitizeSchema,
 } from './baseSchema';
 
-// ============================================================================
-// CODE SEARCH QUERY SCHEMA
-// ============================================================================
-
 export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
-  // Search terms (required)
   queryTerms: z.array(z.string()).min(1).max(4).describe('Terms (AND)'),
-  owner: FlexibleArraySchema.stringOrArray.describe('Owner'),
-  repo: FlexibleArraySchema.stringOrArray.describe('Repo'),
-
+  owner: FlexibleArraySchema.stringOrArray.describe('Repository owner'),
+  repo: FlexibleArraySchema.stringOrArray.describe('Repository name'),
   language: z.string().optional().describe('Language'),
-  extension: z.string().optional().describe('Extension'),
+  extension: z.string().optional().describe('file extension'),
   filename: z.string().optional().describe('Filename'),
   path: z.string().optional().describe('Path'),
   stars: NumericRangeSchema.shape.stars,
   pushed: DateRangeSchema.shape.updated.describe('Pushed'),
   match: FileMatchScopeSchema,
   limit: LimitSchema,
-  minify: OptimizationFlagsSchema.shape.minify,
-  sanitize: OptimizationFlagsSchema.shape.sanitize,
-
-  // Note: GitHub code search only searches the default branch
-  // branch parameter is not supported by the GitHub API
+  minify: MinifySchema,
+  sanitize: SanitizeSchema,
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 
-// Bulk schema for tools that need it
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubCodeSearchQuerySchema,
-  1,
-  5,
-  'Queries'
+  'Code search queries'
 );
-
-// ============================================================================
-// PROCESSED RESULT TYPES
-// ============================================================================
 
 export interface ProcessedCodeSearchResult {
   files?: Array<{
