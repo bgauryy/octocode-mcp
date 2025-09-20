@@ -10,32 +10,13 @@ import {
 } from '../scheme/package_search';
 import { searchPackagesAPI } from '../npm/package';
 import { PackageSearchBulkParams } from './types';
-
-const DESCRIPTION = `Discover NPM and Python packages with comprehensive metadata and repository analysis.
-
-Searches package registries to find packages by functionality, providing rich metadata
-including GitHub repository links, version history, and usage statistics. Essential for package
-research, dependency analysis, and finding optimal solutions for your projects.
-
-FEATURES:
-- Multi-ecosystem search: NPM and Python package discovery in single tool
-- Rich metadata: Repository links, version history, download stats, dependencies
-- Research optimization: Better than GitHub API for package-specific analysis
-- Bulk operations: Search multiple packages simultaneously (up to 10 queries)
-- Repository integration: Direct links to GitHub repos for deeper code analysis
-
-BEST PRACTICES:
-- Search by functionality rather than exact names: "http client", "database ORM"
-- Use package search first when researching libraries or frameworks
-- Combine with GitHub tools for complete package-to-code analysis
-- Specify research goals for optimized metadata extraction
-- Leverage bulk operations to compare multiple package alternatives`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerPackageSearchTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
       inputSchema: BulkPackageSearchSchema.shape,
       annotations: {
         title: 'Package Search',

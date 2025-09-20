@@ -20,30 +20,13 @@ import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
 import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
-
-const DESCRIPTION = `Octocode Search code
-
-GOAL:
-Find relevant files content for research context.
-
-FEATURES:
-- use Github search API
-- use bulk queries to research different angles
-- validate schemas and plan research properly
-
-HINTS:
-- query SEMANTIC search with Natural language (functionality, concepts, docs)
-- query TECHNICAL search with Code terms and patterns (code and config files)
-- separate semantic and technical queries
-- Use structure tool to explore repository
-- Validate findings with additional searches
-- Quality search results should be fetched. ALWAYS use fetch tool with matchString after findings relevant results for research`;
+import { DESCRIPTIONS } from './descriptions.js';
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
       inputSchema: GitHubCodeSearchBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Code Search',

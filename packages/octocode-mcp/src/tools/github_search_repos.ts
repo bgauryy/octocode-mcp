@@ -22,23 +22,7 @@ import {
 } from '../utils/bulkOperations';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Octocode Search repositories
-
-GOAL:
-Find repositories for research
-
-FEATURES:
-- use Github search API
-- use bulk queries to research different angles
-- validate schemas and plan research properly
-
-HINTS:
-- Use topics for exploration
-- Use terms for specific matches
-- separate topics and terms queries
-- Specific repo: limit=1 for most relevant match
-- Get most relevant repos by stars, updated, forks, activity, etc`;
+import { DESCRIPTIONS } from './descriptions';
 
 // Simplified aggregated context
 interface AggregatedRepoContext {
@@ -54,7 +38,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
       inputSchema: GitHubReposSearchQuerySchema.shape,
       annotations: {
         title: 'GitHub Repository Search',

@@ -21,30 +21,13 @@ import {
   type BulkResponseConfig,
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Octocode Explore repository structure
-
-GOAL:
-Understand repository structure (files, folders) for better research context
-
-
-FEATURES:
-- use Github search API
-
-HINTS:
-- use bulk queries to research different angles
-- validate schemas and plan research properly
-- Start with root directory for overall structure (or specific paths for better context understanding)
-- Use depth control (max 2) for performance vs detail balance
-- Use findings to guide further searches/fetches
-- Use search tool to find relevant files/folders or to check their relvance 
-- Fetch files content  if needed  (partially) to understand their context`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
       inputSchema: GitHubViewRepoStructureBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Repository Structure Explorer',

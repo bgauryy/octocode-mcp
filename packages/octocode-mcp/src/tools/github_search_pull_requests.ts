@@ -11,32 +11,13 @@ import {
 import { GitHubPullRequestsSearchParams } from '../github/github-openapi';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
-
-Provides powerful pull request discovery across GitHub repositories with smart filtering capabilities,
-error recovery, and context-aware suggestions. Perfect for understanding code reviews, tracking features,
-and analyzing development workflows.
-
-FEATURES:
-- Comprehensive PR search: Find pull requests by state, author, labels, and more
-- Direct PR fetching: Get specific pull requests by number (e.g., PR #123 from owner/repo)
-- Smart filtering: By repository, review status, merge state, and activity
-- Error recovery: Intelligent suggestions for failed searches
-- Research optimization: Tailored hints based on research goals
-
-BEST PRACTICES:
-- Use specific keywords related to the features or changes you're looking for
-- For known PR numbers: Use prNumber with owner/repo for efficient direct fetching
-- Filter by state (open/closed) and review status for targeted results
-- Leverage author and assignee filters for people-specific searches
-- Specify research goals (debugging, analysis) for optimal guidance`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
       inputSchema: GitHubPullRequestSearchBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Pull Request Search',

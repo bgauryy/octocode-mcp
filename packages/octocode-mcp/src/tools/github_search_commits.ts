@@ -11,30 +11,13 @@ import {
 import { GitHubCommitSearchParams } from '../github/github-openapi';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
-
-Provides powerful commit discovery across GitHub repositories with smart filtering capabilities,
-error recovery, and context-aware suggestions. Perfect for understanding code evolution,
-tracking changes, and analyzing development patterns.
-
-FEATURES:
-- Comprehensive commit search: Find changes by author, message, date, and more
-- Smart filtering: By repository, author, date ranges, and commit types
-- Error recovery: Intelligent suggestions for failed searches
-- Research optimization: Tailored hints based on research goals
-
-BEST PRACTICES:
-- Use specific keywords related to the changes you're looking for
-- Filter by date ranges for targeted historical analysis
-- Leverage author filters for developer-specific searches
-- Specify research goals (debugging, analysis) for optimal guidance`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_COMMITS,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
       inputSchema: GitHubCommitSearchQuerySchema.shape,
       annotations: {
         title: 'GitHub Commit Search',

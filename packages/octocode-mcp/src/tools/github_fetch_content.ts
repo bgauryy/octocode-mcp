@@ -17,30 +17,13 @@ import { generateHints } from './hints.js';
 import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Octocode Fetch file content
-
-GOAL:
-To get more research CONTEXT data from real implementations, documentation, and configuration files.
-
-FEATURES:
-- Complete file retrieval
-- Partial file retrieval(startLine + endLine OR matchString + matchStringContextLines)
-- use bulk queries to research different angles
-- validate schemas and plan research properly
-
-HINTS:
-- Validate documentation from implementation usign search and fetch tools  
-- Use fetched content to find more research data to search (using search tools)
-- If needed fetch more files or content from retrived content
-- Use structure tool to understand the repository structure better for better context fetching
-`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
       inputSchema: FileContentBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub File Content Fetch',
