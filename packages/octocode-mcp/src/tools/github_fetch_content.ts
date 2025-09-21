@@ -139,15 +139,17 @@ async function fetchMultipleGitHubFileContents(
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-      // Build the result object with new format (add queryDescription and queryId)
+      // Build the result object with flattened format
       // Use user-provided queryDescription if available, otherwise construct from owner/repo/filePath
       const queryDescription =
         query.queryDescription ||
         `${query.owner}/${query.repo}/${query.filePath}`;
+
+      // Flatten the result structure - spread result properties directly into the query result
       const resultObj: FileContentQueryResult = {
-        queryId: query.id, // Add sequential query ID
+        queryId: query.id,
         queryDescription,
-        result: result,
+        ...result, // Flatten all result properties (filePath, owner, repo, content, etc.)
       };
 
       // Add sampling result if BETA features are enabled
@@ -203,19 +205,16 @@ async function fetchMultipleGitHubFileContents(
         query.queryDescription ||
         `${query.owner}/${query.repo}/${query.filePath}`;
       results.push({
-        queryId: query.id, // Add sequential query ID
+        queryId: query.id,
         queryDescription,
         originalQuery: query, // Only include on error
-        result: { error: errorMessage },
-        error: errorMessage,
+        error: errorMessage, // Flatten error directly at top level
       });
     }
   }
 
   // Generate intelligent hints based on results
-  const successfulQueries = results.filter(
-    r => !('error' in r.result) && !r.error
-  ).length;
+  const successfulQueries = results.filter(r => !r.error).length;
 
   const hints = generateHints({
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,

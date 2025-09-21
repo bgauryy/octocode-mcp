@@ -42,9 +42,33 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
 export interface FileContentQueryResult {
   queryId?: string;
   queryDescription?: string;
-  originalQuery?: FileContentQuery;
-  result: GitHubFileContentResponse | { error: string; hints?: string[] };
-  error?: string;
+  originalQuery?: FileContentQuery; // Only included on error
+  error?: string; // Flattened error at top level
+
+  // Flattened GitHubFileContentResponse properties (only present on success)
+  filePath?: string;
+  owner?: string;
+  repo?: string;
+  branch?: string; // Only included when verbose=true
+  content?: string;
+  startLine?: number;
+  endLine?: number;
+  totalLines?: number;
+  isPartial?: boolean;
+  minified?: boolean; // Only included when verbose=true
+  minificationFailed?: boolean; // Only included when verbose=true
+  minificationType?: // Only included when verbose=true
+  | 'terser'
+    | 'conservative'
+    | 'aggressive'
+    | 'json'
+    | 'general'
+    | 'markdown'
+    | 'failed'
+    | 'none';
+  securityWarnings?: string[];
+
+  // Sampling result (beta feature)
   sampling?: {
     codeExplanation: string;
     filePath: string;

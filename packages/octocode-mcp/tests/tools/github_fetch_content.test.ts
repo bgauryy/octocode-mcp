@@ -102,8 +102,8 @@ describe('GitHub Fetch Content Tool', () => {
 
       const fileResult = data.results[0];
       expect(fileResult.queryDescription).toBeDefined(); // queryId was removed, queryDescription added
-      expect(fileResult.result.filePath).toBe('README.md');
-      expect(fileResult.result.content).toContain('Hello World');
+      expect(fileResult.filePath).toBe('README.md');
+      expect(fileResult.content).toContain('Hello World');
       expect(fileResult.originalQuery).toBeUndefined(); // Only on error
     });
 
@@ -199,8 +199,8 @@ describe('GitHub Fetch Content Tool', () => {
         r.queryDescription?.toString().includes('package.json')
       );
 
-      expect(readmeResult.result.filePath).toBe('README.md');
-      expect(packageResult.result.filePath).toBe('package.json');
+      expect(readmeResult.filePath).toBe('README.md');
+      expect(packageResult.filePath).toBe('package.json');
     });
   });
 
@@ -232,8 +232,8 @@ describe('GitHub Fetch Content Tool', () => {
       const errorResult = data.results[0];
       expect(errorResult.queryDescription).toContain('test/repo');
       expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
-      expect(errorResult.result.error).toContain('not found');
-      expect(errorResult.error).toBeUndefined(); // No wrapper error for API errors
+      expect(errorResult.error).toContain('not found');
+      expect(errorResult.filePath).toBeUndefined(); // No file properties on error
     });
 
     it('should handle API exception', async () => {
@@ -265,8 +265,8 @@ describe('GitHub Fetch Content Tool', () => {
         filePath: 'test.md',
         id: 'exception-test', // Custom ID provided in the test
       }); // originalQuery is included in error responses
-      expect(errorResult.result.error).toBe('Network error');
       expect(errorResult.error).toBe('Network error');
+      expect(errorResult.filePath).toBeUndefined(); // No file properties on error
     });
   });
 
@@ -317,11 +317,11 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.content).toBe(fullFileContent);
-      expect(fileResult.result.totalLines).toBe(12);
-      expect(fileResult.result.isPartial).toBeUndefined();
-      expect(fileResult.result.startLine).toBeUndefined();
-      expect(fileResult.result.endLine).toBeUndefined();
+      expect(fileResult.content).toBe(fullFileContent);
+      expect(fileResult.totalLines).toBe(12);
+      expect(fileResult.isPartial).toBeUndefined();
+      expect(fileResult.startLine).toBeUndefined();
+      expect(fileResult.endLine).toBeUndefined();
 
       // Verify API was called with fullContent=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -416,11 +416,11 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.content).toBe('line 5\nline 6\nline 7');
-      expect(fileResult.result.isPartial).toBe(true);
-      expect(fileResult.result.startLine).toBe(5);
-      expect(fileResult.result.endLine).toBe(7);
-      expect(fileResult.result.totalLines).toBe(20);
+      expect(fileResult.content).toBe('line 5\nline 6\nline 7');
+      expect(fileResult.isPartial).toBe(true);
+      expect(fileResult.startLine).toBe(5);
+      expect(fileResult.endLine).toBe(7);
+      expect(fileResult.totalLines).toBe(20);
 
       // Verify API was called with correct line parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -471,11 +471,11 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.content).toContain('function main');
-      expect(fileResult.result.isPartial).toBe(true);
-      expect(fileResult.result.startLine).toBe(8);
-      expect(fileResult.result.endLine).toBe(14);
-      expect(fileResult.result.securityWarnings).toContain(
+      expect(fileResult.content).toContain('function main');
+      expect(fileResult.isPartial).toBe(true);
+      expect(fileResult.startLine).toBe(8);
+      expect(fileResult.endLine).toBe(14);
+      expect(fileResult.securityWarnings).toContain(
         'Found "function main" on line 11'
       );
 
@@ -569,9 +569,9 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.minified).toBe(true);
-      expect(fileResult.result.minificationType).toBe('terser');
-      expect(fileResult.result.minificationFailed).toBe(false);
+      expect(fileResult.minified).toBe(true);
+      expect(fileResult.minificationType).toBe('terser');
+      expect(fileResult.minificationFailed).toBe(false);
 
       // Verify API was called with minified=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -613,8 +613,8 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.content).toContain('return "Hello World"');
-      expect(fileResult.result.minified).toBe(false);
+      expect(fileResult.content).toContain('return "Hello World"');
+      expect(fileResult.minified).toBe(false);
 
       // Verify API was called with minified=false
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -658,9 +658,9 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.minificationFailed).toBe(true);
-      expect(fileResult.result.minificationType).toBe('failed');
-      expect(fileResult.result.content).toContain('// Syntax error');
+      expect(fileResult.minificationFailed).toBe(true);
+      expect(fileResult.minificationType).toBe('failed');
+      expect(fileResult.content).toContain('// Syntax error');
     });
   });
 
@@ -699,11 +699,11 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.content).toContain('[REDACTED]');
-      expect(fileResult.result.securityWarnings).toContain(
+      expect(fileResult.content).toContain('[REDACTED]');
+      expect(fileResult.securityWarnings).toContain(
         'Secrets detected and redacted: API_KEY, DATABASE_URL'
       );
-      expect(fileResult.result.securityWarnings).toContain(
+      expect(fileResult.securityWarnings).toContain(
         'Potentially sensitive configuration file detected'
       );
 
@@ -866,7 +866,7 @@ End of file.`;
       // Should not have sampling data when it fails
       expect(fileResult.sampling).toBeUndefined();
       // But should still have the file content
-      expect(fileResult.result.content).toBe('console.log("test");');
+      expect(fileResult.content).toBe('console.log("test");');
     });
   });
 
@@ -901,7 +901,7 @@ End of file.`;
       const data = JSON.parse(result.content[0]?.text as string);
       const fileResult = data.results[0];
 
-      expect(fileResult.result.branch).toBe('feature-branch');
+      expect(fileResult.branch).toBe('feature-branch');
 
       // Verify API was called with correct branch
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -1006,22 +1006,22 @@ End of file.`;
       // First result should be successful
       const successResult = data.results[0];
       expect(successResult.queryDescription).toContain('success.js');
-      expect(successResult.result.content).toBe('const success = true;');
+      expect(successResult.content).toBe('const success = true;');
       expect(successResult.error).toBeUndefined();
       expect(successResult.originalQuery).toBeUndefined();
 
       // Second result should have API error
       const errorResult = data.results[1];
       expect(errorResult.queryDescription).toContain('missing.js');
-      expect(errorResult.result.error).toBe('File not found');
-      expect(errorResult.error).toBeUndefined(); // No wrapper error for API errors
+      expect(errorResult.error).toBe('File not found');
+      expect(errorResult.content).toBeUndefined(); // No content properties on error
       expect(errorResult.originalQuery).toBeUndefined();
 
       // Third result should have exception error
       const exceptionResult = data.results[2];
       expect(exceptionResult.queryDescription).toContain('timeout.js');
-      expect(exceptionResult.result.error).toBe('Network timeout');
       expect(exceptionResult.error).toBe('Network timeout');
+      expect(exceptionResult.content).toBeUndefined(); // No content properties on error
       expect(exceptionResult.originalQuery).toBeDefined(); // originalQuery included for exceptions
     });
   });
