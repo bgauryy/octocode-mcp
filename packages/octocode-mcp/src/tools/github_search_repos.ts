@@ -133,6 +133,8 @@ async function searchMultipleGitHubRepos(
           });
 
           return {
+            queryId: query.id,
+            queryDescription: query.queryDescription,
             error: apiResult.error,
             hints,
             metadata: {},
@@ -145,6 +147,8 @@ async function searchMultipleGitHubRepos(
           repositories as unknown as SimplifiedRepository[];
 
         return {
+          queryId: query.id,
+          queryDescription: query.queryDescription,
           repositories: typedRepositories,
           total_count: apiResult.data.total_count,
           metadata: {},
@@ -160,6 +164,8 @@ async function searchMultipleGitHubRepos(
         });
 
         return {
+          queryId: query.id,
+          queryDescription: query.queryDescription,
           error: errorMessage,
           hints,
           metadata: {},

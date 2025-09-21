@@ -75,10 +75,33 @@ export function registerPackageSearchTool(server: McpServer) {
         }
 
         try {
+          // Add queryDescription to queries if not provided
+          const enhancedArgs = { ...args };
+          if (enhancedArgs.npmPackages) {
+            enhancedArgs.npmPackages = enhancedArgs.npmPackages.map(
+              (pkg, index) => ({
+                ...pkg,
+                id: pkg.id || `npm-${index + 1}`,
+                queryDescription:
+                  pkg.queryDescription || `NPM package: ${pkg.name}`,
+              })
+            );
+          }
+          if (enhancedArgs.pythonPackages) {
+            enhancedArgs.pythonPackages = enhancedArgs.pythonPackages.map(
+              (pkg, index) => ({
+                ...pkg,
+                id: pkg.id || `python-${index + 1}`,
+                queryDescription:
+                  pkg.queryDescription || `Python package: ${pkg.name}`,
+              })
+            );
+          }
+
           // Use the unified searchPackagesAPI function
           // NPM enablement is now handled internally by searchPackagesAPI
           const searchResult = await searchPackagesAPI(
-            args as PackageSearchBulkParams
+            enhancedArgs as PackageSearchBulkParams
           );
 
           // Handle the result based on its type

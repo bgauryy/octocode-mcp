@@ -10,6 +10,9 @@ FEATURES:
 - Fetching types: fullContent, specific line range (startLine+endLine), pattern-based extraction (matchString+matchStringContextLines)
 - Bulk queries for comparative analysis across files
 
+MUST:
+- Verify path before fetching (do not hallucinate)
+
 HINTS:
 - Fetch content in a smart way (token efficient while getting the most relevant context)
 - Combine with search and strcuture tools after fetching for discovery and better research context
@@ -36,15 +39,20 @@ Find repositories for research
 FEATURES:
 - GitHub search API
 - Bulk queries
-- Topic/term separation for exploration vs targeting
+- Two complementary search approaches: queryTerms AND topics
+
+SEARCH STRATEGY:
+- queryTerms: Use for SPECIFIC keyword searches
+- topics: Use for GITHUB TOPIC exploration
+- CRITICAL: For exploratory research, ALWAYS use BOTH approaches in different queries
 
 HINTS:
-- use queryTerms for specific matches
-- use topics for exploration
-- Each query on bulk should search different direction (terms / topic)
-
-- use both queryTerms and topics in a bulk (each query should search different parts of research)
-- prefer popular and updated repositories on results
+- MANDATORY for exploration: Mix queryTerms and topics queries in bulk operations
+- queryTerms queries: Target specific repo
+- topics queries: Discover via GitHub repository topics 
+- Each query in bulk MUST use different approach (queryTerms and topics)
+- NEVER use only queryTerms OR only topics - combine both for comprehensive coverage
+- Prefer popular and updated repositories in results
 `,
   [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `Explore repository structure
 

@@ -1,36 +1,37 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
   GitHubBranchSchema,
 } from './baseSchema';
 
-export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
-  owner: GitHubOwnerSchema,
-  repo: GitHubRepoSchema,
-  branch: GitHubBranchSchema,
-  path: z.string().default('').optional().describe('Path'),
-  depth: z
-    .number()
-    .min(1)
-    .max(2)
-    .default(1)
-    .optional()
-    .describe('Depth to expolore'),
-  includeIgnored: z
-    .boolean()
-    .default(false)
-    .optional()
-    .describe('Include ignored files'),
-  showMedia: z
-    .boolean()
-    .default(false)
-    .optional()
-    .describe('Include meida files'),
-  queryDescription: z.string().optional().describe('Research purpose'),
-});
+export const GitHubViewRepoStructureQuerySchema =
+  BaseBulkQueryItemSchema.extend({
+    owner: GitHubOwnerSchema,
+    repo: GitHubRepoSchema,
+    branch: GitHubBranchSchema,
+    path: z.string().default('').optional().describe('Path'),
+    depth: z
+      .number()
+      .min(1)
+      .max(2)
+      .default(1)
+      .optional()
+      .describe('Depth to expolore'),
+    includeIgnored: z
+      .boolean()
+      .default(false)
+      .optional()
+      .describe('Include ignored files'),
+    showMedia: z
+      .boolean()
+      .default(false)
+      .optional()
+      .describe('Include meida files'),
+    queryDescription: z.string().optional().describe('Research purpose'),
+  });
 
 export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema

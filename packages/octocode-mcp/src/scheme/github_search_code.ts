@@ -1,26 +1,36 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
-  FlexibleArraySchema,
   LimitSchema,
   FileMatchScopeSchema,
-  DateRangeSchema,
   NumericRangeSchema,
   MinifySchema,
   SanitizeSchema,
+  GitHubOwnerSchema,
+  GitHubRepoSchema,
 } from './baseSchema';
 
-export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
-  queryTerms: z.array(z.string()).min(1).max(4).describe('Terms (AND)'),
-  owner: FlexibleArraySchema.stringOrArray.describe('Repository owner'),
-  repo: FlexibleArraySchema.stringOrArray.describe('Repository name'),
-  language: z.string().optional().describe('Language'),
+export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
+  queryTerms: z
+    .array(z.string())
+    .min(1)
+    .max(4)
+    .describe('Github search queries`'),
+  owner: z.union([GitHubOwnerSchema, z.array(GitHubOwnerSchema)]).optional(),
+  repo: z.union([GitHubRepoSchema, z.array(GitHubRepoSchema)]).optional(),
+  language: z.string().optional().describe('file language'),
   extension: z.string().optional().describe('file extension'),
-  filename: z.string().optional().describe('Filename'),
+  filename: z.string().optional().describe('File name'),
   path: z.string().optional().describe('Path'),
   stars: NumericRangeSchema.shape.stars,
-  pushed: DateRangeSchema.shape.updated.describe('Pushed'),
+  pushed: z
+    .string()
+    .regex(
+      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+    )
+    .optional()
+    .describe('Repository last push date filter'),
   match: FileMatchScopeSchema,
   limit: LimitSchema,
   minify: MinifySchema,
@@ -35,6 +45,8 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
 );
 
 export interface ProcessedCodeSearchResult {
+  queryId?: string;
+  queryDescription?: string;
   files?: Array<{
     path: string;
     text_matches: string[]; // Array of fragment strings only

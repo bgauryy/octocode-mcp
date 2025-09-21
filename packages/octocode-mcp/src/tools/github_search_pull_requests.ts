@@ -175,7 +175,8 @@ async function searchMultipleGitHubPullRequests(
           userContext
         );
         return {
-          queryId: `pr-search_${index + 1}`,
+          queryId: query.id || `pr-search_${index + 1}`,
+          queryDescription: query.queryDescription,
           data: result,
           metadata: {
             resultCount:
@@ -187,13 +188,14 @@ async function searchMultipleGitHubPullRequests(
             searchType: 'error' in result ? 'error' : 'success',
             queryArgs: {
               ...query,
-              id: `pr-search_${index + 1}`,
+              id: query.id || `pr-search_${index + 1}`,
             },
           },
         };
       } catch (error) {
         return {
-          queryId: `pr-search_${index + 1}`,
+          queryId: query.id || `pr-search_${index + 1}`,
+          queryDescription: query.queryDescription,
           data: {
             error:
               error instanceof Error ? error.message : 'Unknown error occurred',
@@ -205,7 +207,7 @@ async function searchMultipleGitHubPullRequests(
             hasResults: false,
             searchType: 'error',
             queryArgs: {
-              id: `pr-search_${index + 1}`,
+              id: query.id || `pr-search_${index + 1}`,
             },
           },
         };
@@ -218,8 +220,10 @@ async function searchMultipleGitHubPullRequests(
     if (result.status === 'fulfilled') {
       return result.value;
     } else {
+      const originalQuery = queries[index];
       return {
-        queryId: `pr-search_${index + 1}`,
+        queryId: originalQuery?.id || `pr-search_${index + 1}`,
+        queryDescription: originalQuery?.queryDescription,
         data: {
           error: result.reason?.message || 'Unknown error occurred',
           status: 500,
@@ -230,7 +234,7 @@ async function searchMultipleGitHubPullRequests(
           hasResults: false,
           searchType: 'error',
           queryArgs: {
-            id: `pr-search_${index + 1}`,
+            id: originalQuery?.id || `pr-search_${index + 1}`,
           },
         },
       };

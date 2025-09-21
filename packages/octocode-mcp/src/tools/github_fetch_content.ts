@@ -140,7 +140,10 @@ async function fetchMultipleGitHubFileContents(
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
       // Build the result object with new format (add queryDescription and queryId)
-      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
+      // Use user-provided queryDescription if available, otherwise construct from owner/repo/filePath
+      const queryDescription =
+        query.queryDescription ||
+        `${query.owner}/${query.repo}/${query.filePath}`;
       const resultObj: FileContentQueryResult = {
         queryId: query.id, // Add sequential query ID
         queryDescription,
@@ -195,7 +198,10 @@ async function fetchMultipleGitHubFileContents(
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
 
-      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
+      // Use user-provided queryDescription if available, otherwise construct from owner/repo/filePath
+      const queryDescription =
+        query.queryDescription ||
+        `${query.owner}/${query.repo}/${query.filePath}`;
       results.push({
         queryId: query.id, // Add sequential query ID
         queryDescription,

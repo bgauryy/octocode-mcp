@@ -20,9 +20,22 @@ export const draftSchema = z.boolean().optional().describe('Draft');
 export const BaseQuerySchema = z.object({
   id: queryIdSchema,
   queryDescription: queryDescriptionSchema,
-  verbose: verboseSchema,
 });
 
+// Base schema for single queries that don't support per-query verbose
+export const BaseSingleQuerySchema = z.object({
+  id: queryIdSchema,
+  queryDescription: queryDescriptionSchema,
+});
+
+// Base schema for bulk query items that support per-query verbose
+export const BaseBulkQueryItemSchema = z.object({
+  id: queryIdSchema,
+  queryDescription: queryDescriptionSchema,
+  verbose: verboseSchema.optional(),
+});
+
+// Legacy function - use BaseSingleQuerySchema.extend() or BaseBulkQueryItemSchema.extend() directly
 export function extendBaseQuerySchema<T extends z.ZodRawShape>(
   toolSpecificSchema: T
 ) {
@@ -62,8 +75,6 @@ export const GitHubBranchSchema = z
   .min(1)
   .max(255)
   .describe('Github Branch/tag/SHA');
-
-export const GitHubFilePathSchema = z.string().describe('Github File Path');
 
 export const LimitSchema = z
   .number()

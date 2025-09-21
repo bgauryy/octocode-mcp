@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseSingleQuerySchema,
   createBulkQuerySchema,
   FlexibleArraySchema,
   DateRangeSchema,
@@ -10,7 +10,7 @@ import {
   draftSchema,
 } from './baseSchema';
 
-export const GitHubPullRequestSearchQuerySchema = extendBaseQuerySchema({
+export const GitHubPullRequestSearchQuerySchema = BaseSingleQuerySchema.extend({
   query: z.string().optional().describe('Search query for PR content'),
 
   owner: FlexibleArraySchema.stringOrArray.describe(

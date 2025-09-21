@@ -175,7 +175,10 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');
     this.addSimpleFilter(params.stars, 'stars');
-    this.addSimpleFilter(params.pushed, 'pushed');
+    // Add pushed filter if it exists in params (for backward compatibility)
+    if ('pushed' in params && params.pushed) {
+      this.addSimpleFilter(params.pushed, 'pushed');
+    }
     return this;
   }
 
@@ -209,7 +212,7 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
 
   addRepoFilters(params: GitHubReposSearchQuery): this {
     this.addLanguageFilter(params.language);
-    this.addArrayFilter(params.topic, 'topic');
+    this.addArrayFilter(params.topics, 'topic');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.size, 'size');
     this.addSimpleFilter(params.created, 'created');
@@ -456,8 +459,8 @@ function mapLanguageToGitHub(language: string): string {
 export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   return new CodeSearchQueryBuilder()
     .addQueryTerms(params)
-    .addOwnerRepo(params)
     .addSearchFilters(params)
+    .addOwnerRepo(params)
     .addMatchFilters(params)
     .build();
 }

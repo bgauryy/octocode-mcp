@@ -74,23 +74,32 @@ export interface BulkResponseConfig {
 }
 
 /**
- * Generate sequential query IDs for bulk operations
- * Always generates sequential IDs regardless of existing id field
+ * Ensure all queries have unique IDs for tracking and error reporting
+ * Accepts external IDs from schema, generates fallback IDs only when needed
  *
- * @param queries Array of queries to assign sequential IDs
+ * @param queries Array of queries to assign IDs
  * @param defaultPrefix Prefix for generated IDs (default: 'query')
- * @returns Array of queries with sequential IDs (query_1, query_2, etc.)
+ * @returns Array of queries with unique IDs (preserves external IDs, generates fallbacks)
  */
 export function ensureUniqueQueryIds<T extends HasOptionalId>(
   queries: T[],
   defaultPrefix: string = 'query'
 ): Array<T & { id: string }> {
-  return queries.map((query, index) => {
-    // Always generate sequential ID: query_1, query_2, query_3, etc.
-    const sequentialId = `${defaultPrefix}_${index + 1}`;
+  const usedIds = new Set<string>();
 
-    // Create result with sequential ID
-    return { ...query, id: sequentialId };
+  return queries.map((query, index) => {
+    // First, try to use external ID from schema if provided
+    let queryId = safeExtractString(query, 'id');
+
+    // If no external ID or ID already used, generate fallback
+    if (!queryId || usedIds.has(queryId)) {
+      queryId = `${defaultPrefix}_${index + 1}`;
+    }
+
+    usedIds.add(queryId);
+
+    // Create result with preserved or generated ID
+    return { ...query, id: queryId };
   });
 }
 
@@ -178,8 +187,11 @@ function generateQueryDescription(
   // Search terms or path
   const queryTerms = query.queryTerms as string[] | undefined;
   const path = safeExtractString(query, 'path');
+  const filePath = safeExtractString(query, 'filePath');
   if (queryTerms && queryTerms.length > 0) {
     parts.push(`search: ${queryTerms.join(', ')}`);
+  } else if (filePath) {
+    parts.push(`file: ${filePath}`);
   } else if (path) {
     parts.push(`path: ${path}`);
   }
@@ -188,6 +200,24 @@ function generateQueryDescription(
   const language = safeExtractString(query, 'language');
   if (language) {
     parts.push(`language:${language}`);
+  }
+
+  // Package name for package searches
+  const name = safeExtractString(query, 'name');
+  if (name && !owner && !repo) {
+    parts.push(`package: ${name}`);
+  }
+
+  // Author for commit/PR searches
+  const author = safeExtractString(query, 'author');
+  if (author) {
+    parts.push(`author: ${author}`);
+  }
+
+  // Branch for structure searches
+  const branch = safeExtractString(query, 'branch');
+  if (branch && branch !== 'main' && branch !== 'master') {
+    parts.push(`branch: ${branch}`);
   }
 
   return parts.length > 0 ? parts.join(' - ') : undefined;

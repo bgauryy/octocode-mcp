@@ -121,7 +121,6 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
     fullContent: false,
     minified: false,
     sanitize: true,
-    verbose: false,
     matchStringContextLines: 5,
     ...overrides,
   };
@@ -226,14 +225,13 @@ describe('GitHub API Utils', () => {
         owner: 'facebook',
         repo: 'react',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'Button repo:facebook/react language:typescript',
+        q: 'Button language:typescript repo:facebook/react',
         per_page: 30,
         page: 1,
         headers: {
@@ -262,8 +260,9 @@ describe('GitHub API Utils', () => {
 
       const params = {
         queryTerms: [''],
+        owner: 'test',
+        repo: 'repo',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
@@ -302,9 +301,10 @@ describe('GitHub API Utils', () => {
 
       const params = {
         queryTerms: ['test'],
+        owner: 'test',
+        repo: 'repo',
         minify: true,
         sanitize: true,
-        verbose: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -332,9 +332,10 @@ describe('GitHub API Utils', () => {
 
       const params = {
         queryTerms: ['test'],
+        owner: 'test',
+        repo: 'repo',
         minify: true,
         sanitize: true,
-        verbose: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -362,9 +363,10 @@ describe('GitHub API Utils', () => {
 
       const params = {
         queryTerms: ['test'],
+        owner: 'test',
+        repo: 'repo',
         minify: true,
         sanitize: true,
-        verbose: false,
       };
       const result = await searchGitHubCodeAPI(params);
 
@@ -390,7 +392,6 @@ describe('GitHub API Utils', () => {
         filename: 'index.js',
         extension: 'js',
         path: 'src',
-        verbose: false,
         match: ['file'] as ('file' | 'path')[],
         minify: true,
         sanitize: true,
@@ -399,7 +400,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export repo:microsoft/vscode language:JavaScript filename:index.js extension:js path:src in:file',
+        q: 'function export language:JavaScript filename:index.js extension:js path:src repo:microsoft/vscode in:file',
         per_page: 30,
         page: 1,
         headers: {
@@ -417,15 +418,15 @@ describe('GitHub API Utils', () => {
       const userParams = {
         queryTerms: ['function'],
         owner: 'octocat',
+        repo: 'test',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
       await searchGitHubCodeAPI(userParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat',
+        q: 'function repo:octocat/test',
         per_page: 30,
         page: 1,
         headers: {
@@ -437,7 +438,7 @@ describe('GitHub API Utils', () => {
       const orgParams = {
         queryTerms: ['function'],
         owner: 'github',
-        verbose: false,
+        repo: 'test',
         minify: true,
         sanitize: true,
       };
@@ -445,7 +446,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(orgParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:github', // Implementation uses user: for all owners by default
+        q: 'function repo:github/test', // Implementation uses repo: when both owner and repo are provided
         per_page: 30,
         page: 1,
         headers: {
@@ -456,11 +457,10 @@ describe('GitHub API Utils', () => {
       // Test multiple owners (array format)
       const multipleOwnersParams = {
         queryTerms: ['function'],
-        owner: ['octocat', 'github'],
+        owner: 'octocat',
+        repo: 'test',
         minify: true,
         sanitize: true,
-        verbose: false,
-
         excludeArchived: true,
         excludeForks: false,
       };
@@ -468,7 +468,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(multipleOwnersParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat user:github', // Implementation adds user: for each owner
+        q: 'function repo:octocat/test', // Implementation uses repo: when repo is provided
         per_page: 30,
         page: 1,
         headers: {
@@ -485,15 +485,16 @@ describe('GitHub API Utils', () => {
       // Test basic search without quality boost
       const forkTrueParams = {
         queryTerms: ['function'],
+        owner: 'test',
+        repo: 'repo',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
       await searchGitHubCodeAPI(forkTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function',
+        q: 'function repo:test/repo',
         per_page: 30,
         page: 1,
         headers: {
@@ -508,7 +509,6 @@ describe('GitHub API Utils', () => {
         repo: 'react',
         minify: true,
         sanitize: true,
-        verbose: false,
       };
 
       await searchGitHubCodeAPI(forkFalseParams);
@@ -525,9 +525,9 @@ describe('GitHub API Utils', () => {
       // Test with explicit stars and pushed filters
       const forkOnlyParams = {
         queryTerms: ['function'],
+        owner: 'test',
+        repo: 'repo',
         stars: '>100',
-        pushed: '>2023-01-01',
-        verbose: false,
         minify: true,
         sanitize: true,
       };
@@ -535,7 +535,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(forkOnlyParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function stars:>100 pushed:>2023-01-01',
+        q: 'function stars:>100 repo:test/repo',
         per_page: 30,
         page: 1,
         headers: {
@@ -552,15 +552,16 @@ describe('GitHub API Utils', () => {
       // Test with quality boost enabled (adds stars and pushed filters)
       const archivedTrueParams = {
         queryTerms: ['function'],
+        owner: 'test',
+        repo: 'repo',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
       await searchGitHubCodeAPI(archivedTrueParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function',
+        q: 'function repo:test/repo',
         per_page: 30,
         page: 1,
         headers: {
@@ -572,15 +573,15 @@ describe('GitHub API Utils', () => {
       const archivedFalseParams = {
         queryTerms: ['function'],
         owner: 'microsoft',
+        repo: 'test',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
       await searchGitHubCodeAPI(archivedFalseParams);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:microsoft',
+        q: 'function repo:microsoft/test',
         per_page: 30,
         page: 1,
         headers: {
@@ -600,7 +601,6 @@ describe('GitHub API Utils', () => {
         owner: 'facebook',
         repo: 'react',
         minify: true,
-        verbose: false,
         sanitize: true,
       };
 
@@ -623,17 +623,17 @@ describe('GitHub API Utils', () => {
 
       const params = {
         queryTerms: ['function'],
-        owner: ['octocat', 'github'],
+        owner: 'octocat',
+        repo: 'test',
         language: 'javascript',
         minify: true,
         sanitize: true,
-        verbose: false,
       };
 
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function user:octocat user:github language:JavaScript',
+        q: 'function language:JavaScript repo:octocat/test',
         per_page: 30,
         page: 1,
         headers: {
@@ -667,7 +667,6 @@ describe('GitHub API Utils', () => {
 
         const params = {
           queryTerms: ['react'],
-          verbose: false,
           language: 'javascript',
           stars: '>1000',
         };
@@ -708,9 +707,7 @@ describe('GitHub API Utils', () => {
           status: 200,
         });
 
-        const params = {
-          verbose: false,
-        };
+        const params = {};
         const result = await searchGitHubReposAPI(params);
 
         // With the new implementation, empty queries work because we always add archive/fork filters
@@ -725,13 +722,12 @@ describe('GitHub API Utils', () => {
         const params = {
           queryTerms: ['machine', 'learning'],
           language: 'python',
-          owner: ['google', 'microsoft'],
-          topic: ['ml', 'ai'],
+          owner: 'google',
+          topics: ['ml', 'ai'],
           stars: '>100',
           forks: '10..50',
           size: '<1000',
           created: '>2020-01-01',
-          verbose: false,
           updated: '<2023-12-31',
           archived: false,
           'include-forks': 'false' as const,
@@ -746,7 +742,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning user:google user:microsoft language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived is:not-fork';
+          'machine learning user:google language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived is:not-fork';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,
@@ -1127,7 +1123,6 @@ describe('GitHub API Utils', () => {
               repo: 'react',
               branch: 'main',
               path: '',
-              verbose: false,
               depth: 1,
               includeIgnored: false,
               showMedia: false,
@@ -1193,7 +1188,6 @@ describe('GitHub API Utils', () => {
             const params = {
               owner: 'nonexistent',
               repo: 'repo',
-              verbose: false,
               branch: 'main',
             };
 
@@ -1257,7 +1251,6 @@ describe('GitHub API Utils', () => {
             const params = {
               owner: 'test',
               repo: 'repo',
-              verbose: false,
               branch: 'nonexistent-branch',
             };
 

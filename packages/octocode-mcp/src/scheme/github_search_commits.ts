@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseSingleQuerySchema,
   createBulkQuerySchema,
   SortingSchema,
 } from './baseSchema';
 
-export const GitHubCommitSearchQuerySchema = extendBaseQuerySchema({
+export const GitHubCommitSearchQuerySchema = BaseSingleQuerySchema.extend({
   queryTerms: z
     .array(z.string())
     .optional()
@@ -90,6 +90,10 @@ export const GitHubCommitSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubCommitSearchQuerySchema,
   'Commit search queries'
 );
+
+export type GitHubCommitSearchBulkQuery = z.infer<
+  typeof GitHubCommitSearchBulkQuerySchema
+>;
 
 export interface GitHubCommitSearchResult {
   total_count: number;

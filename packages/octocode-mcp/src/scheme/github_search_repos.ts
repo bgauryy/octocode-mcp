@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseSingleQuerySchema,
   createBulkQuerySchema,
   FlexibleArraySchema,
   LimitSchema,
@@ -18,10 +18,15 @@ export interface SimplifiedRepository {
   updatedAt: string;
 }
 
-const GitHubReposSearchSingleQuerySchema = extendBaseQuerySchema({
-  queryTerms: z.array(z.string()).optional().describe('Terms'),
+const GitHubReposSearchSingleQuerySchema = BaseSingleQuerySchema.extend({
+  queryTerms: z
+    .array(z.string())
+    .optional()
+    .describe('search repos by search terms'),
   owner: FlexibleArraySchema.stringOrArrayOrNull.describe('Owner(s)'),
-  topic: FlexibleArraySchema.stringOrArrayOrNull.describe('Topics'),
+  topics: FlexibleArraySchema.stringOrArrayOrNull.describe(
+    'search repos by github topics'
+  ),
   language: z.string().nullable().optional().describe('Language'),
   stars: FlexibleArraySchema.numberOrStringRangeOrNull.describe('Stars'),
   size: z.string().nullable().optional().describe('Size KB'),

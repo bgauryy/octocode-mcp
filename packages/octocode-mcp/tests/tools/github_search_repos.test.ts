@@ -199,7 +199,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ topic: 'machine-learning' }],
+          queries: [{ topics: 'machine-learning' }],
         }
       );
 
@@ -766,8 +766,8 @@ describe('GitHub Search Repositories Tool', () => {
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
-            { queryTerms: ['react'], topic: 'frontend' },
-            { queryTerms: ['vue'], topic: 'frontend' },
+            { queryTerms: ['react'], topics: 'frontend' },
+            { queryTerms: ['vue'], topics: 'frontend' },
           ],
         }
       );

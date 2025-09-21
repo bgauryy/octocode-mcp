@@ -1,19 +1,22 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
-  GitHubFilePathSchema,
   GitHubBranchSchema,
   MinifySchema,
   SanitizeSchema,
 } from './baseSchema';
 
-export const FileContentQuerySchema = extendBaseQuerySchema({
+export const FileContentQuerySchema = BaseBulkQueryItemSchema.extend({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
-  filePath: GitHubFilePathSchema,
+  minified: MinifySchema,
+  sanitize: SanitizeSchema,
+  filePath: z
+    .string()
+    .describe('Github File Path - MUST be exact absolute path from repo'),
   branch: GitHubBranchSchema.optional(),
   fullContent: z.boolean().default(false).describe('Return entire file'),
   startLine: z.number().int().min(1).optional().describe('Start line in file'),
@@ -26,8 +29,6 @@ export const FileContentQuerySchema = extendBaseQuerySchema({
     .max(50)
     .default(5)
     .describe('Lines before and after matchString'),
-  minified: MinifySchema,
-  sanitize: SanitizeSchema,
 });
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;

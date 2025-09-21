@@ -114,7 +114,8 @@ async function exploreMultipleRepositoryStructures(
         // Create API request with properly typed fields
         const apiRequest: GitHubViewRepoStructureQuery = {
           id: String(query.id),
-          verbose: query.verbose,
+          queryDescription: query.queryDescription,
+          verbose: query.verbose || false,
           owner: String(query.owner),
           repo: String(query.repo),
           branch: String(query.branch),
