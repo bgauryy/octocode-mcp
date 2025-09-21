@@ -67,20 +67,18 @@ graph TB
 
 ### Entry Points & Server
 
-**Location**: `src/index.ts`, `src/server.ts`
-
 The system supports two deployment modes:
 
-1. **Standalone MCP Server** (`index.ts`): Standard MCP protocol over stdio
-2. **HTTP Server** (`server.ts`): Express.js server with HTTP endpoints (Beta)
+1. **Standalone MCP Server**: Standard MCP protocol over stdio
+2. **HTTP Server**: Express.js server with HTTP endpoints (Beta)
 
-**Key Features** (`src/index.ts`):
+**Key Features**:
 - Graceful shutdown handling with cleanup timeout
 - Tool registration and capability management  
 - Beta feature toggling (sampling)
 - Cache cleanup on shutdown
 
-**HTTP Server Features** (`src/server.ts`):
+**HTTP Server Features**:
 - Express.js HTTP endpoints for MCP over HTTP
 - CORS support for cross-origin requests
 - JSON-RPC 2.0 over HTTP transport
@@ -88,12 +86,11 @@ The system supports two deployment modes:
 
 ### Configuration Management
 
-**Location**: `src/serverConfig.ts`
-
 **ServerConfig Interface**:
 ```typescript
 export interface ServerConfig {
   version: string;
+  toolsToRun?: string[];
   enableTools?: string[];
   disableTools?: string[];
   enableLogging: boolean;
@@ -111,46 +108,44 @@ export interface ServerConfig {
 
 **Configuration Sources**:
 ```
-Environment Variables → GitHub CLI Token → Cached Token → Server Config
+GitHub CLI Token → Environment Variables → Cached Token → Server Config
 ```
 
 ### GitHub API Integration
 
-**Location**: `src/github/`
-
 Comprehensive GitHub API abstraction layer:
 
-#### Core Client (`client.ts`)
+#### Core Client
 - **Octokit Integration**: Official GitHub SDK with throttling plugin
 - **Authentication**: Unified token resolution via serverConfig
 - **Rate Limiting**: Built-in GitHub API rate limit handling  
 - **Connection Management**: Cached Octokit instances with token rotation
 
 #### Specialized Search Modules
-- **Code Search** (`codeSearch.ts`): Optimized search result processing with content minification
-- **Repository Search** (`repoSearch.ts`): Repository discovery with quality filtering
-- **Commit Search** (`commitSearch.ts`): Commit history analysis with optional diff content
-- **Pull Request Search** (`pullRequestSearch.ts`): PR analysis with file changes support
+- **Code Search**: Optimized search result processing with content minification
+- **Repository Search**: Repository discovery with quality filtering
+- **Commit Search**: Commit history analysis with optional diff content
+- **Pull Request Search**: PR analysis with file changes support
 
-#### File Operations (`fileOperations.ts`)
+#### File Operations
 - **Content Fetching**: File content retrieval with partial access via line ranges
 - **Repository Structure**: Directory tree exploration with smart filtering
 - **Binary Detection**: Safe handling of binary files
 - **Content Processing**: Integration with minification and sanitization
 
-#### Query Builders (`queryBuilders.ts`)
+#### Query Builders
 - **Search Query Construction**: GitHub search syntax generation
 - **Quality Boosting**: Automated filters for better results (stars, activity, etc.)
 - **Language Mapping**: Common language identifiers to GitHub API values
 - **Parameter Validation**: Input sanitization and transformation
 
-#### User Info & Rate Limits (`userInfo.ts`)
+#### User Info & Rate Limits
 - **Authentication Status**: User information and token validation
 - **Rate Limit Monitoring**: Real-time rate limit status checking
 - **API Throttling**: Intelligent request pacing
 - **Context Management**: User session and organization tracking
 
-#### Error Handling (`errors.ts`)
+#### Error Handling
 - **Comprehensive Error Mapping**: GitHub API error categorization
 - **Recovery Suggestions**: Actionable hints for common issues
 - **Scope Analysis**: OAuth scope validation and recommendations
@@ -158,104 +153,109 @@ Comprehensive GitHub API abstraction layer:
 
 ### NPM Integration
 
-**Location**: `src/npm/`
-
 NPM package management and command execution:
 
-#### Base Command Builder (`BaseCommandBuilder.ts`)
+#### Base Command Builder
 - **Abstract Base Class**: Framework for CLI command construction
 - **Parameter Normalization**: Consistent argument handling
 - **Flag Management**: Systematic command-line flag building
 - **Query Support**: Search term handling with AND/OR logic
 
-#### NPM Command Builder (`NpmCommandBuilder.ts`)
+#### NPM Command Builder
 - **Package Search**: NPM registry search command construction
 - **Package View**: Detailed package metadata retrieval
 - **JSON Output**: Structured data extraction from NPM CLI
 
-#### Package Operations (`package.ts`)
+#### Package Operations
 - **Multi-Ecosystem Search**: NPM and Python package discovery
 - **Metadata Enhancement**: Repository URL extraction and validation
 - **Bulk Operations**: Parallel package processing
 - **Deduplication**: Intelligent package result optimization
 
-#### NPM API Integration (`npmAPI.ts`)
+#### NPM API Integration
 - **Connection Testing**: NPM registry connectivity verification
 - **Status Management**: NPM availability caching
 - **Command Execution**: Secure NPM CLI command execution
 
-#### User Details (`getNPMUserDetails.ts`)
+#### User Details
 - **Registry Configuration**: NPM registry URL detection
 - **Connection Status**: NPM CLI availability checking
 
 ### MCP Tools
 
-**Location**: `src/tools/`
-
 The tool system follows a modular architecture with comprehensive GitHub and NPM capabilities:
 
 #### Core GitHub Tools
-1. **GitHub Code Search** (`github_search_code.ts`)
-   - Semantic and technical search strategies
-   - Progressive refinement workflows
-   - Bulk operation support (up to 5 queries)
-   - Quality boosting and relevance optimization
+1. **GitHub Code Search**
+   - GitHub search API with bulk queries for comprehensive technique discovery
+   - Simple queryTerms approach: Use up to 3 focused terms per query for best results
+   - Progressive refinement workflows with separate queries for different aspects
+   - Quality boosting and relevance optimization based on content and path
 
-2. **GitHub File Content** (`github_fetch_content.ts`)
-   - File content retrieval with line range support
-   - Context extraction with `matchString` functionality
-   - Binary file detection and handling
+2. **GitHub File Content**
+   - Fetching types: fullContent, specific line range (startLine+endLine), pattern-based extraction (matchString+matchStringContextLines)
+   - Bulk queries for comparative analysis across files
+   - Token efficient content retrieval with smart context extraction
    - Beta: Automatic code explanation via MCP sampling
 
-3. **GitHub Repository Search** (`github_search_repos.ts`)
-   - Repository discovery and filtering
-   - Topic and language-based search
-   - Star count and activity-based quality filtering
-   - Bulk repository analysis
+3. **GitHub Repository Search**
+   - Two complementary search approaches: queryTerms AND topics
+   - queryTerms for specific keyword searches, topics for GitHub topic exploration
+   - Bulk queries with mandatory mixing of both approaches for comprehensive coverage
+   - Preference for popular and updated repositories in results
 
-4. **GitHub Repository Structure** (`github_view_repo_structure.ts`)
-   - Directory tree exploration with depth control
-   - Smart filtering (excludes build artifacts, media files)
-   - Recursive structure traversal with rate limiting
-   - File and folder organization analysis
+4. **GitHub Repository Structure**
+   - GitHub API structure exploration with bulk queries
+   - Depth control for performance (max 2 levels)
+   - File/folder filtering options with clean results
+   - Start with root path, use specific paths for focused exploration
 
-5. **GitHub Commit Search** (`github_search_commits.ts`)
-   - Commit history analysis with author/date filtering
-   - Optional diff content retrieval
-   - Message search and hash-based lookup
-   - Commit statistics and file change analysis
+5. **GitHub Commit Search**
+   - Commit search by message/author/date/repo with bulk queries
+   - Date range filtering (author-date, committer-date) with operators
+   - Optional diff content (WARNING: token expensive)
+   - queryTerms for commit message keywords and author analysis
 
-6. **GitHub Pull Request Search** (`github_search_pull_requests.ts`)
-   - PR discovery with state and review status filtering
-   - Direct PR fetching by number
-   - File change analysis with diff content
-   - Comment retrieval and review analysis
+6. **GitHub Pull Request Search**
+   - PR search by state/author/labels with bulk queries
+   - Direct PR fetching by number (prNumber + owner/repo) - most efficient
+   - Optional comments/diffs (WARNING: token expensive)
+   - Filter by state/review status for targeted results
 
-7. **Package Search** (`package_search.ts`)
-   - Multi-ecosystem package discovery (NPM and Python)
-   - Repository URL extraction and validation
-   - Version history and download statistics
-   - Metadata enhancement with repository links
+7. **Package Search**
+   - Multi-ecosystem search (NPM + Python) with bulk queries
+   - Rich metadata with GitHub repository links
+   - Configurable search strategies and limits
+   - Search by functionality rather than exact names
 
 #### Tool Infrastructure
 
-**Tool Configuration** (`tools.ts`):
+**Tool Configuration**:
 - Tool registry and configuration management
 - Feature toggling and tool enabling/disabling
 - Tool categorization (search, content, history, npm)
 
-**Tool Manager** (`toolsManager.ts`):
+**Tool Name Mapping**:
+- GitHub Code Search → `githubSearchCode`
+- GitHub File Content → `githubGetFileContent`
+- GitHub Repository Search → `githubSearchRepositories`
+- GitHub Repository Structure → `githubViewRepoStructure`
+- GitHub Commit Search → `githubSearchCommits`
+- GitHub Pull Request Search → `githubSearchPullRequests`
+- Package Search → `packageSearch`
+
+**Tool Manager**:
 - Dynamic tool registration
 - Error handling during tool initialization
 - Success/failure tracking for tool loading
 
-**Hint Generation** (`hints.ts`):
+**Hint Generation**:
 - Context-aware guidance generation
 - Research goal-based recommendations
 - Error recovery suggestions with actionable steps
 - Tool navigation and workflow suggestions
 
-**Type Definitions** (`types.ts`):
+**Type Definitions**:
 - Package metadata types (NPM, Python)
 - Enhanced package result structures
 - Query parameter definitions
@@ -263,73 +263,69 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
 
 ### Schema Validation
 
-**Location**: `src/scheme/`
-
 Comprehensive Zod-based schema validation for all tool parameters:
 
-#### Base Schema Framework (`baseSchema.ts`)
+#### Base Schema Framework
 - **Common Patterns**: Research goals, query IDs, bulk operations
 - **Extension Utilities**: Schema composition and reusability
 - **Validation Helpers**: Type guards and parameter validation
 - **Error Handling**: Structured validation error responses
 
 #### Tool-Specific Schemas
-- **GitHub Code Search** (`github_search_code.ts`): Query terms, language filters, repository targeting
-- **GitHub File Content** (`github_fetch_content.ts`): File paths, line ranges, match strings
-- **GitHub Commit Search** (`github_search_commits.ts`): Author filters, date ranges, hash lookups
-- **GitHub PR Search** (`github_search_pull_requests.ts`): State filters, review status, file changes
-- **GitHub Repository Search** (`github_search_repos.ts`): Topics, languages, quality filters
-- **Repository Structure** (`github_view_repo_structure.ts`): Path exploration, depth control
-- **Package Search** (`package_search.ts`): Multi-ecosystem queries, metadata options
+- **GitHub Code Search**: Query terms, language filters, repository targeting
+- **GitHub File Content**: File paths, line ranges, match strings
+- **GitHub Commit Search**: Author filters, date ranges, hash lookups
+- **GitHub PR Search**: State filters, review status, file changes
+- **GitHub Repository Search**: Topics, languages, quality filters
+- **Repository Structure**: Path exploration, depth control
+- **Package Search**: Multi-ecosystem queries, metadata options
 
 ### Security Layer
 
-**Location**: `src/security/`
-
 Multi-layered security architecture with comprehensive protection:
 
-#### Content Sanitizer (`contentSanitizer.ts`)
+#### Content Sanitizer
 - **Secret Detection**: Extensive pattern library for API keys, tokens, credentials
 - **Content Filtering**: Malicious pattern removal and prompt injection detection
 - **Length Limits**: 1MB max content, 10K max line length
 - **Parameter Validation**: Input sanitization with detailed warnings
 - **Security Result Structure**: Comprehensive sanitization reporting
 
-#### Security Validation Wrapper (`withSecurityValidation.ts`)
+#### Security Validation Wrapper
 - **Universal Tool Protection**: Applied to all tools for consistent security
 - **User Context Extraction**: Enterprise mode support with organization tracking
 - **Input Sanitization**: Parameter validation and cleaning
 - **Audit Integration**: Comprehensive event logging
 - **Rate Limit Integration**: Per-user API request tracking
 
-#### Rate Limiter (`rateLimiter.ts`)
+#### Rate Limiter
 - **Multi-tier Limits**: API requests (100/hour), auth attempts (10/hour), token requests (5/hour)
 - **Sliding Windows**: Hour-based time windows with precise tracking
 - **User Isolation**: Per-user rate limit tracking and enforcement
 - **Dynamic Configuration**: Runtime configuration updates
 - **Cleanup Management**: Automatic expired window cleanup
 
-#### Audit Logger (`auditLogger.ts`)
+#### Audit Logger
 - **Event Tracking**: Authentication, API calls, tool execution logging
 - **Structured Events**: Event ID, timestamp, action, outcome tracking
 - **Buffer Management**: In-memory buffering with periodic disk flush
 - **Enterprise Ready**: Configurable retention and cleanup policies
 - **Statistics**: Usage tracking and audit trail analysis
 
-#### Credential Store (`credentialStore.ts`)
+#### Credential Store
 - **Secure Encryption**: AES-256-GCM encryption for credential storage
 - **Memory-Based Storage**: Secure in-memory credential caching
 - **Automatic Cleanup**: Time-based credential expiration (24 hours)
 - **Token Management**: Specialized GitHub token storage and retrieval
 - **Security Features**: Secure key derivation and IV generation
 
-#### Sensitive Data Masking (`mask.ts`)
+#### Sensitive Data Masking
 - **Pattern Detection**: Comprehensive sensitive data pattern library
 - **Smart Masking**: Context-aware data redaction strategies
 - **High-Accuracy Patterns**: API keys, tokens, secrets, credentials
 - **File Context Awareness**: Different patterns for different file types
 
-#### Regex Patterns (`regexes.ts`)
+#### Regex Patterns
 - **Comprehensive Pattern Library**: 50+ patterns for various secret types
 - **Accuracy Classification**: High and medium accuracy pattern matching
 - **File Context Support**: Context-specific pattern matching
@@ -337,11 +333,9 @@ Multi-layered security architecture with comprehensive protection:
 
 ### Utility Services
 
-**Location**: `src/utils/`
-
 Core utility services supporting the entire system:
 
-#### Caching System (`cache.ts`)
+#### Caching System
 - **Multi-layer Caching**: Tool results and data caching with different TTL strategies
 - **24-hour TTL**: Balances freshness with performance for GitHub data
 - **1000 key limit**: Prevents unbounded memory growth with LRU-style cleanup
@@ -366,28 +360,28 @@ export async function withDataCache<T>(
 ): Promise<T>
 ```
 
-#### Command Execution (`exec.ts`)
+#### Command Execution
 - **Secure NPM Command Execution**: Whitelist-based command validation
 - **Argument Escaping**: Shell injection prevention
 - **Timeout Management**: Configurable command timeouts
 - **Error Handling**: Structured command result parsing
 - **GitHub CLI Integration**: Token extraction from GitHub CLI
 
-#### Bulk Operations (`bulkOperations.ts`)
+#### Bulk Operations
 - **Parallel Query Processing**: Concurrent execution with error isolation
 - **Query ID Management**: Automatic unique ID generation for tracking
 - **Error Recovery**: Graceful handling of partial failures
 - **Aggregated Context**: Cross-query result analysis and insights
 - **Response Optimization**: Structured bulk response formatting
 
-#### Promise Utilities (`promiseUtils.ts`)
+#### Promise Utilities
 - **Error Isolation**: Parallel execution with individual error handling
 - **Concurrency Control**: Configurable parallel processing limits
 - **Timeout Management**: Operation-level timeout enforcement
 - **Retry Logic**: Exponential backoff with custom retry strategies
 - **Batch Processing**: Efficient processing of large item collections
 
-#### File Filtering (`fileFilters.ts`)
+#### File Filtering
 - **Smart Filtering**: Intelligent exclusion of build artifacts and media files
 - **Context-Aware**: Different filtering rules for different scenarios
 - **Performance Optimization**: Efficient filtering for large directory structures
@@ -395,37 +389,35 @@ export async function withDataCache<T>(
 
 ### MCP Protocol Integration
 
-**Location**: `src/` (various MCP-specific files)
-
 Integration with Model Context Protocol specifications:
 
-#### Response Handling (`responses.ts`)
+#### Response Handling
 - **Structured Response Format**: Consistent `CallToolResult` structure across all tools
 - **Error Standardization**: Unified error response format with hints and metadata
 - **Data Optimization**: Content wrapping and JSON optimization for token efficiency
 - **Utility Functions**: Date formatting, URL simplification, text optimization helpers
 
-#### Sampling Integration (`sampling.ts`)
+#### Sampling Integration
 - **Beta Feature**: MCP sampling protocol support for code explanation
 - **Request/Response Types**: Proper TypeScript interfaces for sampling operations
 - **Text Analysis**: Automatic code explanation generation
 - **Token Usage Tracking**: Prompt and completion token monitoring
 
-#### Resource Management (`resources.ts`)
+#### Resource Management
 - **MCP Resource Registration**: Resource discovery and capability advertisement
 - **Resource Handlers**: Structured resource content delivery
 - **Metadata Support**: Resource descriptions and type information
 
-#### Prompt Templates (`prompts.ts`)
+#### Prompt Templates
 - **MCP Prompt Registration**: Prompt template discovery and management
 - **Template Handlers**: Dynamic prompt generation with parameter substitution
 - **Context Integration**: Tool-aware prompt generation
 
-#### System Integration (`systemPrompts.ts`)
+#### System Integration
 - **System-level Prompts**: Core system behavior and instruction templates
 - **Tool Guidance**: AI assistant guidance for tool usage optimization
 
-#### Constants (`constants.ts`)
+#### Constants
 - **Research Goals**: Enumeration of supported research goal types
 - **Tool Names**: Centralized tool name constants for consistency
 - **Configuration Values**: System-wide constant definitions
@@ -484,14 +476,14 @@ sequenceDiagram
     participant Cache as Token Cache
     participant GitHub as GitHub API
     
-    Config->>EnvVar: Check GITHUB_TOKEN
-    alt Environment Token Found
-        EnvVar-->>Config: Return Token
-    else No Environment Token
-        Config->>GitHubCLI: Extract CLI Token
-        alt CLI Token Found
-            GitHubCLI-->>Config: Return Token
-        else No CLI Token
+    Config->>GitHubCLI: Extract CLI Token
+    alt CLI Token Found
+        GitHubCLI-->>Config: Return Token
+    else No CLI Token
+        Config->>EnvVar: Check GITHUB_TOKEN
+        alt Environment Token Found
+            EnvVar-->>Config: Return Token
+        else No Environment Token
             Config-->>Config: Return null
         end
     end
@@ -599,6 +591,7 @@ The security architecture is built on multiple protective layers:
 
 The system provides 7 comprehensive tools organized by functionality:
 
+#### Default Tools (Enabled by Default)
 1. **Repository Discovery Tools**
    - **GitHub Repository Search**: Topic-based discovery, quality filtering, language targeting
    - **GitHub Repository Structure**: Directory exploration, file organization analysis
@@ -606,9 +599,10 @@ The system provides 7 comprehensive tools organized by functionality:
 2. **Code Analysis Tools**  
    - **GitHub Code Search**: Semantic and technical code pattern discovery
    - **GitHub File Content**: Content examination with line ranges and context matching
-   - **GitHub Commit Search**: History analysis with diff content and author filtering
 
-3. **Collaboration Analysis Tools**
+#### Optional Tools (Disabled by Default)
+3. **History Analysis Tools**
+   - **GitHub Commit Search**: History analysis with diff content and author filtering
    - **GitHub Pull Request Search**: PR workflow analysis, review status, file changes
 
 4. **Package Ecosystem Tools**
@@ -653,7 +647,7 @@ Code Search ←→ File Content ←→ Commit Search ←→ PR Search
 
 ### Intelligent Hint System
 
-**Context-Aware Guidance** (`src/tools/hints.ts`):
+**Context-Aware Guidance**:
 - **Error Recovery**: Actionable suggestions based on error type analysis
 - **Research Flow**: Next-step recommendations based on current results
 - **Tool Navigation**: Strategic tool chaining suggestions
