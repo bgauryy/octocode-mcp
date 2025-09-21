@@ -732,6 +732,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: 'search term',
           minified: true,
           matchStringContextLines: 3,
+          verbose: false,
         },
         undefined
       );
@@ -775,6 +776,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: undefined,
           minified: false,
           matchStringContextLines: 5,
+          verbose: false,
         },
         undefined
       );
@@ -791,6 +793,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: undefined,
           minified: false,
           matchStringContextLines: 5,
+          verbose: false,
         },
         undefined
       );

@@ -146,11 +146,29 @@ async function fetchMultipleGitHubFileContents(
         `${query.owner}/${query.repo}/${query.filePath}`;
 
       // Flatten the result structure - spread result properties directly into the query result
-      const resultObj: FileContentQueryResult = {
+      const baseResultObj: FileContentQueryResult = {
         queryId: query.id,
         queryDescription,
         ...result, // Flatten all result properties (filePath, owner, repo, content, etc.)
       };
+
+      // Apply verbose filtering - only include verbose-only fields when verbose=true
+      const isVerbose =
+        typeof query.verbose === 'boolean' ? query.verbose : false;
+      const resultObj: FileContentQueryResult = {
+        ...baseResultObj,
+      };
+
+      // Remove verbose-only fields if verbose=false
+      if (!isVerbose) {
+        delete resultObj.branch;
+        delete resultObj.minified;
+        delete resultObj.minificationFailed;
+        delete resultObj.minificationType;
+      } else {
+        // Add query field when verbose=true
+        resultObj.query = { ...query };
+      }
 
       // Add sampling result if BETA features are enabled
       if (

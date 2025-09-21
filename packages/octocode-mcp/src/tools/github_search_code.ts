@@ -80,9 +80,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
             hints,
           });
         }
+        // Check if any query has verbose=true
+        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
         return searchMultipleGitHubCode(
           args.queries,
-          args.verbose || false,
+          hasVerboseQuery,
           authInfo,
           userContext
         );
@@ -225,32 +228,69 @@ async function searchMultipleGitHubCode(
     maxHints: 8,
   };
 
-  // Add query field for failed queries, no results cases, or when verbose is true
-  const processedResults = results.map(({ result }, index) => {
-    const codeResult = result as ProcessedCodeSearchResult;
-    const hasError = !!codeResult.error;
-    const hasNoResults = codeResult.files && codeResult.files.length === 0;
-
-    if (hasError || hasNoResults || verbose) {
-      // Find the original query for this result
-      const originalQuery = uniqueQueries[index]; // Use index since we removed queryId
-      if (originalQuery) {
-        // Add query field to the result itself
-        codeResult.query = { ...originalQuery };
-      }
-    }
-    return codeResult;
-  });
-
   // Create response with enhanced hints
   const response = createBulkResponse(
     config,
-    processedResults.map(result => ({ result })),
+    results,
     aggregatedContext,
     errors,
     uniqueQueries,
     verbose
   );
+
+  // Apply verbose filtering and flatten complex structures
+  const responseText = response.content[0]?.text;
+  if (!responseText || typeof responseText !== 'string') {
+    return response;
+  }
+  const responseData = JSON.parse(responseText);
+  if (responseData.results) {
+    responseData.results = responseData.results.map(
+      (result: Record<string, unknown>, index: number) => {
+        const hasError = !!result.error;
+        const hasNoResults =
+          result.files && (result.files as unknown[]).length === 0;
+
+        // If this specific query has verbose=true, add query field
+        const originalQuery = uniqueQueries[index];
+        const queryIsVerbose = originalQuery?.verbose === true;
+
+        // Flatten metadata.queryArgs to query field when appropriate
+        if (result.metadata && typeof result.metadata === 'object') {
+          const metadata = result.metadata as Record<string, unknown>;
+          if (metadata.queryArgs) {
+            if (hasError || hasNoResults || queryIsVerbose) {
+              result.query = metadata.queryArgs;
+            }
+            // Remove complex nested metadata structure only if not verbose
+            if (!queryIsVerbose) {
+              delete result.metadata;
+            }
+          }
+        }
+
+        if (queryIsVerbose && !result.query) {
+          if (originalQuery) {
+            result.query = { ...originalQuery };
+          } else {
+            // Fallback: create query from result data
+            result.query = {
+              id: result.queryId,
+              queryDescription: result.queryDescription,
+              verbose: true,
+            };
+          }
+        }
+
+        return result;
+      }
+    );
+  }
+
+  // Update the response content
+  response.content = [
+    { type: 'text', text: JSON.stringify(responseData, null, 2) },
+  ];
 
   // Enhance hints with research-specific guidance
   if (enhancedHints.length > 0) {

@@ -70,7 +70,6 @@ abstract class BaseQueryBuilder {
     const dateFields: Record<string, string> = {
       created: 'created',
       updated: 'updated',
-      pushed: 'pushed',
       'author-date': 'author-date',
       'committer-date': 'committer-date',
       'merged-at': 'merged',
@@ -175,10 +174,6 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');
     this.addSimpleFilter(params.stars, 'stars');
-    // Add pushed filter if it exists in params (for backward compatibility)
-    if ('pushed' in params && params.pushed) {
-      this.addSimpleFilter(params.pushed, 'pushed');
-    }
     return this;
   }
 

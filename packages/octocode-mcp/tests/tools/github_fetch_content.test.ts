@@ -560,6 +560,7 @@ End of file.`;
             repo: 'repo',
             filePath: 'src/app.js',
             minified: true,
+            verbose: true,
             id: 'minified-test',
           },
         ],
@@ -604,6 +605,7 @@ End of file.`;
             repo: 'repo',
             filePath: 'src/readable.js',
             minified: false,
+            verbose: true,
             id: 'not-minified-test',
           },
         ],
@@ -649,6 +651,7 @@ End of file.`;
             repo: 'repo',
             filePath: 'src/broken.js',
             minified: true,
+            verbose: true,
             id: 'minification-failed-test',
           },
         ],
@@ -892,6 +895,7 @@ End of file.`;
             repo: 'repo',
             filePath: 'feature.js',
             branch: 'feature-branch',
+            verbose: true,
             id: 'branch-test',
           },
         ],
@@ -902,6 +906,9 @@ End of file.`;
       const fileResult = data.results[0];
 
       expect(fileResult.branch).toBe('feature-branch');
+      expect(fileResult.query).toBeDefined();
+      expect(fileResult.query.branch).toBe('feature-branch');
+      expect(fileResult.query.verbose).toBe(true);
 
       // Verify API was called with correct branch
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(

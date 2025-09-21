@@ -44,6 +44,7 @@ export interface FileContentQueryResult {
   queryDescription?: string;
   originalQuery?: FileContentQuery; // Only included on error
   error?: string; // Flattened error at top level
+  query?: FileContentQuery; // Only included when verbose=true
 
   // Flattened GitHubFileContentResponse properties (only present on success)
   filePath?: string;

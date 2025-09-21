@@ -563,8 +563,9 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ queryTerms: ['test'], id: 'verbose-test' }],
-          verbose: true,
+          queries: [
+            { queryTerms: ['test'], verbose: true, id: 'verbose-test' },
+          ],
         }
       );
 
@@ -681,8 +682,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ queryTerms: ['test'], limit: 1 }],
-          verbose: true,
+          queries: [{ queryTerms: ['test'], limit: 1, verbose: true }],
         }
       );
 

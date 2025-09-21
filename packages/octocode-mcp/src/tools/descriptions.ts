@@ -27,10 +27,13 @@ FEATURES:
 - Bulk queries for comprehensive technique discovery
 
 HINTS:
-- TECHNICAL Search query: use queryTerms with Code patterns and specific terms for targeting
-- SEMANTIC Search query: use queryTerms with Natural language for exploration
-- Each query on bulk should search different part of research
-- ALWAYS fetch quality results for better research context`,
+- SIMPLE queryTerms: Use up to 3 focused terms per query for best results
+- AVOID multi-word patterns on exploratory research - they reduce result quality significantly
+- Each bulk query should target different aspects
+- Use separate queries rather than cramming multiple concepts into one
+- ALWAYS fetch quality results for better research context
+- Get relevance of results by its content and its path
+- Search more if needed by given results`,
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `Search repositories
 
 GOAL:

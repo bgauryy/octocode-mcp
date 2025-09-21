@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import {
-  BaseSingleQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
   SortingSchema,
 } from './baseSchema';
 
-export const GitHubCommitSearchQuerySchema = BaseSingleQuerySchema.extend({
+export const GitHubCommitSearchQuerySchema = BaseBulkQueryItemSchema.extend({
   queryTerms: z
     .array(z.string())
     .optional()

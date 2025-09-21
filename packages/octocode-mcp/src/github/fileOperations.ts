@@ -45,6 +45,7 @@ export async function fetchGitHubFileContentAPI(
       matchString: params.matchString,
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
+      verbose: params.verbose, // Include verbose parameter in cache key
     },
     sessionId
   );

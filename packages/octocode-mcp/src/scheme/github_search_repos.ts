@@ -1,10 +1,9 @@
 import { z } from 'zod';
 import {
-  BaseSingleQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
   FlexibleArraySchema,
   LimitSchema,
-  DateRangeSchema,
 } from './baseSchema';
 
 // Simplified repository type for search results
@@ -18,7 +17,7 @@ export interface SimplifiedRepository {
   updatedAt: string;
 }
 
-const GitHubReposSearchSingleQuerySchema = BaseSingleQuerySchema.extend({
+const GitHubReposSearchSingleQuerySchema = BaseBulkQueryItemSchema.extend({
   queryTerms: z
     .array(z.string())
     .optional()
@@ -30,8 +29,18 @@ const GitHubReposSearchSingleQuerySchema = BaseSingleQuerySchema.extend({
   language: z.string().nullable().optional().describe('Language'),
   stars: FlexibleArraySchema.numberOrStringRangeOrNull.describe('Stars'),
   size: z.string().nullable().optional().describe('Size KB'),
-  created: DateRangeSchema.shape.created,
-  updated: DateRangeSchema.shape.updated,
+  created: z
+    .string()
+    .optional()
+    .describe(
+      'Repository creation date filter (YYYY-MM-DD, >=YYYY-MM-DD, <=YYYY-MM-DD, YYYY-MM-DD..YYYY-MM-DD)'
+    ),
+  updated: z
+    .string()
+    .optional()
+    .describe(
+      'Repository last update date filter (YYYY-MM-DD, >=YYYY-MM-DD, <=YYYY-MM-DD, YYYY-MM-DD..YYYY-MM-DD)'
+    ),
   match: z
     .union([
       z.enum(['name', 'description', 'readme']),

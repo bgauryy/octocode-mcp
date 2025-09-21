@@ -152,14 +152,13 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['react'],
         stars: '>100',
-        pushed: '>2023-01-01',
 
         minify: true,
         sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe('react stars:>100 pushed:>2023-01-01');
+      expect(query).toBe('react stars:>100');
     });
 
     it('should handle empty query terms', () => {

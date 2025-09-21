@@ -129,9 +129,12 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         }
 
         try {
+          // Check if any query has verbose=true
+          const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
           return await searchMultipleGitHubPullRequests(
             args.queries,
-            args.verbose || false,
+            hasVerboseQuery,
             authInfo,
             userContext
           );

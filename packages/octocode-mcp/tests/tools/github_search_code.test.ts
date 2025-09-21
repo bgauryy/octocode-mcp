@@ -367,7 +367,6 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
     // Note: order parameter was deprecated by GitHub in April 2023
   });
 
@@ -395,7 +394,6 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
   it('should apply code_review research goal correctly', async () => {
@@ -422,7 +420,6 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
   it('should disable quality boost for specific repo searches', async () => {
@@ -450,7 +447,6 @@ describe('Quality Boosting and Research Goals', () => {
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs!.q).not.toMatch(/stars:>10/);
-    expect(callArgs!.q).not.toMatch(/pushed:>2022-01-01/);
     expect(callArgs!.q).toMatch(/repo:facebook\/react/);
   });
 
@@ -478,6 +474,5 @@ describe('Quality Boosting and Research Goals', () => {
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>1000/);
-    // Note: pushed filter not included since it wasn't in the input parameters
   });
 });

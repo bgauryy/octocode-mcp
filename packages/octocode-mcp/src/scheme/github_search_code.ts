@@ -15,8 +15,8 @@ export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
   queryTerms: z
     .array(z.string())
     .min(1)
-    .max(4)
-    .describe('Github search queries`'),
+    .max(5)
+    .describe('Github search queries (AND logic in file)`'),
   owner: z.union([GitHubOwnerSchema, z.array(GitHubOwnerSchema)]).optional(),
   repo: z.union([GitHubRepoSchema, z.array(GitHubRepoSchema)]).optional(),
   language: z.string().optional().describe('file language'),
@@ -24,13 +24,6 @@ export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
   filename: z.string().optional().describe('File name'),
   path: z.string().optional().describe('Path'),
   stars: NumericRangeSchema.shape.stars,
-  pushed: z
-    .string()
-    .regex(
-      /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
-    )
-    .optional()
-    .describe('Repository last push date filter'),
   match: FileMatchScopeSchema,
   limit: LimitSchema,
   minify: MinifySchema,

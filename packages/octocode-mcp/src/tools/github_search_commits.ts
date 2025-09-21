@@ -75,9 +75,12 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
           });
         }
 
+        // Check if any query has verbose=true
+        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
         return searchMultipleGitHubCommits(
           args.queries,
-          args.verbose || false,
+          hasVerboseQuery,
           authInfo,
           userContext
         );
