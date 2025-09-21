@@ -124,7 +124,6 @@ async function searchMultipleGitHubCode(
 
           return {
             queryId: query.id,
-            queryDescription: query.queryDescription,
             reasoning: query.reasoning,
             error: apiResult.error,
             hints: hints,
@@ -145,7 +144,6 @@ async function searchMultipleGitHubCode(
 
         const result: ProcessedCodeSearchResult = {
           queryId: query.id,
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           repository,
           files: apiResult.data.items.map(
@@ -195,7 +193,6 @@ async function searchMultipleGitHubCode(
 
         return {
           queryId: query.id,
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           error: errorMessage,
           hints: hints,
@@ -279,7 +276,6 @@ async function searchMultipleGitHubCode(
             // Fallback: create query from result data
             result.query = {
               id: result.queryId,
-              queryDescription: result.queryDescription,
               verbose: true,
             };
           }

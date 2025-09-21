@@ -98,14 +98,11 @@ async function searchMultipleGitHubCommits(
   const results = await Promise.allSettled(
     queries.map(async (query, index) => {
       const queryId = query.id || `commit-search_${index + 1}`;
-      const queryDescription =
-        query.queryDescription || generateCommitQueryDescription(query);
 
       try {
         const result = await searchSingleCommit(query, authInfo, userContext);
         return {
           queryId,
-          queryDescription,
           data: result,
           metadata: {
             resultCount: 'error' in result ? 0 : result.commits?.length || 0,
@@ -118,7 +115,6 @@ async function searchMultipleGitHubCommits(
       } catch (error) {
         return {
           queryId,
-          queryDescription,
           data: {
             error:
               error instanceof Error ? error.message : 'Unknown error occurred',
@@ -144,9 +140,6 @@ async function searchMultipleGitHubCommits(
       const originalQuery = queries[index];
       return {
         queryId: originalQuery?.id || `commit-search_${index + 1}`,
-        queryDescription:
-          originalQuery?.queryDescription ||
-          generateCommitQueryDescription(originalQuery || {}),
         data: {
           error: result.reason?.message || 'Unknown error occurred',
           status: 500,
@@ -184,26 +177,6 @@ async function searchMultipleGitHubCommits(
     },
     hints,
   });
-}
-
-function generateCommitQueryDescription(
-  query: GitHubCommitSearchQuery | Record<string, unknown>
-): string {
-  const parts: string[] = [];
-  if ('owner' in query && 'repo' in query && query.owner && query.repo) {
-    parts.push(`${query.owner}/${query.repo}`);
-  }
-  if (
-    'queryTerms' in query &&
-    Array.isArray(query.queryTerms) &&
-    query.queryTerms.length > 0
-  ) {
-    parts.push(`search: ${query.queryTerms.join(', ')}`);
-  }
-  if ('author' in query && query.author) {
-    parts.push(`author: ${query.author}`);
-  }
-  return parts.length > 0 ? parts.join(' - ') : 'commit search';
 }
 
 async function searchSingleCommit(

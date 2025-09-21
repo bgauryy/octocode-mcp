@@ -75,15 +75,13 @@ export function registerPackageSearchTool(server: McpServer) {
         }
 
         try {
-          // Add queryDescription to queries if not provided
+          // Add IDs to queries if not provided
           const enhancedArgs = { ...args };
           if (enhancedArgs.npmPackages) {
             enhancedArgs.npmPackages = enhancedArgs.npmPackages.map(
               (pkg, index) => ({
                 ...pkg,
                 id: pkg.id || `npm-${index + 1}`,
-                queryDescription:
-                  pkg.queryDescription || `NPM package: ${pkg.name}`,
               })
             );
           }
@@ -92,8 +90,6 @@ export function registerPackageSearchTool(server: McpServer) {
               (pkg, index) => ({
                 ...pkg,
                 id: pkg.id || `python-${index + 1}`,
-                queryDescription:
-                  pkg.queryDescription || `Python package: ${pkg.name}`,
               })
             );
           }

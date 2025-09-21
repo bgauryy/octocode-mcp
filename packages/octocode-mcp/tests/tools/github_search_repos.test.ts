@@ -582,7 +582,6 @@ describe('GitHub Search Repositories Tool', () => {
       expect(data.results.length).toBeGreaterThan(0);
       const queryResult = data.results[0];
       expect(queryResult.metadata).toBeDefined(); // Should have metadata when verbose
-      expect(queryResult.queryDescription).toBeDefined(); // Should still have queryDescription
     });
   });
 

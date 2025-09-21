@@ -179,7 +179,6 @@ async function searchMultipleGitHubPullRequests(
         );
         return {
           queryId: query.id || `pr-search_${index + 1}`,
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           data: result,
           metadata: {
@@ -199,7 +198,6 @@ async function searchMultipleGitHubPullRequests(
       } catch (error) {
         return {
           queryId: query.id || `pr-search_${index + 1}`,
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           data: {
             error:
@@ -228,7 +226,6 @@ async function searchMultipleGitHubPullRequests(
       const originalQuery = queries[index];
       return {
         queryId: originalQuery?.id || `pr-search_${index + 1}`,
-        queryDescription: originalQuery?.queryDescription,
         data: {
           error: result.reason?.message || 'Unknown error occurred',
           status: 500,

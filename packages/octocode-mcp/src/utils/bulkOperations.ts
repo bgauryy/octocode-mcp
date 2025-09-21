@@ -164,65 +164,6 @@ export async function processBulkQueries<
   return { results, errors };
 }
 
-/**
- * Generate a query description from query parameters
- *
- * @param query The query object to generate description for
- * @returns Generated description or undefined
- */
-function generateQueryDescription(
-  query: Record<string, unknown>
-): string | undefined {
-  const parts: string[] = [];
-
-  // Repository context
-  const owner = safeExtractString(query, 'owner');
-  const repo = safeExtractString(query, 'repo');
-  if (owner && repo) {
-    parts.push(`${owner}/${repo}`);
-  } else if (owner) {
-    parts.push(`owner:${owner}`);
-  }
-
-  // Search terms or path
-  const queryTerms = query.queryTerms as string[] | undefined;
-  const path = safeExtractString(query, 'path');
-  const filePath = safeExtractString(query, 'filePath');
-  if (queryTerms && queryTerms.length > 0) {
-    parts.push(`search: ${queryTerms.join(', ')}`);
-  } else if (filePath) {
-    parts.push(`file: ${filePath}`);
-  } else if (path) {
-    parts.push(`path: ${path}`);
-  }
-
-  // Language filter
-  const language = safeExtractString(query, 'language');
-  if (language) {
-    parts.push(`language:${language}`);
-  }
-
-  // Package name for package searches
-  const name = safeExtractString(query, 'name');
-  if (name && !owner && !repo) {
-    parts.push(`package: ${name}`);
-  }
-
-  // Author for commit/PR searches
-  const author = safeExtractString(query, 'author');
-  if (author) {
-    parts.push(`author: ${author}`);
-  }
-
-  // Branch for structure searches
-  const branch = safeExtractString(query, 'branch');
-  if (branch && branch !== 'main' && branch !== 'master') {
-    parts.push(`branch: ${branch}`);
-  }
-
-  return parts.length > 0 ? parts.join(' - ') : undefined;
-}
-
 function createBulkHintsContext<T extends HasOptionalId>(
   config: BulkResponseConfig,
   context: AggregatedContext,
@@ -296,21 +237,6 @@ export function createBulkResponse<
     } else if (!verbose && 'metadata' in result) {
       // Remove metadata only if not verbose and has results
       delete result.metadata;
-    }
-
-    // Add queryDescription to top layer - use LLM-provided description from schema or generate one
-    if (query) {
-      // First try to use LLM-provided description from schema
-      let queryDescription = safeExtractString(query, 'queryDescription');
-
-      // If not provided, generate one from query parameters
-      if (!queryDescription) {
-        queryDescription = generateQueryDescription(query);
-      }
-
-      if (queryDescription) {
-        result.queryDescription = queryDescription;
-      }
     }
 
     // For repository structure tool, add summary and queryArgs to top level if verbose

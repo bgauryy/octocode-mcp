@@ -117,7 +117,6 @@ async function exploreMultipleRepositoryStructures(
         // Create API request with properly typed fields
         const apiRequest: GitHubViewRepoStructureQuery = {
           id: String(query.id),
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           verbose: query.verbose || false,
           owner: String(query.owner),
@@ -167,7 +166,6 @@ async function exploreMultipleRepositoryStructures(
 
         const result: ProcessedRepositoryStructureResult = {
           queryId: String(query.id),
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
           branch: apiRequest.branch,
@@ -327,7 +325,6 @@ async function exploreMultipleRepositoryStructures(
             // Fallback: create query from result data
             result.query = {
               id: result.queryId,
-              queryDescription: result.queryDescription,
               verbose: true,
             };
           }

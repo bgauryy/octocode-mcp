@@ -137,7 +137,6 @@ async function searchMultipleGitHubRepos(
 
           return {
             queryId: query.id,
-            queryDescription: query.queryDescription,
             reasoning: query.reasoning,
             error: apiResult.error,
             hints,
@@ -152,7 +151,6 @@ async function searchMultipleGitHubRepos(
 
         return {
           queryId: query.id,
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           repositories: typedRepositories,
           total_count: apiResult.data.total_count,
@@ -170,7 +168,6 @@ async function searchMultipleGitHubRepos(
 
         return {
           queryId: query.id,
-          queryDescription: query.queryDescription,
           reasoning: query.reasoning,
           error: errorMessage,
           hints,
@@ -257,7 +254,6 @@ async function searchMultipleGitHubRepos(
             // Fallback: create query from result data
             result.query = {
               id: result.queryId,
-              queryDescription: result.queryDescription,
               verbose: true,
             };
           }

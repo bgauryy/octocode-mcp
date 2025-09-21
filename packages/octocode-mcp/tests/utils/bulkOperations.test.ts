@@ -232,9 +232,8 @@ describe('bulkOperations', () => {
         responseText.length > 0
           ? JSON.parse(responseText)
           : { results: [], meta: { errors: [] } };
-      // The results now include queryDescription and exclude metadata (since verbose=false by default)
+      // The results exclude metadata (since verbose=false by default)
       expect(responseData.results.length).toBe(2);
-      expect(responseData.results[0]).toHaveProperty('queryDescription');
       expect(responseData.results[0]).not.toHaveProperty('metadata');
       expect(responseData.results[0]?.data).toEqual(processedResults[0]?.data);
       // This test has no errors, so no need to check meta.errors

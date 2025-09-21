@@ -101,7 +101,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(data.results).toHaveLength(1);
 
       const fileResult = data.results[0];
-      expect(fileResult.queryDescription).toBeDefined(); // queryId was removed, queryDescription added
       expect(fileResult.filePath).toBe('README.md');
       expect(fileResult.content).toContain('Hello World');
       expect(fileResult.originalQuery).toBeUndefined(); // Only on error
@@ -193,10 +192,10 @@ describe('GitHub Fetch Content Tool', () => {
       expect(data.results).toHaveLength(2);
 
       const readmeResult = data.results.find((r: Record<string, unknown>) =>
-        r.queryDescription?.toString().includes('README.md')
+        r.filePath?.toString().includes('README.md')
       );
       const packageResult = data.results.find((r: Record<string, unknown>) =>
-        r.queryDescription?.toString().includes('package.json')
+        r.filePath?.toString().includes('package.json')
       );
 
       expect(readmeResult.filePath).toBe('README.md');
@@ -230,7 +229,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(data.results).toHaveLength(1);
 
       const errorResult = data.results[0];
-      expect(errorResult.queryDescription).toContain('test/repo');
       expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
       expect(errorResult.error).toContain('not found');
       expect(errorResult.filePath).toBeUndefined(); // No file properties on error
@@ -258,7 +256,6 @@ describe('GitHub Fetch Content Tool', () => {
       expect(data.results).toHaveLength(1);
 
       const errorResult = data.results[0];
-      expect(errorResult.queryDescription).toContain('test/repo');
       expect(errorResult.originalQuery).toEqual({
         owner: 'test',
         repo: 'repo',
@@ -1012,21 +1009,18 @@ End of file.`;
 
       // First result should be successful
       const successResult = data.results[0];
-      expect(successResult.queryDescription).toContain('success.js');
       expect(successResult.content).toBe('const success = true;');
       expect(successResult.error).toBeUndefined();
       expect(successResult.originalQuery).toBeUndefined();
 
       // Second result should have API error
       const errorResult = data.results[1];
-      expect(errorResult.queryDescription).toContain('missing.js');
       expect(errorResult.error).toBe('File not found');
       expect(errorResult.content).toBeUndefined(); // No content properties on error
       expect(errorResult.originalQuery).toBeUndefined();
 
       // Third result should have exception error
       const exceptionResult = data.results[2];
-      expect(exceptionResult.queryDescription).toContain('timeout.js');
       expect(exceptionResult.error).toBe('Network timeout');
       expect(exceptionResult.content).toBeUndefined(); // No content properties on error
       expect(exceptionResult.originalQuery).toBeDefined(); // originalQuery included for exceptions

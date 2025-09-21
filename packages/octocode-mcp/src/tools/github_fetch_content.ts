@@ -140,15 +140,9 @@ async function fetchMultipleGitHubFileContents(
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
       // Build the result object with flattened format
-      // Use user-provided queryDescription if available, otherwise construct from owner/repo/filePath
-      const queryDescription =
-        query.queryDescription ||
-        `${query.owner}/${query.repo}/${query.filePath}`;
-
       // Flatten the result structure - spread result properties directly into the query result
       const baseResultObj: FileContentQueryResult = {
         queryId: query.id,
-        queryDescription,
         ...result, // Flatten all result properties (filePath, owner, repo, content, etc.)
       };
 
@@ -218,13 +212,8 @@ async function fetchMultipleGitHubFileContents(
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
 
-      // Use user-provided queryDescription if available, otherwise construct from owner/repo/filePath
-      const queryDescription =
-        query.queryDescription ||
-        `${query.owner}/${query.repo}/${query.filePath}`;
       results.push({
         queryId: query.id,
-        queryDescription,
         originalQuery: query, // Only include on error
         error: errorMessage, // Flatten error directly at top level
       });
