@@ -42,6 +42,7 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
 export interface FileContentQueryResult {
   queryId?: string;
   queryDescription?: string;
+  reasoning?: string;
   originalQuery?: FileContentQuery; // Only included on error
   error?: string; // Flattened error at top level
   query?: FileContentQuery; // Only included when verbose=true

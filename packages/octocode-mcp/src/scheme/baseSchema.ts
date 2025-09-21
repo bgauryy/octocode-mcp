@@ -20,18 +20,30 @@ export const draftSchema = z.boolean().optional().describe('Draft');
 export const BaseQuerySchema = z.object({
   id: queryIdSchema,
   queryDescription: queryDescriptionSchema,
+  reasoning: z
+    .string()
+    .optional()
+    .describe('Explanation or reasoning behind the query for the research'),
 });
 
 // Base schema for single queries that don't support per-query verbose
 export const BaseSingleQuerySchema = z.object({
   id: queryIdSchema,
   queryDescription: queryDescriptionSchema,
+  reasoning: z
+    .string()
+    .optional()
+    .describe('Explanation or reasoning behind the query for the research'),
 });
 
 // Base schema for bulk query items that support per-query verbose
 export const BaseBulkQueryItemSchema = z.object({
   id: queryIdSchema,
   queryDescription: queryDescriptionSchema,
+  reasoning: z
+    .string()
+    .optional()
+    .describe('Explanation or reasoning behind the query for the research'),
   verbose: verboseSchema.optional(),
 });
 
@@ -159,6 +171,7 @@ export const FlexibleArraySchema = {
 
 export interface BaseResult {
   queryId?: string;
+  reasoning?: string;
   failed?: boolean;
   hints?: string[];
 }

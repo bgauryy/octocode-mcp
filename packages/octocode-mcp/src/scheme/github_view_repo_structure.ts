@@ -115,6 +115,7 @@ export interface GitHubRepositoryStructureError {
 export interface ProcessedRepositoryStructureResult {
   queryId?: string;
   queryDescription?: string;
+  reasoning?: string;
   repository?: string;
   branch?: string;
   path?: string;

@@ -180,6 +180,7 @@ async function searchMultipleGitHubPullRequests(
         return {
           queryId: query.id || `pr-search_${index + 1}`,
           queryDescription: query.queryDescription,
+          reasoning: query.reasoning,
           data: result,
           metadata: {
             resultCount:
@@ -199,6 +200,7 @@ async function searchMultipleGitHubPullRequests(
         return {
           queryId: query.id || `pr-search_${index + 1}`,
           queryDescription: query.queryDescription,
+          reasoning: query.reasoning,
           data: {
             error:
               error instanceof Error ? error.message : 'Unknown error occurred',

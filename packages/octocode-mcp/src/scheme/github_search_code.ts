@@ -40,6 +40,7 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
 export interface ProcessedCodeSearchResult {
   queryId?: string;
   queryDescription?: string;
+  reasoning?: string;
   files?: Array<{
     path: string;
     text_matches: string[]; // Array of fragment strings only

@@ -138,6 +138,7 @@ async function searchMultipleGitHubRepos(
           return {
             queryId: query.id,
             queryDescription: query.queryDescription,
+            reasoning: query.reasoning,
             error: apiResult.error,
             hints,
             metadata: {},
@@ -152,6 +153,7 @@ async function searchMultipleGitHubRepos(
         return {
           queryId: query.id,
           queryDescription: query.queryDescription,
+          reasoning: query.reasoning,
           repositories: typedRepositories,
           total_count: apiResult.data.total_count,
           metadata: {},
@@ -169,6 +171,7 @@ async function searchMultipleGitHubRepos(
         return {
           queryId: query.id,
           queryDescription: query.queryDescription,
+          reasoning: query.reasoning,
           error: errorMessage,
           hints,
           metadata: {},
