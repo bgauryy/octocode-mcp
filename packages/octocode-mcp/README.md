@@ -1,10 +1,14 @@
 # Octocode MCP - AI-Powered GitHub Intelligence
 
-**Transform your AI assistant into a code research expert**
+**Transform your AI assistant into a code research expert with the Model Context Protocol (MCP)**
 
 <div align="center">
   <a href="https://octocode.ai" style="font-size: 1.1em; font-weight: bold; text-decoration: none;">
     🌐 Visit octocode.ai for guides, examples & community →
+  </a>
+  <br>
+  <a href="https://www.youtube.com/@Octocode-ai" style="font-size: 1.1em; font-weight: bold; text-decoration: none; color: #ff0000;">
+    📺 YouTube Tutorials & Demos →
   </a>
 </div>
 
@@ -29,16 +33,28 @@
 
 </div>
 
+## 🤖 What is MCP?
 
-### Local Setup
+**Model Context Protocol (MCP)** is an open standard that enables AI assistants to securely connect to external data sources and tools. Octocode MCP is an official community server that gives your AI assistant superpowers for code research to add quality context for your AI agents.
 
-For local development:
+
+## 🚀 Quick Start
+
+Get up and running in 2 minutes with your preferred authentication method:
+
+### Option 1: GitHub CLI (Recommended)
+**Perfect for developers who already use GitHub CLI**
 
 ```bash
-# 1. Authenticate with GitHub
+# 1. Install GitHub CLI (if not already installed)
+# macOS: brew install gh
+# Windows: winget install --id GitHub.cli
+# Linux: See https://github.com/cli/cli#installation
+
+# 2. Authenticate with GitHub
 gh auth login
 
-# 2. Add to your MCP configuration
+# 3. Add to your MCP configuration
 ```
 
 ```json
@@ -46,7 +62,28 @@ gh auth login
   "mcpServers": {
     "octocode": {
       "command": "npx",
-      "args": ["octocode-mcp"]
+      "args": ["octocode-mcp@latest"]
+    }
+  }
+}
+```
+
+### Option 2: GitHub Personal Access Token
+**Great for CI/CD, Windows users, or when you prefer token-based auth**
+
+1. **Create a token**: Go to [GitHub Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
+2. **Select scopes**: `repo`, `read:user`, `read:org` (see [detailed scope guide](./docs/AUTHENTICATION.md))
+3. **Configure MCP**:
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["octocode-mcp@latest"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
+      }
     }
   }
 }
@@ -59,6 +96,7 @@ gh auth login
   style="font-size: 1.1em; font-weight: bold; text-decoration: none;">
     📚 View Usage Examples & Best Practices →
   </a>
+  <br><br>
 </div>
 
 ## What can Octocode do?
@@ -70,53 +108,28 @@ gh auth login
 - **Node.js** >= 18.12.0 - [Download here](https://nodejs.org/)
 - **GitHub Authentication** - GitHub CLI (recommended) or Personal Access Token
 
-## 🔧 Alternative Setup Options
+## 🔗 MCP Assistant Integration
 
-**Need a different setup?** Choose your preferred method:
+Octocode MCP works with any MCP-compatible AI assistant:
 
-### GitHub Token (for Windows/CI/Production)
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["octocode-mcp"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
-      }
-    }
-  }
-}
-```
+## 🏢 Enterprise & Advanced Setup
 
-### Enterprise Setup
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx", 
-      "args": ["octocode-mcp"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
-        "GITHUB_ORGANIZATION": "your-org"
-      }
-    }
-  }
-}
-```
-
-**📚 Need detailed setup help?**
-- **[Complete Authentication Guide](./docs/AUTHENTICATION.md)** - All authentication methods, OAuth, GitHub Apps, and enterprise features
-- **[Installation Guide](./docs/INSTALLATION.md)** - Step-by-step setup for all environments
-
-## 🔗 AI Assistant Integration
-
-**Claude Desktop setup:**
+### Advanced Configuration Options
 ```bash
-claude mcp add -s user octocode npx 'octocode-mcp@latest'
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"              # GitHub token
+export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Run ONLY these tools (exclusive)
+export ENABLE_TOOLS="additionalTool1,additionalTool2" # Add non-default tools  
+export DISABLE_TOOLS="unwantedTool1,unwantedTool2"    # Disable default tools
+export BETA="1"                                      # Enable experimental features
 ```
 
-Octocode works with any MCP-compatible AI assistant.
+**⚠️ Important:** `TOOLS_TO_RUN` cannot be used together with `ENABLE_TOOLS`/`DISABLE_TOOLS`. When `TOOLS_TO_RUN` is set, it runs ONLY the specified tools, ignoring all other tool configuration.
+
+## 🔒 Security & Privacy
+
+Octocode MCP is built with security-first principles:
+- **Content Sanitization**: Automatically detects and redacts API keys, tokens, and sensitive data
+- **Smart File Filtering**: Ignores sensitive paths, binaries, and non-searchable files for cleaner results
 
 ## 🚀 What You Can Do
 
@@ -152,42 +165,31 @@ For organizations: audit logging, access controls, rate limiting, and compliance
 
 **Default tools** are automatically enabled and provide core GitHub research functionality. **Non-default tools** can be enabled using the configuration options below.
 
-## ⚙️ Configuration & Advanced Setup
 
-**Most common settings:**
-```bash
-export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"              # GitHub token
-export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Run ONLY these tools (exclusive)
-export ENABLE_TOOLS="additionalTool1,additionalTool2" # Add non-default tools  
-export DISABLE_TOOLS="unwantedTool1,unwantedTool2"    # Disable default tools
-export BETA="1"                                      # Enable experimental features
-```
+## 📚 Complete Documentation
 
-**⚠️ Important:** `TOOLS_TO_RUN` cannot be used together with `ENABLE_TOOLS`/`DISABLE_TOOLS`. When `TOOLS_TO_RUN` is set, it runs ONLY the specified tools, ignoring all other tool configuration.
+### 🚀 Getting Started
+| Resource | Description |
+|----------|-------------|
+| **[🌐 octocode.ai](https://octocode.ai)** | Interactive tutorials and community |
+| **[🔐 Authentication Guide](./docs/AUTHENTICATION.md)** | Complete setup for GitHub CLI, tokens, OAuth, and enterprise |
+| **[📚 Usage Guide](./docs/USAGE_GUIDE.md)** | Examples, best practices, and prompt templates |
 
-**📚 For complete configuration options:**
-- **[Environment Variables Reference](./docs/AUTHENTICATION.md)** - All settings, OAuth, enterprise features
-- **[Tool Configuration Guide](./docs/TOOL_SCHEMAS.md)** - Available tools and parameters
+### 🛠️ Technical Reference
+| Resource | Description |
+|----------|-------------|
+| **[🔧 Tool Schemas](./docs/TOOL_SCHEMAS.md)** | Complete API reference for all 7 tools with parameters |
+| **[🏗️ Architecture Overview](./docs/summary.md)** | System design, security, and performance details |
+
+### 🎯 Quick Links by Use Case
+- **Want examples?** → [Usage Guide](./docs/USAGE_GUIDE.md) with 20+ prompt examples
+- **Need API details?** → [Tool Schemas](./docs/TOOL_SCHEMAS.md) for bulk operations and advanced parameters
+- **Enterprise deployment?** → [Authentication Guide](./docs/AUTHENTICATION.md) for audit logging and access controls
+- **Understanding MCP?** → [Architecture Overview](./docs/summary.md) for system design
 
 ## 🚨 Troubleshooting
 
-**Common Issues:**
-- **"No GitHub token found"** → [Setup GitHub authentication](./docs/AUTHENTICATION.md)
-- **Rate limiting** → [Configure rate limits](./docs/AUTHENTICATION.md)
-- **Enterprise setup** → [Enterprise guide](./docs/AUTHENTICATION.md)
-
-## 📚 Documentation & Help
-
-| Resource | Purpose |
-|----------|---------|
-| **[🌐 octocode.ai](https://octocode.ai)** | Tutorials, community & latest updates |
-| **[📚 Usage Guide](./docs/USAGE_GUIDE.md)** | Examples and best practices |
-| **[🔐 Authentication](./docs/AUTHENTICATION.md)** | Setup for all auth methods |
-| **[🛠️ Tool Reference](./docs/TOOL_SCHEMAS.md)** | Complete API reference |
-| **[🏗️ Architecture](./docs/SUMMARY.md)** | System design overview |
-
-**Need help?** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues) • [Discord](https://discord.gg/octocode) • [octocode.ai](https://octocode.ai)
-
+**Need help?** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
 ---
 
 <div align="center">

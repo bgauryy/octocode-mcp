@@ -70,7 +70,6 @@ abstract class BaseQueryBuilder {
     const dateFields: Record<string, string> = {
       created: 'created',
       updated: 'updated',
-      pushed: 'pushed',
       'author-date': 'author-date',
       'committer-date': 'committer-date',
       'merged-at': 'merged',
@@ -175,7 +174,6 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');
     this.addSimpleFilter(params.stars, 'stars');
-    this.addSimpleFilter(params.pushed, 'pushed');
     return this;
   }
 
@@ -209,7 +207,7 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
 
   addRepoFilters(params: GitHubReposSearchQuery): this {
     this.addLanguageFilter(params.language);
-    this.addArrayFilter(params.topic, 'topic');
+    this.addArrayFilter(params.topics, 'topic');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.size, 'size');
     this.addSimpleFilter(params.created, 'created');
@@ -456,8 +454,8 @@ function mapLanguageToGitHub(language: string): string {
 export function buildCodeSearchQuery(params: GitHubCodeSearchQuery): string {
   return new CodeSearchQueryBuilder()
     .addQueryTerms(params)
-    .addOwnerRepo(params)
     .addSearchFilters(params)
+    .addOwnerRepo(params)
     .addMatchFilters(params)
     .build();
 }

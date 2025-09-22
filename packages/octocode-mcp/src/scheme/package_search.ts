@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { extendBaseQuerySchema, BaseResult } from './baseSchema';
+import { BaseBulkQueryItemSchema, BaseResult } from './baseSchema';
 
 // NPM package field enum for validation
 const NpmFieldEnum = [
@@ -22,7 +22,7 @@ const NpmFieldEnum = [
 ] as const;
 
 // NPM Package Query Schema
-const NpmPackageQuerySchema = extendBaseQuerySchema({
+const NpmPackageQuerySchema = BaseBulkQueryItemSchema.extend({
   name: z.string().describe('Package name'),
   searchLimit: z.number().int().min(1).max(10).optional().describe('Limit'),
   npmSearchStrategy: z
@@ -38,7 +38,7 @@ const NpmPackageQuerySchema = extendBaseQuerySchema({
 });
 
 // Python Package Query Schema
-const PythonPackageQuerySchema = extendBaseQuerySchema({
+const PythonPackageQuerySchema = BaseBulkQueryItemSchema.extend({
   name: z.string().describe('Python package name to search for'),
   searchLimit: z
     .number()

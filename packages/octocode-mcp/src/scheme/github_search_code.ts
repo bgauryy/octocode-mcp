@@ -1,55 +1,45 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
-  FlexibleArraySchema,
   LimitSchema,
-  OptimizationFlagsSchema,
   FileMatchScopeSchema,
-  DateRangeSchema,
   NumericRangeSchema,
+  MinifySchema,
+  SanitizeSchema,
+  GitHubOwnerSchema,
+  GitHubRepoSchema,
 } from './baseSchema';
 
-// ============================================================================
-// CODE SEARCH QUERY SCHEMA
-// ============================================================================
-
-export const GitHubCodeSearchQuerySchema = extendBaseQuerySchema({
-  // Search terms (required)
-  queryTerms: z.array(z.string()).min(1).max(4).describe('Terms (AND)'),
-  owner: FlexibleArraySchema.stringOrArray.describe('Owner'),
-  repo: FlexibleArraySchema.stringOrArray.describe('Repo'),
-
-  language: z.string().optional().describe('Language'),
-  extension: z.string().optional().describe('Extension'),
-  filename: z.string().optional().describe('Filename'),
+export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
+  queryTerms: z
+    .array(z.string())
+    .min(1)
+    .max(5)
+    .describe('Github search queries (AND logic in file)`'),
+  owner: z.union([GitHubOwnerSchema, z.array(GitHubOwnerSchema)]).optional(),
+  repo: z.union([GitHubRepoSchema, z.array(GitHubRepoSchema)]).optional(),
+  language: z.string().optional().describe('file language'),
+  extension: z.string().optional().describe('file extension'),
+  filename: z.string().optional().describe('File name'),
   path: z.string().optional().describe('Path'),
   stars: NumericRangeSchema.shape.stars,
-  pushed: DateRangeSchema.shape.updated.describe('Pushed'),
   match: FileMatchScopeSchema,
   limit: LimitSchema,
-  minify: OptimizationFlagsSchema.shape.minify,
-  sanitize: OptimizationFlagsSchema.shape.sanitize,
-
-  // Note: GitHub code search only searches the default branch
-  // branch parameter is not supported by the GitHub API
+  minify: MinifySchema,
+  sanitize: SanitizeSchema,
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 
-// Bulk schema for tools that need it
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubCodeSearchQuerySchema,
-  1,
-  5,
-  'Queries'
+  'Code search queries'
 );
 
-// ============================================================================
-// PROCESSED RESULT TYPES
-// ============================================================================
-
 export interface ProcessedCodeSearchResult {
+  queryId?: string;
+  reasoning?: string;
   files?: Array<{
     path: string;
     text_matches: string[]; // Array of fragment strings only

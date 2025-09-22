@@ -13,6 +13,7 @@ import { handleGitHubAPIError } from './errors';
 import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { shouldIgnoreFile } from '../utils/fileFilters';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
@@ -106,7 +107,7 @@ async function searchGitHubCodeAPIInternal(
 
     return {
       data: {
-        total_count: result.data.total_count,
+        total_count: optimizedResult.total_count,
         items: optimizedResult.items,
         repository: optimizedResult.repository,
         securityWarnings: optimizedResult.securityWarnings,
@@ -157,8 +158,11 @@ async function transformToOptimizedFormat(
   const foundPackages = new Set<string>();
   const foundFiles = new Set<string>();
 
+  // Filter out ignored files based on path, name, and extension
+  const filteredItems = items.filter(item => !shouldIgnoreFile(item.path));
+
   const optimizedItems = await Promise.all(
-    items.map(async item => {
+    filteredItems.map(async item => {
       // Track found files for deeper research
       foundFiles.add(item.path);
 
@@ -242,7 +246,7 @@ async function transformToOptimizedFormat(
 
   const result: OptimizedCodeSearchResult = {
     items: optimizedItems,
-    total_count: items.length,
+    total_count: filteredItems.length,
     // Add research context for smart hints
     _researchContext: {
       foundPackages: Array.from(foundPackages),

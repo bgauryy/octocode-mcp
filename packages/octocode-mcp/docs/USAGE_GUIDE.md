@@ -1,6 +1,6 @@
-# Octocode Usage Guide
+# Octocode MCP Usage Guide
 
-Transform your code research and development workflow with AI-powered GitHub intelligence and package discovery.
+Transform your code research and development workflow with AI-powered GitHub intelligence and package discovery through the Model Context Protocol (MCP).
 
 <div align="center">
   <a href="https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/TOOL_SCHEMAS.md" 
@@ -16,8 +16,8 @@ Transform your code research and development workflow with AI-powered GitHub int
 ## 🚀 Core Capabilities
 
 ### 🧠 **Context Generation & AI Enhancement**
-- Extract rich context from code, docs, PRs, commits, issues, and packages
-- **Beta Feature**: Automatic code explanation via AI sampling 
+- Extract rich context from code, docs, PRs, commits, and packages
+- **Beta Feature**: AI sampling for automatic code explanations (requires `BETA=1`)
 - Analyze real implementations for patterns and best practices
 - Navigate repository history and code evolution
 - Universal support for all programming languages and frameworks
@@ -25,9 +25,9 @@ Transform your code research and development workflow with AI-powered GitHub int
 
 ### 🏢 **Enterprise & Organization Intelligence**
 - Access private repositories and internal projects seamlessly
-- **OAuth Authentication**: Secure GitHub access with web-based authentication
+- **GitHub CLI Integration**: Automatic token detection from `gh auth login`
 - **Audit Logging**: Enterprise-grade access logging and monitoring
-- **Rate Limiting**: Configurable API usage controls
+- **Rate Limiting**: Built-in API usage controls and throttling
 - Map dependencies and data flows across multiple repositories
 - Discover organizational patterns and coding standards
 - Extract institutional knowledge from development history
@@ -38,36 +38,43 @@ Transform your code research and development workflow with AI-powered GitHub int
 - Multi-dimensional code discovery with semantic search
 - Extract best practices from high-quality codebases
 - **Bulk Operations**: Execute up to 10 parallel queries for comprehensive research
+- **Progressive Refinement**: Start broad, then narrow based on findings
 
 ### 🏗️ **Project Intelligence**
-- Smart repository discovery with quality boosting
+- Smart repository discovery with quality ranking
 - Project architecture mapping and navigation
 - Multi-repository comparison and analysis
-- Repository structure exploration with filtering
+- Repository structure exploration with intelligent filtering
 - Seamless access to both public and private repositories
 
 ### 📦 **Package Intelligence**
 - **NPM & Python**: Comprehensive package discovery across ecosystems
-- Repository linking and integration
-- Dependency relationship analysis and mapping
+- Repository linking and integration analysis
+- Dependency relationship mapping
 - Version tracking and metadata extraction
 - Bridge packages to their source repositories for code analysis
 
 ## 🛠️ Available Tools
 
-Octocode provides 7 specialized tools for comprehensive code research:
+Octocode MCP provides 7 specialized tools for comprehensive code research:
 
-| Tool | Description | Default |
-|------|-------------|---------|
-| **`githubSearchRepositories`** | Search and discover GitHub repositories with quality ranking | ✅ |
-| **`githubSearchCode`** | Search code across repositories with semantic matching and snippets | ✅ |
-| **`githubGetFileContent`** | Fetch file content with smart context extraction and Beta AI explanations | ✅ |
-| **`githubViewRepoStructure`** | View repository structure and navigation with filtering | ✅ |
-| **`githubSearchCommits`** | Search commit history and change analysis with optional diffs | ⚙️ |
-| **`githubSearchPullRequests`** | Search pull requests and code reviews with file changes | ⚙️ |
-| **`packageSearch`** | Search NPM and Python packages with repository integration | ⚙️ |
+| Tool | Description | Default | Type |
+|------|-------------|---------|------|
+| **`githubSearchRepositories`** | Search and discover GitHub repositories with quality ranking | ✅ | search |
+| **`githubSearchCode`** | Search code across repositories with semantic matching and snippets | ✅ | search |
+| **`githubGetFileContent`** | Fetch file content with smart context extraction and Beta AI explanations | ✅ | content |
+| **`githubViewRepoStructure`** | View repository structure and navigation with intelligent filtering | ✅ | content |
+| **`githubSearchCommits`** | Search commit history and change analysis with optional diffs | ⚙️ | history |
+| **`githubSearchPullRequests`** | Search pull requests and code reviews with file changes | ⚙️ | history |
+| **`packageSearch`** | Search NPM and Python packages with repository integration | ⚙️ | npm |
 
 **Legend**: ✅ = Default enabled | ⚙️ = Optional (enable via configuration)
+
+### Tool Configuration
+- **Default Tools**: Automatically enabled unless explicitly disabled
+- **Optional Tools**: Must be explicitly enabled via `ENABLE_TOOLS` environment variable
+- **Bulk Operations**: All tools support up to 10 parallel queries for comprehensive research
+- **Caching**: Built-in 24-hour caching with intelligent TTL management
 
 ## 💡 Prompt Examples
 
@@ -133,20 +140,22 @@ Octocode performs better with specific identifiers like organization names, repo
 
 ### 🔧 **Tool Configuration**
 Customize tool availability via environment variables:
-- `ENABLE_TOOLS="tool1,tool2"` - Enable specific tools
-- `DISABLE_TOOLS="tool1,tool2"` - Disable specific tools
-- Default tools are automatically enabled unless disabled
+- `ENABLE_TOOLS="githubSearchCommits,packageSearch"` - Enable specific optional tools
+- `DISABLE_TOOLS="githubSearchCode"` - Disable specific tools (including defaults)
+- `TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"` - Run only specified tools
+- Default tools are automatically enabled unless explicitly disabled
 
 ### 🤖 **Beta Features**
 Enable advanced features with `BETA=1`:
-- **AI Sampling**: Automatic code explanations
-- **Enhanced Analysis**: Advanced research capabilities
+- **AI Sampling**: Automatic code explanations for file content
+- **Enhanced Capabilities**: Access to experimental MCP features
 
 ### 🏢 **Enterprise Features**
-Configure for enterprise use:
-- **Audit Logging**: `AUDIT_ALL_ACCESS=true`
-- **Rate Limiting**: Set `RATE_LIMIT_API_HOUR`, `RATE_LIMIT_AUTH_HOUR`
-- **OAuth Authentication**: Configure `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
+Built-in enterprise capabilities:
+- **Audit Logging**: Automatic access logging and monitoring
+- **Rate Limiting**: Built-in GitHub API throttling and retry logic
+- **Security**: Content sanitization and secret detection
+- **Caching**: Intelligent 24-hour caching with memory management
 
 ### 🔧 **IDE Integration**
 - Use Octocode with your IDE to improve existing code
@@ -177,32 +186,57 @@ Configure for enterprise use:
 ## 🚀 Getting Started
 
 ### Quick Start
-1. **Configure Authentication**: Set `GITHUB_TOKEN` or configure OAuth with `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`
+1. **Configure Authentication**: Use `gh auth login` or set `GITHUB_TOKEN`
 2. **Start Specific**: Begin with your organization or specific repository
 3. **Build Context**: Use bulk operations to gather comprehensive information
 4. **Enable Beta**: Set `BETA=1` for AI-enhanced code explanations
 
 ### Authentication Options
-- **GitHub Token**: Set `GITHUB_TOKEN` or `GH_TOKEN` environment variable
-- **OAuth (Enterprise)**: Configure web-based authentication for shared access
-- **GitHub CLI**: Uses existing `gh auth login` tokens automatically
+- **GitHub CLI**: Automatically uses existing `gh auth login` tokens (recommended)
+- **Environment Variables**: Set `GITHUB_TOKEN` or `GH_TOKEN`
+- **Fallback**: Manual token configuration
 
 ### Configuration Examples
 ```bash
-# Basic setup
+# Recommended: Use GitHub CLI
+gh auth login
+
+# Alternative: Environment variable
 export GITHUB_TOKEN=your_token_here
 
-# Enterprise setup with OAuth
-export GITHUB_CLIENT_ID=your_client_id
-export GITHUB_CLIENT_SECRET=your_client_secret
-export BASE_URL=https://your-domain.com
+# Enable optional tools
+export ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests,packageSearch"
 
-# Beta features + Enterprise monitoring
+# Beta features
 export BETA=1
-export AUDIT_ALL_ACCESS=true
-export RATE_LIMIT_API_HOUR=5000
+
+# Advanced configuration
+export REQUEST_TIMEOUT=60000
+export MAX_RETRIES=5
+export ENABLE_LOGGING=true
 ```
+
+## 🔧 MCP Integration
+
+Octocode MCP integrates seamlessly with MCP-compatible AI assistants:
+
+### Server Capabilities
+- **Tools**: 7 specialized GitHub and package research tools
+- **Resources**: Access to prompts and system configurations
+- **Sampling**: AI-enhanced code explanations (Beta)
+- **Caching**: Intelligent response caching for performance
+
+### Response Format
+All tools return structured responses with:
+- **data**: Primary response content
+- **hints**: Strategic guidance for next steps
+- **meta**: Context and metadata for research workflows
+
+### Error Handling
+- **Graceful Degradation**: Continues operation despite individual tool failures
+- **Smart Fallbacks**: Provides alternative approaches when primary methods fail
+- **Recovery Hints**: Actionable suggestions for resolving issues
 
 ---
 
-*Transform your development process with intelligent code research, AI-enhanced analysis, and enterprise-grade security.*
+*Transform your development process with intelligent code research through the Model Context Protocol.*

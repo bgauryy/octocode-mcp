@@ -152,14 +152,13 @@ describe('Query Builders', () => {
       const params = toCodeSearchQuery({
         queryTerms: ['react'],
         stars: '>100',
-        pushed: '>2023-01-01',
 
         minify: true,
         sanitize: true,
       });
 
       const query = buildCodeSearchQuery(params);
-      expect(query).toBe('react stars:>100 pushed:>2023-01-01');
+      expect(query).toBe('react stars:>100');
     });
 
     it('should handle empty query terms', () => {
@@ -190,7 +189,7 @@ describe('Query Builders', () => {
     it('should build query with topics', () => {
       const params = {
         queryTerms: ['app'],
-        topic: ['react', 'typescript'],
+        topics: ['react', 'typescript'],
         verbose: false,
       };
 
@@ -203,7 +202,7 @@ describe('Query Builders', () => {
     it('should build query with single topic', () => {
       const params = {
         queryTerms: ['framework'],
-        topic: 'javascript',
+        topics: 'javascript',
         verbose: false,
       };
 

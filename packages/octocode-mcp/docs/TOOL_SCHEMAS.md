@@ -12,7 +12,7 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 
 **Key Features:**
 - Semantic and technical code search
-- Bulk queries (1-5 per request) for comprehensive research
+- Bulk queries (1-10 per request) for comprehensive research
 - Progressive refinement: broad discovery → targeted search
 - Content processing pipeline with sanitization and minification
 
@@ -21,24 +21,25 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 {
   queries: [
     {
-      queryTerms: string[],           // 1-4 search terms (AND logic)
+      id?: string,                    // Optional query identifier
+      reasoning?: string,             // Optional reasoning for research
+      verbose?: boolean,              // Per-query debug info
+
+      queryTerms: string[],           // 1-5 search terms (AND logic)
       owner?: string | string[],      // Repository owner(s)
       repo?: string | string[],       // Repository name(s)
       language?: string,              // Programming language filter
       extension?: string,             // File extension filter
-      filename?: string,              // Target filename pattern
-      path?: string,                  // File path pattern
-      size?: string,                  // File size filter (e.g., ">50")
-      stars?: number | string,        // Minimum stars filter
-      pushed?: string,                // Last push date filter
-      created?: string,               // Creation date filter
-      match?: "file" | "path"[],      // Search scope
-      sort?: "best-match" | "indexed", // Sort method
-      order?: "asc" | "desc",         // Sort order
+      filename?: string,              // Target filename
+      path?: string,                  // File path prefix
+      stars?: number | string,        // Stars filter: 10, ">=10", "5..50", etc.
+      match?: "file" | "path" | Array<"file" | "path">, // Search scope
       limit?: number,                 // Results limit (1-20)
+      minify?: boolean,               // Minify content (default: true)
+      sanitize?: boolean              // Sanitize content (default: true)
     }
   ],
-  verbose?: boolean
+  verbose?: boolean                   // Global debug info
 }
 ```
 
@@ -65,18 +66,28 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 {
   queries: [
     {
-      owner: string,                    // Repository owner
-      repo: string,                     // Repository name
-      filePath: string,                 // File path from root
-      branch?: string,                  // Branch/tag/commit SHA
-      startLine?: number,               // Start line for partial access
-      endLine?: number,                 // End line for partial access
-      matchString?: string,             // Exact string to find
-      matchStringContextLines?: number, // Context lines around match
-      minified?: boolean,               // Content optimization
+      id?: string,                       // Optional query identifier
+      reasoning?: string,                // Optional reasoning for research
+      verbose?: boolean,                 // Per-query debug info
+
+      owner: string,                     // Repository owner
+      repo: string,                      // Repository name
+      filePath: string,                  // Exact path from repo root
+      branch?: string,                   // Branch/tag/commit SHA
+
+      // Retrieval controls
+      fullContent?: boolean,             // Return entire file (default: false)
+      startLine?: number,                // Start line (1-based)
+      endLine?: number,                  // End line (1-based)
+      matchString?: string,              // Pattern to locate; returns with context
+      matchStringContextLines?: number,  // Context lines around match (0-50, default: 5)
+
+      // Content processing
+      minified?: boolean,                // Minify content (default: true)
+      sanitize?: boolean                 // Sanitize content (default: true)
     }
   ],
-  verbose?: boolean
+  verbose?: boolean                      // Global debug info
 }
 ```
 
@@ -103,25 +114,24 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 {
   queries: [
     {
-      queryTerms?: string[],           // Search terms for names/descriptions
-      owner?: string | string[],       // Repository owner(s)
-      topic?: string | string[],       // Topics/technologies
-      language?: string,               // Programming language
-      license?: string | string[],     // License filter
-      stars?: number | string,         // Star count filter
-      size?: string,                   // Repository size filter
-      created?: string,                // Creation date filter
-      updated?: string,                // Last update filter
-      followers?: number | string,     // Owner followers count
-      'good-first-issues'?: number,    // Good first issues count
-      'help-wanted-issues'?: number,   // Help wanted issues count
-      visibility?: "public" | "private" | "internal",
-      sort?: "forks" | "stars" | "updated" | "best-match",
-      order?: "asc" | "desc",
-      limit?: number,                  // Results limit (1-100)
+      id?: string,                    // Optional query identifier
+      reasoning?: string,             // Optional reasoning for research
+      verbose?: boolean,              // Per-query debug info
+
+      queryTerms?: string[],          // Search terms for name/desc/readme
+      owner?: string | string[] | null,
+      topics?: string | string[] | null,
+      language?: string | null,
+      stars?: number | string | null, // e.g., ">=100", "50..500"
+      size?: string | null,           // Size filter string
+      created?: string,               // YYYY-MM-DD, ranges supported
+      updated?: string,               // YYYY-MM-DD, ranges supported
+      match?: "name" | "description" | "readme" | Array<"name"|"description"|"readme"> | null,
+      sort?: "forks" | "help-wanted-issues" | "stars" | "updated" | "best-match" | null,
+      limit?: number | null           // Max results (1-20)
     }
   ],
-  verbose?: boolean
+  verbose?: boolean                   // Global debug info
 }
 ```
 
@@ -147,16 +157,20 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 {
   queries: [
     {
-      owner: string,                   // Repository owner
-      repo: string,                    // Repository name
-      branch: string,                  // Branch/tag/commit SHA
-      path?: string,                   // Directory path (default: root)
-      depth?: number,                  // Directory depth (1-2)
-      includeIgnored?: boolean,        // Include config/hidden files
-      showMedia?: boolean,             // Include media files
+      id?: string,                 // Optional query identifier
+      reasoning?: string,          // Optional reasoning for research
+      verbose?: boolean,           // Per-query debug info
+
+      owner: string,               // Repository owner
+      repo: string,                // Repository name
+      branch: string,              // Branch/tag/commit SHA
+      path?: string,               // Directory path (default: "")
+      depth?: number,              // 1-2 (default: 1)
+      includeIgnored?: boolean,    // Include ignored files (default: false)
+      showMedia?: boolean          // Include media files (default: false)
     }
   ],
-  verbose?: boolean
+  verbose?: boolean               // Global debug info
 }
 ```
 
@@ -182,28 +196,75 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 {
   queries: [
     {
-      query?: string,                  // Search query text
-      owner?: string | string[],       // Repository owner(s)
-      repo?: string | string[],        // Repository name(s)
-      prNumber?: number,               // Specific PR number
-      state?: "open" | "closed",       // PR state
-      assignee?: string,               // Assignee username
-      author?: string,                 // Author username
-      label?: string | string[],       // Labels filter
-      milestone?: string,              // Milestone title
+      id?: string,                       // Optional query identifier
+      reasoning?: string,                // Optional reasoning for research
+      verbose?: boolean,                 // Per-query debug info
+
+      // Direct fetching or general search
+      query?: string,                    // Search query for PR content
+      owner?: string | string[],         // Repository owner(s)
+      repo?: string | string[],          // Repository name(s)
+      prNumber?: number,                 // Specific PR number (with owner/repo)
+
+      // Filters
+      state?: "open" | "closed",
+      assignee?: string,
+      author?: string,
+      commenter?: string,
+      involves?: string,
+      mentions?: string,
+      "review-requested"?: string,
+      "reviewed-by"?: string,
+      "team-mentions"?: string,
+      label?: string | string[],
+      "no-label"?: boolean,
+      milestone?: string,
+      "no-milestone"?: boolean,
+      project?: string,
+      "no-project"?: boolean,
+      "no-assignee"?: boolean,
+      head?: string,
+      base?: string,
+      created?: string,                  // Date/range
+      updated?: string,                  // Date/range
+      closed?: string,                   // Date/range
+      "merged-at"?: string,             // Date/range
+      comments?: number | string,        // 10, ">=10", "5..20"
+      reactions?: number | string,       // 10, ">=10", "5..20"
+      interactions?: number | string,    // 10, ">=10", "5..20"
+      merged?: boolean,
+      draft?: boolean,
+      locked?: boolean,
       review?: "none" | "required" | "approved" | "changes_requested",
       checks?: "pending" | "success" | "failure",
-      created?: string,                // Creation date filter
-      updated?: string,                // Update date filter
-      merged?: boolean,                // Merged state
-      draft?: boolean,                 // Draft state
-      sort?: "comments" | "reactions" | "created" | "updated",
-      limit?: number,                  // Results limit (1-100)
-      withComments?: boolean,          // Include comments (expensive)
-      getFileChanges?: boolean,        // Include diffs (expensive)
+      language?: string,
+      visibility?: "public" | "private" | "internal" | Array<"public" | "private" | "internal">,
+      app?: string,
+      match?: Array<"title" | "body" | "comments">,
+
+      // Sorting and limits
+      sort?:
+        | "comments"
+        | "reactions"
+        | "reactions-+1"
+        | "reactions--1"
+        | "reactions-smile"
+        | "reactions-thinking_face"
+        | "reactions-heart"
+        | "reactions-tada"
+        | "interactions"
+        | "created"
+        | "updated"
+        | "best-match",
+      order?: "asc" | "desc",
+      limit?: number,                    // 1-100 (default: 30)
+
+      // Expensive data
+      withComments?: boolean,            // Include comments (default: false)
+      getFileChanges?: boolean           // Include file changes/diffs (default: false)
     }
   ],
-  verbose?: boolean
+  verbose?: boolean                      // Global debug info
 }
 ```
 
@@ -228,25 +289,40 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 **Schema Parameters:**
 ```typescript
 {
-  queryTerms?: string[],             // Search terms (AND logic)
-  orTerms?: string[],                // Search terms (OR logic)
-  owner?: string,                    // Repository owner
-  repo?: string,                     // Repository name
-  author?: string,                   // Author username
-  'author-name'?: string,            // Author full name
-  'author-email'?: string,           // Author email
-  committer?: string,                // Committer username
-  'committer-name'?: string,         // Committer full name
-  'committer-email'?: string,        // Committer email
-  'author-date'?: string,            // Author date filter
-  'committer-date'?: string,         // Commit date filter
-  hash?: string,                     // Commit SHA
-  parent?: string,                   // Parent commit SHA
-  merge?: boolean,                   // Merge commits filter
-  limit?: number,                    // Results limit (1-50)
-  getChangesContent?: boolean,       // Include diffs (expensive)
-  sort?: "author-date" | "committer-date",
-  order?: "asc" | "desc",
+  queries: [
+    {
+      id?: string,                    // Optional query identifier
+      reasoning?: string,             // Optional reasoning for research
+      verbose?: boolean,              // Per-query debug info
+
+      queryTerms?: string[],          // Search terms (AND logic)
+      orTerms?: string[],             // Search terms (OR logic)
+      owner?: string,                 // Repository owner
+      repo?: string,                  // Repository name
+
+      author?: string,
+      'author-name'?: string,
+      'author-email'?: string,
+      committer?: string,
+      'committer-name'?: string,
+      'committer-email'?: string,
+
+      'author-date'?: string,         // Date/range
+      'committer-date'?: string,      // Date/range
+
+      hash?: string,                  // Commit SHA (full or partial)
+      parent?: string,                // Parent commit SHA
+      tree?: string,                  // Tree SHA
+      merge?: boolean,                // Only merge commits if true; exclude if false
+      visibility?: 'public' | 'private' | 'internal',
+
+      limit?: number,                 // 1-50 (default: 25)
+      getChangesContent?: boolean,    // Include diffs (default: false)
+      sort?: 'author-date' | 'committer-date',
+      order?: 'asc' | 'desc'
+    }
+  ],
+  verbose?: boolean                   // Global debug info
 }
 ```
 
@@ -271,25 +347,71 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
 **Schema Parameters:**
 ```typescript
 {
+  // Global defaults
+  searchLimit?: number,                 // 1-10 (default: 1)
+  npmSearchStrategy?: 'individual' | 'combined', // (default: 'individual')
+  npmFetchMetadata?: boolean,           // (default: false)
+
+  // Package arrays for bulk search (max 10 each)
   npmPackages?: [
     {
-      name: string,                    // Package name
-      searchLimit?: number,            // Results limit (1-10)
-      npmSearchStrategy?: "individual" | "combined",
-      npmFetchMetadata?: boolean,      // Detailed metadata
-      npmField?: string,               // Specific field
-      npmMatch?: string | string[]     // Field matching
+      id?: string,                      // Optional query identifier
+      reasoning?: string,               // Optional reasoning for research
+      verbose?: boolean,                // Per-query debug info
+
+      name: string,                     // Package name
+      searchLimit?: number,             // 1-10
+      npmSearchStrategy?: 'individual' | 'combined',
+      npmFetchMetadata?: boolean,       // Fetch detailed metadata
+      npmField?: string,                // Specific field name
+      npmMatch?:
+        | 'version'
+        | 'description'
+        | 'license'
+        | 'author'
+        | 'homepage'
+        | 'repository'
+        | 'dependencies'
+        | 'devDependencies'
+        | 'keywords'
+        | 'main'
+        | 'scripts'
+        | 'engines'
+        | 'files'
+        | 'publishConfig'
+        | 'dist-tags'
+        | 'time'
+        | Array<
+            | 'version'
+            | 'description'
+            | 'license'
+            | 'author'
+            | 'homepage'
+            | 'repository'
+            | 'dependencies'
+            | 'devDependencies'
+            | 'keywords'
+            | 'main'
+            | 'scripts'
+            | 'engines'
+            | 'files'
+            | 'publishConfig'
+            | 'dist-tags'
+            | 'time'
+          >
+        | string                       // Free-form field path
     }
   ],
   pythonPackages?: [
     {
-      name: string,                    // Package name
-      searchLimit?: number             // Results limit (1-10)
+      id?: string,                      // Optional query identifier
+      reasoning?: string,               // Optional reasoning for research
+      verbose?: boolean,                // Per-query debug info
+
+      name: string,                     // Python package name
+      searchLimit?: number              // 1-10
     }
-  ],
-  searchLimit?: number,                // Global default limit
-  npmSearchStrategy?: "individual" | "combined",
-  npmFetchMetadata?: boolean,          // Global metadata setting
+  ]
 }
 ```
 

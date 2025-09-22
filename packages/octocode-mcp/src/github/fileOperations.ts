@@ -1,12 +1,12 @@
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './github-openapi';
 import {
-  GithubFetchRequestParams,
+  FileContentQuery,
   GitHubFileContentResponse,
   GitHubFileContentError,
 } from '../scheme/github_fetch_content';
 import {
-  GitHubRepositoryStructureParams,
+  GitHubViewRepoStructureQuery,
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
@@ -20,13 +20,14 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
+import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 
 /**
  * Fetch GitHub file content using Octokit API with proper TypeScript types and caching
  * Token management is handled internally by the GitHub client
  */
 export async function fetchGitHubFileContentAPI(
-  params: GithubFetchRequestParams,
+  params: FileContentQuery,
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
@@ -39,11 +40,13 @@ export async function fetchGitHubFileContentAPI(
       filePath: params.filePath,
       branch: params.branch,
       // Include other parameters that affect the content
+      ...(params.fullContent && { fullContent: params.fullContent }),
       startLine: params.startLine,
       endLine: params.endLine,
       matchString: params.matchString,
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
+      verbose: params.verbose, // Include verbose parameter in cache key
     },
     sessionId
   );
@@ -90,7 +93,7 @@ export async function fetchGitHubFileContentAPI(
  * Token management is handled internally by the GitHub client
  */
 async function fetchGitHubFileContentAPIInternal(
-  params: GithubFetchRequestParams,
+  params: FileContentQuery,
   authInfo?: AuthInfo
 ): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
   try {
@@ -188,9 +191,10 @@ async function fetchGitHubFileContentAPIInternal(
         branch || data.sha,
         filePath,
         params.minified !== false,
+        params.fullContent || false,
         params.startLine,
         params.endLine,
-        params.matchStringContextLines || 5,
+        params.matchStringContextLines ?? 5,
         params.matchString
       );
 
@@ -231,6 +235,7 @@ async function processFileContentAPI(
   branch: string,
   filePath: string,
   minified: boolean,
+  fullContent: boolean,
   startLine?: number,
   endLine?: number,
   matchStringContextLines: number = 5,
@@ -274,8 +279,14 @@ async function processFileContentAPI(
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
+  // If fullContent is true, return the entire file and ignore other parameters
+  if (fullContent) {
+    finalContent = decodedContent;
+    // Don't set actualStartLine/actualEndLine for full content
+    // Don't set isPartial for full content
+  }
   // SMART MATCH FINDER: If matchString is provided, find it and set line range
-  if (matchString) {
+  else if (matchString) {
     const matchingLines: number[] = [];
 
     // Find all lines that contain the match string
@@ -306,13 +317,22 @@ async function processFileContentAPI(
     startLine = matchStartLine;
     endLine = matchEndLine;
 
+    // Extract the matching lines with context
+    const selectedLines = lines.slice(matchStartLine - 1, matchEndLine);
+    finalContent = selectedLines.join('\n');
+
+    // Set the actual line boundaries for the response
+    actualStartLine = matchStartLine;
+    actualEndLine = matchEndLine;
+    isPartial = true;
+
     // Add info about the match for user context
     securityWarnings.push(
       `Found "${matchString}" on line ${firstMatch}${matchingLines.length > 1 ? ` (and ${matchingLines.length - 1} other locations)` : ''}`
     );
   }
-
-  if (startLine !== undefined || endLine !== undefined) {
+  // Handle startLine/endLine selection (only if not fullContent and no matchString)
+  else if (startLine !== undefined || endLine !== undefined) {
     // When only endLine is provided, default startLine to 1
     const effectiveStartLine = startLine || 1;
 
@@ -349,6 +369,8 @@ async function processFileContentAPI(
       }
     }
   }
+  // If no content selection parameters are set (fullContent=false, no matchString, no startLine/endLine),
+  // finalContent remains as decodedContent (full file) for backward compatibility
 
   // Apply minification to final content (both partial and full files)
   let minificationFailed = false;
@@ -392,7 +414,7 @@ async function processFileContentAPI(
  * View GitHub repository structure using Octokit API with caching
  */
 export async function viewGitHubRepositoryStructureAPI(
-  params: GitHubRepositoryStructureParams,
+  params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
@@ -445,20 +467,12 @@ export async function viewGitHubRepositoryStructureAPI(
  * Token management is handled internally by the GitHub client
  */
 async function viewGitHubRepositoryStructureAPIInternal(
-  params: GitHubRepositoryStructureParams,
+  params: GitHubViewRepoStructureQuery,
   authInfo?: AuthInfo
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
   try {
     const octokit = await getOctokit(authInfo);
-    const {
-      owner,
-      repo,
-      branch,
-      path = '',
-      depth = 1,
-      includeIgnored = false,
-      showMedia = false,
-    } = params;
+    const { owner, repo, branch, path = '', depth = 1 } = params;
 
     // Clean up path
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
@@ -590,53 +604,16 @@ async function viewGitHubRepositoryStructureAPIInternal(
       );
     }
 
-    // Apply filtering if needed
-    let filteredItems = allItems;
-    if (!includeIgnored) {
-      // Simple filtering logic - exclude common ignored patterns
-      filteredItems = allItems.filter(item => {
-        const name = item.name.toLowerCase();
-        const path = item.path.toLowerCase();
+    // Apply filtering using centralized filtering logic from fileFilters.ts
+    const filteredItems = allItems.filter(item => {
+      // For directories, use shouldIgnoreDir function
+      if (item.type === 'dir') {
+        return !shouldIgnoreDir(item.name);
+      }
 
-        // Skip hidden files and directories
-        if (name.startsWith('.') && !showMedia) return false;
-
-        // Skip common build/dependency directories
-        if (
-          [
-            'node_modules',
-            'dist',
-            'build',
-            '.git',
-            '.vscode',
-            '.idea',
-          ].includes(name)
-        )
-          return false;
-
-        // Skip lock files and config files
-        if (name.includes('lock') || name.endsWith('.lock')) return false;
-
-        // Skip media files unless requested
-        if (!showMedia) {
-          const mediaExtensions = [
-            '.png',
-            '.jpg',
-            '.jpeg',
-            '.gif',
-            '.svg',
-            '.ico',
-            '.webp',
-            '.mp4',
-            '.mov',
-            '.avi',
-          ];
-          if (mediaExtensions.some(ext => path.endsWith(ext))) return false;
-        }
-
-        return true;
-      });
-    }
+      // For files, use shouldIgnoreFileByPath function
+      return !shouldIgnoreFile(item.path);
+    });
 
     // Limit items for performance
     const itemLimit = Math.min(200, 50 * depth);
@@ -683,7 +660,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
         totalFiles: files.length,
         totalFolders: folders.length,
         truncated: allItems.length > limitedItems.length,
-        filtered: !includeIgnored,
+        filtered: true,
         originalCount: allItems.length,
       },
       files: files,

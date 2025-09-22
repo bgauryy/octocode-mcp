@@ -154,16 +154,16 @@ describe('Code Search Flows', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['function'],
+      owner: 'test',
+      repo: 'repo',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     if ('data' in result) {
       expect(result.data.items).toHaveLength(1);
-      expect(result.data.total_count).toBe(2);
+      expect(result.data.total_count).toBe(1); // Should match filtered item count
       expect(result.data.items[0]?.path).toBe('src/component.js');
     } else {
       expect.fail('Expected successful result with data');
@@ -182,9 +182,9 @@ describe('Code Search Flows', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['nonexistent'],
+      owner: 'test',
+      repo: 'repo',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
@@ -225,9 +225,9 @@ describe('Code Search Flows', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['function'],
+      owner: 'test',
+      repo: 'repo',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
@@ -262,9 +262,9 @@ describe('Code Search Flows', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['const'],
+      owner: 'test',
+      repo: 'repo',
       limit: 1,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
@@ -288,9 +288,9 @@ describe('Code Search Flows', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['test'],
-      verbose: true,
+      owner: 'test',
+      repo: 'repo',
       limit: 1,
-
       minify: true,
       sanitize: true,
     });
@@ -355,19 +355,18 @@ describe('Quality Boosting and Research Goals', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
+      owner: 'test',
+      repo: 'repo',
       language: 'javascript',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
     // Note: order parameter was deprecated by GitHub in April 2023
   });
 
@@ -383,19 +382,18 @@ describe('Quality Boosting and Research Goals', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
+      owner: 'test',
+      repo: 'repo',
       language: 'javascript',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
   it('should apply code_review research goal correctly', async () => {
@@ -410,19 +408,18 @@ describe('Quality Boosting and Research Goals', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
+      owner: 'test',
+      repo: 'repo',
       language: 'javascript',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toBe('useMemo React language:JavaScript');
+    expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
-    expect(callArgs.q).not.toMatch(/pushed:>2022-01-01/);
   });
 
   it('should disable quality boost for specific repo searches', async () => {
@@ -444,14 +441,12 @@ describe('Quality Boosting and Research Goals', () => {
 
       minify: true,
       sanitize: true,
-      verbose: false,
     });
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs).toBeDefined();
     expect(callArgs!.q).not.toMatch(/stars:>10/);
-    expect(callArgs!.q).not.toMatch(/pushed:>2022-01-01/);
     expect(callArgs!.q).toMatch(/repo:facebook\/react/);
   });
 
@@ -467,12 +462,11 @@ describe('Quality Boosting and Research Goals', () => {
 
     const result = await searchGitHubCodeAPI({
       queryTerms: ['useMemo', 'React'],
+      owner: 'test',
+      repo: 'repo',
       language: 'javascript',
       stars: '>1000',
-      pushed: '>2024-01-01',
       limit: 5,
-
-      verbose: false,
       minify: true,
       sanitize: true,
     });
@@ -480,6 +474,5 @@ describe('Quality Boosting and Research Goals', () => {
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
     expect(callArgs.q).toMatch(/stars:>1000/);
-    expect(callArgs.q).toMatch(/pushed:>2024-01-01/);
   });
 });

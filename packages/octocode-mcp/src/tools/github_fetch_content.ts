@@ -17,35 +17,13 @@ import { generateHints } from './hints.js';
 import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Fetch file content from GitHub repositories
-
-GOAL:
-To get more research CONTEXT data from real implementations, documentation, and configuration files.
-
-FEATURES:
-- Complete file retrieval
-- Partial file retrieval
-  - startLine / endLine
-  - matchString / matchStringContextLines
-
-USAGE:
-- Use line ranges for large files
-- Use matchString to find specific patterns from search results
-- Specify research goals for optimized suggestions
-- Combine with repository structure exploration
-
-HINTS:
-- Validate documentation from implementation usign search and fetch tools
-- Use fetched content to find more research data to search (using search tools)
-- If needed fetch more files or content from retrived content
-- Use structure tool to understand the repository structure better for better context fetching`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
       inputSchema: FileContentBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub File Content Fetch',
@@ -117,20 +95,39 @@ async function fetchMultipleGitHubFileContents(
   for (const query of uniqueQueries) {
     try {
       // Create properly typed request using smart type conversion
+      // Handle fullContent parameter - if true, ignore other content selection parameters
+      const fullContent =
+        typeof query.fullContent === 'boolean' ? query.fullContent : false;
+
       const apiRequest = {
         owner: String(query.owner),
         repo: String(query.repo),
         filePath: String(query.filePath),
         branch: query.branch ? String(query.branch) : undefined,
-        startLine:
-          typeof query.startLine === 'number' ? query.startLine : undefined,
-        endLine: typeof query.endLine === 'number' ? query.endLine : undefined,
-        matchString: query.matchString ? String(query.matchString) : undefined,
+        fullContent: fullContent,
+        // If fullContent is true, don't pass startLine/endLine/matchString
+        startLine: fullContent
+          ? undefined
+          : typeof query.startLine === 'number'
+            ? query.startLine
+            : undefined,
+        endLine: fullContent
+          ? undefined
+          : typeof query.endLine === 'number'
+            ? query.endLine
+            : undefined,
+        matchString: fullContent
+          ? undefined
+          : query.matchString
+            ? String(query.matchString)
+            : undefined,
         matchStringContextLines:
           typeof query.matchStringContextLines === 'number'
             ? query.matchStringContextLines
-            : undefined,
+            : 5,
         minified: typeof query.minified === 'boolean' ? query.minified : true,
+        sanitize: typeof query.sanitize === 'boolean' ? query.sanitize : true,
+        verbose: typeof query.verbose === 'boolean' ? query.verbose : false,
       };
 
       const apiResult = await fetchGitHubFileContentAPI(
@@ -142,13 +139,30 @@ async function fetchMultipleGitHubFileContents(
       // Extract the actual result from the GitHubAPIResponse wrapper
       const result = 'data' in apiResult ? apiResult.data : apiResult;
 
-      // Build the result object with new format (add queryDescription and queryId)
-      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
-      const resultObj: FileContentQueryResult = {
-        queryId: query.id, // Add sequential query ID
-        queryDescription,
-        result: result,
+      // Build the result object with flattened format
+      // Flatten the result structure - spread result properties directly into the query result
+      const baseResultObj: FileContentQueryResult = {
+        queryId: query.id,
+        ...result, // Flatten all result properties (filePath, owner, repo, content, etc.)
       };
+
+      // Apply verbose filtering - only include verbose-only fields when verbose=true
+      const isVerbose =
+        typeof query.verbose === 'boolean' ? query.verbose : false;
+      const resultObj: FileContentQueryResult = {
+        ...baseResultObj,
+      };
+
+      // Remove verbose-only fields if verbose=false
+      if (!isVerbose) {
+        delete resultObj.branch;
+        delete resultObj.minified;
+        delete resultObj.minificationFailed;
+        delete resultObj.minificationType;
+      } else {
+        // Add query field when verbose=true
+        resultObj.query = { ...query };
+      }
 
       // Add sampling result if BETA features are enabled
       if (
@@ -198,21 +212,16 @@ async function fetchMultipleGitHubFileContents(
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
 
-      const queryDescription = `${query.owner}/${query.repo} - ${query.filePath}`;
       results.push({
-        queryId: query.id, // Add sequential query ID
-        queryDescription,
+        queryId: query.id,
         originalQuery: query, // Only include on error
-        result: { error: errorMessage },
-        error: errorMessage,
+        error: errorMessage, // Flatten error directly at top level
       });
     }
   }
 
   // Generate intelligent hints based on results
-  const successfulQueries = results.filter(
-    r => !('error' in r.result) && !r.error
-  ).length;
+  const successfulQueries = results.filter(r => !r.error).length;
 
   const hints = generateHints({
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,

@@ -74,23 +74,32 @@ export interface BulkResponseConfig {
 }
 
 /**
- * Generate sequential query IDs for bulk operations
- * Always generates sequential IDs regardless of existing id field
+ * Ensure all queries have unique IDs for tracking and error reporting
+ * Accepts external IDs from schema, generates fallback IDs only when needed
  *
- * @param queries Array of queries to assign sequential IDs
+ * @param queries Array of queries to assign IDs
  * @param defaultPrefix Prefix for generated IDs (default: 'query')
- * @returns Array of queries with sequential IDs (query_1, query_2, etc.)
+ * @returns Array of queries with unique IDs (preserves external IDs, generates fallbacks)
  */
 export function ensureUniqueQueryIds<T extends HasOptionalId>(
   queries: T[],
   defaultPrefix: string = 'query'
 ): Array<T & { id: string }> {
-  return queries.map((query, index) => {
-    // Always generate sequential ID: query_1, query_2, query_3, etc.
-    const sequentialId = `${defaultPrefix}_${index + 1}`;
+  const usedIds = new Set<string>();
 
-    // Create result with sequential ID
-    return { ...query, id: sequentialId };
+  return queries.map((query, index) => {
+    // First, try to use external ID from schema if provided
+    let queryId = safeExtractString(query, 'id');
+
+    // If no external ID or ID already used, generate fallback
+    if (!queryId || usedIds.has(queryId)) {
+      queryId = `${defaultPrefix}_${index + 1}`;
+    }
+
+    usedIds.add(queryId);
+
+    // Create result with preserved or generated ID
+    return { ...query, id: queryId };
   });
 }
 
@@ -155,44 +164,6 @@ export async function processBulkQueries<
   return { results, errors };
 }
 
-/**
- * Generate a query description from query parameters
- *
- * @param query The query object to generate description for
- * @returns Generated description or undefined
- */
-function generateQueryDescription(
-  query: Record<string, unknown>
-): string | undefined {
-  const parts: string[] = [];
-
-  // Repository context
-  const owner = safeExtractString(query, 'owner');
-  const repo = safeExtractString(query, 'repo');
-  if (owner && repo) {
-    parts.push(`${owner}/${repo}`);
-  } else if (owner) {
-    parts.push(`owner:${owner}`);
-  }
-
-  // Search terms or path
-  const queryTerms = query.queryTerms as string[] | undefined;
-  const path = safeExtractString(query, 'path');
-  if (queryTerms && queryTerms.length > 0) {
-    parts.push(`search: ${queryTerms.join(', ')}`);
-  } else if (path) {
-    parts.push(`path: ${path}`);
-  }
-
-  // Language filter
-  const language = safeExtractString(query, 'language');
-  if (language) {
-    parts.push(`language:${language}`);
-  }
-
-  return parts.length > 0 ? parts.join(' - ') : undefined;
-}
-
 function createBulkHintsContext<T extends HasOptionalId>(
   config: BulkResponseConfig,
   context: AggregatedContext,
@@ -245,14 +216,21 @@ export function createBulkResponse<
       result.queryId = query.id;
     }
 
+    // Preserve reasoning field if it exists in the original result
+    if ('reasoning' in r.result && r.result.reasoning) {
+      result.reasoning = r.result.reasoning;
+    }
+
     // For no-results cases or errors, always include metadata with query args
     const hasNoResults =
       (!result.data &&
         !result.repositories &&
         !result.files &&
+        !result.folders &&
         !result.structure) ||
       (result.files as unknown[] | undefined)?.length === 0 ||
       (result.repositories as unknown[] | undefined)?.length === 0 ||
+      (result.folders as unknown[] | undefined)?.length === 0 ||
       (result.structure as unknown[] | undefined)?.length === 0;
 
     const hasError = !!result.error;
@@ -266,21 +244,6 @@ export function createBulkResponse<
     } else if (!verbose && 'metadata' in result) {
       // Remove metadata only if not verbose and has results
       delete result.metadata;
-    }
-
-    // Add queryDescription to top layer - use LLM-provided description from schema or generate one
-    if (query) {
-      // First try to use LLM-provided description from schema
-      let queryDescription = safeExtractString(query, 'queryDescription');
-
-      // If not provided, generate one from query parameters
-      if (!queryDescription) {
-        queryDescription = generateQueryDescription(query);
-      }
-
-      if (queryDescription) {
-        result.queryDescription = queryDescription;
-      }
     }
 
     // For repository structure tool, add summary and queryArgs to top level if verbose
