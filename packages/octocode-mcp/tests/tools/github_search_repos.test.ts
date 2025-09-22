@@ -82,13 +82,16 @@ describe('GitHub Search Repositories Tool', () => {
       expect(mockServer.server.registerTool).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         expect.objectContaining({
-          description: expect.stringContaining('Search GitHub repositories'),
+          description: expect.stringContaining('Search repositories'),
           inputSchema: expect.objectContaining({
             queries: expect.any(Object),
           }),
           annotations: expect.objectContaining({
-            idempotent: true,
-            openWorld: true,
+            title: 'GitHub Repository Search',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: true,
           }),
         }),
         expect.any(Function)
@@ -196,7 +199,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ topic: 'machine-learning' }],
+          queries: [{ topics: 'machine-learning' }],
         }
       );
 
@@ -560,8 +563,9 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ queryTerms: ['test'], id: 'verbose-test' }],
-          verbose: true,
+          queries: [
+            { queryTerms: ['test'], verbose: true, id: 'verbose-test' },
+          ],
         }
       );
 
@@ -578,7 +582,6 @@ describe('GitHub Search Repositories Tool', () => {
       expect(data.results.length).toBeGreaterThan(0);
       const queryResult = data.results[0];
       expect(queryResult.metadata).toBeDefined(); // Should have metadata when verbose
-      expect(queryResult.queryDescription).toBeDefined(); // Should still have queryDescription
     });
   });
 
@@ -678,8 +681,7 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ queryTerms: ['test'], limit: 1 }],
-          verbose: true,
+          queries: [{ queryTerms: ['test'], limit: 1, verbose: true }],
         }
       );
 
@@ -763,8 +765,8 @@ describe('GitHub Search Repositories Tool', () => {
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
-            { queryTerms: ['react'], topic: 'frontend' },
-            { queryTerms: ['vue'], topic: 'frontend' },
+            { queryTerms: ['react'], topics: 'frontend' },
+            { queryTerms: ['vue'], topics: 'frontend' },
           ],
         }
       );

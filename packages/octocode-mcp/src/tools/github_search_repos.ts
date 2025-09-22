@@ -11,8 +11,8 @@ import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   ProcessedRepoSearchResult,
+  SimplifiedRepository,
 } from '../scheme/github_search_repos';
-import type { Repository } from '../github/github-openapi';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations';
 import {
   processBulkQueries,
@@ -22,27 +22,7 @@ import {
 } from '../utils/bulkOperations';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Search GitHub repositories with smart filtering
-
-GOAL:
-Find repositories containing relevant implementations, examples, or documentation for research.
-
-FEATURES:
-- Bulk queries (up to 5 parallel searches)
-- Quality filters: stars, forks, activity, last updated
-- Topic and term-based discovery
-
-STRATEGY:
-- Use topics OR terms (not both together for exploration)
-- Specific repo: limit=1 for most relevant match
-- Exploration: bulk search from multiple angles
-- Filter by quality metrics for better results
-
-USAGE:
-- Topic search: ["react", "typescript"] 
-- Term search: ["authentication", "middleware"]
-- Quality filter: stars>100, updated>2024-01-01`;
+import { DESCRIPTIONS } from './descriptions';
 
 // Simplified aggregated context
 interface AggregatedRepoContext {
@@ -58,11 +38,14 @@ export function registerSearchGitHubReposTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
       inputSchema: GitHubReposSearchQuerySchema.shape,
       annotations: {
-        idempotent: true,
-        openWorld: true,
+        title: 'GitHub Repository Search',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
       },
     },
     withSecurityValidation(
@@ -112,9 +95,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           });
         }
 
+        // Check if any query has verbose=true
+        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
         return searchMultipleGitHubRepos(
           args.queries,
-          args.verbose || false,
+          hasVerboseQuery,
           authInfo,
           userContext
         );
@@ -150,6 +136,8 @@ async function searchMultipleGitHubRepos(
           });
 
           return {
+            queryId: query.id,
+            reasoning: query.reasoning,
             error: apiResult.error,
             hints,
             metadata: {},
@@ -158,9 +146,12 @@ async function searchMultipleGitHubRepos(
 
         // Extract repository data
         const repositories = apiResult.data.repositories || [];
-        const typedRepositories = repositories as unknown as Repository[];
+        const typedRepositories =
+          repositories as unknown as SimplifiedRepository[];
 
         return {
+          queryId: query.id,
+          reasoning: query.reasoning,
           repositories: typedRepositories,
           total_count: apiResult.data.total_count,
           metadata: {},
@@ -176,6 +167,8 @@ async function searchMultipleGitHubRepos(
         });
 
         return {
+          queryId: query.id,
+          reasoning: query.reasoning,
           error: errorMessage,
           hints,
           metadata: {},
@@ -212,32 +205,71 @@ async function searchMultipleGitHubRepos(
     maxHints: 8,
   };
 
-  // Add query field for failed queries, no results cases, or when verbose is true
-  const processedResults = results.map(({ result }, index) => {
-    const repoResult = result as ProcessedRepoSearchResult;
-    const hasError = !!repoResult.error;
-    const hasNoResults =
-      repoResult.repositories && repoResult.repositories.length === 0;
-
-    if (hasError || hasNoResults || verbose) {
-      // Find the original query for this result
-      const originalQuery = uniqueQueries[index];
-      if (originalQuery) {
-        // Add query field to the result itself
-        repoResult.query = { ...originalQuery };
-      }
-    }
-    return repoResult;
-  });
-
-  return createBulkResponse(
+  // Create response with enhanced hints
+  const response = createBulkResponse(
     config,
-    processedResults.map(result => ({ result })),
+    results,
     aggregatedContext,
     errors,
     uniqueQueries,
     verbose
   );
+
+  // Apply verbose filtering and flatten complex structures
+  const responseText = response.content[0]?.text;
+  if (!responseText || typeof responseText !== 'string') {
+    return response;
+  }
+  const responseData = JSON.parse(responseText);
+  if (responseData.results) {
+    responseData.results = responseData.results.map(
+      (result: Record<string, unknown>, index: number) => {
+        const hasError = !!result.error;
+        const hasNoResults =
+          result.repositories &&
+          (result.repositories as unknown[]).length === 0;
+
+        // If this specific query has verbose=true, add query field
+        const originalQuery = uniqueQueries[index];
+        const queryIsVerbose = originalQuery?.verbose === true;
+
+        // Flatten metadata.queryArgs to query field when appropriate
+        if (result.metadata && typeof result.metadata === 'object') {
+          const metadata = result.metadata as Record<string, unknown>;
+          if (metadata.queryArgs) {
+            if (hasError || hasNoResults || queryIsVerbose) {
+              result.query = metadata.queryArgs;
+            }
+            // Remove complex nested metadata structure only if not verbose
+            if (!queryIsVerbose) {
+              delete result.metadata;
+            }
+          }
+        }
+
+        if (queryIsVerbose && !result.query) {
+          if (originalQuery) {
+            result.query = { ...originalQuery };
+          } else {
+            // Fallback: create query from result data
+            result.query = {
+              id: result.queryId,
+              verbose: true,
+            };
+          }
+        }
+
+        return result;
+      }
+    );
+  }
+
+  // Update the response content
+  response.content = [
+    { type: 'text', text: JSON.stringify(responseData, null, 2) },
+  ];
+
+  return response;
 }
 
 // End of searchMultipleGitHubRepos function

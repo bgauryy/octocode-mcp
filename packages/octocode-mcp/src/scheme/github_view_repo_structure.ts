@@ -1,36 +1,26 @@
 import { z } from 'zod';
 import {
-  extendBaseQuerySchema,
+  BaseBulkQueryItemSchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
   GitHubBranchSchema,
-  BaseToolMeta,
 } from './baseSchema';
 
-export const GitHubViewRepoStructureQuerySchema = extendBaseQuerySchema({
-  owner: GitHubOwnerSchema,
-  repo: GitHubRepoSchema,
-  branch: GitHubBranchSchema,
-  path: z.string().default('').optional().describe('Path'),
-  depth: z
-    .number()
-    .min(1)
-    .max(2)
-    .default(1)
-    .optional()
-    .describe('Depth to expolore'),
-  includeIgnored: z
-    .boolean()
-    .default(false)
-    .optional()
-    .describe('Include ignored files'),
-  showMedia: z
-    .boolean()
-    .default(false)
-    .optional()
-    .describe('Include meida files'),
-});
+export const GitHubViewRepoStructureQuerySchema =
+  BaseBulkQueryItemSchema.extend({
+    owner: GitHubOwnerSchema,
+    repo: GitHubRepoSchema,
+    branch: GitHubBranchSchema,
+    path: z.string().default('').optional().describe('Path'),
+    depth: z
+      .number()
+      .min(1)
+      .max(2)
+      .default(1)
+      .optional()
+      .describe('Depth to expolore - max 2'),
+  });
 
 export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema
@@ -39,14 +29,8 @@ export type GitHubViewRepoStructureQuery = z.infer<
 // Bulk schema for multiple repository structure queries
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   GitHubViewRepoStructureQuerySchema,
-  1,
-  5,
-  'Queries'
+  'Repository structure exploration queries'
 );
-
-// Legacy interfaces - all point to the schema-derived type for consistency
-export type GitHubRepositoryStructureQuery = GitHubViewRepoStructureQuery;
-export type GitHubRepositoryStructureParams = GitHubViewRepoStructureQuery;
 
 export interface GitHubApiFileItem {
   name: string;
@@ -117,38 +101,20 @@ export interface GitHubRepositoryStructureError {
 }
 
 // Bulk operations types
-export interface ProcessedRepoStructureResult {
-  queryDescription?: string;
+export interface ProcessedRepositoryStructureResult {
+  queryId?: string;
+  reasoning?: string;
   repository?: string;
   branch?: string;
   path?: string;
-  structure?: Array<{
-    path: string;
-    type: 'file' | 'dir' | 'symlink' | 'submodule';
-    size?: number;
-    sha?: string;
-  }>;
+  files?: string[];
+  folders?: string[];
   data?: unknown;
   error?: string;
   hints?: string[];
   metadata: Record<string, unknown>; // Required for processing, removed later if not verbose
 }
 
-// Legacy interface for backward compatibility
-export interface ProcessedRepositoryStructureResult
-  extends ProcessedRepoStructureResult {}
-
-export interface GitHubRepositoryStructureMeta extends BaseToolMeta {
-  repositories: Array<{ nameWithOwner: string; branch: string; path: string }>;
-  totalRepositories: number;
-  researchContext?: {
-    foundDirectories: string[];
-    foundFileTypes: string[];
-    repositoryContexts: string[];
-  };
-}
-
-// Aggregated context for bulk operations
 export interface AggregatedRepositoryContext {
   totalQueries: number;
   successfulQueries: number;
@@ -163,9 +129,3 @@ export interface AggregatedRepositoryContext {
     hasStructure: boolean;
   };
 }
-
-// Legacy schema for backward compatibility - now points to the main schema
-export const GitHubRepositoryStructureQuerySchema =
-  GitHubViewRepoStructureQuerySchema;
-export const GitHubRepositoryStructureParamsSchema =
-  GitHubViewRepoStructureQuerySchema;

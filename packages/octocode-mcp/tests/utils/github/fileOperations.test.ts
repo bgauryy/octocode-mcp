@@ -49,7 +49,47 @@ vi.mock('../../../src/mcp/responses.js', () => ({
 // Import after mocks are set up
 import { fetchGitHubFileContentAPI } from '../../../src/github/fileOperations.js';
 
+// Helper function to create properly formatted test parameters
+function createTestParams(overrides: Record<string, unknown> = {}) {
+  return {
+    owner: 'test',
+    repo: 'repo',
+    filePath: 'test.txt',
+    fullContent: false,
+    minified: false,
+    sanitize: true,
+    verbose: false,
+    matchStringContextLines: 5,
+    ...overrides,
+  };
+}
+
 describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
+  describe('Schema defaults and backward compatibility', () => {
+    it('should have correct schema defaults for backward compatibility', async () => {
+      const { FileContentQuerySchema } = await import(
+        '../../../src/scheme/github_fetch_content.js'
+      );
+
+      // Test minimal valid input (only required fields)
+      const minimalInput = {
+        owner: 'test',
+        repo: 'repo',
+        filePath: 'test.js',
+      };
+
+      const parsed = FileContentQuerySchema.parse(minimalInput);
+
+      // Verify defaults ensure backward compatibility
+      expect(parsed.fullContent).toBe(false); // Should default to false
+      expect(parsed.startLine).toBeUndefined(); // Should be optional
+      expect(parsed.endLine).toBeUndefined(); // Should be optional
+      expect(parsed.matchString).toBeUndefined(); // Should be optional
+      expect(parsed.matchStringContextLines).toBe(5); // Should have default
+      expect(parsed.minified).toBe(true); // Should have default
+      expect(parsed.sanitize).toBe(true); // Should have default
+    });
+  });
   let mockOctokit: {
     rest: {
       repos: {
@@ -139,13 +179,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       });
     });
 
-    it('should fetch entire file when no parameters specified', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
-        minified: false,
-      };
+    it('should fetch entire file when no parameters specified (backward compatibility)', async () => {
+      const params = createTestParams();
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -157,16 +192,62 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         );
         expect(result.data.totalLines).toBe(5);
         expect(result.data.isPartial).toBeUndefined();
+        expect(result.data.startLine).toBeUndefined();
+        expect(result.data.endLine).toBeUndefined();
+
+        // Verify it's treated as full content (not partial)
+        expect(result.data.isPartial).toBeFalsy();
+      }
+    });
+
+    it('should fetch entire file when only non-content parameters are specified', async () => {
+      const params = createTestParams({
+        minified: false,
+        sanitize: true,
+        verbose: false,
+        // No fullContent, startLine, endLine, or matchString
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        // Should return full content for backward compatibility
+        expect(result.data.content).toBe(
+          'line 1\nline 2\nline 3\nline 4\nline 5'
+        );
+        expect(result.data.totalLines).toBe(5);
+        expect(result.data.isPartial).toBeUndefined();
+        expect(result.data.startLine).toBeUndefined();
+        expect(result.data.endLine).toBeUndefined();
+      }
+    });
+
+    it('should explicitly handle fullContent=false as full content (backward compatibility)', async () => {
+      const params = createTestParams({
+        fullContent: false, // Explicitly set to false
+        // No other content selection parameters
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        // Should still return full content when fullContent=false and no other params
+        expect(result.data.content).toBe(
+          'line 1\nline 2\nline 3\nline 4\nline 5'
+        );
+        expect(result.data.totalLines).toBe(5);
+        expect(result.data.isPartial).toBeUndefined();
+        expect(result.data.startLine).toBeUndefined();
+        expect(result.data.endLine).toBeUndefined();
       }
     });
 
     it('should apply minification when minified=true', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         minified: true,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -183,12 +264,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should not apply minification when minified=false', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
-        minified: false,
-      };
+      const params = createTestParams();
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -199,6 +275,47 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           'line 1\nline 2\nline 3\nline 4\nline 5'
         );
         expect(result.data.minified).toBeUndefined();
+      }
+    });
+
+    it('should return entire file when fullContent=true', async () => {
+      const params = createTestParams({
+        fullContent: true,
+        startLine: 2, // Should be ignored
+        endLine: 4, // Should be ignored
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        expect(result.data.content).toBe(
+          'line 1\nline 2\nline 3\nline 4\nline 5'
+        );
+        expect(result.data.startLine).toBeUndefined();
+        expect(result.data.endLine).toBeUndefined();
+        expect(result.data.totalLines).toBe(5);
+        expect(result.data.isPartial).toBeUndefined();
+      }
+    });
+
+    it('should return entire file when fullContent=true and ignore matchString', async () => {
+      const params = createTestParams({
+        fullContent: true,
+        matchString: 'line 3', // Should be ignored
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        expect(result.data.content).toBe(
+          'line 1\nline 2\nline 3\nline 4\nline 5'
+        );
+        expect(result.data.startLine).toBeUndefined();
+        expect(result.data.endLine).toBeUndefined();
+        expect(result.data.totalLines).toBe(5);
+        expect(result.data.isPartial).toBeUndefined();
       }
     });
   });
@@ -221,14 +338,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should extract specific line range with startLine and endLine', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         startLine: 3,
         endLine: 6,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -243,13 +356,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should extract from startLine to end when only startLine specified', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         startLine: 8,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -263,13 +372,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should extract from beginning to endLine when only endLine specified', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         endLine: 3,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -283,14 +388,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should handle invalid line ranges gracefully by returning whole file', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         startLine: 15, // Beyond file length
         endLine: 20,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -304,14 +405,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should handle endLine beyond file bounds by adjusting to file end', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         startLine: 8,
         endLine: 15, // Beyond file length
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -354,13 +451,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should find match and return context with default matchStringContextLines (5)', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.jsx',
+      const params = createTestParams({
         matchString: 'function MyComponent()',
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -378,14 +471,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should respect custom matchStringContextLines', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.jsx',
+      const params = createTestParams({
         matchString: 'function MyComponent()',
         matchStringContextLines: 2,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -401,36 +490,101 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should handle matchStringContextLines=0 (only matching line)', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.jsx',
+      const params = createTestParams({
         matchString: 'function MyComponent()',
         matchStringContextLines: 0,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
       expect(result.status).toBe(200);
       if ('data' in result) {
-        // The implementation returns the full context even when matchStringContextLines=0
-        // because it uses the default value of 5 when the parameter is not provided
+        // With 0 context lines, should return only the matching line
         expect(result.data.content).toContain('function MyComponent()');
-        expect(result.data.startLine).toBe(1); // Max(1, 5-5)
-        expect(result.data.endLine).toBe(10); // Min(10, 5+5)
+        expect(result.data.startLine).toBe(5); // Max(1, 5-0) = 5 (exact match line)
+        expect(result.data.endLine).toBe(5); // Min(10, 5+0) = 5 (exact match line)
         expect(result.data.isPartial).toBe(true);
+        // Should contain only the matching line
+        expect(result.data.content).toBe('function MyComponent() {');
+      }
+    });
+
+    it('should return only context lines for match string (TDD bug reproduction)', async () => {
+      // Create a file that mimics the React file structure that caused the bug
+      const reactLikeContent = [
+        '/**',
+        ' * Copyright (c) Meta Platforms, Inc. and affiliates.',
+        ' *',
+        ' * This source code is licensed under the MIT license found in the',
+        ' * LICENSE file in the root directory of this source tree.',
+        ' * @flow',
+        ' */',
+        '',
+        "import type {RefObject} from 'shared/ReactTypes';",
+        '',
+        '// an immutable object with a single mutable value',
+        'export function createRef(): RefObject {', // Line 12 - this is our match
+        '  const refObject = {',
+        '    current: null,',
+        '  };',
+        '  if (__DEV__) {',
+        '    Object.seal(refObject);',
+        '  }',
+        '  return refObject;',
+        '}',
+        '',
+      ].join('\n');
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: Buffer.from(reactLikeContent).toString('base64'),
+          size: reactLikeContent.length,
+          sha: 'abc123',
+        },
+      });
+
+      const params = createTestParams({
+        matchString: 'export function createRef',
+        matchStringContextLines: 3,
+        minified: false, // Explicitly disable minification like in real test
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        const totalLines = reactLikeContent.split('\n').length;
+        const contentLines = result.data.content.split('\n');
+
+        // The bug: it returns ALL lines instead of just context
+        // This test should FAIL initially, proving the bug exists
+        expect(contentLines.length).toBe(7); // Should be 7 lines (3 before + match + 3 after)
+        expect(contentLines.length).not.toBe(totalLines); // Should NOT be the full file
+
+        expect(result.data.startLine).toBe(9); // Max(1, 12-3)
+        expect(result.data.endLine).toBe(15); // Min(21, 12+3)
+        expect(result.data.isPartial).toBe(true);
+        expect(result.data.totalLines).toBe(totalLines);
+
+        // Should contain the match and context
+        expect(result.data.content).toContain('export function createRef');
+        expect(result.data.content).toContain('// an immutable object'); // Context before
+        expect(result.data.content).toContain('const refObject = {'); // Context after
+
+        // Should NOT contain the copyright header (too far from match)
+        expect(result.data.content).not.toContain(
+          'Copyright (c) Meta Platforms'
+        );
+
+        expect(result.data.securityWarnings).toContain(
+          'Found "export function createRef" on line 12'
+        );
       }
     });
 
     it('should return error when matchString not found', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.jsx',
-        matchString: 'nonexistent string',
-        minified: false,
-      };
+      const params = createTestParams({ matchString: 'nonexistent string' });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -444,14 +598,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should handle matchString with multiple occurrences', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.jsx',
+      const params = createTestParams({
         matchString: 'import', // Appears multiple times
         matchStringContextLines: 1,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -483,16 +633,12 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should prioritize matchString over manual startLine/endLine', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         startLine: 1,
         endLine: 5,
         matchString: 'line 10',
         matchStringContextLines: 2,
-        minified: false,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -509,14 +655,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should apply minification to line-selected content', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         startLine: 5,
         endLine: 8,
         minified: true,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -533,14 +676,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     });
 
     it('should apply minification to match-selected content', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         matchString: 'line 15',
         matchStringContextLines: 1,
         minified: true,
-      };
+      });
 
       const result = await fetchGitHubFileContentAPI(params);
 
@@ -559,17 +699,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   describe('Cache key generation', () => {
     it('should generate cache key with all relevant parameters', async () => {
-      const params = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
+      const params = createTestParams({
         branch: 'feature',
         startLine: 5,
         endLine: 10,
         matchString: 'search term',
         matchStringContextLines: 3,
         minified: true,
-      };
+      });
 
       // Mock file response
       mockOctokit.rest.repos.getContent.mockResolvedValue({
@@ -595,18 +732,14 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: 'search term',
           minified: true,
           matchStringContextLines: 3,
+          verbose: false,
         },
         undefined
       );
     });
 
     it('should generate different cache keys for different parameters', async () => {
-      const baseParams = {
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.txt',
-        minified: false,
-      };
+      const baseParams = createTestParams();
 
       // Mock file response
       mockOctokit.rest.repos.getContent.mockResolvedValue({
@@ -642,7 +775,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           endLine: undefined,
           matchString: undefined,
           minified: false,
-          matchStringContextLines: undefined,
+          matchStringContextLines: 5,
+          verbose: false,
         },
         undefined
       );
@@ -658,7 +792,8 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           endLine: 5,
           matchString: undefined,
           minified: false,
-          matchStringContextLines: undefined,
+          matchStringContextLines: 5,
+          verbose: false,
         },
         undefined
       );

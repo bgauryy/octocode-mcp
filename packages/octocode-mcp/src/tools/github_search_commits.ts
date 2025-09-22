@@ -6,36 +6,20 @@ import { searchGitHubCommitsAPI } from '../github/index';
 import { TOOL_NAMES } from '../constants';
 import {
   GitHubCommitSearchQuery,
-  GitHubCommitSearchQuerySchema,
+  GitHubCommitSearchBulkQuerySchema,
+  GitHubCommitSearchResult,
 } from '../scheme/github_search_commits';
 import { GitHubCommitSearchParams } from '../github/github-openapi';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Search GitHub commits with intelligent filtering and comprehensive analysis.
-
-Provides powerful commit discovery across GitHub repositories with smart filtering capabilities,
-error recovery, and context-aware suggestions. Perfect for understanding code evolution,
-tracking changes, and analyzing development patterns.
-
-FEATURES:
-- Comprehensive commit search: Find changes by author, message, date, and more
-- Smart filtering: By repository, author, date ranges, and commit types
-- Error recovery: Intelligent suggestions for failed searches
-- Research optimization: Tailored hints based on research goals
-
-BEST PRACTICES:
-- Use specific keywords related to the changes you're looking for
-- Filter by date ranges for targeted historical analysis
-- Leverage author filters for developer-specific searches
-- Specify research goals (debugging, analysis) for optimal guidance`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerSearchGitHubCommitsTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_COMMITS,
     {
-      description: DESCRIPTION,
-      inputSchema: GitHubCommitSearchQuerySchema.shape,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_COMMITS],
+      inputSchema: GitHubCommitSearchBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Commit Search',
         readOnlyHint: true,
@@ -46,169 +30,222 @@ export function registerSearchGitHubCommitsTool(server: McpServer) {
     },
     withSecurityValidation(
       async (
-        args: GitHubCommitSearchQuery,
+        args: {
+          queries: GitHubCommitSearchQuery[];
+          verbose?: boolean;
+        },
         authInfo?: AuthInfo,
         userContext?: import('../security/withSecurityValidation').UserContext
       ): Promise<CallToolResult> => {
-        // Validate that at least one search parameter is provided
-        const hasSearchTerms =
-          (Array.isArray(args.queryTerms) && args.queryTerms.length > 0) ||
-          (Array.isArray(args.orTerms) && args.orTerms.length > 0);
-        const hasFilters =
-          args.author ||
-          args['author-name'] ||
-          args['author-email'] ||
-          args.committer ||
-          args['committer-name'] ||
-          args['committer-email'] ||
-          args.hash ||
-          args.parent ||
-          args.tree ||
-          args.merge !== undefined ||
-          args['author-date'] ||
-          args['committer-date'];
-
-        if (!hasSearchTerms && !hasFilters) {
+        if (
+          !args.queries ||
+          !Array.isArray(args.queries) ||
+          args.queries.length === 0
+        ) {
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: false,
-            totalItems: 0,
-            errorMessage: 'Search parameters required',
+            errorMessage: 'Queries array is required and cannot be empty',
             customHints: [
-              'Provide search terms (queryTerms) or filters (author, hash, dates)',
-              'Example: queryTerms: ["fix", "bug"] or author: "username"',
+              'Provide at least one commit search query with search terms or filters',
             ],
           });
 
           return createResult({
-            data: {
-              error: 'At least one search parameter or filter is required',
-            },
             isError: true,
+            error: 'Queries array is required and cannot be empty',
             hints,
           });
         }
 
-        if (args.getChangesContent && (!args.owner || !args.repo)) {
+        if (args.queries.length > 5) {
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
             hasResults: false,
-            errorMessage: 'Repository required for changes content',
+            errorMessage: 'Too many queries provided',
             customHints: [
-              'Specify both owner and repo when requesting commit changes',
+              'Limit to 5 queries per request for optimal performance',
             ],
           });
 
           return createResult({
-            data: {
-              error:
-                'Both owner and repo are required when getChangesContent is true',
-            },
             isError: true,
+            error: 'Maximum 5 queries allowed per request',
             hints,
           });
         }
 
-        try {
-          const result = await searchGitHubCommitsAPI(
-            args as GitHubCommitSearchParams,
-            authInfo,
-            userContext
-          );
+        // Check if any query has verbose=true
+        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
 
-          // Check if result is an error
-          if ('error' in result) {
-            const hints = generateHints({
-              toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-              hasResults: false,
-              totalItems: 0,
-              errorMessage: result.error,
-              customHints: result.hints || [],
-            });
-            return createResult({
-              error: result.error,
-              hints,
-            });
-          }
-
-          // Success - generate intelligent hints
-
-          const searchTerms = [
-            ...(Array.isArray(args.queryTerms) ? args.queryTerms : []),
-            ...(Array.isArray(args.orTerms) ? args.orTerms : []),
-          ];
-
-          const baseHints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-            hasResults: result.commits.length > 0,
-            totalItems: result.commits.length,
-            queryContext: {
-              owner: args.owner
-                ? Array.isArray(args.owner)
-                  ? args.owner.map(String)
-                  : String(args.owner)
-                : undefined,
-              repo: args.repo
-                ? Array.isArray(args.repo)
-                  ? args.repo.map(String)
-                  : String(args.repo)
-                : undefined,
-              queryTerms: searchTerms,
-            },
-          });
-
-          // Build enhanced hints
-          let enhancedHints = baseHints;
-
-          // Add hint about getChangesContent if we have results
-          if (result.commits.length > 0) {
-            const changesHint =
-              args.owner && args.repo
-                ? `You can see code changes of the commit using getChangesContent: true`
-                : `You can see code changes of the commit using getChangesContent: true (requires owner and repo parameters)`;
-            enhancedHints = [changesHint, ...enhancedHints];
-          }
-
-          // Add hint about limited results if total_count > shown commits
-          if ((result.total_count || 0) > (result.commits?.length || 0)) {
-            const limitHint = `Showing ${result.commits?.length || 0} of ${result.total_count} total commits. Increase limit parameter to see more results.`;
-            enhancedHints = [limitHint, ...enhancedHints];
-          }
-
-          const hints = enhancedHints;
-
-          return createResult({
-            data: {
-              total_count: result.total_count || 0,
-              incomplete_results: result.incomplete_results || false,
-              commits: result.commits || [],
-            },
-            meta: {
-              totalResults: result.commits?.length || 0,
-              totalAvailable: result.total_count || 0,
-              showingLimited:
-                (result.total_count || 0) > (result.commits?.length || 0),
-            },
-            hints,
-          });
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : 'Unknown error occurred';
-
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-            hasResults: false,
-            totalItems: 0,
-            errorMessage,
-          });
-
-          return createResult({
-            data: { error: `Failed to search commits: ${errorMessage}` },
-            isError: true,
-            hints,
-          });
-        }
+        return searchMultipleGitHubCommits(
+          args.queries,
+          hasVerboseQuery,
+          authInfo,
+          userContext
+        );
       }
     )
   );
+}
+
+async function searchMultipleGitHubCommits(
+  queries: GitHubCommitSearchQuery[],
+  verbose: boolean = false,
+  authInfo?: AuthInfo,
+  userContext?: import('../security/withSecurityValidation').UserContext
+): Promise<CallToolResult> {
+  const results = await Promise.allSettled(
+    queries.map(async (query, index) => {
+      const queryId = query.id || `commit-search_${index + 1}`;
+
+      try {
+        const result = await searchSingleCommit(query, authInfo, userContext);
+        return {
+          queryId,
+          data: result,
+          metadata: {
+            resultCount: 'error' in result ? 0 : result.commits?.length || 0,
+            hasResults:
+              'error' in result ? false : (result.commits?.length || 0) > 0,
+            searchType: 'error' in result ? 'error' : 'success',
+            ...(verbose || 'error' in result ? { queryArgs: query } : {}),
+          },
+        };
+      } catch (error) {
+        return {
+          queryId,
+          data: {
+            error:
+              error instanceof Error ? error.message : 'Unknown error occurred',
+            status: 500,
+            hints: ['Internal error occurred during search'],
+          },
+          metadata: {
+            resultCount: 0,
+            hasResults: false,
+            searchType: 'error',
+            queryArgs: query,
+          },
+        };
+      }
+    })
+  );
+
+  // Process results
+  const allResults = results.map((result, index) => {
+    if (result.status === 'fulfilled') {
+      return result.value;
+    } else {
+      const originalQuery = queries[index];
+      return {
+        queryId: originalQuery?.id || `commit-search_${index + 1}`,
+        data: {
+          error: result.reason?.message || 'Unknown error occurred',
+          status: 500,
+          hints: ['Promise rejected during search'],
+        },
+        metadata: {
+          resultCount: 0,
+          hasResults: false,
+          searchType: 'error',
+          queryArgs: originalQuery,
+        },
+      };
+    }
+  });
+
+  const successfulResults = allResults.filter(
+    result => !('error' in result.data) || result.data.error === undefined
+  );
+
+  const hints = generateHints({
+    toolName: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
+    hasResults: successfulResults.some(r => r.metadata.hasResults),
+    totalItems: successfulResults.reduce(
+      (sum, r) => sum + r.metadata.resultCount,
+      0
+    ),
+  });
+
+  return createResult({
+    data: allResults,
+    meta: {
+      totalOperations: queries.length,
+      successfulOperations: successfulResults.length,
+      failedOperations: allResults.length - successfulResults.length,
+    },
+    hints,
+  });
+}
+
+async function searchSingleCommit(
+  args: GitHubCommitSearchQuery,
+  authInfo?: AuthInfo,
+  userContext?: import('../security/withSecurityValidation').UserContext
+): Promise<GitHubCommitSearchResult | { error: string; hints?: string[] }> {
+  // Validate that at least one search parameter is provided
+  const hasSearchTerms =
+    (Array.isArray(args.queryTerms) && args.queryTerms.length > 0) ||
+    (Array.isArray(args.orTerms) && args.orTerms.length > 0);
+  const hasFilters =
+    args.author ||
+    args['author-name'] ||
+    args['author-email'] ||
+    args.committer ||
+    args['committer-name'] ||
+    args['committer-email'] ||
+    args.hash ||
+    args.parent ||
+    args.tree ||
+    args.merge !== undefined ||
+    args['author-date'] ||
+    args['committer-date'];
+
+  if (!hasSearchTerms && !hasFilters) {
+    return {
+      error: 'At least one search parameter or filter is required',
+      hints: [
+        'Provide search terms (queryTerms) or filters (author, hash, dates)',
+        'Use queryTerms for commit message search',
+        'Use author, hash, or date filters for targeted searches',
+      ],
+    };
+  }
+
+  if (args.getChangesContent && (!args.owner || !args.repo)) {
+    return {
+      error: 'Both owner and repo are required when getChangesContent is true',
+      hints: [
+        'Specify both owner and repo parameters when requesting commit changes',
+        'Example: { owner: "facebook", repo: "react", getChangesContent: true }',
+      ],
+    };
+  }
+
+  try {
+    const result = await searchGitHubCommitsAPI(
+      args as GitHubCommitSearchParams,
+      authInfo,
+      userContext
+    );
+
+    // Check if result is an error
+    if ('error' in result) {
+      return {
+        error: result.error,
+        hints: result.hints || [],
+      };
+    }
+
+    // Success - return the result
+    return result;
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error occurred';
+    return {
+      error: `Failed to search commits: ${errorMessage}`,
+      hints: ['Check search parameters and try again'],
+    };
+  }
 }

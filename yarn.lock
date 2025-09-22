@@ -402,7 +402,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@modelcontextprotocol/sdk@npm:^1.16.0, @modelcontextprotocol/sdk@npm:^1.17.4":
+"@modelcontextprotocol/sdk@npm:^1.17.4":
   version: 1.17.4
   resolution: "@modelcontextprotocol/sdk@npm:1.17.4"
   dependencies:
@@ -419,6 +419,26 @@ __metadata:
     zod: "npm:^3.23.8"
     zod-to-json-schema: "npm:^3.24.1"
   checksum: 10c0/0b549361b713d38d1414809525ad076e91a96a3a550b5e67cac4b91f98d6014e8e79175ba0a738031e053e7a3820bb03d37a55cc528f3f76b662a26b4f18c789
+  languageName: node
+  linkType: hard
+
+"@modelcontextprotocol/sdk@npm:^1.18.1":
+  version: 1.18.1
+  resolution: "@modelcontextprotocol/sdk@npm:1.18.1"
+  dependencies:
+    ajv: "npm:^6.12.6"
+    content-type: "npm:^1.0.5"
+    cors: "npm:^2.8.5"
+    cross-spawn: "npm:^7.0.5"
+    eventsource: "npm:^3.0.2"
+    eventsource-parser: "npm:^3.0.0"
+    express: "npm:^5.0.1"
+    express-rate-limit: "npm:^7.5.0"
+    pkce-challenge: "npm:^5.0.0"
+    raw-body: "npm:^3.0.0"
+    zod: "npm:^3.23.8"
+    zod-to-json-schema: "npm:^3.24.1"
+  checksum: 10c0/86849684f31932d4f1424f7e86dda6d0a3b308ad828790c0c052f381c57622829f8b86ad5cc0786d80c834ea113d7033398660e7327585db095fcaf6c4bc2ce0
   languageName: node
   linkType: hard
 
@@ -4226,7 +4246,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "octocode-mcp@workspace:packages/octocode-mcp"
   dependencies:
-    "@modelcontextprotocol/sdk": "npm:^1.16.0"
+    "@modelcontextprotocol/sdk": "npm:^1.18.1"
     "@octokit/core": "npm:^7.0.3"
     "@octokit/openapi-types": "npm:^25.1.0"
     "@octokit/plugin-rest-endpoint-methods": "npm:^14.0.0"

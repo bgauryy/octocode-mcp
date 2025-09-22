@@ -21,36 +21,14 @@ import {
   type BulkResponseConfig,
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Explore GitHub repository structure and validate access
-
-GOAL:
-Understand project organization, discover key files, and validate repository accessibility for research context.
-
-FEATURES:
-- Bulk operations (explore multiple repos simultaneously)
-- Directory navigation and project layout understanding  
-- Smart filtering (excludes build artifacts, focuses on relevant files)
-- Access validation and error recovery
-
-USAGE:
-- Start with root directory for overall structure
-- Use depth control (max 2) for performance vs detail balance
-- Include ignored files only when needed for complete analysis
-- Bulk operations for comparative analysis across repos
-
-STRATEGY:
-- Root first → key directories → specific files
-- Validate access before deep exploration
-- Filter noise, focus on source/docs/config files
-- Use findings to guide further searches/fetches
-- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
+import { DESCRIPTIONS } from './descriptions';
+import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters';
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
       inputSchema: GitHubViewRepoStructureBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Repository Structure Explorer',
@@ -107,9 +85,12 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
           });
         }
 
+        // Check if any query has verbose=true
+        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
         return exploreMultipleRepositoryStructures(
           args.queries,
-          args.verbose || false,
+          hasVerboseQuery,
           authInfo,
           userContext
         );
@@ -137,18 +118,13 @@ async function exploreMultipleRepositoryStructures(
         // Create API request with properly typed fields
         const apiRequest: GitHubViewRepoStructureQuery = {
           id: String(query.id),
-          verbose: query.verbose,
+          reasoning: query.reasoning,
+          verbose: query.verbose || false,
           owner: String(query.owner),
           repo: String(query.repo),
           branch: String(query.branch),
           path: query.path ? String(query.path) : undefined,
           depth: typeof query.depth === 'number' ? query.depth : undefined,
-          includeIgnored:
-            typeof query.includeIgnored === 'boolean'
-              ? query.includeIgnored
-              : undefined,
-          showMedia:
-            typeof query.showMedia === 'boolean' ? query.showMedia : undefined,
         };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
@@ -174,33 +150,39 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        // Success case - use flatter structure as requested
-        const hasResults = apiResult.files && apiResult.files.length > 0;
+        // Success case - use simplified structure with filtering
 
-        // Combine files and folders into structure array
-        const structureItems: Array<{
-          path: string;
-          type: 'file' | 'dir' | 'symlink' | 'submodule';
-          size?: number;
-          url?: string;
-          sha?: string;
-        }> = [
-          ...apiResult.files.map(file => ({
-            ...file,
-            type: 'file' as 'file' | 'dir' | 'symlink' | 'submodule',
-          })),
-          ...(apiResult.folders?.folders || []).map(folder => ({
-            path: folder.path,
-            url: folder.url,
-            type: 'dir' as 'file' | 'dir' | 'symlink' | 'submodule',
-          })),
-        ];
+        // Filter files using the centralized file filtering logic
+        const filteredFiles = apiResult.files.filter(
+          file => !shouldIgnoreFile(file.path)
+        );
+
+        // Filter folders using the centralized directory filtering logic
+        const filteredFolders = (apiResult.folders?.folders || []).filter(
+          folder => {
+            // Extract folder name from path for shouldIgnoreDir check
+            const folderName = folder.path.split('/').pop() || '';
+            return (
+              !shouldIgnoreDir(folderName) && !shouldIgnoreFile(folder.path)
+            );
+          }
+        );
+
+        const hasResults =
+          filteredFiles.length > 0 || filteredFolders.length > 0;
+
+        // Extract file paths and folder paths separately
+        const filePaths = filteredFiles.map(file => file.path);
+        const folderPaths = filteredFolders.map(folder => folder.path);
 
         const result: ProcessedRepositoryStructureResult = {
+          queryId: String(query.id),
+          reasoning: query.reasoning,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
           branch: apiRequest.branch,
           path: apiRequest.path || '/',
-          structure: structureItems,
+          files: filePaths,
+          folders: folderPaths,
           metadata: {
             branch: apiRequest.branch,
             path: apiRequest.path || '/',
@@ -253,21 +235,21 @@ async function exploreMultipleRepositoryStructures(
       hasContent: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.structure) &&
-          r.result.structure.length > 0
+          ((Array.isArray(r.result.files) && r.result.files.length > 0) ||
+            (Array.isArray(r.result.folders) && r.result.folders.length > 0))
       ),
       hasStructure: results.some(
         r =>
           !r.result.error &&
-          Array.isArray(r.result.structure) &&
-          r.result.structure.length > 0
+          ((Array.isArray(r.result.files) && r.result.files.length > 0) ||
+            (Array.isArray(r.result.folders) && r.result.folders.length > 0))
       ),
     },
   };
 
   // Extract context from successful results
   results.forEach(({ result }) => {
-    if (!result.error && result.structure) {
+    if (!result.error && (result.files || result.folders)) {
       if (result.repository) {
         aggregatedContext.repositoryContexts.add(result.repository);
       }
@@ -276,26 +258,24 @@ async function exploreMultipleRepositoryStructures(
       }
 
       // Extract file types and directories
-      if (Array.isArray(result.structure)) {
-        result.structure.forEach(file => {
-          const extension = file.path.split('.').pop();
+      if (Array.isArray(result.files)) {
+        result.files.forEach((filePath: string) => {
+          const extension = filePath.split('.').pop();
           if (extension) {
             aggregatedContext.foundFileTypes.add(extension);
           }
 
-          const directory = file.path.split('/').slice(0, -1).join('/');
+          const directory = filePath.split('/').slice(0, -1).join('/');
           if (directory) {
             aggregatedContext.foundDirectories.add(directory);
           }
         });
       }
 
-      const foldersMeta = result.metadata?.folders as
-        | { folders?: Array<{ path: string }> }
-        | undefined;
-      if (foldersMeta?.folders) {
-        foldersMeta.folders.forEach(folder => {
-          aggregatedContext.foundDirectories.add(folder.path);
+      // Add folders directly to foundDirectories
+      if (Array.isArray(result.folders)) {
+        result.folders.forEach((folderPath: string) => {
+          aggregatedContext.foundDirectories.add(folderPath);
         });
       }
     }
@@ -308,7 +288,8 @@ async function exploreMultipleRepositoryStructures(
     maxHints: 8,
   };
 
-  return createBulkResponse(
+  // Create response with enhanced hints
+  const response = createBulkResponse(
     config,
     results,
     aggregatedContext,
@@ -316,4 +297,59 @@ async function exploreMultipleRepositoryStructures(
     uniqueQueries,
     verbose
   );
+
+  // Apply verbose filtering and flatten complex structures
+  const responseText = response.content[0]?.text;
+  if (!responseText || typeof responseText !== 'string') {
+    return response;
+  }
+  const responseData = JSON.parse(responseText);
+  if (responseData.results) {
+    responseData.results = responseData.results.map(
+      (result: Record<string, unknown>, index: number) => {
+        const hasError = !!result.error;
+        const hasNoResults =
+          result.structure && (result.structure as unknown[]).length === 0;
+
+        // If this specific query has verbose=true, add query field
+        const originalQuery = uniqueQueries[index];
+        const queryIsVerbose = originalQuery?.verbose === true;
+
+        // Flatten metadata.queryArgs to query field when appropriate
+        if (result.metadata && typeof result.metadata === 'object') {
+          const metadata = result.metadata as Record<string, unknown>;
+          if (metadata.queryArgs) {
+            if (hasError || hasNoResults || queryIsVerbose) {
+              result.query = metadata.queryArgs;
+            }
+            // Remove complex nested metadata structure only if not verbose
+            if (!queryIsVerbose) {
+              delete result.metadata;
+            }
+          }
+        }
+
+        if (queryIsVerbose && !result.query) {
+          if (originalQuery) {
+            result.query = { ...originalQuery };
+          } else {
+            // Fallback: create query from result data
+            result.query = {
+              id: result.queryId,
+              verbose: true,
+            };
+          }
+        }
+
+        return result;
+      }
+    );
+  }
+
+  // Update the response content
+  response.content = [
+    { type: 'text', text: JSON.stringify(responseData, null, 2) },
+  ];
+
+  return response;
 }

@@ -108,28 +108,38 @@ describe('GitHub Search Commits Tool', () => {
       const response = JSON.parse(result.content[0]?.text as string);
       expect(response.hints).toBeDefined();
       expect(response.hints).toContain(
-        'Provide search terms (queryTerms) or filters (author, hash, dates)'
+        'Provide at least one commit search query with search terms or filters'
       );
     });
 
     it('should validate queryTerms array', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: [],
+        queries: [
+          {
+            queryTerms: [],
+          },
+        ],
       });
 
-      expect(result.isError).toBe(true);
+      expect(result.isError).toBe(false); // Bulk operations don't fail at top level
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.hints).toBeDefined();
-      expect(response.hints).toContain(
+      expect(response.data[0].data.error).toContain(
+        'At least one search parameter or filter is required'
+      );
+      expect(response.data[0].data.hints).toContain(
         'Provide search terms (queryTerms) or filters (author, hash, dates)'
       );
     });
 
     it('should accept filter-only searches', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        author: 'testuser',
-        owner: 'facebook',
-        repo: 'react',
+        queries: [
+          {
+            author: 'testuser',
+            owner: 'facebook',
+            repo: 'react',
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -152,7 +162,11 @@ describe('GitHub Search Commits Tool', () => {
   describe('Query Types', () => {
     it('should handle multiple queryTerms (AND logic)', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['readme', 'typo'],
+        queries: [
+          {
+            queryTerms: ['readme', 'typo'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -171,7 +185,11 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle orTerms (OR logic)', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        orTerms: ['fix', 'bug', 'parser'],
+        queries: [
+          {
+            orTerms: ['fix', 'bug', 'parser'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -192,7 +210,11 @@ describe('GitHub Search Commits Tool', () => {
   describe('Basic Functionality', () => {
     it('should handle successful commit search', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['fix'],
+        queries: [
+          {
+            queryTerms: ['fix'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -209,8 +231,10 @@ describe('GitHub Search Commits Tool', () => {
       );
 
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data.commits).toHaveLength(1);
-      expect(response.data.commits[0].commit.message).toBe('Test commit');
+      expect(response.data[0].data.commits).toHaveLength(1);
+      expect(response.data[0].data.commits[0].commit.message).toBe(
+        'Test commit'
+      );
     });
 
     it('should handle no results found', async () => {
@@ -221,12 +245,16 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['nonexistent'],
+        queries: [
+          {
+            queryTerms: ['nonexistent'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data.commits).toHaveLength(0);
+      expect(response.data[0].data.commits).toHaveLength(0);
     });
 
     it('should handle search errors', async () => {
@@ -237,32 +265,44 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['test'],
+        queries: [
+          {
+            queryTerms: ['test'],
+          },
+        ],
       });
 
-      expect(result.isError).toBe(true);
+      expect(result.isError).toBe(false); // Bulk operations don't fail at top level
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.meta.error).toContain('API error');
+      expect(response.data[0].data.error).toContain('API error');
     });
 
     it('should handle API exceptions', async () => {
       mockSearchGitHubCommitsAPI.mockRejectedValue(new Error('Network error'));
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['test'],
+        queries: [
+          {
+            queryTerms: ['test'],
+          },
+        ],
       });
 
-      expect(result.isError).toBe(true);
+      expect(result.isError).toBe(false); // Bulk operations don't fail at top level
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data.error).toContain('Failed to search commits');
+      expect(response.data[0].data.error).toContain('Failed to search commits');
     });
 
     it('should handle getChangesContent parameter', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['fix'],
-        owner: 'owner',
-        repo: 'repo',
-        getChangesContent: true,
+        queries: [
+          {
+            queryTerms: ['fix'],
+            owner: 'owner',
+            repo: 'repo',
+            getChangesContent: true,
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -284,9 +324,13 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should pass authInfo and userContext to GitHub API', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['auth-test'],
-        owner: 'test-owner',
-        repo: 'test-repo',
+        queries: [
+          {
+            queryTerms: ['auth-test'],
+            owner: 'test-owner',
+            repo: 'test-repo',
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -309,8 +353,12 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle filter-only search without query', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        author: 'testuser',
-        'committer-date': '>2023-01-01',
+        queries: [
+          {
+            author: 'testuser',
+            'committer-date': '>2023-01-01',
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -330,9 +378,13 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle date-based filter without query', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        'author-date': '>2023-01-01',
-        owner: 'facebook',
-        repo: 'react',
+        queries: [
+          {
+            'author-date': '>2023-01-01',
+            owner: 'facebook',
+            repo: 'react',
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -353,7 +405,11 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle hash-based filter without query', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        hash: 'abc123def456',
+        queries: [
+          {
+            hash: 'abc123def456',
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -372,9 +428,13 @@ describe('GitHub Search Commits Tool', () => {
 
     it('should handle author-name filter without query', async () => {
       const result = await mockServer.callTool('githubSearchCommits', {
-        'author-name': 'John Doe',
-        owner: 'facebook',
-        repo: 'react',
+        queries: [
+          {
+            'author-name': 'John Doe',
+            owner: 'facebook',
+            repo: 'react',
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
@@ -432,13 +492,19 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['token'],
+        queries: [
+          {
+            queryTerms: ['token'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data.commits[0].commit.message).not.toContain('ghp_');
-      expect(response.data.commits[0].commit.message).toContain(
+      expect(response.data[0].data.commits[0].commit.message).not.toContain(
+        'ghp_'
+      );
+      expect(response.data[0].data.commits[0].commit.message).toContain(
         '[REDACTED-GITHUBTOKENS]'
       );
     });
@@ -480,12 +546,16 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['api', 'key'],
+        queries: [
+          {
+            queryTerms: ['api', 'key'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      const commitMessage = response.data.commits[0].commit.message;
+      const commitMessage = response.data[0].data.commits[0].commit.message;
       expect(commitMessage).not.toContain('sk-');
       expect(commitMessage).toContain('[REDACTED-OPENAIAPIKEY]');
     });
@@ -527,12 +597,16 @@ describe('GitHub Search Commits Tool', () => {
       });
 
       const result = await mockServer.callTool('githubSearchCommits', {
-        queryTerms: ['profile'],
+        queries: [
+          {
+            queryTerms: ['profile'],
+          },
+        ],
       });
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data.commits[0].commit.message).toBe(
+      expect(response.data[0].data.commits[0].commit.message).toBe(
         'Add user profile feature'
       );
     });

@@ -12,6 +12,7 @@ import {
   cleanup,
   getGitHubToken,
 } from './serverConfig.js';
+import { createLogger, LoggerFactory } from './enhancements/logging.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -23,49 +24,56 @@ const SERVER_CONFIG: Implementation = {
 async function startServer() {
   let shutdownInProgress = false;
   let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
+  let logger: ReturnType<typeof createLogger> | null = null;
 
   try {
-    // Initialize configuration and token management
     await initialize();
     const server = new McpServer(SERVER_CONFIG, {
       capabilities: {
         prompts: {},
         resources: {},
         tools: {},
+        logging: {},
         ...(isBetaEnabled() && { sampling: {} }),
       },
     });
+    logger = createLogger(server, 'server');
+    await logger.info('Server starting');
 
     // Initialize advanced components if configured
     try {
       const { AuditLogger } = await import('./security/auditLogger.js');
       AuditLogger.initialize();
-    } catch (_advancedInitError) {
-      // Ignore advanced initialization errors to avoid blocking startup
+      await logger.info('Audit logging ready');
+    } catch {
+      await logger.warning('Audit logging failed to initialize');
     }
 
     await registerAllTools(server);
 
     // Register prompts
     registerPrompts(server);
+    await logger.info('Prompts ready');
 
     // Register resources
     registerResources(server);
+    await logger.info('Resources ready');
 
     // Register sampling capabilities only if BETA features are enabled
     if (isBetaEnabled()) {
       registerSampling(server);
+      await logger.info('Sampling ready (BETA)');
     }
 
     const transport = new StdioServerTransport();
-
     await server.connect(transport);
+    await logger.info('Server ready', { pid: process.pid });
 
     // Ensure all buffered output is sent
     process.stdout.uncork();
     process.stderr.uncork();
 
-    const gracefulShutdown = async (_signal?: string) => {
+    const gracefulShutdown = async (signal?: string) => {
       // Prevent multiple shutdown attempts
       if (shutdownInProgress) {
         return;
@@ -74,6 +82,10 @@ async function startServer() {
       shutdownInProgress = true;
 
       try {
+        if (logger) {
+          await logger.info('Shutting down', { signal });
+        }
+
         // Clear any existing shutdown timeout
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
@@ -87,23 +99,21 @@ async function startServer() {
 
         // Clear cache and credentials (fastest operations)
         clearAllCache();
-
-        // Cleanup configuration and token management
         cleanup();
 
         // Shutdown advanced modules gracefully
         try {
           const { AuditLogger } = await import('./security/auditLogger.js');
           AuditLogger.shutdown();
-        } catch (error) {
+        } catch {
           // Ignore shutdown errors
         }
 
-        // Close server with timeout protection
+        // Close server
         try {
           await server.close();
-        } catch (closeError) {
-          // Error closing server
+        } catch {
+          // Ignore close errors
         }
 
         // Clear the timeout since we completed successfully
@@ -112,10 +122,12 @@ async function startServer() {
           shutdownTimeout = null;
         }
 
-        process.exit(0);
-      } catch (_error) {
-        // Error during graceful shutdown
+        if (logger) {
+          await logger.info('Shutdown complete');
+        }
 
+        process.exit(0);
+      } catch {
         // Clear timeout on error
         if (shutdownTimeout) {
           clearTimeout(shutdownTimeout);
@@ -136,34 +148,51 @@ async function startServer() {
     });
 
     // Handle uncaught errors - prevent multiple handlers
-    process.once('uncaughtException', _error => {
+    process.once('uncaughtException', error => {
+      if (logger) {
+        logger.error('Uncaught exception', { error: error.message });
+      }
       gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
 
-    process.once('unhandledRejection', (_reason, _promise) => {
+    process.once('unhandledRejection', reason => {
+      if (logger) {
+        logger.error('Unhandled rejection', { reason: String(reason) });
+      }
       gracefulShutdown('UNHANDLED_REJECTION');
     });
 
     // Keep process alive
     process.stdin.resume();
-  } catch (_error) {
+  } catch (startupError) {
+    if (logger) {
+      await logger.error('Startup failed', { error: String(startupError) });
+    }
     process.exit(1);
   }
 }
 
 export async function registerAllTools(server: McpServer) {
+  const logger = LoggerFactory.getLogger(server, 'tools');
+
   // Ensure token is available (simple check)
   const token = await getGitHubToken();
   if (!token) {
+    await logger.warning('No GitHub token - limited functionality');
     process.stderr.write(
       '⚠️  No GitHub token available - some features may be limited\n'
     );
+  } else {
+    await logger.info('GitHub token ready');
   }
 
   const { successCount } = registerTools(server);
+  await logger.info('Tools registered', { count: successCount });
 
   if (successCount === 0) {
-    throw new Error('No tools were successfully registered');
+    const error = new Error('No tools were successfully registered');
+    await logger.error('Tool registration failed');
+    throw error;
   }
 }
 

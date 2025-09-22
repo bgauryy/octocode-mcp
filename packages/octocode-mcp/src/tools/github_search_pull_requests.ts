@@ -11,32 +11,13 @@ import {
 import { GitHubPullRequestsSearchParams } from '../github/github-openapi';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-const DESCRIPTION = `Search GitHub pull requests with intelligent filtering and comprehensive analysis.
-
-Provides powerful pull request discovery across GitHub repositories with smart filtering capabilities,
-error recovery, and context-aware suggestions. Perfect for understanding code reviews, tracking features,
-and analyzing development workflows.
-
-FEATURES:
-- Comprehensive PR search: Find pull requests by state, author, labels, and more
-- Direct PR fetching: Get specific pull requests by number (e.g., PR #123 from owner/repo)
-- Smart filtering: By repository, review status, merge state, and activity
-- Error recovery: Intelligent suggestions for failed searches
-- Research optimization: Tailored hints based on research goals
-
-BEST PRACTICES:
-- Use specific keywords related to the features or changes you're looking for
-- For known PR numbers: Use prNumber with owner/repo for efficient direct fetching
-- Filter by state (open/closed) and review status for targeted results
-- Leverage author and assignee filters for people-specific searches
-- Specify research goals (debugging, analysis) for optimal guidance`;
+import { DESCRIPTIONS } from './descriptions';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
       inputSchema: GitHubPullRequestSearchBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Pull Request Search',
@@ -148,9 +129,12 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         }
 
         try {
+          // Check if any query has verbose=true
+          const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
           return await searchMultipleGitHubPullRequests(
             args.queries,
-            args.verbose || false,
+            hasVerboseQuery,
             authInfo,
             userContext
           );
@@ -194,7 +178,8 @@ async function searchMultipleGitHubPullRequests(
           userContext
         );
         return {
-          queryId: `pr-search_${index + 1}`,
+          queryId: query.id || `pr-search_${index + 1}`,
+          reasoning: query.reasoning,
           data: result,
           metadata: {
             resultCount:
@@ -206,13 +191,14 @@ async function searchMultipleGitHubPullRequests(
             searchType: 'error' in result ? 'error' : 'success',
             queryArgs: {
               ...query,
-              id: `pr-search_${index + 1}`,
+              id: query.id || `pr-search_${index + 1}`,
             },
           },
         };
       } catch (error) {
         return {
-          queryId: `pr-search_${index + 1}`,
+          queryId: query.id || `pr-search_${index + 1}`,
+          reasoning: query.reasoning,
           data: {
             error:
               error instanceof Error ? error.message : 'Unknown error occurred',
@@ -224,7 +210,7 @@ async function searchMultipleGitHubPullRequests(
             hasResults: false,
             searchType: 'error',
             queryArgs: {
-              id: `pr-search_${index + 1}`,
+              id: query.id || `pr-search_${index + 1}`,
             },
           },
         };
@@ -237,8 +223,9 @@ async function searchMultipleGitHubPullRequests(
     if (result.status === 'fulfilled') {
       return result.value;
     } else {
+      const originalQuery = queries[index];
       return {
-        queryId: `pr-search_${index + 1}`,
+        queryId: originalQuery?.id || `pr-search_${index + 1}`,
         data: {
           error: result.reason?.message || 'Unknown error occurred',
           status: 500,
@@ -249,7 +236,7 @@ async function searchMultipleGitHubPullRequests(
           hasResults: false,
           searchType: 'error',
           queryArgs: {
-            id: `pr-search_${index + 1}`,
+            id: originalQuery?.id || `pr-search_${index + 1}`,
           },
         },
       };

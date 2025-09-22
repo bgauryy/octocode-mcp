@@ -36,7 +36,7 @@ describe('bulkOperations', () => {
       expect(uniqueIds.size).toBe(3);
     });
 
-    it('should generate sequential IDs regardless of existing IDs', () => {
+    it('should preserve external IDs and generate fallbacks for missing ones', () => {
       const queries = [
         { id: 'custom-id-1', name: 'query1' },
         { name: 'query2' },
@@ -45,9 +45,9 @@ describe('bulkOperations', () => {
 
       const result = ensureUniqueQueryIds(queries);
 
-      expect(result[0]?.id).toBe('query_1');
+      expect(result[0]?.id).toBe('custom-id-1');
       expect(result[1]?.id).toBe('query_2');
-      expect(result[2]?.id).toBe('query_3');
+      expect(result[2]?.id).toBe('custom-id-3');
     });
 
     it('should handle empty query array', () => {
@@ -65,8 +65,8 @@ describe('bulkOperations', () => {
       const result = ensureUniqueQueryIds(queries);
 
       expect(result).toHaveLength(3);
-      expect(result[0]?.id).toBe('query_1');
-      expect(result[1]?.id).toBe('query_2');
+      expect(result[0]?.id).toBe('string-id');
+      expect(result[1]?.id).toBe('query_2'); // null ID gets fallback
       expect(result[2]?.id).toBe('query_3');
     });
 
@@ -79,7 +79,7 @@ describe('bulkOperations', () => {
       expect(result[1]?.id).toBe('custom_2');
     });
 
-    it('should generate sequential IDs even with duplicate input IDs', () => {
+    it('should handle duplicate input IDs by preserving first and generating fallbacks', () => {
       const queries = [
         { id: 'duplicate', name: 'query1' },
         { id: 'duplicate', name: 'query2' },
@@ -88,9 +88,9 @@ describe('bulkOperations', () => {
 
       const result = ensureUniqueQueryIds(queries);
 
-      expect(result[0]?.id).toBe('query_1');
-      expect(result[1]?.id).toBe('query_2');
-      expect(result[2]?.id).toBe('query_3');
+      expect(result[0]?.id).toBe('duplicate');
+      expect(result[1]?.id).toBe('query_2'); // duplicate ID gets fallback
+      expect(result[2]?.id).toBe('query_3'); // duplicate ID gets fallback
     });
   });
 
@@ -232,9 +232,8 @@ describe('bulkOperations', () => {
         responseText.length > 0
           ? JSON.parse(responseText)
           : { results: [], meta: { errors: [] } };
-      // The results now include queryDescription and exclude metadata (since verbose=false by default)
+      // The results exclude metadata (since verbose=false by default)
       expect(responseData.results.length).toBe(2);
-      expect(responseData.results[0]).toHaveProperty('queryDescription');
       expect(responseData.results[0]).not.toHaveProperty('metadata');
       expect(responseData.results[0]?.data).toEqual(processedResults[0]?.data);
       // This test has no errors, so no need to check meta.errors

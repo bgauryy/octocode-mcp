@@ -20,34 +20,14 @@ import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
 import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
-
-const DESCRIPTION = `Search code across GitHub repositories
-
-GOAL:
-Find actual code implementations, functions, classes, and patterns for research context.
-
-STRATEGY:
-- SEMANTIC: Natural language (functionality, concepts)
-- TECHNICAL: Code terms (function names, classes, patterns)
-- Use bulk queries from different angles
-- Use single-word terms for exploration
-
-USAGE:
-- Start with broad terms, then narrow down
-- Use multiple queries in bulk for better coverage
-- Progress: Core terms → Specific patterns → Documentation
-
-NEXT STEPS:
-- Use fetch tool with matchString for context after findings  
-- Use structure tool to explore repository layout
-- Validate findings with additional searches
-- ALWAYS fetch content using ${TOOL_NAMES.GITHUB_FETCH_CONTENT} of relevant results after search`;
+import { DESCRIPTIONS } from './descriptions.js';
+import { shouldIgnoreFile } from '../utils/fileFilters.js';
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
     TOOL_NAMES.GITHUB_SEARCH_CODE,
     {
-      description: DESCRIPTION,
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
       inputSchema: GitHubCodeSearchBulkQuerySchema.shape,
       annotations: {
         title: 'GitHub Code Search',
@@ -101,9 +81,12 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
             hints,
           });
         }
+        // Check if any query has verbose=true
+        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+
         return searchMultipleGitHubCode(
           args.queries,
-          args.verbose || false,
+          hasVerboseQuery,
           authInfo,
           userContext
         );
@@ -141,6 +124,8 @@ async function searchMultipleGitHubCode(
           });
 
           return {
+            queryId: query.id,
+            reasoning: query.reasoning,
             error: apiResult.error,
             hints: hints,
             metadata: {},
@@ -155,12 +140,20 @@ async function searchMultipleGitHubCode(
             ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
 
-        // Check if there are no results
-        const hasNoResults = apiResult.data.items.length === 0;
+        // Filter out ignored files from results - additional filtering at tool level
+        const filteredItems = apiResult.data.items.filter(
+          (item: OptimizedCodeSearchResult['items'][0]) =>
+            !shouldIgnoreFile(item.path)
+        );
+
+        // Check if there are no results after filtering
+        const hasNoResults = filteredItems.length === 0;
 
         const result: ProcessedCodeSearchResult = {
+          queryId: query.id,
+          reasoning: query.reasoning,
           repository,
-          files: apiResult.data.items.map(
+          files: filteredItems.map(
             (item: OptimizedCodeSearchResult['items'][0]) => ({
               path: item.path,
               // text_matches contain actual file content processed through the same
@@ -171,7 +164,7 @@ async function searchMultipleGitHubCode(
               ),
             })
           ),
-          totalCount: apiResult.data.total_count,
+          totalCount: filteredItems.length,
           metadata: {}, // Always include metadata for bulk operations compatibility
         };
 
@@ -206,6 +199,8 @@ async function searchMultipleGitHubCode(
         });
 
         return {
+          queryId: query.id,
+          reasoning: query.reasoning,
           error: errorMessage,
           hints: hints,
           metadata: {},
@@ -240,32 +235,68 @@ async function searchMultipleGitHubCode(
     maxHints: 8,
   };
 
-  // Add query field for failed queries, no results cases, or when verbose is true
-  const processedResults = results.map(({ result }, index) => {
-    const codeResult = result as ProcessedCodeSearchResult;
-    const hasError = !!codeResult.error;
-    const hasNoResults = codeResult.files && codeResult.files.length === 0;
-
-    if (hasError || hasNoResults || verbose) {
-      // Find the original query for this result
-      const originalQuery = uniqueQueries[index]; // Use index since we removed queryId
-      if (originalQuery) {
-        // Add query field to the result itself
-        codeResult.query = { ...originalQuery };
-      }
-    }
-    return codeResult;
-  });
-
   // Create response with enhanced hints
   const response = createBulkResponse(
     config,
-    processedResults.map(result => ({ result })),
+    results,
     aggregatedContext,
     errors,
     uniqueQueries,
     verbose
   );
+
+  // Apply verbose filtering and flatten complex structures
+  const responseText = response.content[0]?.text;
+  if (!responseText || typeof responseText !== 'string') {
+    return response;
+  }
+  const responseData = JSON.parse(responseText);
+  if (responseData.results) {
+    responseData.results = responseData.results.map(
+      (result: Record<string, unknown>, index: number) => {
+        const hasError = !!result.error;
+        const hasNoResults =
+          result.files && (result.files as unknown[]).length === 0;
+
+        // If this specific query has verbose=true, add query field
+        const originalQuery = uniqueQueries[index];
+        const queryIsVerbose = originalQuery?.verbose === true;
+
+        // Flatten metadata.queryArgs to query field when appropriate
+        if (result.metadata && typeof result.metadata === 'object') {
+          const metadata = result.metadata as Record<string, unknown>;
+          if (metadata.queryArgs) {
+            if (hasError || hasNoResults || queryIsVerbose) {
+              result.query = metadata.queryArgs;
+            }
+            // Remove complex nested metadata structure only if not verbose
+            if (!queryIsVerbose) {
+              delete result.metadata;
+            }
+          }
+        }
+
+        if (queryIsVerbose && !result.query) {
+          if (originalQuery) {
+            result.query = { ...originalQuery };
+          } else {
+            // Fallback: create query from result data
+            result.query = {
+              id: result.queryId,
+              verbose: true,
+            };
+          }
+        }
+
+        return result;
+      }
+    );
+  }
+
+  // Update the response content
+  response.content = [
+    { type: 'text', text: JSON.stringify(responseData, null, 2) },
+  ];
 
   // Enhance hints with research-specific guidance
   if (enhancedHints.length > 0) {
