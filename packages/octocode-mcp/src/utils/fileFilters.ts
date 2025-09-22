@@ -1,7 +1,7 @@
 /**
- * Folder patterns to ignore
+ * Folder names to ignore (exact matches)
  */
-export const IGNORED_FOLDER_PATTERNS = [
+export const IGNORED_FOLDER_NAMES = [
   // Hidden folders (starting with .)
   '.github',
   '.git',
@@ -17,7 +17,7 @@ export const IGNORED_FOLDER_PATTERNS = [
   '.gemini',
   '.ng-dev',
   '.configurations',
-  '.tx', // Translation files
+  '.tx',
 
   // Build/distribution folders
   'dist',
@@ -31,16 +31,6 @@ export const IGNORED_FOLDER_PATTERNS = [
   'node_modules',
   'vendor',
   'third_party',
-
-  // Test directories (can be commented out if tests are important)
-  // 'test',
-  // 'tests',
-  // '__tests__',
-  // 'spec',
-
-  // Documentation (can be commented out if docs are important)
-  // 'docs',
-  // 'doc',
 
   // Temporary/cache directories
   'tmp',
@@ -59,6 +49,59 @@ export const IGNORED_FOLDER_PATTERNS = [
   '.turbo',
   '.angular',
   '.dart_tool',
+  '__pycache__',
+  '.ruff_cache',
+  '.nox',
+  'htmlcov',
+  'cover',
+
+  // Java/Kotlin/Scala
+  '.gradle',
+  '.m2',
+  '.sbt',
+  '.bloop',
+  '.metals',
+  '.bsp',
+
+  // .NET/C#
+  'bin',
+  'obj',
+  'TestResults',
+  'BenchmarkDotNet.Artifacts',
+
+  // Go
+  '.vendor-new',
+  'Godeps',
+
+  // PHP
+  'composer.phar',
+  '.phpunit.result.cache',
+
+  // Ruby
+  '.bundle',
+  '.byebug_history',
+  '.rspec_status',
+
+  // Maven/Gradle specific
+  '.mvn',
+
+  // Cloud/AWS/GCP
+  '.aws',
+  '.gcp',
+
+  // Fastlane
+  'fastlane',
+
+  // Swift/iOS
+  'DerivedData',
+  'xcuserdata',
+
+  // Android
+  'local.properties',
+  '.navigation',
+  'captures',
+  '.externalNativeBuild',
+  '.cxx',
 
   // IDE/Editor specific
   '.idea',
@@ -78,396 +121,67 @@ export const IGNORED_FOLDER_PATTERNS = [
   '.DS_Store',
 ];
 
-/**
- * File patterns to ignore
- */
-export const IGNORED_FILE_PATTERNS = [
-  // Hidden configuration files (starting with .)
-  '.gitignore',
-  '.gitattributes',
-  '.editorconfig',
-  '.eslintrc',
-  '.eslintignore',
-  '.prettierrc',
-  '.prettierignore',
-  '.npmrc',
-  '.nvmrc',
-  '.node-version',
-  '.babelrc',
-  '.browserslistrc',
-  '.env',
-  '.env.local',
-  '.env.example',
-  '.dockerignore',
-  '.mailmap',
-  '.mention-bot',
-  '.travis.yml',
-  '.circleci',
-  '.git-blame-ignore-revs',
-  '.alexignore',
-  '.alexrc',
-  '.cursorindexingignore',
-  '.ignore',
-  '.lsifrc.json',
-  '.vscode-test.js',
-  '.rustfmt.toml',
-  '.typos.toml',
-  '.yamllint.yaml',
-  '.cpplint',
-  '.clang-format',
-  '.jscsrc',
-  '.markdown-doctest-setup.js',
-  '.c8rc.json',
-  '.dprint.jsonc',
-  '.gulp.js',
-  '.istanbul.yml',
-
-  // Lock files
+export const IGNORED_FILE_NAMES = [
+  // Lock files (dependency management)
   'package-lock.json',
-  'yarn.lock',
-  'pnpm-lock.yaml',
-  'Cargo.lock',
-  'Pipfile.lock',
-  'poetry.lock',
-  'composer.lock',
-  'Gemfile.lock',
 
-  // Configuration files
-  'tsconfig.json',
-  'tsconfig.*.json',
-  'jest.config.js',
-  'jest.config.ts',
-  'webpack.config.js',
-  'rollup.config.js',
-  'vite.config.js',
-  'vitest.config.js',
-  'vitest.config.ts',
-  'babel.config.js',
-  'postcss.config.js',
-  'tailwind.config.js',
-  'next.config.js',
-  'nuxt.config.js',
-  'svelte.config.js',
-  'astro.config.js',
-  'remix.config.js',
-  'turbo.json',
-  'lerna.json',
-  'rush.json',
-  'tsfmt.json',
-  'cspell.json',
-  'knip.jsonc',
-  'codecov.yml',
-  'renovate.json',
-  'dependabot.yml',
-  'open-bot.yaml',
-  'sgconfig.yml',
-  'socket.yaml',
-  'vercel.json',
-  'netlify.toml',
-  'firebase.json',
-  'app.json',
-  'eas.json',
-  'expo.json',
+  // Sensitive files (API keys, certificates, secrets)
+  '.secrets',
+  '.secret',
+  'secrets.json',
+  'secrets.yaml',
+  'secrets.yml',
+  'credentials.json',
+  'credentials.yaml',
+  'credentials.yml',
+  'auth.json',
+  'auth.yaml',
+  'auth.yml',
+  'api-keys.json',
+  'api_keys.json',
+  'service-account.json',
+  'service_account.json',
+  'private-key.pem',
+  'private_key.pem',
+  'id_rsa',
+  'id_dsa',
+  'id_ecdsa',
+  'id_ed25519',
+  'keyfile',
+  'keyfile.json',
+  'gcloud-service-key.json',
+  'firebase-adminsdk.json',
+  'google-services.json',
+  'GoogleService-Info.plist',
 
-  // Build/CI configuration
-  'Dockerfile',
-  'docker-compose.yml',
-  'Makefile',
-  'CMakeLists.txt',
-  'meson.build',
-  'BUILD.bazel',
-  'WORKSPACE',
-  'Herebyfile.mjs',
-  'gulpfile.js',
-  'Gruntfile.js',
-  'angular.json',
-  'nx.json',
-  'project.json',
-  'workspace.json',
-
-  // Lint/format staged config
-  'lint-staged.config.js',
-  '.lintstagedrc',
-  '.huskyrc',
-  'pre-commit',
-  'pre-push',
-  'commit-msg',
-  'prepare-commit-msg',
-
-  // ESLint config variations
-  'eslint.config.js',
-  'eslint.config.mjs',
-  'eslint.config.cjs',
-  '.eslintrc.js',
-  '.eslintrc.mjs',
-  '.eslintrc.cjs',
-  '.eslintrc.json',
-  '.eslintrc.yml',
-  '.eslintrc.yaml',
-
-  // Documentation/Legal files
-  'LICENSE',
-  'LICENSE.txt',
-  'LICENSE.md',
-  'COPYING',
-  'COPYRIGHT',
-  'NOTICE',
-  'CONTRIBUTING.md',
-  'CODE_OF_CONDUCT.md',
-  'SECURITY.md',
-  'SUPPORT.md',
-  'GOVERNANCE.md',
-  'MAINTAINERS',
-  'AUTHORS',
-  'CHANGELOG',
-  'CHANGELOG.md',
-  'HISTORY.md',
-  'RELEASES.md',
-  'NEWS.md',
-  'UPGRADING.md',
-  'MIGRATION.md',
-  'BUILDING.md',
-  'TESTING_DOCS.md',
-  '_SETUP.md',
-  'onboarding.md',
-  'glossary.md',
-
-  // Generated/compiled files
-  '*.min.js',
-  '*.min.css',
-  '*.map',
-  '*.d.ts.map',
-  'types.d.ts',
-  'declarations.d.ts',
-  'declarations.test.d.ts',
-  'module.d.ts',
-
-  // IDE/Editor files
-  '*.swp',
-  '*.swo',
-  '*~',
+  // OS/IDE specific files
   '.DS_Store',
   'Thumbs.db',
-  '*.sublime-project',
-  '*.sublime-workspace',
 
-  // Log files
-  '*.log',
-  'npm-debug.log*',
-  'yarn-debug.log*',
-  'yarn-error.log*',
+  // Binary database files (large and not searchable)
+  'db.sqlite3',
+  'db.sqlite3-journal',
 
-  // Runtime/temp files
-  '*.pid',
-  '*.seed',
-  '*.coverage',
-  '.nyc_output',
+  // Cache files that are regenerated
+  '.eslintcache',
+  '.stylelintcache',
+  '.node_repl_history',
+  '.yarn-integrity',
+  'celerybeat-schedule',
+  'celerybeat.pid',
 
-  // Archives
-  '*.zip',
-  '*.tar.gz',
-  '*.tgz',
-  '*.rar',
-  '*.7z',
-
-  // Binary files (usually not interesting for code structure)
-  '*.exe',
-  '*.dll',
-  '*.so',
-  '*.dylib',
-  '*.jar',
-  '*.war',
-  '*.ear',
-
-  // NOTE: Media files (images, videos, audio) are controlled by the showMedia parameter
-  // NOTE: Test files can be filtered by uncommenting the patterns in shouldIgnoreFile function
-
-  // Go language files
-  'go.mod',
-  'go.sum',
-  'go.work',
-  'go.work.sum',
-  '.go-version',
-
-  // Rust language files
-  'Cargo.toml',
-  'rustfmt.toml',
-  'rust-bors.toml',
-  'triagebot.toml',
-  'typos.toml',
-  'REUSE.toml',
-  'bootstrap.example.toml',
-
-  // Java/Gradle/Maven files
-  'build.gradle',
-  'settings.gradle',
-  'gradle.properties',
-  'gradlew',
-  'gradlew.bat',
-  '.sdkmanrc',
-  'pom.xml',
-  'mvnw',
-  'mvnw.cmd',
-  'eclipse.properties',
-  '*.setup',
-  'SpringRepositorySupport.groovy',
-
-  // Python additional files
-  '.flake8',
-  '.coveragerc',
-  'MANIFEST.in',
-  '.pre-commit-config.yaml',
-  '.readthedocs.yml',
-  'mypy.ini',
-  '.mypy.ini',
-  'pytest.ini',
-  'requirements-test.txt',
-
-  // Dart/Flutter files
-  '.ci.yaml',
-  'analysis_options.yaml',
-  'dartdoc_options.yaml',
-  'pubspec.yaml',
-  'DEPS',
-  'flutter_console.bat',
-
-  // Project management files
-  'TESTOWNERS',
-  'CODEOWNERS',
-  'SECURITY_CONTACTS',
-  'OWNERS',
-  'OWNERS_ALIASES',
-  'dco.yml',
-  'labeler.yml',
-  'release.yml',
-  'FUNDING.yml',
-  'PATENT_GRANT',
-
-  // Other commonly generated files
+  // Large generated notice/license files
   'ThirdPartyNoticeText.txt',
   'ThirdPartyNotices.txt',
   'cglicenses.json',
   'cgmanifest.json',
-  'manifest.json',
-  'BSDmakefile',
-  'android-configure',
-  'android_configure.py',
-  'configure',
-  'configure.py',
-  'vcbuild.bat',
-  'rust-toolchain.toml',
-  'pyproject.toml',
-  'setup.py',
-  'setup.cfg',
-  'requirements.txt',
-  'requirements-dev.txt',
-  'Pipfile',
-  'poetry.toml',
-  'tox.ini',
-  'noxfile.py',
-  'common.gypi',
-  'node.gyp',
-  'node.gypi',
-  'node.gni',
-  'unofficial.gni',
-  'packages.bzl',
-  'yarn.bzl',
-  'generate-types-config.js',
-  'release.js',
-  'run-tests.js',
-  'test-file.txt',
-  'tsconfig-tsec.json',
-  'tsec-exemptions.json',
-
-  // Build scripts and shell files that are typically config/setup
-  'x',
-  'x.ps1',
-  'x.py',
-  'make.bat',
-
-  // Additional configuration files
-  '.env.*',
-  '.editorconfig.*',
-  'tsconfig.node.json',
-  'pnpm-workspace.yaml',
-  'react-native.config.js',
-  'app.config.js',
-  '.code-workspace',
-  'Rakefile',
-  'Procfile',
-  'fastlane/Fastfile',
-
-  // IDE project files
-  '.project',
-  '.classpath',
-  '*.iml',
-  '*.iws',
-  '*.ipr',
-  'icon.svg',
 ];
 
 /**
- * Additional file extensions to ignore
+ * File extensions to ignore
  */
-/**
- * Media file extensions that can be optionally filtered
- */
-export const MEDIA_FILE_EXTENSIONS = [
-  // Images
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.svg',
-  '.ico',
-  '.webp',
-  '.bmp',
-  '.tiff',
-  '.tif',
-  '.psd',
-  '.ai',
-  '.eps',
-  '.avif',
-  '.heic',
-  '.heif',
-
-  // Videos
-  '.mp4',
-  '.avi',
-  '.mov',
-  '.wmv',
-  '.flv',
-  '.webm',
-  '.mkv',
-  '.m4v',
-  '.3gp',
-  '.ogv',
-  '.m2v',
-  '.mpg',
-  '.mpeg',
-
-  // Audio
-  '.mp3',
-  '.wav',
-  '.flac',
-  '.aac',
-  '.ogg',
-  '.wma',
-  '.m4a',
-  '.opus',
-  '.aiff',
-
-  // Other media/binary formats
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-];
-
 export const IGNORED_FILE_EXTENSIONS = [
+  // Lock files (dependency management)
   '.lock',
   '.log',
   '.tmp',
@@ -479,117 +193,147 @@ export const IGNORED_FILE_EXTENSIONS = [
   '.swp',
   '.swo',
   '.rej',
+  '.pid',
+  '.seed',
+  '.old',
+  '.save',
+  '.temporary',
+
+  // Compiled/binary files
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.a',
+  '.lib',
+  '.o',
   '.obj',
   '.bin',
   '.class',
   '.pdb',
   '.dSYM',
+  '.pyc',
+  '.pyo',
+  '.pyd',
+  '.jar',
+  '.war',
+  '.ear',
+  '.nar',
+
+  // Database files
+  '.db',
+  '.sqlite',
+  '.sqlite3',
+  '.mdb',
+  '.accdb',
+
+  // Archive files
+  '.zip',
+  '.tar',
+  '.gz',
+  '.bz2',
+  '.xz',
+  '.lz',
+  '.lzma',
+  '.Z',
+  '.tgz',
+  '.rar',
+  '.7z',
+
+  // Package files
+  '.deb',
+  '.rpm',
+  '.pkg',
+  '.dmg',
+  '.msi',
+  '.appx',
+  '.snap',
+
+  // Map files
+  '.map',
+  '.d.ts.map',
+
+  // Minified files
+  '.min.js',
+  '.min.css',
+
+  // Certificate/key files
+  '.key',
+  '.pem',
+  '.p12',
+  '.pfx',
+  '.crt',
+  '.cer',
+  '.der',
+  '.csr',
+  '.jks',
+  '.keystore',
+  '.truststore',
+
+  // IDE/Editor specific
+  '.kate-swp',
+  '.gnome-desktop',
+  '.sublime-project',
+  '.sublime-workspace',
+  '.iml',
+  '.iws',
+  '.ipr',
+
+  // Version control
+  '.patch',
+  '.diff',
+
+  // Profiling/debugging
+  '.prof',
+  '.profile',
+  '.trace',
+  '.perf',
+  '.coverage',
+
+  // Language specific
+  '.egg-info',
+  '.egg',
+  '.mo',
+  '.pot',
+  '.setup',
+  '.paket.template',
 ];
 
 /**
- * Check if a folder should be ignored based on the ignore patterns
+ * Check if a directory should be ignored based on folder name
  */
-export function shouldIgnoreFolder(
-  folderName: string,
-  folderPath: string
-): boolean {
-  // Check exact matches and prefix matches
-  return IGNORED_FOLDER_PATTERNS.some(pattern => {
-    return (
-      folderName === pattern ||
-      folderName.startsWith(pattern) ||
-      folderPath.includes(`/${pattern}/`)
-    );
-  });
+export function shouldIgnoreDir(folderName: string): boolean {
+  return IGNORED_FOLDER_NAMES.includes(folderName);
 }
 
 /**
- * Check if a file should be ignored based on the ignore patterns
+ * Check if a file should be ignored based on file name, extension, and path
+ * Optimized order: extension (fastest) → file name → path (most expensive)
+ * @param filePath - Full file path (e.g., ".yarn/x/y/z.js")
  */
-export function shouldIgnoreFile(
-  fileName: string,
-  _filePath: string,
-  showMedia: boolean = false
-): boolean {
-  // Check exact matches
-  if (IGNORED_FILE_PATTERNS.some(pattern => fileName === pattern)) {
+export function shouldIgnoreFile(filePath: string): boolean {
+  // Extract file name from path (do this once)
+  const fileName = filePath.split('/').pop() || '';
+
+  // 1. Check file extension first (fastest - simple string operations)
+  for (const ext of IGNORED_FILE_EXTENSIONS) {
+    if (fileName.endsWith(ext)) {
+      return true;
+    }
+  }
+
+  // 2. Check if file name is ignored (fast - single array lookup)
+  if (IGNORED_FILE_NAMES.includes(fileName)) {
     return true;
   }
 
-  // Check pattern matches with wildcards
-  if (
-    IGNORED_FILE_PATTERNS.some(pattern => {
-      if (pattern.includes('*')) {
-        const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-        return regex.test(fileName);
-      }
-      return false;
-    })
-  ) {
-    return true;
-  }
-
-  // Check file extensions
-  if (IGNORED_FILE_EXTENSIONS.some(ext => fileName.endsWith(ext))) {
-    return true;
-  }
-
-  // Check media file extensions (only if showMedia is false)
-  if (!showMedia && MEDIA_FILE_EXTENSIONS.some(ext => fileName.endsWith(ext))) {
-    return true;
-  }
-
-  // Check if it starts with any ignored pattern
-  if (
-    IGNORED_FILE_PATTERNS.some(pattern => {
-      if (!pattern.includes('*') && !pattern.includes('.')) {
-        return fileName.startsWith(pattern);
-      }
-      return false;
-    })
-  ) {
-    return true;
+  // 3. Check if file is in an ignored directory (most expensive - path traversal)
+  const pathParts = filePath.split('/');
+  for (const part of pathParts) {
+    if (IGNORED_FOLDER_NAMES.includes(part)) {
+      return true;
+    }
   }
 
   return false;
-}
-
-/**
- * Filter an array of items (files or folders) based on ignore patterns
- * @param items - Array of file/folder items to filter
- * @param showMedia - If true, media files (images, videos, audio) will be shown. Default: false (media hidden)
- */
-export function filterItems<
-  T extends { name: string; path: string; type?: string | 'file' | 'dir' },
->(items: T[], showMedia: boolean = false): T[] {
-  return items.filter(item => {
-    // Always show important code directories even if they match patterns
-    const importantDirs = [
-      'src',
-      'lib',
-      'packages',
-      'apps',
-      'components',
-      'pages',
-      'api',
-      'utils',
-      'hooks',
-      'store',
-      'styles',
-      'assets',
-      'public',
-      'static',
-    ];
-    if (item.type === 'dir' && importantDirs.includes(item.name)) {
-      return true;
-    }
-
-    // Check if it's a folder
-    if (item.type === 'dir') {
-      return !shouldIgnoreFolder(item.name, item.path);
-    } else {
-      // It's a file - apply filtering with media control
-      return !shouldIgnoreFile(item.name, item.path, showMedia);
-    }
-  });
 }

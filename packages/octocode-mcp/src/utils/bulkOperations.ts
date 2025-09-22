@@ -221,9 +221,11 @@ export function createBulkResponse<
       (!result.data &&
         !result.repositories &&
         !result.files &&
+        !result.folders &&
         !result.structure) ||
       (result.files as unknown[] | undefined)?.length === 0 ||
       (result.repositories as unknown[] | undefined)?.length === 0 ||
+      (result.folders as unknown[] | undefined)?.length === 0 ||
       (result.structure as unknown[] | undefined)?.length === 0;
 
     const hasError = !!result.error;

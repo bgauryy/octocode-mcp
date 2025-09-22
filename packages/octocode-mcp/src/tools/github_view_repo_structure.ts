@@ -22,6 +22,7 @@ import {
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
+import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters';
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(
@@ -124,12 +125,6 @@ async function exploreMultipleRepositoryStructures(
           branch: String(query.branch),
           path: query.path ? String(query.path) : undefined,
           depth: typeof query.depth === 'number' ? query.depth : undefined,
-          includeIgnored:
-            typeof query.includeIgnored === 'boolean'
-              ? query.includeIgnored
-              : undefined,
-          showMedia:
-            typeof query.showMedia === 'boolean' ? query.showMedia : undefined,
         };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
@@ -155,14 +150,30 @@ async function exploreMultipleRepositoryStructures(
           };
         }
 
-        // Success case - use simplified structure
-        const hasResults = apiResult.files && apiResult.files.length > 0;
+        // Success case - use simplified structure with filtering
+
+        // Filter files using the centralized file filtering logic
+        const filteredFiles = apiResult.files.filter(
+          file => !shouldIgnoreFile(file.path)
+        );
+
+        // Filter folders using the centralized directory filtering logic
+        const filteredFolders = (apiResult.folders?.folders || []).filter(
+          folder => {
+            // Extract folder name from path for shouldIgnoreDir check
+            const folderName = folder.path.split('/').pop() || '';
+            return (
+              !shouldIgnoreDir(folderName) && !shouldIgnoreFile(folder.path)
+            );
+          }
+        );
+
+        const hasResults =
+          filteredFiles.length > 0 || filteredFolders.length > 0;
 
         // Extract file paths and folder paths separately
-        const filePaths = apiResult.files.map(file => file.path);
-        const folderPaths = (apiResult.folders?.folders || []).map(
-          folder => folder.path
-        );
+        const filePaths = filteredFiles.map(file => file.path);
+        const folderPaths = filteredFolders.map(folder => folder.path);
 
         const result: ProcessedRepositoryStructureResult = {
           queryId: String(query.id),

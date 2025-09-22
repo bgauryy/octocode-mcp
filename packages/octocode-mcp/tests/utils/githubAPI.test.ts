@@ -1124,8 +1124,6 @@ describe('GitHub API Utils', () => {
               branch: 'main',
               path: '',
               depth: 1,
-              includeIgnored: false,
-              showMedia: false,
             };
 
             await viewGitHubRepositoryStructureAPI(params);

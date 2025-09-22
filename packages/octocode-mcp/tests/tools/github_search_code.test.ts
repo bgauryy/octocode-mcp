@@ -163,7 +163,7 @@ describe('Code Search Flows', () => {
 
     if ('data' in result) {
       expect(result.data.items).toHaveLength(1);
-      expect(result.data.total_count).toBe(2);
+      expect(result.data.total_count).toBe(1); // Should match filtered item count
       expect(result.data.items[0]?.path).toBe('src/component.js');
     } else {
       expect.fail('Expected successful result with data');

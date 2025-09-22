@@ -21,6 +21,7 @@ import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 import { DESCRIPTIONS } from './descriptions.js';
+import { shouldIgnoreFile } from '../utils/fileFilters.js';
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
@@ -139,14 +140,20 @@ async function searchMultipleGitHubCode(
             ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
 
-        // Check if there are no results
-        const hasNoResults = apiResult.data.items.length === 0;
+        // Filter out ignored files from results - additional filtering at tool level
+        const filteredItems = apiResult.data.items.filter(
+          (item: OptimizedCodeSearchResult['items'][0]) =>
+            !shouldIgnoreFile(item.path)
+        );
+
+        // Check if there are no results after filtering
+        const hasNoResults = filteredItems.length === 0;
 
         const result: ProcessedCodeSearchResult = {
           queryId: query.id,
           reasoning: query.reasoning,
           repository,
-          files: apiResult.data.items.map(
+          files: filteredItems.map(
             (item: OptimizedCodeSearchResult['items'][0]) => ({
               path: item.path,
               // text_matches contain actual file content processed through the same
@@ -157,7 +164,7 @@ async function searchMultipleGitHubCode(
               ),
             })
           ),
-          totalCount: apiResult.data.total_count,
+          totalCount: filteredItems.length,
           metadata: {}, // Always include metadata for bulk operations compatibility
         };
 

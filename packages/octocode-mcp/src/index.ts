@@ -27,7 +27,6 @@ async function startServer() {
   let logger: ReturnType<typeof createLogger> | null = null;
 
   try {
-    // Initialize configuration and token management
     await initialize();
     const server = new McpServer(SERVER_CONFIG, {
       capabilities: {
@@ -38,10 +37,8 @@ async function startServer() {
         ...(isBetaEnabled() && { sampling: {} }),
       },
     });
-
-    // Initialize logger
     logger = createLogger(server, 'server');
-    await logger.info('Server starting', { version });
+    await logger.info('Server starting');
 
     // Initialize advanced components if configured
     try {

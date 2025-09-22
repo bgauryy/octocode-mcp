@@ -20,6 +20,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
+import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 
 /**
  * Fetch GitHub file content using Octokit API with proper TypeScript types and caching
@@ -471,15 +472,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
 ): Promise<GitHubRepositoryStructureResult | GitHubRepositoryStructureError> {
   try {
     const octokit = await getOctokit(authInfo);
-    const {
-      owner,
-      repo,
-      branch,
-      path = '',
-      depth = 1,
-      includeIgnored = false,
-      showMedia = false,
-    } = params;
+    const { owner, repo, branch, path = '', depth = 1 } = params;
 
     // Clean up path
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
@@ -611,53 +604,16 @@ async function viewGitHubRepositoryStructureAPIInternal(
       );
     }
 
-    // Apply filtering if needed
-    let filteredItems = allItems;
-    if (!includeIgnored) {
-      // Simple filtering logic - exclude common ignored patterns
-      filteredItems = allItems.filter(item => {
-        const name = item.name.toLowerCase();
-        const path = item.path.toLowerCase();
+    // Apply filtering using centralized filtering logic from fileFilters.ts
+    const filteredItems = allItems.filter(item => {
+      // For directories, use shouldIgnoreDir function
+      if (item.type === 'dir') {
+        return !shouldIgnoreDir(item.name);
+      }
 
-        // Skip hidden files and directories
-        if (name.startsWith('.') && !showMedia) return false;
-
-        // Skip common build/dependency directories
-        if (
-          [
-            'node_modules',
-            'dist',
-            'build',
-            '.git',
-            '.vscode',
-            '.idea',
-          ].includes(name)
-        )
-          return false;
-
-        // Skip lock files and config files
-        if (name.includes('lock') || name.endsWith('.lock')) return false;
-
-        // Skip media files unless requested
-        if (!showMedia) {
-          const mediaExtensions = [
-            '.png',
-            '.jpg',
-            '.jpeg',
-            '.gif',
-            '.svg',
-            '.ico',
-            '.webp',
-            '.mp4',
-            '.mov',
-            '.avi',
-          ];
-          if (mediaExtensions.some(ext => path.endsWith(ext))) return false;
-        }
-
-        return true;
-      });
-    }
+      // For files, use shouldIgnoreFileByPath function
+      return !shouldIgnoreFile(item.path);
+    });
 
     // Limit items for performance
     const itemLimit = Math.min(200, 50 * depth);
@@ -704,7 +660,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
         totalFiles: files.length,
         totalFolders: folders.length,
         truncated: allItems.length > limitedItems.length,
-        filtered: !includeIgnored,
+        filtered: true,
         originalCount: allItems.length,
       },
       files: files,

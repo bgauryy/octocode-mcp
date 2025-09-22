@@ -125,6 +125,12 @@ export BETA="1"                                      # Enable experimental featu
 
 **⚠️ Important:** `TOOLS_TO_RUN` cannot be used together with `ENABLE_TOOLS`/`DISABLE_TOOLS`. When `TOOLS_TO_RUN` is set, it runs ONLY the specified tools, ignoring all other tool configuration.
 
+## 🔒 Security & Privacy
+
+Octocode MCP is built with security-first principles:
+- **Content Sanitization**: Automatically detects and redacts API keys, tokens, and sensitive data
+- **Smart File Filtering**: Ignores sensitive paths, binaries, and non-searchable files for cleaner results
+
 ## 🚀 What You Can Do
 
 ### 🔍 Code Research & Discovery

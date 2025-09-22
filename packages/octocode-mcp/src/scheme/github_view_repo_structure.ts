@@ -19,17 +19,7 @@ export const GitHubViewRepoStructureQuerySchema =
       .max(2)
       .default(1)
       .optional()
-      .describe('Depth to expolore'),
-    includeIgnored: z
-      .boolean()
-      .default(false)
-      .optional()
-      .describe('Include ignored files'),
-    showMedia: z
-      .boolean()
-      .default(false)
-      .optional()
-      .describe('Include meida files'),
+      .describe('Depth to expolore - max 2'),
   });
 
 export type GitHubViewRepoStructureQuery = z.infer<
