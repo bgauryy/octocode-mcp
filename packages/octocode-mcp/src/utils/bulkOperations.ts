@@ -216,6 +216,11 @@ export function createBulkResponse<
       result.queryId = query.id;
     }
 
+    // Preserve reasoning field if it exists in the original result
+    if ('reasoning' in r.result && r.result.reasoning) {
+      result.reasoning = r.result.reasoning;
+    }
+
     // For no-results cases or errors, always include metadata with query args
     const hasNoResults =
       (!result.data &&
