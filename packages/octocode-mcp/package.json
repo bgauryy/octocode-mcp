@@ -53,7 +53,7 @@
     "mcp-s-oauth": "^1.0.5",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
-    "octocode-utils": "^1.0.0",
+    "octocode-utils": "^5.0.0",
     "octokit": "^5.0.3",
     "zod": "^3.25.26"
   },

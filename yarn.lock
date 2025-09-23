@@ -402,6 +402,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@microsoft/tiktokenizer@npm:^1.0.10":
+  version: 1.0.10
+  resolution: "@microsoft/tiktokenizer@npm:1.0.10"
+  checksum: 10c0/d5561ff3b9483177632e02a2dc30a990f50f3f29946bafd17ffbf556618644ff02a89c79ae8821d94126ca980fa3d7466b860a49fae421ef3e096ba5e36289d6
+  languageName: node
+  linkType: hard
+
 "@modelcontextprotocol/sdk@npm:^1.17.4":
   version: 1.17.4
   resolution: "@modelcontextprotocol/sdk@npm:1.17.4"
@@ -1166,6 +1173,13 @@ __metadata:
     "@types/istanbul-lib-coverage": "npm:*"
     "@types/istanbul-lib-report": "npm:*"
   checksum: 10c0/80b76715f4ac74a4ddfc82d7942b2faaefbe9fdce8e7dfdfa497b3fb60a3e707b632c6e70e1565cfe30045eaebaf7aad0d6c3d102652d1da8fdb0bf095924eb3
+  languageName: node
+  linkType: hard
+
+"@types/js-yaml@npm:^4.0.9":
+  version: 4.0.9
+  resolution: "@types/js-yaml@npm:4.0.9"
+  checksum: 10c0/24de857aa8d61526bbfbbaa383aa538283ad17363fcd5bb5148e2c7f604547db36646440e739d78241ed008702a8920665d1add5618687b6743858fae00da211
   languageName: node
   linkType: hard
 
@@ -4268,7 +4282,7 @@ __metadata:
     mcp-s-oauth: "npm:^1.0.5"
     node-cache: "npm:^5.1.2"
     node-fetch: "npm:^3.3.2"
-    octocode-utils: "npm:^1.0.0"
+    octocode-utils: "npm:^5.0.0"
     octokit: "npm:^5.0.3"
     prettier: "npm:^3.5.3"
     rollup: "npm:^4.46.2"
@@ -4299,44 +4313,42 @@ __metadata:
     eslint-config-prettier: "npm:^10.1.5"
     eslint-plugin-prettier: "npm:^5.4.1"
     prettier: "npm:^3.5.3"
-    rollup: "npm:^4.41.1"
+    rollup: "npm:^4.46.2"
     rollup-plugin-terser: "npm:^7.0.2"
     syncpack: "npm:^14.0.0-alpha.19"
     tslib: "npm:^2.8.1"
-    typescript: "npm:^5.8.3"
+    typescript: "npm:^5.9.2"
     vitest: "npm:^3.2.4"
     wsrun: "npm:^5.2.4"
   languageName: unknown
   linkType: soft
 
-"octocode-utils@npm:^1.0.0":
-  version: 1.0.1
-  resolution: "octocode-utils@npm:1.0.1"
-  dependencies:
-    clean-css: "npm:^5.3.0"
-    html-minifier-terser: "npm:^7.2.0"
-    terser: "npm:^5.19.0"
-  checksum: 10c0/add2e70bd48b855ddfcfe87de7589113ce85ffc900704e0bb1586ba2c1f1b10b84f62bbadac29cecfb68e5c666f1824da3b51a189fd7b204837ca0d71bcf39b6
-  languageName: node
-  linkType: hard
-
-"octocode-utils@workspace:packages/octocode-utils":
+"octocode-utils@npm:^5.0.0, octocode-utils@workspace:packages/octocode-utils":
   version: 0.0.0-use.local
   resolution: "octocode-utils@workspace:packages/octocode-utils"
   dependencies:
+    "@microsoft/tiktokenizer": "npm:^1.0.10"
     "@rollup/plugin-node-resolve": "npm:^16.0.1"
     "@rollup/plugin-typescript": "npm:^12.1.2"
     "@types/clean-css": "npm:^4.2.11"
     "@types/html-minifier-terser": "npm:^7.0.2"
+    "@types/js-yaml": "npm:^4.0.9"
     "@types/node": "npm:^22.15.29"
+    "@typescript-eslint/eslint-plugin": "npm:^6.21.0"
+    "@typescript-eslint/parser": "npm:^6.21.0"
     clean-css: "npm:^5.3.0"
+    eslint: "npm:^8.57.0"
+    eslint-config-prettier: "npm:^10.1.5"
+    eslint-plugin-prettier: "npm:^5.4.1"
     html-minifier-terser: "npm:^7.2.0"
-    rollup: "npm:^4.41.1"
+    js-yaml: "npm:^4.1.0"
+    prettier: "npm:^3.5.3"
+    rollup: "npm:^4.46.2"
     rollup-plugin-dts: "npm:^6.0.0"
     terser: "npm:^5.19.0"
     tslib: "npm:^2.8.1"
     tsx: "npm:^4.20.4"
-    typescript: "npm:^5.8.3"
+    typescript: "npm:^5.9.2"
     vitest: "npm:^3.2.4"
   languageName: unknown
   linkType: soft
@@ -4935,7 +4947,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rollup@npm:^4.41.1, rollup@npm:^4.43.0, rollup@npm:^4.46.2":
+"rollup@npm:^4.43.0, rollup@npm:^4.46.2":
   version: 4.49.0
   resolution: "rollup@npm:4.49.0"
   dependencies:
@@ -5836,7 +5848,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^5.8.3, typescript@npm:^5.9.2":
+"typescript@npm:^5.9.2":
   version: 5.9.2
   resolution: "typescript@npm:5.9.2"
   bin:
@@ -5846,7 +5858,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.9.2#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A^5.9.2#optional!builtin<compat/typescript>":
   version: 5.9.2
   resolution: "typescript@patch:typescript@npm%3A5.9.2#optional!builtin<compat/typescript>::version=5.9.2&hash=5786d5"
   bin:
