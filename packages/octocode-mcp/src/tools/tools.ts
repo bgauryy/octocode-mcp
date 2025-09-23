@@ -6,7 +6,6 @@ import { TOOL_NAMES } from '../constants.js';
 import { registerGitHubSearchCodeTool } from './github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './github_fetch_content.js';
 import { registerSearchGitHubReposTool } from './github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from './github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from './github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from './github_view_repo_structure.js';
 
@@ -50,14 +49,6 @@ export const GITHUB_SEARCH_REPOSITORIES: ToolConfig = {
   fn: registerSearchGitHubReposTool,
 };
 
-export const GITHUB_SEARCH_COMMITS: ToolConfig = {
-  name: TOOL_NAMES.GITHUB_SEARCH_COMMITS,
-  description: 'Search GitHub commits and change history',
-  isDefault: false,
-  type: 'history',
-  fn: registerSearchGitHubCommitsTool,
-};
-
 export const GITHUB_SEARCH_PULL_REQUESTS: ToolConfig = {
   name: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
   description: 'Search GitHub pull requests and code reviews',
@@ -71,6 +62,5 @@ export const DEFAULT_TOOLS: ToolConfig[] = [
   GITHUB_FETCH_CONTENT,
   GITHUB_VIEW_REPO_STRUCTURE,
   GITHUB_SEARCH_REPOSITORIES,
-  GITHUB_SEARCH_COMMITS,
   GITHUB_SEARCH_PULL_REQUESTS,
 ];

@@ -21,7 +21,6 @@ export {
   searchGitHubPullRequestsAPI,
   fetchGitHubPullRequestByNumberAPI,
   transformPullRequestItemFromREST,
-  searchGitHubCommitsAPI,
   // File operations
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,

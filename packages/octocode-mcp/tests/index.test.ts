@@ -11,7 +11,6 @@ vi.mock('../src/sampling.js');
 vi.mock('../src/tools/github_search_code.js');
 vi.mock('../src/tools/github_fetch_content.js');
 vi.mock('../src/tools/github_search_repos.js');
-vi.mock('../src/tools/github_search_commits.js');
 vi.mock('../src/tools/github_search_pull_requests.js');
 vi.mock('../src/tools/github_view_repo_structure.js');
 vi.mock('../src/utils/exec.js');
@@ -25,7 +24,6 @@ import { registerSampling } from '../src/sampling.js';
 import { registerGitHubSearchCodeTool } from '../src/tools/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_content.js';
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
-import { registerSearchGitHubCommitsTool } from '../src/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
@@ -69,9 +67,6 @@ const mockRegisterFetchGitHubFileContentTool = vi.mocked(
 );
 const mockRegisterSearchGitHubReposTool = vi.mocked(
   registerSearchGitHubReposTool
-);
-const mockRegisterGitHubSearchCommitsTool = vi.mocked(
-  registerSearchGitHubCommitsTool
 );
 const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
   registerSearchGitHubPullRequestsTool
@@ -166,9 +161,6 @@ describe('Index Module', () => {
       () => mockRegisteredTool
     );
     mockRegisterSearchGitHubReposTool.mockImplementation(
-      () => mockRegisteredTool
-    );
-    mockRegisterGitHubSearchCommitsTool.mockImplementation(
       () => mockRegisteredTool
     );
     mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
@@ -353,7 +345,7 @@ describe('Index Module', () => {
     it('should continue registering tools even if some fail', async () => {
       // Mock registerTools to return partial success
       mockRegisterTools.mockImplementation(() => {
-        return { successCount: 3, failedTools: ['githubSearchCommits'] };
+        return { successCount: 3, failedTools: ['githubSearchPullRequests'] };
       });
 
       await import('../src/index.js');
@@ -559,7 +551,7 @@ describe('Index Module', () => {
     });
 
     it('should enable additional tools with ENABLE_TOOLS', async () => {
-      process.env.ENABLE_TOOLS = 'githubSearchCommits,githubSearchPullRequests';
+      process.env.ENABLE_TOOLS = 'githubSearchPullRequests';
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -582,7 +574,7 @@ describe('Index Module', () => {
     });
 
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', async () => {
-      process.env.ENABLE_TOOLS = 'githubSearchCommits';
+      process.env.ENABLE_TOOLS = 'githubSearchPullRequests';
       process.env.DISABLE_TOOLS = 'githubSearchCode';
 
       await import('../src/index.js');
@@ -593,8 +585,7 @@ describe('Index Module', () => {
     });
 
     it('should handle whitespace in tool configuration', async () => {
-      process.env.ENABLE_TOOLS =
-        ' githubSearchPullRequests , githubSearchCommits ';
+      process.env.ENABLE_TOOLS = ' githubSearchPullRequests ';
       process.env.DISABLE_TOOLS = ' githubSearchCode ';
 
       await import('../src/index.js');
@@ -605,7 +596,7 @@ describe('Index Module', () => {
     });
 
     it('should handle invalid tool names gracefully', async () => {
-      process.env.ENABLE_TOOLS = 'githubSearchCommits,invalidTool';
+      process.env.ENABLE_TOOLS = 'githubSearchPullRequests,invalidTool';
       process.env.DISABLE_TOOLS = 'nonExistentTool';
 
       await import('../src/index.js');

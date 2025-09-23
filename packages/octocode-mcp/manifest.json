@@ -47,10 +47,6 @@
       "description": "Search GitHub repositories"
     },
     {
-      "name": "mcp_octocode_githubSearchCommits",
-      "description": "Search commit history across GitHub repositories"
-    },
-    {
       "name": "mcp_octocode_githubSearchPullRequests",
       "description": "Search GitHub pull requests"
     },

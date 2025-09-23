@@ -371,20 +371,6 @@ function generateToolNavigationHints(
         hints.push(TOOL_NAVIGATION_HINTS.IMPLEMENTATION_FIRST);
       }
       break;
-
-    case TOOL_NAMES.GITHUB_SEARCH_COMMITS:
-      if (hasResults) {
-        hints.push(
-          'Use commit SHAs with github_fetch_content to see actual code changes'
-        );
-        hints.push(TOOL_NAVIGATION_HINTS.VERIFY_DOCS);
-      } else {
-        hints.push(TOOL_NAVIGATION_HINTS.COMMITS_PRS_ON_REQUEST);
-        hints.push(
-          'Focus on current implementation rather than change history'
-        );
-      }
-      break;
   }
 
   return hints;

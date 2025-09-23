@@ -72,21 +72,6 @@ HINTS:
 - Use bulk queries for comprehensive mapping
 - Use findings to guide targeted searches/fetches
 - Clean results with filtering options`,
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commits
-
-GOAL:
-Track code evolution, changes, and development patterns.
-
-FEATURES:
-- Commit search by message/author/date/repo with bulk queries
-- Date range filtering (author-date, committer-date)
-- Optional diff content (WARNING: token expensive)
-
-HINTS:
-- Use queryTerms for commit message keywords
-- Filter by author/author-date for developer analysis
-- Use date ranges with operators for time filtering
-- Use bulk queries for comprehensive analysis`,
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests
 
 GOAL:

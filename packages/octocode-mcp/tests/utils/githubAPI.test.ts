@@ -178,7 +178,6 @@ describe('GitHub API Utils', () => {
       expect(fetchGitHubFileContentAPI).toBeDefined();
       expect(viewGitHubRepositoryStructureAPI).toBeDefined();
       expect(searchGitHubPullRequestsAPI).toBeDefined();
-      expect(searchGitHubCommitsAPI).toBeDefined();
     });
   });
 

@@ -124,7 +124,6 @@ Comprehensive GitHub API abstraction layer:
 #### Specialized Search Modules
 - **Code Search**: Optimized search result processing with content minification
 - **Repository Search**: Repository discovery with quality filtering
-- **Commit Search**: Commit history analysis with optional diff content
 - **Pull Request Search**: PR analysis with file changes support
 
 #### File Operations
@@ -210,8 +209,6 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
    - File/folder filtering options with clean results
    - Start with root path, use specific paths for focused exploration
 
-5. **GitHub Commit Search**
-   - Commit search by message/author/date/repo with bulk queries
    - Date range filtering (author-date, committer-date) with operators
    - Optional diff content (WARNING: token expensive)
    - queryTerms for commit message keywords and author analysis
@@ -240,7 +237,6 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
 - GitHub File Content → `githubGetFileContent`
 - GitHub Repository Search → `githubSearchRepositories`
 - GitHub Repository Structure → `githubViewRepoStructure`
-- GitHub Commit Search → `githubSearchCommits`
 - GitHub Pull Request Search → `githubSearchPullRequests`
 
 **Tool Manager**:
@@ -273,7 +269,6 @@ Comprehensive Zod-based schema validation for all tool parameters:
 #### Tool-Specific Schemas
 - **GitHub Code Search**: Query terms, language filters, repository targeting
 - **GitHub File Content**: File paths, line ranges, match strings
-- **GitHub Commit Search**: Author filters, date ranges, hash lookups
 - **GitHub PR Search**: State filters, review status, file changes
 - **GitHub Repository Search**: Topics, languages, quality filters
 - **Repository Structure**: Path exploration, depth control
@@ -601,7 +596,6 @@ The system provides 7 comprehensive tools organized by functionality:
 
 #### Optional Tools (Disabled by Default)
 3. **History Analysis Tools**
-   - **GitHub Commit Search**: History analysis with diff content and author filtering
    - **GitHub Pull Request Search**: PR workflow analysis, review status, file changes
 
 4. **Package Ecosystem Tools**
@@ -633,14 +627,14 @@ Tools are designed for **strategic integration** with intelligent chaining:
 ```
 Package Search → Repository Search → Repository Structure
       ↓                 ↓                    ↓
-Code Search ←→ File Content ←→ Commit Search ←→ PR Search
+Code Search ←→ File Content ←→ PR Search
       ↓                 ↓                    ↓
    Research Synthesis & Hint Generation
 ```
 
 **Common Workflows**:
 - **Architecture Exploration**: Repository Search → Structure → File Content → Code Search
-- **Change Analysis**: Commit Search → PR Search → File Content (with diff context)
+- **Change Analysis**: PR Search → File Content (with diff context)
 - **Dependency Research**: Package Search → Repository Search → Code Search
 - **Implementation Discovery**: Code Search → File Content → Repository Structure
 
