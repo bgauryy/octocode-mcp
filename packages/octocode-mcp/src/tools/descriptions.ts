@@ -102,19 +102,4 @@ HINTS:
 - Filter by state/review status for targeted results
 - Use query for PR content search, not title matching
 - Use bulk queries for comprehensive analysis`,
-  [TOOL_NAMES.PACKAGE_SEARCH]: `Search packages
-
-GOAL:
-Discover NPM/Python packages with metadata and repository links.
-
-FEATURES:
-- Multi-ecosystem search (NPM + Python) with bulk queries
-- Rich metadata with GitHub repository links
-- Configurable search strategies and limits
-
-HINTS:
-- Search by functionality rather than exact names
-- Use bulk queries for comparing alternatives
-- Configure metadata fetching as needed
-- Combine with GitHub tools for package→code analysis`,
 };

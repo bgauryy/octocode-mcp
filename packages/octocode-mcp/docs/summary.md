@@ -242,7 +242,6 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
 - GitHub Repository Structure → `githubViewRepoStructure`
 - GitHub Commit Search → `githubSearchCommits`
 - GitHub Pull Request Search → `githubSearchPullRequests`
-- Package Search → `packageSearch`
 
 **Tool Manager**:
 - Dynamic tool registration

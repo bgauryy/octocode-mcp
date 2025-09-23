@@ -85,8 +85,6 @@ const TOOL_NAVIGATION_HINTS = {
     'Use github_view_repo_structure first to understand project layout, then target specific files',
   COMPARE_APPROACHES:
     'Compare implementations across 3-5 repositories to identify best practices',
-  PACKAGE_SEARCH:
-    'Start with package search to discover libraries, then follow repository links for implementation analysis',
   LOOK_FOR_DOCS:
     'Prioritize documentation in this order: README files, docs folders, examples, then verify against implementation',
   EXAMINE_TESTS:
@@ -303,7 +301,7 @@ function generateToolNavigationHints(
         hints.push(NO_RESULTS_HINTS.START_WITH_REPOS);
         hints.push(NO_RESULTS_HINTS.PROGRESSIVE_SEARCH);
         hints.push(NO_RESULTS_HINTS.DIFFERENT_TERMS);
-        hints.push(TOOL_NAVIGATION_HINTS.PACKAGE_SEARCH);
+        hints.push(TOOL_NAVIGATION_HINTS.LOOK_FOR_DOCS);
         hints.push(TOOL_NAVIGATION_HINTS.IMPLEMENTATION_FIRST);
       }
       break;
@@ -320,9 +318,7 @@ function generateToolNavigationHints(
           hints.push('Explore structure of most popular repositories first');
         }
       } else {
-        hints.push(
-          `If repo not found, try ${TOOL_NAMES.PACKAGE_SEARCH} for npm/python packages search to get the github repo`
-        );
+        hints.push('Try broader search terms or use topics for discovery');
         hints.push(TOOL_NAVIGATION_HINTS.USE_TOPICS_FOR_EXPLORATION);
         hints.push(NO_RESULTS_HINTS.PACKAGE_DISCOVERY);
         hints.push(NO_RESULTS_HINTS.RELATED_TECH);
@@ -359,28 +355,6 @@ function generateToolNavigationHints(
           'Try different branch names: main, master, develop, or default'
         );
         hints.push('Verify repository access and spelling of owner/repo names');
-      }
-      break;
-
-    case TOOL_NAMES.PACKAGE_SEARCH:
-      if (hasResults) {
-        hints.push(
-          'Extract GitHub URLs and use repository tools for source code analysis'
-        );
-        hints.push(
-          'Compare download stats, dependencies, and maintenance activity'
-        );
-        hints.push(TOOL_NAVIGATION_HINTS.COMPARE_APPROACHES);
-        hints.push(
-          'Check package documentation and README files for usage examples'
-        );
-      } else {
-        hints.push(NO_RESULTS_HINTS.DIFFERENT_TERMS);
-        hints.push(ERROR_RECOVERY_HINTS.USE_FUNCTIONAL_TERMS);
-        hints.push(
-          'Try broader functional categories that describe the domain or purpose'
-        );
-        hints.push('Search GitHub repositories directly if package not found');
       }
       break;
 

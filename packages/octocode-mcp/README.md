@@ -117,7 +117,7 @@ Octocode MCP works with any MCP-compatible AI assistant:
 ### Advanced Configuration Options
 ```bash
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"              # GitHub token
-export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Run ONLY these tools (exclusive)
+export TOOLS_TO_RUN="githubSearchCode,githubSearchCommits" # Run ONLY these tools (exclusive)
 export ENABLE_TOOLS="additionalTool1,additionalTool2" # Add non-default tools  
 export DISABLE_TOOLS="unwantedTool1,unwantedTool2"    # Disable default tools
 export BETA="1"                                      # Enable experimental features
@@ -161,7 +161,6 @@ For organizations: audit logging, access controls, rate limiting, and compliance
 | `githubSearchRepositories` | Search and discover GitHub repositories | ✅ Yes | Search |
 | `githubSearchCommits` | Search GitHub commits and change history | ❌ No | History |
 | `githubSearchPullRequests` | Search GitHub pull requests and code reviews | ❌ No | History |
-| `packageSearch` | Search NPM and Python package registries | ❌ No | NPM |
 
 **Default tools** are automatically enabled and provide core GitHub research functionality. **Non-default tools** can be enabled using the configuration options below.
 

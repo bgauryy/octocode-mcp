@@ -307,7 +307,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should parse toolsToRun correctly', async () => {
       process.env.TOOLS_TO_RUN =
-        'github_search_code,package_search , github_fetch_content';
+        'github_search_code,github_search_commits , github_fetch_content';
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
@@ -315,7 +315,7 @@ describe('ServerConfig - Simplified Version', () => {
 
       expect(config.toolsToRun).toEqual([
         'github_search_code',
-        'package_search',
+        'github_search_commits',
         'github_fetch_content',
       ]);
     });

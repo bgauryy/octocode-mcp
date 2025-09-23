@@ -61,14 +61,6 @@
     {
       "name": "mcp_octocode_githubViewRepoStructure",
       "description": "View GitHub repository structure"
-    },
-    {
-      "name": "mcp_octocode_packageSearch",
-      "description": "Search npm and python packages"
-    },
-    {
-      "name": "mcp_octocode_npmViewPackage",
-      "description": "View npm package information"
     }
   ],
   "keywords": [

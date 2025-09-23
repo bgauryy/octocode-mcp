@@ -66,7 +66,6 @@ Octocode MCP provides 7 specialized tools for comprehensive code research:
 | **`githubViewRepoStructure`** | View repository structure and navigation with intelligent filtering | ✅ | content |
 | **`githubSearchCommits`** | Search commit history and change analysis with optional diffs | ⚙️ | history |
 | **`githubSearchPullRequests`** | Search pull requests and code reviews with file changes | ⚙️ | history |
-| **`packageSearch`** | Search NPM and Python packages with repository integration | ⚙️ | npm |
 
 **Legend**: ✅ = Default enabled | ⚙️ = Optional (enable via configuration)
 
@@ -140,7 +139,7 @@ Octocode performs better with specific identifiers like organization names, repo
 
 ### 🔧 **Tool Configuration**
 Customize tool availability via environment variables:
-- `ENABLE_TOOLS="githubSearchCommits,packageSearch"` - Enable specific optional tools
+- `ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests"` - Enable specific optional tools
 - `DISABLE_TOOLS="githubSearchCode"` - Disable specific tools (including defaults)
 - `TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"` - Run only specified tools
 - Default tools are automatically enabled unless explicitly disabled
@@ -179,9 +178,9 @@ Built-in enterprise capabilities:
 |----------|-------------|------------|
 | **Standards Mapping** | Discover and document coding patterns across teams | `githubSearchCode`, `githubSearchRepositories` |
 | **Security Auditing** | Identify vulnerabilities and access control patterns with audit logging | `githubSearchCode`, `githubGetFileContent` + `AUDIT_ALL_ACCESS=true` |
-| **Architecture Analysis** | Trace data flows and service dependencies | `githubViewRepoStructure`, `packageSearch`, `githubSearchCode` |
+| **Architecture Analysis** | Trace data flows and service dependencies | `githubViewRepoStructure`, `githubSearchCode` |
 | **Knowledge Extraction** | Capture institutional knowledge from commit histories | `githubSearchCommits`, `githubSearchPullRequests` |
-| **Package Governance** | Track and audit package usage across repositories | `packageSearch`, `githubSearchCode` |
+| **Package Governance** | Track and audit package usage across repositories | `githubSearchCode` |
 
 ## 🚀 Getting Started
 
@@ -205,7 +204,7 @@ gh auth login
 export GITHUB_TOKEN=your_token_here
 
 # Enable optional tools
-export ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests,packageSearch"
+export ENABLE_TOOLS="githubSearchCommits,githubSearchPullRequests"
 
 # Beta features
 export BETA=1

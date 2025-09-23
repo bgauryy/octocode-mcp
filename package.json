@@ -1,7 +1,7 @@
 {
   "name": "octocode-monorepo",
   "version": "1.0.0",
-  "description": "Monorepo for Octocode MCP and related packages - Model Context Protocol server for advanced GitHub repository analysis, code discovery, and npm package exploration.",
+  "description": "Monorepo for Octocode MCP and related packages - Model Context Protocol server for advanced GitHub repository analysis and code discovery.",
   "author": "Guy Bary <bgauryy@gmail.com>",
   "homepage": "https://octocode.ai",
   "repository": "bgauryy/octocode-mcp.git",

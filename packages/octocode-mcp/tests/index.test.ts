@@ -13,9 +13,7 @@ vi.mock('../src/tools/github_fetch_content.js');
 vi.mock('../src/tools/github_search_repos.js');
 vi.mock('../src/tools/github_search_commits.js');
 vi.mock('../src/tools/github_search_pull_requests.js');
-vi.mock('../src/tools/package_search.js');
 vi.mock('../src/tools/github_view_repo_structure.js');
-vi.mock('../src/npm/getNPMUserDetails.js');
 vi.mock('../src/utils/exec.js');
 vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/serverConfig.js');
@@ -29,9 +27,7 @@ import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_co
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos.js';
 import { registerSearchGitHubCommitsTool } from '../src/tools/github_search_commits.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests.js';
-import { registerPackageSearchTool } from '../src/tools/package_search.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure.js';
-import { getNPMUserDetails } from '../src/npm/getNPMUserDetails.js';
 import { getGithubCLIToken } from '../src/utils/exec.js';
 import {
   isBetaEnabled,
@@ -56,7 +52,6 @@ const mockTransport = {
 const mockRegisterPrompts = vi.mocked(registerPrompts);
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
-const mockGetNPMUserDetails = vi.mocked(getNPMUserDetails);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockRegisterTools = vi.mocked(registerTools);
 const mockGetGitHubToken = vi.mocked(getGitHubToken);
@@ -81,7 +76,6 @@ const mockRegisterGitHubSearchCommitsTool = vi.mocked(
 const mockRegisterSearchGitHubPullRequestsTool = vi.mocked(
   registerSearchGitHubPullRequestsTool
 );
-const mockRegisterPackageSearchTool = vi.mocked(registerPackageSearchTool);
 const mockRegisterViewGitHubRepoStructureTool = vi.mocked(
   registerViewGitHubRepoStructureTool
 );
@@ -122,12 +116,6 @@ describe('Index Module', () => {
       () =>
         mockTransport as unknown as InstanceType<typeof StdioServerTransport>
     );
-
-    // Mock NPM user details
-    mockGetNPMUserDetails.mockResolvedValue({
-      npmConnected: true,
-      registry: 'https://registry.npmjs.org/',
-    });
 
     // Mock GitHub CLI token
     mockGetGithubCLIToken.mockResolvedValue('cli-token');
@@ -186,7 +174,6 @@ describe('Index Module', () => {
     mockRegisterSearchGitHubPullRequestsTool.mockImplementation(
       () => mockRegisteredTool
     );
-    mockRegisterPackageSearchTool.mockImplementation(() => mockRegisteredTool);
     mockRegisterViewGitHubRepoStructureTool.mockImplementation(
       () => mockRegisteredTool
     );
@@ -274,8 +261,6 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      // NPM status checking is now handled internally by package search tool
-      expect(mockGetNPMUserDetails).not.toHaveBeenCalled();
       expect(mockRegisterTools).toHaveBeenCalled();
     });
 
@@ -574,7 +559,7 @@ describe('Index Module', () => {
     });
 
     it('should enable additional tools with ENABLE_TOOLS', async () => {
-      process.env.ENABLE_TOOLS = 'githubSearchCommits,packageSearch';
+      process.env.ENABLE_TOOLS = 'githubSearchCommits,githubSearchPullRequests';
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -597,7 +582,7 @@ describe('Index Module', () => {
     });
 
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', async () => {
-      process.env.ENABLE_TOOLS = 'packageSearch';
+      process.env.ENABLE_TOOLS = 'githubSearchCommits';
       process.env.DISABLE_TOOLS = 'githubSearchCode';
 
       await import('../src/index.js');
@@ -608,7 +593,8 @@ describe('Index Module', () => {
     });
 
     it('should handle whitespace in tool configuration', async () => {
-      process.env.ENABLE_TOOLS = ' packageSearch , githubSearchCommits ';
+      process.env.ENABLE_TOOLS =
+        ' githubSearchPullRequests , githubSearchCommits ';
       process.env.DISABLE_TOOLS = ' githubSearchCode ';
 
       await import('../src/index.js');
@@ -619,7 +605,7 @@ describe('Index Module', () => {
     });
 
     it('should handle invalid tool names gracefully', async () => {
-      process.env.ENABLE_TOOLS = 'packageSearch,invalidTool';
+      process.env.ENABLE_TOOLS = 'githubSearchCommits,invalidTool';
       process.env.DISABLE_TOOLS = 'nonExistentTool';
 
       await import('../src/index.js');

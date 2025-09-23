@@ -11,7 +11,6 @@ vi.mock('../../src/tools/tools.js', () => {
     { name: 'githubSearchRepositories', isDefault: true, fn: vi.fn() },
     { name: 'githubSearchCommits', isDefault: false, fn: vi.fn() },
     { name: 'githubSearchPullRequests', isDefault: false, fn: vi.fn() },
-    { name: 'packageSearch', isDefault: false, fn: vi.fn() },
   ];
   return {
     DEFAULT_TOOLS: mockTools,
@@ -75,7 +74,6 @@ describe('ToolsManager', () => {
       // Verify non-default tools were NOT called
       expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchCommits
       expect(DEFAULT_TOOLS[5]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
-      expect(DEFAULT_TOOLS[6]?.fn).not.toHaveBeenCalled(); // packageSearch
     });
   });
 
@@ -83,7 +81,7 @@ describe('ToolsManager', () => {
     it('should register only specified tools when TOOLS_TO_RUN is set', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        toolsToRun: ['githubSearchCode', 'packageSearch'],
+        toolsToRun: ['githubSearchCode', 'githubSearchCommits'],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -97,20 +95,23 @@ describe('ToolsManager', () => {
 
       // Verify only specified tools were called
       expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalledWith(mockServer); // packageSearch
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCommits
 
       // Verify other tools were NOT called
       expect(DEFAULT_TOOLS[1]?.fn).not.toHaveBeenCalled(); // githubGetFileContent
       expect(DEFAULT_TOOLS[2]?.fn).not.toHaveBeenCalled(); // githubViewRepoStructure
       expect(DEFAULT_TOOLS[3]?.fn).not.toHaveBeenCalled(); // githubSearchRepositories
-      expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchCommits
       expect(DEFAULT_TOOLS[5]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
     });
 
     it('should handle non-existent tools in TOOLS_TO_RUN gracefully', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        toolsToRun: ['githubSearchCode', 'nonExistentTool', 'packageSearch'],
+        toolsToRun: [
+          'githubSearchCode',
+          'nonExistentTool',
+          'githubSearchCommits',
+        ],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -124,7 +125,7 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toEqual([]);
 
       expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalledWith(mockServer); // packageSearch
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCommits
     });
 
     it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', () => {
@@ -154,7 +155,7 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         toolsToRun: ['githubSearchCode'],
-        enableTools: ['packageSearch'],
+        enableTools: ['githubSearchCommits'],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -169,7 +170,7 @@ describe('ToolsManager', () => {
 
       // Should use TOOLS_TO_RUN exclusively
       expect(DEFAULT_TOOLS[0]?.fn).toHaveBeenCalledWith(mockServer); // githubSearchCode
-      expect(DEFAULT_TOOLS[6]?.fn).not.toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchCommits
     });
 
     it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
@@ -194,7 +195,7 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         toolsToRun: ['githubSearchCode'],
-        enableTools: ['packageSearch'],
+        enableTools: ['githubSearchCommits'],
         disableTools: ['githubGetFileContent'],
         enableLogging: false,
         betaEnabled: false,
@@ -214,7 +215,7 @@ describe('ToolsManager', () => {
     it('should add non-default tools with ENABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        enableTools: ['packageSearch', 'githubSearchCommits'],
+        enableTools: ['githubSearchPullRequests', 'githubSearchCommits'],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -235,10 +236,7 @@ describe('ToolsManager', () => {
 
       // Verify enabled tools were called
       expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchCommits
-      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalled(); // packageSearch
-
-      // Verify non-enabled tool was NOT called
-      expect(DEFAULT_TOOLS[5]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
+      expect(DEFAULT_TOOLS[5]?.fn).toHaveBeenCalled(); // githubSearchPullRequests
     });
 
     it('should remove default tools with DISABLE_TOOLS', () => {
@@ -269,7 +267,7 @@ describe('ToolsManager', () => {
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        enableTools: ['packageSearch'],
+        enableTools: ['githubSearchCommits'],
         disableTools: ['githubSearchCode'],
         enableLogging: false,
         betaEnabled: false,
@@ -292,14 +290,14 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
 
       // Verify enabled tool was called
-      expect(DEFAULT_TOOLS[6]?.fn).toHaveBeenCalled(); // packageSearch
+      expect(DEFAULT_TOOLS[4]?.fn).toHaveBeenCalled(); // githubSearchCommits
     });
 
     it('should handle disabling enabled tools (DISABLE_TOOLS takes precedence)', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        enableTools: ['packageSearch'],
-        disableTools: ['packageSearch'], // Same tool in both lists
+        enableTools: ['githubSearchCommits'],
+        disableTools: ['githubSearchCommits'], // Same tool in both lists
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -308,12 +306,12 @@ describe('ToolsManager', () => {
 
       const result = registerTools(mockServer);
 
-      // Should register 4 default tools (packageSearch should be disabled)
+      // Should register 4 default tools (githubSearchCommits should be disabled)
       expect(result.successCount).toBe(4);
       expect(result.failedTools).toEqual([]);
 
-      // Verify packageSearch was NOT called (disabled takes precedence)
-      expect(DEFAULT_TOOLS[6]?.fn).not.toHaveBeenCalled(); // packageSearch
+      // Verify githubSearchCommits was NOT called (disabled takes precedence)
+      expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchCommits
     });
   });
 

@@ -298,7 +298,7 @@ describe('bulkOperations', () => {
       };
 
       const config = {
-        toolName: 'package_search' as ToolName,
+        toolName: 'githubSearchCode' as ToolName,
       };
 
       const result = createBulkResponse(
