@@ -130,7 +130,7 @@ The Octocode platform consists of specialized packages, each serving a critical 
 **Core Features:**
 - **🧠 AI-Optimized Content Processing** - Transform any content for optimal AI consumption
 - **⚡ Advanced Minification** - Multi-strategy compression for 50+ file types
-- **🔄 JSON-to-Natural Language** - Convert structured data to human-readable format
+- **🔄 JSON-to-YAML Conversion** - Convert structured data to token-efficient YAML format
 - **🛡️ Production Ready** - Comprehensive error handling and fallback mechanisms
 
 **Perfect For:** Developers building MCP applications or AI content processing tools

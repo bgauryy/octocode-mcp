@@ -402,6 +402,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@microsoft/tiktokenizer@npm:^1.0.10":
+  version: 1.0.10
+  resolution: "@microsoft/tiktokenizer@npm:1.0.10"
+  checksum: 10c0/d5561ff3b9483177632e02a2dc30a990f50f3f29946bafd17ffbf556618644ff02a89c79ae8821d94126ca980fa3d7466b860a49fae421ef3e096ba5e36289d6
+  languageName: node
+  linkType: hard
+
 "@modelcontextprotocol/sdk@npm:^1.17.4":
   version: 1.17.4
   resolution: "@modelcontextprotocol/sdk@npm:1.17.4"
@@ -1166,6 +1173,13 @@ __metadata:
     "@types/istanbul-lib-coverage": "npm:*"
     "@types/istanbul-lib-report": "npm:*"
   checksum: 10c0/80b76715f4ac74a4ddfc82d7942b2faaefbe9fdce8e7dfdfa497b3fb60a3e707b632c6e70e1565cfe30045eaebaf7aad0d6c3d102652d1da8fdb0bf095924eb3
+  languageName: node
+  linkType: hard
+
+"@types/js-yaml@npm:^4.0.9":
+  version: 4.0.9
+  resolution: "@types/js-yaml@npm:4.0.9"
+  checksum: 10c0/24de857aa8d61526bbfbbaa383aa538283ad17363fcd5bb5148e2c7f604547db36646440e739d78241ed008702a8920665d1add5618687b6743858fae00da211
   languageName: node
   linkType: hard
 
@@ -4324,13 +4338,16 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "octocode-utils@workspace:packages/octocode-utils"
   dependencies:
+    "@microsoft/tiktokenizer": "npm:^1.0.10"
     "@rollup/plugin-node-resolve": "npm:^16.0.1"
     "@rollup/plugin-typescript": "npm:^12.1.2"
     "@types/clean-css": "npm:^4.2.11"
     "@types/html-minifier-terser": "npm:^7.0.2"
+    "@types/js-yaml": "npm:^4.0.9"
     "@types/node": "npm:^22.15.29"
     clean-css: "npm:^5.3.0"
     html-minifier-terser: "npm:^7.2.0"
+    js-yaml: "npm:^4.1.0"
     rollup: "npm:^4.41.1"
     rollup-plugin-dts: "npm:^6.0.0"
     terser: "npm:^5.19.0"
