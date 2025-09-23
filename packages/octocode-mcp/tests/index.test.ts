@@ -14,7 +14,6 @@ vi.mock('../src/tools/github_search_repos.js');
 vi.mock('../src/tools/github_search_pull_requests.js');
 vi.mock('../src/tools/github_view_repo_structure.js');
 vi.mock('../src/utils/exec.js');
-vi.mock('../src/security/credentialStore.js');
 vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
 
