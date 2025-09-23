@@ -12,7 +12,7 @@ import {
   cleanup,
   getGitHubToken,
 } from './serverConfig.js';
-import { createLogger, LoggerFactory } from './enhancements/logging.js';
+import { createLogger, LoggerFactory } from './utils/logger.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
