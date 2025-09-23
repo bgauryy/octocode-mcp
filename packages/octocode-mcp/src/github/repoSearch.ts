@@ -10,9 +10,7 @@ import {
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
-import { generateCacheKey, withCache } from '../utils/cache';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
 
@@ -37,43 +35,24 @@ export async function searchGitHubReposAPI(
     userContext?.sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubReposAPIInternal(params, authInfo);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<
+    GitHubAPIResponse<{
+      total_count: number;
+      repositories: SimplifiedRepository[];
+    }>
+  >(
+    cacheKey,
+    async () => {
+      return await searchGitHubReposAPIInternal(params, authInfo);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: value =>
+        'data' in value && !(value as { error?: unknown }).error,
     }
-  };
+  );
 
-  // Use cache with 2-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<{
-      total_count: number;
-      repositories: SimplifiedRepository[];
-    }>;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<{
-      total_count: number;
-      repositories: SimplifiedRepository[];
-    }>;
-  }
+  return result;
 }
 
 /**

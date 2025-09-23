@@ -19,7 +19,7 @@ const mockminifyContent = vi.hoisted(() =>
     type: 'general',
   })
 );
-const mockWithCache = vi.hoisted(() => vi.fn());
+const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
 
@@ -39,7 +39,7 @@ vi.mock('octocode-utils', () => ({
 
 vi.mock('../../../src/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
+  withDataCache: mockWithDataCache,
 }));
 
 vi.mock('../../../src/mcp/responses.js', () => ({
@@ -112,7 +112,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     mockGetOctokit.mockReturnValue(mockOctokit);
 
     // Setup default cache behavior - execute the operation directly
-    mockWithCache.mockImplementation(
+    mockWithDataCache.mockImplementation(
       async (
         _cacheKey: string,
         operation: () => Promise<{
@@ -588,11 +588,10 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      // The result should be a success response with error data inside
-      expect('data' in result).toBe(true);
-      if ('data' in result) {
-        expect(result.data).toHaveProperty('error');
-        expect(result.data.error).toContain(
+      // The result should be a direct error response
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain(
           'Match string "nonexistent string" not found in file'
         );
       }
@@ -733,7 +732,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: 'search term',
           minified: true,
           matchStringContextLines: 3,
-          verbose: false,
         },
         undefined
       );
@@ -777,7 +775,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: undefined,
           minified: false,
           matchStringContextLines: 5,
-          verbose: false,
         },
         undefined
       );
@@ -794,7 +791,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           matchString: undefined,
           minified: false,
           matchStringContextLines: 5,
-          verbose: false,
         },
         undefined
       );

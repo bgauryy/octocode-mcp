@@ -7,11 +7,12 @@
  * - Error aggregation and recovery
  * - Result aggregation and context building
  * - Smart hint generation based on bulk results
+ * - Reasoning propagation from queries to results
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 // Hints are now provided by the consolidated hints system
-import { ToolName } from '../constants.js';
+import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 
@@ -29,6 +30,67 @@ function safeExtractString(
 ): string | undefined {
   const value = obj[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+// Tool-aware, code-based empty detection aligned with our GitHub API wrappers
+function getNestedField(obj: Record<string, unknown>, key: string): unknown {
+  if (key in obj) return (obj as Record<string, unknown>)[key];
+  const data = (obj as Record<string, unknown>)['data'];
+  if (
+    data &&
+    typeof data === 'object' &&
+    key in (data as Record<string, unknown>)
+  ) {
+    return (data as Record<string, unknown>)[key];
+  }
+  return undefined;
+}
+
+function isNoResultsForTool(
+  toolName: ToolName,
+  resultObj: Record<string, unknown>
+): boolean {
+  // If error flag present on a "success" object, treat as no-results path
+  if ('error' in resultObj) return true;
+
+  switch (toolName) {
+    case TOOL_NAMES.GITHUB_FETCH_CONTENT: {
+      // Our API returns explicit error for empty file; success implies content available
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_SEARCH_CODE: {
+      const total = getNestedField(resultObj, 'totalCount');
+      const files = getNestedField(resultObj, 'files');
+      if (typeof total === 'number') return total === 0;
+      if (Array.isArray(files)) return files.length === 0;
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES: {
+      const total = getNestedField(resultObj, 'total_count');
+      const repos = getNestedField(resultObj, 'repositories');
+      if (typeof total === 'number') return total === 0;
+      if (Array.isArray(repos)) return repos.length === 0;
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS: {
+      const total = getNestedField(resultObj, 'total_count');
+      const prs = getNestedField(resultObj, 'pull_requests');
+      if (typeof total === 'number') return total === 0;
+      if (Array.isArray(prs)) return prs.length === 0;
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE: {
+      const files = getNestedField(resultObj, 'files');
+      const folders = getNestedField(resultObj, 'folders');
+      const filesEmpty = Array.isArray(files) ? files.length === 0 : false;
+      const foldersEmpty = Array.isArray(folders)
+        ? folders.length === 0
+        : false;
+      return filesEmpty && foldersEmpty;
+    }
+    default:
+      return false;
+  }
 }
 
 /**
@@ -227,91 +289,84 @@ export function createBulkResponse<
   const hintContext = createBulkHintsContext(config, context, errors, queries);
   const hints = generateBulkHints(hintContext);
 
-  // Process successful results with proper query mapping
-  const processedSuccessResults = results.map(r => {
-    const result = { ...r.result } as Record<string, unknown>;
+  // Process successful results with proper query mapping (build map for O(1) access later)
+  const processedSuccessMap = new Map<string, Record<string, unknown>>();
+  results.forEach(r => {
+    const merged = { ...(r.result as Record<string, unknown>) } as Record<
+      string,
+      unknown
+    >;
     const query = r.originalQuery;
 
     // Always add queryId to results
-    result.queryId = r.queryId;
+    merged.queryId = r.queryId;
 
-    // Preserve reasoning field if it exists in the original result
-    if ('reasoning' in r.result && r.result.reasoning) {
-      result.reasoning = r.result.reasoning;
+    // Prefer result reasoning when defined, otherwise use query reasoning (including empty strings)
+    const resultReasoning = (r.result as Record<string, unknown>).reasoning as
+      | string
+      | undefined;
+    const queryReasoning = safeExtractString(query, 'reasoning');
+    if (resultReasoning !== undefined) {
+      merged.reasoning = resultReasoning;
+    } else if (queryReasoning !== undefined) {
+      merged.reasoning = queryReasoning;
     }
 
-    // For no-results cases or errors, always include metadata with query args
-    const hasNoResults =
-      (!result.data &&
-        !result.repositories &&
-        !result.files &&
-        !result.folders &&
-        !result.structure &&
-        !result.pull_requests &&
-        !result.content) ||
-      (result.files as unknown[] | undefined)?.length === 0 ||
-      (result.repositories as unknown[] | undefined)?.length === 0 ||
-      (result.folders as unknown[] | undefined)?.length === 0 ||
-      (result.structure as unknown[] | undefined)?.length === 0 ||
-      (result.pull_requests as unknown[] | undefined)?.length === 0;
-
-    const hasError = !!result.error;
+    // Add originalQuery metadata for no-results or errors, remove metadata for successful results
+    const hasNoResults = isNoResultsForTool(config.toolName, merged);
+    const hasError = !!merged.error;
 
     if (hasNoResults || hasError) {
-      // Ensure metadata exists and includes query args
-      if (!result.metadata || typeof result.metadata !== 'object') {
-        result.metadata = {};
+      if (!merged.metadata || typeof merged.metadata !== 'object') {
+        merged.metadata = {};
       }
-      (result.metadata as Record<string, unknown>).queryArgs = { ...query };
-    } else if ('metadata' in result) {
-      // Remove metadata if has results and no error
-      delete result.metadata;
+      (merged.metadata as Record<string, unknown>).originalQuery = { ...query };
+    } else {
+      // Remove metadata for successful results with content
+      delete merged.metadata;
     }
 
-    return result;
+    processedSuccessMap.set(r.queryId, merged);
   });
 
-  // Process error results to include them in the response
-  const processedErrorResults = errors.map(error => {
-    // Find the original query for this error
+  // Process error results to include them in the response (build map)
+  const processedErrorMap = new Map<string, Record<string, unknown>>();
+  errors.forEach(error => {
     const originalQuery = queries.find(q => q.id === error.queryId);
+    const queryReasoning = originalQuery
+      ? safeExtractString(originalQuery, 'reasoning')
+      : undefined;
 
-    return {
+    const errorResult: Record<string, unknown> = {
       queryId: error.queryId,
       error: error.error,
       hints: error.recoveryHints || [],
       metadata: {
-        queryArgs: originalQuery ? { ...originalQuery } : { id: error.queryId },
+        originalQuery: originalQuery
+          ? { ...originalQuery }
+          : { id: error.queryId },
       },
     };
+
+    if (queryReasoning !== undefined) {
+      errorResult.reasoning = queryReasoning;
+    }
+
+    processedErrorMap.set(error.queryId, errorResult);
   });
 
   // Combine successful and error results, maintaining query order
   const allResults: Record<string, unknown>[] = [];
-  const resultMap = new Map(results.map(r => [r.queryId, r]));
-  const errorMap = new Map(errors.map(e => [e.queryId, e]));
-
   // Process queries in original order to maintain consistency
   queries.forEach(query => {
-    const successResult = resultMap.get(query.id);
-    const errorResult = errorMap.get(query.id);
-
-    if (successResult) {
-      // Find the processed success result
-      const processedResult = processedSuccessResults.find(
-        pr => pr.queryId === query.id
-      );
-      if (processedResult) {
-        allResults.push(processedResult);
-      }
-    } else if (errorResult) {
-      // Find the processed error result
-      const processedError = processedErrorResults.find(
-        pe => pe.queryId === query.id
-      );
-      if (processedError) {
-        allResults.push(processedError);
-      }
+    const successProcessed = processedSuccessMap.get(query.id);
+    if (successProcessed) {
+      allResults.push(successProcessed);
+      return;
+    }
+    const errorProcessed = processedErrorMap.get(query.id);
+    if (errorProcessed) {
+      allResults.push(errorProcessed);
     }
   });
 

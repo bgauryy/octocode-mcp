@@ -14,9 +14,7 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
-import { generateCacheKey, withCache } from '../utils/cache';
-import { createResult } from '../responses';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
 
@@ -36,158 +34,22 @@ export async function searchGitHubPullRequestsAPI(
     userContext?.sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubPullRequestsAPIInternal(
-      params,
-      authInfo,
-      userContext?.sessionId
-    );
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<PullRequestSearchResult>(
+    cacheKey,
+    async () => {
+      return await searchGitHubPullRequestsAPIInternal(
+        params,
+        authInfo,
+        userContext?.sessionId
+      );
+    },
+    {
+      // Only cache successful responses
+      shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
-  };
+  );
 
-  // Use cache with 30-minute TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return {
-      pull_requests: [],
-      total_count: 0,
-      error: parsedData.data.error,
-      hints: parsedData.data.hints,
-      metadata: { error: parsedData.data.error },
-    };
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    const apiResult = parsedData.data as {
-      pull_requests?: Array<{
-        id: number;
-        number: number;
-        title: string;
-        url: string;
-        html_url: string;
-        state: 'open' | 'closed';
-        draft: boolean;
-        merged: boolean;
-        created_at: string;
-        updated_at: string;
-        closed_at?: string;
-        merged_at?: string;
-        user: {
-          login: string;
-          id: number;
-          avatar_url: string;
-          html_url: string;
-        };
-        assignees?: Array<{
-          login: string;
-          id: number;
-          avatar_url: string;
-          html_url: string;
-        }>;
-        labels?: Array<{
-          id: number;
-          name: string;
-          color: string;
-          description?: string;
-        }>;
-        milestone?: {
-          id: number;
-          title: string;
-          description?: string;
-          state: 'open' | 'closed';
-          created_at: string;
-          updated_at: string;
-          due_on?: string;
-        };
-        head: { ref: string; sha: string; repo?: { full_name: string } };
-        base: { ref: string; sha: string; repo: { full_name: string } };
-        body?: string;
-        comments?: number;
-        review_comments?: number;
-        commits?: number;
-        additions?: number;
-        deletions?: number;
-        changed_files?: number;
-        comment_details?: Array<{
-          id: number;
-          user: string;
-          body: string;
-          created_at: string;
-          updated_at: string;
-        }>;
-        file_changes?: Array<{
-          filename: string;
-          status: string;
-          additions: number;
-          deletions: number;
-          changes: number;
-          patch?: string;
-        }>;
-      }>;
-      total_count?: number;
-      incomplete_results?: boolean;
-    };
-    return {
-      pull_requests:
-        apiResult.pull_requests?.map(pr => ({
-          id: pr.id,
-          number: pr.number,
-          title: pr.title,
-          url: pr.url,
-          html_url: pr.html_url,
-          state: pr.state,
-          draft: pr.draft,
-          merged: pr.merged,
-          created_at: pr.created_at,
-          updated_at: pr.updated_at,
-          closed_at: pr.closed_at,
-          merged_at: pr.merged_at,
-          author: pr.user,
-          assignees: pr.assignees,
-          labels: pr.labels,
-          milestone: pr.milestone,
-          head: {
-            ref: pr.head.ref,
-            sha: pr.head.sha,
-            repo: pr.head.repo?.full_name,
-          },
-          base: {
-            ref: pr.base.ref,
-            sha: pr.base.sha,
-            repo: pr.base.repo.full_name,
-          },
-          body: pr.body,
-          comments: pr.comments,
-          review_comments: pr.review_comments,
-          commits: pr.commits,
-          additions: pr.additions,
-          deletions: pr.deletions,
-          changed_files: pr.changed_files,
-          comment_details: pr.comment_details,
-          file_changes: pr.file_changes,
-        })) || [],
-      total_count: apiResult.total_count || 0,
-      incomplete_results: apiResult.incomplete_results,
-      metadata: {},
-    };
-  }
+  return result;
 }
 
 /**
@@ -743,157 +605,18 @@ export async function fetchGitHubPullRequestByNumberAPI(
     sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubPullRequestByNumberAPIInternal(
-      params,
-      authInfo
-    );
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<PullRequestSearchResult>(
+    cacheKey,
+    async () => {
+      return await fetchGitHubPullRequestByNumberAPIInternal(params, authInfo);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
-  };
+  );
 
-  // Use cache with 30-minute TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, fetchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return {
-      pull_requests: [],
-      total_count: 0,
-      error: parsedData.data.error,
-      hints: parsedData.data.hints,
-      metadata: { error: parsedData.data.error },
-    };
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    const apiResult = parsedData.data as {
-      pull_requests?: Array<{
-        id: number;
-        number: number;
-        title: string;
-        url: string;
-        html_url: string;
-        state: 'open' | 'closed';
-        draft: boolean;
-        merged: boolean;
-        created_at: string;
-        updated_at: string;
-        closed_at?: string;
-        merged_at?: string;
-        user: {
-          login: string;
-          id: number;
-          avatar_url: string;
-          html_url: string;
-        };
-        assignees?: Array<{
-          login: string;
-          id: number;
-          avatar_url: string;
-          html_url: string;
-        }>;
-        labels?: Array<{
-          id: number;
-          name: string;
-          color: string;
-          description?: string;
-        }>;
-        milestone?: {
-          id: number;
-          title: string;
-          description?: string;
-          state: 'open' | 'closed';
-          created_at: string;
-          updated_at: string;
-          due_on?: string;
-        };
-        head: { ref: string; sha: string; repo?: { full_name: string } };
-        base: { ref: string; sha: string; repo: { full_name: string } };
-        body?: string;
-        comments?: number;
-        review_comments?: number;
-        commits?: number;
-        additions?: number;
-        deletions?: number;
-        changed_files?: number;
-        comment_details?: Array<{
-          id: number;
-          user: string;
-          body: string;
-          created_at: string;
-          updated_at: string;
-        }>;
-        file_changes?: Array<{
-          filename: string;
-          status: string;
-          additions: number;
-          deletions: number;
-          changes: number;
-          patch?: string;
-        }>;
-      }>;
-      total_count?: number;
-      incomplete_results?: boolean;
-    };
-    return {
-      pull_requests:
-        apiResult.pull_requests?.map(pr => ({
-          id: pr.id,
-          number: pr.number,
-          title: pr.title,
-          url: pr.url,
-          html_url: pr.html_url,
-          state: pr.state,
-          draft: pr.draft,
-          merged: pr.merged,
-          created_at: pr.created_at,
-          updated_at: pr.updated_at,
-          closed_at: pr.closed_at,
-          merged_at: pr.merged_at,
-          author: pr.user,
-          assignees: pr.assignees,
-          labels: pr.labels,
-          milestone: pr.milestone,
-          head: {
-            ref: pr.head.ref,
-            sha: pr.head.sha,
-            repo: pr.head.repo?.full_name,
-          },
-          base: {
-            ref: pr.base.ref,
-            sha: pr.base.sha,
-            repo: pr.base.repo.full_name,
-          },
-          body: pr.body,
-          comments: pr.comments,
-          review_comments: pr.review_comments,
-          commits: pr.commits,
-          additions: pr.additions,
-          deletions: pr.deletions,
-          changed_files: pr.changed_files,
-          comment_details: pr.comment_details,
-          file_changes: pr.file_changes,
-        })) || [],
-      total_count: apiResult.total_count || 0,
-      incomplete_results: apiResult.incomplete_results,
-      metadata: {},
-    };
-  }
+  return result;
 }
 
 /**

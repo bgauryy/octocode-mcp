@@ -5,10 +5,7 @@
  */
 
 import { getOctokit } from './client';
-import { handleGitHubAPIError } from './errors';
-import { generateCacheKey, withCache } from '../utils/cache';
-import { createResult } from '../responses';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 
 export interface GitHubUserInfo {
   login: string;
@@ -54,52 +51,44 @@ export async function getAuthenticatedUser(
 ): Promise<GitHubUserInfo | null> {
   const cacheKey = generateCacheKey('github-user', {}, sessionId);
 
-  const userOperation = async (): Promise<CallToolResult> => {
-    try {
-      const octokit = await getOctokit();
-      const response = await octokit.rest.users.getAuthenticated();
+  const result = await withDataCache<GitHubUserInfo | null>(
+    cacheKey,
+    async () => {
+      try {
+        const octokit = await getOctokit();
+        const response = await octokit.rest.users.getAuthenticated();
 
-      const userInfo: GitHubUserInfo = {
-        login: response.data.login,
-        id: response.data.id,
-        name: response.data.name,
-        email: response.data.email,
-        company: response.data.company,
-        type: response.data.type as 'User' | 'Organization',
-        plan: response.data.plan
-          ? {
-              name: response.data.plan.name,
-              space: response.data.plan.space,
-              private_repos: response.data.plan.private_repos,
-            }
-          : undefined,
-      };
+        const userInfo: GitHubUserInfo = {
+          login: response.data.login,
+          id: response.data.id,
+          name: response.data.name,
+          email: response.data.email,
+          company: response.data.company,
+          type: response.data.type as 'User' | 'Organization',
+          plan: response.data.plan
+            ? {
+                name: response.data.plan.name,
+                space: response.data.plan.space,
+                private_repos: response.data.plan.private_repos,
+              }
+            : undefined,
+        };
 
-      return createResult({ data: userInfo });
-    } catch (error) {
-      const apiError = handleGitHubAPIError(error);
-      return createResult({
-        data: {
-          ...apiError,
-          error: `Failed to get user info: ${apiError.error}`,
-        },
-        isError: true,
-      });
+        return userInfo;
+      } catch (error) {
+        // Return null on error - don't cache errors for user info
+        return null;
+      }
+    },
+    {
+      // Cache for 15 minutes
+      ttl: 15 * 60,
+      // Only cache successful responses (non-null)
+      shouldCache: (value: GitHubUserInfo | null) => value !== null,
     }
-  };
+  );
 
-  // Cache for 15 minutes
-  const cachedResult = await withCache(cacheKey, userOperation, {
-    ttl: 15 * 60 * 1000,
-  });
-
-  if (cachedResult.isError) {
-    return null;
-  }
-
-  const jsonText = (cachedResult.content[0] as { text: string }).text;
-  const parsedData = JSON.parse(jsonText);
-  return parsedData.data as GitHubUserInfo;
+  return result;
 }
 
 /**

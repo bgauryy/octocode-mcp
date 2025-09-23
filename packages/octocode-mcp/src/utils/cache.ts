@@ -1,4 +1,3 @@
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import NodeCache from 'node-cache';
 import crypto from 'crypto';
 
@@ -32,30 +31,13 @@ const cacheStats: CacheStats = {
 
 // TTL configurations for different cache types (in seconds)
 export const CACHE_TTL_CONFIG = {
-  // GitHub API calls - shorter TTL as data changes frequently
-  'gh-api-code': 3600, // 1 hour
-  'gh-api-repos': 7200, // 2 hours
-  'gh-api-issues': 1800, // 30 minutes
-  'gh-api-prs': 1800, // 30 minutes
-  'gh-commits-api': 3600, // 1 hour
-  'gh-api-file-content': 3600, // 1 hour
-  'gh-repo-structure-api': 7200, // 2 hours
-
-  // GitHub CLI calls - similar to API
-  'gh-code': 3600, // 1 hour
-  'gh-repos': 7200, // 2 hours
-  'gh-issues': 1800, // 30 minutes
-  'gh-prs': 1800, // 30 minutes
-  'gh-commits': 3600, // 1 hour
-  'gh-file-content-cli': 7200, // 2 hours
-  'gh-repo-structure': 7200, // 2 hours
-
-  // NPM operations - longer TTL as package data is more stable
-  'npm-view': 14400, // 4 hours
-  'npm-exec': 7200, // 2 hours
-
-  // Command execution - shorter TTL
-  'gh-exec': 1800, // 30 minutes
+  // GitHub API calls - optimized TTL based on data volatility
+  'gh-api-code': 3600, // 1 hour - code changes frequently
+  'gh-api-repos': 7200, // 2 hours - repo metadata more stable
+  'gh-api-prs': 1800, // 30 minutes - PRs change frequently
+  'gh-api-file-content': 3600, // 1 hour - file content changes
+  'gh-repo-structure-api': 7200, // 2 hours - structure more stable
+  'github-user': 900, // 15 minutes - user info for rate limiting
 
   // Default fallback
   default: 86400, // 24 hours
@@ -127,64 +109,6 @@ function getTTLForPrefix(prefix: string): number {
     (CACHE_TTL_CONFIG as Record<string, number>)[prefix] ||
     CACHE_TTL_CONFIG.default
   );
-}
-
-/**
- * Enhanced cache wrapper with per-key TTL and statistics
- */
-export async function withCache(
-  cacheKey: string,
-  operation: () => Promise<CallToolResult>,
-  options: {
-    ttl?: number; // Override TTL for this specific key
-    skipCache?: boolean; // Skip cache entirely
-    forceRefresh?: boolean; // Force refresh even if cached
-  } = {}
-): Promise<CallToolResult> {
-  // Skip cache if requested
-  if (options.skipCache) {
-    return await operation();
-  }
-
-  // Check if result exists in cache (unless force refresh)
-  if (!options.forceRefresh) {
-    try {
-      const cachedResult = cache.get<CallToolResult>(cacheKey);
-      if (cachedResult) {
-        cacheStats.hits++;
-        return cachedResult;
-      }
-    } catch (error) {
-      // If cache read fails, continue to execute operation
-    }
-  }
-
-  cacheStats.misses++;
-
-  // Execute operation
-  const result = await operation();
-
-  // Only cache successful responses
-  if (!result.isError) {
-    try {
-      // Determine TTL
-      let ttl = options.ttl;
-      if (!ttl) {
-        // Extract prefix from cache key to determine TTL
-        const prefixMatch = cacheKey.match(/^v\d+-([^:]+):/);
-        const prefix = prefixMatch?.[1] ?? 'default';
-        ttl = getTTLForPrefix(prefix);
-      }
-
-      cache.set(cacheKey, result, ttl);
-      cacheStats.sets++;
-      cacheStats.totalKeys = cache.keys().length;
-    } catch (error) {
-      // If cache write fails, continue without caching
-    }
-  }
-
-  return result;
 }
 
 /**

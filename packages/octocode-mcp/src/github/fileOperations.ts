@@ -14,9 +14,7 @@ import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
-import { generateCacheKey, withCache } from '../utils/cache';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
@@ -30,7 +28,7 @@ export async function fetchGitHubFileContentAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<ContentResult>> {
-  // Generate cache key based on request parameters
+  // Generate cache key based on request parameters (verbose excluded by cache logic)
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
     {
@@ -45,45 +43,24 @@ export async function fetchGitHubFileContentAPI(
       matchString: params.matchString,
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
-      verbose: params.verbose, // Include verbose parameter in cache key
+      // verbose is now excluded automatically by cache logic
     },
     sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubFileContentAPIInternal(params, authInfo);
-
-    // Convert GitHubAPIResponse to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result.data,
-      });
+  const result = await withDataCache<GitHubAPIResponse<ContentResult>>(
+    cacheKey,
+    async () => {
+      return await fetchGitHubFileContentAPIInternal(params, authInfo);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: (value: GitHubAPIResponse<ContentResult>) =>
+        'data' in value && !(value as { error?: unknown }).error,
     }
-  };
+  );
 
-  // Use cache with 1-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, fetchOperation);
-
-  // Convert CallToolResult back to GitHubAPIResponse
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<ContentResult>;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return {
-      data: parsedData.data as ContentResult,
-      status: 200,
-    };
-  }
+  return result;
 }
 
 /**
@@ -423,40 +400,20 @@ export async function viewGitHubRepositoryStructureAPI(
     userContext?.sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const structureOperation = async (): Promise<CallToolResult> => {
-    const result = await viewGitHubRepositoryStructureAPIInternal(
-      params,
-      authInfo
-    );
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<
+    GitHubRepositoryStructureResult | GitHubRepositoryStructureError
+  >(
+    cacheKey,
+    async () => {
+      return await viewGitHubRepositoryStructureAPIInternal(params, authInfo);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: value => !('error' in value),
     }
-  };
+  );
 
-  // Use cache with 2-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, structureOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubRepositoryStructureError;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubRepositoryStructureResult;
-  }
+  return result;
 }
 
 /**

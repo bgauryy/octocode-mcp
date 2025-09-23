@@ -647,7 +647,7 @@ describe('GitHub Search Repositories Tool', () => {
       );
       expect(noResultQuery).toBeDefined();
       // In the new bulk format, query args are in metadata for no-result cases
-      expect(noResultQuery.metadata?.queryArgs).toBeDefined();
+      expect(noResultQuery.metadata?.originalQuery).toBeDefined();
     });
 
     it('should include query field when verbose is true', async () => {

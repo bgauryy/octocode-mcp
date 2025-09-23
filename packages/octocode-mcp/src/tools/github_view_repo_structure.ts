@@ -127,7 +127,6 @@ async function exploreMultipleRepositoryStructures(
               'Ensure you have access to the repository',
             ],
             metadata: {
-              queryArgs: { ...query },
               error: apiResult.error,
               searchType: 'api_error',
             },

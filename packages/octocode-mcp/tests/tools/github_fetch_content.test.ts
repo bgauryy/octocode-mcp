@@ -256,14 +256,14 @@ describe('GitHub Fetch Content Tool', () => {
       expect(data.data).toHaveLength(1);
 
       const errorResult = data.data[0];
-      expect(errorResult.metadata?.queryArgs).toEqual(
+      expect(errorResult.metadata?.originalQuery).toEqual(
         expect.objectContaining({
           owner: 'test',
           repo: 'repo',
           filePath: 'test.md',
           id: 'exception-test',
         })
-      ); // queryArgs are included in metadata for error responses
+      ); // originalQuery are included in metadata for error responses
       expect(errorResult.error).toBe('Network error');
       expect(errorResult.filePath).toBeUndefined(); // No file properties on error
     });
@@ -1022,7 +1022,7 @@ End of file.`;
       const exceptionResult = data.data[2];
       expect(exceptionResult.error).toBe('Network timeout');
       expect(exceptionResult.content).toBeUndefined(); // No content properties on error
-      expect(exceptionResult.metadata?.queryArgs).toBeDefined(); // queryArgs included in metadata for exceptions
+      expect(exceptionResult.metadata?.originalQuery).toBeDefined(); // originalQuery included in metadata for exceptions
     });
   });
 
