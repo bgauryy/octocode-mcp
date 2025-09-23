@@ -10,9 +10,8 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
-  ProcessedRepositoryStructureResult,
-  AggregatedRepositoryContext,
-} from '../scheme/github_view_repo_structure';
+  RepoStructureResult,
+} from '../scheme/github_view_repo_structure.js';
 import { generateHints } from './hints';
 import {
   ensureUniqueQueryIds,
@@ -110,7 +109,7 @@ async function exploreMultipleRepositoryStructures(
     uniqueQueries,
     async (
       query: GitHubViewRepoStructureQuery
-    ): Promise<ProcessedRepositoryStructureResult> => {
+    ): Promise<RepoStructureResult> => {
       try {
         // TypeScript and Zod validation ensure all required fields are properly typed
         // No manual validation needed - trust the type system!
@@ -136,6 +135,13 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
+            queryId: String(query.id),
+            reasoning: query.reasoning,
+            repository: `${query.owner}/${query.repo}`,
+            branch: query.branch,
+            path: query.path || '/',
+            files: [],
+            folders: [],
             error: apiResult.error,
             hints: [
               'Verify repository owner and name are correct',
@@ -175,7 +181,7 @@ async function exploreMultipleRepositoryStructures(
         const filePaths = filteredFiles.map(file => file.path);
         const folderPaths = filteredFolders.map(folder => folder.path);
 
-        const result: ProcessedRepositoryStructureResult = {
+        const result: RepoStructureResult = {
           queryId: String(query.id),
           reasoning: query.reasoning,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
@@ -203,6 +209,13 @@ async function exploreMultipleRepositoryStructures(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          queryId: String(query.id),
+          reasoning: query.reasoning,
+          repository: `${query.owner}/${query.repo}`,
+          branch: query.branch,
+          path: query.path || '/',
+          files: [],
+          folders: [],
           error: `Failed to explore repository structure: ${errorMessage}`,
           hints: [
             'Verify repository owner and name are correct',
@@ -222,7 +235,7 @@ async function exploreMultipleRepositoryStructures(
   // Build aggregated context for intelligent hints
   const successfulCount = results.filter(r => !r.result.error).length;
   const failedCount = results.length - successfulCount;
-  const aggregatedContext: AggregatedRepositoryContext = {
+  const aggregatedContext = {
     totalQueries: results.length,
     successfulQueries: successfulCount,
     failedQueries: failedCount,

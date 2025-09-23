@@ -5,6 +5,7 @@ import {
   FlexibleArraySchema,
   LimitSchema,
 } from './baseSchema';
+import { ToolResponse } from '../responses.js';
 
 // Simplified repository type for search results
 export interface SimplifiedRepository {
@@ -69,14 +70,42 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
 );
 
 // ============================================================================
-// RESULT TYPES
+// Simple Input/Output Types
 // ============================================================================
 
-export interface ProcessedRepoSearchResult {
-  repositories?: SimplifiedRepository[];
-  total_count?: number;
-  query?: Record<string, unknown>; // Include original query when verbose or no results
+/**
+ * Tool input - bulk repository search queries
+ */
+export interface GitHubSearchReposInput {
+  queries: GitHubReposSearchQuery[];
+  verbose?: boolean;
+}
+
+/**
+ * Tool output - extends standardized ToolResponse format
+ */
+export interface GitHubSearchReposOutput extends ToolResponse {
+  /** Primary data payload - array of repository search results */
+  data: RepoSearchResult[];
+
+  /** Additional context with operation counts */
+  meta: ToolResponse['meta'] & {
+    totalOperations: number;
+    successfulOperations: number;
+    failedOperations: number;
+  };
+}
+
+/**
+ * Individual repository search result
+ */
+export interface RepoSearchResult {
+  queryId?: string;
+  reasoning?: string;
+  repositories: SimplifiedRepository[];
+  total_count: number;
   error?: string;
   hints?: string[];
-  metadata: Record<string, unknown>; // Required for bulk operations compatibility
+  query?: Record<string, unknown>; // Only when verbose or error
+  metadata?: Record<string, unknown>; // Internal use
 }

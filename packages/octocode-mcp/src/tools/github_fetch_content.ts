@@ -10,8 +10,8 @@ import { TOOL_NAMES } from '../constants.js';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
-  FileContentQueryResult,
-} from '../scheme/github_fetch_content';
+  ContentResult,
+} from '../scheme/github_fetch_content.js';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
 import { generateHints } from './hints.js';
 import { isSamplingEnabled } from '../serverConfig.js';
@@ -89,7 +89,7 @@ async function fetchMultipleGitHubFileContents(
   userContext?: UserContext
 ): Promise<CallToolResult> {
   const uniqueQueries = ensureUniqueQueryIds(queries, 'file-content');
-  const results: FileContentQueryResult[] = [];
+  const results: ContentResult[] = [];
 
   // Execute all queries
   for (const query of uniqueQueries) {
@@ -141,7 +141,7 @@ async function fetchMultipleGitHubFileContents(
 
       // Build the result object with flattened format
       // Flatten the result structure - spread result properties directly into the query result
-      const baseResultObj: FileContentQueryResult = {
+      const baseResultObj: ContentResult = {
         queryId: query.id,
         ...result, // Flatten all result properties (filePath, owner, repo, content, etc.)
       };
@@ -149,7 +149,7 @@ async function fetchMultipleGitHubFileContents(
       // Apply verbose filtering - only include verbose-only fields when verbose=true
       const isVerbose =
         typeof query.verbose === 'boolean' ? query.verbose : false;
-      const resultObj: FileContentQueryResult = {
+      const resultObj: ContentResult = {
         ...baseResultObj,
       };
 
@@ -198,7 +198,7 @@ async function fetchMultipleGitHubFileContents(
 
           // Store the sampling request for potential debugging/analysis
           (
-            resultObj as FileContentQueryResult & {
+            resultObj as ContentResult & {
               _samplingRequest?: unknown;
             }
           )._samplingRequest = samplingRequest;

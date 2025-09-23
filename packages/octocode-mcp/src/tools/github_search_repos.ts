@@ -10,7 +10,7 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
-  ProcessedRepoSearchResult,
+  RepoSearchResult,
   SimplifiedRepository,
 } from '../scheme/github_search_repos';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations';
@@ -184,7 +184,7 @@ async function searchMultipleGitHubRepos(
     failedQueries: results.length - successfulCount,
     dataQuality: {
       hasResults: results.some(r => {
-        const repoResult = r.result as ProcessedRepoSearchResult;
+        const repoResult = r.result as RepoSearchResult;
         return (
           !repoResult.error &&
           repoResult.repositories &&
@@ -221,8 +221,8 @@ async function searchMultipleGitHubRepos(
     return response;
   }
   const responseData = JSON.parse(responseText);
-  if (responseData.results) {
-    responseData.results = responseData.results.map(
+  if (responseData.data) {
+    responseData.data = responseData.data.map(
       (result: Record<string, unknown>, index: number) => {
         const hasError = !!result.error;
         const hasNoResults =

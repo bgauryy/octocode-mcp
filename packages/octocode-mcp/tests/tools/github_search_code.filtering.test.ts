@@ -150,8 +150,8 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       );
 
       // Should have filtered results
-      expect(resultData.results).toHaveLength(1);
-      const queryResult = resultData.results[0];
+      expect(resultData.data).toHaveLength(1);
+      const queryResult = resultData.data[0];
 
       // Should only have the valid files after double filtering
       expect(queryResult.files).toHaveLength(2);
@@ -220,8 +220,8 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       );
 
       // Should have result with no files
-      expect(resultData.results).toHaveLength(1);
-      const queryResult = resultData.results[0];
+      expect(resultData.data).toHaveLength(1);
+      const queryResult = resultData.data[0];
 
       expect(queryResult.files).toHaveLength(0);
       expect(queryResult.totalCount).toBe(0);
@@ -294,7 +294,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       const resultData = JSON.parse(
         (result as CallToolResult).content[0]!.text
       );
-      const queryResult = resultData.results[0];
+      const queryResult = resultData.data[0];
 
       // Should only include source files, not vendor/third_party
       expect(queryResult.files).toHaveLength(2);
@@ -378,7 +378,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       const resultData = JSON.parse(
         (result as CallToolResult).content[0]!.text
       );
-      const queryResult = resultData.results[0];
+      const queryResult = resultData.data[0];
 
       // Should only include source files, not build output
       expect(queryResult.files).toHaveLength(2);
@@ -475,17 +475,17 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       );
 
       // Should have both query results
-      expect(resultData.results).toHaveLength(2);
+      expect(resultData.data).toHaveLength(2);
 
       // First query should filter out .log file
-      const query1Result = resultData.results.find(
+      const query1Result = resultData.data.find(
         (r: { queryId: string }) => r.queryId === 'query1'
       );
       expect(query1Result.files).toHaveLength(1);
       expect(query1Result.files[0].path).toBe('src/component.js');
 
       // Second query should include both files (.env is now allowed for context)
-      const query2Result = resultData.results.find(
+      const query2Result = resultData.data.find(
         (r: { queryId: string }) => r.queryId === 'query2'
       );
       expect(query2Result.files).toHaveLength(2);

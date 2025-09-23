@@ -260,9 +260,9 @@ export function createBulkResponse<
     return result;
   });
 
-  // Build response object with consistent format: {results: [], hints: [], meta: []}
+  // Build response object with ToolResponse format: {data: [], hints: [], meta: {}}
   const responseData: Record<string, unknown> = {
-    results: processedResults,
+    data: processedResults,
     hints,
   };
 

@@ -231,11 +231,11 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { results: [], meta: { errors: [] } };
+          : { data: [], meta: { errors: [] } };
       // The results exclude metadata (since verbose=false by default)
-      expect(responseData.results.length).toBe(2);
-      expect(responseData.results[0]).not.toHaveProperty('metadata');
-      expect(responseData.results[0]?.data).toEqual(processedResults[0]?.data);
+      expect(responseData.data.length).toBe(2);
+      expect(responseData.data[0]).not.toHaveProperty('metadata');
+      expect(responseData.data[0]?.data).toEqual(processedResults[0]?.data);
       // This test has no errors, so no need to check meta.errors
     });
 
@@ -279,7 +279,7 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { results: [], meta: { errors: [] } };
+          : { data: [], meta: { errors: [] } };
       expect(responseData.meta.errors).toEqual(errors);
     });
 
@@ -316,8 +316,8 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { results: [], meta: { errors: [] } };
-      expect(responseData.results).toEqual([]);
+          : { data: [], meta: { errors: [] } };
+      expect(responseData.data).toEqual([]);
     });
 
     it('should handle config options', () => {

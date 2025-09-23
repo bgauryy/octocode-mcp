@@ -3,10 +3,7 @@ import {
   GitHubCommitSearchItem,
   OptimizedCommitSearchResult,
 } from './github-openapi';
-import {
-  GitHubCommitSearchResult,
-  GitHubCommitSearchError,
-} from '../scheme/github_search_commits';
+import { CommitSearchResult } from '../scheme/github_search_commits.js';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -25,7 +22,7 @@ export async function searchGitHubCommitsAPI(
   params: GitHubCommitSearchParams,
   authInfo?: AuthInfo,
   userContext?: UserContext
-): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
+): Promise<CommitSearchResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-commits-api',
@@ -58,12 +55,74 @@ export async function searchGitHubCommitsAPI(
     // Extract the actual error data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubCommitSearchError;
+    return {
+      commits: [],
+      total_count: 0,
+      error: parsedData.data.error,
+      hints: parsedData.data.hints,
+      metadata: { error: parsedData.data.error },
+    };
   } else {
     // Extract the actual success data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubCommitSearchResult;
+    const apiResult = parsedData.data as {
+      commits?: Array<{
+        sha: string;
+        commit: {
+          message: string;
+          author: { name: string; email: string; date: string };
+          committer: { name: string; email: string; date: string };
+        };
+        author?: { login: string };
+        committer?: { login: string };
+        url: string;
+        html_url: string;
+        repository?: { full_name: string };
+        files?: Array<{
+          filename: string;
+          status: string;
+          additions: number;
+          deletions: number;
+          changes: number;
+          patch?: string;
+        }>;
+        stats?: {
+          total: number;
+          additions: number;
+          deletions: number;
+        };
+      }>;
+      total_count?: number;
+      incomplete_results?: boolean;
+    };
+    return {
+      commits:
+        apiResult.commits?.map(commit => ({
+          sha: commit.sha,
+          message: commit.commit.message,
+          author: {
+            name: commit.commit.author.name,
+            email: commit.commit.author.email,
+            date: commit.commit.author.date,
+            login: commit.author?.login,
+          },
+          committer: {
+            name: commit.commit.committer.name,
+            email: commit.commit.committer.email,
+            date: commit.commit.committer.date,
+            login: commit.committer?.login,
+          },
+          url: commit.url,
+          html_url: commit.html_url,
+          repository: commit.repository?.full_name,
+          files: commit.files,
+          stats: commit.stats,
+        })) || [],
+      total_count: apiResult.total_count || 0,
+      incomplete_results: apiResult.incomplete_results,
+      metadata: {},
+    };
   }
 }
 
@@ -73,7 +132,7 @@ export async function searchGitHubCommitsAPI(
 async function searchGitHubCommitsAPIInternal(
   params: GitHubCommitSearchParams,
   authInfo?: AuthInfo
-): Promise<GitHubCommitSearchResult | GitHubCommitSearchError> {
+): Promise<CommitSearchResult> {
   try {
     const octokit = await getOctokit(authInfo);
 
@@ -82,11 +141,13 @@ async function searchGitHubCommitsAPIInternal(
 
     if (!searchQuery) {
       return {
+        commits: [],
+        total_count: 0,
         error: 'No valid search parameters provided',
-        status: 400,
         hints: [
           'Provide search query or filters like author, committer, hash, or date',
         ],
+        metadata: { error: 'No valid search parameters provided' },
       };
     }
 
@@ -168,56 +229,32 @@ async function searchGitHubCommitsAPIInternal(
       params
     );
 
-    // Transform optimized commits back to expected GitHub format
+    // Transform optimized commits to CommitInfo format
     const formattedCommits = optimizedResult.commits.map(commit => ({
       sha: commit.sha,
-      node_id: `MDQ6Q29tbWl0${commit.sha}`,
+      message: commit.message,
+      author: {
+        name: commit.author,
+        email: '',
+        date: commit.date,
+        login: undefined,
+      },
+      committer: {
+        name: commit.author,
+        email: '',
+        date: commit.date,
+        login: undefined,
+      },
       url: commit.url,
       html_url: commit.url,
-      commit: {
-        message: commit.message,
-        author: {
-          name: commit.author,
-          email: '',
-          date: commit.date,
-        },
-        committer: {
-          name: commit.author,
-          email: '',
-          date: commit.date,
-        },
-        tree: {
-          sha: commit.sha,
-          url: commit.url,
-        },
-      },
-      author: undefined,
-      committer: undefined,
-      parents: [],
-      repository: commit.repository
-        ? {
-            id: 0,
-            name: commit.repository.split('/').pop() || '',
-            full_name: commit.repository,
-            owner: {
-              login: commit.repository.split('/')[0] || '',
-              id: 0,
-            },
-            private: false,
-            html_url: `https://github.com/${commit.repository}`,
-          }
-        : undefined,
-      score: 1,
+      repository: commit.repository,
       files: commit.diff?.files?.map(file => ({
-        ...file,
-        status: file.status as
-          | 'added'
-          | 'removed'
-          | 'modified'
-          | 'renamed'
-          | 'copied'
-          | 'changed'
-          | 'unchanged',
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        changes: file.changes,
+        patch: file.patch,
       })),
       stats: commit.diff
         ? {
@@ -229,19 +266,19 @@ async function searchGitHubCommitsAPIInternal(
     }));
 
     return {
+      commits: formattedCommits,
       total_count: totalCount,
       incomplete_results: totalCount > allCommits.length,
-      commits: formattedCommits,
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     return {
+      commits: [],
+      total_count: 0,
       error: `Commit search failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [`Verify authentication and search parameters`],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }

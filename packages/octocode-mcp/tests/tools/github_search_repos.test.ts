@@ -251,17 +251,15 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
-      // With the new bulk search implementation, response.results is an array containing results from all queries
-      expect(response.results).toBeDefined();
-      expect(response.results.length).toBeGreaterThan(0);
+      // With the new bulk search implementation, response.data is an array containing results from all queries
+      expect(response.data).toBeDefined();
+      expect(response.data.length).toBeGreaterThan(0);
 
       // Find the result with repositories
-      const queryResult = response.results.find(
-        (r: Record<string, unknown>) => {
-          const repositories = r.repositories;
-          return Array.isArray(repositories) && repositories.length > 0;
-        }
-      );
+      const queryResult = response.data.find((r: Record<string, unknown>) => {
+        const repositories = r.repositories;
+        return Array.isArray(repositories) && repositories.length > 0;
+      });
       expect(queryResult).toBeDefined();
 
       const repo = (
@@ -338,8 +336,8 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may have no repositories
-      expect(response.results.length).toBeGreaterThan(0);
-      const queryResult = response.results[0];
+      expect(response.data.length).toBeGreaterThan(0);
+      const queryResult = response.data[0];
       expect(queryResult.repositories || []).toHaveLength(0);
       expect(response.hints.length).toBeGreaterThan(0);
     });
@@ -370,8 +368,8 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk format, we expect at least one query result, but it may be an error
-      expect(response.results.length).toBeGreaterThan(0);
-      const queryResult = response.results[0];
+      expect(response.data.length).toBeGreaterThan(0);
+      const queryResult = response.data[0];
       // The result should be an error or have no repositories
       if (!queryResult.error) {
         expect(queryResult.repositories || []).toHaveLength(0);
@@ -433,11 +431,11 @@ describe('GitHub Search Repositories Tool', () => {
       expect(result.isError).toBe(false);
       const response = JSON.parse(result.content[0]?.text as string);
       // With bulk processing, expect 2 query results
-      expect(response.results.length).toBeGreaterThanOrEqual(2);
+      expect(response.data.length).toBeGreaterThanOrEqual(2);
       expect(response.hints.length).toBeGreaterThan(0);
 
       // Look for specific repositories from our mocks in the query results
-      const allRepos = response.results.flatMap(
+      const allRepos = response.data.flatMap(
         (queryResult: Record<string, unknown>) => queryResult.repositories || []
       );
       const repo1 = allRepos.find(
@@ -479,7 +477,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results.length).toBeGreaterThan(0); // Successful query results
+      expect(data.data.length).toBeGreaterThan(0); // Successful query results
       expect(data.hints.length).toBeGreaterThan(0);
     });
 
@@ -505,7 +503,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results.length).toBeGreaterThan(2); // Repositories from 3 queries
+      expect(data.data.length).toBeGreaterThan(2); // Repositories from 3 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
     });
 
@@ -545,7 +543,7 @@ describe('GitHub Search Repositories Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results.length).toBeGreaterThan(4); // Repositories from 5 queries
+      expect(data.data.length).toBeGreaterThan(4); // Repositories from 5 queries
       expect(data.hints.length).toBeGreaterThan(0); // Strategic hints from new system
       // The implementation might use API calls instead of CLI commands
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(5);
@@ -579,8 +577,8 @@ describe('GitHub Search Repositories Tool', () => {
       expect(data.meta.failedOperations).toBeDefined();
 
       // Should include metadata in query results when verbose is true
-      expect(data.results.length).toBeGreaterThan(0);
-      const queryResult = data.results[0];
+      expect(data.data.length).toBeGreaterThan(0);
+      const queryResult = data.data[0];
       expect(queryResult.metadata).toBeDefined(); // Should have metadata when verbose
     });
   });
@@ -619,11 +617,11 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0]?.text as string);
 
       // Should have flattened structure
-      expect(data.results[0]).toHaveProperty('repositories');
-      expect(data.results[0]).toHaveProperty('total_count');
-      expect(data.results[0]).not.toHaveProperty('data'); // No nested data field
-      expect(data.results[0].repositories).toHaveLength(1);
-      expect(data.results[0].total_count).toBe(2);
+      expect(data.data[0]).toHaveProperty('repositories');
+      expect(data.data[0]).toHaveProperty('total_count');
+      expect(data.data[0]).not.toHaveProperty('data'); // No nested data field
+      expect(data.data[0].repositories).toHaveLength(1);
+      expect(data.data[0].total_count).toBe(2);
     });
 
     it('should include query field when no results are found', async () => {
@@ -645,7 +643,7 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0]?.text as string);
 
       // Should include query field for no results case
-      const noResultQuery = data.results.find(
+      const noResultQuery = data.data.find(
         (r: Record<string, unknown>) =>
           Array.isArray(r.repositories) && r.repositories.length === 0
       );
@@ -689,8 +687,8 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0]?.text as string);
 
       // Should include query field when verbose is true
-      expect(data.results[0].query).toBeDefined();
-      expect(data.results[0].query.queryTerms).toEqual(['test']);
+      expect(data.data[0].query).toBeDefined();
+      expect(data.data[0].query.queryTerms).toEqual(['test']);
     });
 
     it('should handle API errors gracefully', async () => {
@@ -711,7 +709,7 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0]?.text as string);
 
       // Should have error in results but not fail overall
-      const errorResult = data.results.find(
+      const errorResult = data.data.find(
         (r: Record<string, unknown>) => r.error
       );
       expect(errorResult).toBeDefined();
@@ -775,7 +773,7 @@ describe('GitHub Search Repositories Tool', () => {
       const data = JSON.parse(result.content[0]?.text as string);
 
       // Should process both queries
-      expect(data.results.length).toBe(2);
+      expect(data.data.length).toBe(2);
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(2);
 
       // Should have aggregated hints

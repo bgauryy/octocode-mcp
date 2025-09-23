@@ -2,9 +2,8 @@ import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './github-openapi';
 import {
   FileContentQuery,
-  GitHubFileContentResponse,
-  GitHubFileContentError,
-} from '../scheme/github_fetch_content';
+  ContentResult,
+} from '../scheme/github_fetch_content.js';
 import {
   GitHubViewRepoStructureQuery,
   GitHubApiFileItem,
@@ -30,7 +29,7 @@ export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
   sessionId?: string
-): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
+): Promise<GitHubAPIResponse<ContentResult>> {
   // Generate cache key based on request parameters
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
@@ -76,13 +75,13 @@ export async function fetchGitHubFileContentAPI(
     // Extract the actual error data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<GitHubFileContentResponse>;
+    return parsedData.data as GitHubAPIResponse<ContentResult>;
   } else {
     // Extract the actual success data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
     return {
-      data: parsedData.data as GitHubFileContentResponse,
+      data: parsedData.data as ContentResult,
       status: 200,
     };
   }
@@ -95,7 +94,7 @@ export async function fetchGitHubFileContentAPI(
 async function fetchGitHubFileContentAPIInternal(
   params: FileContentQuery,
   authInfo?: AuthInfo
-): Promise<GitHubAPIResponse<GitHubFileContentResponse>> {
+): Promise<GitHubAPIResponse<ContentResult>> {
   try {
     const octokit = await getOctokit(authInfo);
     const { owner, repo, filePath, branch } = params;
@@ -200,10 +199,10 @@ async function fetchGitHubFileContentAPIInternal(
 
       // Wrap the result in GitHubAPISuccess if it's not an error
       if ('error' in result) {
-        // Ensure the error has the required type property
         return {
-          ...result,
-          type: result.type || ('unknown' as const),
+          error: result.error || 'Unknown error',
+          status: 500,
+          type: 'unknown' as const,
         };
       } else {
         return {
@@ -240,7 +239,7 @@ async function processFileContentAPI(
   endLine?: number,
   matchStringContextLines: number = 5,
   matchString?: string
-): Promise<GitHubFileContentResponse | GitHubFileContentError> {
+): Promise<ContentResult> {
   // Sanitize the decoded content for security
   const sanitizationResult = ContentSanitizer.sanitizeContent(decodedContent);
   decodedContent = sanitizationResult.content;
@@ -407,7 +406,7 @@ async function processFileContentAPI(
     ...(securityWarnings.length > 0 && {
       securityWarnings,
     }),
-  } as GitHubFileContentResponse;
+  } as ContentResult;
 }
 
 /**

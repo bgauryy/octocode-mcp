@@ -7,8 +7,8 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubCommitSearchQuery,
   GitHubCommitSearchBulkQuerySchema,
-  GitHubCommitSearchResult,
-} from '../scheme/github_search_commits';
+  CommitSearchResult,
+} from '../scheme/github_search_commits.js';
 import { GitHubCommitSearchParams } from '../github/github-openapi';
 import { generateHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
@@ -183,7 +183,7 @@ async function searchSingleCommit(
   args: GitHubCommitSearchQuery,
   authInfo?: AuthInfo,
   userContext?: import('../security/withSecurityValidation').UserContext
-): Promise<GitHubCommitSearchResult | { error: string; hints?: string[] }> {
+): Promise<CommitSearchResult> {
   // Validate that at least one search parameter is provided
   const hasSearchTerms =
     (Array.isArray(args.queryTerms) && args.queryTerms.length > 0) ||
@@ -204,22 +204,28 @@ async function searchSingleCommit(
 
   if (!hasSearchTerms && !hasFilters) {
     return {
+      commits: [],
+      total_count: 0,
       error: 'At least one search parameter or filter is required',
       hints: [
         'Provide search terms (queryTerms) or filters (author, hash, dates)',
         'Use queryTerms for commit message search',
         'Use author, hash, or date filters for targeted searches',
       ],
+      metadata: {},
     };
   }
 
   if (args.getChangesContent && (!args.owner || !args.repo)) {
     return {
+      commits: [],
+      total_count: 0,
       error: 'Both owner and repo are required when getChangesContent is true',
       hints: [
         'Specify both owner and repo parameters when requesting commit changes',
         'Example: { owner: "facebook", repo: "react", getChangesContent: true }',
       ],
+      metadata: {},
     };
   }
 
@@ -233,8 +239,11 @@ async function searchSingleCommit(
     // Check if result is an error
     if ('error' in result) {
       return {
+        commits: [],
+        total_count: 0,
         error: result.error,
         hints: result.hints || [],
+        metadata: {},
       };
     }
 
@@ -244,8 +253,11 @@ async function searchSingleCommit(
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error occurred';
     return {
+      commits: [],
+      total_count: 0,
       error: `Failed to search commits: ${errorMessage}`,
       hints: ['Check search parameters and try again'],
+      metadata: {},
     };
   }
 }

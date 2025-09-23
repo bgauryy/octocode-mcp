@@ -7,6 +7,8 @@ import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
+  GitHubSearchCodeInput,
+  SearchResult,
 } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/index.js';
 import {
@@ -17,7 +19,6 @@ import {
 } from '../utils/bulkOperations.js';
 import { generateHints, generateBulkHints, consolidateHints } from './hints.js';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
-import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 import { DESCRIPTIONS } from './descriptions.js';
@@ -39,17 +40,16 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     },
     withSecurityValidation(
       async (
-        args: {
-          queries: GitHubCodeSearchQuery[];
-          verbose?: boolean;
-        },
+        args: Record<string, unknown>,
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
+        // Type assertion after validation
+        const typedArgs = args as unknown as GitHubSearchCodeInput;
         if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
+          !typedArgs.queries ||
+          !Array.isArray(typedArgs.queries) ||
+          typedArgs.queries.length === 0
         ) {
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
@@ -65,7 +65,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           });
         }
 
-        if (args.queries.length > 5) {
+        if (typedArgs.queries.length > 5) {
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
@@ -82,10 +82,10 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           });
         }
         // Check if any query has verbose=true
-        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
+        const hasVerboseQuery = typedArgs.queries.some(q => q.verbose === true);
 
         return searchMultipleGitHubCode(
-          args.queries,
+          typedArgs.queries,
           hasVerboseQuery,
           authInfo,
           userContext
@@ -149,7 +149,7 @@ async function searchMultipleGitHubCode(
         // Check if there are no results after filtering
         const hasNoResults = filteredItems.length === 0;
 
-        const result: ProcessedCodeSearchResult = {
+        const result: SearchResult = {
           queryId: query.id,
           reasoning: query.reasoning,
           repository,
@@ -165,7 +165,7 @@ async function searchMultipleGitHubCode(
             })
           ),
           totalCount: filteredItems.length,
-          metadata: {}, // Always include metadata for bulk operations compatibility
+          metadata: {},
         };
 
         // Add hints for no results case
@@ -251,8 +251,8 @@ async function searchMultipleGitHubCode(
     return response;
   }
   const responseData = JSON.parse(responseText);
-  if (responseData.results) {
-    responseData.results = responseData.results.map(
+  if (responseData.data) {
+    responseData.data = responseData.data.map(
       (result: Record<string, unknown>, index: number) => {
         const hasError = !!result.error;
         const hasNoResults =
@@ -317,9 +317,9 @@ async function searchMultipleGitHubCode(
       8
     );
 
-    // Create new response with enhanced hints using consistent bulk format
+    // Create new response with enhanced hints using consistent ToolResponse format
     const newResponseData: Record<string, unknown> = {
-      results: responseData.results, // Use 'results' field from bulk response
+      data: responseData.data, // Use 'data' field from ToolResponse format
       hints: combinedHints,
     };
 

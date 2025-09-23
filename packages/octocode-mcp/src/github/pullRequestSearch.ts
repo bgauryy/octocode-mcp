@@ -3,10 +3,7 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from './github-openapi';
-import {
-  GitHubPullRequestSearchResult,
-  GitHubPullRequestSearchError,
-} from '../scheme/github_search_pull_requests';
+import { PullRequestSearchResult } from '../scheme/github_search_pull_requests.js';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
@@ -31,7 +28,7 @@ export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   userContext?: UserContext
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-api-prs',
@@ -68,12 +65,129 @@ export async function searchGitHubPullRequestsAPI(
     // Extract the actual error data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchError;
+    return {
+      pull_requests: [],
+      total_count: 0,
+      error: parsedData.data.error,
+      hints: parsedData.data.hints,
+      metadata: { error: parsedData.data.error },
+    };
   } else {
     // Extract the actual success data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchResult;
+    const apiResult = parsedData.data as {
+      pull_requests?: Array<{
+        id: number;
+        number: number;
+        title: string;
+        url: string;
+        html_url: string;
+        state: 'open' | 'closed';
+        draft: boolean;
+        merged: boolean;
+        created_at: string;
+        updated_at: string;
+        closed_at?: string;
+        merged_at?: string;
+        user: {
+          login: string;
+          id: number;
+          avatar_url: string;
+          html_url: string;
+        };
+        assignees?: Array<{
+          login: string;
+          id: number;
+          avatar_url: string;
+          html_url: string;
+        }>;
+        labels?: Array<{
+          id: number;
+          name: string;
+          color: string;
+          description?: string;
+        }>;
+        milestone?: {
+          id: number;
+          title: string;
+          description?: string;
+          state: 'open' | 'closed';
+          created_at: string;
+          updated_at: string;
+          due_on?: string;
+        };
+        head: { ref: string; sha: string; repo?: { full_name: string } };
+        base: { ref: string; sha: string; repo: { full_name: string } };
+        body?: string;
+        comments?: number;
+        review_comments?: number;
+        commits?: number;
+        additions?: number;
+        deletions?: number;
+        changed_files?: number;
+        comment_details?: Array<{
+          id: number;
+          user: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        }>;
+        file_changes?: Array<{
+          filename: string;
+          status: string;
+          additions: number;
+          deletions: number;
+          changes: number;
+          patch?: string;
+        }>;
+      }>;
+      total_count?: number;
+      incomplete_results?: boolean;
+    };
+    return {
+      pull_requests:
+        apiResult.pull_requests?.map(pr => ({
+          id: pr.id,
+          number: pr.number,
+          title: pr.title,
+          url: pr.url,
+          html_url: pr.html_url,
+          state: pr.state,
+          draft: pr.draft,
+          merged: pr.merged,
+          created_at: pr.created_at,
+          updated_at: pr.updated_at,
+          closed_at: pr.closed_at,
+          merged_at: pr.merged_at,
+          author: pr.user,
+          assignees: pr.assignees,
+          labels: pr.labels,
+          milestone: pr.milestone,
+          head: {
+            ref: pr.head.ref,
+            sha: pr.head.sha,
+            repo: pr.head.repo?.full_name,
+          },
+          base: {
+            ref: pr.base.ref,
+            sha: pr.base.sha,
+            repo: pr.base.repo.full_name,
+          },
+          body: pr.body,
+          comments: pr.comments,
+          review_comments: pr.review_comments,
+          commits: pr.commits,
+          additions: pr.additions,
+          deletions: pr.deletions,
+          changed_files: pr.changed_files,
+          comment_details: pr.comment_details,
+          file_changes: pr.file_changes,
+        })) || [],
+      total_count: apiResult.total_count || 0,
+      incomplete_results: apiResult.incomplete_results,
+      metadata: {},
+    };
   }
 }
 
@@ -84,7 +198,7 @@ async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   _sessionId?: string
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   try {
     // If prNumber is provided with owner/repo, fetch specific PR by number
     if (
@@ -118,9 +232,11 @@ async function searchGitHubPullRequestsAPIInternal(
 
     if (!searchQuery) {
       return {
+        pull_requests: [],
+        total_count: 0,
         error: 'No valid search parameters provided',
-        status: 400,
         hints: ['Provide search query or filters like owner/repo'],
+        metadata: { error: 'No valid search parameters provided' },
       };
     }
 
@@ -159,7 +275,7 @@ async function searchGitHubPullRequestsAPIInternal(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at,
       merged_at: pr.merged_at,
-      user: {
+      author: {
         login: pr.author,
         id: 0,
         avatar_url: '',
@@ -168,22 +284,12 @@ async function searchGitHubPullRequestsAPIInternal(
       head: {
         ref: pr.head || '',
         sha: pr.head_sha || '',
+        repo: pr.repository,
       },
       base: {
         ref: pr.base || '',
         sha: pr.base_sha || '',
-        repo: {
-          id: 0,
-          name: pr.repository.split('/')[1] || '',
-          full_name: pr.repository,
-          owner: {
-            login: pr.repository.split('/')[0] || '',
-            id: 0,
-          },
-          private: false,
-          html_url: `https://github.com/${pr.repository}`,
-          default_branch: 'main',
-        },
+        repo: pr.repository,
       },
       body: pr.body,
       comments: pr.comments?.length || 0,
@@ -197,23 +303,32 @@ async function searchGitHubPullRequestsAPIInternal(
         0,
       changed_files: pr.file_changes?.total_count || 0,
       // Include file_changes if it was requested and fetched
-      ...(pr.file_changes && { file_changes: pr.file_changes }),
+      ...(pr.file_changes && {
+        file_changes: pr.file_changes.files?.map(file => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
+      }),
     }));
 
     return {
+      pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       incomplete_results: searchResult.data.incomplete_results,
-      pull_requests: formattedPRs,
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     return {
+      pull_requests: [],
+      total_count: 0,
       error: `Pull request search failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [`Verify authentication and search parameters`],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }
@@ -224,7 +339,7 @@ async function searchGitHubPullRequestsAPIInternal(
 async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   try {
     const owner = params.owner as string;
     const repo = params.repo as string;
@@ -267,7 +382,7 @@ async function searchPullRequestsWithREST(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at,
       merged_at: pr.merged_at,
-      user: {
+      author: {
         login: pr.author,
         id: 0,
         avatar_url: '',
@@ -276,22 +391,12 @@ async function searchPullRequestsWithREST(
       head: {
         ref: pr.head || '',
         sha: pr.head_sha || '',
+        repo: pr.repository,
       },
       base: {
         ref: pr.base || '',
         sha: pr.base_sha || '',
-        repo: {
-          id: 0,
-          name: pr.repository.split('/')[1] || '',
-          full_name: pr.repository,
-          owner: {
-            login: pr.repository.split('/')[0] || '',
-            id: 0,
-          },
-          private: false,
-          html_url: `https://github.com/${pr.repository}`,
-          default_branch: 'main',
-        },
+        repo: pr.repository,
       },
       body: pr.body,
       comments: pr.comments?.length || 0,
@@ -305,23 +410,32 @@ async function searchPullRequestsWithREST(
         0,
       changed_files: pr.file_changes?.total_count || 0,
       // Include file_changes if it was requested and fetched
-      ...(pr.file_changes && { file_changes: pr.file_changes }),
+      ...(pr.file_changes && {
+        file_changes: pr.file_changes.files?.map(file => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
+      }),
     }));
 
     return {
+      pull_requests: formattedPRs,
       total_count: formattedPRs.length,
       incomplete_results: false,
-      pull_requests: formattedPRs,
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     return {
+      pull_requests: [],
+      total_count: 0,
       error: `Pull request list failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [`Verify repository access and authentication`],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }
@@ -616,7 +730,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   sessionId?: string
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-api-prs',
@@ -658,12 +772,129 @@ export async function fetchGitHubPullRequestByNumberAPI(
     // Extract the actual error data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchError;
+    return {
+      pull_requests: [],
+      total_count: 0,
+      error: parsedData.data.error,
+      hints: parsedData.data.hints,
+      metadata: { error: parsedData.data.error },
+    };
   } else {
     // Extract the actual success data from the CallToolResult
     const jsonText = (cachedResult.content[0] as { text: string }).text;
     const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchResult;
+    const apiResult = parsedData.data as {
+      pull_requests?: Array<{
+        id: number;
+        number: number;
+        title: string;
+        url: string;
+        html_url: string;
+        state: 'open' | 'closed';
+        draft: boolean;
+        merged: boolean;
+        created_at: string;
+        updated_at: string;
+        closed_at?: string;
+        merged_at?: string;
+        user: {
+          login: string;
+          id: number;
+          avatar_url: string;
+          html_url: string;
+        };
+        assignees?: Array<{
+          login: string;
+          id: number;
+          avatar_url: string;
+          html_url: string;
+        }>;
+        labels?: Array<{
+          id: number;
+          name: string;
+          color: string;
+          description?: string;
+        }>;
+        milestone?: {
+          id: number;
+          title: string;
+          description?: string;
+          state: 'open' | 'closed';
+          created_at: string;
+          updated_at: string;
+          due_on?: string;
+        };
+        head: { ref: string; sha: string; repo?: { full_name: string } };
+        base: { ref: string; sha: string; repo: { full_name: string } };
+        body?: string;
+        comments?: number;
+        review_comments?: number;
+        commits?: number;
+        additions?: number;
+        deletions?: number;
+        changed_files?: number;
+        comment_details?: Array<{
+          id: number;
+          user: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        }>;
+        file_changes?: Array<{
+          filename: string;
+          status: string;
+          additions: number;
+          deletions: number;
+          changes: number;
+          patch?: string;
+        }>;
+      }>;
+      total_count?: number;
+      incomplete_results?: boolean;
+    };
+    return {
+      pull_requests:
+        apiResult.pull_requests?.map(pr => ({
+          id: pr.id,
+          number: pr.number,
+          title: pr.title,
+          url: pr.url,
+          html_url: pr.html_url,
+          state: pr.state,
+          draft: pr.draft,
+          merged: pr.merged,
+          created_at: pr.created_at,
+          updated_at: pr.updated_at,
+          closed_at: pr.closed_at,
+          merged_at: pr.merged_at,
+          author: pr.user,
+          assignees: pr.assignees,
+          labels: pr.labels,
+          milestone: pr.milestone,
+          head: {
+            ref: pr.head.ref,
+            sha: pr.head.sha,
+            repo: pr.head.repo?.full_name,
+          },
+          base: {
+            ref: pr.base.ref,
+            sha: pr.base.sha,
+            repo: pr.base.repo.full_name,
+          },
+          body: pr.body,
+          comments: pr.comments,
+          review_comments: pr.review_comments,
+          commits: pr.commits,
+          additions: pr.additions,
+          deletions: pr.deletions,
+          changed_files: pr.changed_files,
+          comment_details: pr.comment_details,
+          file_changes: pr.file_changes,
+        })) || [],
+      total_count: apiResult.total_count || 0,
+      incomplete_results: apiResult.incomplete_results,
+      metadata: {},
+    };
   }
 }
 
@@ -673,7 +904,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
 async function fetchGitHubPullRequestByNumberAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   try {
     const octokit = await getOctokit(authInfo);
 
@@ -709,7 +940,7 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       updated_at: transformedPR.updated_at,
       closed_at: transformedPR.closed_at,
       merged_at: transformedPR.merged_at,
-      user: {
+      author: {
         login: transformedPR.author,
         id: 0,
         avatar_url: '',
@@ -718,22 +949,12 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       head: {
         ref: transformedPR.head || '',
         sha: transformedPR.head_sha || '',
+        repo: transformedPR.repository,
       },
       base: {
         ref: transformedPR.base || '',
         sha: transformedPR.base_sha || '',
-        repo: {
-          id: 0,
-          name: transformedPR.repository.split('/')[1] || '',
-          full_name: transformedPR.repository,
-          owner: {
-            login: transformedPR.repository.split('/')[0] || '',
-            id: 0,
-          },
-          private: false,
-          html_url: `https://github.com/${transformedPR.repository}`,
-          default_branch: 'main',
-        },
+        repo: transformedPR.repository,
       },
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
@@ -752,14 +973,22 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       changed_files: transformedPR.file_changes?.total_count || 0,
       // Include file_changes if it was requested and fetched
       ...(transformedPR.file_changes && {
-        file_changes: transformedPR.file_changes,
+        file_changes: transformedPR.file_changes.files?.map(file => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
       }),
     };
 
     return {
+      pull_requests: [formattedPR],
       total_count: 1,
       incomplete_results: false,
-      pull_requests: [formattedPR],
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -768,16 +997,15 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     const prNumber = params.prNumber!;
 
     return {
+      pull_requests: [],
+      total_count: 0,
       error: `Failed to fetch pull request #${prNumber}: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [
         `Verify that pull request #${prNumber} exists in ${owner}/${repo}`,
         'Check if you have access to this repository',
         'Ensure the PR number is correct',
       ],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }

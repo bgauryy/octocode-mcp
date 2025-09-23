@@ -555,7 +555,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       expect(result.status).toBe(200);
       if ('data' in result) {
         const totalLines = reactLikeContent.split('\n').length;
-        const contentLines = result.data.content.split('\n');
+        const contentLines = result.data.content?.split('\n') || [];
 
         // The bug: it returns ALL lines instead of just context
         // This test should FAIL initially, proving the bug exists

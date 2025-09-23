@@ -1,6 +1,8 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from './security/mask';
 import { ContentSanitizer } from './security/contentSanitizer';
+import { isBetaEnabled } from './serverConfig';
+import { jsonToYamlString } from 'octocode-utils';
 
 /**
  * Standardized response format for all tool responses
@@ -9,16 +11,13 @@ export interface ToolResponse {
   /** Primary data payload (GitHub API responses, packages, file contents, etc.) */
   data: unknown;
 
-  /** Whether the operation failed (excluded from JSON response) */
-  isError: boolean;
-
-  /** Helpful hints for AI assistants (recovery tips, usage guidance) */
-  hints: string[];
-
   /** Additional context (total results, error details, research goals) */
   meta: {
     [key: string]: unknown;
   };
+
+  /** Helpful hints for AI assistants (recovery tips, usage guidance) */
+  hints: string[];
 }
 
 /**
@@ -61,31 +60,63 @@ export function createResult(options: {
 
   const response: ToolResponse = {
     data: finalData || null,
-    isError: finalIsError,
-    hints,
     meta: finalMeta,
-  };
-
-  // Return response without isError field in the JSON structure
-  const responseForJson = {
-    data: response.data,
-    meta: response.meta,
-    hints: response.hints,
+    hints,
   };
 
   return {
-    content: [{ type: 'text', text: wrapResponse(responseForJson) }],
+    content: [{ type: 'text', text: createResponseFormat(response) }],
     isError: finalIsError,
   };
 }
 
 /**
- * Wraps tool data with a system prompt and escapes/sanitizes untrusted data
+ * Creates the final response format for tool responses with security processing.
+ *
+ * This function performs comprehensive processing on structured tool responses:
+ * 1. Optionally converts to YAML format if beta features are enabled
+ * 2. Serializes structured data to JSON string format
+ * 3. Sanitizes content to remove malicious patterns and prompt injections
+ * 4. Masks sensitive information (API keys, tokens, credentials)
+ *
+ * @param responseData - The structured tool response data
+ * @returns Sanitized and formatted string ready for safe transmission
+ *
+ * @example
+ * ```typescript
+ * const responseData: ToolResponse = {
+ *   data: { repos: [...] },
+ *   meta: { total: 42 },
+ *   hints: ["Try narrowing your search"]
+ * };
+ * const formatted = createResponseFormat(responseData);
+ * ```
+ *
+ * @security
+ * - Removes potential prompt injection attacks
+ * - Masks sensitive credentials and tokens
+ * - Handles unserializable data gracefully
+ * - Preserves structured data format for AI parsing
  */
-function wrapResponse(data: unknown): string {
+function createResponseFormat(responseData: ToolResponse): string {
   let text: string;
+  let processedData: ToolResponse | string = responseData;
+
+  // Convert to YAML if beta features are enabled (with safe fallback)
   try {
-    text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    if (isBetaEnabled()) {
+      processedData = jsonToYamlString(responseData);
+    }
+  } catch {
+    // If serverConfig is not initialized, just use JSON format
+    // This ensures tests and other scenarios work without full server initialization
+  }
+
+  try {
+    text =
+      typeof processedData === 'string'
+        ? processedData
+        : JSON.stringify(processedData, null, 2);
   } catch (e) {
     text = '[Unserializable data]';
   }
@@ -94,27 +125,7 @@ function wrapResponse(data: unknown): string {
   const sanitizationResult = ContentSanitizer.sanitizeContent(text);
 
   // Then mask sensitive data
-  const maskedText = maskSensitiveData(sanitizationResult.content);
-
-  // Add security warnings if any issues were detected
-  // Only add warnings for non-JSON responses to avoid breaking JSON parsing
-  if (sanitizationResult.warnings.length > 0) {
-    try {
-      // Test if the content is valid JSON
-      JSON.parse(maskedText);
-      // If it's valid JSON, we'll need to embed warnings differently
-      // For now, let's skip warnings for JSON responses to avoid breaking tests
-      // In production, warnings could be added to a metadata field
-    } catch {
-      // Not JSON, safe to add warnings
-      const warningText = sanitizationResult.warnings
-        .map(w => `⚠️ ${w}`)
-        .join('\n');
-      return `${maskedText}\n\n--- Security Notice ---\n${warningText}`;
-    }
-  }
-
-  return maskedText;
+  return maskSensitiveData(sanitizationResult.content);
 }
 
 /**

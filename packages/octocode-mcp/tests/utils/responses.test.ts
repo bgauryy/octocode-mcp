@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createResult,
   toDDMMYYYY,
@@ -8,6 +8,11 @@ import {
   simplifyGitHubUrl,
   optimizeTextMatch,
 } from '../../src/responses';
+
+// Mock the isBetaEnabled function
+vi.mock('../../src/serverConfig', () => ({
+  isBetaEnabled: vi.fn(() => false),
+}));
 
 describe('Response Utilities', () => {
   describe('createResult', () => {

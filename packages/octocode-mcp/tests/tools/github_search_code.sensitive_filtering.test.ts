@@ -24,7 +24,7 @@ interface CodeSearchResult {
 }
 
 interface CodeSearchResponse {
-  results: CodeSearchResult[];
+  data: CodeSearchResult[];
 }
 
 // Mock the GitHub client
@@ -132,9 +132,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include files not in .git directory
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/config.js');
       expect(filePaths).toContain('src/main.js');
       expect(filePaths).not.toContain('.git/hooks/pre-commit');
@@ -201,9 +201,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include files not in node_modules
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/utils.js');
       expect(filePaths).toContain('src/helpers/helper.js');
       expect(filePaths).not.toContain('node_modules/lodash/lodash.js');
@@ -277,9 +277,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include source files, not build artifacts
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/app.js');
       expect(filePaths).toContain('src/components/component.js');
       expect(filePaths).not.toContain('dist/bundle.js');
@@ -348,9 +348,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include source files, not cache files
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/service.py');
       expect(filePaths).toContain('src/utils.py');
       expect(filePaths).not.toContain('.cache/cached_data.py');
@@ -426,11 +426,11 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
 
       // Should only include configuration files and filter out package-lock.json
       // Note: Other lock files (yarn.lock, pnpm-lock.yaml, Cargo.lock) are not in IGNORED_FILE_NAMES
-      expect(resultData.results[0]?.files).toHaveLength(3);
+      expect(resultData.data[0]?.files).toHaveLength(3);
       expect(filePaths).toContain('package.json');
       expect(filePaths).toContain('Cargo.toml');
       expect(filePaths).toContain('pnpm-lock.yaml'); // Not filtered since not in IGNORED_FILE_NAMES
@@ -511,9 +511,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include non-sensitive configuration files
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/config.js');
       expect(filePaths).toContain('src/settings.js');
       expect(filePaths).not.toContain('secrets.json');
@@ -601,9 +601,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include source files, not binary/compiled files
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/app.js');
       expect(filePaths).toContain('src/main.py');
       expect(filePaths).not.toContain('bin/app.exe');
@@ -668,9 +668,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include source files, not minified files
-      expect(resultData.results[0]?.files).toHaveLength(2);
+      expect(resultData.data[0]?.files).toHaveLength(2);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
       expect(filePaths).toContain('src/app.js');
       expect(filePaths).toContain('src/styles.css');
       expect(filePaths).not.toContain('dist/app.min.js');
@@ -786,9 +786,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // Should only include the 3 valid source files
-      expect(resultData.results[0]?.files).toHaveLength(3);
+      expect(resultData.data[0]?.files).toHaveLength(3);
       const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+        resultData.data[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
 
       // Valid files should be included
       expect(filePaths).toContain('src/services/UserService.js');
@@ -861,12 +861,12 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
       ) as CodeSearchResponse;
 
       // All files should be filtered out
-      expect(resultData.results[0]?.files).toHaveLength(0);
-      expect(resultData.results[0]?.totalCount).toBe(0);
+      expect(resultData.data[0]?.files).toHaveLength(0);
+      expect(resultData.data[0]?.totalCount).toBe(0);
 
       // Should include hints for no results
-      expect(resultData.results[0]?.hints).toBeDefined();
-      expect(resultData.results[0]?.hints?.length).toBeGreaterThan(0);
+      expect(resultData.data[0]?.hints).toBeDefined();
+      expect(resultData.data[0]?.hints?.length).toBeGreaterThan(0);
     });
   });
 });

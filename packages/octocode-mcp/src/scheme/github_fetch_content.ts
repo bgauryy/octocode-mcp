@@ -8,6 +8,7 @@ import {
   MinifySchema,
   SanitizeSchema,
 } from './baseSchema';
+import { ToolResponse } from '../responses.js';
 
 export const FileContentQuerySchema = BaseBulkQueryItemSchema.extend({
   owner: GitHubOwnerSchema,
@@ -39,81 +40,51 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
   'File content fetch queries'
 );
 
-export interface FileContentQueryResult {
+/**
+ * Tool input - bulk file content queries
+ */
+export interface GitHubFetchContentInput {
+  queries: FileContentQuery[];
+  verbose?: boolean;
+}
+
+/**
+ * Tool output - extends standardized ToolResponse format
+ */
+export interface GitHubFetchContentOutput extends ToolResponse {
+  /** Primary data payload - array of file content results */
+  data: ContentResult[];
+
+  /** Additional context with operation counts */
+  meta: ToolResponse['meta'] & {
+    totalOperations: number;
+    successfulOperations: number;
+    failedOperations: number;
+  };
+}
+
+/**
+ * Individual file content result
+ */
+export interface ContentResult {
   queryId?: string;
   reasoning?: string;
-  originalQuery?: FileContentQuery; // Only included on error
-  error?: string; // Flattened error at top level
-  query?: FileContentQuery; // Only included when verbose=true
-
-  // Flattened GitHubFileContentResponse properties (only present on success)
   filePath?: string;
   owner?: string;
   repo?: string;
-  branch?: string; // Only included when verbose=true
   content?: string;
+  branch?: string;
   startLine?: number;
   endLine?: number;
   totalLines?: number;
   isPartial?: boolean;
-  minified?: boolean; // Only included when verbose=true
-  minificationFailed?: boolean; // Only included when verbose=true
-  minificationType?: // Only included when verbose=true
-  | 'terser'
-    | 'conservative'
-    | 'aggressive'
-    | 'json'
-    | 'general'
-    | 'markdown'
-    | 'failed'
-    | 'none';
-  securityWarnings?: string[];
-
-  // Sampling result (beta feature)
-  sampling?: {
-    codeExplanation: string;
-    filePath: string;
-    repo: string;
-    usage?: {
-      promptTokens: number;
-      completionTokens: number;
-      totalTokens: number;
-    };
-    stopReason?: string;
-  };
-}
-export interface GitHubFileContentResponse {
-  filePath: string;
-  owner: string;
-  repo: string;
-  branch: string;
-  content: string;
-  // Actual content boundaries (with context applied)
-  startLine?: number;
-  endLine?: number;
-  totalLines: number; // Always returned - total lines in the file
-  isPartial?: boolean;
   minified?: boolean;
   minificationFailed?: boolean;
-  minificationType?:
-    | 'terser'
-    | 'conservative'
-    | 'aggressive'
-    | 'json'
-    | 'general'
-    | 'markdown'
-    | 'failed'
-    | 'none';
-  // Security metadata
-  securityWarnings?: string[];
-}
-
-export interface GitHubFileContentError {
-  error: string;
-  status?: number;
+  minificationType?: string;
+  error?: string;
   hints?: string[];
-  rateLimitRemaining?: number;
-  rateLimitReset?: number;
-  scopesSuggestion?: string;
-  type?: 'http' | 'graphql' | 'network' | 'unknown';
+  query?: Record<string, unknown>; // Only when verbose or error
+  originalQuery?: Record<string, unknown>; // Only on error
+  securityWarnings?: string[];
+  sampling?: Record<string, unknown>; // Beta feature
 }

@@ -10,6 +10,7 @@ import {
   GitHubOwnerSchema,
   GitHubRepoSchema,
 } from './baseSchema';
+import { ToolResponse } from '../responses.js';
 
 export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
   queryTerms: z
@@ -37,17 +38,45 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
   'Code search queries'
 );
 
-export interface ProcessedCodeSearchResult {
+export interface GitHubSearchCodeInput {
+  queries: GitHubCodeSearchQuery[];
+  verbose?: boolean;
+}
+
+/**
+ * Tool output - extends standardized ToolResponse format
+ */
+export interface GitHubSearchCodeOutput extends ToolResponse {
+  /** Primary data payload - array of search results */
+  data: SearchResult[];
+
+  /** Additional context with operation counts */
+  meta: ToolResponse['meta'] & {
+    totalOperations: number;
+    successfulOperations: number;
+    failedOperations: number;
+  };
+}
+
+/**
+ * Individual search result
+ */
+export interface SearchResult {
   queryId?: string;
   reasoning?: string;
-  files?: Array<{
-    path: string;
-    text_matches: string[]; // Array of fragment strings only
-  }>;
-  totalCount?: number;
   repository?: string;
-  query?: Record<string, unknown>; // Include original query when verbose or no results
+  files: SearchFile[];
+  totalCount: number;
   error?: string;
   hints?: string[];
-  metadata: Record<string, unknown>; // Required for bulk operations compatibility
+  query?: Record<string, unknown>; // Only when verbose or error
+  metadata?: Record<string, unknown>; // Internal use
+}
+
+/**
+ * File match in search results
+ */
+export interface SearchFile {
+  path: string;
+  text_matches: string[];
 }
