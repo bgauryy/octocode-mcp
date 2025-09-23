@@ -55,7 +55,6 @@ graph TB
     Cache --> Memory[(In-Memory Storage)]
     
     Security --> Audit[Audit Logger]
-    Security --> RateLimit[Rate Limiter]
     Security --> Content[Content Sanitizer]
     Security --> Credentials[Credential Store]
     
@@ -290,14 +289,7 @@ Multi-layered security architecture with comprehensive protection:
 - **User Context Extraction**: Enterprise mode support with organization tracking
 - **Input Sanitization**: Parameter validation and cleaning
 - **Audit Integration**: Comprehensive event logging
-- **Rate Limit Integration**: Per-user API request tracking
 
-#### Rate Limiter
-- **Multi-tier Limits**: API requests (100/hour), auth attempts (10/hour), token requests (5/hour)
-- **Sliding Windows**: Hour-based time windows with precise tracking
-- **User Isolation**: Per-user rate limit tracking and enforcement
-- **Dynamic Configuration**: Runtime configuration updates
-- **Cleanup Management**: Automatic expired window cleanup
 
 #### Audit Logger
 - **Event Tracking**: Authentication, API calls, tool execution logging
@@ -501,7 +493,6 @@ The security architecture is built on multiple protective layers:
 
 2. **Authentication & Authorization Layer**
    - **Token-Based Authentication**: GitHub personal access tokens or GitHub CLI tokens
-   - **Rate Limiting**: Multi-tier limits (API: 100/hour, Auth: 10/hour, Token: 5/hour)
    - **User Context Tracking**: Session-based user identification and tracking
    - **Enterprise Mode**: Organization and user context for enterprise deployments
 
@@ -526,7 +517,6 @@ The security architecture is built on multiple protective layers:
 ### Security Features
 
 - **Secure Credential Storage**: AES-256-GCM encryption for token storage
-- **Rate Limit Protection**: Per-user sliding window rate limiting  
 - **Content Sanitization**: Real-time secret detection and removal
 - **Audit Trail**: Complete event logging for compliance and debugging
 - **Error Isolation**: Security failures don't compromise other operations
@@ -560,7 +550,6 @@ The security architecture is built on multiple protective layers:
 4. **Rate Limit Management**
    - **Built-in Throttling**: Octokit plugin handles GitHub API rate limits
    - **Proactive Monitoring**: Real-time rate limit status checking  
-   - **User Isolation**: Per-user rate limit tracking
    - **Intelligent Backoff**: Exponential retry strategies
    - **Multi-tier Limits**: Different limits for different operation types
 

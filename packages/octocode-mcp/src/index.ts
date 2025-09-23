@@ -92,8 +92,6 @@ async function startServer() {
         clearAllCache();
         cleanup();
 
-        // Shutdown advanced modules gracefully
-
         // Close server
         try {
           await server.close();

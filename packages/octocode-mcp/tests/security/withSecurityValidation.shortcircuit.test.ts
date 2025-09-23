@@ -6,7 +6,6 @@ import { withSecurityValidation } from '../../src/security/withSecurityValidatio
 // Mocks
 const mockIsEnterpriseMode = vi.hoisted(() => vi.fn());
 const mockGetUserContext = vi.hoisted(() => vi.fn());
-const mockRateLimiterCheck = vi.hoisted(() => vi.fn());
 const mockOrgValidate = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/utils/enterpriseUtils.js', () => ({
@@ -41,7 +40,6 @@ describe('withSecurityValidation enterprise short-circuit', () => {
 
     // Short-circuit: none of these should be called
     expect(mockGetUserContext).not.toHaveBeenCalled();
-    expect(mockRateLimiterCheck).not.toHaveBeenCalled();
     expect(mockOrgValidate).not.toHaveBeenCalled();
   });
   it.skip('fetches user context and may perform enterprise checks in enterprise mode (DISABLED: enterprise features removed)', async () => {
@@ -50,7 +48,6 @@ describe('withSecurityValidation enterprise short-circuit', () => {
       user: { id: 123, login: 'tester' },
       organizationId: 'org-1',
     });
-    mockRateLimiterCheck.mockResolvedValue({ allowed: true });
     mockOrgValidate.mockResolvedValue({ valid: true, errors: [] });
 
     const handler = vi.fn(async (args: { a: number }) => ({
@@ -69,9 +66,6 @@ describe('withSecurityValidation enterprise short-circuit', () => {
 
     // Enterprise path hit
     expect(mockGetUserContext).toHaveBeenCalled();
-    expect(mockRateLimiterCheck).toHaveBeenCalledWith('123', 'api', {
-      increment: true,
-    });
     expect(mockOrgValidate).toHaveBeenCalledWith('org-1', 'tester');
   });
 });
