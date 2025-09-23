@@ -40,15 +40,6 @@ async function startServer() {
     logger = createLogger(server, 'server');
     await logger.info('Server starting');
 
-    // Initialize advanced components if configured
-    try {
-      const { AuditLogger } = await import('./security/auditLogger.js');
-      AuditLogger.initialize();
-      await logger.info('Audit logging ready');
-    } catch {
-      await logger.warning('Audit logging failed to initialize');
-    }
-
     await registerAllTools(server);
 
     // Register prompts
@@ -102,12 +93,6 @@ async function startServer() {
         cleanup();
 
         // Shutdown advanced modules gracefully
-        try {
-          const { AuditLogger } = await import('./security/auditLogger.js');
-          AuditLogger.shutdown();
-        } catch {
-          // Ignore shutdown errors
-        }
 
         // Close server
         try {

@@ -18,24 +18,14 @@ vi.mock('../../src/tools/tools.js', () => {
   };
 });
 
-vi.mock('../../src/security/auditLogger.js', () => ({
-  logToolEvent: vi.fn(),
-  AuditLogger: {
-    initialize: vi.fn(),
-  },
-}));
-
 vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
 }));
 
 import { DEFAULT_TOOLS } from '../../src/tools/tools.js';
-import { logToolEvent, AuditLogger } from '../../src/security/auditLogger.js';
 import { getServerConfig } from '../../src/serverConfig.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
-const mockLogToolEvent = vi.mocked(logToolEvent);
-const mockAuditLogger = vi.mocked(AuditLogger);
 
 describe('ToolsManager', () => {
   let mockServer: McpServer;
@@ -54,10 +44,6 @@ describe('ToolsManager', () => {
     DEFAULT_TOOLS.forEach(tool => {
       vi.mocked(tool.fn).mockReset();
     });
-
-    // Setup default audit logger behavior
-    mockAuditLogger.initialize.mockImplementation(() => {});
-    mockLogToolEvent.mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -382,72 +368,6 @@ describe('ToolsManager', () => {
       // Verify successful tools were still called
       expect(DEFAULT_TOOLS[1]?.fn).toHaveBeenCalled(); // githubGetFileContent
       expect(DEFAULT_TOOLS[3]?.fn).toHaveBeenCalled(); // githubSearchRepositories
-    });
-  });
-
-  describe('Audit Logging', () => {
-    it('should initialize audit logger', () => {
-      mockGetServerConfig.mockReturnValue({
-        version: '1.0.0',
-        enableLogging: false,
-        betaEnabled: false,
-        timeout: 30000,
-        maxRetries: 3,
-      });
-
-      registerTools(mockServer);
-
-      expect(mockAuditLogger.initialize).toHaveBeenCalled();
-    });
-
-    it('should log tool registration events', () => {
-      mockGetServerConfig.mockReturnValue({
-        version: '1.0.0',
-        toolsToRun: ['githubSearchCode'],
-        enableLogging: false,
-        betaEnabled: false,
-        timeout: 30000,
-        maxRetries: 3,
-      });
-
-      registerTools(mockServer);
-
-      expect(mockLogToolEvent).toHaveBeenCalledWith('registration_start');
-      expect(mockLogToolEvent).toHaveBeenCalledWith('githubSearchCode');
-      expect(mockLogToolEvent).toHaveBeenCalledWith('registration_complete');
-    });
-
-    it('should log skipped tools', () => {
-      mockGetServerConfig.mockReturnValue({
-        version: '1.0.0',
-        disableTools: ['githubSearchCode'],
-        enableLogging: false,
-        betaEnabled: false,
-        timeout: 30000,
-        maxRetries: 3,
-      });
-
-      registerTools(mockServer);
-
-      expect(mockLogToolEvent).toHaveBeenCalledWith('githubSearchCode_skipped');
-    });
-
-    it('should log failed tool registrations', () => {
-      mockGetServerConfig.mockReturnValue({
-        version: '1.0.0',
-        enableLogging: false,
-        betaEnabled: false,
-        timeout: 30000,
-        maxRetries: 3,
-      });
-
-      vi.mocked(DEFAULT_TOOLS[0]?.fn!).mockImplementation(() => {
-        throw new Error('Registration failed');
-      });
-
-      registerTools(mockServer);
-
-      expect(mockLogToolEvent).toHaveBeenCalledWith('githubSearchCode_failed');
     });
   });
 });
