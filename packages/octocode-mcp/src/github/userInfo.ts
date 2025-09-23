@@ -79,9 +79,11 @@ export async function getAuthenticatedUser(
     } catch (error) {
       const apiError = handleGitHubAPIError(error);
       return createResult({
+        data: {
+          ...apiError,
+          error: `Failed to get user info: ${apiError.error}`,
+        },
         isError: true,
-        error: `Failed to get user info: ${apiError.error}`,
-        data: apiError,
       });
     }
   };

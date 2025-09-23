@@ -47,7 +47,6 @@ export async function searchGitHubPullRequestsAPI(
     // Convert to CallToolResult for caching
     if ('error' in result) {
       return createResult({
-        isError: true,
         data: result,
       });
     } else {
@@ -754,7 +753,6 @@ export async function fetchGitHubPullRequestByNumberAPI(
     // Convert to CallToolResult for caching
     if ('error' in result) {
       return createResult({
-        isError: true,
         data: result,
       });
     } else {

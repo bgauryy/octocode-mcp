@@ -78,7 +78,7 @@ export async function executeWithErrorIsolation<T>(
     createIsolatedPromise(promiseFn, index, timeout, onError)
   );
 
-  // Execute all promises
+  // Execute all promises with better error handling
   const results = await Promise.allSettled(isolatedPromises);
 
   return results.map((result, index) => {

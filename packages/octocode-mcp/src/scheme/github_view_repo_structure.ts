@@ -119,13 +119,6 @@ export interface GitHubViewRepoStructureInput {
 export interface GitHubViewRepoStructureOutput extends ToolResponse {
   /** Primary data payload - array of repository structure results */
   data: RepoStructureResult[];
-
-  /** Additional context with operation counts */
-  meta: ToolResponse['meta'] & {
-    totalOperations: number;
-    successfulOperations: number;
-    failedOperations: number;
-  };
 }
 
 /**

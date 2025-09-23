@@ -87,13 +87,6 @@ export interface GitHubSearchReposInput {
 export interface GitHubSearchReposOutput extends ToolResponse {
   /** Primary data payload - array of repository search results */
   data: RepoSearchResult[];
-
-  /** Additional context with operation counts */
-  meta: ToolResponse['meta'] & {
-    totalOperations: number;
-    successfulOperations: number;
-    failedOperations: number;
-  };
 }
 
 /**

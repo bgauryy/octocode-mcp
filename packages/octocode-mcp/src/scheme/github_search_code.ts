@@ -49,13 +49,6 @@ export interface GitHubSearchCodeInput {
 export interface GitHubSearchCodeOutput extends ToolResponse {
   /** Primary data payload - array of search results */
   data: SearchResult[];
-
-  /** Additional context with operation counts */
-  meta: ToolResponse['meta'] & {
-    totalOperations: number;
-    successfulOperations: number;
-    failedOperations: number;
-  };
 }
 
 /**

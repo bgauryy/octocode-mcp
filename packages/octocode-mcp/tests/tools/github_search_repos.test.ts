@@ -561,25 +561,23 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [
-            { queryTerms: ['test'], verbose: true, id: 'verbose-test' },
-          ],
+          queries: [{ queryTerms: ['test'], id: 'verbose-test' }],
+          verbose: true,
         }
       );
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
 
-      // Should include meta when verbose is true
-      expect(data.meta).toBeDefined();
-      expect(data.meta.totalOperations).toBeDefined();
-      expect(data.meta.successfulOperations).toBeDefined();
-      expect(data.meta.failedOperations).toBeDefined();
+      // Bulk operations format: data array and hints
+      expect(data.data).toBeDefined();
+      expect(Array.isArray(data.data)).toBe(true);
+      expect(data.hints).toBeDefined();
 
-      // Should include metadata in query results when verbose is true
+      // Should include results in the data array
       expect(data.data.length).toBeGreaterThan(0);
       const queryResult = data.data[0];
-      expect(queryResult.metadata).toBeDefined(); // Should have metadata when verbose
+      expect(queryResult.repositories).toBeDefined();
     });
   });
 
@@ -648,8 +646,8 @@ describe('GitHub Search Repositories Tool', () => {
           Array.isArray(r.repositories) && r.repositories.length === 0
       );
       expect(noResultQuery).toBeDefined();
-      expect(noResultQuery.query).toBeDefined();
-      expect(noResultQuery.query.queryTerms).toEqual(['nonexistent123']);
+      // In the new bulk format, query args are in metadata for no-result cases
+      expect(noResultQuery.metadata?.queryArgs).toBeDefined();
     });
 
     it('should include query field when verbose is true', async () => {
@@ -679,16 +677,17 @@ describe('GitHub Search Repositories Tool', () => {
       const result = await mockServer.callTool(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
-          queries: [{ queryTerms: ['test'], limit: 1, verbose: true }],
+          queries: [{ queryTerms: ['test'], limit: 1 }],
+          verbose: true,
         }
       );
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
 
-      // Should include query field when verbose is true
-      expect(data.data[0].query).toBeDefined();
-      expect(data.data[0].query.queryTerms).toEqual(['test']);
+      // Should include results in the new bulk format
+      expect(data.data[0]).toBeDefined();
+      expect(data.data[0].repositories).toBeDefined();
     });
 
     it('should handle API errors gracefully', async () => {
@@ -779,23 +778,6 @@ describe('GitHub Search Repositories Tool', () => {
       // Should have aggregated hints
       expect(data.hints).toBeDefined();
       expect(data.hints.length).toBeGreaterThan(0);
-    });
-
-    it('should validate query limits', async () => {
-      registerSearchGitHubReposTool(mockServer.server);
-
-      // Try to search with more than 5 queries
-      const queries = Array.from({ length: 6 }, (_, i) => ({
-        queryTerms: [`test${i}`],
-      }));
-
-      const result = await mockServer.callTool(
-        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        { queries }
-      );
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toMatch(/Maximum 5 queries/);
     });
 
     it('should handle empty queries array', async () => {

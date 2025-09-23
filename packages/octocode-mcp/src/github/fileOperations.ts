@@ -57,7 +57,6 @@ export async function fetchGitHubFileContentAPI(
     // Convert GitHubAPIResponse to CallToolResult for caching
     if ('error' in result) {
       return createResult({
-        isError: true,
         data: result,
       });
     } else {
@@ -434,7 +433,6 @@ export async function viewGitHubRepositoryStructureAPI(
     // Convert to CallToolResult for caching
     if ('error' in result) {
       return createResult({
-        isError: true,
         data: result,
       });
     } else {

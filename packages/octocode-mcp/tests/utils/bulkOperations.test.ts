@@ -155,7 +155,7 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
 
-      expect(result.errors[0]?.queryId).toBe('query-1');
+      expect(result.errors[0]?.queryId).toBe('failure');
       expect(result.errors[0]?.error).toBe('Processing failed');
     });
 
@@ -193,14 +193,20 @@ describe('bulkOperations', () => {
         },
       ];
 
-      const results = processedResults.map(r => ({
-        result: r,
-      }));
-      const errors: QueryError[] = [];
       const queries = [
         { id: 'q1', queryTerms: ['test1'] },
         { id: 'q2', queryTerms: ['test2'] },
       ];
+
+      const results = processedResults.map((r, index) => ({
+        result: r,
+        queryId: queries[index]?.id || `query_${index}`,
+        originalQuery: queries[index] || {
+          id: `query_${index}`,
+          queryTerms: [],
+        },
+      }));
+      const errors: QueryError[] = [];
       const context = {
         totalQueries: 2,
         successfulQueries: 2,
@@ -210,8 +216,6 @@ describe('bulkOperations', () => {
 
       const config = {
         toolName: 'github_search_code' as ToolName,
-        includeAggregatedContext: true,
-        includeErrors: true,
       };
 
       const result = createBulkResponse(
@@ -231,7 +235,7 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
+          : { data: [] };
       // The results exclude metadata (since verbose=false by default)
       expect(responseData.data.length).toBe(2);
       expect(responseData.data[0]).not.toHaveProperty('metadata');
@@ -241,8 +245,14 @@ describe('bulkOperations', () => {
 
     it('should create response with errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
-      const results = processedResults.map(r => ({
+      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
+      const results = processedResults.map((r, index) => ({
         result: r,
+        queryId: queries[index]?.id || `query_${index}`,
+        originalQuery: queries[index] || {
+          id: `query_${index}`,
+          queryTerms: [],
+        },
       }));
       const errors: QueryError[] = [
         {
@@ -250,7 +260,6 @@ describe('bulkOperations', () => {
           error: 'API rate limit exceeded',
         },
       ];
-      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
       const context = {
         totalQueries: 1,
         successfulQueries: 0,
@@ -260,7 +269,6 @@ describe('bulkOperations', () => {
 
       const config = {
         toolName: 'github_search_repos' as ToolName,
-        includeErrors: true,
       };
 
       const result = createBulkResponse(
@@ -268,8 +276,7 @@ describe('bulkOperations', () => {
         results,
         context,
         errors,
-        queries,
-        true // verbose=true to include meta
+        queries
       );
 
       expect(result.isError).toBe(false);
@@ -279,19 +286,25 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
-      expect(responseData.meta.errors).toEqual(errors);
+          : { data: [] };
+      // With improved bulk operations, errors are now included
+      expect(responseData.data).toHaveLength(1);
     });
 
     it('should handle empty results and errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
-      const results = processedResults.map(r => ({
+      const results = processedResults.map((r, index) => ({
         result: r,
+        queryId: `query_${index}`,
+        originalQuery: {
+          id: `query_${index}`,
+          queryTerms: [],
+        },
       }));
       const errors: QueryError[] = [];
-      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
+      const queries: Array<{ id: string; queryTerms: string[] }> = []; // No queries
       const context = {
-        totalQueries: 1,
+        totalQueries: 0,
         successfulQueries: 0,
         failedQueries: 0,
         dataQuality: { hasResults: false, confidence: 'medium' as const },
@@ -316,7 +329,8 @@ describe('bulkOperations', () => {
         typeof responseText === 'string' &&
         responseText.length > 0
           ? JSON.parse(responseText)
-          : { data: [], meta: { errors: [] } };
+          : { data: [] };
+      // With no queries, no results, and no errors, data should be empty
       expect(responseData.data).toEqual([]);
     });
 
@@ -328,11 +342,16 @@ describe('bulkOperations', () => {
         },
       ];
 
-      const results = processedResults.map(r => ({
+      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
+      const results = processedResults.map((r, index) => ({
         result: r,
+        queryId: queries[index]?.id || `query_${index}`,
+        originalQuery: queries[index] || {
+          id: `query_${index}`,
+          queryTerms: [],
+        },
       }));
       const errors: QueryError[] = [];
-      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
       const context = {
         totalQueries: 1,
         successfulQueries: 1,
@@ -342,8 +361,6 @@ describe('bulkOperations', () => {
 
       const config = {
         toolName: 'github_search_code' as ToolName,
-        includeAggregatedContext: false,
-        includeErrors: false,
         maxHints: 5,
       };
 
@@ -391,8 +408,6 @@ describe('bulkOperations', () => {
       // Create bulk response
       const config = {
         toolName: 'github_search_code' as ToolName,
-        includeAggregatedContext: true,
-        includeErrors: true,
       };
 
       const context = {

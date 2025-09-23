@@ -54,13 +54,6 @@ export interface GitHubFetchContentInput {
 export interface GitHubFetchContentOutput extends ToolResponse {
   /** Primary data payload - array of file content results */
   data: ContentResult[];
-
-  /** Additional context with operation counts */
-  meta: ToolResponse['meta'] & {
-    totalOperations: number;
-    successfulOperations: number;
-    failedOperations: number;
-  };
 }
 
 /**

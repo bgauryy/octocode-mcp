@@ -11,11 +11,6 @@ export interface ToolResponse {
   /** Primary data payload (GitHub API responses, packages, file contents, etc.) */
   data: unknown;
 
-  /** Additional context (total results, error details, research goals) */
-  meta: {
-    [key: string]: unknown;
-  };
-
   /** Helpful hints for AI assistants (recovery tips, usage guidance) */
   hints: string[];
 }
@@ -24,49 +19,19 @@ export interface ToolResponse {
  * Simplified result creation with standardized format
  */
 export function createResult(options: {
-  data?: unknown;
-  error?: string | Error;
-  isError?: boolean;
+  data: unknown;
   hints?: string[];
-  meta?: {
-    [key: string]: unknown;
-  };
+  isError?: boolean;
 }): CallToolResult {
-  const { data, error, isError = false, hints = [], meta = {} } = options;
-
-  // Handle error parameter
-  let finalData = data;
-  let finalIsError = isError;
-  let finalMeta = { ...meta };
-
-  if (error) {
-    finalIsError = true;
-    const errorMessage = error instanceof Error ? error.message : error;
-
-    // If data is provided, keep it but add error to meta
-    if (data !== undefined) {
-      finalMeta = { ...meta, error: errorMessage };
-    } else {
-      // If no data provided, set data to null and put error in meta
-      finalData = null;
-      finalMeta = { ...meta, error: errorMessage };
-    }
-  }
-
-  // Special case: if isError is true but no error parameter, set meta.error to true
-  if (finalIsError && !error) {
-    finalMeta = { ...finalMeta, error: true };
-  }
-
+  const { data, hints = [], isError } = options;
   const response: ToolResponse = {
-    data: finalData || null,
-    meta: finalMeta,
+    data,
     hints,
   };
 
   return {
     content: [{ type: 'text', text: createResponseFormat(response) }],
-    isError: finalIsError,
+    isError: Boolean(isError),
   };
 }
 
@@ -86,7 +51,6 @@ export function createResult(options: {
  * ```typescript
  * const responseData: ToolResponse = {
  *   data: { repos: [...] },
- *   meta: { total: 42 },
  *   hints: ["Try narrowing your search"]
  * };
  * const formatted = createResponseFormat(responseData);
@@ -111,7 +75,7 @@ function createResponseFormat(responseData: ToolResponse): string {
     // If serverConfig is not initialized, just use JSON format
     // This ensures tests and other scenarios work without full server initialization
   }
-
+  // Try to stringify the data
   try {
     text =
       typeof processedData === 'string'
@@ -120,11 +84,9 @@ function createResponseFormat(responseData: ToolResponse): string {
   } catch (e) {
     text = '[Unserializable data]';
   }
-
-  // First, sanitize for malicious content and prompt injection
+  //sanitize for malicious content and prompt injection
   const sanitizationResult = ContentSanitizer.sanitizeContent(text);
-
-  // Then mask sensitive data
+  //mask sensitive data
   return maskSensitiveData(sanitizationResult.content);
 }
 

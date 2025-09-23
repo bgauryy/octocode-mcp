@@ -44,7 +44,6 @@ export async function searchGitHubReposAPI(
     // Convert to CallToolResult for caching
     if ('error' in result) {
       return createResult({
-        isError: true,
         data: result,
       });
     } else {

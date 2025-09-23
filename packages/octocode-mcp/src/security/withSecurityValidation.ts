@@ -38,7 +38,9 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
       // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
         return createResult({
-          error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          data: {
+            error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          },
           isError: true,
         });
       }
@@ -59,7 +61,9 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
       );
     } catch (error) {
       return createResult({
-        error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        data: {
+          error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
         isError: true,
       });
     }
@@ -83,7 +87,9 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
       // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
         return createResult({
-          error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          data: {
+            error: `Security validation failed: ${validation.warnings.join('; ')}`,
+          },
           isError: true,
         });
       }
@@ -92,7 +98,9 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
       return await toolHandler(validation.sanitizedParams as T);
     } catch (error) {
       return createResult({
-        error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        data: {
+          error: `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
         isError: true,
       });
     }

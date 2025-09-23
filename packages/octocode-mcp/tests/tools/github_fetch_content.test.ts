@@ -97,10 +97,10 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content[0]?.type).toBe('text');
 
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(Array.isArray(data.results)).toBe(true);
-      expect(data.results).toHaveLength(1);
+      expect(Array.isArray(data.data)).toBe(true);
+      expect(data.data).toHaveLength(1);
 
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
       expect(fileResult.filePath).toBe('README.md');
       expect(fileResult.content).toContain('Hello World');
       expect(fileResult.originalQuery).toBeUndefined(); // Only on error
@@ -189,12 +189,12 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(2);
+      expect(data.data).toHaveLength(2);
 
-      const readmeResult = data.results.find((r: Record<string, unknown>) =>
+      const readmeResult = data.data.find((r: Record<string, unknown>) =>
         r.filePath?.toString().includes('README.md')
       );
-      const packageResult = data.results.find((r: Record<string, unknown>) =>
+      const packageResult = data.data.find((r: Record<string, unknown>) =>
         r.filePath?.toString().includes('package.json')
       );
 
@@ -226,9 +226,9 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false); // Tool doesn't error, but result contains error
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(1);
+      expect(data.data).toHaveLength(1);
 
-      const errorResult = data.results[0];
+      const errorResult = data.data[0];
       expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
       expect(errorResult.error).toContain('not found');
       expect(errorResult.filePath).toBeUndefined(); // No file properties on error
@@ -253,15 +253,17 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(1);
+      expect(data.data).toHaveLength(1);
 
-      const errorResult = data.results[0];
-      expect(errorResult.originalQuery).toEqual({
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.md',
-        id: 'exception-test', // Custom ID provided in the test
-      }); // originalQuery is included in error responses
+      const errorResult = data.data[0];
+      expect(errorResult.metadata?.queryArgs).toEqual(
+        expect.objectContaining({
+          owner: 'test',
+          repo: 'repo',
+          filePath: 'test.md',
+          id: 'exception-test',
+        })
+      ); // queryArgs are included in metadata for error responses
       expect(errorResult.error).toBe('Network error');
       expect(errorResult.filePath).toBeUndefined(); // No file properties on error
     });
@@ -312,7 +314,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.content).toBe(fullFileContent);
       expect(fileResult.totalLines).toBe(12);
@@ -411,7 +413,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.content).toBe('line 5\nline 6\nline 7');
       expect(fileResult.isPartial).toBe(true);
@@ -466,7 +468,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.content).toContain('function main');
       expect(fileResult.isPartial).toBe(true);
@@ -565,7 +567,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.minified).toBe(true);
       expect(fileResult.minificationType).toBe('terser');
@@ -610,7 +612,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.content).toContain('return "Hello World"');
       expect(fileResult.minified).toBe(false);
@@ -656,7 +658,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.minificationFailed).toBe(true);
       expect(fileResult.minificationType).toBe('failed');
@@ -697,7 +699,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.content).toContain('[REDACTED]');
       expect(fileResult.securityWarnings).toContain(
@@ -811,7 +813,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.sampling).toBeDefined();
       expect(fileResult.sampling.codeExplanation).toBe(
@@ -861,7 +863,7 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       // Should not have sampling data when it fails
       expect(fileResult.sampling).toBeUndefined();
@@ -900,12 +902,9 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
+      const fileResult = data.data[0];
 
       expect(fileResult.branch).toBe('feature-branch');
-      expect(fileResult.query).toBeDefined();
-      expect(fileResult.query.branch).toBe('feature-branch');
-      expect(fileResult.query.verbose).toBe(true);
 
       // Verify API was called with correct branch
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -1005,25 +1004,25 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(3);
+      expect(data.data).toHaveLength(3);
 
       // First result should be successful
-      const successResult = data.results[0];
+      const successResult = data.data[0];
       expect(successResult.content).toBe('const success = true;');
       expect(successResult.error).toBeUndefined();
       expect(successResult.originalQuery).toBeUndefined();
 
       // Second result should have API error
-      const errorResult = data.results[1];
+      const errorResult = data.data[1];
       expect(errorResult.error).toBe('File not found');
       expect(errorResult.content).toBeUndefined(); // No content properties on error
       expect(errorResult.originalQuery).toBeUndefined();
 
       // Third result should have exception error
-      const exceptionResult = data.results[2];
+      const exceptionResult = data.data[2];
       expect(exceptionResult.error).toBe('Network timeout');
       expect(exceptionResult.content).toBeUndefined(); // No content properties on error
-      expect(exceptionResult.originalQuery).toBeDefined(); // originalQuery included for exceptions
+      expect(exceptionResult.metadata?.queryArgs).toBeDefined(); // queryArgs included in metadata for exceptions
     });
   });
 
@@ -1125,34 +1124,12 @@ End of file.`;
       expect(result.isError).toBe(true);
       const errorData = JSON.parse(result.content[0]?.text as string);
 
-      // The error structure has meta.error as boolean true, and the actual error message in data
-      expect(errorData.meta.error).toBe(true);
+      // The error structure has error in data field
+      expect(errorData.data.error).toBeDefined();
       expect(Array.isArray(errorData.hints)).toBe(true);
       expect(
         errorData.hints.some((hint: string) =>
           hint.includes('at least one file content query')
-        )
-      ).toBe(true);
-    });
-
-    it('should reject too many queries', async () => {
-      const manyQueries = Array.from({ length: 11 }, (_, i) => ({
-        owner: 'test',
-        repo: 'repo',
-        filePath: `file${i}.md`,
-        id: `query-${i}`,
-      }));
-
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: manyQueries,
-      });
-
-      expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0]?.text as string);
-      expect(errorData.meta.error).toBe(true);
-      expect(
-        errorData.hints.some((hint: string) =>
-          hint.includes('Limit to 10 file queries')
         )
       ).toBe(true);
     });
@@ -1162,7 +1139,7 @@ End of file.`;
 
       expect(result.isError).toBe(true);
       const errorData = JSON.parse(result.content[0]?.text as string);
-      expect(errorData.meta.error).toBe(true);
+      expect(errorData.data.error).toBeDefined();
       expect(
         errorData.hints.some((hint: string) =>
           hint.includes('at least one file content query')

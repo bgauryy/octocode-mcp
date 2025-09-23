@@ -193,13 +193,6 @@ export interface GitHubSearchPullRequestsInput {
 export interface GitHubSearchPullRequestsOutput extends ToolResponse {
   /** Primary data payload - array of pull request search results */
   data: PullRequestSearchResult[];
-
-  /** Additional context with operation counts */
-  meta: ToolResponse['meta'] & {
-    totalOperations: number;
-    successfulOperations: number;
-    failedOperations: number;
-  };
 }
 
 /**

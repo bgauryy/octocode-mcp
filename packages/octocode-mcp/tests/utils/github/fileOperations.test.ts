@@ -588,10 +588,11 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      // The result should be an error response
-      expect('error' in result).toBe(true);
-      if ('error' in result) {
-        expect(result.error).toContain(
+      // The result should be a success response with error data inside
+      expect('data' in result).toBe(true);
+      if ('data' in result) {
+        expect(result.data).toHaveProperty('error');
+        expect(result.data.error).toContain(
           'Match string "nonexistent string" not found in file'
         );
       }

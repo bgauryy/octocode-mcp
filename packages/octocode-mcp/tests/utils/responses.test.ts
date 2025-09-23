@@ -26,49 +26,52 @@ describe('Response Utilities', () => {
       const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: { message: 'Hello' },
-        meta: {},
         hints: [],
       });
     });
 
     it('should create error result with string message', () => {
       const errorMessage = 'Something went wrong';
-      const result = createResult({ error: errorMessage });
+      const result = createResult({
+        data: { error: errorMessage },
+        isError: true,
+      });
 
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
       expect(result.content[0]!.type).toBe('text');
       const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
-        data: null,
-        meta: { error: errorMessage },
+        data: { error: errorMessage },
         hints: [],
       });
     });
 
     it('should include suggestions in error result', () => {
       const result = createResult({
-        error: 'Not found',
+        data: { error: 'Not found' },
+        isError: true,
       });
 
       expect(result.isError).toBe(true);
       const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
-        data: null,
-        meta: { error: 'Not found' },
+        data: { error: 'Not found' },
         hints: [],
       });
     });
 
     it('should handle error object', () => {
       const error = new Error('Test error');
-      const result = createResult({ error });
+      const result = createResult({
+        data: { error: error.message },
+        isError: true,
+      });
 
       expect(result.isError).toBe(true);
       const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
-        data: null,
-        meta: { error: 'Test error' },
+        data: { error: 'Test error' },
         hints: [],
       });
     });
@@ -81,7 +84,6 @@ describe('Response Utilities', () => {
       const parsedResponse = JSON.parse(result.content[0]!.text as string);
       expect(parsedResponse).toEqual({
         data: { test: 'value' },
-        meta: {},
         hints: [],
       });
     });

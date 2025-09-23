@@ -61,35 +61,14 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
           });
 
           return createResult({
-            isError: true,
-            error: 'Queries array is required and cannot be empty',
+            data: { error: 'Queries array is required and cannot be empty' },
             hints,
+            isError: true,
           });
         }
-
-        if (args.queries.length > 5) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-            hasResults: false,
-            errorMessage: 'Too many queries provided',
-            customHints: [
-              'Limit to 5 repository structure queries per request for optimal performance',
-            ],
-          });
-
-          return createResult({
-            isError: true,
-            error: 'Maximum 5 queries allowed per request',
-            hints,
-          });
-        }
-
-        // Check if any query has verbose=true
-        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
 
         return exploreMultipleRepositoryStructures(
           args.queries,
-          hasVerboseQuery,
           authInfo,
           userContext
         );
@@ -100,7 +79,6 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
 
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
-  verbose: boolean = false,
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
@@ -296,73 +274,15 @@ async function exploreMultipleRepositoryStructures(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    includeAggregatedContext: verbose,
-    includeErrors: true,
     maxHints: 8,
   };
 
-  // Create response with enhanced hints
-  const response = createBulkResponse(
+  // Create standardized response - bulk operations handles all hint generation and formatting
+  return createBulkResponse(
     config,
     results,
     aggregatedContext,
     errors,
-    uniqueQueries,
-    verbose
+    uniqueQueries
   );
-
-  // Apply verbose filtering and flatten complex structures
-  const responseText = response.content[0]?.text;
-  if (!responseText || typeof responseText !== 'string') {
-    return response;
-  }
-  const responseData = JSON.parse(responseText);
-  if (responseData.results) {
-    responseData.results = responseData.results.map(
-      (result: Record<string, unknown>, index: number) => {
-        const hasError = !!result.error;
-        const hasNoResults =
-          result.structure && (result.structure as unknown[]).length === 0;
-
-        // If this specific query has verbose=true, add query field
-        const originalQuery = uniqueQueries[index];
-        const queryIsVerbose = originalQuery?.verbose === true;
-
-        // Flatten metadata.queryArgs to query field when appropriate
-        if (result.metadata && typeof result.metadata === 'object') {
-          const metadata = result.metadata as Record<string, unknown>;
-          if (metadata.queryArgs) {
-            if (hasError || hasNoResults || queryIsVerbose) {
-              result.query = metadata.queryArgs;
-            }
-            // Remove complex nested metadata structure only if not verbose
-            if (!queryIsVerbose) {
-              delete result.metadata;
-            }
-          }
-        }
-
-        if (queryIsVerbose && !result.query) {
-          if (originalQuery) {
-            result.query = { ...originalQuery };
-          } else {
-            // Fallback: create query from result data
-            result.query = {
-              id: result.queryId,
-              verbose: true,
-            };
-          }
-        }
-
-        return result;
-      }
-    );
-  }
-
-  // Update the response content
-  response.content = [
-    { type: 'text', text: JSON.stringify(responseData, null, 2) },
-  ];
-
-  return response;
 }

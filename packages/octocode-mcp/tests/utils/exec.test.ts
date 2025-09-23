@@ -88,7 +88,6 @@ describe('exec utilities', () => {
       const responseData = JSON.parse(text);
       expect(responseData.data).toBe('success output');
       expect(responseData.hints).toEqual([]);
-      expect(responseData.meta).toEqual({});
     });
 
     it('should handle error with Error object', () => {
@@ -100,9 +99,8 @@ describe('exec utilities', () => {
 
       const text = (result.content[0]?.text || '{}') as string;
       const responseData = JSON.parse(text);
-      expect(responseData.data).toBeNull();
+      expect(responseData.data).toEqual({ error: true });
       expect(responseData.hints).toContain('Command failed: Command failed');
-      expect(responseData.meta.error).toBe(true);
     });
 
     it('should handle stderr without error object', () => {
@@ -113,9 +111,8 @@ describe('exec utilities', () => {
 
       const text = (result.content[0]?.text || '{}') as string;
       const responseData = JSON.parse(text);
-      expect(responseData.data).toBeNull();
+      expect(responseData.data).toEqual({ error: true });
       expect(responseData.hints).toContain('Command error: error in stderr');
-      expect(responseData.meta.error).toBe(true);
     });
 
     it('should handle empty stderr', () => {
@@ -128,7 +125,6 @@ describe('exec utilities', () => {
       const responseData = JSON.parse(text);
       expect(responseData.data).toBe('output');
       expect(responseData.hints).toEqual([]);
-      expect(responseData.meta).toEqual({});
     });
 
     it('should prioritize Error object over stderr', () => {
@@ -140,9 +136,8 @@ describe('exec utilities', () => {
 
       const text = (result.content[0]?.text || '{}') as string;
       const responseData = JSON.parse(text);
-      expect(responseData.data).toBeNull();
+      expect(responseData.data).toEqual({ error: true });
       expect(responseData.hints).toContain('Command failed: Main error');
-      expect(responseData.meta.error).toBe(true);
     });
   });
 
