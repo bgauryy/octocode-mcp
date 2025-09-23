@@ -52,7 +52,7 @@ export interface YamlConversionConfig {
  *   active: true,
  *   profile: {
  *     bio: "Developer",
- *     name: "John Profile", 
+ *     name: "John Profile",
  *     id: "profile-456"
  *   }
  * };
@@ -67,9 +67,9 @@ export interface YamlConversionConfig {
  * const yaml3 = jsonToYamlString(data, {
  *   keysPriority: ["id", "name", "type"]
  * });
- * // Output: 
+ * // Output:
  * // id: "user-123"           <- Priority key first
- * // name: "John Doe"         <- Priority key second  
+ * // name: "John Doe"         <- Priority key second
  * // active: true             <- Remaining keys alphabetically
  * // age: 30
  * // profile:

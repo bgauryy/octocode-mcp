@@ -610,7 +610,8 @@ hints:
       results: [
         {
           queryId: 'agents_general',
-          reasoning: 'Search for general agent-related code patterns and implementations',
+          reasoning:
+            'Search for general agent-related code patterns and implementations',
           repository: 'tigerneil/awesome-deep-rl',
           files: [
             {
