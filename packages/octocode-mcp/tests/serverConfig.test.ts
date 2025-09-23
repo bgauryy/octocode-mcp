@@ -92,7 +92,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should throw when accessing config before initialization', () => {
       expect(() => getServerConfig()).toThrow(
-        'Configuration not initialized. Call initialize() first.'
+        'Configuration not initialized. Call initialize() and await its completion before calling getServerConfig().'
       );
     });
 
