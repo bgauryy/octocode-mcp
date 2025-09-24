@@ -1,7 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from './security/mask';
 import { ContentSanitizer } from './security/contentSanitizer';
-import { isBetaEnabled } from './serverConfig';
 import { jsonToYamlString } from 'octocode-utils';
 
 /**
@@ -39,10 +38,11 @@ export function createResult(options: {
  * Creates the final response format for tool responses with security processing.
  *
  * This function performs comprehensive processing on structured tool responses:
- * 1. Optionally converts to YAML format if beta features are enabled
- * 2. Serializes structured data to JSON string format
- * 3. Sanitizes content to remove malicious patterns and prompt injections
- * 4. Masks sensitive information (API keys, tokens, credentials)
+ * 1. Recursively cleans the data by removing empty objects, null, undefined, and NaN values
+ * 2. Optionally converts to YAML format if beta features are enabled
+ * 3. Serializes structured data to JSON string format
+ * 4. Sanitizes content to remove malicious patterns and prompt injections
+ * 5. Masks sensitive information (API keys, tokens, credentials)
  *
  * @param responseData - The structured tool response data
  * @returns Sanitized and formatted string ready for safe transmission
@@ -62,30 +62,15 @@ export function createResult(options: {
  * - Handles unserializable data gracefully
  * - Preserves structured data format for AI parsing
  */
-function createResponseFormat(responseData: ToolResponse): string {
-  let text: string;
-  let processedData: ToolResponse | string = responseData;
-
+export function createResponseFormat(responseData: ToolResponse): string {
+  // Clean object
+  const cleanedData = cleanJsonObject(responseData) as ToolResponse;
   // Convert to YAML if beta features are enabled (with safe fallback)
-  try {
-    if (isBetaEnabled()) {
-      processedData = jsonToYamlString(responseData);
-    }
-  } catch {
-    // If serverConfig is not initialized, just use JSON format
-    // This ensures tests and other scenarios work without full server initialization
-  }
-  // Try to stringify the data
-  try {
-    text =
-      typeof processedData === 'string'
-        ? processedData
-        : JSON.stringify(processedData, null, 2);
-  } catch (e) {
-    text = '[Unserializable data]';
-  }
+  const yamlData = jsonToYamlString(cleanedData, {
+    keysPriority: ['queryId', 'reasoning'],
+  });
   //sanitize for malicious content and prompt injection
-  const sanitizationResult = ContentSanitizer.sanitizeContent(text);
+  const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);
   //mask sensitive data
   return maskSensitiveData(sanitizationResult.content);
 }
@@ -162,4 +147,37 @@ export function optimizeTextMatch(
   }
 
   return truncated + '…';
+}
+
+/**
+ * Recursively clean JSON object by removing empty objects, null, undefined, and NaN values
+ * Preserves empty arrays as they may be meaningful (e.g., hints: [])
+ */
+function cleanJsonObject(obj: unknown): unknown {
+  if (obj === null || obj === undefined || Number.isNaN(obj)) {
+    return undefined;
+  }
+
+  if (Array.isArray(obj)) {
+    const cleaned = obj.map(cleanJsonObject).filter(item => item !== undefined);
+    // Always return arrays, even if empty, as they may be meaningful
+    return cleaned;
+  }
+
+  if (typeof obj === 'object' && obj !== null) {
+    const cleaned: Record<string, unknown> = {};
+    let hasValidProperties = false;
+
+    for (const [key, value] of Object.entries(obj)) {
+      const cleanedValue = cleanJsonObject(value);
+      if (cleanedValue !== undefined) {
+        cleaned[key] = cleanedValue;
+        hasValidProperties = true;
+      }
+    }
+
+    return hasValidProperties ? cleaned : undefined;
+  }
+
+  return obj;
 }

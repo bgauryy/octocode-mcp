@@ -15,6 +15,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
+import { createResponseFormat, type ToolResponse } from '../responses.js';
 
 /**
  * Smart type constraint - handles schema-inferred types and unknown fields
@@ -371,17 +372,17 @@ export function createBulkResponse<
   });
 
   // Build response object with ToolResponse format: {data: [], hints: []}
-  const responseData: Record<string, unknown> = {
+  const responseData: ToolResponse = {
     data: allResults,
     hints,
   };
 
-  // Create the result directly with the custom structure
+  // Use createResponseFormat to ensure proper security processing, sanitization, and formatting
   return {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(responseData, null, 2),
+        text: createResponseFormat(responseData),
       },
     ],
     isError: false,
