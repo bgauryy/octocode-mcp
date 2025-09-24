@@ -15,19 +15,9 @@ vi.mock('../src/utils/exec.js', () => ({
   getGithubCLIToken: vi.fn(),
 }));
 
-vi.mock('../src/security/credentialStore.js', () => ({
-  SecureCredentialStore: {
-    setToken: vi.fn(),
-    getToken: vi.fn(),
-    removeCredential: vi.fn(),
-  },
-}));
-
 import { getGithubCLIToken } from '../src/utils/exec.js';
-import { SecureCredentialStore } from '../src/security/credentialStore.js';
 
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
-const mockSecureCredentialStore = vi.mocked(SecureCredentialStore);
 
 describe('ServerConfig - Simplified Version', () => {
   const originalEnv = process.env;
@@ -47,11 +37,6 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
-
-    // Setup default secure store behavior
-    mockSecureCredentialStore.setToken.mockReturnValue('token-id-123');
-    mockSecureCredentialStore.getToken.mockReturnValue(null);
-    mockSecureCredentialStore.removeCredential.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -92,7 +77,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should throw when accessing config before initialization', () => {
       expect(() => getServerConfig()).toThrow(
-        'Configuration not initialized. Call initialize() first.'
+        'Configuration not initialized. Call initialize() and await its completion before calling getServerConfig().'
       );
     });
 
@@ -174,7 +159,6 @@ describe('ServerConfig - Simplified Version', () => {
       const token = await getToken();
 
       expect(token).toBe('available-token');
-      // Note: simplified implementation doesn't use SecureCredentialStore
     });
 
     it('should throw when no token available', async () => {
@@ -307,7 +291,7 @@ describe('ServerConfig - Simplified Version', () => {
 
     it('should parse toolsToRun correctly', async () => {
       process.env.TOOLS_TO_RUN =
-        'github_search_code,package_search , github_fetch_content';
+        'github_search_code,github_search_pull_requests , github_fetch_content';
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
@@ -315,7 +299,7 @@ describe('ServerConfig - Simplified Version', () => {
 
       expect(config.toolsToRun).toEqual([
         'github_search_code',
-        'package_search',
+        'github_search_pull_requests',
         'github_fetch_content',
       ]);
     });

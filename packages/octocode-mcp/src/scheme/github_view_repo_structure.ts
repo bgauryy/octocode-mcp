@@ -6,6 +6,7 @@ import {
   GitHubRepoSchema,
   GitHubBranchSchema,
 } from './baseSchema';
+import { ToolResponse } from '../responses.js';
 
 export const GitHubViewRepoStructureQuerySchema =
   BaseBulkQueryItemSchema.extend({
@@ -100,32 +101,38 @@ export interface GitHubRepositoryStructureError {
   rateLimitReset?: number;
 }
 
-// Bulk operations types
-export interface ProcessedRepositoryStructureResult {
+// ============================================================================
+// Simple Input/Output Types
+// ============================================================================
+
+/**
+ * Tool input - bulk repository structure queries
+ */
+export interface GitHubViewRepoStructureInput {
+  queries: GitHubViewRepoStructureQuery[];
+  verbose?: boolean;
+}
+
+/**
+ * Tool output - extends standardized ToolResponse format
+ */
+export interface GitHubViewRepoStructureOutput extends ToolResponse {
+  /** Primary data payload - array of repository structure results */
+  data: RepoStructureResult[];
+}
+
+/**
+ * Individual repository structure result
+ */
+export interface RepoStructureResult {
   queryId?: string;
   reasoning?: string;
   repository?: string;
-  branch?: string;
   path?: string;
   files?: string[];
   folders?: string[];
-  data?: unknown;
   error?: string;
   hints?: string[];
-  metadata: Record<string, unknown>; // Required for processing, removed later if not verbose
-}
-
-export interface AggregatedRepositoryContext {
-  totalQueries: number;
-  successfulQueries: number;
-  failedQueries: number;
-  foundDirectories: Set<string>;
-  foundFileTypes: Set<string>;
-  repositoryContexts: Set<string>;
-  exploredPaths: Set<string>;
-  dataQuality: {
-    hasResults: boolean;
-    hasContent: boolean;
-    hasStructure: boolean;
-  };
+  query?: Record<string, unknown>; // Only when verbose or error
+  metadata: Record<string, unknown>; // Required for bulk operations compatibility
 }

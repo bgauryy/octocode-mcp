@@ -12,10 +12,14 @@ FEATURES:
 
 MUST:
 - Verify path before fetching (do not hallucinate)
+- Use github_view_repo_structure or github_search_code FIRST to find correct file paths
+- File paths must be verified from actual repository structure or search results
 
 HINTS:
+- ALWAYS use github_view_repo_structure tool first to explore repository and find correct file paths
+- Use github_search_code to discover relevant files before fetching their content
 - Fetch content in a smart way (token efficient while getting the most relevant context)
-- Combine with search and strcuture tools after fetching for discovery and better research context
+- Combine with search and structure tools after fetching for discovery and better research context
 - Quality data should be fetched for better research context`,
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code
 
@@ -72,21 +76,6 @@ HINTS:
 - Use bulk queries for comprehensive mapping
 - Use findings to guide targeted searches/fetches
 - Clean results with filtering options`,
-  [TOOL_NAMES.GITHUB_SEARCH_COMMITS]: `Search commits
-
-GOAL:
-Track code evolution, changes, and development patterns.
-
-FEATURES:
-- Commit search by message/author/date/repo with bulk queries
-- Date range filtering (author-date, committer-date)
-- Optional diff content (WARNING: token expensive)
-
-HINTS:
-- Use queryTerms for commit message keywords
-- Filter by author/author-date for developer analysis
-- Use date ranges with operators for time filtering
-- Use bulk queries for comprehensive analysis`,
   [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: `Search pull requests
 
 GOAL:
@@ -102,19 +91,4 @@ HINTS:
 - Filter by state/review status for targeted results
 - Use query for PR content search, not title matching
 - Use bulk queries for comprehensive analysis`,
-  [TOOL_NAMES.PACKAGE_SEARCH]: `Search packages
-
-GOAL:
-Discover NPM/Python packages with metadata and repository links.
-
-FEATURES:
-- Multi-ecosystem search (NPM + Python) with bulk queries
-- Rich metadata with GitHub repository links
-- Configurable search strategies and limits
-
-HINTS:
-- Search by functionality rather than exact names
-- Use bulk queries for comparing alternatives
-- Configure metadata fetching as needed
-- Combine with GitHub tools for package→code analysis`,
 };

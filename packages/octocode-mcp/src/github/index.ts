@@ -57,7 +57,6 @@ export {
   fetchGitHubPullRequestByNumberAPI,
   transformPullRequestItemFromREST,
 } from './pullRequestSearch';
-export { searchGitHubCommitsAPI } from './commitSearch';
 
 // File operations
 export {

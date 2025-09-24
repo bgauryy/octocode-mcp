@@ -398,9 +398,7 @@ describe('Consolidated Hints System', () => {
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        TOOL_NAMES.PACKAGE_SEARCH,
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        TOOL_NAMES.GITHUB_SEARCH_COMMITS,
       ];
 
       allTools.forEach(toolName => {

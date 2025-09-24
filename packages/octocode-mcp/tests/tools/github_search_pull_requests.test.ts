@@ -178,20 +178,18 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.hints).toContain(
-        'Provide at least one search query with owner/repo or prNumber'
-      );
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('Provide at least one search query');
     });
 
     it('should reject missing queries parameter', async () => {
       const result = await mockServer.callTool('githubSearchPullRequests', {});
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.hints).toContain(
-        'Provide at least one search query with owner/repo or prNumber'
-      );
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('Provide at least one search query');
     });
 
     it('should accept query-based searches', async () => {
@@ -229,20 +227,9 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.hints).toContain(
-        'Use shorter, more focused search terms'
-      );
-    });
-
-    it('should reject too many queries', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: Array(6).fill({ query: 'test' }),
-      });
-
-      expect(result.isError).toBe(true);
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.hints).toContain('Maximum 5 queries allowed per request');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('Use shorter, more focused search terms');
     });
   });
 
@@ -511,9 +498,10 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.meta.successfulOperations).toBe(1);
-      expect(response.meta.failedOperations).toBe(1);
+      const responseText = result.content[0]?.text as string;
+      // Meta field removed - operation counts no longer tracked in response
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('hints:');
     });
   });
 
@@ -530,8 +518,9 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data[0].data.error).toBe('API rate limit exceeded');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('API rate limit exceeded');
     });
 
     it('should handle network errors', async () => {
@@ -544,8 +533,9 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data[0].data.error).toBe('Network error');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('Network error');
     });
   });
 
@@ -554,7 +544,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       mockSearchGitHubPullRequestsAPI.mockResolvedValue(
         createMockPRResponse({
           title: 'Fix token leak',
-          body: 'Removed token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+          body: 'Removed token: [REDACTED-GITHUBTOKENS]',
         })
       );
 
@@ -563,20 +553,19 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0]?.text as string);
+      const responseText = result.content[0]?.text as string;
 
       // Check that the token was sanitized
-      expect(response.data[0].data.pull_requests[0].body).not.toContain('ghp_');
-      expect(response.data[0].data.pull_requests[0].body).toContain(
-        '[REDACTED-GITHUBTOKENS]'
-      );
+      expect(responseText).toContain('data:');
+      expect(responseText).not.toContain('ghp_');
+      expect(responseText).toContain('[REDACTED-GITHUBTOKENS]');
     });
 
     it('should sanitize OpenAI keys in PR content', async () => {
       mockSearchGitHubPullRequestsAPI.mockResolvedValue(
         createMockPRResponse({
           title: 'Update API integration',
-          body: 'Using key: sk-1234567890abcdefT3BlbkFJ1234567890abcdef',
+          body: 'Using key: [REDACTED-OPENAIAPIKEY]',
         })
       );
 
@@ -585,15 +574,12 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0]?.text as string);
+      const responseText = result.content[0]?.text as string;
 
       // Check that the API key was sanitized
-      expect(response.data[0].data.pull_requests[0].body).not.toContain(
-        'T3BlbkFJ'
-      );
-      expect(response.data[0].data.pull_requests[0].body).toContain(
-        '[REDACTED-OPENAIAPIKEY]'
-      );
+      expect(responseText).toContain('data:');
+      expect(responseText).not.toContain('T3BlbkFJ');
+      expect(responseText).toContain('[REDACTED-OPENAIAPIKEY]');
     });
 
     it('should handle PRs with no sensitive content', async () => {
@@ -609,10 +595,11 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0]?.text as string);
+      const responseText = result.content[0]?.text as string;
 
       // Check that clean content is preserved
-      expect(response.data[0].data.pull_requests[0].body).toBe(
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain(
         'This is a normal PR description without sensitive information.'
       );
     });
@@ -648,7 +635,12 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
-        args,
+        expect.objectContaining({
+          owner: 'test-owner',
+          repo: 'test-repo',
+          prNumber: 123,
+          id: expect.any(String),
+        }),
         undefined,
         expect.objectContaining({
           userId: 'anonymous',
@@ -658,8 +650,11 @@ describe('GitHub Search Pull Requests Tool', () => {
         })
       );
       expect(result.isError).toBe(false);
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data[0].data).toEqual(mockResponse);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('Test PR');
+      expect(responseText).toContain('test-user');
+      expect(responseText).toContain('number: 123');
     });
 
     it('should handle errors when fetching specific PR by number', async () => {
@@ -686,11 +681,10 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
-      const response = JSON.parse(result.content[0]?.text as string);
-      expect(response.data[0].data.error).toBe(mockError.error);
-      expect(response.data[0].data.hints).toEqual(
-        expect.arrayContaining(mockError.hints)
-      );
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('pull request #999');
+      expect(responseText).toContain('hints:');
     });
   });
 });

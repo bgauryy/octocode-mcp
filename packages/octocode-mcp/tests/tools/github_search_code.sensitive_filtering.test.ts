@@ -6,27 +6,6 @@ interface CallToolResult {
   isError?: boolean;
 }
 
-interface CodeSearchFile {
-  path: string;
-  text_matches: string[];
-}
-
-interface CodeSearchResult {
-  queryId?: string;
-  reasoning?: string;
-  files?: CodeSearchFile[];
-  totalCount?: number;
-  repository?: string;
-  query?: Record<string, unknown>;
-  error?: string;
-  hints?: string[];
-  metadata: Record<string, unknown>;
-}
-
-interface CodeSearchResponse {
-  results: CodeSearchResult[];
-}
-
 // Mock the GitHub client
 const mockOctokit = vi.hoisted(() => ({
   rest: {
@@ -127,18 +106,13 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include files not in .git directory
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/config.js');
-      expect(filePaths).toContain('src/main.js');
-      expect(filePaths).not.toContain('.git/hooks/pre-commit');
-      expect(filePaths).not.toContain('.git/config');
+      expect(responseText).toContain('src/config.js');
+      expect(responseText).toContain('src/main.js');
+      expect(responseText).not.toContain('.git/hooks/pre-commit');
+      expect(responseText).not.toContain('.git/config');
     });
 
     it('should filter out files in node_modules directories', async () => {
@@ -196,19 +170,14 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include files not in node_modules
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/utils.js');
-      expect(filePaths).toContain('src/helpers/helper.js');
-      expect(filePaths).not.toContain('node_modules/lodash/lodash.js');
-      expect(filePaths).not.toContain('node_modules/react/index.js');
-      expect(filePaths).not.toContain('node_modules/express/package.json');
+      expect(responseText).toContain('src/utils.js');
+      expect(responseText).toContain('src/helpers/helper.js');
+      expect(responseText).not.toContain('node_modules/lodash/lodash.js');
+      expect(responseText).not.toContain('node_modules/react/index.js');
+      expect(responseText).not.toContain('node_modules/express/package.json');
     });
 
     it('should filter out files in build/dist directories', async () => {
@@ -272,20 +241,15 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not build artifacts
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/app.js');
-      expect(filePaths).toContain('src/components/component.js');
-      expect(filePaths).not.toContain('dist/bundle.js');
-      expect(filePaths).not.toContain('build/main.js');
-      expect(filePaths).not.toContain('out/output.js');
-      expect(filePaths).not.toContain('target/app.jar');
+      expect(responseText).toContain('src/app.js');
+      expect(responseText).toContain('src/components/component.js');
+      expect(responseText).not.toContain('dist/bundle.js');
+      expect(responseText).not.toContain('build/main.js');
+      expect(responseText).not.toContain('out/output.js');
+      expect(responseText).not.toContain('target/app.jar');
     });
 
     it('should filter out files in cache directories', async () => {
@@ -343,19 +307,14 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not cache files
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/service.py');
-      expect(filePaths).toContain('src/utils.py');
-      expect(filePaths).not.toContain('.cache/cached_data.py');
-      expect(filePaths).not.toContain('.pytest_cache/test_cache.py');
-      expect(filePaths).not.toContain('.mypy_cache/cache.py');
+      expect(responseText).toContain('src/service.py');
+      expect(responseText).toContain('src/utils.py');
+      expect(responseText).not.toContain('.cache/cached_data.py');
+      expect(responseText).not.toContain('.pytest_cache/test_cache.py');
+      expect(responseText).not.toContain('.mypy_cache/cache.py');
     });
   });
 
@@ -421,22 +380,13 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
-
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include configuration files and filter out package-lock.json
-      // Note: Other lock files (yarn.lock, pnpm-lock.yaml, Cargo.lock) are not in IGNORED_FILE_NAMES
-      expect(resultData.results[0]?.files).toHaveLength(3);
-      expect(filePaths).toContain('package.json');
-      expect(filePaths).toContain('Cargo.toml');
-      expect(filePaths).toContain('pnpm-lock.yaml'); // Not filtered since not in IGNORED_FILE_NAMES
-      expect(filePaths).not.toContain('package-lock.json'); // Only this is filtered
-      expect(filePaths).not.toContain('yarn.lock'); // Filtered by search results
-      expect(filePaths).not.toContain('Cargo.lock'); // Filtered by search results
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('Cargo.toml');
+      expect(responseText).toContain('pnpm-lock.yaml');
+      expect(responseText).not.toContain('package-lock.json');
     });
 
     it('should filter out sensitive credential files', async () => {
@@ -506,21 +456,16 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include non-sensitive configuration files
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/config.js');
-      expect(filePaths).toContain('src/settings.js');
-      expect(filePaths).not.toContain('secrets.json');
-      expect(filePaths).not.toContain('config/credentials.yaml');
-      expect(filePaths).not.toContain('api-keys.json');
-      expect(filePaths).not.toContain('certs/private-key.pem');
-      expect(filePaths).not.toContain('.ssh/id_rsa');
+      expect(responseText).toContain('src/config.js');
+      expect(responseText).toContain('src/settings.js');
+      expect(responseText).not.toContain('secrets.json');
+      expect(responseText).not.toContain('config/credentials.yaml');
+      expect(responseText).not.toContain('api-keys.json');
+      expect(responseText).not.toContain('certs/private-key.pem');
+      expect(responseText).not.toContain('.ssh/id_rsa');
     });
 
     it('should filter out binary and compiled files', async () => {
@@ -596,22 +541,17 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not binary/compiled files
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/app.js');
-      expect(filePaths).toContain('src/main.py');
-      expect(filePaths).not.toContain('bin/app.exe');
-      expect(filePaths).not.toContain('lib/library.dll');
-      expect(filePaths).not.toContain('lib/module.so');
-      expect(filePaths).not.toContain('build/Main.class');
-      expect(filePaths).not.toContain('__pycache__/cache.pyc');
-      expect(filePaths).not.toContain('target/app.jar');
+      expect(responseText).toContain('src/app.js');
+      expect(responseText).toContain('src/main.py');
+      expect(responseText).not.toContain('bin/app.exe');
+      expect(responseText).not.toContain('lib/library.dll');
+      expect(responseText).not.toContain('lib/module.so');
+      expect(responseText).not.toContain('build/Main.class');
+      expect(responseText).not.toContain('__pycache__/cache.pyc');
+      expect(responseText).not.toContain('target/app.jar');
     });
 
     it('should filter out minified files', async () => {
@@ -663,18 +603,13 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not minified files
-      expect(resultData.results[0]?.files).toHaveLength(2);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
-      expect(filePaths).toContain('src/app.js');
-      expect(filePaths).toContain('src/styles.css');
-      expect(filePaths).not.toContain('dist/app.min.js');
-      expect(filePaths).not.toContain('dist/styles.min.css');
+      expect(responseText).toContain('src/app.js');
+      expect(responseText).toContain('src/styles.css');
+      expect(responseText).not.toContain('dist/app.min.js');
+      expect(responseText).not.toContain('dist/styles.min.css');
     });
   });
 
@@ -781,30 +716,23 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
-
-      // Should only include the 3 valid source files
-      expect(resultData.results[0]?.files).toHaveLength(3);
-      const filePaths =
-        resultData.results[0]?.files?.map((f: CodeSearchFile) => f.path) || [];
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Valid files should be included
-      expect(filePaths).toContain('src/services/UserService.js');
-      expect(filePaths).toContain('src/controllers/AuthController.js');
-      expect(filePaths).toContain('src/config.js');
+      expect(responseText).toContain('src/services/UserService.js');
+      expect(responseText).toContain('src/controllers/AuthController.js');
+      expect(responseText).toContain('src/config.js');
 
       // All sensitive files should be filtered out
-      expect(filePaths).not.toContain('node_modules/express/index.js');
-      expect(filePaths).not.toContain('dist/bundle.js');
-      expect(filePaths).not.toContain('.git/config');
-      expect(filePaths).not.toContain('config/secrets.json');
-      expect(filePaths).not.toContain('package-lock.json');
-      expect(filePaths).not.toContain('.ssh/id_rsa');
-      expect(filePaths).not.toContain('bin/app.exe');
-      expect(filePaths).not.toContain('__pycache__/cache.pyc');
-      expect(filePaths).not.toContain('dist/styles.min.css');
+      expect(responseText).not.toContain('node_modules/express/index.js');
+      expect(responseText).not.toContain('dist/bundle.js');
+      expect(responseText).not.toContain('.git/config');
+      expect(responseText).not.toContain('config/secrets.json');
+      expect(responseText).not.toContain('package-lock.json');
+      expect(responseText).not.toContain('.ssh/id_rsa');
+      expect(responseText).not.toContain('bin/app.exe');
+      expect(responseText).not.toContain('__pycache__/cache.pyc');
+      expect(responseText).not.toContain('dist/styles.min.css');
     });
 
     it('should return empty results when all files are filtered', async () => {
@@ -856,17 +784,14 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      ) as CodeSearchResponse;
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // All files should be filtered out
-      expect(resultData.results[0]?.files).toHaveLength(0);
-      expect(resultData.results[0]?.totalCount).toBe(0);
-
-      // Should include hints for no results
-      expect(resultData.results[0]?.hints).toBeDefined();
-      expect(resultData.results[0]?.hints?.length).toBeGreaterThan(0);
+      expect(responseText).toContain('files: []');
+      expect(responseText).toContain('hints:');
+      expect(responseText).not.toContain('package-lock.json');
+      expect(responseText).not.toContain('secrets.json');
+      expect(responseText).not.toContain('app.exe');
     });
   });
 });

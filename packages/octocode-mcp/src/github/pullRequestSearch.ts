@@ -3,10 +3,7 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from './github-openapi';
-import {
-  GitHubPullRequestSearchResult,
-  GitHubPullRequestSearchError,
-} from '../scheme/github_search_pull_requests';
+import { PullRequestSearchResult } from '../scheme/github_search_pull_requests.js';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
@@ -17,9 +14,7 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
-import { generateCacheKey, withCache } from '../utils/cache';
-import { createResult } from '../responses';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
 
@@ -31,7 +26,7 @@ export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   userContext?: UserContext
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   // Generate cache key based on search parameters only (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-api-prs',
@@ -39,42 +34,22 @@ export async function searchGitHubPullRequestsAPI(
     userContext?.sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubPullRequestsAPIInternal(
-      params,
-      authInfo,
-      userContext?.sessionId
-    );
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<PullRequestSearchResult>(
+    cacheKey,
+    async () => {
+      return await searchGitHubPullRequestsAPIInternal(
+        params,
+        authInfo,
+        userContext?.sessionId
+      );
+    },
+    {
+      // Only cache successful responses
+      shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
-  };
+  );
 
-  // Use cache with 30-minute TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchError;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchResult;
-  }
+  return result;
 }
 
 /**
@@ -84,7 +59,7 @@ async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   _sessionId?: string
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   try {
     // If prNumber is provided with owner/repo, fetch specific PR by number
     if (
@@ -118,9 +93,11 @@ async function searchGitHubPullRequestsAPIInternal(
 
     if (!searchQuery) {
       return {
+        pull_requests: [],
+        total_count: 0,
         error: 'No valid search parameters provided',
-        status: 400,
         hints: ['Provide search query or filters like owner/repo'],
+        metadata: { error: 'No valid search parameters provided' },
       };
     }
 
@@ -159,7 +136,7 @@ async function searchGitHubPullRequestsAPIInternal(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at,
       merged_at: pr.merged_at,
-      user: {
+      author: {
         login: pr.author,
         id: 0,
         avatar_url: '',
@@ -168,22 +145,12 @@ async function searchGitHubPullRequestsAPIInternal(
       head: {
         ref: pr.head || '',
         sha: pr.head_sha || '',
+        repo: pr.repository,
       },
       base: {
         ref: pr.base || '',
         sha: pr.base_sha || '',
-        repo: {
-          id: 0,
-          name: pr.repository.split('/')[1] || '',
-          full_name: pr.repository,
-          owner: {
-            login: pr.repository.split('/')[0] || '',
-            id: 0,
-          },
-          private: false,
-          html_url: `https://github.com/${pr.repository}`,
-          default_branch: 'main',
-        },
+        repo: pr.repository,
       },
       body: pr.body,
       comments: pr.comments?.length || 0,
@@ -197,23 +164,32 @@ async function searchGitHubPullRequestsAPIInternal(
         0,
       changed_files: pr.file_changes?.total_count || 0,
       // Include file_changes if it was requested and fetched
-      ...(pr.file_changes && { file_changes: pr.file_changes }),
+      ...(pr.file_changes && {
+        file_changes: pr.file_changes.files?.map(file => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
+      }),
     }));
 
     return {
+      pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       incomplete_results: searchResult.data.incomplete_results,
-      pull_requests: formattedPRs,
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     return {
+      pull_requests: [],
+      total_count: 0,
       error: `Pull request search failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [`Verify authentication and search parameters`],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }
@@ -224,7 +200,7 @@ async function searchGitHubPullRequestsAPIInternal(
 async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   params: GitHubPullRequestsSearchParams
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   try {
     const owner = params.owner as string;
     const repo = params.repo as string;
@@ -267,7 +243,7 @@ async function searchPullRequestsWithREST(
       updated_at: pr.updated_at,
       closed_at: pr.closed_at,
       merged_at: pr.merged_at,
-      user: {
+      author: {
         login: pr.author,
         id: 0,
         avatar_url: '',
@@ -276,22 +252,12 @@ async function searchPullRequestsWithREST(
       head: {
         ref: pr.head || '',
         sha: pr.head_sha || '',
+        repo: pr.repository,
       },
       base: {
         ref: pr.base || '',
         sha: pr.base_sha || '',
-        repo: {
-          id: 0,
-          name: pr.repository.split('/')[1] || '',
-          full_name: pr.repository,
-          owner: {
-            login: pr.repository.split('/')[0] || '',
-            id: 0,
-          },
-          private: false,
-          html_url: `https://github.com/${pr.repository}`,
-          default_branch: 'main',
-        },
+        repo: pr.repository,
       },
       body: pr.body,
       comments: pr.comments?.length || 0,
@@ -305,23 +271,32 @@ async function searchPullRequestsWithREST(
         0,
       changed_files: pr.file_changes?.total_count || 0,
       // Include file_changes if it was requested and fetched
-      ...(pr.file_changes && { file_changes: pr.file_changes }),
+      ...(pr.file_changes && {
+        file_changes: pr.file_changes.files?.map(file => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
+      }),
     }));
 
     return {
+      pull_requests: formattedPRs,
       total_count: formattedPRs.length,
       incomplete_results: false,
-      pull_requests: formattedPRs,
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
     return {
+      pull_requests: [],
+      total_count: 0,
       error: `Pull request list failed: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [`Verify repository access and authentication`],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }
@@ -616,7 +591,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   sessionId?: string
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
     'gh-api-prs',
@@ -630,41 +605,18 @@ export async function fetchGitHubPullRequestByNumberAPI(
     sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const fetchOperation = async (): Promise<CallToolResult> => {
-    const result = await fetchGitHubPullRequestByNumberAPIInternal(
-      params,
-      authInfo
-    );
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<PullRequestSearchResult>(
+    cacheKey,
+    async () => {
+      return await fetchGitHubPullRequestByNumberAPIInternal(params, authInfo);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: (value: PullRequestSearchResult) => !value.error,
     }
-  };
+  );
 
-  // Use cache with 30-minute TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, fetchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchError;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubPullRequestSearchResult;
-  }
+  return result;
 }
 
 /**
@@ -673,7 +625,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
 async function fetchGitHubPullRequestByNumberAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo
-): Promise<GitHubPullRequestSearchResult | GitHubPullRequestSearchError> {
+): Promise<PullRequestSearchResult> {
   try {
     const octokit = await getOctokit(authInfo);
 
@@ -709,7 +661,7 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       updated_at: transformedPR.updated_at,
       closed_at: transformedPR.closed_at,
       merged_at: transformedPR.merged_at,
-      user: {
+      author: {
         login: transformedPR.author,
         id: 0,
         avatar_url: '',
@@ -718,22 +670,12 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       head: {
         ref: transformedPR.head || '',
         sha: transformedPR.head_sha || '',
+        repo: transformedPR.repository,
       },
       base: {
         ref: transformedPR.base || '',
         sha: transformedPR.base_sha || '',
-        repo: {
-          id: 0,
-          name: transformedPR.repository.split('/')[1] || '',
-          full_name: transformedPR.repository,
-          owner: {
-            login: transformedPR.repository.split('/')[0] || '',
-            id: 0,
-          },
-          private: false,
-          html_url: `https://github.com/${transformedPR.repository}`,
-          default_branch: 'main',
-        },
+        repo: transformedPR.repository,
       },
       body: transformedPR.body,
       comments: transformedPR.comments?.length || 0,
@@ -752,14 +694,22 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       changed_files: transformedPR.file_changes?.total_count || 0,
       // Include file_changes if it was requested and fetched
       ...(transformedPR.file_changes && {
-        file_changes: transformedPR.file_changes,
+        file_changes: transformedPR.file_changes.files?.map(file => ({
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch: file.patch,
+        })),
       }),
     };
 
     return {
+      pull_requests: [formattedPR],
       total_count: 1,
       incomplete_results: false,
-      pull_requests: [formattedPR],
+      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -768,16 +718,15 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
     const prNumber = params.prNumber!;
 
     return {
+      pull_requests: [],
+      total_count: 0,
       error: `Failed to fetch pull request #${prNumber}: ${apiError.error}`,
-      status: apiError.status,
-      rateLimitRemaining: apiError.rateLimitRemaining,
-      rateLimitReset: apiError.rateLimitReset,
       hints: [
         `Verify that pull request #${prNumber} exists in ${owner}/${repo}`,
         'Check if you have access to this repository',
         'Ensure the PR number is correct',
       ],
-      type: apiError.type,
+      metadata: { error: apiError.error },
     };
   }
 }

@@ -1,6 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from './security/mask';
 import { ContentSanitizer } from './security/contentSanitizer';
+import { jsonToYamlString } from 'octocode-utils';
 
 /**
  * Standardized response format for all tool responses
@@ -9,112 +10,78 @@ export interface ToolResponse {
   /** Primary data payload (GitHub API responses, packages, file contents, etc.) */
   data: unknown;
 
-  /** Whether the operation failed (excluded from JSON response) */
-  isError: boolean;
-
   /** Helpful hints for AI assistants (recovery tips, usage guidance) */
   hints: string[];
-
-  /** Additional context (total results, error details, research goals) */
-  meta: {
-    [key: string]: unknown;
-  };
 }
 
 /**
  * Simplified result creation with standardized format
  */
 export function createResult(options: {
-  data?: unknown;
-  error?: string | Error;
-  isError?: boolean;
+  data: unknown;
   hints?: string[];
-  meta?: {
-    [key: string]: unknown;
-  };
+  isError?: boolean;
 }): CallToolResult {
-  const { data, error, isError = false, hints = [], meta = {} } = options;
-
-  // Handle error parameter
-  let finalData = data;
-  let finalIsError = isError;
-  let finalMeta = { ...meta };
-
-  if (error) {
-    finalIsError = true;
-    const errorMessage = error instanceof Error ? error.message : error;
-
-    // If data is provided, keep it but add error to meta
-    if (data !== undefined) {
-      finalMeta = { ...meta, error: errorMessage };
-    } else {
-      // If no data provided, set data to null and put error in meta
-      finalData = null;
-      finalMeta = { ...meta, error: errorMessage };
-    }
-  }
-
-  // Special case: if isError is true but no error parameter, set meta.error to true
-  if (finalIsError && !error) {
-    finalMeta = { ...finalMeta, error: true };
-  }
-
+  const { data, hints = [], isError } = options;
   const response: ToolResponse = {
-    data: finalData || null,
-    isError: finalIsError,
+    data,
     hints,
-    meta: finalMeta,
-  };
-
-  // Return response without isError field in the JSON structure
-  const responseForJson = {
-    data: response.data,
-    meta: response.meta,
-    hints: response.hints,
   };
 
   return {
-    content: [{ type: 'text', text: wrapResponse(responseForJson) }],
-    isError: finalIsError,
+    content: [{ type: 'text', text: createResponseFormat(response) }],
+    isError: Boolean(isError),
   };
 }
 
 /**
- * Wraps tool data with a system prompt and escapes/sanitizes untrusted data
+ * Creates the final response format for tool responses with security processing.
+ *
+ * This function performs comprehensive processing on structured tool responses:
+ * 1. Recursively cleans the data by removing empty objects, null, undefined, and NaN values
+ * 2. Optionally converts to YAML format if beta features are enabled
+ * 3. Serializes structured data to JSON string format
+ * 4. Sanitizes content to remove malicious patterns and prompt injections
+ * 5. Masks sensitive information (API keys, tokens, credentials)
+ *
+ * @param responseData - The structured tool response data
+ * @param keysPriority - Optional array of keys to prioritize in YAML output ordering
+ * @returns Sanitized and formatted string ready for safe transmission
+ *
+ * @example
+ * ```typescript
+ * const responseData: ToolResponse = {
+ *   data: { repos: [...] },
+ *   hints: ["Try narrowing your search"]
+ * };
+ * const formatted = createResponseFormat(responseData, ['queryId', 'reasoning']);
+ * ```
+ *
+ * @security
+ * - Removes potential prompt injection attacks
+ * - Masks sensitive credentials and tokens
+ * - Handles unserializable data gracefully
+ * - Preserves structured data format for AI parsing
  */
-function wrapResponse(data: unknown): string {
-  let text: string;
-  try {
-    text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-  } catch (e) {
-    text = '[Unserializable data]';
-  }
-
-  // First, sanitize for malicious content and prompt injection
-  const sanitizationResult = ContentSanitizer.sanitizeContent(text);
-
-  // Then mask sensitive data
-  const maskedText = maskSensitiveData(sanitizationResult.content);
-
-  // Add security warnings if any issues were detected
-  // Only add warnings for non-JSON responses to avoid breaking JSON parsing
-  if (sanitizationResult.warnings.length > 0) {
-    try {
-      // Test if the content is valid JSON
-      JSON.parse(maskedText);
-      // If it's valid JSON, we'll need to embed warnings differently
-      // For now, let's skip warnings for JSON responses to avoid breaking tests
-      // In production, warnings could be added to a metadata field
-    } catch {
-      // Not JSON, safe to add warnings
-      const warningText = sanitizationResult.warnings
-        .map(w => `⚠️ ${w}`)
-        .join('\n');
-      return `${maskedText}\n\n--- Security Notice ---\n${warningText}`;
-    }
-  }
-
-  return maskedText;
+export function createResponseFormat(
+  responseData: ToolResponse,
+  keysPriority?: string[]
+): string {
+  // Clean object
+  const cleanedData = cleanJsonObject(responseData) as ToolResponse;
+  // Convert to YAML if beta features are enabled (with safe fallback)
+  const yamlData = jsonToYamlString(cleanedData, {
+    keysPriority: keysPriority || [
+      'queryId',
+      'reasoning',
+      'repository',
+      'files',
+    ],
+  });
+  //sanitize for malicious content and prompt injection
+  const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);
+  //mask sensitive data
+  return maskSensitiveData(sanitizationResult.content);
 }
 
 /**
@@ -189,4 +156,37 @@ export function optimizeTextMatch(
   }
 
   return truncated + '…';
+}
+
+/**
+ * Recursively clean JSON object by removing empty objects, null, undefined, and NaN values
+ * Preserves empty arrays as they may be meaningful (e.g., hints: [])
+ */
+function cleanJsonObject(obj: unknown): unknown {
+  if (obj === null || obj === undefined || Number.isNaN(obj)) {
+    return undefined;
+  }
+
+  if (Array.isArray(obj)) {
+    const cleaned = obj.map(cleanJsonObject).filter(item => item !== undefined);
+    // Always return arrays, even if empty, as they may be meaningful
+    return cleaned;
+  }
+
+  if (typeof obj === 'object' && obj !== null) {
+    const cleaned: Record<string, unknown> = {};
+    let hasValidProperties = false;
+
+    for (const [key, value] of Object.entries(obj)) {
+      const cleanedValue = cleanJsonObject(value);
+      if (cleanedValue !== undefined) {
+        cleaned[key] = cleanedValue;
+        hasValidProperties = true;
+      }
+    }
+
+    return hasValidProperties ? cleaned : undefined;
+  }
+
+  return obj;
 }

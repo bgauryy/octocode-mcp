@@ -70,9 +70,6 @@ describe('GitHub API Re-exports', () => {
       expect(typeof githubAPI.transformPullRequestItemFromREST).toBe(
         'function'
       );
-
-      expect(githubAPI.searchGitHubCommitsAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubCommitsAPI).toBe('function');
     });
   });
 

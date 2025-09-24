@@ -12,7 +12,7 @@ import {
   cleanup,
   getGitHubToken,
 } from './serverConfig.js';
-import { createLogger, LoggerFactory } from './enhancements/logging.js';
+import { createLogger, LoggerFactory } from './utils/logger.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -39,15 +39,6 @@ async function startServer() {
     });
     logger = createLogger(server, 'server');
     await logger.info('Server starting');
-
-    // Initialize advanced components if configured
-    try {
-      const { AuditLogger } = await import('./security/auditLogger.js');
-      AuditLogger.initialize();
-      await logger.info('Audit logging ready');
-    } catch {
-      await logger.warning('Audit logging failed to initialize');
-    }
 
     await registerAllTools(server);
 
@@ -100,14 +91,6 @@ async function startServer() {
         // Clear cache and credentials (fastest operations)
         clearAllCache();
         cleanup();
-
-        // Shutdown advanced modules gracefully
-        try {
-          const { AuditLogger } = await import('./security/auditLogger.js');
-          AuditLogger.shutdown();
-        } catch {
-          // Ignore shutdown errors
-        }
 
         // Close server
         try {

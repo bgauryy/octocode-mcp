@@ -119,9 +119,9 @@ describe('GitHub View Repository Structure Tool', () => {
 
     // With bulk operations, errors are handled gracefully and returned as data with hints
     expect(result.isError).toBe(false);
-    const response = JSON.parse(result.content[0]?.text as string);
-    expect(response.hints).toBeDefined();
-    expect(response.hints.length).toBeGreaterThan(0);
+    const responseText = result.content[0]?.text as string;
+    expect(responseText).toContain('hints:');
+    expect(responseText).toContain('error:');
   });
 
   it('should handle optional parameters', async () => {
@@ -138,5 +138,300 @@ describe('GitHub View Repository Structure Tool', () => {
     });
 
     expect(result.isError).toBe(false);
+  });
+
+  describe('New Features Tests', () => {
+    it('should remove path prefix from files and folders for subdirectory paths', async () => {
+      // Mock API response with files and folders that have the path prefix
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [
+          { path: '/contextapp/.gitignore', size: 100 },
+          { path: '/contextapp/package.json', size: 500 },
+          { path: '/contextapp/src/App.js', size: 1200 },
+          { path: '/contextapp/src/index.js', size: 800 },
+        ],
+        folders: {
+          folders: [
+            { path: '/contextapp/src' },
+            { path: '/contextapp/public' },
+            { path: '/contextapp/src/components' },
+          ],
+        },
+        summary: {
+          totalFiles: 4,
+          totalFolders: 3,
+        },
+      });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        queries: [
+          {
+            owner: 'iamshaunjp',
+            repo: 'react-context-hooks',
+            branch: 'main',
+            path: '/contextapp',
+            id: 'contextapp-test',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+
+      // Verify the path prefix is removed from files
+      expect(responseText).toContain('/.gitignore');
+      expect(responseText).toContain('/package.json');
+      expect(responseText).toContain('/src/App.js');
+      expect(responseText).toContain('/src/index.js');
+
+      // Verify the path prefix is removed from folders
+      expect(responseText).toContain('/src');
+      expect(responseText).toContain('/public');
+      expect(responseText).toContain('/src/components');
+
+      // Verify the original path prefixes are NOT present
+      expect(responseText).not.toContain('/contextapp/.gitignore');
+      expect(responseText).not.toContain('/contextapp/package.json');
+      expect(responseText).not.toContain('/contextapp/src/App.js');
+    });
+
+    it('should handle root path without removing prefixes', async () => {
+      // Mock API response for root directory
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [
+          { path: '/.gitignore', size: 100 },
+          { path: '/package.json', size: 500 },
+          { path: '/README.md', size: 1200 },
+        ],
+        folders: {
+          folders: [{ path: '/src' }, { path: '/public' }, { path: '/docs' }],
+        },
+        summary: {
+          totalFiles: 3,
+          totalFolders: 3,
+        },
+      });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        queries: [
+          {
+            owner: 'facebook',
+            repo: 'react',
+            branch: 'main',
+            path: '/',
+            id: 'root-test',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+
+      // For root path, files and folders should keep their absolute paths
+      expect(responseText).toContain('/.gitignore');
+      expect(responseText).toContain('/package.json');
+      expect(responseText).toContain('/README.md');
+      expect(responseText).toContain('/src');
+      expect(responseText).toContain('/public');
+      expect(responseText).toContain('/docs');
+    });
+
+    it('should not include branch field in output', async () => {
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [{ path: '/README.md', size: 1024 }],
+        folders: {
+          folders: [{ path: '/src' }],
+        },
+        summary: {
+          totalFiles: 1,
+          totalFolders: 1,
+        },
+      });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            id: 'no-branch-test',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+
+      // Verify branch field is not in the output
+      expect(responseText).not.toContain('branch:');
+      expect(responseText).not.toContain('branch: "main"');
+
+      // Verify other expected fields are present
+      expect(responseText).toContain('queryId: "no-branch-test"');
+      expect(responseText).toContain('repository: "test/repo"');
+      expect(responseText).toContain('path: "/"');
+      expect(responseText).toContain('files:');
+      expect(responseText).toContain('folders:');
+    });
+
+    it('should use correct field ordering: queryId, reasoning, repository, path, files, folders', async () => {
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [{ path: '/test.js', size: 500 }],
+        folders: {
+          folders: [{ path: '/utils' }],
+        },
+        summary: {
+          totalFiles: 1,
+          totalFolders: 1,
+        },
+      });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            reasoning: 'Test field ordering',
+            id: 'field-order-test',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+
+      // Extract the data section to check field ordering
+      const dataMatch = responseText.match(/data:\s*\n([\s\S]*?)(?=hints:|$)/);
+      expect(dataMatch).toBeTruthy();
+
+      if (dataMatch?.[1]) {
+        const dataSection = dataMatch[1];
+        const lines = dataSection.split('\n').filter(line => line.trim());
+
+        // Find the indices of each field
+        const queryIdIndex = lines.findIndex(line => line.includes('queryId:'));
+        const reasoningIndex = lines.findIndex(line =>
+          line.includes('reasoning:')
+        );
+        const repositoryIndex = lines.findIndex(line =>
+          line.includes('repository:')
+        );
+        const pathIndex = lines.findIndex(line => line.includes('path:'));
+        const filesIndex = lines.findIndex(line => line.includes('files:'));
+        const foldersIndex = lines.findIndex(line => line.includes('folders:'));
+
+        // Verify the correct ordering
+        expect(queryIdIndex).toBeLessThan(reasoningIndex);
+        expect(reasoningIndex).toBeLessThan(repositoryIndex);
+        expect(repositoryIndex).toBeLessThan(pathIndex);
+        expect(pathIndex).toBeLessThan(filesIndex);
+        expect(filesIndex).toBeLessThan(foldersIndex);
+      }
+    });
+
+    it('should handle empty path prefix removal correctly', async () => {
+      // Mock API response with files that don't have a common prefix
+      mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+        files: [
+          { path: '/utils/helper.js', size: 300 },
+          { path: '/utils/config.js', size: 200 },
+        ],
+        folders: {
+          folders: [{ path: '/utils/lib' }],
+        },
+        summary: {
+          totalFiles: 2,
+          totalFolders: 1,
+        },
+      });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            path: '/utils',
+            id: 'utils-test',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+
+      // Verify the /utils prefix is removed
+      expect(responseText).toContain('/helper.js');
+      expect(responseText).toContain('/config.js');
+      expect(responseText).toContain('/lib');
+
+      // Verify the original paths with prefix are not present
+      expect(responseText).not.toContain('/utils/helper.js');
+      expect(responseText).not.toContain('/utils/config.js');
+      expect(responseText).not.toContain('/utils/lib');
+    });
+
+    it('should handle multiple queries with different path prefixes', async () => {
+      // Mock API responses for different calls
+      mockViewGitHubRepositoryStructureAPI
+        .mockResolvedValueOnce({
+          files: [
+            { path: '/src/App.js', size: 1000 },
+            { path: '/src/index.js', size: 500 },
+          ],
+          folders: {
+            folders: [{ path: '/src/components' }],
+          },
+          summary: { totalFiles: 2, totalFolders: 1 },
+        })
+        .mockResolvedValueOnce({
+          files: [
+            { path: '/docs/README.md', size: 800 },
+            { path: '/docs/API.md', size: 600 },
+          ],
+          folders: {
+            folders: [{ path: '/docs/images' }],
+          },
+          summary: { totalFiles: 2, totalFolders: 1 },
+        });
+
+      const result = await mockServer.callTool('githubViewRepoStructure', {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            path: '/src',
+            id: 'src-test',
+          },
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            path: '/docs',
+            id: 'docs-test',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+
+      // Verify both queries have their prefixes removed correctly
+      // First query (/src)
+      expect(responseText).toContain('/App.js');
+      expect(responseText).toContain('/index.js');
+      expect(responseText).toContain('/components');
+
+      // Second query (/docs)
+      expect(responseText).toContain('/README.md');
+      expect(responseText).toContain('/API.md');
+      expect(responseText).toContain('/images');
+
+      // Verify original prefixed paths are not present
+      expect(responseText).not.toContain('/src/App.js');
+      expect(responseText).not.toContain('/docs/README.md');
+    });
   });
 });

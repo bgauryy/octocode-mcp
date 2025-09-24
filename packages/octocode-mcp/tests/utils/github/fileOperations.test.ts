@@ -19,7 +19,7 @@ const mockminifyContent = vi.hoisted(() =>
     type: 'general',
   })
 );
-const mockWithCache = vi.hoisted(() => vi.fn());
+const mockWithDataCache = vi.hoisted(() => vi.fn());
 const mockGenerateCacheKey = vi.hoisted(() => vi.fn());
 const mockCreateResult = vi.hoisted(() => vi.fn());
 
@@ -39,7 +39,7 @@ vi.mock('octocode-utils', () => ({
 
 vi.mock('../../../src/utils/cache.js', () => ({
   generateCacheKey: mockGenerateCacheKey,
-  withCache: mockWithCache,
+  withDataCache: mockWithDataCache,
 }));
 
 vi.mock('../../../src/mcp/responses.js', () => ({
@@ -54,7 +54,7 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
   return {
     owner: 'test',
     repo: 'repo',
-    filePath: 'test.txt',
+    path: 'test.txt',
     fullContent: false,
     minified: false,
     sanitize: true,
@@ -75,7 +75,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const minimalInput = {
         owner: 'test',
         repo: 'repo',
-        filePath: 'test.js',
+        path: 'test.js',
       };
 
       const parsed = FileContentQuerySchema.parse(minimalInput);
@@ -112,7 +112,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
     mockGetOctokit.mockReturnValue(mockOctokit);
 
     // Setup default cache behavior - execute the operation directly
-    mockWithCache.mockImplementation(
+    mockWithDataCache.mockImplementation(
       async (
         _cacheKey: string,
         operation: () => Promise<{
@@ -190,7 +190,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toBe(
           'line 1\nline 2\nline 3\nline 4\nline 5'
         );
-        expect(result.data.totalLines).toBe(5);
+        expect(result.data.contentLength).toBe(34);
         expect(result.data.isPartial).toBeUndefined();
         expect(result.data.startLine).toBeUndefined();
         expect(result.data.endLine).toBeUndefined();
@@ -216,7 +216,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toBe(
           'line 1\nline 2\nline 3\nline 4\nline 5'
         );
-        expect(result.data.totalLines).toBe(5);
+        expect(result.data.contentLength).toBe(34);
         expect(result.data.isPartial).toBeUndefined();
         expect(result.data.startLine).toBeUndefined();
         expect(result.data.endLine).toBeUndefined();
@@ -237,7 +237,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.content).toBe(
           'line 1\nline 2\nline 3\nline 4\nline 5'
         );
-        expect(result.data.totalLines).toBe(5);
+        expect(result.data.contentLength).toBe(34);
         expect(result.data.isPartial).toBeUndefined();
         expect(result.data.startLine).toBeUndefined();
         expect(result.data.endLine).toBeUndefined();
@@ -294,7 +294,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         );
         expect(result.data.startLine).toBeUndefined();
         expect(result.data.endLine).toBeUndefined();
-        expect(result.data.totalLines).toBe(5);
+        expect(result.data.contentLength).toBe(34);
         expect(result.data.isPartial).toBeUndefined();
       }
     });
@@ -314,7 +314,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         );
         expect(result.data.startLine).toBeUndefined();
         expect(result.data.endLine).toBeUndefined();
-        expect(result.data.totalLines).toBe(5);
+        expect(result.data.contentLength).toBe(34);
         expect(result.data.isPartial).toBeUndefined();
       }
     });
@@ -351,7 +351,9 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         expect(result.data.startLine).toBe(3);
         expect(result.data.endLine).toBe(6);
         expect(result.data.isPartial).toBe(true);
-        expect(result.data.totalLines).toBe(10);
+        expect(result.data.contentLength).toBe(
+          result.data.content?.length || 0
+        );
       }
     });
 
@@ -554,18 +556,21 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       expect(result.status).toBe(200);
       if ('data' in result) {
-        const totalLines = reactLikeContent.split('\n').length;
-        const contentLines = result.data.content.split('\n');
+        const contentLines = result.data.content?.split('\n') || [];
 
         // The bug: it returns ALL lines instead of just context
         // This test should FAIL initially, proving the bug exists
         expect(contentLines.length).toBe(7); // Should be 7 lines (3 before + match + 3 after)
-        expect(contentLines.length).not.toBe(totalLines); // Should NOT be the full file
+        expect(contentLines.length).not.toBe(
+          reactLikeContent.split('\n').length
+        ); // Should NOT be the full file
 
         expect(result.data.startLine).toBe(9); // Max(1, 12-3)
         expect(result.data.endLine).toBe(15); // Min(21, 12+3)
         expect(result.data.isPartial).toBe(true);
-        expect(result.data.totalLines).toBe(totalLines);
+        expect(result.data.contentLength).toBe(
+          result.data.content?.length || 0
+        );
 
         // Should contain the match and context
         expect(result.data.content).toContain('export function createRef');
@@ -588,7 +593,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      // The result should be an error response
+      // The result should be a direct error response
       expect('error' in result).toBe(true);
       if ('error' in result) {
         expect(result.error).toContain(
@@ -725,14 +730,13 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         {
           owner: 'test',
           repo: 'repo',
-          filePath: 'test.txt',
+          path: 'test.txt',
           branch: 'feature',
           startLine: 5,
           endLine: 10,
           matchString: 'search term',
           minified: true,
           matchStringContextLines: 3,
-          verbose: false,
         },
         undefined
       );
@@ -769,14 +773,13 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         {
           owner: 'test',
           repo: 'repo',
-          filePath: 'test.txt',
+          path: 'test.txt',
           branch: undefined,
           startLine: undefined,
           endLine: undefined,
           matchString: undefined,
           minified: false,
           matchStringContextLines: 5,
-          verbose: false,
         },
         undefined
       );
@@ -786,14 +789,13 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         {
           owner: 'test',
           repo: 'repo',
-          filePath: 'test.txt',
+          path: 'test.txt',
           branch: undefined,
           startLine: 1,
           endLine: 5,
           matchString: undefined,
           minified: false,
           matchStringContextLines: 5,
-          verbose: false,
         },
         undefined
       );

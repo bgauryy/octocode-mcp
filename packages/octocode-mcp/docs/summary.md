@@ -55,7 +55,6 @@ graph TB
     Cache --> Memory[(In-Memory Storage)]
     
     Security --> Audit[Audit Logger]
-    Security --> RateLimit[Rate Limiter]
     Security --> Content[Content Sanitizer]
     Security --> Credentials[Credential Store]
     
@@ -124,7 +123,6 @@ Comprehensive GitHub API abstraction layer:
 #### Specialized Search Modules
 - **Code Search**: Optimized search result processing with content minification
 - **Repository Search**: Repository discovery with quality filtering
-- **Commit Search**: Commit history analysis with optional diff content
 - **Pull Request Search**: PR analysis with file changes support
 
 #### File Operations
@@ -210,8 +208,6 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
    - File/folder filtering options with clean results
    - Start with root path, use specific paths for focused exploration
 
-5. **GitHub Commit Search**
-   - Commit search by message/author/date/repo with bulk queries
    - Date range filtering (author-date, committer-date) with operators
    - Optional diff content (WARNING: token expensive)
    - queryTerms for commit message keywords and author analysis
@@ -240,9 +236,7 @@ The tool system follows a modular architecture with comprehensive GitHub and NPM
 - GitHub File Content → `githubGetFileContent`
 - GitHub Repository Search → `githubSearchRepositories`
 - GitHub Repository Structure → `githubViewRepoStructure`
-- GitHub Commit Search → `githubSearchCommits`
 - GitHub Pull Request Search → `githubSearchPullRequests`
-- Package Search → `packageSearch`
 
 **Tool Manager**:
 - Dynamic tool registration
@@ -274,7 +268,6 @@ Comprehensive Zod-based schema validation for all tool parameters:
 #### Tool-Specific Schemas
 - **GitHub Code Search**: Query terms, language filters, repository targeting
 - **GitHub File Content**: File paths, line ranges, match strings
-- **GitHub Commit Search**: Author filters, date ranges, hash lookups
 - **GitHub PR Search**: State filters, review status, file changes
 - **GitHub Repository Search**: Topics, languages, quality filters
 - **Repository Structure**: Path exploration, depth control
@@ -296,14 +289,7 @@ Multi-layered security architecture with comprehensive protection:
 - **User Context Extraction**: Enterprise mode support with organization tracking
 - **Input Sanitization**: Parameter validation and cleaning
 - **Audit Integration**: Comprehensive event logging
-- **Rate Limit Integration**: Per-user API request tracking
 
-#### Rate Limiter
-- **Multi-tier Limits**: API requests (100/hour), auth attempts (10/hour), token requests (5/hour)
-- **Sliding Windows**: Hour-based time windows with precise tracking
-- **User Isolation**: Per-user rate limit tracking and enforcement
-- **Dynamic Configuration**: Runtime configuration updates
-- **Cleanup Management**: Automatic expired window cleanup
 
 #### Audit Logger
 - **Event Tracking**: Authentication, API calls, tool execution logging
@@ -507,7 +493,6 @@ The security architecture is built on multiple protective layers:
 
 2. **Authentication & Authorization Layer**
    - **Token-Based Authentication**: GitHub personal access tokens or GitHub CLI tokens
-   - **Rate Limiting**: Multi-tier limits (API: 100/hour, Auth: 10/hour, Token: 5/hour)
    - **User Context Tracking**: Session-based user identification and tracking
    - **Enterprise Mode**: Organization and user context for enterprise deployments
 
@@ -532,7 +517,6 @@ The security architecture is built on multiple protective layers:
 ### Security Features
 
 - **Secure Credential Storage**: AES-256-GCM encryption for token storage
-- **Rate Limit Protection**: Per-user sliding window rate limiting  
 - **Content Sanitization**: Real-time secret detection and removal
 - **Audit Trail**: Complete event logging for compliance and debugging
 - **Error Isolation**: Security failures don't compromise other operations
@@ -566,7 +550,6 @@ The security architecture is built on multiple protective layers:
 4. **Rate Limit Management**
    - **Built-in Throttling**: Octokit plugin handles GitHub API rate limits
    - **Proactive Monitoring**: Real-time rate limit status checking  
-   - **User Isolation**: Per-user rate limit tracking
    - **Intelligent Backoff**: Exponential retry strategies
    - **Multi-tier Limits**: Different limits for different operation types
 
@@ -602,7 +585,6 @@ The system provides 7 comprehensive tools organized by functionality:
 
 #### Optional Tools (Disabled by Default)
 3. **History Analysis Tools**
-   - **GitHub Commit Search**: History analysis with diff content and author filtering
    - **GitHub Pull Request Search**: PR workflow analysis, review status, file changes
 
 4. **Package Ecosystem Tools**
@@ -634,14 +616,14 @@ Tools are designed for **strategic integration** with intelligent chaining:
 ```
 Package Search → Repository Search → Repository Structure
       ↓                 ↓                    ↓
-Code Search ←→ File Content ←→ Commit Search ←→ PR Search
+Code Search ←→ File Content ←→ PR Search
       ↓                 ↓                    ↓
    Research Synthesis & Hint Generation
 ```
 
 **Common Workflows**:
 - **Architecture Exploration**: Repository Search → Structure → File Content → Code Search
-- **Change Analysis**: Commit Search → PR Search → File Content (with diff context)
+- **Change Analysis**: PR Search → File Content (with diff context)
 - **Dependency Research**: Package Search → Repository Search → Code Search
 - **Implementation Discovery**: Code Search → File Content → Repository Structure
 

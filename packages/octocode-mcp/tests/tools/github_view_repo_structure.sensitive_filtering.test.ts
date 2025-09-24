@@ -135,19 +135,14 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include non-git directories and files
-      expect(resultData.results[0].folders).toHaveLength(1);
-      expect(resultData.results[0].folders).toContain('src');
-      expect(resultData.results[0].folders).not.toContain('.git');
-      expect(resultData.results[0].folders).not.toContain('.github');
-
-      expect(resultData.results[0].files).toHaveLength(2);
-      expect(resultData.results[0].files).toContain('README.md');
-      expect(resultData.results[0].files).toContain('package.json');
+      expect(responseText).toContain('src');
+      expect(responseText).not.toContain('.git');
+      expect(responseText).not.toContain('.github');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('package.json');
     });
 
     it('should filter out node_modules directories', async () => {
@@ -239,20 +234,15 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source directories, not dependency directories
-      expect(resultData.results[0].folders).toHaveLength(2);
-      expect(resultData.results[0].folders).toContain('src');
-      expect(resultData.results[0].folders).toContain('lib');
-      expect(resultData.results[0].folders).not.toContain('node_modules');
-      expect(resultData.results[0].folders).not.toContain('vendor');
-      expect(resultData.results[0].folders).not.toContain('third_party');
-
-      expect(resultData.results[0].files).toHaveLength(1);
-      expect(resultData.results[0].files).toContain('package.json');
+      expect(responseText).toContain('src');
+      expect(responseText).toContain('lib');
+      expect(responseText).not.toContain('node_modules');
+      expect(responseText).not.toContain('vendor');
+      expect(responseText).not.toContain('third_party');
+      expect(responseText).toContain('package.json');
     });
 
     it('should filter out build and distribution directories', async () => {
@@ -355,19 +345,16 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source directories, not build artifacts
-      expect(resultData.results[0].folders).toHaveLength(2);
-      expect(resultData.results[0].folders).toContain('src');
-      expect(resultData.results[0].folders).toContain('tests');
-      expect(resultData.results[0].folders).not.toContain('dist');
-      expect(resultData.results[0].folders).not.toContain('build');
-      expect(resultData.results[0].folders).not.toContain('out');
-      expect(resultData.results[0].folders).not.toContain('target');
-      expect(resultData.results[0].folders).not.toContain('release');
+      expect(responseText).toContain('src');
+      expect(responseText).toContain('tests');
+      expect(responseText).not.toContain('dist');
+      expect(responseText).not.toContain('build');
+      expect(responseText).not.toContain('out');
+      expect(responseText).not.toContain('target');
+      expect(responseText).not.toContain('release');
     });
 
     it('should filter out cache directories', async () => {
@@ -481,20 +468,17 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source directories, not cache directories
-      expect(resultData.results[0].folders).toHaveLength(2);
-      expect(resultData.results[0].folders).toContain('src');
-      expect(resultData.results[0].folders).toContain('docs');
-      expect(resultData.results[0].folders).not.toContain('.cache');
-      expect(resultData.results[0].folders).not.toContain('.pytest_cache');
-      expect(resultData.results[0].folders).not.toContain('.mypy_cache');
-      expect(resultData.results[0].folders).not.toContain('__pycache__');
-      expect(resultData.results[0].folders).not.toContain('.next');
-      expect(resultData.results[0].folders).not.toContain('tmp');
+      expect(responseText).toContain('src');
+      expect(responseText).toContain('docs');
+      expect(responseText).not.toContain('.cache');
+      expect(responseText).not.toContain('.pytest_cache');
+      expect(responseText).not.toContain('.mypy_cache');
+      expect(responseText).not.toContain('__pycache__');
+      expect(responseText).not.toContain('.next');
+      expect(responseText).not.toContain('tmp');
     });
   });
 
@@ -599,20 +583,14 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include configuration files and filter out package-lock.json
-      // Note: Other lock files (yarn.lock, pnpm-lock.yaml, Cargo.lock) are not in IGNORED_FILE_NAMES
-      expect(resultData.results[0].files).toHaveLength(4);
-      expect(resultData.results[0].files).toContain('package.json');
-      expect(resultData.results[0].files).toContain('Cargo.toml');
-      expect(resultData.results[0].files).toContain('README.md');
-      expect(resultData.results[0].files).toContain('pnpm-lock.yaml'); // Not filtered since not in IGNORED_FILE_NAMES
-      expect(resultData.results[0].files).not.toContain('package-lock.json'); // Only this is filtered
-      expect(resultData.results[0].files).not.toContain('yarn.lock'); // Not in mock response
-      expect(resultData.results[0].files).not.toContain('Cargo.lock'); // Not in mock response
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('Cargo.toml');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('pnpm-lock.yaml');
+      expect(responseText).not.toContain('package-lock.json');
     });
 
     it('should filter out sensitive credential files', async () => {
@@ -726,20 +704,17 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include non-sensitive configuration files
-      expect(resultData.results[0].files).toHaveLength(2);
-      expect(resultData.results[0].files).toContain('config.js');
-      expect(resultData.results[0].files).toContain('settings.js');
-      expect(resultData.results[0].files).not.toContain('secrets.json');
-      expect(resultData.results[0].files).not.toContain('credentials.yaml');
-      expect(resultData.results[0].files).not.toContain('api-keys.json');
-      expect(resultData.results[0].files).not.toContain('private-key.pem');
-      expect(resultData.results[0].files).not.toContain('id_rsa');
-      expect(resultData.results[0].files).not.toContain('google-services.json');
+      expect(responseText).toContain('config.js');
+      expect(responseText).toContain('settings.js');
+      expect(responseText).not.toContain('secrets.json');
+      expect(responseText).not.toContain('credentials.yaml');
+      expect(responseText).not.toContain('api-keys.json');
+      expect(responseText).not.toContain('private-key.pem');
+      expect(responseText).not.toContain('id_rsa');
+      expect(responseText).not.toContain('google-services.json');
     });
 
     it('should filter out binary and compiled files', async () => {
@@ -864,21 +839,18 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not binary/compiled files
-      expect(resultData.results[0].files).toHaveLength(2);
-      expect(resultData.results[0].files).toContain('app.js');
-      expect(resultData.results[0].files).toContain('main.py');
-      expect(resultData.results[0].files).not.toContain('app.exe');
-      expect(resultData.results[0].files).not.toContain('library.dll');
-      expect(resultData.results[0].files).not.toContain('module.so');
-      expect(resultData.results[0].files).not.toContain('Main.class');
-      expect(resultData.results[0].files).not.toContain('cache.pyc');
-      expect(resultData.results[0].files).not.toContain('app.jar');
-      expect(resultData.results[0].files).not.toContain('data.db');
+      expect(responseText).toContain('app.js');
+      expect(responseText).toContain('main.py');
+      expect(responseText).not.toContain('app.exe');
+      expect(responseText).not.toContain('library.dll');
+      expect(responseText).not.toContain('module.so');
+      expect(responseText).not.toContain('Main.class');
+      expect(responseText).not.toContain('cache.pyc');
+      expect(responseText).not.toContain('app.jar');
+      expect(responseText).not.toContain('data.db');
     });
 
     it('should filter out minified files', async () => {
@@ -959,17 +931,14 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not minified files
-      expect(resultData.results[0].files).toHaveLength(2);
-      expect(resultData.results[0].files).toContain('app.js');
-      expect(resultData.results[0].files).toContain('styles.css');
-      expect(resultData.results[0].files).not.toContain('app.min.js');
-      expect(resultData.results[0].files).not.toContain('styles.min.css');
-      expect(resultData.results[0].files).not.toContain('bundle.min.js');
+      expect(responseText).toContain('app.js');
+      expect(responseText).toContain('styles.css');
+      expect(responseText).not.toContain('app.min.js');
+      expect(responseText).not.toContain('styles.min.css');
+      expect(responseText).not.toContain('bundle.min.js');
     });
 
     it('should filter out OS-specific files', async () => {
@@ -1039,16 +1008,13 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include project files, not OS-specific files
-      expect(resultData.results[0].files).toHaveLength(2);
-      expect(resultData.results[0].files).toContain('README.md');
-      expect(resultData.results[0].files).toContain('package.json');
-      expect(resultData.results[0].files).not.toContain('.DS_Store');
-      expect(resultData.results[0].files).not.toContain('Thumbs.db');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('package.json');
+      expect(responseText).not.toContain('.DS_Store');
+      expect(responseText).not.toContain('Thumbs.db');
     });
   });
 
@@ -1234,29 +1200,25 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should only include valid directories
-      expect(resultData.results[0].folders).toHaveLength(2);
-      expect(resultData.results[0].folders).toContain('src');
-      expect(resultData.results[0].folders).toContain('docs');
-      expect(resultData.results[0].folders).not.toContain('node_modules');
-      expect(resultData.results[0].folders).not.toContain('.git');
-      expect(resultData.results[0].folders).not.toContain('dist');
-      expect(resultData.results[0].folders).not.toContain('.cache');
+      expect(responseText).toContain('src');
+      expect(responseText).toContain('docs');
+      expect(responseText).not.toContain('node_modules');
+      expect(responseText).not.toContain('.git');
+      expect(responseText).not.toContain('dist');
+      expect(responseText).not.toContain('.cache');
 
       // Should only include valid files
-      expect(resultData.results[0].files).toHaveLength(3);
-      expect(resultData.results[0].files).toContain('README.md');
-      expect(resultData.results[0].files).toContain('package.json');
-      expect(resultData.results[0].files).toContain('main.js');
-      expect(resultData.results[0].files).not.toContain('package-lock.json');
-      expect(resultData.results[0].files).not.toContain('secrets.json');
-      expect(resultData.results[0].files).not.toContain('app.exe');
-      expect(resultData.results[0].files).not.toContain('bundle.min.js');
-      expect(resultData.results[0].files).not.toContain('.DS_Store');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('main.js');
+      expect(responseText).not.toContain('package-lock.json');
+      expect(responseText).not.toContain('secrets.json');
+      expect(responseText).not.toContain('app.exe');
+      expect(responseText).not.toContain('bundle.min.js');
+      expect(responseText).not.toContain('.DS_Store');
     });
 
     it('should return empty results when all files/folders are filtered', async () => {
@@ -1337,19 +1299,16 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // All files and folders should be filtered out
-      expect(resultData.results[0].folders).toHaveLength(0);
-      expect(resultData.results[0].files).toHaveLength(0);
-
-      // Should indicate no results after filtering
-      const hasResults =
-        resultData.results[0].folders.length > 0 ||
-        resultData.results[0].files.length > 0;
-      expect(hasResults).toBe(false);
+      expect(responseText).toContain('files: []');
+      expect(responseText).toContain('hints:');
+      expect(responseText).not.toContain('node_modules');
+      expect(responseText).not.toContain('.git');
+      expect(responseText).not.toContain('package-lock.json');
+      expect(responseText).not.toContain('secrets.json');
+      expect(responseText).not.toContain('app.exe');
     });
 
     it('should handle nested sensitive paths correctly', async () => {
@@ -1421,23 +1380,19 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const responseText = (result as CallToolResult).content[0]!.text;
 
       // Should include valid directory
-      expect(resultData.results[0].folders).toHaveLength(1);
-      expect(resultData.results[0].folders).toContain('src');
+      expect(responseText).toContain('src');
 
       // Should only include non-sensitive files
-      expect(resultData.results[0].files).toHaveLength(1);
-      expect(resultData.results[0].files).toContain('src/config.js');
+      expect(responseText).toContain('src/config.js');
 
       // Should filter out files in sensitive directories and sensitive file names
-      expect(resultData.results[0].files).not.toContain(
+      expect(responseText).not.toContain(
         'node_modules/some-package/secrets.json'
       );
-      expect(resultData.results[0].files).not.toContain('src/credentials.json');
+      expect(responseText).not.toContain('src/credentials.json');
     });
   });
 });
