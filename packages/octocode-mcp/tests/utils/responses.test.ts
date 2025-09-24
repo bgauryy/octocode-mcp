@@ -459,12 +459,11 @@ describe('Response Utilities', () => {
         const fileContentResponse = {
           data: [
             {
-              filePath: 'README.md',
-              owner: 'getify',
-              repo: 'TNG-Hooks',
+              repository: 'getify/TNG-Hooks',
+              path: 'README.md',
+              contentLength: 126,
               content:
                 '# TNG-Hooks\n\n[![Build Status](https://travis-ci.org/getify/TNG-Hooks.svg?branch=master)](https://travis-ci.org/getify/TNG-Hooks)',
-              totalLines: 811,
               queryId: 'tng_hooks_readme',
               reasoning:
                 'Get documentation for TNG-Hooks which provides React-inspired useState for standalone functions',
@@ -477,10 +476,17 @@ describe('Response Utilities', () => {
         };
 
         const yamlResult = jsonToYamlString(fileContentResponse, {
-          keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
+          keysPriority: [
+            'queryId',
+            'reasoning',
+            'repository',
+            'path',
+            'contentLength',
+            'content',
+          ],
         });
 
-        const expectedYaml = `data:\n  - owner: "getify"\n    repo: "TNG-Hooks"\n    content: "# TNG-Hooks\\n\\n[![Build Status](https://travis-ci.org/getify/TNG-Hooks.svg?branch=master)](https://travis-ci.org/getify/TNG-Hooks)"\n    filePath: "README.md"\n    queryId: "tng_hooks_readme"\n    reasoning: "Get documentation for TNG-Hooks which provides React-inspired useState for standalone functions"\n    totalLines: 811\nhints:\n  - "Rich dataset available - analyze patterns, compare implementations, identify best practices"\n  - "Compare implementations across 3-5 repositories to identify best practices"\n`;
+        const expectedYaml = `data:\n  - queryId: "tng_hooks_readme"\n    reasoning: "Get documentation for TNG-Hooks which provides React-inspired useState for standalone functions"\n    repository: "getify/TNG-Hooks"\n    path: "README.md"\n    contentLength: 126\n    content: "# TNG-Hooks\\n\\n[![Build Status](https://travis-ci.org/getify/TNG-Hooks.svg?branch=master)](https://travis-ci.org/getify/TNG-Hooks)"\nhints:\n  - "Rich dataset available - analyze patterns, compare implementations, identify best practices"\n  - "Compare implementations across 3-5 repositories to identify best practices"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });

@@ -69,12 +69,11 @@ describe('GitHub Fetch Content Tool', () => {
       // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'README.md',
-          owner: 'test',
-          repo: 'repo',
+          repository: 'test/repo',
+          path: 'README.md',
           branch: 'main',
           content: '# Hello World\n\nThis is a test file.',
-          totalLines: 3,
+          contentLength: 35,
           minified: false,
         },
         status: 200,
@@ -85,7 +84,7 @@ describe('GitHub Fetch Content Tool', () => {
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'README.md',
+            path: 'README.md',
             branch: 'main',
             id: 'test-query',
           },
@@ -99,11 +98,10 @@ describe('GitHub Fetch Content Tool', () => {
       const responseText = result.content[0]?.text as string;
       const expectedYaml = `data:
   - queryId: "test-query"
-    filePath: "README.md"
+    repository: "test/repo"
+    path: "README.md"
+    contentLength: 35
     content: "# Hello World\\n\\nThis is a test file."
-    owner: "test"
-    repo: "repo"
-    totalLines: 3
 hints:
   - "Use repository structure analysis to find similar implementations"
   - "Single result found - dive deep and look for related examples in the same repository"
@@ -119,12 +117,11 @@ hints:
       // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'testowner',
-          repo: 'testrepo',
+          path: 'test.js',
+          repository: 'testowner/testrepo',
           branch: 'main',
           content: 'console.log("test");',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -135,7 +132,7 @@ hints:
           {
             owner: 'testowner',
             repo: 'testrepo',
-            filePath: 'test.js',
+            path: 'test.js',
             branch: 'main',
             id: 'auth-test-query',
           },
@@ -158,23 +155,23 @@ hints:
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
-            filePath: 'README.md',
+            path: 'README.md',
             owner: 'test',
             repo: 'repo',
             branch: 'main',
             content: '# README',
-            totalLines: 1,
+            contentLength: 1,
           },
           status: 200,
         })
         .mockResolvedValueOnce({
           data: {
-            filePath: 'package.json',
+            path: 'package.json',
             owner: 'test',
             repo: 'repo',
             branch: 'main',
             content: '{"name": "test"}',
-            totalLines: 1,
+            contentLength: 1,
           },
           status: 200,
         });
@@ -184,13 +181,13 @@ hints:
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'README.md',
+            path: 'README.md',
             id: 'readme',
           },
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'package.json',
+            path: 'package.json',
             id: 'package',
           },
         ],
@@ -221,7 +218,7 @@ hints:
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'nonexistent.md',
+            path: 'nonexistent.md',
             id: 'error-test',
           },
         ],
@@ -245,7 +242,7 @@ hints:
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.md',
+            path: 'test.md',
             id: 'exception-test',
           },
         ],
@@ -277,12 +274,11 @@ End of file.`;
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'README.md',
-          owner: 'test',
-          repo: 'repo',
+          path: 'README.md',
+          repository: 'test/repo',
           branch: 'main',
           content: fullFileContent,
-          totalLines: 12,
+          contentLength: 12,
           minified: false,
           isPartial: undefined, // Should not be partial for full content
           startLine: undefined, // Should not have line boundaries for full content
@@ -296,7 +292,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'README.md',
+            path: 'README.md',
             fullContent: true,
             id: 'full-content-test',
           },
@@ -307,7 +303,7 @@ End of file.`;
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('data:');
       expect(responseText).toContain('Full File Content');
-      expect(responseText).toContain('totalLines: 12');
+      expect(responseText).toContain('contentLength: 12');
       expect(responseText).toContain('README.md');
 
       // Verify API was called with fullContent=true
@@ -326,12 +322,11 @@ End of file.`;
     it('should ignore other parameters when fullContent=true', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'Full file content should be returned',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -342,7 +337,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             fullContent: true,
             startLine: 5, // Should be ignored
             endLine: 10, // Should be ignored
@@ -372,12 +367,11 @@ End of file.`;
     it('should fetch content with startLine and endLine', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/index.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/index.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'line 5\nline 6\nline 7',
-          totalLines: 20,
+          contentLength: 20,
           isPartial: true,
           startLine: 5,
           endLine: 7,
@@ -391,7 +385,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/index.js',
+            path: 'src/index.js',
             startLine: 5,
             endLine: 7,
             id: 'partial-lines-test',
@@ -423,13 +417,12 @@ End of file.`;
     it('should fetch content with matchString and context', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/utils.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/utils.js',
+          repository: 'test/repo',
           branch: 'main',
           content:
             'function helper() {\n  return true;\n}\n\nfunction main() {\n  return helper();\n}',
-          totalLines: 50,
+          contentLength: 50,
           isPartial: true,
           startLine: 8,
           endLine: 14,
@@ -444,7 +437,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/utils.js',
+            path: 'src/utils.js',
             matchString: 'function main',
             matchStringContextLines: 3,
             id: 'match-string-test',
@@ -478,12 +471,11 @@ End of file.`;
     it('should use default matchStringContextLines when not specified', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.py',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.py',
+          repository: 'test/repo',
           branch: 'main',
           content: 'def test_function():\n    pass',
-          totalLines: 10,
+          contentLength: 10,
           isPartial: true,
           startLine: 1,
           endLine: 10,
@@ -497,7 +489,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.py',
+            path: 'test.py',
             matchString: 'def test_function',
             id: 'default-context-test',
           },
@@ -522,12 +514,11 @@ End of file.`;
     it('should apply minification when minified=true', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/app.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/app.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const app=()=>{return"Hello"};',
-          totalLines: 1,
+          contentLength: 1,
           minified: true,
           minificationType: 'terser',
           minificationFailed: false,
@@ -540,7 +531,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/app.js',
+            path: 'src/app.js',
             minified: true,
             verbose: true,
             id: 'minified-test',
@@ -568,12 +559,11 @@ End of file.`;
     it('should not apply minification when minified=false', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/readable.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/readable.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const app = () => {\n  return "Hello World";\n};',
-          totalLines: 3,
+          contentLength: 37,
           minified: false,
         },
         status: 200,
@@ -584,7 +574,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/readable.js',
+            path: 'src/readable.js',
             minified: false,
             verbose: true,
             id: 'not-minified-test',
@@ -611,12 +601,11 @@ End of file.`;
     it('should handle minification failure gracefully', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/broken.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/broken.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const broken = () => { // Syntax error',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
           minificationType: 'failed',
           minificationFailed: true,
@@ -629,7 +618,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/broken.js',
+            path: 'src/broken.js',
             minified: true,
             verbose: true,
             id: 'minification-failed-test',
@@ -650,12 +639,11 @@ End of file.`;
     it('should sanitize content and provide security warnings', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'config.env',
-          owner: 'test',
-          repo: 'repo',
+          path: 'config.env',
+          repository: 'test/repo',
           branch: 'main',
           content: 'API_KEY=[REDACTED]\nDATABASE_URL=[REDACTED]',
-          totalLines: 2,
+          contentLength: 2,
           minified: false,
           securityWarnings: [
             'Secrets detected and redacted: API_KEY, DATABASE_URL',
@@ -670,7 +658,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'config.env',
+            path: 'config.env',
             sanitize: true,
             id: 'security-test',
           },
@@ -699,12 +687,11 @@ End of file.`;
     it('should handle sanitize=false parameter', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'public.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'public.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'console.log("Public content");',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -715,7 +702,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'public.js',
+            path: 'public.js',
             sanitize: false,
             id: 'no-sanitize-test',
           },
@@ -766,12 +753,11 @@ End of file.`;
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'utils.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'utils.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'export const helper = () => true;',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -782,7 +768,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'utils.js',
+            path: 'utils.js',
             id: 'sampling-test',
           },
         ],
@@ -809,12 +795,11 @@ End of file.`;
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'console.log("test");',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -825,7 +810,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             id: 'sampling-failure-test',
           },
         ],
@@ -844,12 +829,11 @@ End of file.`;
     it('should handle custom branch parameter', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'feature.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'feature.js',
+          repository: 'test/repo',
           branch: 'feature-branch',
           content: 'const feature = "new feature";',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -860,7 +844,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'feature.js',
+            path: 'feature.js',
             branch: 'feature-branch',
             verbose: true,
             id: 'branch-test',
@@ -887,12 +871,11 @@ End of file.`;
     it('should handle missing branch (defaults to main/master)', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'main.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'main.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const main = "main branch";',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -903,7 +886,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'main.js',
+            path: 'main.js',
             id: 'no-branch-test',
           },
         ],
@@ -928,12 +911,12 @@ End of file.`;
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
-            filePath: 'success.js',
+            path: 'success.js',
             owner: 'test',
             repo: 'repo',
             branch: 'main',
             content: 'const success = true;',
-            totalLines: 1,
+            contentLength: 1,
             minified: false,
           },
           status: 200,
@@ -952,19 +935,19 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'success.js',
+            path: 'success.js',
             id: 'success-query',
           },
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'missing.js',
+            path: 'missing.js',
             id: 'error-query',
           },
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'timeout.js',
+            path: 'timeout.js',
             id: 'exception-query',
           },
         ],
@@ -986,12 +969,11 @@ End of file.`;
     it('should handle string numbers for line parameters', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'line 5\nline 6',
-          totalLines: 10,
+          contentLength: 10,
           isPartial: true,
           startLine: 5,
           endLine: 6,
@@ -1005,7 +987,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             startLine: 5, // Should be converted to number
             endLine: 6, // Should be converted to number
             id: 'type-conversion-test',
@@ -1029,12 +1011,11 @@ End of file.`;
     it('should handle boolean parameters correctly', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'test content',
-          totalLines: 1,
+          contentLength: 1,
           minified: true,
         },
         status: 200,
@@ -1045,7 +1026,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             fullContent: true,
             minified: true,
             sanitize: false,

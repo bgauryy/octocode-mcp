@@ -91,7 +91,7 @@ async function fetchMultipleGitHubFileContents(
         const apiRequest = {
           owner: String(query.owner),
           repo: String(query.repo),
-          filePath: String(query.filePath),
+          path: String(query.path),
           branch: query.branch ? String(query.branch) : undefined,
           fullContent: fullContent,
           // If fullContent is true, don't pass startLine/endLine/matchString
@@ -170,11 +170,11 @@ async function fetchMultipleGitHubFileContents(
           try {
             // Create sampling request to explain the code
             const samplingRequest = SamplingUtils.createQASamplingRequest(
-              `What does this ${query.filePath} code file do? Describe its main functionality, key components, and purpose in simple terms.
+              `What does this ${query.path} code file do? Describe its main functionality, key components, and purpose in simple terms.
               which research path can I take to research more about this file?
               what is the best way to use this file?
               Is somthing missing from this file to understand it better?`,
-              `File: ${query.owner}/${query.repo}/${query.filePath}\n\nCode:\n${result.content}`,
+              `File: ${query.owner}/${query.repo}/${query.path}\n\nCode:\n${result.content}`,
               { maxTokens: 2000, temperature: 0.3 }
             );
 
@@ -186,7 +186,7 @@ async function fetchMultipleGitHubFileContents(
 
             resultObj.sampling = {
               codeExplanation: samplingResponse.content,
-              filePath: String(query.filePath),
+              path: String(query.path),
               repo: `${String(query.owner)}/${String(query.repo)}`,
               usage: samplingResponse.usage,
               stopReason: samplingResponse.stopReason,
@@ -237,7 +237,14 @@ async function fetchMultipleGitHubFileContents(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     maxHints: 8,
-    keysPriority: ['queryId', 'reasoning', 'repository', 'filePath', 'content'],
+    keysPriority: [
+      'queryId',
+      'reasoning',
+      'repository',
+      'path',
+      'contentLength',
+      'content',
+    ],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

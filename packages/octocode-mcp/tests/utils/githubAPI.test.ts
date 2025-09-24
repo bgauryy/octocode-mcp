@@ -116,7 +116,7 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
   return {
     owner: 'test',
     repo: 'repo',
-    filePath: 'test.txt',
+    path: 'test.txt',
     fullContent: false,
     minified: false,
     sanitize: true,
@@ -855,12 +855,11 @@ describe('GitHub API Utils', () => {
 
           expect(result).toEqual(
             expect.objectContaining({
-              filePath: 'src/index.js',
-              owner: 'facebook',
-              repo: 'react',
+              repository: 'facebook/react',
+              path: 'src/index.js',
               branch: 'main',
               content: 'minified content', // Content gets minified by default
-              totalLines: 1,
+              contentLength: 16,
               minified: true,
               minificationFailed: false,
               minificationType: 'javascript',

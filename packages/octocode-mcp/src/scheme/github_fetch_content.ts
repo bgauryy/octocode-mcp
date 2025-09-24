@@ -15,7 +15,7 @@ export const FileContentQuerySchema = BaseBulkQueryItemSchema.extend({
   repo: GitHubRepoSchema,
   minified: MinifySchema,
   sanitize: SanitizeSchema,
-  filePath: z
+  path: z
     .string()
     .describe(
       'Github File Path - MUST be exact absolute path from repo. Use github_view_repo_structure or github_search_code first to verify correct paths exist.'
@@ -64,14 +64,13 @@ export interface GitHubFetchContentOutput extends ToolResponse {
 export interface ContentResult {
   queryId?: string;
   reasoning?: string;
-  filePath?: string;
-  owner?: string;
-  repo?: string;
+  repository?: string;
+  path?: string;
+  contentLength?: number;
   content?: string;
   branch?: string;
   startLine?: number;
   endLine?: number;
-  totalLines?: number;
   isPartial?: boolean;
   minified?: boolean;
   minificationFailed?: boolean;

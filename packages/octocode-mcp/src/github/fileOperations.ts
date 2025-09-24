@@ -34,7 +34,7 @@ export async function fetchGitHubFileContentAPI(
     {
       owner: params.owner,
       repo: params.repo,
-      filePath: params.filePath,
+      path: params.path,
       branch: params.branch,
       // Include other parameters that affect the content
       ...(params.fullContent && { fullContent: params.fullContent }),
@@ -73,7 +73,7 @@ async function fetchGitHubFileContentAPIInternal(
 ): Promise<GitHubAPIResponse<ContentResult>> {
   try {
     const octokit = await getOctokit(authInfo);
-    const { owner, repo, filePath, branch } = params;
+    const { owner, repo, path: filePath, branch } = params;
 
     // Use properly typed parameters
     const contentParams: GetContentParameters = {
@@ -359,13 +359,11 @@ async function processFileContentAPI(
   }
 
   return {
-    filePath,
-    owner,
-    repo,
-    branch,
+    repository: `${owner}/${repo}`,
+    path: filePath,
+    contentLength: finalContent.length,
     content: finalContent,
-    // Always return total lines for LLM context
-    totalLines,
+    branch,
     // Actual content boundaries (only for partial content)
     ...(isPartial && {
       startLine: actualStartLine,
