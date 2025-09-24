@@ -428,7 +428,6 @@ describe('Response Utilities', () => {
                   ],
                 },
               ],
-              totalCount: 15,
             },
           ],
           hints: [
@@ -438,10 +437,10 @@ describe('Response Utilities', () => {
         };
 
         const yamlResult = jsonToYamlString(codeSearchResponse, {
-          keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
+          keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
         });
 
-        const expectedYaml = `data:\n  - files:\n      - path: "App.js"\n        text_matches:\n          - "function useState(initial) {\\n  const oldHook = wipFiber?.alternate?.hooks?.shift();"\n          - "function Counter() {\\n  const [targetCount, setTargetCount] = React.useState(1);"\n      - path: "static/examples/7.x/auth-flow.js"\n        text_matches:\n          - "function SignInScreen() {\\n  const [username, setUsername] = React.useState('');"\n    queryId: "usestate_examples"\n    reasoning: "Find diverse code examples showing useState implementation patterns"\n    repository: "yyl134934/react-mini"\n    totalCount: 15\nhints:\n  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"\n  - "Use github_fetch_content with matchString from search results for precise context extraction"\n`;
+        const expectedYaml = `data:\n  - queryId: "usestate_examples"\n    reasoning: "Find diverse code examples showing useState implementation patterns"\n    repository: "yyl134934/react-mini"\n    files:\n      - path: "App.js"\n        text_matches:\n          - "function useState(initial) {\\n  const oldHook = wipFiber?.alternate?.hooks?.shift();"\n          - "function Counter() {\\n  const [targetCount, setTargetCount] = React.useState(1);"\n      - path: "static/examples/7.x/auth-flow.js"\n        text_matches:\n          - "function SignInScreen() {\\n  const [username, setUsername] = React.useState('');"\nhints:\n  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"\n  - "Use github_fetch_content with matchString from search results for precise context extraction"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });

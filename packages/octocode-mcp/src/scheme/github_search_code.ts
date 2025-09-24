@@ -59,7 +59,6 @@ export interface SearchResult {
   reasoning?: string;
   repository?: string;
   files: SearchFile[];
-  totalCount: number;
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only when verbose or error

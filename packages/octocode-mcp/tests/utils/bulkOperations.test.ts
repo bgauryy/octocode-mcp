@@ -955,7 +955,6 @@ hints:
           result: {
             queryId: 'q1',
             files: [],
-            totalCount: 0,
             metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
@@ -985,7 +984,6 @@ hints:
       originalQuery:
         id: "q1"
         name: "code_search_empty"
-    totalCount: 0
 hints:
   - "All 1 queries returned no results - try broader research strategy"
   - "Start with repository search to find relevant projects, then search within promising repos"
@@ -1210,7 +1208,6 @@ hints:
           result: {
             queryId: 'q1',
             files: [{ path: 'src/index.ts', url: 'https://example' }],
-            totalCount: 1,
             metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
@@ -1238,7 +1235,6 @@ hints:
     files:
       - path: "src/index.ts"
         url: "https://example"
-    totalCount: 1
 hints:
   - "Use repository structure analysis to find similar implementations"
   - "Use github_fetch_content with matchString from search results for precise context extraction"

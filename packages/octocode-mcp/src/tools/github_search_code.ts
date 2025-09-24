@@ -143,7 +143,6 @@ async function searchMultipleGitHubCode(
               ),
             })
           ),
-          totalCount: filteredItems.length,
           metadata: {},
         };
 

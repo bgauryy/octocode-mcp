@@ -788,7 +788,6 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       // All files should be filtered out
       expect(responseText).toContain('files: []');
-      expect(responseText).toContain('totalCount: 0');
       expect(responseText).toContain('hints:');
       expect(responseText).not.toContain('package-lock.json');
       expect(responseText).not.toContain('secrets.json');

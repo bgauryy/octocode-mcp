@@ -151,7 +151,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       expect(resultText).toContain('data:');
       expect(resultText).toContain('src/index.js');
       expect(resultText).toContain('src/components/component.js');
-      expect(resultText).toContain('totalCount: 2');
     });
 
     it('should handle empty results after filtering at tool level', async () => {
@@ -214,7 +213,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       // Should have result with no files
       expect(resultText).toContain('data:');
       expect(resultText).toContain('files: []');
-      expect(resultText).toContain('totalCount: 0');
       expect(resultText).toContain('hints:');
       expect(resultText).toContain('broader');
     });

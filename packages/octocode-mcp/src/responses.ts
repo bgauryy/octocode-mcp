@@ -67,7 +67,7 @@ export function createResponseFormat(responseData: ToolResponse): string {
   const cleanedData = cleanJsonObject(responseData) as ToolResponse;
   // Convert to YAML if beta features are enabled (with safe fallback)
   const yamlData = jsonToYamlString(cleanedData, {
-    keysPriority: ['queryId', 'reasoning'],
+    keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
   });
   //sanitize for malicious content and prompt injection
   const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);
