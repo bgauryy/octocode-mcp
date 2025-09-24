@@ -17,7 +17,9 @@ export const FileContentQuerySchema = BaseBulkQueryItemSchema.extend({
   sanitize: SanitizeSchema,
   filePath: z
     .string()
-    .describe('Github File Path - MUST be exact absolute path from repo'),
+    .describe(
+      'Github File Path - MUST be exact absolute path from repo. Use github_view_repo_structure or github_search_code first to verify correct paths exist.'
+    ),
   branch: GitHubBranchSchema.optional(),
   fullContent: z.boolean().default(false).describe('Return entire file'),
   startLine: z.number().int().min(1).optional().describe('Start line in file'),
@@ -37,7 +39,7 @@ export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 // Bulk schema for multiple file content queries
 export const FileContentBulkQuerySchema = createBulkQuerySchema(
   FileContentQuerySchema,
-  'File content fetch queries'
+  'File content fetch queries - Use github_view_repo_structure or github_search_code first to find correct file paths'
 );
 
 /**

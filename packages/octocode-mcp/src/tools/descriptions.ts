@@ -12,10 +12,14 @@ FEATURES:
 
 MUST:
 - Verify path before fetching (do not hallucinate)
+- Use github_view_repo_structure or github_search_code FIRST to find correct file paths
+- File paths must be verified from actual repository structure or search results
 
 HINTS:
+- ALWAYS use github_view_repo_structure tool first to explore repository and find correct file paths
+- Use github_search_code to discover relevant files before fetching their content
 - Fetch content in a smart way (token efficient while getting the most relevant context)
-- Combine with search and strcuture tools after fetching for discovery and better research context
+- Combine with search and structure tools after fetching for discovery and better research context
 - Quality data should be fetched for better research context`,
   [TOOL_NAMES.GITHUB_SEARCH_CODE]: `Search code
 
