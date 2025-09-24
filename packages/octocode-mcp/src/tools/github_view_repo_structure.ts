@@ -274,6 +274,7 @@ async function exploreMultipleRepositoryStructures(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     maxHints: 8,
+    keysPriority: ['queryId', 'reasoning', 'repository', 'structure'],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

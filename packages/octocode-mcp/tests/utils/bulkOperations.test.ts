@@ -1007,7 +1007,6 @@ hints:
           result: {
             queryId: 'rq1',
             repositories: [],
-            total_count: 0,
             metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
@@ -1016,8 +1015,7 @@ hints:
           queryId: 'rq2',
           result: {
             queryId: 'rq2',
-            repositories: [{ owner_repo: 'a/b' }, { owner_repo: 'c/d' }],
-            total_count: 2,
+            repositories: [{ repository: 'a/b' }, { repository: 'c/d' }],
             metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[1]!,
@@ -1047,12 +1045,10 @@ hints:
         id: "rq1"
         name: "repos_empty"
     repositories: []
-    total_count: 0
   - queryId: "rq2"
     repositories:
-      - owner_repo: "a/b"
-      - owner_repo: "c/d"
-    total_count: 2
+      - repository: "a/b"
+      - repository: "c/d"
 hints:
   - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
   - "Use github_view_repo_structure first to understand project layout, then target specific files"

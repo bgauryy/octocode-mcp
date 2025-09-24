@@ -355,7 +355,7 @@ describe('Response Utilities', () => {
                 'Find popular React repositories that demonstrate useState usage patterns',
               repositories: [
                 {
-                  owner_repo: 'getify/TNG-Hooks',
+                  repository: 'getify/TNG-Hooks',
                   stars: 1010,
                   description:
                     'Provides React-inspired hooks like useState(..) for stand-alone functions',
@@ -363,7 +363,7 @@ describe('Response Utilities', () => {
                   updatedAt: '31/08/2025',
                 },
                 {
-                  owner_repo: 'the-road-to-learn-react/use-state-with-callback',
+                  repository: 'the-road-to-learn-react/use-state-with-callback',
                   stars: 277,
                   description:
                     'Custom hook to include a callback function for useState.',
@@ -380,10 +380,18 @@ describe('Response Utilities', () => {
         };
 
         const yamlResult = jsonToYamlString(repoSearchResponse, {
-          keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
+          keysPriority: [
+            'queryId',
+            'reasoning',
+            'repository',
+            'description',
+            'url',
+            'stars',
+            'updatedAt',
+          ],
         });
 
-        const expectedYaml = `data:\n  - queryId: "react_hooks_repos"\n    reasoning: "Find popular React repositories that demonstrate useState usage patterns"\n    repositories:\n      - url: "https://github.com/getify/TNG-Hooks"\n        description: "Provides React-inspired hooks like useState(..) for stand-alone functions"\n        owner_repo: "getify/TNG-Hooks"\n        stars: 1010\n        updatedAt: "31/08/2025"\n      - url: "https://github.com/the-road-to-learn-react/use-state-with-callback"\n        description: "Custom hook to include a callback function for useState."\n        owner_repo: "the-road-to-learn-react/use-state-with-callback"\n        stars: 277\n        updatedAt: "18/04/2025"\nhints:\n  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"\n  - "Use github_view_repo_structure first to understand project layout, then target specific files"\n`;
+        const expectedYaml = `data:\n  - queryId: "react_hooks_repos"\n    reasoning: "Find popular React repositories that demonstrate useState usage patterns"\n    repositories:\n      - repository: "getify/TNG-Hooks"\n        description: "Provides React-inspired hooks like useState(..) for stand-alone functions"\n        url: "https://github.com/getify/TNG-Hooks"\n        stars: 1010\n        updatedAt: "31/08/2025"\n      - repository: "the-road-to-learn-react/use-state-with-callback"\n        description: "Custom hook to include a callback function for useState."\n        url: "https://github.com/the-road-to-learn-react/use-state-with-callback"\n        stars: 277\n        updatedAt: "18/04/2025"\nhints:\n  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"\n  - "Use github_view_repo_structure first to understand project layout, then target specific files"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });

@@ -174,6 +174,15 @@ async function searchMultipleGitHubRepos(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     maxHints: 8,
+    keysPriority: [
+      'queryId',
+      'reasoning',
+      'repository',
+      'description',
+      'url',
+      'stars',
+      'updatedAt',
+    ],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

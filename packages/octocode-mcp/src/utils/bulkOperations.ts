@@ -132,6 +132,7 @@ export interface AggregatedContext {
 export interface BulkResponseConfig {
   toolName: ToolName;
   maxHints?: number;
+  keysPriority?: string[];
 }
 
 /**
@@ -382,7 +383,7 @@ export function createBulkResponse<
     content: [
       {
         type: 'text' as const,
-        text: createResponseFormat(responseData),
+        text: createResponseFormat(responseData, config.keysPriority),
       },
     ],
     isError: false,

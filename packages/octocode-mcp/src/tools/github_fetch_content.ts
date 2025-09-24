@@ -237,6 +237,7 @@ async function fetchMultipleGitHubFileContents(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     maxHints: 8,
+    keysPriority: ['queryId', 'reasoning', 'repository', 'filePath', 'content'],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

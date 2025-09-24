@@ -247,6 +247,7 @@ async function searchMultipleGitHubPullRequests(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     maxHints: 8,
+    keysPriority: ['queryId', 'reasoning', 'pullRequests'],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

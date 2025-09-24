@@ -9,7 +9,7 @@ import { ToolResponse } from '../responses.js';
 
 // Simplified repository type for search results
 export interface SimplifiedRepository {
-  owner_repo: string;
+  repository: string;
   stars: number;
   description: string;
   url: string;

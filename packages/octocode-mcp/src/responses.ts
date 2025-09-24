@@ -45,6 +45,7 @@ export function createResult(options: {
  * 5. Masks sensitive information (API keys, tokens, credentials)
  *
  * @param responseData - The structured tool response data
+ * @param keysPriority - Optional array of keys to prioritize in YAML output ordering
  * @returns Sanitized and formatted string ready for safe transmission
  *
  * @example
@@ -53,7 +54,7 @@ export function createResult(options: {
  *   data: { repos: [...] },
  *   hints: ["Try narrowing your search"]
  * };
- * const formatted = createResponseFormat(responseData);
+ * const formatted = createResponseFormat(responseData, ['queryId', 'reasoning']);
  * ```
  *
  * @security
@@ -62,12 +63,20 @@ export function createResult(options: {
  * - Handles unserializable data gracefully
  * - Preserves structured data format for AI parsing
  */
-export function createResponseFormat(responseData: ToolResponse): string {
+export function createResponseFormat(
+  responseData: ToolResponse,
+  keysPriority?: string[]
+): string {
   // Clean object
   const cleanedData = cleanJsonObject(responseData) as ToolResponse;
   // Convert to YAML if beta features are enabled (with safe fallback)
   const yamlData = jsonToYamlString(cleanedData, {
-    keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
+    keysPriority: keysPriority || [
+      'queryId',
+      'reasoning',
+      'repository',
+      'files',
+    ],
   });
   //sanitize for malicious content and prompt injection
   const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);

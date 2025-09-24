@@ -99,8 +99,8 @@ describe('GitHub Fetch Content Tool', () => {
       const responseText = result.content[0]?.text as string;
       const expectedYaml = `data:
   - queryId: "test-query"
-    content: "# Hello World\\n\\nThis is a test file."
     filePath: "README.md"
+    content: "# Hello World\\n\\nThis is a test file."
     owner: "test"
     repo: "repo"
     totalLines: 3

@@ -200,6 +200,7 @@ async function searchMultipleGitHubCode(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
     maxHints: 8,
+    keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

@@ -91,9 +91,9 @@ async function searchGitHubReposAPIInternal(
     const result = await octokit.rest.search.repos(searchParams);
 
     // Transform repository results to match CLI format with proper typing
-    const repositories = result.data.items.map(
-      (repo: RepoSearchResultItem) => ({
-        owner_repo: repo.full_name,
+    const repositories = result.data.items
+      .map((repo: RepoSearchResultItem) => ({
+        repository: repo.full_name,
         stars: repo.stargazers_count || 0,
         description: repo.description
           ? repo.description.length > 150
@@ -102,8 +102,18 @@ async function searchGitHubReposAPIInternal(
           : 'No description',
         url: repo.html_url,
         updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
-      })
-    );
+      }))
+      // Sort by stars (descending) then by updatedAt (descending)
+      .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {
+        // First sort by stars (higher stars first)
+        if (b.stars !== a.stars) {
+          return b.stars - a.stars;
+        }
+        // If stars are equal, sort by updatedAt (more recent first)
+        const dateA = new Date(a.updatedAt.split('/').reverse().join('-'));
+        const dateB = new Date(b.updatedAt.split('/').reverse().join('-'));
+        return dateB.getTime() - dateA.getTime();
+      });
 
     return {
       data: {

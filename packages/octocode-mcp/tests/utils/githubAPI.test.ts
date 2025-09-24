@@ -683,7 +683,7 @@ describe('GitHub API Utils', () => {
           data: {
             repositories: [
               {
-                owner_repo: 'facebook/react',
+                repository: 'facebook/react',
                 stars: 50000,
                 description:
                   'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
