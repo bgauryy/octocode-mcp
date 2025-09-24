@@ -25,11 +25,11 @@
 
 <div align="center">
   
-  [![Version](https://img.shields.io/badge/version-4.1.0-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-6.0.0-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.12.0-brightgreen)](https://nodejs.org/)
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
-  [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
 
 </div>
 
@@ -189,6 +189,9 @@ For organizations: audit logging, access controls, rate limiting, and compliance
 
 **Need help?** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
 ---
+
+ <a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" />
 
 <div align="center">
   <p>Built with ❤️ for developers</p>
