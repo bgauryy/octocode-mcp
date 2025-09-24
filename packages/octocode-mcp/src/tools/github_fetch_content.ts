@@ -136,6 +136,7 @@ async function fetchMultipleGitHubFileContents(
               'Verify repository owner, name, and file path are correct',
               'Check that the branch exists (try "main" or "master")',
               'Ensure you have access to the repository',
+              'Use github_view_repo_structure tool first to explore the repository structure and find correct file paths',
             ],
             metadata: {},
           };
@@ -216,6 +217,7 @@ async function fetchMultipleGitHubFileContents(
             'Verify repository owner, name, and file path are correct',
             'Check that the branch exists (try "main" or "master")',
             'Ensure you have access to the repository',
+            'Use github_view_repo_structure tool first to explore the repository structure and find correct file paths',
           ],
           metadata: {},
         } as ProcessedBulkResult;
