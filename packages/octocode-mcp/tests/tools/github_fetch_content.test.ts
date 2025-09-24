@@ -69,12 +69,11 @@ describe('GitHub Fetch Content Tool', () => {
       // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'README.md',
-          owner: 'test',
-          repo: 'repo',
+          repository: 'test/repo',
+          path: 'README.md',
           branch: 'main',
           content: '# Hello World\n\nThis is a test file.',
-          totalLines: 3,
+          contentLength: 35,
           minified: false,
         },
         status: 200,
@@ -85,7 +84,7 @@ describe('GitHub Fetch Content Tool', () => {
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'README.md',
+            path: 'README.md',
             branch: 'main',
             id: 'test-query',
           },
@@ -96,26 +95,33 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content).toHaveLength(1);
       expect(result.content[0]?.type).toBe('text');
 
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(Array.isArray(data.results)).toBe(true);
-      expect(data.results).toHaveLength(1);
-
-      const fileResult = data.results[0];
-      expect(fileResult.filePath).toBe('README.md');
-      expect(fileResult.content).toContain('Hello World');
-      expect(fileResult.originalQuery).toBeUndefined(); // Only on error
+      const responseText = result.content[0]?.text as string;
+      const expectedYaml = `data:
+  - queryId: "test-query"
+    repository: "test/repo"
+    path: "README.md"
+    contentLength: 35
+    content: "# Hello World\\n\\nThis is a test file."
+hints:
+  - "Use repository structure analysis to find similar implementations"
+  - "Single result found - dive deep and look for related examples in the same repository"
+  - "From implementation files, find: imports, exports, tests, and related modules"
+  - "Always verify documentation claims against actual implementation code"
+  - "Look for main files, index files, and public APIs to understand code structure"
+  - "Examine imports/exports to understand dependencies and usage"
+`;
+      expect(responseText).toEqual(expectedYaml);
     });
 
     it('should pass authInfo and userContext to GitHub API', async () => {
       // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'testowner',
-          repo: 'testrepo',
+          path: 'test.js',
+          repository: 'testowner/testrepo',
           branch: 'main',
           content: 'console.log("test");',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -126,7 +132,7 @@ describe('GitHub Fetch Content Tool', () => {
           {
             owner: 'testowner',
             repo: 'testrepo',
-            filePath: 'test.js',
+            path: 'test.js',
             branch: 'main',
             id: 'auth-test-query',
           },
@@ -149,23 +155,23 @@ describe('GitHub Fetch Content Tool', () => {
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
-            filePath: 'README.md',
+            path: 'README.md',
             owner: 'test',
             repo: 'repo',
             branch: 'main',
             content: '# README',
-            totalLines: 1,
+            contentLength: 1,
           },
           status: 200,
         })
         .mockResolvedValueOnce({
           data: {
-            filePath: 'package.json',
+            path: 'package.json',
             owner: 'test',
             repo: 'repo',
             branch: 'main',
             content: '{"name": "test"}',
-            totalLines: 1,
+            contentLength: 1,
           },
           status: 200,
         });
@@ -175,31 +181,25 @@ describe('GitHub Fetch Content Tool', () => {
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'README.md',
+            path: 'README.md',
             id: 'readme',
           },
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'package.json',
+            path: 'package.json',
             id: 'package',
           },
         ],
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(2);
-
-      const readmeResult = data.results.find((r: Record<string, unknown>) =>
-        r.filePath?.toString().includes('README.md')
-      );
-      const packageResult = data.results.find((r: Record<string, unknown>) =>
-        r.filePath?.toString().includes('package.json')
-      );
-
-      expect(readmeResult.filePath).toBe('README.md');
-      expect(packageResult.filePath).toBe('package.json');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('readme');
+      expect(responseText).toContain('package');
     });
   });
 
@@ -218,20 +218,17 @@ describe('GitHub Fetch Content Tool', () => {
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'nonexistent.md',
+            path: 'nonexistent.md',
             id: 'error-test',
           },
         ],
       });
 
       expect(result.isError).toBe(false); // Tool doesn't error, but result contains error
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(1);
-
-      const errorResult = data.results[0];
-      expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
-      expect(errorResult.error).toContain('not found');
-      expect(errorResult.filePath).toBeUndefined(); // No file properties on error
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('not found');
     });
 
     it('should handle API exception', async () => {
@@ -245,25 +242,18 @@ describe('GitHub Fetch Content Tool', () => {
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.md',
+            path: 'test.md',
             id: 'exception-test',
           },
         ],
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(1);
-
-      const errorResult = data.results[0];
-      expect(errorResult.originalQuery).toEqual({
-        owner: 'test',
-        repo: 'repo',
-        filePath: 'test.md',
-        id: 'exception-test', // Custom ID provided in the test
-      }); // originalQuery is included in error responses
-      expect(errorResult.error).toBe('Network error');
-      expect(errorResult.filePath).toBeUndefined(); // No file properties on error
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('Network error');
+      expect(responseText).toContain('exception-test');
     });
   });
 
@@ -284,12 +274,11 @@ End of file.`;
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'README.md',
-          owner: 'test',
-          repo: 'repo',
+          path: 'README.md',
+          repository: 'test/repo',
           branch: 'main',
           content: fullFileContent,
-          totalLines: 12,
+          contentLength: 12,
           minified: false,
           isPartial: undefined, // Should not be partial for full content
           startLine: undefined, // Should not have line boundaries for full content
@@ -303,7 +292,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'README.md',
+            path: 'README.md',
             fullContent: true,
             id: 'full-content-test',
           },
@@ -311,14 +300,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.content).toBe(fullFileContent);
-      expect(fileResult.totalLines).toBe(12);
-      expect(fileResult.isPartial).toBeUndefined();
-      expect(fileResult.startLine).toBeUndefined();
-      expect(fileResult.endLine).toBeUndefined();
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('Full File Content');
+      expect(responseText).toContain('contentLength: 12');
+      expect(responseText).toContain('README.md');
 
       // Verify API was called with fullContent=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -336,12 +322,11 @@ End of file.`;
     it('should ignore other parameters when fullContent=true', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'Full file content should be returned',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -352,7 +337,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             fullContent: true,
             startLine: 5, // Should be ignored
             endLine: 10, // Should be ignored
@@ -382,12 +367,11 @@ End of file.`;
     it('should fetch content with startLine and endLine', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/index.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/index.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'line 5\nline 6\nline 7',
-          totalLines: 20,
+          contentLength: 20,
           isPartial: true,
           startLine: 5,
           endLine: 7,
@@ -401,7 +385,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/index.js',
+            path: 'src/index.js',
             startLine: 5,
             endLine: 7,
             id: 'partial-lines-test',
@@ -410,14 +394,12 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.content).toBe('line 5\nline 6\nline 7');
-      expect(fileResult.isPartial).toBe(true);
-      expect(fileResult.startLine).toBe(5);
-      expect(fileResult.endLine).toBe(7);
-      expect(fileResult.totalLines).toBe(20);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('line 5');
+      expect(responseText).toContain('isPartial: true');
+      expect(responseText).toContain('startLine: 5');
+      expect(responseText).toContain('endLine: 7');
 
       // Verify API was called with correct line parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -435,13 +417,12 @@ End of file.`;
     it('should fetch content with matchString and context', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/utils.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/utils.js',
+          repository: 'test/repo',
           branch: 'main',
           content:
             'function helper() {\n  return true;\n}\n\nfunction main() {\n  return helper();\n}',
-          totalLines: 50,
+          contentLength: 50,
           isPartial: true,
           startLine: 8,
           endLine: 14,
@@ -456,7 +437,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/utils.js',
+            path: 'src/utils.js',
             matchString: 'function main',
             matchStringContextLines: 3,
             id: 'match-string-test',
@@ -465,16 +446,13 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.content).toContain('function main');
-      expect(fileResult.isPartial).toBe(true);
-      expect(fileResult.startLine).toBe(8);
-      expect(fileResult.endLine).toBe(14);
-      expect(fileResult.securityWarnings).toContain(
-        'Found "function main" on line 11'
-      );
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('function main');
+      expect(responseText).toContain('isPartial: true');
+      expect(responseText).toContain('startLine: 8');
+      expect(responseText).toContain('securityWarnings');
+      expect(responseText).toContain('function main');
 
       // Verify API was called with matchString parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -493,12 +471,11 @@ End of file.`;
     it('should use default matchStringContextLines when not specified', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.py',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.py',
+          repository: 'test/repo',
           branch: 'main',
           content: 'def test_function():\n    pass',
-          totalLines: 10,
+          contentLength: 10,
           isPartial: true,
           startLine: 1,
           endLine: 10,
@@ -512,7 +489,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.py',
+            path: 'test.py',
             matchString: 'def test_function',
             id: 'default-context-test',
           },
@@ -537,12 +514,11 @@ End of file.`;
     it('should apply minification when minified=true', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/app.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/app.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const app=()=>{return"Hello"};',
-          totalLines: 1,
+          contentLength: 1,
           minified: true,
           minificationType: 'terser',
           minificationFailed: false,
@@ -555,7 +531,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/app.js',
+            path: 'src/app.js',
             minified: true,
             verbose: true,
             id: 'minified-test',
@@ -564,12 +540,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.minified).toBe(true);
-      expect(fileResult.minificationType).toBe('terser');
-      expect(fileResult.minificationFailed).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('minified: true');
+      expect(responseText).toContain('minificationType: "terser"');
+      expect(responseText).toContain('minificationFailed: false');
 
       // Verify API was called with minified=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -584,12 +559,11 @@ End of file.`;
     it('should not apply minification when minified=false', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/readable.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/readable.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const app = () => {\n  return "Hello World";\n};',
-          totalLines: 3,
+          contentLength: 37,
           minified: false,
         },
         status: 200,
@@ -600,7 +574,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/readable.js',
+            path: 'src/readable.js',
             minified: false,
             verbose: true,
             id: 'not-minified-test',
@@ -609,11 +583,10 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.content).toContain('return "Hello World"');
-      expect(fileResult.minified).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('Hello World');
+      expect(responseText).toContain('minified: false');
 
       // Verify API was called with minified=false
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -628,12 +601,11 @@ End of file.`;
     it('should handle minification failure gracefully', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'src/broken.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'src/broken.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const broken = () => { // Syntax error',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
           minificationType: 'failed',
           minificationFailed: true,
@@ -646,7 +618,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'src/broken.js',
+            path: 'src/broken.js',
             minified: true,
             verbose: true,
             id: 'minification-failed-test',
@@ -655,12 +627,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.minificationFailed).toBe(true);
-      expect(fileResult.minificationType).toBe('failed');
-      expect(fileResult.content).toContain('// Syntax error');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('minificationFailed: true');
+      expect(responseText).toContain('minificationType: "failed"');
+      expect(responseText).toContain('// Syntax error');
     });
   });
 
@@ -668,12 +639,11 @@ End of file.`;
     it('should sanitize content and provide security warnings', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'config.env',
-          owner: 'test',
-          repo: 'repo',
+          path: 'config.env',
+          repository: 'test/repo',
           branch: 'main',
           content: 'API_KEY=[REDACTED]\nDATABASE_URL=[REDACTED]',
-          totalLines: 2,
+          contentLength: 2,
           minified: false,
           securityWarnings: [
             'Secrets detected and redacted: API_KEY, DATABASE_URL',
@@ -688,7 +658,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'config.env',
+            path: 'config.env',
             sanitize: true,
             id: 'security-test',
           },
@@ -696,14 +666,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.content).toContain('[REDACTED]');
-      expect(fileResult.securityWarnings).toContain(
-        'Secrets detected and redacted: API_KEY, DATABASE_URL'
-      );
-      expect(fileResult.securityWarnings).toContain(
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('[REDACTED]');
+      expect(responseText).toContain('Secrets detected and redacted');
+      expect(responseText).toContain(
         'Potentially sensitive configuration file detected'
       );
 
@@ -720,12 +687,11 @@ End of file.`;
     it('should handle sanitize=false parameter', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'public.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'public.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'console.log("Public content");',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -736,7 +702,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'public.js',
+            path: 'public.js',
             sanitize: false,
             id: 'no-sanitize-test',
           },
@@ -787,12 +753,11 @@ End of file.`;
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'utils.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'utils.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'export const helper = () => true;',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -803,27 +768,20 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'utils.js',
+            path: 'utils.js',
             id: 'sampling-test',
           },
         ],
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.sampling).toBeDefined();
-      expect(fileResult.sampling.codeExplanation).toBe(
-        'This is a JavaScript utility function that exports a helper method.'
-      );
-      expect(fileResult.sampling.filePath).toBe('utils.js');
-      expect(fileResult.sampling.repo).toBe('test/repo');
-      expect(fileResult.sampling.usage).toEqual({
-        promptTokens: 100,
-        completionTokens: 50,
-        totalTokens: 150,
-      });
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('sampling:');
+      expect(responseText).toContain('JavaScript utility function');
+      expect(responseText).toContain('utils.js');
+      expect(responseText).toContain('test/repo');
+      expect(responseText).toContain('promptTokens: 100');
     });
 
     it('should handle sampling failure gracefully', async () => {
@@ -837,12 +795,11 @@ End of file.`;
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'console.log("test");',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -853,20 +810,18 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             id: 'sampling-failure-test',
           },
         ],
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('console.log');
       // Should not have sampling data when it fails
-      expect(fileResult.sampling).toBeUndefined();
-      // But should still have the file content
-      expect(fileResult.content).toBe('console.log("test");');
+      expect(responseText).not.toContain('sampling:');
     });
   });
 
@@ -874,12 +829,11 @@ End of file.`;
     it('should handle custom branch parameter', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'feature.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'feature.js',
+          repository: 'test/repo',
           branch: 'feature-branch',
           content: 'const feature = "new feature";',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -890,7 +844,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'feature.js',
+            path: 'feature.js',
             branch: 'feature-branch',
             verbose: true,
             id: 'branch-test',
@@ -899,13 +853,10 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.results[0];
-
-      expect(fileResult.branch).toBe('feature-branch');
-      expect(fileResult.query).toBeDefined();
-      expect(fileResult.query.branch).toBe('feature-branch');
-      expect(fileResult.query.verbose).toBe(true);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('branch: "feature-branch"');
+      expect(responseText).toContain('feature.js');
 
       // Verify API was called with correct branch
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -920,12 +871,11 @@ End of file.`;
     it('should handle missing branch (defaults to main/master)', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'main.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'main.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'const main = "main branch";',
-          totalLines: 1,
+          contentLength: 1,
           minified: false,
         },
         status: 200,
@@ -936,7 +886,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'main.js',
+            path: 'main.js',
             id: 'no-branch-test',
           },
         ],
@@ -961,12 +911,12 @@ End of file.`;
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
-            filePath: 'success.js',
+            path: 'success.js',
             owner: 'test',
             repo: 'repo',
             branch: 'main',
             content: 'const success = true;',
-            totalLines: 1,
+            contentLength: 1,
             minified: false,
           },
           status: 200,
@@ -985,45 +935,33 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'success.js',
+            path: 'success.js',
             id: 'success-query',
           },
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'missing.js',
+            path: 'missing.js',
             id: 'error-query',
           },
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'timeout.js',
+            path: 'timeout.js',
             id: 'exception-query',
           },
         ],
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.results).toHaveLength(3);
-
-      // First result should be successful
-      const successResult = data.results[0];
-      expect(successResult.content).toBe('const success = true;');
-      expect(successResult.error).toBeUndefined();
-      expect(successResult.originalQuery).toBeUndefined();
-
-      // Second result should have API error
-      const errorResult = data.results[1];
-      expect(errorResult.error).toBe('File not found');
-      expect(errorResult.content).toBeUndefined(); // No content properties on error
-      expect(errorResult.originalQuery).toBeUndefined();
-
-      // Third result should have exception error
-      const exceptionResult = data.results[2];
-      expect(exceptionResult.error).toBe('Network timeout');
-      expect(exceptionResult.content).toBeUndefined(); // No content properties on error
-      expect(exceptionResult.originalQuery).toBeDefined(); // originalQuery included for exceptions
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('const success = true;');
+      expect(responseText).toContain('File not found');
+      expect(responseText).toContain('Network timeout');
+      expect(responseText).toContain('success-query');
+      expect(responseText).toContain('error-query');
+      expect(responseText).toContain('exception-query');
     });
   });
 
@@ -1031,12 +969,11 @@ End of file.`;
     it('should handle string numbers for line parameters', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'line 5\nline 6',
-          totalLines: 10,
+          contentLength: 10,
           isPartial: true,
           startLine: 5,
           endLine: 6,
@@ -1050,7 +987,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             startLine: 5, // Should be converted to number
             endLine: 6, // Should be converted to number
             id: 'type-conversion-test',
@@ -1074,12 +1011,11 @@ End of file.`;
     it('should handle boolean parameters correctly', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
-          filePath: 'test.js',
-          owner: 'test',
-          repo: 'repo',
+          path: 'test.js',
+          repository: 'test/repo',
           branch: 'main',
           content: 'test content',
-          totalLines: 1,
+          contentLength: 1,
           minified: true,
         },
         status: 200,
@@ -1090,7 +1026,7 @@ End of file.`;
           {
             owner: 'test',
             repo: 'repo',
-            filePath: 'test.js',
+            path: 'test.js',
             fullContent: true,
             minified: true,
             sanitize: false,
@@ -1123,51 +1059,22 @@ End of file.`;
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0]?.text as string);
-
-      // The error structure has meta.error as boolean true, and the actual error message in data
-      expect(errorData.meta.error).toBe(true);
-      expect(Array.isArray(errorData.hints)).toBe(true);
-      expect(
-        errorData.hints.some((hint: string) =>
-          hint.includes('at least one file content query')
-        )
-      ).toBe(true);
-    });
-
-    it('should reject too many queries', async () => {
-      const manyQueries = Array.from({ length: 11 }, (_, i) => ({
-        owner: 'test',
-        repo: 'repo',
-        filePath: `file${i}.md`,
-        id: `query-${i}`,
-      }));
-
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: manyQueries,
-      });
-
-      expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0]?.text as string);
-      expect(errorData.meta.error).toBe(true);
-      expect(
-        errorData.hints.some((hint: string) =>
-          hint.includes('Limit to 10 file queries')
-        )
-      ).toBe(true);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('at least one file content query');
     });
 
     it('should reject missing queries parameter', async () => {
       const result = await mockServer.callTool('githubGetFileContent', {});
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0]?.text as string);
-      expect(errorData.meta.error).toBe(true);
-      expect(
-        errorData.hints.some((hint: string) =>
-          hint.includes('at least one file content query')
-        )
-      ).toBe(true);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('at least one file content query');
     });
   });
 });

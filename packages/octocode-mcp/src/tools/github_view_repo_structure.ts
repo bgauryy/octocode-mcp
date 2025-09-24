@@ -10,9 +10,8 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
-  ProcessedRepositoryStructureResult,
-  AggregatedRepositoryContext,
-} from '../scheme/github_view_repo_structure';
+  RepoStructureResult,
+} from '../scheme/github_view_repo_structure.js';
 import { generateHints } from './hints';
 import {
   ensureUniqueQueryIds,
@@ -62,35 +61,14 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
           });
 
           return createResult({
-            isError: true,
-            error: 'Queries array is required and cannot be empty',
+            data: { error: 'Queries array is required and cannot be empty' },
             hints,
+            isError: true,
           });
         }
-
-        if (args.queries.length > 5) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-            hasResults: false,
-            errorMessage: 'Too many queries provided',
-            customHints: [
-              'Limit to 5 repository structure queries per request for optimal performance',
-            ],
-          });
-
-          return createResult({
-            isError: true,
-            error: 'Maximum 5 queries allowed per request',
-            hints,
-          });
-        }
-
-        // Check if any query has verbose=true
-        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
 
         return exploreMultipleRepositoryStructures(
           args.queries,
-          hasVerboseQuery,
           authInfo,
           userContext
         );
@@ -101,7 +79,6 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
 
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
-  verbose: boolean = false,
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
@@ -110,7 +87,7 @@ async function exploreMultipleRepositoryStructures(
     uniqueQueries,
     async (
       query: GitHubViewRepoStructureQuery
-    ): Promise<ProcessedRepositoryStructureResult> => {
+    ): Promise<RepoStructureResult> => {
       try {
         // TypeScript and Zod validation ensure all required fields are properly typed
         // No manual validation needed - trust the type system!
@@ -136,6 +113,12 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
+            queryId: String(query.id),
+            reasoning: query.reasoning,
+            repository: `${query.owner}/${query.repo}`,
+            path: query.path || '/',
+            files: [],
+            folders: [],
             error: apiResult.error,
             hints: [
               'Verify repository owner and name are correct',
@@ -143,7 +126,6 @@ async function exploreMultipleRepositoryStructures(
               'Ensure you have access to the repository',
             ],
             metadata: {
-              queryArgs: { ...query },
               error: apiResult.error,
               searchType: 'api_error',
             },
@@ -171,15 +153,30 @@ async function exploreMultipleRepositoryStructures(
         const hasResults =
           filteredFiles.length > 0 || filteredFolders.length > 0;
 
-        // Extract file paths and folder paths separately
-        const filePaths = filteredFiles.map(file => file.path);
-        const folderPaths = filteredFolders.map(folder => folder.path);
+        // Extract file paths and folder paths separately, removing the path prefix
+        const pathPrefix = apiRequest.path || '/';
+        const normalizedPrefix = pathPrefix === '/' ? '' : pathPrefix;
 
-        const result: ProcessedRepositoryStructureResult = {
+        const filePaths = filteredFiles.map(file => {
+          // Remove the path prefix if it exists
+          if (normalizedPrefix && file.path.startsWith(normalizedPrefix)) {
+            return file.path.substring(normalizedPrefix.length);
+          }
+          return file.path;
+        });
+
+        const folderPaths = filteredFolders.map(folder => {
+          // Remove the path prefix if it exists
+          if (normalizedPrefix && folder.path.startsWith(normalizedPrefix)) {
+            return folder.path.substring(normalizedPrefix.length);
+          }
+          return folder.path;
+        });
+
+        const result: RepoStructureResult = {
           queryId: String(query.id),
           reasoning: query.reasoning,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
-          branch: apiRequest.branch,
           path: apiRequest.path || '/',
           files: filePaths,
           folders: folderPaths,
@@ -203,6 +200,12 @@ async function exploreMultipleRepositoryStructures(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          queryId: String(query.id),
+          reasoning: query.reasoning,
+          repository: `${query.owner}/${query.repo}`,
+          path: query.path || '/',
+          files: [],
+          folders: [],
           error: `Failed to explore repository structure: ${errorMessage}`,
           hints: [
             'Verify repository owner and name are correct',
@@ -222,7 +225,7 @@ async function exploreMultipleRepositoryStructures(
   // Build aggregated context for intelligent hints
   const successfulCount = results.filter(r => !r.result.error).length;
   const failedCount = results.length - successfulCount;
-  const aggregatedContext: AggregatedRepositoryContext = {
+  const aggregatedContext = {
     totalQueries: results.length,
     successfulQueries: successfulCount,
     failedQueries: failedCount,
@@ -283,73 +286,23 @@ async function exploreMultipleRepositoryStructures(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    includeAggregatedContext: verbose,
-    includeErrors: true,
     maxHints: 8,
+    keysPriority: [
+      'queryId',
+      'reasoning',
+      'repository',
+      'path',
+      'files',
+      'folders',
+    ],
   };
 
-  // Create response with enhanced hints
-  const response = createBulkResponse(
+  // Create standardized response - bulk operations handles all hint generation and formatting
+  return createBulkResponse(
     config,
     results,
     aggregatedContext,
     errors,
-    uniqueQueries,
-    verbose
+    uniqueQueries
   );
-
-  // Apply verbose filtering and flatten complex structures
-  const responseText = response.content[0]?.text;
-  if (!responseText || typeof responseText !== 'string') {
-    return response;
-  }
-  const responseData = JSON.parse(responseText);
-  if (responseData.results) {
-    responseData.results = responseData.results.map(
-      (result: Record<string, unknown>, index: number) => {
-        const hasError = !!result.error;
-        const hasNoResults =
-          result.structure && (result.structure as unknown[]).length === 0;
-
-        // If this specific query has verbose=true, add query field
-        const originalQuery = uniqueQueries[index];
-        const queryIsVerbose = originalQuery?.verbose === true;
-
-        // Flatten metadata.queryArgs to query field when appropriate
-        if (result.metadata && typeof result.metadata === 'object') {
-          const metadata = result.metadata as Record<string, unknown>;
-          if (metadata.queryArgs) {
-            if (hasError || hasNoResults || queryIsVerbose) {
-              result.query = metadata.queryArgs;
-            }
-            // Remove complex nested metadata structure only if not verbose
-            if (!queryIsVerbose) {
-              delete result.metadata;
-            }
-          }
-        }
-
-        if (queryIsVerbose && !result.query) {
-          if (originalQuery) {
-            result.query = { ...originalQuery };
-          } else {
-            // Fallback: create query from result data
-            result.query = {
-              id: result.queryId,
-              verbose: true,
-            };
-          }
-        }
-
-        return result;
-      }
-    );
-  }
-
-  // Update the response content
-  response.content = [
-    { type: 'text', text: JSON.stringify(responseData, null, 2) },
-  ];
-
-  return response;
 }

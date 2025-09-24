@@ -7,6 +7,7 @@
  * - Error aggregation and recovery
  * - Result aggregation and context building
  * - Smart hint generation based on bulk results
+ * - Reasoning propagation from queries to results
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -14,6 +15,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateBulkHints, BulkHintContext } from '../tools/hints.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
+import { createResponseFormat, type ToolResponse } from '../responses.js';
 
 /**
  * Smart type constraint - handles schema-inferred types and unknown fields
@@ -29,6 +31,67 @@ function safeExtractString(
 ): string | undefined {
   const value = obj[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+// Tool-aware, code-based empty detection aligned with our GitHub API wrappers
+function getNestedField(obj: Record<string, unknown>, key: string): unknown {
+  if (key in obj) return (obj as Record<string, unknown>)[key];
+  const data = (obj as Record<string, unknown>)['data'];
+  if (
+    data &&
+    typeof data === 'object' &&
+    key in (data as Record<string, unknown>)
+  ) {
+    return (data as Record<string, unknown>)[key];
+  }
+  return undefined;
+}
+
+function isNoResultsForTool(
+  toolName: ToolName,
+  resultObj: Record<string, unknown>
+): boolean {
+  // If error flag present on a "success" object, treat as no-results path
+  if ('error' in resultObj) return true;
+
+  switch (toolName) {
+    case TOOL_NAMES.GITHUB_FETCH_CONTENT: {
+      // Our API returns explicit error for empty file; success implies content available
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_SEARCH_CODE: {
+      const total = getNestedField(resultObj, 'totalCount');
+      const files = getNestedField(resultObj, 'files');
+      if (typeof total === 'number') return total === 0;
+      if (Array.isArray(files)) return files.length === 0;
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES: {
+      const total = getNestedField(resultObj, 'total_count');
+      const repos = getNestedField(resultObj, 'repositories');
+      if (typeof total === 'number') return total === 0;
+      if (Array.isArray(repos)) return repos.length === 0;
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS: {
+      const total = getNestedField(resultObj, 'total_count');
+      const prs = getNestedField(resultObj, 'pull_requests');
+      if (typeof total === 'number') return total === 0;
+      if (Array.isArray(prs)) return prs.length === 0;
+      return false;
+    }
+    case TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE: {
+      const files = getNestedField(resultObj, 'files');
+      const folders = getNestedField(resultObj, 'folders');
+      const filesEmpty = Array.isArray(files) ? files.length === 0 : false;
+      const foldersEmpty = Array.isArray(folders)
+        ? folders.length === 0
+        : false;
+      return filesEmpty && foldersEmpty;
+    }
+    default:
+      return false;
+  }
 }
 
 /**
@@ -68,9 +131,8 @@ export interface AggregatedContext {
  */
 export interface BulkResponseConfig {
   toolName: ToolName;
-  includeAggregatedContext?: boolean;
-  includeErrors?: boolean;
   maxHints?: number;
+  keysPriority?: string[];
 }
 
 /**
@@ -118,48 +180,69 @@ export async function processBulkQueries<
   queries: Array<T & { id: string }>,
   processor: (query: T & { id: string }) => Promise<R>
 ): Promise<{
-  results: Array<{ result: R }>;
+  results: Array<{
+    result: R;
+    queryId: string;
+    originalQuery: T & { id: string };
+  }>;
   errors: QueryError[];
 }> {
-  const results: Array<{ result: R }> = [];
+  const results: Array<{
+    result: R;
+    queryId: string;
+    originalQuery: T & { id: string };
+  }> = [];
   const errors: QueryError[] = [];
 
-  // Process queries in parallel with error isolation
-  const queryPromises = queries.map(async (query, index) => {
-    try {
-      const result = await processor(query);
-      return { result };
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      errors.push({
-        queryId: `query-${index}`,
-        error: errorMsg,
-      });
-      return null;
-    }
-  });
+  // Early return for empty queries to avoid unnecessary processing
+  if (!queries || queries.length === 0) {
+    return { results, errors };
+  }
 
-  // Wait for all queries to complete with error isolation
-  const queryResults = await executeWithErrorIsolation(
-    queryPromises.map(promise => () => promise),
-    {
-      timeout: 60000, // 60 second timeout per query
-      continueOnError: true,
-      onError: (error: Error, index: number) => {
-        errors.push({
-          queryId: `query-${index}`,
-          error: error.message,
-        });
-      },
-    }
+  // Create promise functions for executeWithErrorIsolation (lazy execution)
+  const queryPromiseFunctions = queries.map(
+    (query, index) => () =>
+      processor(query).then(result => ({
+        result,
+        queryId: query.id,
+        index,
+        originalQuery: query,
+      }))
   );
 
-  // Collect successful results
-  queryResults.forEach((result: PromiseResult<{ result: R } | null>) => {
-    if (result.success && result.data) {
-      results.push(result.data);
-    }
+  // Wait for all queries to complete with error isolation
+  const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
+    timeout: 60000, // 60 second timeout per query
+    continueOnError: true,
+    onError: (error: Error, index: number) => {
+      const query = queries[index];
+      errors.push({
+        queryId: query?.id || `query-${index}`,
+        error: error.message,
+      });
+    },
   });
+
+  // Collect successful results with proper query tracking
+  queryResults.forEach(
+    (
+      result: PromiseResult<{
+        result: R;
+        queryId: string;
+        index: number;
+        originalQuery: T & { id: string };
+      }>
+    ) => {
+      if (result.success && result.data) {
+        const data = result.data; // TypeScript now knows data is defined
+        results.push({
+          result: data.result,
+          queryId: data.queryId,
+          originalQuery: data.originalQuery,
+        });
+      }
+    }
+  );
 
   return { results, errors };
 }
@@ -188,7 +271,6 @@ function createBulkHintsContext<T extends HasOptionalId>(
  * @param context Aggregated context
  * @param errors Query errors
  * @param queries Original queries
- * @param verbose Whether to include verbose metadata
  * @returns Standardized CallToolResult
  */
 export function createBulkResponse<
@@ -196,103 +278,112 @@ export function createBulkResponse<
   R extends ProcessedBulkResult,
 >(
   config: BulkResponseConfig,
-  results: Array<{ result: R }>,
+  results: Array<{
+    result: R;
+    queryId: string;
+    originalQuery: T & { id: string };
+  }>,
   context: AggregatedContext,
   errors: QueryError[],
-  queries: Array<T & { id: string }>,
-  verbose: boolean = false
+  queries: Array<T & { id: string }>
 ): CallToolResult {
   // Generate smart hints using consolidated hints system
   const hintContext = createBulkHintsContext(config, context, errors, queries);
   const hints = generateBulkHints(hintContext);
 
-  // Process results to match new format requirements
-  const processedResults = results.map((r, index) => {
-    const result = { ...r.result } as Record<string, unknown>;
-    const query = queries[index];
+  // Process successful results with proper query mapping (build map for O(1) access later)
+  const processedSuccessMap = new Map<string, Record<string, unknown>>();
+  results.forEach(r => {
+    const merged = { ...(r.result as Record<string, unknown>) } as Record<
+      string,
+      unknown
+    >;
+    const query = r.originalQuery;
 
     // Always add queryId to results
-    if (query?.id) {
-      result.queryId = query.id;
+    merged.queryId = r.queryId;
+
+    // Prefer result reasoning when defined, otherwise use query reasoning (including empty strings)
+    const resultReasoning = (r.result as Record<string, unknown>).reasoning as
+      | string
+      | undefined;
+    const queryReasoning = safeExtractString(query, 'reasoning');
+    if (resultReasoning !== undefined) {
+      merged.reasoning = resultReasoning;
+    } else if (queryReasoning !== undefined) {
+      merged.reasoning = queryReasoning;
     }
 
-    // Preserve reasoning field if it exists in the original result
-    if ('reasoning' in r.result && r.result.reasoning) {
-      result.reasoning = r.result.reasoning;
-    }
+    // Add originalQuery metadata for no-results or errors, remove metadata for successful results
+    const hasNoResults = isNoResultsForTool(config.toolName, merged);
+    const hasError = !!merged.error;
 
-    // For no-results cases or errors, always include metadata with query args
-    const hasNoResults =
-      (!result.data &&
-        !result.repositories &&
-        !result.files &&
-        !result.folders &&
-        !result.structure) ||
-      (result.files as unknown[] | undefined)?.length === 0 ||
-      (result.repositories as unknown[] | undefined)?.length === 0 ||
-      (result.folders as unknown[] | undefined)?.length === 0 ||
-      (result.structure as unknown[] | undefined)?.length === 0;
-
-    const hasError = !!result.error;
-
-    if (hasNoResults || hasError || verbose) {
-      // Ensure metadata exists and includes query args
-      if (!result.metadata || typeof result.metadata !== 'object') {
-        result.metadata = {};
+    if (hasNoResults || hasError) {
+      if (!merged.metadata || typeof merged.metadata !== 'object') {
+        merged.metadata = {};
       }
-      (result.metadata as Record<string, unknown>).queryArgs = { ...query };
-    } else if (!verbose && 'metadata' in result) {
-      // Remove metadata only if not verbose and has results
-      delete result.metadata;
+      (merged.metadata as Record<string, unknown>).originalQuery = { ...query };
+    } else {
+      // Remove metadata for successful results with content
+      delete merged.metadata;
     }
 
-    // For repository structure tool, add summary and queryArgs to top level if verbose
-    if (verbose && config.toolName === TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE) {
-      const metadata = result.metadata as Record<string, unknown> | undefined;
-      if (metadata?.summary) {
-        result.summary = metadata.summary;
-      }
-      if (metadata?.queryArgs) {
-        result.queryArgs = metadata.queryArgs;
-      }
-    }
-
-    return result;
+    processedSuccessMap.set(r.queryId, merged);
   });
 
-  // Build response object with consistent format: {results: [], hints: [], meta: []}
-  const responseData: Record<string, unknown> = {
-    results: processedResults,
+  // Process error results to include them in the response (build map)
+  const processedErrorMap = new Map<string, Record<string, unknown>>();
+  errors.forEach(error => {
+    const originalQuery = queries.find(q => q.id === error.queryId);
+    const queryReasoning = originalQuery
+      ? safeExtractString(originalQuery, 'reasoning')
+      : undefined;
+
+    const errorResult: Record<string, unknown> = {
+      queryId: error.queryId,
+      error: error.error,
+      hints: error.recoveryHints || [],
+      metadata: {
+        originalQuery: originalQuery
+          ? { ...originalQuery }
+          : { id: error.queryId },
+      },
+    };
+
+    if (queryReasoning !== undefined) {
+      errorResult.reasoning = queryReasoning;
+    }
+
+    processedErrorMap.set(error.queryId, errorResult);
+  });
+
+  // Combine successful and error results, maintaining query order
+  const allResults: Record<string, unknown>[] = [];
+  // Process queries in original order to maintain consistency
+  queries.forEach(query => {
+    const successProcessed = processedSuccessMap.get(query.id);
+    if (successProcessed) {
+      allResults.push(successProcessed);
+      return;
+    }
+    const errorProcessed = processedErrorMap.get(query.id);
+    if (errorProcessed) {
+      allResults.push(errorProcessed);
+    }
+  });
+
+  // Build response object with ToolResponse format: {data: [], hints: []}
+  const responseData: ToolResponse = {
+    data: allResults,
     hints,
   };
 
-  // Only include meta if verbose is true
-  if (verbose) {
-    const meta: Record<string, unknown> = {
-      totalOperations: results.length,
-      successfulOperations: results.filter(r => !r.result.error).length,
-      failedOperations: results.filter(r => !!r.result.error).length,
-    };
-
-    // Include aggregated context if requested
-    if (config.includeAggregatedContext) {
-      meta.aggregatedContext = context;
-    }
-
-    // Include errors if requested
-    if (config.includeErrors) {
-      meta.errors = errors;
-    }
-
-    responseData.meta = meta;
-  }
-
-  // Create the result directly with the custom structure
+  // Use createResponseFormat to ensure proper security processing, sanitization, and formatting
   return {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(responseData, null, 2),
+        text: createResponseFormat(responseData, config.keysPriority),
       },
     ],
     isError: false,

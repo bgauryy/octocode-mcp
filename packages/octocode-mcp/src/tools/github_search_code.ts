@@ -7,6 +7,8 @@ import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
+  GitHubSearchCodeInput,
+  SearchResult,
 } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/index.js';
 import {
@@ -15,9 +17,8 @@ import {
   processBulkQueries,
   ProcessedBulkResult,
 } from '../utils/bulkOperations.js';
-import { generateHints, generateBulkHints, consolidateHints } from './hints.js';
+import { generateHints } from './hints.js';
 import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
-import { ProcessedCodeSearchResult } from '../scheme/github_search_code.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 import { DESCRIPTIONS } from './descriptions.js';
@@ -39,17 +40,16 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     },
     withSecurityValidation(
       async (
-        args: {
-          queries: GitHubCodeSearchQuery[];
-          verbose?: boolean;
-        },
+        args: Record<string, unknown>,
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
+        // Type assertion after validation
+        const typedArgs = args as unknown as GitHubSearchCodeInput;
         if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
+          !typedArgs.queries ||
+          !Array.isArray(typedArgs.queries) ||
+          typedArgs.queries.length === 0
         ) {
           const hints = generateHints({
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
@@ -59,34 +59,14 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           });
 
           return createResult({
-            isError: true,
-            error: 'Queries array is required and cannot be empty',
+            data: { error: 'Queries array is required and cannot be empty' },
             hints,
+            isError: true,
           });
         }
-
-        if (args.queries.length > 5) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            hasResults: false,
-            errorMessage: 'Too many queries provided',
-            customHints: [
-              'Limit to 5 queries per request for optimal performance',
-            ],
-          });
-
-          return createResult({
-            isError: true,
-            error: 'Maximum 5 queries allowed per request',
-            hints,
-          });
-        }
-        // Check if any query has verbose=true
-        const hasVerboseQuery = args.queries.some(q => q.verbose === true);
 
         return searchMultipleGitHubCode(
-          args.queries,
-          hasVerboseQuery,
+          typedArgs.queries,
           authInfo,
           userContext
         );
@@ -97,7 +77,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
-  verbose: boolean = false,
   authInfo?: AuthInfo,
   userContext?: import('../security/withSecurityValidation.js').UserContext
 ): Promise<CallToolResult> {
@@ -149,7 +128,7 @@ async function searchMultipleGitHubCode(
         // Check if there are no results after filtering
         const hasNoResults = filteredItems.length === 0;
 
-        const result: ProcessedCodeSearchResult = {
+        const result: SearchResult = {
           queryId: query.id,
           reasoning: query.reasoning,
           repository,
@@ -164,8 +143,7 @@ async function searchMultipleGitHubCode(
               ),
             })
           ),
-          totalCount: filteredItems.length,
-          metadata: {}, // Always include metadata for bulk operations compatibility
+          metadata: {},
         };
 
         // Add hints for no results case
@@ -219,125 +197,18 @@ async function searchMultipleGitHubCode(
 
   // No need to extract detailed context - keep it simple
 
-  // Generate simple bulk hints
-  const enhancedHints = generateBulkHints({
-    toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    hasResults: successfulCount > 0,
-    errorCount: results.length - successfulCount,
-    totalCount: uniqueQueries.length,
-    successCount: successfulCount,
-  });
-
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    includeAggregatedContext: verbose,
-    includeErrors: true,
     maxHints: 8,
+    keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
   };
 
-  // Create response with enhanced hints
-  const response = createBulkResponse(
+  // Create standardized response - bulk operations handles all hint generation and formatting
+  return createBulkResponse(
     config,
     results,
     aggregatedContext,
     errors,
-    uniqueQueries,
-    verbose
+    uniqueQueries
   );
-
-  // Apply verbose filtering and flatten complex structures
-  const responseText = response.content[0]?.text;
-  if (!responseText || typeof responseText !== 'string') {
-    return response;
-  }
-  const responseData = JSON.parse(responseText);
-  if (responseData.results) {
-    responseData.results = responseData.results.map(
-      (result: Record<string, unknown>, index: number) => {
-        const hasError = !!result.error;
-        const hasNoResults =
-          result.files && (result.files as unknown[]).length === 0;
-
-        // If this specific query has verbose=true, add query field
-        const originalQuery = uniqueQueries[index];
-        const queryIsVerbose = originalQuery?.verbose === true;
-
-        // Flatten metadata.queryArgs to query field when appropriate
-        if (result.metadata && typeof result.metadata === 'object') {
-          const metadata = result.metadata as Record<string, unknown>;
-          if (metadata.queryArgs) {
-            if (hasError || hasNoResults || queryIsVerbose) {
-              result.query = metadata.queryArgs;
-            }
-            // Remove complex nested metadata structure only if not verbose
-            if (!queryIsVerbose) {
-              delete result.metadata;
-            }
-          }
-        }
-
-        if (queryIsVerbose && !result.query) {
-          if (originalQuery) {
-            result.query = { ...originalQuery };
-          } else {
-            // Fallback: create query from result data
-            result.query = {
-              id: result.queryId,
-              verbose: true,
-            };
-          }
-        }
-
-        return result;
-      }
-    );
-  }
-
-  // Update the response content
-  response.content = [
-    { type: 'text', text: JSON.stringify(responseData, null, 2) },
-  ];
-
-  // Enhance hints with research-specific guidance
-  if (enhancedHints.length > 0) {
-    // Extract the current hints from the response content
-    const responseText = response.content[0]?.text || '';
-    let responseData: Record<string, unknown>;
-    try {
-      responseData = JSON.parse(responseText as string);
-    } catch {
-      // If parsing fails, return response as is
-      return response;
-    }
-
-    // Combine enhanced hints with existing hints
-    const existingHints = (responseData.hints as string[]) || [];
-    const combinedHints = consolidateHints(
-      [...enhancedHints, ...existingHints],
-      8
-    );
-
-    // Create new response with enhanced hints using consistent bulk format
-    const newResponseData: Record<string, unknown> = {
-      results: responseData.results, // Use 'results' field from bulk response
-      hints: combinedHints,
-    };
-
-    // Add meta if it exists
-    if (responseData.meta) {
-      newResponseData.meta = responseData.meta;
-    }
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(newResponseData, null, 2),
-        },
-      ],
-      isError: response.isError,
-    };
-  }
-
-  return response;
 }

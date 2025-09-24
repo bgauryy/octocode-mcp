@@ -15,7 +15,7 @@ export interface ServerConfig {
 // Simple module state
 let config: ServerConfig | null = null;
 let cachedToken: string | null = null;
-let initialized = false;
+let initializationPromise: Promise<void> | null = null;
 
 /**
  * Parse comma-separated string to array
@@ -50,33 +50,46 @@ async function resolveGitHubToken(): Promise<string | null> {
 
 /**
  * Initialize configuration and resolve token
+ * Uses a promise-based approach to prevent race conditions
  */
 export async function initialize(): Promise<void> {
-  if (initialized) return;
+  // If already initialized, return immediately
+  if (config !== null) {
+    return;
+  }
 
-  // Resolve token
-  cachedToken = await resolveGitHubToken();
+  // If initialization is in progress, wait for it to complete
+  if (initializationPromise !== null) {
+    return initializationPromise;
+  }
 
-  // Build config
-  config = {
-    version: version,
-    toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
-    enableTools: parseStringArray(process.env.ENABLE_TOOLS),
-    disableTools: parseStringArray(process.env.DISABLE_TOOLS),
-    enableLogging: process.env.ENABLE_LOGGING === 'true',
-    betaEnabled:
-      process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
-    timeout: Math.max(
-      30000,
-      parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
-    ),
-    maxRetries: Math.max(
-      0,
-      Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)
-    ),
-  };
+  // Start initialization
+  initializationPromise = (async () => {
+    // Resolve token
+    cachedToken = await resolveGitHubToken();
 
-  initialized = true;
+    // Build config
+    config = {
+      version: version,
+      toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
+      enableTools: parseStringArray(process.env.ENABLE_TOOLS),
+      disableTools: parseStringArray(process.env.DISABLE_TOOLS),
+      enableLogging: process.env.ENABLE_LOGGING === 'true',
+      betaEnabled:
+        process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
+      timeout: Math.max(
+        30000,
+        parseInt(process.env.REQUEST_TIMEOUT || '30000') || 30000
+      ),
+      maxRetries: Math.max(
+        0,
+        Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)
+      ),
+    };
+  })();
+
+  // Wait for initialization to complete
+  await initializationPromise;
 }
 
 /**
@@ -85,15 +98,27 @@ export async function initialize(): Promise<void> {
 export function cleanup(): void {
   config = null;
   cachedToken = null;
-  initialized = false;
+  initializationPromise = null;
 }
 
 /**
  * Get server configuration
+ *
+ * @returns The initialized server configuration
+ * @throws {Error} If configuration has not been initialized yet
+ *
+ * @example
+ * ```typescript
+ * // Ensure initialization first
+ * await initialize();
+ * const config = getServerConfig();
+ * ```
  */
 export function getServerConfig(): ServerConfig {
   if (!config) {
-    throw new Error('Configuration not initialized. Call initialize() first.');
+    throw new Error(
+      'Configuration not initialized. Call initialize() and await its completion before calling getServerConfig().'
+    );
   }
   return config;
 }

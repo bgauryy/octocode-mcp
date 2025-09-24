@@ -25,11 +25,11 @@
 
 <div align="center">
   
-  [![Version](https://img.shields.io/badge/version-4.1.0-blue.svg)](./package.json)
+  [![Version](https://img.shields.io/badge/version-6.0.0-blue.svg)](./package.json)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](./package.json)
   [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.12.0-brightgreen)](https://nodejs.org/)
   [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/bgauryy/octocode-mcp)
-  [![X/Twitter](https://img.shields.io/badge/X-Follow%20@guy__bary-1DA1F2.svg?logo=x&logoColor=white)](https://x.com/guy_bary)
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/bgauryy/octocode-mcp)](https://archestra.ai/mcp-catalog/bgauryy__octocode-mcp)
 
 </div>
 
@@ -117,7 +117,7 @@ Octocode MCP works with any MCP-compatible AI assistant:
 ### Advanced Configuration Options
 ```bash
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"              # GitHub token
-export TOOLS_TO_RUN="githubSearchCode,packageSearch" # Run ONLY these tools (exclusive)
+export TOOLS_TO_RUN="githubSearchCode,githubSearchPullRequests" # Run ONLY these tools (exclusive)
 export ENABLE_TOOLS="additionalTool1,additionalTool2" # Add non-default tools  
 export DISABLE_TOOLS="unwantedTool1,unwantedTool2"    # Disable default tools
 export BETA="1"                                      # Enable experimental features
@@ -159,9 +159,7 @@ For organizations: audit logging, access controls, rate limiting, and compliance
 | `githubGetFileContent` | Fetch file content from GitHub repositories | ✅ Yes | Content |  
 | `githubViewRepoStructure` | View GitHub repository structure and navigation | ✅ Yes | Content |
 | `githubSearchRepositories` | Search and discover GitHub repositories | ✅ Yes | Search |
-| `githubSearchCommits` | Search GitHub commits and change history | ❌ No | History |
 | `githubSearchPullRequests` | Search GitHub pull requests and code reviews | ❌ No | History |
-| `packageSearch` | Search NPM and Python package registries | ❌ No | NPM |
 
 **Default tools** are automatically enabled and provide core GitHub research functionality. **Non-default tools** can be enabled using the configuration options below.
 
@@ -191,6 +189,9 @@ For organizations: audit logging, access controls, rate limiting, and compliance
 
 **Need help?** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
 ---
+
+ <a href="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@bgauryy/octocode-mcp/badge" />
 
 <div align="center">
   <p>Built with ❤️ for developers</p>

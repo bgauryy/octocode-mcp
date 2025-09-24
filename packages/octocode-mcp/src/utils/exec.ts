@@ -30,16 +30,18 @@ export function parseExecResult(
 ): CallToolResult {
   if (error) {
     return createResult({
-      isError: true,
+      data: { error: true },
       hints: [`Command failed: ${error.message}`],
+      isError: true,
     });
   }
 
   // If exit code is 0 (success), treat stderr as warnings, not errors
   if (stderr && stderr.trim() && exitCode !== 0) {
     return createResult({
-      isError: true,
+      data: { error: true },
       hints: [`Command error: ${stderr.trim()}`],
+      isError: true,
     });
   }
 
@@ -116,8 +118,9 @@ export async function executeNpmCommand(
 ): Promise<CallToolResult> {
   if (!ALLOWED_NPM_COMMANDS.includes(command)) {
     return createResult({
-      isError: true,
+      data: { error: `Command '${command}' is not allowed` },
       hints: [`Command '${command}' is not allowed`],
+      isError: true,
     });
   }
 
@@ -125,8 +128,9 @@ export async function executeNpmCommand(
   const validation = validateArgs(args);
   if (!validation.valid) {
     return createResult({
-      isError: true,
+      data: { error: `Invalid arguments: ${validation.error}` },
       hints: [`Invalid arguments: ${validation.error}`],
+      isError: true,
     });
   }
 

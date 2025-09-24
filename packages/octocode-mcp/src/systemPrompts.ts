@@ -34,7 +34,6 @@ RESPONSE FORMAT:
 - data: Tool response content
 - isError: Operation success/failure  
 - hints: [CRITICAL] Next steps, recovery tips, strategic guidance
-- meta: Context (totals, errors, research goals, phase)
 
 EXECUTION PRINCIPLES:
 - **Bulk-First**: Use multi-query operations for comprehensive coverage

@@ -70,9 +70,6 @@ describe('GitHub Index Exports', () => {
       expect(typeof githubIndex.transformPullRequestItemFromREST).toBe(
         'function'
       );
-
-      expect(githubIndex.searchGitHubCommitsAPI).toBeDefined();
-      expect(typeof githubIndex.searchGitHubCommitsAPI).toBe('function');
     });
   });
 
@@ -112,7 +109,6 @@ describe('GitHub Index Exports', () => {
         'searchGitHubPullRequestsAPI',
         'fetchGitHubPullRequestByNumberAPI',
         'transformPullRequestItemFromREST',
-        'searchGitHubCommitsAPI',
         'fetchGitHubFileContentAPI',
         'viewGitHubRepositoryStructureAPI',
       ];
@@ -153,7 +149,6 @@ describe('GitHub Index Exports', () => {
         'searchGitHubPullRequestsAPI',
         'fetchGitHubPullRequestByNumberAPI',
         'transformPullRequestItemFromREST',
-        'searchGitHubCommitsAPI',
         'fetchGitHubFileContentAPI',
         'viewGitHubRepositoryStructureAPI',
       ];

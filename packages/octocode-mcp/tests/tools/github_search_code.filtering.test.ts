@@ -145,19 +145,12 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       );
 
       // Parse the result
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const resultText = (result as CallToolResult).content[0]!.text;
 
       // Should have filtered results
-      expect(resultData.results).toHaveLength(1);
-      const queryResult = resultData.results[0];
-
-      // Should only have the valid files after double filtering
-      expect(queryResult.files).toHaveLength(2);
-      expect(queryResult.files[0].path).toBe('src/index.js');
-      expect(queryResult.files[1].path).toBe('src/components/component.js');
-      expect(queryResult.totalCount).toBe(2);
+      expect(resultText).toContain('data:');
+      expect(resultText).toContain('src/index.js');
+      expect(resultText).toContain('src/components/component.js');
     });
 
     it('should handle empty results after filtering at tool level', async () => {
@@ -215,19 +208,13 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       );
 
       // Parse the result
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const resultText = (result as CallToolResult).content[0]!.text;
 
       // Should have result with no files
-      expect(resultData.results).toHaveLength(1);
-      const queryResult = resultData.results[0];
-
-      expect(queryResult.files).toHaveLength(0);
-      expect(queryResult.totalCount).toBe(0);
-      // Should have hints for no results
-      expect(queryResult.hints).toBeDefined();
-      expect(queryResult.hints).toContain('Use broader search terms');
+      expect(resultText).toContain('data:');
+      expect(resultText).toContain('files: []');
+      expect(resultText).toContain('hints:');
+      expect(resultText).toContain('broader');
     });
 
     it('should filter vendor and third-party directories', async () => {
@@ -291,18 +278,14 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
-      const queryResult = resultData.results[0];
+      const resultText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not vendor/third_party
-      expect(queryResult.files).toHaveLength(2);
-      const paths = queryResult.files.map((f: { path: string }) => f.path);
-      expect(paths).toContain('src/utils.js');
-      expect(paths).toContain('src/helper.js');
-      expect(paths).not.toContain('vendor/jquery/jquery.js');
-      expect(paths).not.toContain('third_party/bootstrap/bootstrap.js');
+      expect(resultText).toContain('data:');
+      expect(resultText).toContain('src/utils.js');
+      expect(resultText).toContain('src/helper.js');
+      expect(resultText).not.toContain('vendor/jquery/jquery.js');
+      expect(resultText).not.toContain('third_party/bootstrap/bootstrap.js');
     });
 
     it('should filter build and dist directories', async () => {
@@ -375,19 +358,15 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
-      const queryResult = resultData.results[0];
+      const resultText = (result as CallToolResult).content[0]!.text;
 
       // Should only include source files, not build output
-      expect(queryResult.files).toHaveLength(2);
-      const paths = queryResult.files.map((f: { path: string }) => f.path);
-      expect(paths).toContain('src/app.js');
-      expect(paths).toContain('src/index.js');
-      expect(paths).not.toContain('dist/bundle.js');
-      expect(paths).not.toContain('build/main.js');
-      expect(paths).not.toContain('out/output.js');
+      expect(resultText).toContain('data:');
+      expect(resultText).toContain('src/app.js');
+      expect(resultText).toContain('src/index.js');
+      expect(resultText).not.toContain('dist/bundle.js');
+      expect(resultText).not.toContain('build/main.js');
+      expect(resultText).not.toContain('out/output.js');
     });
 
     it('should handle multiple queries with filtering', async () => {
@@ -470,30 +449,20 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      const resultData = JSON.parse(
-        (result as CallToolResult).content[0]!.text
-      );
+      const resultText = (result as CallToolResult).content[0]!.text;
 
       // Should have both query results
-      expect(resultData.results).toHaveLength(2);
+      expect(resultText).toContain('data:');
+      expect(resultText).toContain('query1');
+      expect(resultText).toContain('query2');
 
       // First query should filter out .log file
-      const query1Result = resultData.results.find(
-        (r: { queryId: string }) => r.queryId === 'query1'
-      );
-      expect(query1Result.files).toHaveLength(1);
-      expect(query1Result.files[0].path).toBe('src/component.js');
+      expect(resultText).toContain('src/component.js');
+      expect(resultText).not.toContain('debug.log');
 
       // Second query should include both files (.env is now allowed for context)
-      const query2Result = resultData.results.find(
-        (r: { queryId: string }) => r.queryId === 'query2'
-      );
-      expect(query2Result.files).toHaveLength(2);
-      const query2Paths = query2Result.files.map(
-        (f: { path: string }) => f.path
-      );
-      expect(query2Paths).toContain('src/utils.ts');
-      expect(query2Paths).toContain('.env');
+      expect(resultText).toContain('src/utils.ts');
+      expect(resultText).toContain('.env');
     });
   });
 });

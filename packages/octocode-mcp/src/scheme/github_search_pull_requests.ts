@@ -9,6 +9,7 @@ import {
   lockedSchema,
   draftSchema,
 } from './baseSchema';
+import { ToolResponse } from '../responses.js';
 
 export const GitHubPullRequestSearchQuerySchema =
   BaseBulkQueryItemSchema.extend({
@@ -174,97 +175,115 @@ export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
   'Pull request search queries'
 );
 
-export interface GitHubPullRequestSearchResult {
-  total_count: number;
-  incomplete_results: boolean;
-  pull_requests: Array<{
-    id: number;
-    number: number;
-    title: string;
-    url: string;
-    html_url: string;
-    state: 'open' | 'closed';
-    draft: boolean;
-    merged: boolean;
-    created_at: string;
-    updated_at: string;
-    closed_at?: string;
-    merged_at?: string;
-    user: {
-      login: string;
-      id: number;
-      avatar_url: string;
-      html_url: string;
-    };
-    assignees?: Array<{
-      login: string;
-      id: number;
-      avatar_url: string;
-      html_url: string;
-    }>;
-    labels?: Array<{
-      id: number;
-      name: string;
-      color: string;
-      description?: string;
-    }>;
-    milestone?: {
-      id: number;
-      title: string;
-      description?: string;
-      state: 'open' | 'closed';
-      created_at: string;
-      updated_at: string;
-      due_on?: string;
-    };
-    head: {
-      ref: string;
-      sha: string;
-      repo?: {
-        id: number;
-        name: string;
-        full_name: string;
-        owner: {
-          login: string;
-          id: number;
-        };
-        private: boolean;
-        html_url: string;
-        default_branch: string;
-      };
-    };
-    base: {
-      ref: string;
-      sha: string;
-      repo: {
-        id: number;
-        name: string;
-        full_name: string;
-        owner: {
-          login: string;
-          id: number;
-        };
-        private: boolean;
-        html_url: string;
-        default_branch: string;
-      };
-    };
-    body?: string;
-    comments?: number;
-    review_comments?: number;
-    commits?: number;
-    additions?: number;
-    deletions?: number;
-    changed_files?: number;
-  }>;
+// ============================================================================
+// Simple Input/Output Types
+// ============================================================================
+
+/**
+ * Tool input - bulk pull request search queries
+ */
+export interface GitHubSearchPullRequestsInput {
+  queries: GitHubPullRequestSearchQuery[];
+  verbose?: boolean;
 }
 
-export interface GitHubPullRequestSearchError {
-  error: string;
-  status?: number;
+/**
+ * Tool output - extends standardized ToolResponse format
+ */
+export interface GitHubSearchPullRequestsOutput extends ToolResponse {
+  /** Primary data payload - array of pull request search results */
+  data: PullRequestSearchResult[];
+}
+
+/**
+ * Individual pull request search result
+ */
+export interface PullRequestSearchResult {
+  queryId?: string;
+  reasoning?: string;
+  pull_requests?: PullRequestInfo[];
+  total_count?: number;
+  incomplete_results?: boolean;
+  error?: string;
   hints?: string[];
-  rateLimitRemaining?: number;
-  rateLimitReset?: number;
-  scopesSuggestion?: string;
-  type?: 'http' | 'graphql' | 'network' | 'unknown';
+  query?: Record<string, unknown>; // Only when verbose or error
+  metadata: Record<string, unknown>; // Required for bulk operations compatibility
+}
+
+/**
+ * Simplified pull request information - preserves all essential GitHub API data
+ */
+export interface PullRequestInfo {
+  id: number;
+  number: number;
+  title: string;
+  url: string;
+  html_url: string;
+  state: 'open' | 'closed';
+  draft: boolean;
+  merged: boolean;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+  merged_at?: string;
+  author: {
+    login: string;
+    id: number;
+    avatar_url: string;
+    html_url: string;
+  };
+  assignees?: Array<{
+    login: string;
+    id: number;
+    avatar_url: string;
+    html_url: string;
+  }>;
+  labels?: Array<{
+    id: number;
+    name: string;
+    color: string;
+    description?: string;
+  }>;
+  milestone?: {
+    id: number;
+    title: string;
+    description?: string;
+    state: 'open' | 'closed';
+    created_at: string;
+    updated_at: string;
+    due_on?: string;
+  };
+  head: {
+    ref: string;
+    sha: string;
+    repo?: string; // Simplified to repository name
+  };
+  base: {
+    ref: string;
+    sha: string;
+    repo: string; // Simplified to repository name
+  };
+  body?: string;
+  comments?: number;
+  review_comments?: number;
+  commits?: number;
+  additions?: number;
+  deletions?: number;
+  changed_files?: number;
+  // Optional fields for when withComments=true or getFileChanges=true
+  comment_details?: Array<{
+    id: number;
+    user: string;
+    body: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+  file_changes?: Array<{
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch?: string;
+  }>;
 }

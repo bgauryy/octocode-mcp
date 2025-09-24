@@ -10,9 +10,7 @@ import {
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
-import { generateCacheKey, withCache } from '../utils/cache';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses';
+import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { UserContext } from '../security/withSecurityValidation';
 
@@ -26,7 +24,6 @@ export async function searchGitHubReposAPI(
   userContext?: UserContext
 ): Promise<
   GitHubAPIResponse<{
-    total_count: number;
     repositories: SimplifiedRepository[];
   }>
 > {
@@ -37,44 +34,23 @@ export async function searchGitHubReposAPI(
     userContext?.sessionId
   );
 
-  // Create a wrapper function that returns CallToolResult for the cache
-  const searchOperation = async (): Promise<CallToolResult> => {
-    const result = await searchGitHubReposAPIInternal(params, authInfo);
-
-    // Convert to CallToolResult for caching
-    if ('error' in result) {
-      return createResult({
-        isError: true,
-        data: result,
-      });
-    } else {
-      return createResult({
-        data: result,
-      });
+  const result = await withDataCache<
+    GitHubAPIResponse<{
+      repositories: SimplifiedRepository[];
+    }>
+  >(
+    cacheKey,
+    async () => {
+      return await searchGitHubReposAPIInternal(params, authInfo);
+    },
+    {
+      // Only cache successful responses
+      shouldCache: value =>
+        'data' in value && !(value as { error?: unknown }).error,
     }
-  };
+  );
 
-  // Use cache with 2-hour TTL (configured in cache.ts)
-  const cachedResult = await withCache(cacheKey, searchOperation);
-
-  // Convert CallToolResult back to the expected format
-  if (cachedResult.isError) {
-    // Extract the actual error data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<{
-      total_count: number;
-      repositories: SimplifiedRepository[];
-    }>;
-  } else {
-    // Extract the actual success data from the CallToolResult
-    const jsonText = (cachedResult.content[0] as { text: string }).text;
-    const parsedData = JSON.parse(jsonText);
-    return parsedData.data as GitHubAPIResponse<{
-      total_count: number;
-      repositories: SimplifiedRepository[];
-    }>;
-  }
+  return result;
 }
 
 /**
@@ -85,7 +61,6 @@ async function searchGitHubReposAPIInternal(
   authInfo?: AuthInfo
 ): Promise<
   GitHubAPIResponse<{
-    total_count: number;
     repositories: SimplifiedRepository[];
   }>
 > {
@@ -116,25 +91,32 @@ async function searchGitHubReposAPIInternal(
     const result = await octokit.rest.search.repos(searchParams);
 
     // Transform repository results to match CLI format with proper typing
-    const repositories = result.data.items.map(
-      (repo: RepoSearchResultItem) => ({
-        owner_repo: repo.full_name,
+    const repositories = result.data.items
+      .map((repo: RepoSearchResultItem) => ({
+        repository: repo.full_name,
         stars: repo.stargazers_count || 0,
         description: repo.description
           ? repo.description.length > 150
             ? repo.description.substring(0, 150) + '...'
             : repo.description
           : 'No description',
-        language: repo.language || 'Unknown',
         url: repo.html_url,
-        forks: repo.forks || 0,
         updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
-      })
-    );
+      }))
+      // Sort by stars (descending) then by updatedAt (descending)
+      .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {
+        // First sort by stars (higher stars first)
+        if (b.stars !== a.stars) {
+          return b.stars - a.stars;
+        }
+        // If stars are equal, sort by updatedAt (more recent first)
+        const dateA = new Date(a.updatedAt.split('/').reverse().join('-'));
+        const dateB = new Date(b.updatedAt.split('/').reverse().join('-'));
+        return dateB.getTime() - dateA.getTime();
+      });
 
     return {
       data: {
-        total_count: result.data.total_count,
         repositories,
       },
       status: 200,

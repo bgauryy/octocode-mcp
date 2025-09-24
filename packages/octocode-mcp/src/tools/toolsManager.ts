@@ -1,6 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLS } from './tools.js';
-import { logToolEvent, AuditLogger } from '../security/auditLogger.js';
 import { getServerConfig } from '../serverConfig.js';
 
 /**
@@ -10,9 +9,6 @@ export function registerTools(server: McpServer): {
   successCount: number;
   failedTools: string[];
 } {
-  // Initialize audit logger if not already initialized
-  AuditLogger.initialize();
-
   const config = getServerConfig();
   const toolsToRun = config.toolsToRun || [];
   const enableTools = config.enableTools || [];
@@ -20,9 +16,6 @@ export function registerTools(server: McpServer): {
 
   let successCount = 0;
   const failedTools: string[] = [];
-
-  // Log tool registration start
-  logToolEvent('registration_start');
 
   // Check for conflicting configurations
   if (
@@ -70,25 +63,13 @@ export function registerTools(server: McpServer): {
       if (shouldRegisterTool) {
         tool.fn(server);
         successCount++;
-
-        // Audit successful tool registration
-        logToolEvent(tool.name);
       } else if (reason) {
         process.stderr.write(`Tool ${tool.name} ${reason}\n`);
-
-        // Audit disabled/skipped tool
-        logToolEvent(`${tool.name}_skipped`);
       }
     } catch (error) {
       failedTools.push(tool.name);
-
-      // Audit failed tool registration
-      logToolEvent(`${tool.name}_failed`);
     }
   }
-
-  // Log final registration summary
-  logToolEvent('registration_complete');
 
   return { successCount, failedTools };
 }

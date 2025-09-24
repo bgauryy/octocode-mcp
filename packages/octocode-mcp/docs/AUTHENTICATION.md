@@ -10,7 +10,7 @@ Recommended minimum scopes:
 
 | Scope | Why it's needed | Features enabled |
 |------|------------------|------------------|
-| `repo` (or fine‑grained: Contents: Read, Metadata: Read, Pull requests: Read) | Read private repository contents and metadata | Code search, file fetch, repo structure, PR/commit search for private repos |
+| `repo` (or fine‑grained: Contents: Read, Metadata: Read, Pull requests: Read) | Read private repository contents and metadata | Code search, file fetch, repo structure, PR search for private repos |
 | `read:user` | Identify the authenticated user and validate token | User context, rate limit checks, token validation |
 | `read:org` | Verify organization membership and team policies | Enterprise org/teams validation, policy enforcement |
 
