@@ -587,11 +587,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
       return a.path.localeCompare(b.path);
     });
 
-    // Create response structure without depth information
+    // Create response structure with absolute paths
     const files = limitedItems
       .filter(item => item.type === 'file')
       .map(item => ({
-        path: item.path,
+        path: item.path.startsWith('/') ? item.path : `/${item.path}`,
         size: item.size,
         url: item.path,
       }));
@@ -599,7 +599,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
     const folders = limitedItems
       .filter(item => item.type === 'dir')
       .map(item => ({
-        path: item.path,
+        path: item.path.startsWith('/') ? item.path : `/${item.path}`,
         url: item.path,
       }));
 

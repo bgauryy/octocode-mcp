@@ -116,7 +116,6 @@ async function exploreMultipleRepositoryStructures(
             queryId: String(query.id),
             reasoning: query.reasoning,
             repository: `${query.owner}/${query.repo}`,
-            branch: query.branch,
             path: query.path || '/',
             files: [],
             folders: [],
@@ -154,15 +153,30 @@ async function exploreMultipleRepositoryStructures(
         const hasResults =
           filteredFiles.length > 0 || filteredFolders.length > 0;
 
-        // Extract file paths and folder paths separately
-        const filePaths = filteredFiles.map(file => file.path);
-        const folderPaths = filteredFolders.map(folder => folder.path);
+        // Extract file paths and folder paths separately, removing the path prefix
+        const pathPrefix = apiRequest.path || '/';
+        const normalizedPrefix = pathPrefix === '/' ? '' : pathPrefix;
+
+        const filePaths = filteredFiles.map(file => {
+          // Remove the path prefix if it exists
+          if (normalizedPrefix && file.path.startsWith(normalizedPrefix)) {
+            return file.path.substring(normalizedPrefix.length);
+          }
+          return file.path;
+        });
+
+        const folderPaths = filteredFolders.map(folder => {
+          // Remove the path prefix if it exists
+          if (normalizedPrefix && folder.path.startsWith(normalizedPrefix)) {
+            return folder.path.substring(normalizedPrefix.length);
+          }
+          return folder.path;
+        });
 
         const result: RepoStructureResult = {
           queryId: String(query.id),
           reasoning: query.reasoning,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
-          branch: apiRequest.branch,
           path: apiRequest.path || '/',
           files: filePaths,
           folders: folderPaths,
@@ -189,7 +203,6 @@ async function exploreMultipleRepositoryStructures(
           queryId: String(query.id),
           reasoning: query.reasoning,
           repository: `${query.owner}/${query.repo}`,
-          branch: query.branch,
           path: query.path || '/',
           files: [],
           folders: [],
@@ -274,7 +287,14 @@ async function exploreMultipleRepositoryStructures(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     maxHints: 8,
-    keysPriority: ['queryId', 'reasoning', 'repository', 'structure'],
+    keysPriority: [
+      'queryId',
+      'reasoning',
+      'repository',
+      'path',
+      'files',
+      'folders',
+    ],
   };
 
   // Create standardized response - bulk operations handles all hint generation and formatting

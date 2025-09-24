@@ -128,7 +128,6 @@ export interface RepoStructureResult {
   queryId?: string;
   reasoning?: string;
   repository?: string;
-  branch?: string;
   path?: string;
   files?: string[];
   folders?: string[];
