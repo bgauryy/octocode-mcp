@@ -681,21 +681,19 @@ describe('GitHub API Utils', () => {
         const result = await searchGitHubReposAPI(params);
         expect(result).toEqual({
           data: {
-            total_count: 1,
             repositories: [
               {
                 owner_repo: 'facebook/react',
                 stars: 50000,
                 description:
                   'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
-                language: 'JavaScript',
                 url: 'https://github.com/facebook/react',
-                forks: 15000,
                 updatedAt: '01/12/2023',
               },
             ],
           },
           status: 200,
+          headers: undefined,
         });
       });
 

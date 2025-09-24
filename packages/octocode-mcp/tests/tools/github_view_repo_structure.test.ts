@@ -119,9 +119,9 @@ describe('GitHub View Repository Structure Tool', () => {
 
     // With bulk operations, errors are handled gracefully and returned as data with hints
     expect(result.isError).toBe(false);
-    const response = JSON.parse(result.content[0]?.text as string);
-    expect(response.hints).toBeDefined();
-    expect(response.hints.length).toBeGreaterThan(0);
+    const responseText = result.content[0]?.text as string;
+    expect(responseText).toContain('hints:');
+    expect(responseText).toContain('error:');
   });
 
   it('should handle optional parameters', async () => {

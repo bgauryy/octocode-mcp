@@ -230,17 +230,21 @@ describe('bulkOperations', () => {
       expect(result.content).toHaveLength(1);
 
       const responseText = result.content[0]?.text;
-      const responseData =
-        responseText &&
-        typeof responseText === 'string' &&
-        responseText.length > 0
-          ? JSON.parse(responseText)
-          : { data: [] };
-      // The results exclude metadata (since verbose=false by default)
-      expect(responseData.data.length).toBe(2);
-      expect(responseData.data[0]).not.toHaveProperty('metadata');
-      expect(responseData.data[0]?.data).toEqual(processedResults[0]?.data);
-      // This test has no errors, so no need to check meta.errors
+      // Test exact YAML output
+      const expectedYaml = `data:
+  - queryId: "q1"
+    data:
+      items:
+        - name: "item1"
+  - queryId: "q2"
+    data:
+      items:
+        - name: "item2"
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+`;
+      expect(responseText).toEqual(expectedYaml);
     });
 
     it('should create response with errors', () => {
@@ -281,14 +285,23 @@ describe('bulkOperations', () => {
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text;
-      const responseData =
-        responseText &&
-        typeof responseText === 'string' &&
-        responseText.length > 0
-          ? JSON.parse(responseText)
-          : { data: [] };
-      // With improved bulk operations, errors are now included
-      expect(responseData.data).toHaveLength(1);
+      // Test exact YAML output for error response
+      const expectedYaml = `data:
+  - queryId: "q1"
+    error: "API rate limit exceeded"
+    hints: []
+    metadata:
+      originalQuery:
+        id: "q1"
+        queryTerms:
+          - "test1"
+hints:
+  - "All 1 queries returned no results - try broader research strategy"
+  - "Start with repository search to find relevant projects, then search within promising repos"
+  - "Use package search to find libraries, then explore their GitHub repositories"
+  - "Break down into smaller, more focused searches"
+`;
+      expect(responseText).toEqual(expectedYaml);
     });
 
     it('should handle empty results and errors', () => {
@@ -324,14 +337,17 @@ describe('bulkOperations', () => {
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text;
-      const responseData =
-        responseText &&
-        typeof responseText === 'string' &&
-        responseText.length > 0
-          ? JSON.parse(responseText)
-          : { data: [] };
-      // With no queries, no results, and no errors, data should be empty
-      expect(responseData.data).toEqual([]);
+      // Test exact YAML output for empty response
+      const expectedYaml = `data: []
+hints:
+  - "All 0 queries returned no results - try broader research strategy"
+  - "Start with repository search to find relevant projects, then search within promising repos"
+  - "Use package search to find libraries, then explore their GitHub repositories"
+  - "Break down into smaller, more focused searches"
+  - "Try semantic alternatives: expand abbreviations, use synonyms, or try related conceptual terms"
+  - "Start with core concepts, then progressively narrow to specific implementations and tools"
+`;
+      expect(responseText).toEqual(expectedYaml);
     });
 
     it('should handle config options', () => {
@@ -536,19 +552,33 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const responseData = JSON.parse(
-        (bulkResponse.content[0]?.text as string) || '{}'
-      );
+      const yamlText = (bulkResponse.content[0]?.text as string) || '';
 
-      // Check that reasoning is included in results
-      expect(responseData.data).toHaveLength(3);
-      expect(responseData.data[0]?.reasoning).toBe(
-        'Find LangGraph implementations for AI agents'
-      );
-      expect(responseData.data[1]?.reasoning).toBe(
-        'Search for context management patterns'
-      );
-      expect(responseData.data[2]?.reasoning).toBeUndefined(); // No reasoning in query
+      // Test exact YAML output with reasoning
+      const expectedYaml = `data:
+  - queryId: "test1"
+    reasoning: "Find LangGraph implementations for AI agents"
+    data:
+      files:
+        - content: "test content"
+          path: "test.py"
+  - queryId: "test2"
+    reasoning: "Search for context management patterns"
+    data:
+      files:
+        - content: "test content"
+          path: "test.py"
+  - queryId: "test3"
+    data:
+      files:
+        - content: "test content"
+          path: "test.py"
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Use github_fetch_content with matchString from search results for precise context extraction"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should propagate reasoning from queries to error results', async () => {
@@ -590,18 +620,33 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const responseData = JSON.parse(
-        (bulkResponse.content[0]?.text as string) || '{}'
-      );
+      const yamlText = (bulkResponse.content[0]?.text as string) || '';
 
-      // Check that reasoning is included in error results
-      expect(responseData.data).toHaveLength(2);
-      expect(responseData.data[0]?.reasoning).toBe(
-        'This query will fail with reasoning'
-      );
-      expect(responseData.data[0]?.error).toContain('Processing failed');
-      expect(responseData.data[1]?.reasoning).toBeUndefined(); // No reasoning in query
-      expect(responseData.data[1]?.error).toContain('Processing failed');
+      // Test exact YAML output with reasoning in error results
+      const expectedYaml = `data:
+  - queryId: "error1"
+    reasoning: "This query will fail with reasoning"
+    error: "Processing failed for fail_query"
+    hints: []
+    metadata:
+      originalQuery:
+        reasoning: "This query will fail with reasoning"
+        id: "error1"
+        name: "fail_query"
+  - queryId: "error2"
+    error: "Processing failed for fail_query_no_reasoning"
+    hints: []
+    metadata:
+      originalQuery:
+        id: "error2"
+        name: "fail_query_no_reasoning"
+hints:
+  - "All 2 queries returned no results - try broader research strategy"
+  - "Start with repository search to find relevant projects, then search within promising repos"
+  - "Use package search to find libraries, then explore their GitHub repositories"
+  - "Break down into smaller, more focused searches"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should preserve result reasoning over query reasoning when both exist', async () => {
@@ -642,14 +687,22 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const responseData = JSON.parse(
-        (bulkResponse.content[0]?.text as string) || '{}'
-      );
+      const yamlText = (bulkResponse.content[0]?.text as string) || '';
 
-      // Result reasoning should take precedence over query reasoning
-      expect(responseData.data[0]?.reasoning).toBe(
-        'Result reasoning that should take precedence'
-      );
+      // Test exact YAML - result reasoning takes precedence
+      const expectedYaml = `data:
+  - queryId: "test1"
+    reasoning: "Result reasoning that should take precedence"
+    data:
+      files:
+        - path: "test.py"
+hints:
+  - "Use repository structure analysis to find similar implementations"
+  - "Use github_view_repo_structure first to understand project layout, then target specific files"
+  - "Compare implementations across 3-5 repositories to identify best practices"
+  - "Single result found - dive deep and look for related examples in the same repository"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should handle mixed success and error results with reasoning', async () => {
@@ -707,36 +760,44 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const responseData = JSON.parse(
-        (bulkResponse.content[0]?.text as string) || '{}'
-      );
+      const yamlText = (bulkResponse.content[0]?.text as string) || '';
 
-      expect(responseData.data).toHaveLength(4);
-
-      // Find results by queryId to verify reasoning propagation
-      const resultsByQueryId = responseData.data.reduce(
-        (acc: Record<string, unknown>, item: Record<string, unknown>) => {
-          acc[item.queryId as string] = item;
-          return acc;
-        },
-        {}
-      );
-
-      // Successful results
-      expect(resultsByQueryId['success1']?.reasoning).toBe(
-        'Successful query with reasoning'
-      );
-      expect(resultsByQueryId['success1']?.error).toBeUndefined();
-      expect(resultsByQueryId['success2']?.reasoning).toBeUndefined();
-      expect(resultsByQueryId['success2']?.error).toBeUndefined();
-
-      // Error results
-      expect(resultsByQueryId['error1']?.reasoning).toBe(
-        'Failed query with reasoning'
-      );
-      expect(resultsByQueryId['error1']?.error).toContain('Processing failed');
-      expect(resultsByQueryId['error2']?.reasoning).toBeUndefined();
-      expect(resultsByQueryId['error2']?.error).toContain('Processing failed');
+      // Test exact YAML for mixed success and error results
+      const expectedYaml = `data:
+  - queryId: "success1"
+    reasoning: "Successful query with reasoning"
+    data:
+      repositories:
+        - name: "test-repo"
+  - queryId: "error1"
+    reasoning: "Failed query with reasoning"
+    error: "Processing failed for fail_query"
+    hints: []
+    metadata:
+      originalQuery:
+        reasoning: "Failed query with reasoning"
+        id: "error1"
+        name: "fail_query"
+  - queryId: "success2"
+    data:
+      repositories:
+        - name: "test-repo"
+  - queryId: "error2"
+    error: "Processing failed for fail_query_no_reasoning"
+    hints: []
+    metadata:
+      originalQuery:
+        id: "error2"
+        name: "fail_query_no_reasoning"
+hints:
+  - "Review failed queries for pattern adjustments and retry strategies"
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Use github_fetch_content with matchString from search results for precise context extraction"
+  - "2/4 queries succeeded (50%)"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+  - "Look for: naming conventions, file structure, error handling, and configuration patterns"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should handle empty or whitespace-only reasoning', async () => {
@@ -786,14 +847,27 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const responseData = JSON.parse(
-        (bulkResponse.content[0]?.text as string) || '{}'
-      );
+      const yamlText = (bulkResponse.content[0]?.text as string) || '';
 
-      // Empty and whitespace-only reasoning should still be included
-      expect(responseData.data[0]?.reasoning).toBe('');
-      expect(responseData.data[1]?.reasoning).toBe('   ');
-      expect(responseData.data[2]?.reasoning).toBe('Valid reasoning');
+      // Test exact YAML - only valid reasoning is included
+      const expectedYaml = `data:
+  - queryId: "test1"
+    reasoning: ""
+    data:
+      content: "test content"
+  - queryId: "test2"
+    reasoning: "   "
+    data:
+      content: "test content"
+  - queryId: "test3"
+    reasoning: "Valid reasoning"
+    data:
+      content: "test content"
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should maintain query order with reasoning in results', async () => {
@@ -843,18 +917,29 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const responseData = JSON.parse(
-        (bulkResponse.content[0]?.text as string) || '{}'
-      );
+      const yamlText = (bulkResponse.content[0]?.text as string) || '';
 
-      // Verify order is maintained and reasoning is correct
-      expect(responseData.data).toHaveLength(3);
-      expect(responseData.data[0]?.queryId).toBe('first');
-      expect(responseData.data[0]?.reasoning).toBe('First query reasoning');
-      expect(responseData.data[1]?.queryId).toBe('second');
-      expect(responseData.data[1]?.reasoning).toBe('Second query reasoning');
-      expect(responseData.data[2]?.queryId).toBe('third');
-      expect(responseData.data[2]?.reasoning).toBe('Third query reasoning');
+      // Test exact YAML with reasoning in order
+      const expectedYaml = `data:
+  - queryId: "first"
+    reasoning: "First query reasoning"
+    data:
+      result: "Result for query1"
+  - queryId: "second"
+    reasoning: "Second query reasoning"
+    data:
+      result: "Result for query2"
+  - queryId: "third"
+    reasoning: "Third query reasoning"
+    data:
+      result: "Result for query3"
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Use commit/PR search only when explicitly requested - focus on implementation files"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+  - "Focus on code changes rather than PR discussions for implementation details"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
   });
 
@@ -892,10 +977,24 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      expect(payload.data).toHaveLength(1);
-      // Expect metadata.queryArgs to be present for no-results
-      expect(payload.data[0]?.metadata?.originalQuery?.id).toBe('q1');
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "q1"
+    files: []
+    metadata:
+      originalQuery:
+        id: "q1"
+        name: "code_search_empty"
+    totalCount: 0
+hints:
+  - "All 1 queries returned no results - try broader research strategy"
+  - "Start with repository search to find relevant projects, then search within promising repos"
+  - "Use package search to find libraries, then explore their GitHub repositories"
+  - "Break down into smaller, more focused searches"
+  - "Try semantic alternatives: expand abbreviations, use synonyms, or try related conceptual terms"
+  - "Start with core concepts, then progressively narrow to specific implementations and tools"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should handle repo search empty and non-empty', () => {
@@ -942,13 +1041,27 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      const first = payload.data[0];
-      expect(first?.queryId).toBe('rq1');
-      expect(first?.metadata?.originalQuery?.id).toBe('rq1');
-      const second = payload.data[1];
-      expect(second?.queryId).toBe('rq2');
-      expect(second?.metadata).toBeUndefined();
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "rq1"
+    metadata:
+      originalQuery:
+        id: "rq1"
+        name: "repos_empty"
+    repositories: []
+    total_count: 0
+  - queryId: "rq2"
+    repositories:
+      - owner_repo: "a/b"
+      - owner_repo: "c/d"
+    total_count: 2
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Use github_view_repo_structure first to understand project layout, then target specific files"
+  - "Compare implementations across 3-5 repositories to identify best practices"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should handle pull request search empty and non-empty', () => {
@@ -995,13 +1108,28 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      const first = payload.data[0];
-      expect(first?.queryId).toBe('pq1');
-      expect(first?.metadata?.originalQuery?.id).toBe('pq1');
-      const second = payload.data[1];
-      expect(second?.queryId).toBe('pq2');
-      expect(second?.metadata).toBeUndefined();
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "pq1"
+    metadata:
+      originalQuery:
+        id: "pq1"
+        name: "prs_empty"
+    pull_requests: []
+    total_count: 0
+  - queryId: "pq2"
+    pull_requests:
+      - number: 1
+        title: "PR"
+        url: "u"
+    total_count: 1
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Use commit/PR search only when explicitly requested - focus on implementation files"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+  - "Focus on code changes rather than PR discussions for implementation details"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should handle repo structure empty and non-empty', () => {
@@ -1048,13 +1176,28 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      const first = payload.data[0];
-      expect(first?.queryId).toBe('sq1');
-      expect(first?.metadata?.originalQuery?.id).toBe('sq1');
-      const second = payload.data[1];
-      expect(second?.queryId).toBe('sq2');
-      expect(second?.metadata).toBeUndefined();
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "sq1"
+    files: []
+    folders: []
+    metadata:
+      originalQuery:
+        id: "sq1"
+        name: "structure_empty"
+  - queryId: "sq2"
+    files:
+      - path: "README.md"
+    folders:
+      - path: "src"
+hints:
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Use github_fetch_content with matchString from search results for precise context extraction"
+  - "Multiple results found - cross-reference approaches and look for common patterns"
+  - "Look for: naming conventions, file structure, error handling, and configuration patterns"
+  - "Focus on source code and example directories for implementation details"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
     it('should treat code search with items as meaningful content', () => {
       const queries = ensureUniqueQueryIds([
@@ -1089,10 +1232,20 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      expect(payload.data).toHaveLength(1);
-      // metadata should be removed when there are results and no error
-      expect(payload.data[0]?.metadata).toBeUndefined();
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "q1"
+    files:
+      - path: "src/index.ts"
+        url: "https://example"
+    totalCount: 1
+hints:
+  - "Use repository structure analysis to find similar implementations"
+  - "Use github_fetch_content with matchString from search results for precise context extraction"
+  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
+  - "Single result found - dive deep and look for related examples in the same repository"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should treat empty file content as error (per API) and non-empty as content', () => {
@@ -1132,17 +1285,25 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      // First item corresponds to q1 (error path), includes queryArgs
-      const first = payload.data[0];
-      expect(first?.queryId).toBe('q1');
-      expect(first?.error).toContain('File is empty');
-      expect(first?.metadata?.originalQuery?.id).toBe('q1');
-
-      // Second item corresponds to q2 (success path), metadata removed
-      const second = payload.data[1];
-      expect(second?.queryId).toBe('q2');
-      expect(second?.metadata).toBeUndefined();
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "q1"
+    error: "File is empty - no content to display"
+    hints: []
+    metadata:
+      originalQuery:
+        id: "q1"
+        name: "file_content_empty"
+  - queryId: "q2"
+    data:
+      content: "console.log(1);"
+hints:
+  - "Review failed queries for pattern adjustments and retry strategies"
+  - "Use repository structure analysis to find similar implementations"
+  - "1/2 queries succeeded (50%)"
+  - "Single result found - dive deep and look for related examples in the same repository"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
 
     it('should include errors as error results with query args', () => {
@@ -1165,10 +1326,24 @@ describe('bulkOperations', () => {
         queries
       );
 
-      const payload = JSON.parse(resp.content[0]!.text as string);
-      expect(payload.data).toHaveLength(1);
-      expect(payload.data[0]?.error).toContain('GitHub API error');
-      expect(payload.data[0]?.metadata?.originalQuery?.id).toBe('qerr');
+      const yamlText = resp.content[0]!.text as string;
+      const expectedYaml = `data:
+  - queryId: "qerr"
+    error: "GitHub API error"
+    hints: []
+    metadata:
+      originalQuery:
+        id: "qerr"
+        name: "error_case"
+hints:
+  - "All 1 queries returned no results - try broader research strategy"
+  - "Start with repository search to find relevant projects, then search within promising repos"
+  - "Use package search to find libraries, then explore their GitHub repositories"
+  - "Break down into smaller, more focused searches"
+  - "Try broader search terms or use topics for discovery"
+  - "Explore ecosystem: consider frameworks, libraries, and tools commonly used with your target technology"
+`;
+      expect(yamlText).toEqual(expectedYaml);
     });
   });
 });

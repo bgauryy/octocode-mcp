@@ -24,11 +24,9 @@ describe('Response Utilities', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
       expect(result.content[0]!.type).toBe('text');
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
-      expect(parsedResponse).toEqual({
-        data: { message: 'Hello' },
-        hints: [],
-      });
+      const yaml = result.content[0]!.text as string;
+      const expectedYaml = `data:\n  message: "Hello"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should create error result with string message', () => {
@@ -41,11 +39,9 @@ describe('Response Utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
       expect(result.content[0]!.type).toBe('text');
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
-      expect(parsedResponse).toEqual({
-        data: { error: errorMessage },
-        hints: [],
-      });
+      const yaml = result.content[0]!.text as string;
+      const expectedYaml = `data:\n  error: "Something went wrong"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should include suggestions in error result', () => {
@@ -55,11 +51,9 @@ describe('Response Utilities', () => {
       });
 
       expect(result.isError).toBe(true);
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
-      expect(parsedResponse).toEqual({
-        data: { error: 'Not found' },
-        hints: [],
-      });
+      const yaml = result.content[0]!.text as string;
+      const expectedYaml = `data:\n  error: "Not found"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should handle error object', () => {
@@ -70,11 +64,9 @@ describe('Response Utilities', () => {
       });
 
       expect(result.isError).toBe(true);
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
-      expect(parsedResponse).toEqual({
-        data: { error: 'Test error' },
-        hints: [],
-      });
+      const yaml = result.content[0]!.text as string;
+      const expectedYaml = `data:\n  error: "Test error"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should create success result when no error provided', () => {
@@ -82,11 +74,9 @@ describe('Response Utilities', () => {
       const result = createResult({ data });
 
       expect(result.isError).toBe(false);
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
-      expect(parsedResponse).toEqual({
-        data: { test: 'value' },
-        hints: [],
-      });
+      const yaml = result.content[0]!.text as string;
+      const expectedYaml = `data:\n  test: "value"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
   });
 
@@ -309,49 +299,12 @@ describe('Response Utilities', () => {
       };
 
       const result = createResult({ data: dirtyData });
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
+      const yaml = result.content[0]!.text as string;
 
-      // Verify cleaning worked
-      expect(parsedResponse.data).toEqual({
-        validString: 'hello',
-        validNumber: 42,
-        validBoolean: true,
-        validArray: [1, 2, 3],
-        emptyArray: [], // Empty arrays should be preserved
-        nestedObject: {
-          validProp: 'test',
-          nestedArray: [1, 2], // null, undefined, NaN filtered out
-          deepNested: {
-            valid: 'keep',
-            // invalid and empty properties removed
-          },
-        },
-        arrayWithMixed: [
-          'valid',
-          { valid: 'keep' },
-          // null, undefined, NaN, empty objects filtered out
-        ],
-      });
+      const expectedYaml =
+        'data:\n  arrayWithMixed:\n    - "valid"\n    - valid: "keep"\n  emptyArray: []\n  nestedObject:\n    deepNested:\n      valid: "keep"\n    nestedArray:\n      - 1\n      - 2\n    validProp: "test"\n  validArray:\n    - 1\n    - 2\n    - 3\n  validBoolean: true\n  validNumber: 42\n  validString: "hello"\nhints: []\n';
 
-      // Verify removed properties
-      expect(parsedResponse.data).not.toHaveProperty('nullValue');
-      expect(parsedResponse.data).not.toHaveProperty('undefinedValue');
-      expect(parsedResponse.data).not.toHaveProperty('nanValue');
-      expect(parsedResponse.data).not.toHaveProperty('emptyObject');
-      expect(parsedResponse.data.nestedObject).not.toHaveProperty('nullProp');
-      expect(parsedResponse.data.nestedObject).not.toHaveProperty(
-        'undefinedProp'
-      );
-      expect(parsedResponse.data.nestedObject).not.toHaveProperty('nanProp');
-      expect(parsedResponse.data.nestedObject).not.toHaveProperty(
-        'emptyObjectProp'
-      );
-      expect(parsedResponse.data.nestedObject.deepNested).not.toHaveProperty(
-        'invalid'
-      );
-      expect(parsedResponse.data.nestedObject.deepNested).not.toHaveProperty(
-        'empty'
-      );
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should preserve meaningful empty arrays', () => {
@@ -362,11 +315,10 @@ describe('Response Utilities', () => {
       };
 
       const result = createResult({ data, hints: [] });
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
+      const yaml = result.content[0]!.text as string;
 
-      expect(parsedResponse.data.hints).toEqual([]);
-      expect(parsedResponse.data.results).toEqual([]);
-      expect(parsedResponse.hints).toEqual([]);
+      const expectedYaml = `data:\n  hints: []\n  results: []\n  validData: "test"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should handle deeply nested structures', () => {
@@ -385,17 +337,10 @@ describe('Response Utilities', () => {
       };
 
       const result = createResult({ data });
-      const parsedResponse = JSON.parse(result.content[0]!.text as string);
+      const yaml = result.content[0]!.text as string;
 
-      expect(parsedResponse.data).toEqual({
-        level1: {
-          level2: {
-            level3: {
-              valid: 'keep',
-            },
-          },
-        },
-      });
+      const expectedYaml = `data:\n  level1:\n    level2:\n      level3:\n        valid: "keep"\nhints: []\n`;
+      expect(yaml).toEqual(expectedYaml);
     });
   });
 
@@ -438,24 +383,7 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:
-  - queryId: "react_hooks_repos"
-    reasoning: "Find popular React repositories that demonstrate useState usage patterns"
-    repositories:
-      - url: "https://github.com/getify/TNG-Hooks"
-        description: "Provides React-inspired hooks like useState(..) for stand-alone functions"
-        owner_repo: "getify/TNG-Hooks"
-        stars: 1010
-        updatedAt: "31/08/2025"
-      - url: "https://github.com/the-road-to-learn-react/use-state-with-callback"
-        description: "Custom hook to include a callback function for useState."
-        owner_repo: "the-road-to-learn-react/use-state-with-callback"
-        stars: 277
-        updatedAt: "18/04/2025"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use github_view_repo_structure first to understand project layout, then target specific files"
-`;
+        const expectedYaml = `data:\n  - queryId: "react_hooks_repos"\n    reasoning: "Find popular React repositories that demonstrate useState usage patterns"\n    repositories:\n      - url: "https://github.com/getify/TNG-Hooks"\n        description: "Provides React-inspired hooks like useState(..) for stand-alone functions"\n        owner_repo: "getify/TNG-Hooks"\n        stars: 1010\n        updatedAt: "31/08/2025"\n      - url: "https://github.com/the-road-to-learn-react/use-state-with-callback"\n        description: "Custom hook to include a callback function for useState."\n        owner_repo: "the-road-to-learn-react/use-state-with-callback"\n        stars: 277\n        updatedAt: "18/04/2025"\nhints:\n  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"\n  - "Use github_view_repo_structure first to understand project layout, then target specific files"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -470,10 +398,7 @@ hints:
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data: []
-hints:
-  - "No repositories found matching your criteria"
-`;
+        const expectedYaml = `data: []\nhints:\n  - "No repositories found matching your criteria"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -516,23 +441,7 @@ hints:
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:
-  - files:
-      - path: "App.js"
-        text_matches:
-          - "function useState(initial) {\\n  const oldHook = wipFiber?.alternate?.hooks?.shift();"
-          - "function Counter() {\\n  const [targetCount, setTargetCount] = React.useState(1);"
-      - path: "static/examples/7.x/auth-flow.js"
-        text_matches:
-          - "function SignInScreen() {\\n  const [username, setUsername] = React.useState('');"
-    queryId: "usestate_examples"
-    reasoning: "Find diverse code examples showing useState implementation patterns"
-    repository: "yyl134934/react-mini"
-    totalCount: 15
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use github_fetch_content with matchString from search results for precise context extraction"
-`;
+        const expectedYaml = `data:\n  - files:\n      - path: "App.js"\n        text_matches:\n          - "function useState(initial) {\\n  const oldHook = wipFiber?.alternate?.hooks?.shift();"\n          - "function Counter() {\\n  const [targetCount, setTargetCount] = React.useState(1);"\n      - path: "static/examples/7.x/auth-flow.js"\n        text_matches:\n          - "function SignInScreen() {\\n  const [username, setUsername] = React.useState('');"\n    queryId: "usestate_examples"\n    reasoning: "Find diverse code examples showing useState implementation patterns"\n    repository: "yyl134934/react-mini"\n    totalCount: 15\nhints:\n  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"\n  - "Use github_fetch_content with matchString from search results for precise context extraction"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -564,18 +473,7 @@ hints:
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:
-  - owner: "getify"
-    repo: "TNG-Hooks"
-    content: "# TNG-Hooks\\n\\n[![Build Status](https://travis-ci.org/getify/TNG-Hooks.svg?branch=master)](https://travis-ci.org/getify/TNG-Hooks)"
-    filePath: "README.md"
-    queryId: "tng_hooks_readme"
-    reasoning: "Get documentation for TNG-Hooks which provides React-inspired useState for standalone functions"
-    totalLines: 811
-hints:
-  - "Rich dataset available - analyze patterns, compare implementations, identify best practices"
-  - "Compare implementations across 3-5 repositories to identify best practices"
-`;
+        const expectedYaml = `data:\n  - owner: "getify"\n    repo: "TNG-Hooks"\n    content: "# TNG-Hooks\\n\\n[![Build Status](https://travis-ci.org/getify/TNG-Hooks.svg?branch=master)](https://travis-ci.org/getify/TNG-Hooks)"\n    filePath: "README.md"\n    queryId: "tng_hooks_readme"\n    reasoning: "Get documentation for TNG-Hooks which provides React-inspired useState for standalone functions"\n    totalLines: 811\nhints:\n  - "Rich dataset available - analyze patterns, compare implementations, identify best practices"\n  - "Compare implementations across 3-5 repositories to identify best practices"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -612,23 +510,7 @@ hints:
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:
-  pagination:
-    page: 1
-    total: 50
-  repositories:
-    - id: "repo-123"
-      name: "test-repo"
-      owner: "testuser"
-      url: "https://github.com/testuser/test-repo"
-      metadata:
-        id: "meta-456"
-        type: "public"
-        stats:
-          stars: 100
-hints:
-  - "Use pagination for large result sets"
-`;
+        const expectedYaml = `data:\n  pagination:\n    page: 1\n    total: 50\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\n      metadata:\n        id: "meta-456"\n        type: "public"\n        stats:\n          stars: 100\nhints:\n  - "Use pagination for large result sets"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -651,13 +533,7 @@ hints:
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:
-  emptyArray: []
-  emptyObject: {}
-  nullField: null
-  validField: "test"
-hints: []
-`;
+        const expectedYaml = `data:\n  emptyArray: []\n  emptyObject: {}\n  nullField: null\n  validField: "test"\nhints: []\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -676,13 +552,8 @@ hints: []
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:
-  path: "src/components/Button.tsx"
-  code: "const [state, setState] = useState(\\"initial\\");"
-  message: "Hello \\"world\\" with 'quotes' and\\nnewlines"
-hints:
-  - "Handle special characters properly"
-`;
+        const expectedYaml =
+          'data:\n  path: "src/components/Button.tsx"\n  code: "const [state, setState] = useState(\\"initial\\");"\n  message: "Hello \\"world\\" with \'quotes\' and\\nnewlines"\nhints:\n  - "Handle special characters properly"\n';
 
         expect(yamlResult).toEqual(expectedYaml);
       });

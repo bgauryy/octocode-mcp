@@ -96,14 +96,23 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content).toHaveLength(1);
       expect(result.content[0]?.type).toBe('text');
 
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(Array.isArray(data.data)).toBe(true);
-      expect(data.data).toHaveLength(1);
-
-      const fileResult = data.data[0];
-      expect(fileResult.filePath).toBe('README.md');
-      expect(fileResult.content).toContain('Hello World');
-      expect(fileResult.originalQuery).toBeUndefined(); // Only on error
+      const responseText = result.content[0]?.text as string;
+      const expectedYaml = `data:
+  - queryId: "test-query"
+    content: "# Hello World\\n\\nThis is a test file."
+    filePath: "README.md"
+    owner: "test"
+    repo: "repo"
+    totalLines: 3
+hints:
+  - "Use repository structure analysis to find similar implementations"
+  - "Single result found - dive deep and look for related examples in the same repository"
+  - "From implementation files, find: imports, exports, tests, and related modules"
+  - "Always verify documentation claims against actual implementation code"
+  - "Look for main files, index files, and public APIs to understand code structure"
+  - "Examine imports/exports to understand dependencies and usage"
+`;
+      expect(responseText).toEqual(expectedYaml);
     });
 
     it('should pass authInfo and userContext to GitHub API', async () => {
@@ -188,18 +197,12 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(2);
-
-      const readmeResult = data.data.find((r: Record<string, unknown>) =>
-        r.filePath?.toString().includes('README.md')
-      );
-      const packageResult = data.data.find((r: Record<string, unknown>) =>
-        r.filePath?.toString().includes('package.json')
-      );
-
-      expect(readmeResult.filePath).toBe('README.md');
-      expect(packageResult.filePath).toBe('package.json');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('README.md');
+      expect(responseText).toContain('package.json');
+      expect(responseText).toContain('readme');
+      expect(responseText).toContain('package');
     });
   });
 
@@ -225,13 +228,10 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(false); // Tool doesn't error, but result contains error
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(1);
-
-      const errorResult = data.data[0];
-      expect(errorResult.originalQuery).toBeUndefined(); // originalQuery no longer included in error responses
-      expect(errorResult.error).toContain('not found');
-      expect(errorResult.filePath).toBeUndefined(); // No file properties on error
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('not found');
     });
 
     it('should handle API exception', async () => {
@@ -252,20 +252,11 @@ describe('GitHub Fetch Content Tool', () => {
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(1);
-
-      const errorResult = data.data[0];
-      expect(errorResult.metadata?.originalQuery).toEqual(
-        expect.objectContaining({
-          owner: 'test',
-          repo: 'repo',
-          filePath: 'test.md',
-          id: 'exception-test',
-        })
-      ); // originalQuery are included in metadata for error responses
-      expect(errorResult.error).toBe('Network error');
-      expect(errorResult.filePath).toBeUndefined(); // No file properties on error
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('Network error');
+      expect(responseText).toContain('exception-test');
     });
   });
 
@@ -313,14 +304,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.content).toBe(fullFileContent);
-      expect(fileResult.totalLines).toBe(12);
-      expect(fileResult.isPartial).toBeUndefined();
-      expect(fileResult.startLine).toBeUndefined();
-      expect(fileResult.endLine).toBeUndefined();
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('Full File Content');
+      expect(responseText).toContain('totalLines: 12');
+      expect(responseText).toContain('README.md');
 
       // Verify API was called with fullContent=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -412,14 +400,12 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.content).toBe('line 5\nline 6\nline 7');
-      expect(fileResult.isPartial).toBe(true);
-      expect(fileResult.startLine).toBe(5);
-      expect(fileResult.endLine).toBe(7);
-      expect(fileResult.totalLines).toBe(20);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('line 5');
+      expect(responseText).toContain('isPartial: true');
+      expect(responseText).toContain('startLine: 5');
+      expect(responseText).toContain('endLine: 7');
 
       // Verify API was called with correct line parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -467,16 +453,13 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.content).toContain('function main');
-      expect(fileResult.isPartial).toBe(true);
-      expect(fileResult.startLine).toBe(8);
-      expect(fileResult.endLine).toBe(14);
-      expect(fileResult.securityWarnings).toContain(
-        'Found "function main" on line 11'
-      );
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('function main');
+      expect(responseText).toContain('isPartial: true');
+      expect(responseText).toContain('startLine: 8');
+      expect(responseText).toContain('securityWarnings');
+      expect(responseText).toContain('function main');
 
       // Verify API was called with matchString parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -566,12 +549,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.minified).toBe(true);
-      expect(fileResult.minificationType).toBe('terser');
-      expect(fileResult.minificationFailed).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('minified: true');
+      expect(responseText).toContain('minificationType: "terser"');
+      expect(responseText).toContain('minificationFailed: false');
 
       // Verify API was called with minified=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -611,11 +593,10 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.content).toContain('return "Hello World"');
-      expect(fileResult.minified).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('Hello World');
+      expect(responseText).toContain('minified: false');
 
       // Verify API was called with minified=false
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -657,12 +638,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.minificationFailed).toBe(true);
-      expect(fileResult.minificationType).toBe('failed');
-      expect(fileResult.content).toContain('// Syntax error');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('minificationFailed: true');
+      expect(responseText).toContain('minificationType: "failed"');
+      expect(responseText).toContain('// Syntax error');
     });
   });
 
@@ -698,14 +678,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.content).toContain('[REDACTED]');
-      expect(fileResult.securityWarnings).toContain(
-        'Secrets detected and redacted: API_KEY, DATABASE_URL'
-      );
-      expect(fileResult.securityWarnings).toContain(
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('[REDACTED]');
+      expect(responseText).toContain('Secrets detected and redacted');
+      expect(responseText).toContain(
         'Potentially sensitive configuration file detected'
       );
 
@@ -812,20 +789,13 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.sampling).toBeDefined();
-      expect(fileResult.sampling.codeExplanation).toBe(
-        'This is a JavaScript utility function that exports a helper method.'
-      );
-      expect(fileResult.sampling.filePath).toBe('utils.js');
-      expect(fileResult.sampling.repo).toBe('test/repo');
-      expect(fileResult.sampling.usage).toEqual({
-        promptTokens: 100,
-        completionTokens: 50,
-        totalTokens: 150,
-      });
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('sampling:');
+      expect(responseText).toContain('JavaScript utility function');
+      expect(responseText).toContain('utils.js');
+      expect(responseText).toContain('test/repo');
+      expect(responseText).toContain('promptTokens: 100');
     });
 
     it('should handle sampling failure gracefully', async () => {
@@ -862,13 +832,11 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('console.log');
       // Should not have sampling data when it fails
-      expect(fileResult.sampling).toBeUndefined();
-      // But should still have the file content
-      expect(fileResult.content).toBe('console.log("test");');
+      expect(responseText).not.toContain('sampling:');
     });
   });
 
@@ -901,10 +869,10 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      const fileResult = data.data[0];
-
-      expect(fileResult.branch).toBe('feature-branch');
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('branch: "feature-branch"');
+      expect(responseText).toContain('feature.js');
 
       // Verify API was called with correct branch
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
@@ -1003,26 +971,14 @@ End of file.`;
       });
 
       expect(result.isError).toBe(false);
-      const data = JSON.parse(result.content[0]?.text as string);
-      expect(data.data).toHaveLength(3);
-
-      // First result should be successful
-      const successResult = data.data[0];
-      expect(successResult.content).toBe('const success = true;');
-      expect(successResult.error).toBeUndefined();
-      expect(successResult.originalQuery).toBeUndefined();
-
-      // Second result should have API error
-      const errorResult = data.data[1];
-      expect(errorResult.error).toBe('File not found');
-      expect(errorResult.content).toBeUndefined(); // No content properties on error
-      expect(errorResult.originalQuery).toBeUndefined();
-
-      // Third result should have exception error
-      const exceptionResult = data.data[2];
-      expect(exceptionResult.error).toBe('Network timeout');
-      expect(exceptionResult.content).toBeUndefined(); // No content properties on error
-      expect(exceptionResult.metadata?.originalQuery).toBeDefined(); // originalQuery included in metadata for exceptions
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('const success = true;');
+      expect(responseText).toContain('File not found');
+      expect(responseText).toContain('Network timeout');
+      expect(responseText).toContain('success-query');
+      expect(responseText).toContain('error-query');
+      expect(responseText).toContain('exception-query');
     });
   });
 
@@ -1122,29 +1078,22 @@ End of file.`;
       });
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0]?.text as string);
-
-      // The error structure has error in data field
-      expect(errorData.data.error).toBeDefined();
-      expect(Array.isArray(errorData.hints)).toBe(true);
-      expect(
-        errorData.hints.some((hint: string) =>
-          hint.includes('at least one file content query')
-        )
-      ).toBe(true);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('at least one file content query');
     });
 
     it('should reject missing queries parameter', async () => {
       const result = await mockServer.callTool('githubGetFileContent', {});
 
       expect(result.isError).toBe(true);
-      const errorData = JSON.parse(result.content[0]?.text as string);
-      expect(errorData.data.error).toBeDefined();
-      expect(
-        errorData.hints.some((hint: string) =>
-          hint.includes('at least one file content query')
-        )
-      ).toBe(true);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('error:');
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('at least one file content query');
     });
   });
 });

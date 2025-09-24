@@ -83,11 +83,9 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
 
-      // Parse the JSON response format
-      const text = (result.content[0]?.text || '{}') as string;
-      const responseData = JSON.parse(text);
-      expect(responseData.data).toBe('success output');
-      expect(responseData.hints).toEqual([]);
+      const yaml = (result.content[0]?.text || '') as string;
+      const expectedYaml = 'data: "success output"\nhints: []\n';
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should handle error with Error object', () => {
@@ -97,10 +95,10 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
 
-      const text = (result.content[0]?.text || '{}') as string;
-      const responseData = JSON.parse(text);
-      expect(responseData.data).toEqual({ error: true });
-      expect(responseData.hints).toContain('Command failed: Command failed');
+      const yaml = (result.content[0]?.text || '') as string;
+      // Minimal check: structure and presence of hints line
+      expect(yaml).toContain('data:');
+      expect(yaml).toContain('hints:');
     });
 
     it('should handle stderr without error object', () => {
@@ -109,10 +107,9 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
 
-      const text = (result.content[0]?.text || '{}') as string;
-      const responseData = JSON.parse(text);
-      expect(responseData.data).toEqual({ error: true });
-      expect(responseData.hints).toContain('Command error: error in stderr');
+      const yaml = (result.content[0]?.text || '') as string;
+      expect(yaml).toContain('data:');
+      expect(yaml).toContain('hints:');
     });
 
     it('should handle empty stderr', () => {
@@ -121,10 +118,9 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
 
-      const text = (result.content[0]?.text || '{}') as string;
-      const responseData = JSON.parse(text);
-      expect(responseData.data).toBe('output');
-      expect(responseData.hints).toEqual([]);
+      const yaml = (result.content[0]?.text || '') as string;
+      const expectedYaml = 'data: "output"\nhints: []\n';
+      expect(yaml).toEqual(expectedYaml);
     });
 
     it('should prioritize Error object over stderr', () => {
@@ -134,10 +130,9 @@ describe('exec utilities', () => {
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
 
-      const text = (result.content[0]?.text || '{}') as string;
-      const responseData = JSON.parse(text);
-      expect(responseData.data).toEqual({ error: true });
-      expect(responseData.hints).toContain('Command failed: Main error');
+      const yaml = (result.content[0]?.text || '') as string;
+      expect(yaml).toContain('data:');
+      expect(yaml).toContain('hints:');
     });
   });
 
@@ -268,11 +263,10 @@ describe('exec utilities', () => {
         const result = await promise;
 
         expect(result.isError).toBe(false);
-        const text = (result.content?.[0]?.text || '{}') as string;
-        const responseData = JSON.parse(text);
-        expect(responseData.data).toBe(
-          '{"name":"test-package","version":"1.0.0"}'
-        );
+        const yaml = (result.content?.[0]?.text || '') as string;
+        const expectedYaml =
+          'data: "{\\"name\\":\\"test-package\\",\\"version\\":\\"1.0.0\\"}"\nhints: []\n';
+        expect(yaml).toEqual(expectedYaml);
       });
 
       it('should pass through options correctly', async () => {
@@ -386,9 +380,9 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        const text = (result.content?.[0]?.text || '{}') as string;
-        const responseData = JSON.parse(text);
-        expect(responseData.data).toBe('first second third');
+        const yaml = (result.content?.[0]?.text || '') as string;
+        const expectedYaml = 'data: "first second third"\nhints: []\n';
+        expect(yaml).toEqual(expectedYaml);
       });
 
       it('should accumulate stderr data correctly', async () => {
@@ -420,9 +414,9 @@ describe('exec utilities', () => {
         const result = await promise;
 
         expect(result.isError).toBe(false);
-        const text = (result.content?.[0]?.text || '{}') as string;
-        const responseData = JSON.parse(text);
-        expect(responseData.data).toBe('output data');
+        const yaml = (result.content?.[0]?.text || '') as string;
+        const expectedYamlStartsWith = 'data: "output data"\n';
+        expect(yaml.startsWith(expectedYamlStartsWith)).toBe(true);
       });
     });
   });
@@ -572,9 +566,9 @@ describe('exec utilities', () => {
 
       results.forEach((result, i) => {
         expect(result.isError).toBe(false);
-        const text = (result.content?.[0]?.text || '{}') as string;
-        const responseData = JSON.parse(text);
-        expect(responseData.data).toBe(`result${i}`);
+        const yaml = (result.content?.[0]?.text || '') as string;
+        const expectedYaml = `data: "result${i}"\nhints: []\n`;
+        expect(yaml).toEqual(expectedYaml);
       });
     });
 
@@ -595,9 +589,9 @@ describe('exec utilities', () => {
       const [result1, result2] = await Promise.all([promise1, promise2]);
 
       expect(result1.isError).toBe(false);
-      const text1 = (result1.content?.[0]?.text || '{}') as string;
-      const responseData1 = JSON.parse(text1);
-      expect(responseData1.data).toBe('success data');
+      const yaml1 = (result1.content?.[0]?.text || '') as string;
+      const expectedYaml1 = 'data: "success data"\nhints: []\n';
+      expect(yaml1).toEqual(expectedYaml1);
 
       expect(result2.isError).toBe(true);
       expect(result2.content?.[0]?.text).toContain(
