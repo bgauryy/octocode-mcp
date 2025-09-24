@@ -12,9 +12,7 @@ export interface SimplifiedRepository {
   owner_repo: string;
   stars: number;
   description: string;
-  language: string;
   url: string;
-  forks: number;
   updatedAt: string;
 }
 
@@ -96,7 +94,6 @@ export interface RepoSearchResult {
   queryId?: string;
   reasoning?: string;
   repositories: SimplifiedRepository[];
-  total_count: number;
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only when verbose or error

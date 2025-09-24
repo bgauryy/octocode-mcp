@@ -127,7 +127,6 @@ async function searchMultipleGitHubRepos(
           queryId: query.id,
           reasoning: query.reasoning,
           repositories: typedRepositories,
-          total_count: apiResult.data.total_count,
           metadata: {},
         } as ProcessedBulkResult;
       } catch (error) {

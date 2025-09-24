@@ -24,7 +24,6 @@ export async function searchGitHubReposAPI(
   userContext?: UserContext
 ): Promise<
   GitHubAPIResponse<{
-    total_count: number;
     repositories: SimplifiedRepository[];
   }>
 > {
@@ -37,7 +36,6 @@ export async function searchGitHubReposAPI(
 
   const result = await withDataCache<
     GitHubAPIResponse<{
-      total_count: number;
       repositories: SimplifiedRepository[];
     }>
   >(
@@ -63,7 +61,6 @@ async function searchGitHubReposAPIInternal(
   authInfo?: AuthInfo
 ): Promise<
   GitHubAPIResponse<{
-    total_count: number;
     repositories: SimplifiedRepository[];
   }>
 > {
@@ -103,16 +100,13 @@ async function searchGitHubReposAPIInternal(
             ? repo.description.substring(0, 150) + '...'
             : repo.description
           : 'No description',
-        language: repo.language || 'Unknown',
         url: repo.html_url,
-        forks: repo.forks || 0,
         updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
       })
     );
 
     return {
       data: {
-        total_count: result.data.total_count,
         repositories,
       },
       status: 200,

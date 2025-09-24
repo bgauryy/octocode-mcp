@@ -414,9 +414,7 @@ describe('Response Utilities', () => {
                   stars: 1010,
                   description:
                     'Provides React-inspired hooks like useState(..) for stand-alone functions',
-                  language: 'JavaScript',
                   url: 'https://github.com/getify/TNG-Hooks',
-                  forks: 38,
                   updatedAt: '31/08/2025',
                 },
                 {
@@ -424,13 +422,10 @@ describe('Response Utilities', () => {
                   stars: 277,
                   description:
                     'Custom hook to include a callback function for useState.',
-                  language: 'JavaScript',
                   url: 'https://github.com/the-road-to-learn-react/use-state-with-callback',
-                  forks: 37,
                   updatedAt: '18/04/2025',
                 },
               ],
-              total_count: 2,
             },
           ],
           hints: [
@@ -449,19 +444,14 @@ describe('Response Utilities', () => {
     repositories:
       - url: "https://github.com/getify/TNG-Hooks"
         description: "Provides React-inspired hooks like useState(..) for stand-alone functions"
-        forks: 38
-        language: "JavaScript"
         owner_repo: "getify/TNG-Hooks"
         stars: 1010
         updatedAt: "31/08/2025"
       - url: "https://github.com/the-road-to-learn-react/use-state-with-callback"
         description: "Custom hook to include a callback function for useState."
-        forks: 37
-        language: "JavaScript"
         owner_repo: "the-road-to-learn-react/use-state-with-callback"
         stars: 277
         updatedAt: "18/04/2025"
-    total_count: 2
 hints:
   - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
   - "Use github_view_repo_structure first to understand project layout, then target specific files"
@@ -606,7 +596,6 @@ hints:
                   type: 'public',
                   stats: {
                     stars: 100,
-                    forks: 25,
                   },
                 },
               },
@@ -636,7 +625,6 @@ hints:
         id: "meta-456"
         type: "public"
         stats:
-          forks: 25
           stars: 100
 hints:
   - "Use pagination for large result sets"
