@@ -1,4 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { registerTool } from '../mcpCompat.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
@@ -34,19 +35,13 @@ interface AggregatedRepoContext {
   };
 }
 
-export function registerSearchGitHubReposTool(server: McpServer) {
-  return server.registerTool(
+export function registerSearchGitHubReposTool(server: Server) {
+  return registerTool(
+    server,
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
-      inputSchema: GitHubReposSearchQuerySchema.shape,
-      annotations: {
-        title: 'GitHub Repository Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
+      inputSchema: GitHubReposSearchQuerySchema,
     },
     withSecurityValidation(
       async (

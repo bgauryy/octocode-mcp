@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 // Mock all dependencies before importing index
@@ -37,7 +37,7 @@ import { getGitHubToken } from '../src/serverConfig.js';
 import { TOOL_NAMES } from '../src/constants.js';
 
 // Mock implementations
-const mockMcpServer = {
+const mockServer = {
   connect: vi.fn(),
   close: vi.fn(),
 };
@@ -47,7 +47,7 @@ const mockTransport = {
 };
 
 const mockRegisterPrompts = vi.mocked(registerPrompts);
-const mockMcpServerConstructor = vi.mocked(McpServer);
+const mockServerConstructor = vi.mocked(Server);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockGetGithubCLIToken = vi.mocked(getGithubCLIToken);
 const mockRegisterTools = vi.mocked(registerTools);
@@ -99,8 +99,8 @@ describe('Index Module', () => {
     process.env.GITHUB_TOKEN = 'test-token';
 
     // Setup default mock implementations
-    mockMcpServerConstructor.mockImplementation(
-      () => mockMcpServer as unknown as InstanceType<typeof McpServer>
+    mockServerConstructor.mockImplementation(
+      () => mockServer as unknown as InstanceType<typeof Server>
     );
     mockStdioServerTransport.mockImplementation(
       () =>
@@ -126,8 +126,8 @@ describe('Index Module', () => {
     processOnSpy = vi.spyOn(process, 'once').mockImplementation(() => process);
 
     // Mock server connect to resolve immediately
-    mockMcpServer.connect.mockResolvedValue(undefined);
-    mockMcpServer.close.mockResolvedValue(undefined);
+    mockServer.connect.mockResolvedValue(undefined);
+    mockServer.close.mockResolvedValue(undefined);
 
     // Mock all tool registration functions to succeed by default
     const mockRegisteredTool = {
@@ -211,7 +211,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockMcpServerConstructor).toHaveBeenCalledWith(
+      expect(mockServerConstructor).toHaveBeenCalledWith(
         expect.objectContaining({
           name: expect.stringContaining('octocode-mcp'),
           title: 'Octocode MCP',
@@ -230,7 +230,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      const serverConfig = mockMcpServerConstructor.mock.calls[0]?.[0];
+      const serverConfig = mockServerConstructor.mock.calls[0]?.[0];
       expect(serverConfig?.version).toBeDefined();
       expect(typeof serverConfig?.version).toBe('string');
     });
@@ -248,7 +248,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
   });
 
@@ -259,7 +259,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should use GH_TOKEN when GITHUB_TOKEN is not present', async () => {
@@ -269,7 +269,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should use CLI token when no env tokens are present', async () => {
@@ -280,7 +280,7 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should exit when no token is available', async () => {
@@ -327,7 +327,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called with server
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should continue registering tools even if some fail', async () => {
@@ -438,7 +438,7 @@ describe('Index Module', () => {
       }
 
       // Verify that the server was created but exit was called
-      expect(mockMcpServerConstructor).toHaveBeenCalled();
+      expect(mockServerConstructor).toHaveBeenCalled();
       expect(exitCalled).toBe(true);
       expect(exitCode).toBe(1);
     });
@@ -446,7 +446,7 @@ describe('Index Module', () => {
 
   describe('Server Startup', () => {
     it('should handle server startup errors', async () => {
-      mockMcpServer.connect.mockRejectedValue(new Error('Connection failed'));
+      mockServer.connect.mockRejectedValue(new Error('Connection failed'));
 
       // Track the exit call without throwing
       let exitCalled = false;
@@ -524,7 +524,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called (default tools would be registered)
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should register default tools when configuration is empty', async () => {
@@ -535,7 +535,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should enable additional tools with ENABLE_TOOLS', async () => {
@@ -545,7 +545,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called with server
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
 
       // The actual tool filtering logic is tested in the registerTools function
       // Here we just verify the main registration flow works
@@ -558,7 +558,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', async () => {
@@ -569,7 +569,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should handle whitespace in tool configuration', async () => {
@@ -580,7 +580,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called (whitespace handling is done in serverConfig)
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should handle invalid tool names gracefully', async () => {
@@ -591,7 +591,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify registerTools was called (invalid tools are ignored)
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockServer);
     });
 
     it('should exit when all tools are disabled', async () => {
@@ -735,7 +735,7 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify server was created with sampling capability
-      expect(mockMcpServerConstructor).toHaveBeenCalledWith(
+      expect(mockServerConstructor).toHaveBeenCalledWith(
         expect.objectContaining({
           name: expect.stringMatching(/octocode-mcp_/),
         }),
@@ -754,10 +754,10 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       // Verify server was created and find the right call
-      expect(mockMcpServerConstructor).toHaveBeenCalled();
+      expect(mockServerConstructor).toHaveBeenCalled();
 
       // Get the last call (most recent) - there may be multiple calls from different tests
-      const calls = mockMcpServerConstructor.mock.calls;
+      const calls = mockServerConstructor.mock.calls;
       const lastCall = calls[calls.length - 1];
       expect(lastCall).toBeDefined();
       const capabilities = lastCall![1]!.capabilities;

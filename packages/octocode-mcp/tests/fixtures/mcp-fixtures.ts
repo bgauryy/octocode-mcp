@@ -1,12 +1,12 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequest,
   CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { vi } from 'vitest';
 
-export interface MockMcpServer {
-  server: McpServer;
+export interface MockServer {
+  server: Server;
   callTool: (
     name: string,
     args?: Record<string, unknown>
@@ -17,23 +17,16 @@ export interface MockMcpServer {
 /**
  * Create a mock MCP server for testing
  */
-export function createMockMcpServer(): MockMcpServer {
+export function createMockServer(): MockServer {
   const toolHandlers = new Map<string, Function>();
 
   const mockServer = {
-    // Mock for the test's server.tool() method - handler is the 2nd parameter
-    tool: vi.fn((name: string, handler: Function) => {
-      toolHandlers.set(name, handler);
-    }),
-    // Mock for the actual tools' server.registerTool() method - handler is the 3rd parameter
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    registerTool: vi.fn((name: string, _options: any, handler: Function) => {
-      toolHandlers.set(name, handler);
-    }),
+    // Mock for setRequestHandler - used by the new Server API
+    setRequestHandler: vi.fn(),
     // Add other server methods as needed
-    addTool: vi.fn(),
-    listTools: vi.fn(),
-  } as unknown as McpServer;
+    connect: vi.fn(),
+    close: vi.fn(),
+  } as unknown as Server;
 
   const callTool = async (
     name: string,

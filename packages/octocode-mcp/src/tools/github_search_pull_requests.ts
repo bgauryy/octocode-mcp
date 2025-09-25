@@ -1,4 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { registerTool } from '../mcpCompat.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { withSecurityValidation } from '../security/withSecurityValidation';
 import { createResult } from '../responses';
@@ -20,19 +21,13 @@ import {
   type ProcessedBulkResult,
 } from '../utils/bulkOperations';
 
-export function registerSearchGitHubPullRequestsTool(server: McpServer) {
-  return server.registerTool(
+export function registerSearchGitHubPullRequestsTool(server: Server) {
+  return registerTool(
+    server,
     TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
-      inputSchema: GitHubPullRequestSearchBulkQuerySchema.shape,
-      annotations: {
-        title: 'GitHub Pull Request Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
+      inputSchema: GitHubPullRequestSearchBulkQuerySchema,
     },
     withSecurityValidation(
       async (

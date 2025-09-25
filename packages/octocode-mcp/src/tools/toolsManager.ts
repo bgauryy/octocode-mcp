@@ -1,12 +1,23 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DEFAULT_TOOLS } from './tools.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+  name as githubSearchCodeName,
+  description as githubSearchCodeDescription,
+  searchMultipleGitHubCode,
+} from './github_search_code.js';
+import { GitHubCodeSearchSimpleSchema } from '../scheme/github_search_code_simple.js';
 import { getServerConfig } from '../serverConfig.js';
 import { createLogger } from '../utils/logger.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  Tool,
+} from '@modelcontextprotocol/sdk/types.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 
 /**
  * Register tools based on configuration
  */
-export function registerTools(server: McpServer): {
+export function registerTools(server: Server): {
   successCount: number;
   failedTools: string[];
 } {
@@ -16,7 +27,7 @@ export function registerTools(server: McpServer): {
   const disableTools = config.disableTools || [];
   const logger = createLogger(server, 'tools');
 
-  let successCount = 0;
+  //let successCount = 0;
   const failedTools: string[] = [];
 
   // Check for conflicting configurations
@@ -29,53 +40,36 @@ export function registerTools(server: McpServer): {
     );
   }
 
-  // Register tools based on configuration
-  for (const tool of DEFAULT_TOOLS) {
-    try {
-      let shouldRegisterTool = false;
-      let reason = '';
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const tools: Tool[] = [
+      {
+        name: githubSearchCodeName,
+        description: githubSearchCodeDescription,
+        inputSchema: zodToJsonSchema(
+          GitHubCodeSearchSimpleSchema
+        ) as unknown as Tool['inputSchema'],
+      },
+    ];
+    return { tools };
+  });
 
-      if (toolsToRun.length > 0) {
-        // TOOLS_TO_RUN mode: run only specified tools
-        shouldRegisterTool = toolsToRun.includes(tool.name);
-        if (!shouldRegisterTool) {
-          reason = 'not specified in TOOLS_TO_RUN configuration';
-        }
-      } else {
-        // Configuration mode: defaults + enableTools - disableTools
-        // Start with default tools
-        shouldRegisterTool = tool.isDefault;
+  server.setRequestHandler(CallToolRequestSchema, async (request, _extra) => {
+    const { name, arguments: args } = request.params;
 
-        // Add tools from ENABLE_TOOLS (if not already default)
-        if (enableTools.includes(tool.name)) {
-          shouldRegisterTool = true;
-        }
-
-        if (!shouldRegisterTool && reason === '') {
-          reason = 'not a default tool';
-        }
-
-        // Apply DISABLE_TOOLS
-        if (disableTools.includes(tool.name)) {
-          shouldRegisterTool = false;
-          reason = 'disabled by DISABLE_TOOLS configuration';
-        }
-      }
-
-      if (shouldRegisterTool) {
-        tool.fn(server);
-        successCount++;
-      } else if (reason) {
-        logger.info(`Tool ${tool.name} ${reason}`);
-      }
-    } catch (error) {
-      failedTools.push(tool.name);
-      logger.error(`Failed to register tool ${tool.name}`, {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+    if (name === githubSearchCodeName) {
+      // Use simplified schema for validation but cast to expected type
+      const validatedArgs = GitHubCodeSearchSimpleSchema.parse(args);
+      return await searchMultipleGitHubCode(
+        validatedArgs.queries,
+        undefined,
+        undefined
+      );
     }
-  }
 
-  return { successCount, failedTools };
+    return {
+      content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+    };
+  });
+
+  return { successCount: 1, failedTools };
 }

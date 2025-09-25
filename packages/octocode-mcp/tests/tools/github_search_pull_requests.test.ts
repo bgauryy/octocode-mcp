@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  createMockMcpServer,
-  MockMcpServer,
-} from '../fixtures/mcp-fixtures.js';
+import { createMockServer, MockServer } from '../fixtures/mcp-fixtures.js';
 
 // Use vi.hoisted to ensure mocks are available during module initialization
 const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
@@ -93,10 +90,10 @@ function createMockPRResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe('GitHub Search Pull Requests Tool', () => {
-  let mockServer: MockMcpServer;
+  let mockServer: MockServer;
 
   beforeEach(() => {
-    mockServer = createMockMcpServer();
+    mockServer = createMockServer();
     registerSearchGitHubPullRequestsTool(mockServer.server);
 
     // Reset all mocks

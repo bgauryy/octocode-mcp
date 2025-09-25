@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  createMockMcpServer,
-  MockMcpServer,
-} from '../fixtures/mcp-fixtures.js';
+import { createMockServer, MockServer } from '../fixtures/mcp-fixtures.js';
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
@@ -33,10 +30,10 @@ vi.mock('../../src/sampling.js', () => ({
 import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
 
 describe('GitHub Fetch Content Tool', () => {
-  let mockServer: MockMcpServer;
+  let mockServer: MockServer;
 
   beforeEach(() => {
-    mockServer = createMockMcpServer();
+    mockServer = createMockServer();
     vi.clearAllMocks();
 
     // Mock server configuration

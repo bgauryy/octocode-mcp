@@ -1,4 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { registerTool } from '../mcpCompat.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
@@ -23,19 +24,13 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters';
 
-export function registerViewGitHubRepoStructureTool(server: McpServer) {
-  return server.registerTool(
+export function registerViewGitHubRepoStructureTool(server: Server) {
+  return registerTool(
+    server,
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
-      inputSchema: GitHubViewRepoStructureBulkQuerySchema.shape,
-      annotations: {
-        title: 'GitHub Repository Structure Explorer',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
+      inputSchema: GitHubViewRepoStructureBulkQuerySchema,
     },
     withSecurityValidation(
       async (

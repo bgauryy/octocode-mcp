@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 interface CallToolResult {
   content: Array<{ type: string; text: string }>;
@@ -31,7 +31,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
 
 describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
-  let server: McpServer;
+  let server: Server;
   let toolHandler: (
     args: unknown,
     authInfo: unknown,
@@ -47,7 +47,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         toolHandler = handler;
         return Promise.resolve();
       }),
-    } as unknown as McpServer;
+    } as unknown as Server;
 
     // Register the tool
     registerGitHubSearchCodeTool(server);

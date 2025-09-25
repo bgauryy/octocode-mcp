@@ -1,7 +1,4 @@
-import {
-  McpServer,
-  RegisteredTool,
-} from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { TOOL_NAMES } from '../constants.js';
 import { registerGitHubSearchCodeTool } from './github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './github_fetch_content.js';
@@ -14,7 +11,7 @@ export interface ToolConfig {
   description: string;
   isDefault: boolean;
   type: 'search' | 'content' | 'history';
-  fn: (server: McpServer) => RegisteredTool;
+  fn: (server: Server) => unknown;
 }
 
 export const GITHUB_SEARCH_CODE: ToolConfig = {

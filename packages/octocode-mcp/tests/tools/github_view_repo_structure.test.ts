@@ -1,8 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  createMockMcpServer,
-  MockMcpServer,
-} from '../fixtures/mcp-fixtures.js';
+import { createMockServer, MockServer } from '../fixtures/mcp-fixtures.js';
 
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
@@ -13,10 +10,10 @@ vi.mock('../../src/github/index.js', () => ({
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
 describe('GitHub View Repository Structure Tool', () => {
-  let mockServer: MockMcpServer;
+  let mockServer: MockServer;
 
   beforeEach(() => {
-    mockServer = createMockMcpServer();
+    mockServer = createMockServer();
     vi.clearAllMocks();
     registerViewGitHubRepoStructureTool(mockServer.server);
 

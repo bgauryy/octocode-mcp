@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
 // Mock dependencies
@@ -43,13 +43,13 @@ let mockLogger: {
 };
 
 describe('ToolsManager', () => {
-  let mockServer: McpServer;
+  let mockServer: Server;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
     // Mock server
-    mockServer = {} as McpServer;
+    mockServer = {} as Server;
 
     // Mock logger
     mockLogger = {

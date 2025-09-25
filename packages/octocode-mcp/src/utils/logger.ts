@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { LoggingLevel } from '@modelcontextprotocol/sdk/types.js';
 import { version } from '../../package.json';
 import { isLoggerEnabled } from '../serverConfig.js';
@@ -8,9 +8,9 @@ import { isLoggerEnabled } from '../serverConfig.js';
  */
 export class OctocodeLogger {
   private readonly prefix: string;
-  private readonly server: McpServer;
+  private readonly server: Server;
 
-  constructor(server: McpServer, component: string = 'core') {
+  constructor(server: Server, component: string = 'core') {
     this.server = server;
     this.prefix = `Octocode-${version}:${component}`;
   }
@@ -91,7 +91,7 @@ export class OctocodeLogger {
  * Create a simple logger instance
  */
 export function createLogger(
-  server: McpServer,
+  server: Server,
   component?: string
 ): OctocodeLogger {
   return new OctocodeLogger(server, component);
@@ -103,7 +103,7 @@ export function createLogger(
 export class LoggerFactory {
   private static loggers = new Map<string, OctocodeLogger>();
 
-  static getLogger(server: McpServer, component: string): OctocodeLogger {
+  static getLogger(server: Server, component: string): OctocodeLogger {
     if (!this.loggers.has(component)) {
       this.loggers.set(component, new OctocodeLogger(server, component));
     }

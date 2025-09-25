@@ -1,4 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { registerTool } from '../mcpCompat.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
@@ -23,19 +24,13 @@ import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
 
-export function registerFetchGitHubFileContentTool(server: McpServer) {
-  return server.registerTool(
+export function registerFetchGitHubFileContentTool(server: Server) {
+  return registerTool(
+    server,
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
-      inputSchema: FileContentBulkQuerySchema.shape,
-      annotations: {
-        title: 'GitHub File Content Fetch',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
+      inputSchema: FileContentBulkQuerySchema,
     },
     withSecurityValidation(
       async (
@@ -70,7 +65,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
 }
 
 async function fetchMultipleGitHubFileContents(
-  server: McpServer,
+  server: Server,
   queries: FileContentQuery[],
   authInfo?: AuthInfo,
   userContext?: UserContext

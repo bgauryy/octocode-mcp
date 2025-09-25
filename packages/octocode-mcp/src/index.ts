@@ -1,157 +1,162 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { Implementation } from '@modelcontextprotocol/sdk/types.js';
-import { registerPrompts } from './prompts.js';
-import { registerResources } from './resources.js';
-import { registerSampling } from './sampling.js';
-import { clearAllCache } from './utils/cache.js';
+// import { Implementation } from '@modelcontextprotocol/sdk/types.js';
+// import { registerPrompts } from './prompts.js';
+// import { registerResources } from './resources.js';
+// import { registerSampling } from './sampling.js';
+// import { clearAllCache } from './utils/cache.js';
 import { registerTools } from './tools/toolsManager.js';
 import {
-  isBetaEnabled,
   initialize,
-  cleanup,
+  // cleanup,
   getGitHubToken,
+  // isBetaEnabled,
 } from './serverConfig.js';
-import { createLogger, LoggerFactory } from './utils/logger.js';
+//import { createLogger, LoggerFactory } from './utils/logger.js';
+import { LoggerFactory } from './utils/logger.js';
 import { version, name } from '../package.json';
 
-const SERVER_CONFIG: Implementation = {
-  name: `${name}_${version}`,
-  title: 'Octocode MCP',
-  version: version,
-};
-
 async function startServer() {
-  let shutdownInProgress = false;
-  let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
-  let logger: ReturnType<typeof createLogger> | null = null;
+  // let shutdownInProgress = false;
+  // let shutdownTimeout: ReturnType<typeof setTimeout> | null = null;
+  // const logger: ReturnType<typeof createLogger> | null = null;
 
-  try {
-    await initialize();
-    const server = new McpServer(SERVER_CONFIG, {
+  // try {
+  await initialize();
+  const server = new Server(
+    {
+      name: `${name}`,
+      title: 'Octocode MCP Server',
+      version,
+    },
+    {
       capabilities: {
         prompts: {},
-        resources: {},
+        resources: { subscribe: true },
         tools: {},
         logging: {},
-        ...(isBetaEnabled() && { sampling: {} }),
+        completions: {},
       },
-    });
-    logger = createLogger(server, 'server');
-    await logger.info('Server starting');
-
-    await registerAllTools(server);
-
-    // Register prompts
-    registerPrompts(server);
-    await logger.info('Prompts ready');
-
-    // Register resources
-    registerResources(server);
-    await logger.info('Resources ready');
-
-    // Register sampling capabilities only if BETA features are enabled
-    if (isBetaEnabled()) {
-      registerSampling(server);
-      await logger.info('Sampling ready (BETA)');
+      instructions:
+        'Octocode MCP: Advanced GitHub repository analysis and code discovery tools',
     }
+  );
+  //logger = createLogger(server, 'server');
+  //await logger.info('Server starting');
 
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    await logger.info('Server ready', { pid: process.pid });
+  await registerAllTools(server);
 
-    const gracefulShutdown = async (signal?: string) => {
-      // Prevent multiple shutdown attempts
-      if (shutdownInProgress) {
-        return;
-      }
+  // Register prompts
+  //registerPrompts(server);
+  //await logger.info('Prompts ready');
 
-      shutdownInProgress = true;
+  // Register resources
+  //registerResources(server);
+  //await logger.info('Resources ready');
 
-      try {
-        if (logger) {
-          await logger.info('Shutting down', { signal });
-        }
+  // Register sampling capabilities only if BETA features are enabled
+  // if (isBetaEnabled()) {
+  //   registerSampling(server);
+  //   await logger.info('Sampling ready (BETA)');
+  // }
 
-        // Clear any existing shutdown timeout
-        if (shutdownTimeout) {
-          clearTimeout(shutdownTimeout);
-          shutdownTimeout = null;
-        }
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  //await logger.info('Server ready', { pid: process.pid });
 
-        // Set a new shutdown timeout
-        shutdownTimeout = setTimeout(() => {
-          process.exit(1);
-        }, 5000);
+  //   const gracefulShutdown = async (_signal?: string) => {
+  //     // Prevent multiple shutdown attempts
+  //     if (shutdownInProgress) {
+  //       return;
+  //     }
 
-        // Clear cache and credentials (fastest operations)
-        clearAllCache();
-        cleanup();
+  //     shutdownInProgress = true;
 
-        // Close server
-        try {
-          await server.close();
-        } catch {
-          // Ignore close errors
-        }
+  //     try {
+  //       if (logger) {
+  //         //await logger.info('Shutting down', { signal });
+  //       }
 
-        // Clear the timeout since we completed successfully
-        if (shutdownTimeout) {
-          clearTimeout(shutdownTimeout);
-          shutdownTimeout = null;
-        }
+  //       // Clear any existing shutdown timeout
+  //       if (shutdownTimeout) {
+  //         clearTimeout(shutdownTimeout);
+  //         shutdownTimeout = null;
+  //       }
 
-        if (logger) {
-          await logger.info('Shutdown complete');
-        }
+  //       // Set a new shutdown timeout
+  //       shutdownTimeout = setTimeout(() => {
+  //         process.exit(1);
+  //       }, 5000);
 
-        process.exit(0);
-      } catch {
-        // Clear timeout on error
-        if (shutdownTimeout) {
-          clearTimeout(shutdownTimeout);
-          shutdownTimeout = null;
-        }
+  //       // Clear cache and credentials (fastest operations)
+  //       clearAllCache();
+  //       cleanup();
 
-        process.exit(1);
-      }
-    };
+  //       // Close server
+  //       try {
+  //         await server.close();
+  //       } catch {
+  //         // Ignore close errors
+  //       }
 
-    // Handle process signals - only register once
-    process.once('SIGINT', () => gracefulShutdown('SIGINT'));
-    process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  //       // Clear the timeout since we completed successfully
+  //       if (shutdownTimeout) {
+  //         clearTimeout(shutdownTimeout);
+  //         shutdownTimeout = null;
+  //       }
 
-    // Handle stdin close (important for MCP)
-    process.stdin.once('close', () => {
-      gracefulShutdown('STDIN_CLOSE');
-    });
+  //       if (logger) {
+  //         //await logger.info('Shutdown complete');
+  //       }
 
-    // Handle uncaught errors - prevent multiple handlers
-    process.once('uncaughtException', error => {
-      if (logger) {
-        logger.error('Uncaught exception', { error: error.message });
-      }
-      gracefulShutdown('UNCAUGHT_EXCEPTION');
-    });
+  //       process.exit(0);
+  //     } catch {
+  //       // Clear timeout on error
+  //       if (shutdownTimeout) {
+  //         clearTimeout(shutdownTimeout);
+  //         shutdownTimeout = null;
+  //       }
 
-    process.once('unhandledRejection', reason => {
-      if (logger) {
-        logger.error('Unhandled rejection', { reason: String(reason) });
-      }
-      gracefulShutdown('UNHANDLED_REJECTION');
-    });
+  //       process.exit(1);
+  //     }
+  //   };
 
-    // Keep process alive
-    process.stdin.resume();
-  } catch (startupError) {
-    if (logger) {
-      await logger.error('Startup failed', { error: String(startupError) });
-    }
-    process.exit(1);
-  }
+  //   // Handle process signals - only register once
+  //   process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+  //   process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+  //   // Handle stdin close (important for MCP)
+  //   process.stdin.once('close', () => {
+  //     gracefulShutdown('STDIN_CLOSE');
+  //   });
+
+  //   // Handle uncaught errors - prevent multiple handlers
+  //   process.once('uncaughtException', _error => {
+  //     if (logger) {
+  //       //logger.error('Uncaught exception', { error: error.message });
+  //     }
+  //     gracefulShutdown('UNCAUGHT_EXCEPTION');
+  //   });
+
+  //   process.once('unhandledRejection', _reason => {
+  //     if (logger) {
+  //       //logger.error('Unhandled rejection', { reason: String(reason) });
+  //     }
+  //     gracefulShutdown('UNHANDLED_REJECTION');
+  //   });
+
+  //   // Keep process alive
+  //   process.stdin.resume();
+  // }
+  // } catch (startupError) {
+  //   if (logger) {
+  //     //await logger.error('Startup failed', { error: String(startupError) });
+  //   }
+  //   process.exit(1);
+  // }
 }
 
-export async function registerAllTools(server: McpServer) {
+export async function registerAllTools(server: Server) {
   const logger = LoggerFactory.getLogger(server, 'tools');
 
   // Ensure token is available (simple check)
@@ -161,14 +166,14 @@ export async function registerAllTools(server: McpServer) {
       'No GitHub token available - some features may be limited'
     );
   } else {
-    await logger.info('GitHub token ready');
+    //await logger.info('GitHub token ready');
   }
 
   const { successCount, failedTools } = registerTools(server);
-  await logger.info('Tools registered', {
-    count: successCount,
-    failed: failedTools.length,
-  });
+  //await logger.info('Tools registered', {
+  //count: successCount,
+  //failed: failedTools.length,
+  //});
 
   if (failedTools.length > 0) {
     await logger.warning('Some tools failed to register', { failedTools });

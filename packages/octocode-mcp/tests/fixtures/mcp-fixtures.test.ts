@@ -1,60 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  createMockMcpServer,
+  createMockServer,
   createMockResult,
   parseResultJson,
 } from './mcp-fixtures.js';
-import type { MockMcpServer } from './mcp-fixtures.js';
+import type { MockServer } from './mcp-fixtures.js';
 
 describe('MCP Test Fixtures', () => {
-  let mockServer: MockMcpServer;
+  let mockServer: MockServer;
 
   beforeEach(() => {
-    mockServer = createMockMcpServer();
+    mockServer = createMockServer();
   });
 
   afterEach(() => {
     mockServer.cleanup();
   });
 
-  describe('createMockMcpServer', () => {
-    it('should create a mock server with tool registration', () => {
-      expect(mockServer.server).toBeDefined();
-      expect(mockServer.callTool).toBeDefined();
-      expect(mockServer.cleanup).toBeDefined();
-      expect(typeof mockServer.server.tool).toBe('function');
-    });
-
-    it('should register and call tools correctly', async () => {
-      // Register a test tool
-      mockServer.server.tool(
-        'test_tool',
-        async (args: Record<string, unknown>) =>
-          createMockResult({ received: args })
-      );
-
-      // Call the tool
-      const result = await mockServer.callTool('test_tool', { input: 'test' });
-      const data = parseResultJson(result);
-
-      expect(result.isError).toBe(false);
-      expect(data).toEqual({ received: { input: 'test' } });
-    });
-
+  describe('createMockServer', () => {
     it('should throw error for unregistered tools', async () => {
       await expect(mockServer.callTool('nonexistent_tool')).rejects.toThrow(
         "Tool 'nonexistent_tool' not found"
-      );
-    });
-
-    it('should handle tool errors correctly', async () => {
-      // Register a tool that throws an error
-      mockServer.server.tool('error_tool', async () => {
-        throw new Error('Tool execution failed');
-      });
-
-      await expect(mockServer.callTool('error_tool')).rejects.toThrow(
-        'Tool execution failed'
       );
     });
   });

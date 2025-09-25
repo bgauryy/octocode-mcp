@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CreateMessageRequest,
   CreateMessageResultSchema,
@@ -43,7 +43,7 @@ export interface SamplingResponse {
  * Register sampling capabilities with the MCP server
  * This enables the server to handle sampling requests from clients
  */
-export function registerSampling(_server: McpServer): void {
+export function registerSampling(_server: Server): void {
   // Note: In MCP SDK 1.16.0, sampling capabilities are declared in server constructor
 }
 
@@ -56,7 +56,7 @@ export function registerSampling(_server: McpServer): void {
  * @returns Promise<SamplingResponse> - The LLM-generated content and metadata
  */
 export async function performSampling(
-  server: McpServer,
+  server: Server,
   samplingRequest: SamplingRequest
 ): Promise<SamplingResponse> {
   try {
@@ -74,10 +74,7 @@ export async function performSampling(
       },
     };
 
-    const result = await server.server.request(
-      request,
-      CreateMessageResultSchema
-    );
+    const result = await server.request(request, CreateMessageResultSchema);
 
     const response: SamplingResponse = {
       content:

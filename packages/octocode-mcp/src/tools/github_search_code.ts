@@ -1,4 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { registerTool } from '../mcpCompat.js';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 
 import { createResult } from '../responses.js';
@@ -24,58 +25,13 @@ import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
 import { DESCRIPTIONS } from './descriptions.js';
 import { shouldIgnoreFile } from '../utils/fileFilters.js';
 
-export function registerGitHubSearchCodeTool(server: McpServer) {
-  return server.registerTool(
-    TOOL_NAMES.GITHUB_SEARCH_CODE,
-    {
-      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
-      inputSchema: GitHubCodeSearchBulkQuerySchema.shape,
-      annotations: {
-        title: 'GitHub Code Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    withSecurityValidation(
-      async (
-        args: Record<string, unknown>,
-        authInfo,
-        userContext
-      ): Promise<CallToolResult> => {
-        // Type assertion after validation
-        const typedArgs = args as unknown as GitHubSearchCodeInput;
-        if (
-          !typedArgs.queries ||
-          !Array.isArray(typedArgs.queries) ||
-          typedArgs.queries.length === 0
-        ) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            hasResults: false,
-            errorMessage: 'Queries array is required and cannot be empty',
-            customHints: ['Provide at least one search query with queryTerms'],
-          });
+export const name = TOOL_NAMES.GITHUB_SEARCH_CODE;
 
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            hints,
-            isError: true,
-          });
-        }
+export const description = DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE];
 
-        return searchMultipleGitHubCode(
-          typedArgs.queries,
-          authInfo,
-          userContext
-        );
-      }
-    )
-  );
-}
+export const inputSchema = GitHubCodeSearchBulkQuerySchema;
 
-async function searchMultipleGitHubCode(
+export async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   authInfo?: AuthInfo,
   userContext?: import('../security/withSecurityValidation.js').UserContext
@@ -210,5 +166,50 @@ async function searchMultipleGitHubCode(
     aggregatedContext,
     errors,
     uniqueQueries
+  );
+}
+
+export function registerGitHubSearchCodeTool(server: Server) {
+  return registerTool(
+    server,
+    TOOL_NAMES.GITHUB_SEARCH_CODE,
+    {
+      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
+      inputSchema: GitHubCodeSearchBulkQuerySchema,
+    },
+    withSecurityValidation(
+      async (
+        args: Record<string, unknown>,
+        authInfo,
+        userContext
+      ): Promise<CallToolResult> => {
+        // Type assertion after validation
+        const typedArgs = args as unknown as GitHubSearchCodeInput;
+        if (
+          !typedArgs.queries ||
+          !Array.isArray(typedArgs.queries) ||
+          typedArgs.queries.length === 0
+        ) {
+          const hints = generateHints({
+            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+            hasResults: false,
+            errorMessage: 'Queries array is required and cannot be empty',
+            customHints: ['Provide at least one search query with queryTerms'],
+          });
+
+          return createResult({
+            data: { error: 'Queries array is required and cannot be empty' },
+            hints,
+            isError: true,
+          });
+        }
+
+        return searchMultipleGitHubCode(
+          typedArgs.queries,
+          authInfo,
+          userContext
+        );
+      }
+    )
   );
 }

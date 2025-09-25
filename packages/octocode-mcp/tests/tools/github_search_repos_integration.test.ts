@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
+import { createMockServer } from '../fixtures/mcp-fixtures.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('GitHub Search Repositories Integration Test', () => {
   it('should return YAML response with correct structure (no total_count, forks, language)', async () => {
-    const mockServer = createMockMcpServer();
+    const mockServer = createMockServer();
     registerSearchGitHubReposTool(mockServer.server);
 
     const result = await mockServer.callTool(
