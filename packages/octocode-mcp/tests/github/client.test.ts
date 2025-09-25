@@ -57,6 +57,7 @@ describe('GitHub Client', () => {
       version: '1.0.0',
       timeout: 30000,
       enableLogging: false,
+      loggerEnabled: false,
       betaEnabled: false,
       maxRetries: 3,
     });
@@ -152,6 +153,7 @@ describe('GitHub Client', () => {
         version: '1.0.0',
         timeout: 60000,
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         maxRetries: 3,
       });

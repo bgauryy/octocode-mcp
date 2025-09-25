@@ -212,7 +212,23 @@ export BETA=1
 export REQUEST_TIMEOUT=60000
 export MAX_RETRIES=5
 export ENABLE_LOGGING=true
+export LOGGER=true
 ```
+
+### Environment Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITHUB_TOKEN` | - | GitHub Personal Access Token for authentication |
+| `GH_TOKEN` | - | Alternative GitHub token environment variable |
+| `ENABLE_TOOLS` | - | Comma-separated list of optional tools to enable |
+| `DISABLE_TOOLS` | - | Comma-separated list of tools to disable |
+| `TOOLS_TO_RUN` | - | Comma-separated list of specific tools to run (overrides defaults) |
+| `BETA` | `false` | Enable beta features (`1` or `true`) |
+| `REQUEST_TIMEOUT` | `30000` | API request timeout in milliseconds |
+| `MAX_RETRIES` | `3` | Maximum number of retry attempts for failed requests |
+| `ENABLE_LOGGING` | `false` | Enable MCP protocol logging capabilities |
+| `LOGGER` | `false` | Enable internal application logging (requires `ENABLE_LOGGING=true`) |
 
 ## 🔧 MCP Integration
 

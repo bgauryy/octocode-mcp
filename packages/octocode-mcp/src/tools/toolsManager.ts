@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { DEFAULT_TOOLS } from './tools.js';
 import { getServerConfig } from '../serverConfig.js';
+import { createLogger } from '../utils/logger.js';
 
 /**
  * Register tools based on configuration
@@ -13,6 +14,7 @@ export function registerTools(server: McpServer): {
   const toolsToRun = config.toolsToRun || [];
   const enableTools = config.enableTools || [];
   const disableTools = config.disableTools || [];
+  const logger = createLogger(server, 'tools');
 
   let successCount = 0;
   const failedTools: string[] = [];
@@ -22,8 +24,8 @@ export function registerTools(server: McpServer): {
     toolsToRun.length > 0 &&
     (enableTools.length > 0 || disableTools.length > 0)
   ) {
-    process.stderr.write(
-      'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
+    logger.info(
+      'TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.'
     );
   }
 
@@ -64,10 +66,14 @@ export function registerTools(server: McpServer): {
         tool.fn(server);
         successCount++;
       } else if (reason) {
-        process.stderr.write(`Tool ${tool.name} ${reason}\n`);
+        logger.info(`Tool ${tool.name} ${reason}`);
       }
     } catch (error) {
       failedTools.push(tool.name);
+      logger.error(`Failed to register tool ${tool.name}`, {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
     }
   }
 

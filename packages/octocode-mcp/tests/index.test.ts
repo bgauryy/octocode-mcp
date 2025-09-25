@@ -84,10 +84,6 @@ describe('Index Module', () => {
   let processStdinOnSpy: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let processOnSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let processStdoutUncorkSpy: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let processStderrUncorkSpy: any;
   let originalGithubToken: string | undefined;
   let originalGhToken: string | undefined;
 
@@ -128,12 +124,6 @@ describe('Index Module', () => {
       .spyOn(process.stdin, 'once')
       .mockImplementation(() => process.stdin);
     processOnSpy = vi.spyOn(process, 'once').mockImplementation(() => process);
-    processStdoutUncorkSpy = vi
-      .spyOn(process.stdout, 'uncork')
-      .mockImplementation(() => {});
-    processStderrUncorkSpy = vi
-      .spyOn(process.stderr, 'uncork')
-      .mockImplementation(() => {});
 
     // Mock server connect to resolve immediately
     mockMcpServer.connect.mockResolvedValue(undefined);
@@ -180,6 +170,7 @@ describe('Index Module', () => {
       enableTools: [],
       disableTools: [],
       enableLogging: false,
+      loggerEnabled: false,
       betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
@@ -209,8 +200,6 @@ describe('Index Module', () => {
     processStdinResumeSpy?.mockRestore();
     processStdinOnSpy?.mockRestore();
     processOnSpy?.mockRestore();
-    processStdoutUncorkSpy?.mockRestore();
-    processStderrUncorkSpy?.mockRestore();
   });
 
   // Helper function to wait for async operations to complete
@@ -668,6 +657,7 @@ describe('Index Module', () => {
       mockGetServerConfig.mockReturnValue({
         version: '4.0.5',
         enableTools: [],
+        loggerEnabled: false,
         disableTools: [],
         enableLogging: false,
         betaEnabled: true, // This is key
@@ -692,6 +682,7 @@ describe('Index Module', () => {
         version: '4.0.5',
         enableTools: [],
         disableTools: [],
+        loggerEnabled: false,
         enableLogging: false,
         betaEnabled: true, // This is key
         timeout: 30000,

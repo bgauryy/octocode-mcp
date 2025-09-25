@@ -93,6 +93,7 @@ export interface ServerConfig {
   enableTools?: string[];
   disableTools?: string[];
   enableLogging: boolean;
+  loggerEnabled: boolean;
   betaEnabled: boolean;
   timeout: number;
   maxRetries: number;

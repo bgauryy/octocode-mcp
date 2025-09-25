@@ -7,6 +7,7 @@ export interface ServerConfig {
   enableTools?: string[];
   disableTools?: string[];
   enableLogging: boolean;
+  loggerEnabled: boolean;
   betaEnabled: boolean;
   timeout: number;
   maxRetries: number;
@@ -75,6 +76,7 @@ export async function initialize(): Promise<void> {
       enableTools: parseStringArray(process.env.ENABLE_TOOLS),
       disableTools: parseStringArray(process.env.DISABLE_TOOLS),
       enableLogging: process.env.ENABLE_LOGGING === 'true',
+      loggerEnabled: process.env.LOGGER === 'true',
       betaEnabled:
         process.env.BETA === '1' || process.env.BETA?.toLowerCase() === 'true',
       timeout: Math.max(
@@ -162,6 +164,13 @@ export function isBetaEnabled(): boolean {
  */
 export function isSamplingEnabled(): boolean {
   return isBetaEnabled();
+}
+
+/**
+ * Check if logger is enabled
+ */
+export function isLoggerEnabled(): boolean {
+  return getServerConfig().loggerEnabled;
 }
 
 /**

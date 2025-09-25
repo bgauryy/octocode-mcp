@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { LoggingLevel } from '@modelcontextprotocol/sdk/types.js';
 import { version } from '../../package.json';
+import { isLoggerEnabled } from '../serverConfig.js';
 
 /**
  * Simple, reliable logger for Octocode MCP
@@ -53,6 +54,16 @@ export class OctocodeLogger {
     message: string,
     data?: Record<string, unknown>
   ): Promise<void> {
+    // Check if logger is enabled via configuration
+    try {
+      if (!isLoggerEnabled()) {
+        return; // Skip logging if disabled
+      }
+    } catch {
+      // If config is not available, default to disabled (false)
+      return;
+    }
+
     const logData = {
       message,
       timestamp: new Date().toISOString(),
@@ -60,7 +71,10 @@ export class OctocodeLogger {
     };
 
     try {
-      if (this.server.isConnected()) {
+      // sendLoggingMessage - exists in 1.18.1 but not in 1.16.0
+      // @ts-ignore
+      if (this.server.isConnected() && this.server.sendLoggingMessage) {
+        // @ts-ignore
         await this.server.sendLoggingMessage({
           level,
           logger: this.prefix,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
@@ -20,14 +20,30 @@ vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
 }));
 
+vi.mock('../../src/utils/logger.js', () => ({
+  createLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
+}));
+
 import { DEFAULT_TOOLS } from '../../src/tools/tools.js';
 import { getServerConfig } from '../../src/serverConfig.js';
+import { createLogger } from '../../src/utils/logger.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
+const mockCreateLogger = vi.mocked(createLogger);
+let mockLogger: {
+  info: ReturnType<typeof vi.fn>;
+  warning: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+  debug: ReturnType<typeof vi.fn>;
+};
 
 describe('ToolsManager', () => {
   let mockServer: McpServer;
-  const originalStderr = process.stderr.write;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,8 +51,16 @@ describe('ToolsManager', () => {
     // Mock server
     mockServer = {} as McpServer;
 
-    // Mock stderr to capture warnings
-    process.stderr.write = vi.fn();
+    // Mock logger
+    mockLogger = {
+      info: vi.fn(),
+      warning: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+    mockCreateLogger.mockReturnValue(
+      mockLogger as unknown as ReturnType<typeof createLogger>
+    );
 
     // Reset all tool function mocks
     DEFAULT_TOOLS.forEach(tool => {
@@ -44,15 +68,12 @@ describe('ToolsManager', () => {
     });
   });
 
-  afterEach(() => {
-    process.stderr.write = originalStderr;
-  });
-
   describe('Default Configuration (no env vars)', () => {
     it('should register only default tools', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -81,6 +102,7 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         toolsToRun: ['githubSearchCode', 'githubSearchPullRequests'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -110,6 +132,7 @@ describe('ToolsManager', () => {
           'githubSearchPullRequests',
         ],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -130,6 +153,7 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         toolsToRun: ['nonExistentTool1', 'nonExistentTool2'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -148,12 +172,13 @@ describe('ToolsManager', () => {
   });
 
   describe('TOOLS_TO_RUN conflicts with ENABLE_TOOLS/DISABLE_TOOLS', () => {
-    it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS', () => {
+    it('should log info when TOOLS_TO_RUN is used with ENABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         toolsToRun: ['githubSearchCode'],
         enableTools: ['githubSearchPullRequests'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -161,8 +186,8 @@ describe('ToolsManager', () => {
 
       registerTools(mockServer);
 
-      expect(process.stderr.write).toHaveBeenCalledWith(
-        'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.'
       );
 
       // Should use TOOLS_TO_RUN exclusively
@@ -170,12 +195,13 @@ describe('ToolsManager', () => {
       expect(DEFAULT_TOOLS[4]?.fn).not.toHaveBeenCalled(); // githubSearchPullRequests
     });
 
-    it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
+    it('should log info when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         toolsToRun: ['githubSearchCode'],
         disableTools: ['githubGetFileContent'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -183,18 +209,19 @@ describe('ToolsManager', () => {
 
       registerTools(mockServer);
 
-      expect(process.stderr.write).toHaveBeenCalledWith(
-        'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.'
       );
     });
 
-    it('should warn when TOOLS_TO_RUN is used with both ENABLE_TOOLS and DISABLE_TOOLS', () => {
+    it('should log info when TOOLS_TO_RUN is used with both ENABLE_TOOLS and DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         toolsToRun: ['githubSearchCode'],
         enableTools: ['githubSearchPullRequests'],
         disableTools: ['githubGetFileContent'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -202,8 +229,8 @@ describe('ToolsManager', () => {
 
       registerTools(mockServer);
 
-      expect(process.stderr.write).toHaveBeenCalledWith(
-        'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.'
       );
     });
   });
@@ -214,6 +241,7 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         enableTools: ['githubSearchPullRequests'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -240,6 +268,7 @@ describe('ToolsManager', () => {
         version: '1.0.0',
         disableTools: ['githubSearchCode', 'githubGetFileContent'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -266,6 +295,7 @@ describe('ToolsManager', () => {
         enableTools: ['githubSearchPullRequests'],
         disableTools: ['githubSearchCode'],
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -295,6 +325,7 @@ describe('ToolsManager', () => {
         enableTools: ['githubSearchPullRequests'],
         disableTools: ['githubSearchPullRequests'], // Same tool in both lists
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -316,6 +347,7 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
@@ -337,6 +369,7 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         enableLogging: false,
+        loggerEnabled: false,
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,

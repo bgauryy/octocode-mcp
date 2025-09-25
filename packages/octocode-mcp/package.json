@@ -38,7 +38,7 @@
     "octocode-mcp-beta": "dist/index.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.18.1",
+    "@modelcontextprotocol/sdk": "^1.18.0",
     "@octokit/core": "^7.0.3",
     "@octokit/openapi-types": "^25.1.0",
     "@octokit/plugin-rest-endpoint-methods": "^14.0.0",

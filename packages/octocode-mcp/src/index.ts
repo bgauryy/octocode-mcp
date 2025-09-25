@@ -60,10 +60,6 @@ async function startServer() {
     await server.connect(transport);
     await logger.info('Server ready', { pid: process.pid });
 
-    // Ensure all buffered output is sent
-    process.stdout.uncork();
-    process.stderr.uncork();
-
     const gracefulShutdown = async (signal?: string) => {
       // Prevent multiple shutdown attempts
       if (shutdownInProgress) {
@@ -161,20 +157,26 @@ export async function registerAllTools(server: McpServer) {
   // Ensure token is available (simple check)
   const token = await getGitHubToken();
   if (!token) {
-    await logger.warning('No GitHub token - limited functionality');
-    process.stderr.write(
-      '⚠️  No GitHub token available - some features may be limited\n'
+    await logger.warning(
+      'No GitHub token available - some features may be limited'
     );
   } else {
     await logger.info('GitHub token ready');
   }
 
-  const { successCount } = registerTools(server);
-  await logger.info('Tools registered', { count: successCount });
+  const { successCount, failedTools } = registerTools(server);
+  await logger.info('Tools registered', {
+    count: successCount,
+    failed: failedTools.length,
+  });
+
+  if (failedTools.length > 0) {
+    await logger.warning('Some tools failed to register', { failedTools });
+  }
 
   if (successCount === 0) {
     const error = new Error('No tools were successfully registered');
-    await logger.error('Tool registration failed');
+    await logger.error('Tool registration failed', { failedTools });
     throw error;
   }
 }
