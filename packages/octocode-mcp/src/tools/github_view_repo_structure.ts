@@ -100,8 +100,8 @@ async function exploreMultipleRepositoryStructures(
           owner: String(query.owner),
           repo: String(query.repo),
           branch: String(query.branch),
-          path: query.path ? String(query.path) : undefined,
-          depth: typeof query.depth === 'number' ? query.depth : undefined,
+          path: query.path || '',
+          depth: query.depth || 1,
         };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(

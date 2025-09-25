@@ -4,11 +4,9 @@ import {
   createBulkQuerySchema,
   LimitSchema,
   FileMatchScopeSchema,
-  NumericRangeSchema,
+  FlexibleArraySchema,
   MinifySchema,
   SanitizeSchema,
-  GitHubOwnerSchema,
-  GitHubRepoSchema,
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
@@ -18,13 +16,19 @@ export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
     .min(1)
     .max(5)
     .describe('Github search queries (AND logic in file)`'),
-  owner: z.union([GitHubOwnerSchema, z.array(GitHubOwnerSchema)]).optional(),
-  repo: z.union([GitHubRepoSchema, z.array(GitHubRepoSchema)]).optional(),
+  owner: FlexibleArraySchema.stringOrArray.describe(
+    'Repository owner - single owner or array'
+  ),
+  repo: FlexibleArraySchema.stringOrArray.describe(
+    'Repository name - single repo or array'
+  ),
   language: z.string().optional().describe('file language'),
   extension: z.string().optional().describe('file extension'),
   filename: z.string().optional().describe('File name'),
   path: z.string().optional().describe('Path'),
-  stars: NumericRangeSchema.shape.stars,
+  stars: FlexibleArraySchema.numberOrStringRange.describe(
+    'Stars filter - use ">100", ">=10", "<50", "10..50", or exact number'
+  ),
   match: FileMatchScopeSchema,
   limit: LimitSchema,
   minify: MinifySchema,

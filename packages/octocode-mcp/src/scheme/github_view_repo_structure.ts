@@ -13,14 +13,14 @@ export const GitHubViewRepoStructureQuerySchema =
     owner: GitHubOwnerSchema,
     repo: GitHubRepoSchema,
     branch: GitHubBranchSchema,
-    path: z.string().default('').optional().describe('Path'),
+    path: z.string().optional().default('').describe('Path'),
     depth: z
       .number()
       .min(1)
       .max(2)
-      .default(1)
       .optional()
-      .describe('Depth to expolore - max 2'),
+      .default(1)
+      .describe('Depth to explore - max 2'),
   });
 
 export type GitHubViewRepoStructureQuery = z.infer<

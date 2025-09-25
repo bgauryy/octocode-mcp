@@ -40,6 +40,7 @@ export const BaseBulkQueryItemSchema = z.object({
 });
 
 // Legacy function - use BaseSingleQuerySchema.extend() or BaseBulkQueryItemSchema.extend() directly
+// For best TypeScript performance, prefer destructuring: z.object({...BaseSchema.shape, ...toolSpecificSchema})
 export function extendBaseQuerySchema<T extends z.ZodRawShape>(
   toolSpecificSchema: T
 ) {
@@ -100,6 +101,7 @@ export const SanitizeSchema = z
   .default(true)
   .describe('sanitize content');
 
+// Optimized: Use FlexibleArraySchema pattern for consistency and performance
 export const FileMatchScopeSchema = z
   .union([z.enum(['file', 'path']), z.array(z.enum(['file', 'path']))])
   .optional()

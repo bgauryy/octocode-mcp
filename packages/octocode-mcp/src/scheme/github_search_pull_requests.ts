@@ -3,9 +3,7 @@ import {
   BaseBulkQueryItemSchema,
   createBulkQuerySchema,
   FlexibleArraySchema,
-  DateRangeSchema,
   PRMatchScopeSchema,
-  SortingSchema,
   lockedSchema,
   draftSchema,
 } from './baseSchema';
@@ -68,8 +66,24 @@ export const GitHubPullRequestSearchQuerySchema =
     head: z.string().optional().describe('Filter on head branch name'),
     base: z.string().optional().describe('Filter on base branch name'),
 
-    created: DateRangeSchema.shape.created,
-    updated: DateRangeSchema.shape.updated,
+    created: z
+      .string()
+      .regex(
+        /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+      )
+      .optional()
+      .describe(
+        'Created date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
+      ),
+    updated: z
+      .string()
+      .regex(
+        /^(>=?\d{4}-\d{2}-\d{2}|<=?\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})$/
+      )
+      .optional()
+      .describe(
+        'Updated date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'
+      ),
     closed: z
       .string()
       .optional()
@@ -139,7 +153,11 @@ export const GitHubPullRequestSearchQuerySchema =
       ])
       .optional()
       .describe('Sort fetched results'),
-    order: SortingSchema.shape.order,
+    order: z
+      .enum(['asc', 'desc'])
+      .optional()
+      .default('desc')
+      .describe('Sort order'),
 
     limit: z
       .number()

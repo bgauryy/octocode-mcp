@@ -1182,6 +1182,8 @@ describe('GitHub API Utils', () => {
               owner: 'nonexistent',
               repo: 'repo',
               branch: 'main',
+              path: '',
+              depth: 1,
             };
 
             await viewGitHubRepositoryStructureAPI(params);
@@ -1245,6 +1247,8 @@ describe('GitHub API Utils', () => {
               owner: 'test',
               repo: 'repo',
               branch: 'nonexistent-branch',
+              path: '',
+              depth: 1,
             };
 
             await viewGitHubRepositoryStructureAPI(params);
