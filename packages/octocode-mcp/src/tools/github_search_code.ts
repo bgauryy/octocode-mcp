@@ -55,7 +55,9 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
             toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
             hasResults: false,
             errorMessage: 'Queries array is required and cannot be empty',
-            customHints: ['Provide at least one search query with queryTerms'],
+            customHints: [
+              'Provide at least one search query with keywordsToSearch',
+            ],
           });
 
           return createResult({

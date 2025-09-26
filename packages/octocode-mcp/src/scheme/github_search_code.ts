@@ -11,7 +11,7 @@ import {
 import { ToolResponse } from '../responses.js';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
-  queryTerms: z
+  keywordsToSearch: z
     .array(z.string())
     .min(1)
     .max(5)

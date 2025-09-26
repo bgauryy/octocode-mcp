@@ -194,8 +194,8 @@ describe('bulkOperations', () => {
       ];
 
       const queries = [
-        { id: 'q1', queryTerms: ['test1'] },
-        { id: 'q2', queryTerms: ['test2'] },
+        { id: 'q1', keywordsToSearch: ['test1'] },
+        { id: 'q2', keywordsToSearch: ['test2'] },
       ];
 
       const results = processedResults.map((r, index) => ({
@@ -203,7 +203,7 @@ describe('bulkOperations', () => {
         queryId: queries[index]?.id || `query_${index}`,
         originalQuery: queries[index] || {
           id: `query_${index}`,
-          queryTerms: [],
+          keywordsToSearch: [],
         },
       }));
       const errors: QueryError[] = [];
@@ -249,13 +249,13 @@ hints:
 
     it('should create response with errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
-      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
+      const queries = [{ id: 'q1', keywordsToSearch: ['test1'] }];
       const results = processedResults.map((r, index) => ({
         result: r,
         queryId: queries[index]?.id || `query_${index}`,
         originalQuery: queries[index] || {
           id: `query_${index}`,
-          queryTerms: [],
+          keywordsToSearch: [],
         },
       }));
       const errors: QueryError[] = [
@@ -293,7 +293,7 @@ hints:
     metadata:
       originalQuery:
         id: "q1"
-        queryTerms:
+        keywordsToSearch:
           - "test1"
 hints:
   - "All 1 queries returned no results - try broader research strategy"
@@ -311,11 +311,11 @@ hints:
         queryId: `query_${index}`,
         originalQuery: {
           id: `query_${index}`,
-          queryTerms: [],
+          keywordsToSearch: [],
         },
       }));
       const errors: QueryError[] = [];
-      const queries: Array<{ id: string; queryTerms: string[] }> = []; // No queries
+      const queries: Array<{ id: string; keywordsToSearch: string[] }> = []; // No queries
       const context = {
         totalQueries: 0,
         successfulQueries: 0,
@@ -358,13 +358,13 @@ hints:
         },
       ];
 
-      const queries = [{ id: 'q1', queryTerms: ['test1'] }];
+      const queries = [{ id: 'q1', keywordsToSearch: ['test1'] }];
       const results = processedResults.map((r, index) => ({
         result: r,
         queryId: queries[index]?.id || `query_${index}`,
         originalQuery: queries[index] || {
           id: `query_${index}`,
-          queryTerms: [],
+          keywordsToSearch: [],
         },
       }));
       const errors: QueryError[] = [];
@@ -1332,7 +1332,7 @@ hints:
   - "Start with repository search to find relevant projects, then search within promising repos"
   - "Use package search to find libraries, then explore their GitHub repositories"
   - "Break down into smaller, more focused searches"
-  - "Try broader search terms or use topics for discovery"
+  - "Try broader search terms or use topicsToSearch for discovery"
   - "Explore ecosystem: consider frameworks, libraries, and tools commonly used with your target technology"
 `;
       expect(yamlText).toEqual(expectedYaml);

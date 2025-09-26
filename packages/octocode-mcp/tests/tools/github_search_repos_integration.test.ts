@@ -13,7 +13,7 @@ describe('GitHub Search Repositories Integration Test', () => {
       {
         queries: [
           {
-            queryTerms: ['react', 'hooks'],
+            keywordsToSearch: ['react', 'hooks'],
             limit: 2,
           },
         ],

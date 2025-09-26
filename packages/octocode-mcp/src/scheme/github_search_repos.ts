@@ -17,15 +17,20 @@ export interface SimplifiedRepository {
 }
 
 const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
-  queryTerms: z
+  keywordsToSearch: z
     .array(z.string())
     .optional()
-    .describe('search repos by search terms'),
+    .describe('terms for searching repos by name OR description'),
+  topicsToSearch: SimpleArraySchema.stringOrArray
+    .optional()
+    .describe(
+      'terms for searching repos by github topics - best for exploratory searching'
+    ),
   owner: SimpleArraySchema.stringOrArray.describe('Owner(s)'),
-  topics: SimpleArraySchema.stringOrArray.describe(
-    'search repos by github topics'
-  ),
-  language: z.string().optional().describe('Language'),
+  language: z
+    .string()
+    .optional()
+    .describe('Language - DO NOT USE ON EXPLORATORY SEARCHES'),
   stars: SimpleArraySchema.numberOrStringRange.describe('Stars'),
   size: z.string().optional().describe('Size KB'),
   created: z

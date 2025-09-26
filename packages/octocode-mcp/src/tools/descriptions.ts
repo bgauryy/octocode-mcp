@@ -31,36 +31,23 @@ FEATURES:
 - Bulk queries for comprehensive technique discovery
 
 HINTS:
-- SIMPLE queryTerms: Use up to 3 focused terms per query for best results
+- SIMPLE keywordsToSearch: Use up to 3 focused terms per query for best results
 - AVOID multi-word patterns on exploratory research - they reduce result quality significantly
 - Each bulk query should target different aspects
 - Use separate queries rather than cramming multiple concepts into one
 - ALWAYS fetch quality results for better research context
 - Get relevance of results by its content and its path
 - Search more if needed by given results`,
-  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `Search repositories
-
-GOAL:
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `#Search repositories
+#GOAL:
 Find repositories for research
 
-FEATURES:
+#FEATURES:
 - GitHub search API
-- Bulk queries
-- Two complementary search approaches: queryTerms AND topics
+- Each query in the queries array can have topicsToSearch OR keywordsToSearch NOT BOTH
 
-SEARCH STRATEGY:
-- queryTerms: Use for SPECIFIC keyword searches
-- topics: Use for GITHUB TOPIC exploration
-- CRITICAL: For exploratory research, ALWAYS use BOTH approaches in different queries
-
-HINTS:
-- MANDATORY for exploration: Mix queryTerms and topics queries in bulk operations
-- queryTerms queries: Target specific repo
-- topics queries: Discover via GitHub repository topics 
-- Each query in bulk MUST use different approach (queryTerms and topics)
-- NEVER use only queryTerms OR only topics - combine both for comprehensive coverage
-- Prefer popular and updated repositories in results
-`,
+#SEARCH STRATEGY:
+- Prefer popular and updated repos for better results`,
   [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `Explore repository structure
 
 GOAL:

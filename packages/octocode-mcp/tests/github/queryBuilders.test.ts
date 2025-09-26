@@ -41,7 +41,7 @@ describe('Query Builders', () => {
   describe('buildCodeSearchQuery', () => {
     it('should build basic query with terms', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['function', 'auth'],
+        keywordsToSearch: ['function', 'auth'],
 
         minify: true,
         sanitize: true,
@@ -53,7 +53,7 @@ describe('Query Builders', () => {
 
     it('should build query with owner and repo', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         owner: 'microsoft',
         repo: 'vscode',
 
@@ -67,7 +67,7 @@ describe('Query Builders', () => {
 
     it('should build query with owner only', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         owner: 'google',
 
         minify: true,
@@ -80,7 +80,7 @@ describe('Query Builders', () => {
 
     it('should build query with multiple owners and repos', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         owner: ['microsoft', 'google'],
         repo: ['vscode', 'typescript'],
 
@@ -96,7 +96,7 @@ describe('Query Builders', () => {
 
     it('should build query with language filter', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         language: 'ts',
 
         minify: true,
@@ -109,7 +109,7 @@ describe('Query Builders', () => {
 
     it('should build query with file filters', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         filename: 'package.json',
         extension: 'ts',
         path: 'src/',
@@ -124,7 +124,7 @@ describe('Query Builders', () => {
 
     it('should build query with match filters', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         match: ['file', 'path'],
 
         minify: true,
@@ -137,7 +137,7 @@ describe('Query Builders', () => {
 
     it('should build query with single match filter', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         match: 'file',
 
         minify: true,
@@ -150,7 +150,7 @@ describe('Query Builders', () => {
 
     it('should build query with stars and date filters', () => {
       const params = toCodeSearchQuery({
-        queryTerms: ['react'],
+        keywordsToSearch: ['react'],
         stars: '>100',
 
         minify: true,
@@ -163,7 +163,7 @@ describe('Query Builders', () => {
 
     it('should handle empty query terms', () => {
       const params = toCodeSearchQuery({
-        queryTerms: [],
+        keywordsToSearch: [],
         owner: 'microsoft',
 
         minify: true,
@@ -178,7 +178,7 @@ describe('Query Builders', () => {
   describe('buildRepoSearchQuery', () => {
     it('should build basic repo search query', () => {
       const params = {
-        queryTerms: ['todo', 'app'],
+        keywordsToSearch: ['todo', 'app'],
         verbose: false,
       };
 
@@ -186,10 +186,10 @@ describe('Query Builders', () => {
       expect(query).toBe('todo app is:not-archived is:not-fork');
     });
 
-    it('should build query with topics', () => {
+    it('should build query with topicsToSearch', () => {
       const params = {
-        queryTerms: ['app'],
-        topics: ['react', 'typescript'],
+        keywordsToSearch: ['app'],
+        topicsToSearch: ['react', 'typescript'],
         verbose: false,
       };
 
@@ -201,8 +201,8 @@ describe('Query Builders', () => {
 
     it('should build query with single topic', () => {
       const params = {
-        queryTerms: ['framework'],
-        topics: 'javascript',
+        keywordsToSearch: ['framework'],
+        topicsToSearch: 'javascript',
         verbose: false,
       };
 
@@ -214,7 +214,7 @@ describe('Query Builders', () => {
 
     it('should build query with repository metrics', () => {
       const params = {
-        queryTerms: ['library'],
+        keywordsToSearch: ['library'],
         stars: '>1000',
         size: '<10000',
         verbose: false,
@@ -228,7 +228,7 @@ describe('Query Builders', () => {
 
     it('should build query with match filters', () => {
       const params = {
-        queryTerms: ['awesome'],
+        keywordsToSearch: ['awesome'],
         match: ['name', 'description'],
       } as Parameters<typeof buildRepoSearchQuery>[0];
 
@@ -240,7 +240,7 @@ describe('Query Builders', () => {
 
     it('should map updated to pushed', () => {
       const params = {
-        queryTerms: ['active'],
+        keywordsToSearch: ['active'],
         updated: '>2023-01-01',
         verbose: false,
       };
@@ -358,7 +358,7 @@ describe('Query Builders', () => {
   describe('buildCommitSearchQuery', () => {
     it('should build basic commit search query', () => {
       const params = {
-        queryTerms: ['fix', 'bug'],
+        keywordsToSearch: ['fix', 'bug'],
       };
 
       const query = buildCommitSearchQuery(params);
@@ -385,7 +385,7 @@ describe('Query Builders', () => {
 
     it('should build query with author filters', () => {
       const params = {
-        queryTerms: ['feature'],
+        keywordsToSearch: ['feature'],
         author: 'john',
         'author-name': 'John Doe',
         'author-email': 'john@example.com',
@@ -399,7 +399,7 @@ describe('Query Builders', () => {
 
     it('should build query with committer filters', () => {
       const params = {
-        queryTerms: ['merge'],
+        keywordsToSearch: ['merge'],
         committer: 'alice',
         'committer-name': 'Alice Smith',
         'committer-email': 'alice@example.com',
@@ -413,7 +413,7 @@ describe('Query Builders', () => {
 
     it('should build query with hash filters', () => {
       const params = {
-        queryTerms: ['refactor'],
+        keywordsToSearch: ['refactor'],
         hash: 'abc123',
         parent: 'def456',
         tree: 'ghi789',
@@ -425,7 +425,7 @@ describe('Query Builders', () => {
 
     it('should build query with date filters', () => {
       const params = {
-        queryTerms: ['update'],
+        keywordsToSearch: ['update'],
         'author-date': '>2023-01-01',
         'committer-date': '2023-01-01..2023-12-31',
       };
@@ -438,7 +438,7 @@ describe('Query Builders', () => {
 
     it('should build query with merge filter', () => {
       const params = {
-        queryTerms: ['feature'],
+        keywordsToSearch: ['feature'],
         merge: true,
       };
 
@@ -448,7 +448,7 @@ describe('Query Builders', () => {
 
     it('should build query excluding merges', () => {
       const params = {
-        queryTerms: ['docs'],
+        keywordsToSearch: ['docs'],
         merge: false,
       };
 
