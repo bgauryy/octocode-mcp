@@ -44,7 +44,8 @@ Find repositories for research
 
 #FEATURES:
 - GitHub search API
-- Each query in the queries array can have topicsToSearch OR keywordsToSearch NOT BOTH
+- Use topicsToSearch for topics discovery (e.g., ["topi1", "topic2"]) 
+- Use keywordsToSearch for specific terms in names/descriptions
 
 #SEARCH STRATEGY:
 - Prefer popular and updated repos for better results`,

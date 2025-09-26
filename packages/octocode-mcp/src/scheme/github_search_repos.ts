@@ -24,7 +24,7 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   topicsToSearch: SimpleArraySchema.stringOrArray
     .optional()
     .describe(
-      'terms for searching repos by github topics - best for exploratory searching'
+      'terms for searching repos by github topics- tag used to categorize repo'
     ),
   owner: SimpleArraySchema.stringOrArray.describe('Owner(s)'),
   language: z

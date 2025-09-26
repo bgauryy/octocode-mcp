@@ -84,12 +84,68 @@ export function registerSearchGitHubReposTool(server: McpServer) {
   );
 }
 
+/**
+ * Expands queries that have both topicsToSearch and keywordsToSearch into separate queries
+ * This improves search effectiveness by allowing each search type to be optimized independently
+ */
+function expandQueriesWithBothSearchTypes(
+  queries: GitHubReposSearchQuery[]
+): GitHubReposSearchQuery[] {
+  const expandedQueries: GitHubReposSearchQuery[] = [];
+
+  queries.forEach((query, index) => {
+    const hasTopics =
+      query.topicsToSearch &&
+      (Array.isArray(query.topicsToSearch)
+        ? query.topicsToSearch.length > 0
+        : query.topicsToSearch);
+    const hasKeywords =
+      query.keywordsToSearch && query.keywordsToSearch.length > 0;
+
+    if (hasTopics && hasKeywords) {
+      // Split into two queries: one for topics, one for keywords
+      const baseQuery = { ...query };
+      delete baseQuery.topicsToSearch;
+      delete baseQuery.keywordsToSearch;
+
+      // Topics-based query
+      const topicsQuery: GitHubReposSearchQuery = {
+        ...baseQuery,
+        id: query.id ? `${query.id}_topics` : `query_${index}_topics`,
+        reasoning: query.reasoning
+          ? `${query.reasoning} (topics-based search)`
+          : 'Topics-based repository search',
+        topicsToSearch: query.topicsToSearch,
+      };
+
+      // Keywords-based query
+      const keywordsQuery: GitHubReposSearchQuery = {
+        ...baseQuery,
+        id: query.id ? `${query.id}_keywords` : `query_${index}_keywords`,
+        reasoning: query.reasoning
+          ? `${query.reasoning} (keywords-based search)`
+          : 'Keywords-based repository search',
+        keywordsToSearch: query.keywordsToSearch,
+      };
+
+      expandedQueries.push(topicsQuery, keywordsQuery);
+    } else {
+      // Keep original query if it doesn't have both search types
+      expandedQueries.push(query);
+    }
+  });
+
+  return expandedQueries;
+}
+
 async function searchMultipleGitHubRepos(
   queries: GitHubReposSearchQuery[],
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-search');
+  // Split queries that have both topicsToSearch and keywordsToSearch
+  const expandedQueries = expandQueriesWithBothSearchTypes(queries);
+  const uniqueQueries = ensureUniqueQueryIds(expandedQueries, 'repo-search');
 
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
