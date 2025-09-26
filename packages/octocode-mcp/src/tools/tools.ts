@@ -8,12 +8,13 @@ import { registerFetchGitHubFileContentTool } from './github_fetch_content.js';
 import { registerSearchGitHubReposTool } from './github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from './github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from './github_view_repo_structure.js';
+import { registerOctocodeTestTool } from './octocode_test.js';
 
 export interface ToolConfig {
   name: string;
   description: string;
   isDefault: boolean;
-  type: 'search' | 'content' | 'history';
+  type: 'search' | 'content' | 'history' | 'debug';
   fn: (server: McpServer) => RegisteredTool;
 }
 
@@ -57,10 +58,19 @@ export const GITHUB_SEARCH_PULL_REQUESTS: ToolConfig = {
   fn: registerSearchGitHubPullRequestsTool,
 };
 
+export const OCTOCODE_TEST: ToolConfig = {
+  name: TOOL_NAMES.OCTOCODE_TEST,
+  description: 'Test tool for development and debugging',
+  isDefault: false,
+  type: 'debug',
+  fn: registerOctocodeTestTool,
+};
+
 export const DEFAULT_TOOLS: ToolConfig[] = [
   GITHUB_SEARCH_CODE,
   GITHUB_FETCH_CONTENT,
   GITHUB_VIEW_REPO_STRUCTURE,
   GITHUB_SEARCH_REPOSITORIES,
   GITHUB_SEARCH_PULL_REQUESTS,
+  OCTOCODE_TEST,
 ];
