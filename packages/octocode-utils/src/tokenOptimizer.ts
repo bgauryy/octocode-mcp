@@ -60,9 +60,15 @@ export function tokenOptimizer(
   jsonObject: unknown,
   config?: tokenOptimizerConfig
 ): string {
+  // Merge user config with defaults first
+  const mergedConfig = {
+    ...DEFAULT_CONFIG,
+    ...config,
+  };
+
   // Apply removeRedundant cleaning if enabled
   let processedObject = jsonObject;
-  if (config?.removeRedundant) {
+  if (mergedConfig.removeRedundant) {
     processedObject = removeRedundantValues(jsonObject);
     // If the entire object becomes empty/undefined after cleaning, return empty YAML
     if (processedObject === undefined) {
@@ -73,15 +79,15 @@ export function tokenOptimizer(
   // Create sorting function based on configuration
   const createSortFunction = () => {
     // No sorting if neither sortKeys nor keysPriority is specified
-    if (!config?.sortKeys && !config?.keysPriority) {
+    if (!mergedConfig.sortKeys && !mergedConfig.keysPriority) {
       return false;
     }
 
     // If keysPriority is provided, use priority-based sorting
-    if (config.keysPriority && config.keysPriority.length > 0) {
+    if (mergedConfig.keysPriority && mergedConfig.keysPriority.length > 0) {
       return (a: string, b: string) => {
-        const aPriority = config.keysPriority!.indexOf(a);
-        const bPriority = config.keysPriority!.indexOf(b);
+        const aPriority = mergedConfig.keysPriority!.indexOf(a);
+        const bPriority = mergedConfig.keysPriority!.indexOf(b);
 
         // If both keys are in priority list, sort by their position
         if (aPriority !== -1 && bPriority !== -1) {
@@ -104,21 +110,20 @@ export function tokenOptimizer(
     }
 
     // If only sortKeys is true, use alphabetical sorting
-    if (config.sortKeys) {
+    if (mergedConfig.sortKeys) {
       return (a: string, b: string) => a.localeCompare(b);
     }
 
     return false;
   };
 
-  const mergedConfig = {
-    ...DEFAULT_CONFIG,
-    ...config,
+  const finalConfig = {
+    ...mergedConfig,
     sortKeys: createSortFunction(),
   };
 
   try {
-    return dump(processedObject, mergedConfig);
+    return dump(processedObject, finalConfig);
   } catch (error) {
     // If YAML conversion fails, fallback to JSON.stringify for safety
     // This ensures the function always returns a valid string representation

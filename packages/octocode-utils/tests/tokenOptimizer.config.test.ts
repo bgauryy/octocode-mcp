@@ -410,27 +410,28 @@ items:
   });
 
   describe('removeRedundant configuration', () => {
-    it('should remove empty objects, empty arrays, empty strings, null, undefined, and NaN when removeRedundant is true', () => {
-      const input = {
-        name: 'John Doe',
-        age: 30,
-        active: true,
-        inactive: false,
-        score: 0, // Should be preserved (number)
-        emptyObject: {},
-        emptyArray: [],
-        nullValue: null,
-        undefinedValue: undefined,
-        nanValue: NaN,
-        emptyString: '', // Should be removed (empty string)
-        validArray: [1, 2, 3],
-        validObject: { key: 'value' },
-      };
+    describe('removeRedundant: true behavior', () => {
+      it('should remove empty objects, empty arrays, empty strings, null, undefined, and NaN when removeRedundant is true', () => {
+        const input = {
+          name: 'John Doe',
+          age: 30,
+          active: true,
+          inactive: false,
+          score: 0, // Should be preserved (number)
+          emptyObject: {},
+          emptyArray: [],
+          nullValue: null,
+          undefinedValue: undefined,
+          nanValue: NaN,
+          emptyString: '', // Should be removed (empty string)
+          validArray: [1, 2, 3],
+          validObject: { key: 'value' },
+        };
 
-      const config: tokenOptimizerConfig = { removeRedundant: true };
-      const yaml = tokenOptimizer(input, config);
+        const config: tokenOptimizerConfig = { removeRedundant: true };
+        const yaml = tokenOptimizer(input, config);
 
-      expect(yaml).toEqual(`name: "John Doe"
+        expect(yaml).toEqual(`name: "John Doe"
 age: 30
 active: true
 inactive: false
@@ -442,28 +443,282 @@ validArray:
 validObject:
   key: "value"
 `);
+      });
+
+      it('should remove empty strings from arrays when removeRedundant is true', () => {
+        const input = {
+          mixedArray: [
+            'valid string',
+            '',
+            42,
+            true,
+            '',
+            'another valid',
+            0,
+            false,
+            null,
+            undefined,
+            NaN,
+          ],
+        };
+
+        const config: tokenOptimizerConfig = { removeRedundant: true };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`mixedArray:
+  - "valid string"
+  - 42
+  - true
+  - "another valid"
+  - 0
+  - false
+`);
+      });
+
+      it('should recursively remove redundant values in nested structures when removeRedundant is true', () => {
+        const input = {
+          user: {
+            name: 'Alice',
+            bio: '',
+            age: 25,
+            active: true,
+            tags: ['admin', '', 'user', ''],
+            settings: {
+              theme: 'dark',
+              description: '',
+              notifications: true,
+              customCss: '',
+              preferences: {
+                emptyField: '',
+                validField: 'keep me',
+                nullField: null,
+                undefinedField: undefined,
+                emptyObj: {},
+                emptyArr: [],
+              },
+            },
+          },
+          metadata: {
+            title: 'User Profile',
+            description: '',
+            version: 1,
+            deprecated: false,
+          },
+        };
+
+        const config: tokenOptimizerConfig = { removeRedundant: true };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`user:
+  name: "Alice"
+  age: 25
+  active: true
+  tags:
+    - "admin"
+    - "user"
+  settings:
+    theme: "dark"
+    notifications: true
+    preferences:
+      validField: "keep me"
+metadata:
+  title: "User Profile"
+  version: 1
+  deprecated: false
+`);
+      });
+
+      it('should use removeRedundant: true as default behavior (no config provided)', () => {
+        const input = {
+          name: 'Test',
+          emptyString: '',
+          emptyObject: {},
+          emptyArray: [],
+          nullValue: null,
+          validNumber: 42,
+          validBoolean: true,
+        };
+
+        // No config provided - should use default removeRedundant: true
+        const yaml = tokenOptimizer(input);
+
+        expect(yaml).toEqual(`name: "Test"
+validNumber: 42
+validBoolean: true
+`);
+
+        // Verify redundant values are not present
+        expect(yaml).not.toContain('emptyString');
+        expect(yaml).not.toContain('emptyObject');
+        expect(yaml).not.toContain('emptyArray');
+        expect(yaml).not.toContain('nullValue');
+        expect(yaml).not.toContain('""');
+        expect(yaml).not.toContain('{}');
+        expect(yaml).not.toContain('[]');
+        expect(yaml).not.toContain('null');
+      });
+
+      it('should use removeRedundant: true as default behavior (empty config provided)', () => {
+        const input = {
+          name: 'Test',
+          emptyString: '',
+          validNumber: 42,
+        };
+
+        // Empty config provided - should use default removeRedundant: true
+        const yaml = tokenOptimizer(input, {});
+
+        expect(yaml).toEqual(`name: "Test"
+validNumber: 42
+`);
+        expect(yaml).not.toContain('emptyString');
+      });
     });
 
-    it('should preserve all values when removeRedundant is false (default)', () => {
-      const input = {
-        name: 'John Doe',
-        emptyObject: {},
-        emptyArray: [],
-        nullValue: null,
-        score: 0,
-        active: false,
-      };
+    describe('removeRedundant: false behavior', () => {
+      it('should preserve all values when removeRedundant is explicitly set to false', () => {
+        const input = {
+          name: 'John Doe',
+          emptyString: '',
+          emptyObject: {},
+          emptyArray: [],
+          nullValue: null,
+          score: 0,
+          active: false,
+        };
 
-      const config: tokenOptimizerConfig = { removeRedundant: false };
-      const yaml = tokenOptimizer(input, config);
+        const config: tokenOptimizerConfig = { removeRedundant: false };
+        const yaml = tokenOptimizer(input, config);
 
-      expect(yaml).toEqual(`name: "John Doe"
+        expect(yaml).toEqual(`name: "John Doe"
+emptyString: ""
 emptyObject: {}
 emptyArray: []
 nullValue: null
 score: 0
 active: false
 `);
+      });
+
+      it('should preserve empty strings in arrays when removeRedundant is false', () => {
+        const input = {
+          mixedArray: ['valid', '', 42, null, true, '', undefined],
+        };
+
+        const config: tokenOptimizerConfig = { removeRedundant: false };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`mixedArray:
+  - "valid"
+  - ""
+  - 42
+  - null
+  - true
+  - ""
+  - null
+`);
+      });
+
+      it('should preserve all redundant values in nested structures when removeRedundant is false', () => {
+        const input = {
+          user: {
+            name: 'Alice',
+            bio: '',
+            settings: {
+              theme: '',
+              notifications: true,
+              emptyObj: {},
+              emptyArr: [],
+              nullField: null,
+            },
+          },
+          emptyMetadata: {},
+        };
+
+        const config: tokenOptimizerConfig = { removeRedundant: false };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`user:
+  name: "Alice"
+  bio: ""
+  settings:
+    theme: ""
+    notifications: true
+    emptyObj: {}
+    emptyArr: []
+    nullField: null
+emptyMetadata: {}
+`);
+      });
+    });
+
+    describe('removeRedundant with other configurations', () => {
+      it('should work with removeRedundant: true and sortKeys: true', () => {
+        const input = {
+          zebra: 'animal',
+          emptyString: '',
+          alpha: 'first',
+          emptyObject: {},
+          beta: 42,
+          nullValue: null,
+        };
+
+        const config: tokenOptimizerConfig = {
+          removeRedundant: true,
+          sortKeys: true,
+        };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`alpha: "first"
+beta: 42
+zebra: "animal"
+`);
+      });
+
+      it('should work with removeRedundant: true and keysPriority', () => {
+        const input = {
+          name: 'Test',
+          id: 123,
+          emptyData: {},
+          nullValue: null,
+          emptyString: '',
+          version: '1.0',
+          description: 'Valid description',
+        };
+
+        const config: tokenOptimizerConfig = {
+          removeRedundant: true,
+          keysPriority: ['id', 'name', 'version'],
+        };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`id: 123
+name: "Test"
+version: "1.0"
+description: "Valid description"
+`);
+      });
+
+      it('should work with removeRedundant: false and other configurations', () => {
+        const input = {
+          zebra: 'animal',
+          emptyString: '',
+          alpha: 'first',
+          emptyObject: {},
+        };
+
+        const config: tokenOptimizerConfig = {
+          removeRedundant: false,
+          sortKeys: true,
+        };
+        const yaml = tokenOptimizer(input, config);
+
+        expect(yaml).toEqual(`alpha: "first"
+emptyObject: {}
+emptyString: ""
+zebra: "animal"
+`);
+      });
     });
 
     it('should handle nested objects with redundant values', () => {

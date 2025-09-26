@@ -1169,16 +1169,16 @@ hints:
         },
       };
 
-      const defaultYaml = tokenOptimizer(input); // Default config
+      const preserveAllYaml = tokenOptimizer(input, { removeRedundant: false });
       const cleanedYaml = tokenOptimizer(input, { removeRedundant: true });
 
-      const defaultTokens = countTokens(defaultYaml);
+      const preserveAllTokens = countTokens(preserveAllYaml);
       const cleanedTokens = countTokens(cleanedYaml);
 
-      expect(cleanedTokens).toBeLessThan(defaultTokens);
+      expect(cleanedTokens).toBeLessThan(preserveAllTokens);
 
       const savingsPercentage = calculateTokenSavingsPercentage(
-        defaultTokens,
+        preserveAllTokens,
         cleanedTokens
       );
 
@@ -1228,28 +1228,28 @@ hints:
       };
 
       const minifiedJson = JSON.stringify(input);
-      const defaultYaml = tokenOptimizer(input);
+      const preserveAllYaml = tokenOptimizer(input, { removeRedundant: false });
       const cleanedYaml = tokenOptimizer(input, { removeRedundant: true });
 
       const jsonTokens = countTokens(minifiedJson);
-      const defaultYamlTokens = countTokens(defaultYaml);
+      const preserveAllYamlTokens = countTokens(preserveAllYaml);
       const cleanedYamlTokens = countTokens(cleanedYaml);
 
       // removeRedundant should significantly improve YAML efficiency
-      expect(cleanedYamlTokens).toBeLessThan(defaultYamlTokens);
+      expect(cleanedYamlTokens).toBeLessThan(preserveAllYamlTokens);
 
       // Should get much closer to minified JSON efficiency
-      const defaultYamlSavings = calculateTokenSavingsPercentage(
+      const preserveAllYamlSavings = calculateTokenSavingsPercentage(
         jsonTokens,
-        defaultYamlTokens
+        preserveAllYamlTokens
       );
       const cleanedYamlSavings = calculateTokenSavingsPercentage(
         jsonTokens,
         cleanedYamlTokens
       );
 
-      // Cleaned YAML should have better savings compared to JSON than default YAML
-      expect(cleanedYamlSavings).toBeGreaterThan(defaultYamlSavings);
+      // Cleaned YAML should have better savings compared to JSON than preserveAll YAML
+      expect(cleanedYamlSavings).toBeGreaterThan(preserveAllYamlSavings);
     });
   });
 });

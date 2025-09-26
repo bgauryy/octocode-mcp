@@ -342,7 +342,8 @@ describe('tokenOptimizer Quoting Behavior', () => {
         actualNumber: NaN,
       };
 
-      const yaml = tokenOptimizer(input);
+      // Use removeRedundant: false to preserve null and NaN values for this test
+      const yaml = tokenOptimizer(input, { removeRedundant: false });
 
       // String representations should be quoted
       expect(yaml).toContain('nullString: "null"');
