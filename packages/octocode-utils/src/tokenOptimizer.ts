@@ -12,6 +12,7 @@ const DEFAULT_CONFIG: Required<
   noCompatMode: true,
   flowLevel: -1,
   skipInvalid: false,
+  removeRedundant: false,
 };
 
 export interface tokenOptimizerConfig {
@@ -50,12 +51,25 @@ export interface tokenOptimizerConfig {
 
   /** If true, all non-key strings will be quoted even if they normally don't need to */
   forceQuotes?: boolean;
+
+  /** If true, remove empty objects, empty arrays, empty strings, null, undefined, and NaN values (preserves booleans and numbers) */
+  removeRedundant?: boolean;
 }
 
 export function tokenOptimizer(
   jsonObject: unknown,
   config?: tokenOptimizerConfig
 ): string {
+  // Apply removeRedundant cleaning if enabled
+  let processedObject = jsonObject;
+  if (config?.removeRedundant) {
+    processedObject = removeRedundantValues(jsonObject);
+    // If the entire object becomes empty/undefined after cleaning, return empty YAML
+    if (processedObject === undefined) {
+      return '';
+    }
+  }
+
   // Create sorting function based on configuration
   const createSortFunction = () => {
     // No sorting if neither sortKeys nor keysPriority is specified
@@ -104,7 +118,7 @@ export function tokenOptimizer(
   };
 
   try {
-    return dump(jsonObject, mergedConfig);
+    return dump(processedObject, mergedConfig);
   } catch (error) {
     // If YAML conversion fails, fallback to JSON.stringify for safety
     // This ensures the function always returns a valid string representation
@@ -116,10 +130,52 @@ export function tokenOptimizer(
     );
 
     try {
-      return JSON.stringify(jsonObject, null, 2);
+      return JSON.stringify(processedObject, null, 2);
     } catch (jsonError) {
       // If JSON.stringify also fails (e.g., circular references), return a safe string
       return `# YAML conversion failed: ${errorMessage}\n# JSON conversion also failed: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}\n# Object: [Unconvertible]`;
     }
   }
+}
+
+function removeRedundantValues(obj: unknown): unknown {
+  if (obj === null || obj === undefined || Number.isNaN(obj)) {
+    return undefined; // Will be filtered out
+  }
+
+  if (typeof obj === 'boolean' || typeof obj === 'number') {
+    return obj; // Preserve all booleans and numbers
+  }
+
+  if (typeof obj === 'string') {
+    // Remove empty strings, preserve non-empty strings
+    return obj === '' ? undefined : obj;
+  }
+
+  if (Array.isArray(obj)) {
+    const cleaned = obj
+      .map(item => removeRedundantValues(item))
+      .filter(item => item !== undefined);
+
+    // Return undefined if array becomes empty after cleaning
+    return cleaned.length === 0 ? undefined : cleaned;
+  }
+
+  if (typeof obj === 'object' && obj !== null) {
+    const cleaned: Record<string, unknown> = {};
+    let hasValidProperties = false;
+
+    for (const [key, value] of Object.entries(obj)) {
+      const cleanedValue = removeRedundantValues(value);
+      if (cleanedValue !== undefined) {
+        cleaned[key] = cleanedValue;
+        hasValidProperties = true;
+      }
+    }
+
+    // Return undefined if object becomes empty after cleaning
+    return hasValidProperties ? cleaned : undefined;
+  }
+
+  return obj; // For any other types, return as-is
 }

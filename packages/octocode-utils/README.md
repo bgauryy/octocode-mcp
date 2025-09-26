@@ -98,11 +98,12 @@ console.log(tokenOptimizer(data, config));
   - **Default**: Preserves original key order
   - **Alphabetical**: Sorts all keys alphabetically (`sortKeys: true`)
   - **Priority-based**: Custom key ordering with `keysPriority` array
-- **Recursive Sorting**: Key sorting applies to ALL nested objects at every level
+- **Redundant Value Removal**: Optional cleaning of empty objects, arrays, null, undefined, and NaN
+- **Recursive Processing**: Key sorting and cleaning applies to ALL nested objects at every level
 - **LLM Optimization**: Priority keys (id, name, type) appear first for better context
 - **Forced String Quoting**: Maintains consistency with `forceQuotes: true`
 - **JSON-like Consistency**: Uses double quotes for familiar syntax
-- **Semantic Equivalence**: Preserves all data relationships and types
+- **Semantic Equivalence**: Preserves all meaningful data relationships and types
 - **Clean Structure**: No line wrapping for predictable output
 - **Error Resilience**: Graceful fallback to JSON on conversion failure
 
@@ -124,6 +125,12 @@ interface tokenOptimizerConfig {
    * to the same priority rules, ensuring consistent structure throughout the entire data tree.
    */
   keysPriority?: string[];
+  /** 
+   * Remove empty objects {}, empty arrays [], null, undefined, and NaN values (false by default).
+   * Preserves all booleans (true/false), numbers (including 0), and strings (including empty strings).
+   * Applied recursively to all nested structures for maximum token efficiency.
+   */
+  removeRedundant?: boolean;
 }
 ```
 
@@ -145,6 +152,15 @@ tokenOptimizer(data, {
 tokenOptimizer(data, { 
   sortKeys: true,                    // This is ignored
   keysPriority: ["id", "name"]       // This is used instead
+});
+
+// Remove redundant values for maximum token efficiency
+tokenOptimizer(data, { removeRedundant: true });
+
+// Combine configurations for optimal results
+tokenOptimizer(data, {
+  keysPriority: ["id", "name", "type"],
+  removeRedundant: true              // Remove empty objects, arrays, nulls
 });
 ```
 

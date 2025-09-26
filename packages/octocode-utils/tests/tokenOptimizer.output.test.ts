@@ -729,4 +729,527 @@ hints:
     );
     expect(savingsPercentage).toEqual(10.11);
   });
+
+  describe('Minified JSON vs tokenOptimizer YAML Comparison', () => {
+    // Note: All YAML outputs use default tokenOptimizer configuration (no custom sorting or options)
+    it('should compare token efficiency: minified JSON vs YAML (default config) for simple objects', () => {
+      // Test uses tokenOptimizer with default configuration (no custom sortKeys, keysPriority, or other options)
+      const input = {
+        name: 'John Doe',
+        age: 30,
+        active: true,
+        email: 'john@example.com',
+        roles: ['admin', 'user'],
+        settings: { theme: 'dark', notifications: true },
+      };
+
+      const prettyJson = JSON.stringify(input, null, 2);
+      const minifiedJson = JSON.stringify(input);
+      const yaml = tokenOptimizer(input);
+
+      const prettyJsonTokens = countTokens(prettyJson);
+      const minifiedJsonTokens = countTokens(minifiedJson);
+      const yamlTokens = countTokens(yaml);
+
+      // Minified JSON should be more efficient than pretty JSON
+      expect(minifiedJsonTokens).toBeLessThan(prettyJsonTokens);
+
+      // Test the claim: is minified JSON more efficient than YAML?
+      const minifiedJsonSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        minifiedJsonTokens
+      );
+      const yamlSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        yamlTokens
+      );
+
+      expect(minifiedJsonSavings).toEqual(44.78);
+      expect(yamlSavings).toEqual(29.85);
+
+      // For simple objects, minified JSON should be more efficient than YAML
+      expect(minifiedJsonTokens).toBeLessThan(yamlTokens);
+    });
+
+    it('should compare token efficiency: minified JSON vs YAML (default config) for complex nested objects', () => {
+      // Test uses tokenOptimizer with default configuration (no custom sortKeys, keysPriority, or other options)
+      const input = {
+        metadata: {
+          title: 'Complex Configuration System',
+          version: '2.1.0',
+          created: '2024-01-15T10:30:00Z',
+          author: 'Development Team',
+          description:
+            'A comprehensive configuration system for enterprise applications',
+        },
+        database: {
+          primary: {
+            host: 'primary-db.example.com',
+            port: 5432,
+            name: 'production_db',
+            credentials: {
+              username: 'db_admin',
+              password: 'super_secret_password_123',
+              ssl_cert: '/path/to/ssl/certificate.pem',
+            },
+            options: {
+              ssl: true,
+              timeout: 30000,
+              retries: 3,
+              pool_size: 20,
+              max_connections: 100,
+            },
+          },
+          replica: {
+            host: 'replica-db.example.com',
+            port: 5433,
+            name: 'production_db_replica',
+            credentials: {
+              username: 'replica_user',
+              password: 'replica_password_456',
+            },
+          },
+        },
+        cache: {
+          redis: {
+            host: 'redis-cluster.example.com',
+            port: 6379,
+            password: 'redis_secret_789',
+            cluster_nodes: [
+              'redis-1.example.com:6379',
+              'redis-2.example.com:6379',
+              'redis-3.example.com:6379',
+            ],
+          },
+          memcached: {
+            servers: ['memcached-1:11211', 'memcached-2:11211'],
+            timeout: 5000,
+          },
+        },
+        features: [
+          'authentication',
+          'authorization',
+          'logging',
+          'metrics',
+          'caching',
+          'rate_limiting',
+          'data_encryption',
+          'audit_trail',
+          'backup_system',
+        ],
+        environments: {
+          development: {
+            debug: true,
+            logLevel: 'verbose',
+            hot_reload: true,
+            profiling: true,
+          },
+          staging: {
+            debug: true,
+            logLevel: 'info',
+            performance_monitoring: true,
+          },
+          production: {
+            debug: false,
+            logLevel: 'error',
+            performance_monitoring: true,
+            security_scanning: true,
+            auto_scaling: true,
+          },
+        },
+        api: {
+          version: 'v2',
+          base_url: 'https://api.example.com',
+          endpoints: {
+            users: '/api/v2/users',
+            auth: '/api/v2/auth',
+            data: '/api/v2/data',
+            admin: '/api/v2/admin',
+          },
+          rate_limits: {
+            per_minute: 1000,
+            per_hour: 50000,
+            burst: 100,
+          },
+        },
+      };
+
+      const prettyJson = JSON.stringify(input, null, 2);
+      const minifiedJson = JSON.stringify(input);
+      const yaml = tokenOptimizer(input);
+
+      const prettyJsonTokens = countTokens(prettyJson);
+      const minifiedJsonTokens = countTokens(minifiedJson);
+      const yamlTokens = countTokens(yaml);
+
+      // Minified JSON should be more efficient than pretty JSON
+      expect(minifiedJsonTokens).toBeLessThan(prettyJsonTokens);
+
+      const minifiedJsonSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        minifiedJsonTokens
+      );
+      const yamlSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        yamlTokens
+      );
+
+      expect(minifiedJsonSavings).toEqual(36.35);
+      expect(yamlSavings).toEqual(18.85);
+
+      // For complex objects, minified JSON should be significantly more efficient
+      expect(minifiedJsonTokens).toBeLessThan(yamlTokens);
+    });
+
+    it('should compare token efficiency: minified JSON vs YAML (default config) for large arrays of objects', () => {
+      // Test uses tokenOptimizer with default configuration (no custom sortKeys, keysPriority, or other options)
+      const generateUser = (id: number) => ({
+        id,
+        name: `User ${id}`,
+        email: `user${id}@example.com`,
+        active: id % 2 === 0,
+        roles: id % 3 === 0 ? ['admin', 'user'] : ['user'],
+        preferences: {
+          theme: id % 2 === 0 ? 'dark' : 'light',
+          notifications: true,
+          language: 'en',
+          timezone: 'UTC',
+        },
+        metadata: {
+          created_at: '2024-01-01T00:00:00Z',
+          last_login: '2024-01-15T10:30:00Z',
+          login_count: Math.floor(Math.random() * 1000),
+          subscription_type: id % 5 === 0 ? 'premium' : 'basic',
+        },
+      });
+
+      const input = {
+        users: Array.from({ length: 20 }, (_, i) => generateUser(i + 1)),
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 1000,
+          hasMore: true,
+          totalPages: 50,
+        },
+        filters: {
+          active: true,
+          roles: ['user', 'admin'],
+          subscription_types: ['basic', 'premium'],
+          date_range: {
+            start: '2024-01-01',
+            end: '2024-12-31',
+          },
+        },
+        sort: {
+          field: 'created_at',
+          direction: 'desc',
+        },
+      };
+
+      const prettyJson = JSON.stringify(input, null, 2);
+      const minifiedJson = JSON.stringify(input);
+      const yaml = tokenOptimizer(input);
+
+      const prettyJsonTokens = countTokens(prettyJson);
+      const minifiedJsonTokens = countTokens(minifiedJson);
+      const yamlTokens = countTokens(yaml);
+
+      // Minified JSON should be more efficient than pretty JSON
+      expect(minifiedJsonTokens).toBeLessThan(prettyJsonTokens);
+
+      const minifiedJsonSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        minifiedJsonTokens
+      );
+      const yamlSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        yamlTokens
+      );
+
+      expect(minifiedJsonSavings).toEqual(36.66);
+      expect(yamlSavings).toEqual(18.13);
+
+      // For large arrays, minified JSON should be much more efficient
+      expect(minifiedJsonTokens).toBeLessThan(yamlTokens);
+    });
+
+    it('should compare token efficiency: minified JSON vs YAML (default config) for string-heavy content', () => {
+      // Test uses tokenOptimizer with default configuration (no custom sortKeys, keysPriority, or other options)
+      const input = {
+        documentation: {
+          title: 'API Documentation',
+          sections: [
+            {
+              name: 'Authentication',
+              content:
+                'This section describes how to authenticate with our API. You need to include an Authorization header with a valid Bearer token. The token can be obtained by making a POST request to the /auth/login endpoint with valid credentials.',
+              examples: [
+                'curl -H "Authorization: Bearer your-token-here" https://api.example.com/users',
+                'fetch("https://api.example.com/users", { headers: { "Authorization": "Bearer your-token-here" } })',
+              ],
+            },
+            {
+              name: 'Rate Limiting',
+              content:
+                'Our API implements rate limiting to ensure fair usage. The default limits are 1000 requests per hour for authenticated users and 100 requests per hour for unauthenticated requests. Rate limit headers are included in all responses.',
+              examples: [
+                'X-RateLimit-Limit: 1000',
+                'X-RateLimit-Remaining: 999',
+                'X-RateLimit-Reset: 1640995200',
+              ],
+            },
+          ],
+        },
+        code_samples: {
+          javascript:
+            'const response = await fetch("https://api.example.com/users", { method: "GET", headers: { "Authorization": "Bearer token", "Content-Type": "application/json" } });',
+          python:
+            'import requests\\nresponse = requests.get("https://api.example.com/users", headers={"Authorization": "Bearer token"})',
+          curl: 'curl -X GET "https://api.example.com/users" -H "Authorization: Bearer token" -H "Content-Type: application/json"',
+        },
+      };
+
+      const prettyJson = JSON.stringify(input, null, 2);
+      const minifiedJson = JSON.stringify(input);
+      const yaml = tokenOptimizer(input);
+
+      const prettyJsonTokens = countTokens(prettyJson);
+      const minifiedJsonTokens = countTokens(minifiedJson);
+      const yamlTokens = countTokens(yaml);
+
+      // Minified JSON should be more efficient than pretty JSON
+      expect(minifiedJsonTokens).toBeLessThan(prettyJsonTokens);
+
+      const minifiedJsonSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        minifiedJsonTokens
+      );
+      const yamlSavings = calculateTokenSavingsPercentage(
+        prettyJsonTokens,
+        yamlTokens
+      );
+
+      // String-heavy content should show different patterns
+      expect(minifiedJsonSavings).toEqual(16.98); // Lower savings for string-heavy content
+      expect(yamlSavings).toEqual(8.89); // Should be positive but less than minified JSON
+
+      // Minified JSON should still be more efficient for string-heavy content
+      expect(minifiedJsonTokens).toBeLessThan(yamlTokens);
+    });
+
+    it('should verify the general rule: minified JSON vs YAML (default config) efficiency patterns', () => {
+      // Test uses tokenOptimizer with default configuration (no custom sortKeys, keysPriority, or other options)
+      const testCases = [
+        {
+          name: 'Small flat object',
+          data: { id: 1, name: 'test', active: true },
+        },
+        {
+          name: 'Medium nested object',
+          data: {
+            user: {
+              id: 1,
+              profile: { name: 'John', settings: { theme: 'dark' } },
+            },
+            permissions: ['read', 'write'],
+          },
+        },
+        {
+          name: 'Array of primitives',
+          data: { tags: ['javascript', 'typescript', 'node', 'react', 'vue'] },
+        },
+        {
+          name: 'Mixed content',
+          data: {
+            config: { debug: true, timeout: 5000 },
+            features: ['auth', 'logging'],
+            metadata: { version: '1.0.0', author: 'team' },
+          },
+        },
+      ];
+
+      const results = testCases.map(testCase => {
+        const prettyJson = JSON.stringify(testCase.data, null, 2);
+        const minifiedJson = JSON.stringify(testCase.data);
+        const yaml = tokenOptimizer(testCase.data);
+
+        const prettyJsonTokens = countTokens(prettyJson);
+        const minifiedJsonTokens = countTokens(minifiedJson);
+        const yamlTokens = countTokens(yaml);
+
+        const minifiedJsonSavings = calculateTokenSavingsPercentage(
+          prettyJsonTokens,
+          minifiedJsonTokens
+        );
+        const yamlSavings = calculateTokenSavingsPercentage(
+          prettyJsonTokens,
+          yamlTokens
+        );
+
+        return {
+          name: testCase.name,
+          prettyJsonTokens,
+          minifiedJsonTokens,
+          yamlTokens,
+          minifiedJsonSavings,
+          yamlSavings,
+          minifiedJsonWins: minifiedJsonTokens < yamlTokens,
+        };
+      });
+
+      // Verify that minified JSON is consistently more efficient than pretty JSON
+      results.forEach(result => {
+        expect(result.minifiedJsonTokens).toBeLessThan(result.prettyJsonTokens);
+        expect(result.minifiedJsonSavings).toBeGreaterThan(0);
+      });
+
+      // Count how often minified JSON wins vs YAML
+      const minifiedJsonWins = results.filter(r => r.minifiedJsonWins).length;
+      const totalTests = results.length;
+
+      // The claim should be validated: minified JSON should win in most cases
+      expect(minifiedJsonWins).toBeGreaterThanOrEqual(totalTests * 0.75); // At least 75% of cases
+    });
+  });
+
+  describe('removeRedundant Token Efficiency Tests', () => {
+    it('should demonstrate token savings with removeRedundant configuration', () => {
+      // Test uses tokenOptimizer with removeRedundant enabled vs default configuration
+      const input = {
+        name: 'API Response',
+        data: {
+          users: [
+            {
+              id: 1,
+              name: 'John',
+              profile: {
+                bio: null,
+                avatar: '',
+                settings: {},
+                preferences: {
+                  theme: 'dark',
+                  notifications: true,
+                  emptySection: {},
+                },
+              },
+              metadata: null,
+              tags: [],
+            },
+            {
+              id: 2,
+              name: 'Jane',
+              profile: {
+                bio: 'Developer',
+                avatar: null,
+                settings: {
+                  privacy: 'public',
+                },
+                preferences: {},
+              },
+              metadata: undefined,
+              tags: ['admin'],
+            },
+          ],
+          pagination: {
+            page: 1,
+            limit: 10,
+            total: 2,
+            hasMore: false,
+            emptyFilters: {},
+            nullField: null,
+          },
+        },
+        errors: [],
+        warnings: null,
+        debug: {
+          timing: 150,
+          cache: true,
+          emptyStats: {},
+        },
+      };
+
+      const defaultYaml = tokenOptimizer(input); // Default config
+      const cleanedYaml = tokenOptimizer(input, { removeRedundant: true });
+
+      const defaultTokens = countTokens(defaultYaml);
+      const cleanedTokens = countTokens(cleanedYaml);
+
+      expect(cleanedTokens).toBeLessThan(defaultTokens);
+
+      const savingsPercentage = calculateTokenSavingsPercentage(
+        defaultTokens,
+        cleanedTokens
+      );
+
+      // Should show significant token savings by removing redundant values
+      expect(savingsPercentage).toBeGreaterThan(20); // At least 20% savings
+
+      // Verify the cleaned YAML doesn't contain redundant values
+      expect(cleanedYaml).not.toContain('{}');
+      expect(cleanedYaml).not.toContain('[]');
+      expect(cleanedYaml).not.toContain('null');
+
+      // But should preserve meaningful values
+      expect(cleanedYaml).toContain('theme: "dark"');
+      expect(cleanedYaml).toContain('notifications: true');
+      expect(cleanedYaml).toContain('hasMore: false');
+      expect(cleanedYaml).toContain('timing: 150');
+      expect(cleanedYaml).toContain('cache: true');
+    });
+
+    it('should show token efficiency comparison: removeRedundant vs minified JSON', () => {
+      // Test comparing removeRedundant YAML vs minified JSON for data with many redundant values
+      const input = {
+        results: [
+          {
+            id: 1,
+            data: { value: 'test' },
+            metadata: null,
+            errors: [],
+            warnings: {},
+          },
+          {
+            id: 2,
+            data: null,
+            metadata: { created: '2024-01-01' },
+            errors: [],
+            warnings: {},
+          },
+        ],
+        pagination: {
+          page: 1,
+          total: 2,
+          emptyFilters: {},
+          nullField: null,
+        },
+        debug: {},
+        errors: [],
+      };
+
+      const minifiedJson = JSON.stringify(input);
+      const defaultYaml = tokenOptimizer(input);
+      const cleanedYaml = tokenOptimizer(input, { removeRedundant: true });
+
+      const jsonTokens = countTokens(minifiedJson);
+      const defaultYamlTokens = countTokens(defaultYaml);
+      const cleanedYamlTokens = countTokens(cleanedYaml);
+
+      // removeRedundant should significantly improve YAML efficiency
+      expect(cleanedYamlTokens).toBeLessThan(defaultYamlTokens);
+
+      // Should get much closer to minified JSON efficiency
+      const defaultYamlSavings = calculateTokenSavingsPercentage(
+        jsonTokens,
+        defaultYamlTokens
+      );
+      const cleanedYamlSavings = calculateTokenSavingsPercentage(
+        jsonTokens,
+        cleanedYamlTokens
+      );
+
+      // Cleaned YAML should have better savings compared to JSON than default YAML
+      expect(cleanedYamlSavings).toBeGreaterThan(defaultYamlSavings);
+    });
+  });
 });
