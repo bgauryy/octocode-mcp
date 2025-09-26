@@ -245,7 +245,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
 
   addQualityFilters(): this {
     this.queryParts.push('is:not-archived');
-    this.queryParts.push('is:not-fork');
     return this;
   }
 }
