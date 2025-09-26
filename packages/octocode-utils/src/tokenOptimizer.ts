@@ -12,7 +12,7 @@ const DEFAULT_CONFIG: Required<
   noCompatMode: true,
   flowLevel: -1,
   skipInvalid: false,
-  removeRedundant: false,
+  removeRedundant: true,
 };
 
 export interface tokenOptimizerConfig {
