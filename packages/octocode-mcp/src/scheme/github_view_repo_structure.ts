@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  BaseBulkQueryItemSchema,
+  BaseQuerySchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
@@ -8,20 +8,19 @@ import {
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
-export const GitHubViewRepoStructureQuerySchema =
-  BaseBulkQueryItemSchema.extend({
-    owner: GitHubOwnerSchema,
-    repo: GitHubRepoSchema,
-    branch: GitHubBranchSchema,
-    path: z.string().default('').optional().describe('Path'),
-    depth: z
-      .number()
-      .min(1)
-      .max(2)
-      .default(1)
-      .optional()
-      .describe('Depth to expolore - max 2'),
-  });
+export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
+  owner: GitHubOwnerSchema,
+  repo: GitHubRepoSchema,
+  branch: GitHubBranchSchema,
+  path: z.string().default('').optional().describe('Path'),
+  depth: z
+    .number()
+    .min(1)
+    .max(2)
+    .default(1)
+    .optional()
+    .describe('Depth to expolore - max 2'),
+});
 
 export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema

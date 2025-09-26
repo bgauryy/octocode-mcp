@@ -1,30 +1,28 @@
 import { z } from 'zod';
 import {
-  BaseBulkQueryItemSchema,
+  BaseQuerySchema,
   createBulkQuerySchema,
   LimitSchema,
   FileMatchScopeSchema,
-  NumericRangeSchema,
   MinifySchema,
   SanitizeSchema,
-  GitHubOwnerSchema,
-  GitHubRepoSchema,
+  SimpleArraySchema,
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
-export const GitHubCodeSearchQuerySchema = BaseBulkQueryItemSchema.extend({
+export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
   queryTerms: z
     .array(z.string())
     .min(1)
     .max(5)
     .describe('Github search queries (AND logic in file)`'),
-  owner: z.union([GitHubOwnerSchema, z.array(GitHubOwnerSchema)]).optional(),
-  repo: z.union([GitHubRepoSchema, z.array(GitHubRepoSchema)]).optional(),
+  owner: SimpleArraySchema.stringOrArray,
+  repo: SimpleArraySchema.stringOrArray,
   language: z.string().optional().describe('file language'),
   extension: z.string().optional().describe('file extension'),
   filename: z.string().optional().describe('File name'),
   path: z.string().optional().describe('Path'),
-  stars: NumericRangeSchema.shape.stars,
+  stars: SimpleArraySchema.numberOrStringRange,
   match: FileMatchScopeSchema,
   limit: LimitSchema,
   minify: MinifySchema,

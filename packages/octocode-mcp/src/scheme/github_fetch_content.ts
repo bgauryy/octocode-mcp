@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  BaseBulkQueryItemSchema,
+  BaseQuerySchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
@@ -10,7 +10,7 @@ import {
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
-export const FileContentQuerySchema = BaseBulkQueryItemSchema.extend({
+export const FileContentQuerySchema = BaseQuerySchema.extend({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
   minified: MinifySchema,

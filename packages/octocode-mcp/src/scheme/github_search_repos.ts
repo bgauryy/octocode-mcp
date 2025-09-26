@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import {
-  BaseBulkQueryItemSchema,
+  BaseQuerySchema,
   createBulkQuerySchema,
-  FlexibleArraySchema,
+  SimpleArraySchema,
   LimitSchema,
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
@@ -16,18 +16,18 @@ export interface SimplifiedRepository {
   updatedAt: string;
 }
 
-const GitHubReposSearchSingleQuerySchema = BaseBulkQueryItemSchema.extend({
+const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   queryTerms: z
     .array(z.string())
     .optional()
     .describe('search repos by search terms'),
-  owner: FlexibleArraySchema.stringOrArrayOrNull.describe('Owner(s)'),
-  topics: FlexibleArraySchema.stringOrArrayOrNull.describe(
+  owner: SimpleArraySchema.stringOrArray.describe('Owner(s)'),
+  topics: SimpleArraySchema.stringOrArray.describe(
     'search repos by github topics'
   ),
-  language: z.string().nullable().optional().describe('Language'),
-  stars: FlexibleArraySchema.numberOrStringRangeOrNull.describe('Stars'),
-  size: z.string().nullable().optional().describe('Size KB'),
+  language: z.string().optional().describe('Language'),
+  stars: SimpleArraySchema.numberOrStringRange.describe('Stars'),
+  size: z.string().optional().describe('Size KB'),
   created: z
     .string()
     .optional()
@@ -41,20 +41,15 @@ const GitHubReposSearchSingleQuerySchema = BaseBulkQueryItemSchema.extend({
       'Repository last update date filter (YYYY-MM-DD, >=YYYY-MM-DD, <=YYYY-MM-DD, YYYY-MM-DD..YYYY-MM-DD)'
     ),
   match: z
-    .union([
-      z.enum(['name', 'description', 'readme']),
-      z.array(z.enum(['name', 'description', 'readme'])),
-      z.null(),
-    ])
+    .array(z.enum(['name', 'description', 'readme']))
     .optional()
     .describe('Scope'),
   sort: z
     .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
-    .nullable()
     .optional()
     .describe('Sort'),
 
-  limit: LimitSchema.nullable().optional(),
+  limit: LimitSchema,
 });
 
 export type GitHubReposSearchQuery = z.infer<
