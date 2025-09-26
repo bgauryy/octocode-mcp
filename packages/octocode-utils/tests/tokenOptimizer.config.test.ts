@@ -1,14 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createByEncoderName } from '@microsoft/tiktokenizer';
-import {
-  jsonToYamlString,
-  YamlConversionConfig,
-} from '../src/jsonToYamlString';
+import { tokenOptimizer, tokenOptimizerConfig } from '../src/tokenOptimizer';
 
 let tiktoken: { encode: (text: string) => number[] };
 
 beforeAll(async () => {
-  tiktoken = await createByEncoderName('cl100k_base'); // For GPT-4
+  tiktoken = await createByEncoderName('o200k_base'); // GPT-5 / ChatGPT-5
 });
 
 function countTokens(text: string): number {
@@ -23,7 +20,7 @@ function calculateTokenSavingsPercentage(
   return Math.round(((jsonTokens - yamlTokens) / jsonTokens) * 100 * 100) / 100;
 }
 
-describe('jsonToYamlString Configuration Options', () => {
+describe('tokenOptimizer Configuration Options', () => {
   const testData = {
     name: 'John Doe',
     age: 30,
@@ -46,7 +43,7 @@ describe('jsonToYamlString Configuration Options', () => {
 
   describe('Default behavior (no configuration)', () => {
     it('should preserve original key order when no config is provided', () => {
-      const yaml = jsonToYamlString(testData);
+      const yaml = tokenOptimizer(testData);
       const lines = yaml.split('\n').filter(line => line.trim());
 
       // Should start with 'name' as it's first in the original object
@@ -56,7 +53,7 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should preserve original key order with empty config', () => {
-      const yaml = jsonToYamlString(testData, {});
+      const yaml = tokenOptimizer(testData, {});
       const lines = yaml.split('\n').filter(line => line.trim());
 
       expect(lines[0]).toBe('name: "John Doe"');
@@ -67,8 +64,8 @@ describe('jsonToYamlString Configuration Options', () => {
 
   describe('sortKeys: true configuration', () => {
     it('should sort keys alphabetically when sortKeys is true', () => {
-      const config: YamlConversionConfig = { sortKeys: true };
-      const yaml = jsonToYamlString(testData, config);
+      const config: tokenOptimizerConfig = { sortKeys: true };
+      const yaml = tokenOptimizer(testData, config);
       const lines = yaml
         .split('\n')
         .filter(line => line.trim() && !line.startsWith(' '));
@@ -83,8 +80,8 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should sort nested object keys alphabetically', () => {
-      const config: YamlConversionConfig = { sortKeys: true };
-      const yaml = jsonToYamlString(testData, config);
+      const config: tokenOptimizerConfig = { sortKeys: true };
+      const yaml = tokenOptimizer(testData, config);
 
       // Check that nested settings keys are also sorted
       expect(yaml).toContain(
@@ -96,9 +93,9 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should maintain token efficiency with alphabetical sorting', () => {
-      const config: YamlConversionConfig = { sortKeys: true };
+      const config: tokenOptimizerConfig = { sortKeys: true };
       const json = JSON.stringify(testData, null, 2);
-      const yaml = jsonToYamlString(testData, config);
+      const yaml = tokenOptimizer(testData, config);
 
       const jsonTokens = countTokens(json);
       const yamlTokens = countTokens(yaml);
@@ -114,10 +111,10 @@ describe('jsonToYamlString Configuration Options', () => {
 
   describe('keysPriority configuration', () => {
     it('should prioritize specified keys in order', () => {
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['id', 'name', 'type', 'version'],
       };
-      const yaml = jsonToYamlString(testData, config);
+      const yaml = tokenOptimizer(testData, config);
       const lines = yaml
         .split('\n')
         .filter(line => line.trim() && !line.startsWith(' '));
@@ -130,10 +127,10 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should place non-priority keys alphabetically after priority keys', () => {
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['id', 'name'],
       };
-      const yaml = jsonToYamlString(testData, config);
+      const yaml = tokenOptimizer(testData, config);
       const lines = yaml
         .split('\n')
         .filter(line => line.trim() && !line.startsWith(' '));
@@ -149,10 +146,10 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should handle empty keysPriority array', () => {
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: [],
       };
-      const yaml = jsonToYamlString(testData, config);
+      const yaml = tokenOptimizer(testData, config);
       const lines = yaml.split('\n').filter(line => line.trim());
 
       // Should preserve original order when keysPriority is empty
@@ -161,10 +158,10 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should handle keysPriority with non-existent keys', () => {
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['nonexistent', 'id', 'name', 'alsononexistent'],
       };
-      const yaml = jsonToYamlString(testData, config);
+      const yaml = tokenOptimizer(testData, config);
       const lines = yaml
         .split('\n')
         .filter(line => line.trim() && !line.startsWith(' '));
@@ -192,10 +189,10 @@ describe('jsonToYamlString Configuration Options', () => {
         },
       };
 
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['id', 'name', 'type'],
       };
-      const yaml = jsonToYamlString(nestedData, config);
+      const yaml = tokenOptimizer(nestedData, config);
 
       // Check that nested objects also respect priority sorting
       expect(yaml).toContain(
@@ -215,11 +212,11 @@ describe('jsonToYamlString Configuration Options', () => {
 
   describe('Configuration precedence', () => {
     it('should use keysPriority when both sortKeys and keysPriority are provided', () => {
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         sortKeys: true,
         keysPriority: ['name', 'id'],
       };
-      const yaml = jsonToYamlString(testData, config);
+      const yaml = tokenOptimizer(testData, config);
       const lines = yaml
         .split('\n')
         .filter(line => line.trim() && !line.startsWith(' '));
@@ -234,18 +231,18 @@ describe('jsonToYamlString Configuration Options', () => {
     });
 
     it('should ignore sortKeys when keysPriority is provided', () => {
-      const config1: YamlConversionConfig = {
+      const config1: tokenOptimizerConfig = {
         sortKeys: true,
         keysPriority: ['version', 'name'],
       };
 
-      const config2: YamlConversionConfig = {
+      const config2: tokenOptimizerConfig = {
         sortKeys: false,
         keysPriority: ['version', 'name'],
       };
 
-      const yaml1 = jsonToYamlString(testData, config1);
-      const yaml2 = jsonToYamlString(testData, config2);
+      const yaml1 = tokenOptimizer(testData, config1);
+      const yaml2 = tokenOptimizer(testData, config2);
 
       // Both should produce the same result since keysPriority takes precedence
       expect(yaml1).toBe(yaml2);
@@ -277,11 +274,11 @@ describe('jsonToYamlString Configuration Options', () => {
         message: 'Data retrieved successfully',
       };
 
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['id', 'name', 'type', 'status', 'version', 'message'],
       };
 
-      const yaml = jsonToYamlString(apiResponse, config);
+      const yaml = tokenOptimizer(apiResponse, config);
       const json = JSON.stringify(apiResponse, null, 2);
 
       // Verify token efficiency
@@ -325,7 +322,7 @@ message: "Data retrieved successfully"`
         },
       };
 
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: [
           'name',
           'host',
@@ -336,7 +333,7 @@ message: "Data retrieved successfully"`
         ],
       };
 
-      const yaml = jsonToYamlString(configData, config);
+      const yaml = tokenOptimizer(configData, config);
 
       // Verify nested objects respect priority
       expect(yaml).toContain(
@@ -360,11 +357,11 @@ message: "Data retrieved successfully"`
   describe('Edge cases and error handling', () => {
     it('should handle null and undefined values in keysPriority', () => {
       const simpleData = { a: 1, b: 2, c: 3 };
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['b', 'a'],
       };
 
-      const yaml = jsonToYamlString(simpleData, config);
+      const yaml = tokenOptimizer(simpleData, config);
       const lines = yaml.split('\n').filter(line => line.trim());
 
       expect(lines[0]).toBe('b: 2');
@@ -379,11 +376,11 @@ message: "Data retrieved successfully"`
         id: 'list-1',
       };
 
-      const config: YamlConversionConfig = {
+      const config: tokenOptimizerConfig = {
         keysPriority: ['id', 'count'],
       };
 
-      const yaml = jsonToYamlString(arrayData, config);
+      const yaml = tokenOptimizer(arrayData, config);
       expect(yaml).toContain(
         `id: "list-1"
 count: 3
@@ -397,9 +394,9 @@ items:
     it('should maintain consistent output format regardless of configuration', () => {
       const data = { name: 'test', value: 42 };
 
-      const yaml1 = jsonToYamlString(data);
-      const yaml2 = jsonToYamlString(data, { sortKeys: true });
-      const yaml3 = jsonToYamlString(data, { keysPriority: ['value', 'name'] });
+      const yaml1 = tokenOptimizer(data);
+      const yaml2 = tokenOptimizer(data, { sortKeys: true });
+      const yaml3 = tokenOptimizer(data, { keysPriority: ['value', 'name'] });
 
       // All should use forced quotes and same formatting
       expect(yaml1).toContain('name: "test"');

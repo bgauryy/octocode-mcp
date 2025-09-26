@@ -35,12 +35,12 @@ yarn add octocode-utils
 
 ## 📚 Usage
 
-### jsonToYamlString
+### tokenOptimizer
 
 Converts JSON data to YAML format with configurable key sorting and forced string quoting for optimal token efficiency and AI consumption.
 
 ```typescript
-import { jsonToYamlString, YamlConversionConfig } from 'octocode-utils';
+import { tokenOptimizer, tokenOptimizerConfig } from 'octocode-utils';
 
 const data = {
   name: "John Doe",
@@ -56,7 +56,7 @@ const data = {
 };
 
 // Default behavior (preserves original key order)
-console.log(jsonToYamlString(data));
+console.log(tokenOptimizer(data));
 // Output:
 // name: "John Doe"
 // age: 30
@@ -71,11 +71,11 @@ console.log(jsonToYamlString(data));
 //   id: "settings-456"
 
 // With priority-based sorting (applied recursively to all nested objects)
-const config: YamlConversionConfig = {
+const config: tokenOptimizerConfig = {
   keysPriority: ["id", "name"]
 };
 
-console.log(jsonToYamlString(data, config));
+console.log(tokenOptimizer(data, config));
 // Output:
 // id: "user-123"        <- Priority key first
 // name: "John Doe"      <- Priority key second
@@ -109,12 +109,12 @@ console.log(jsonToYamlString(data, config));
 #### API
 
 ```typescript
-function jsonToYamlString(
+function tokenOptimizer(
   jsonObject: unknown,
-  config?: YamlConversionConfig
+  config?: tokenOptimizerConfig
 ): string
 
-interface YamlConversionConfig {
+interface tokenOptimizerConfig {
   /** Whether to sort keys alphabetically (false by default) */
   sortKeys?: boolean;
   /** 
@@ -131,18 +131,18 @@ interface YamlConversionConfig {
 
 ```typescript
 // No sorting (default) - preserves original key order
-jsonToYamlString(data);
+tokenOptimizer(data);
 
 // Alphabetical sorting at all levels
-jsonToYamlString(data, { sortKeys: true });
+tokenOptimizer(data, { sortKeys: true });
 
 // Priority-based sorting (recursive to all nested objects)
-jsonToYamlString(data, { 
+tokenOptimizer(data, { 
   keysPriority: ["id", "name", "type", "status", "version"] 
 });
 
 // Priority takes precedence over sortKeys
-jsonToYamlString(data, { 
+tokenOptimizer(data, { 
   sortKeys: true,                    // This is ignored
   keysPriority: ["id", "name"]       // This is used instead
 });
@@ -187,7 +187,7 @@ const complexData = {
 };
 
 const config = { keysPriority: ["id", "name"] };
-const yaml = jsonToYamlString(complexData, config);
+const yaml = tokenOptimizer(complexData, config);
 
 // Result: Every object gets its keys sorted by the same priority rules
 // Root level:     id → name → (alphabetical)
@@ -371,7 +371,7 @@ This package provides core utilities used across the Octocode MCP ecosystem:
 ```
 src/
 ├── index.ts           # Main exports
-├── jsonToYamlString.ts # JSON to YAML conversion with token optimization
+├── tokenOptimizer.ts  # JSON to YAML conversion with token optimization
 └── minifier.ts        # Advanced content minification
 ```
 

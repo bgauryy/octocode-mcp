@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createByEncoderName } from '@microsoft/tiktokenizer';
-import { jsonToYamlString } from '../src/jsonToYamlString';
+import { tokenOptimizer } from '../src/tokenOptimizer';
 
 let tiktoken: { encode: (text: string) => number[] };
 
 beforeAll(async () => {
-  // GPT-4 uses cl100k_base, GPT-4o uses o200k_base
-  tiktoken = await createByEncoderName('cl100k_base'); // For GPT-4
-  // tiktoken = await createByEncoderName('o200k_base'); // For GPT-4o
+  tiktoken = await createByEncoderName('o200k_base'); // GPT-5 / ChatGPT-5
 });
 
 function countTokens(text: string): number {
@@ -22,7 +20,7 @@ function calculateTokenSavingsPercentage(
   return Math.round(((jsonTokens - yamlTokens) / jsonTokens) * 100 * 100) / 100;
 }
 
-describe('jsonToYamlString (simple expected-YAML cases)', () => {
+describe('tokenOptimizer (simple expected-YAML cases)', () => {
   it('simple object', () => {
     const input = { name: 'John Doe', age: 30, active: true };
     const expectedYaml = `name: "John Doe"
@@ -31,7 +29,7 @@ active: true
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
 
@@ -65,7 +63,7 @@ metadata:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
     const jsonTokens = countTokens(json);
@@ -105,7 +103,7 @@ settings:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
     const jsonTokens = countTokens(json);
@@ -139,7 +137,7 @@ config:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
     const jsonTokens = countTokens(json);
@@ -172,7 +170,7 @@ author: "Test Author"
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
     const jsonTokens = countTokens(json);
@@ -234,7 +232,7 @@ environments:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
     const jsonTokens = countTokens(json);
@@ -245,7 +243,7 @@ environments:
       jsonTokens,
       yamlTokens
     );
-    expect(savingsPercentage).toEqual(25.39);
+    expect(savingsPercentage).toEqual(25.26);
   });
 
   it('arrays of objects', () => {
@@ -297,7 +295,7 @@ pagination:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
     const jsonTokens = countTokens(json);
@@ -449,7 +447,7 @@ hints:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
 
@@ -462,7 +460,7 @@ hints:
       yamlTokens
     );
     // This complex test case has lower savings due to large string content
-    expect(savingsPercentage).toEqual(3.69);
+    expect(savingsPercentage).toEqual(3.75);
   });
 
   it('github search results with multiple repositories', () => {
@@ -589,7 +587,7 @@ hints:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
 
@@ -602,7 +600,7 @@ hints:
       yamlTokens
     );
     // This test case should show good token savings due to reduced JSON syntax overhead
-    expect(savingsPercentage).toEqual(11.14);
+    expect(savingsPercentage).toEqual(11.07);
   });
 
   it('octocode agent search results', () => {
@@ -717,7 +715,7 @@ hints:
 `;
 
     const json = JSON.stringify(input, null, 2);
-    const yaml = jsonToYamlString(input);
+    const yaml = tokenOptimizer(input);
 
     expect(yaml).toEqual(expectedYaml);
 
@@ -729,6 +727,6 @@ hints:
       jsonTokens,
       yamlTokens
     );
-    expect(savingsPercentage).toEqual(10.12);
+    expect(savingsPercentage).toEqual(10.11);
   });
 });
