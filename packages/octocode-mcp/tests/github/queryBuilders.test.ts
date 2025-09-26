@@ -183,7 +183,7 @@ describe('Query Builders', () => {
       };
 
       const query = buildRepoSearchQuery(params);
-      expect(query).toBe('todo app is:not-archived is:not-fork');
+      expect(query).toBe('todo app is:not-archived');
     });
 
     it('should build query with topicsToSearch', () => {
@@ -194,9 +194,7 @@ describe('Query Builders', () => {
       };
 
       const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'app topic:react topic:typescript is:not-archived is:not-fork'
-      );
+      expect(query).toBe('app topic:react topic:typescript is:not-archived');
     });
 
     it('should build query with single topic', () => {
@@ -207,9 +205,7 @@ describe('Query Builders', () => {
       };
 
       const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'framework topic:javascript is:not-archived is:not-fork'
-      );
+      expect(query).toBe('framework topic:javascript is:not-archived');
     });
 
     it('should build query with repository metrics', () => {
@@ -221,9 +217,7 @@ describe('Query Builders', () => {
       };
 
       const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'library stars:>1000 size:<10000 is:not-archived is:not-fork'
-      );
+      expect(query).toBe('library stars:>1000 size:<10000 is:not-archived');
     });
 
     it('should build query with match filters', () => {
@@ -233,9 +227,7 @@ describe('Query Builders', () => {
       } as Parameters<typeof buildRepoSearchQuery>[0];
 
       const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'awesome in:name in:description is:not-archived is:not-fork'
-      );
+      expect(query).toBe('awesome in:name in:description is:not-archived');
     });
 
     it('should map updated to pushed', () => {
@@ -246,9 +238,7 @@ describe('Query Builders', () => {
       };
 
       const query = buildRepoSearchQuery(params);
-      expect(query).toBe(
-        'active pushed:>2023-01-01 is:not-archived is:not-fork'
-      );
+      expect(query).toBe('active pushed:>2023-01-01 is:not-archived');
     });
   });
 

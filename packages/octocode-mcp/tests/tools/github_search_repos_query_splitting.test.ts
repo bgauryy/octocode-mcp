@@ -333,6 +333,212 @@ describe('GitHub Search Repositories Query Splitting', () => {
     });
   });
 
+  describe('Complex Multi-Query Splitting', () => {
+    it('should correctly split all queries with both keywordsToSearch and topicsToSearch from whale detection example', async () => {
+      const mockServer = createMockMcpServer();
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const queries: GitHubReposSearchQuery[] = [
+        {
+          id: 'whale_detection_ai',
+          keywordsToSearch: ['whale', 'detection', 'AI'],
+          topicsToSearch: [
+            'computer-vision',
+            'machine-learning',
+            'deep-learning',
+          ],
+          sort: 'stars',
+          limit: 20,
+          reasoning:
+            'Search for repositories specifically focused on whale detection using AI and computer vision',
+        },
+        {
+          id: 'marine_mammal_detection',
+          keywordsToSearch: ['marine', 'mammal', 'detection'],
+          topicsToSearch: ['computer-vision', 'object-detection'],
+          sort: 'stars',
+          limit: 20,
+          reasoning:
+            'Find repositories for marine mammal detection which would include whales',
+        },
+        {
+          id: 'underwater_computer_vision',
+          keywordsToSearch: ['underwater', 'computer', 'vision'],
+          topicsToSearch: ['opencv', 'tensorflow', 'pytorch'],
+          sort: 'stars',
+          limit: 20,
+          reasoning:
+            'Look for underwater computer vision projects that might include whale detection',
+        },
+        {
+          id: 'ocean_wildlife_detection',
+          keywordsToSearch: ['ocean', 'wildlife', 'detection'],
+          topicsToSearch: ['yolo', 'object-detection', 'deep-learning'],
+          sort: 'stars',
+          limit: 20,
+          reasoning:
+            'Search for ocean wildlife detection systems that could detect whales',
+        },
+        {
+          id: 'cetacean_detection',
+          keywordsToSearch: ['cetacean', 'detection'],
+          sort: 'stars',
+          limit: 15,
+          reasoning:
+            'Search for cetacean (whale and dolphin) specific detection repositories',
+        },
+      ];
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
+        queries,
+      });
+
+      // Should be called 9 times total:
+      // - whale_detection_ai: 2 (split)
+      // - marine_mammal_detection: 2 (split)
+      // - underwater_computer_vision: 2 (split)
+      // - ocean_wildlife_detection: 2 (split)
+      // - cetacean_detection: 1 (no split - only keywords)
+      expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(9);
+
+      const calls = mockSearchGitHubReposAPI.mock.calls;
+
+      // Verify whale_detection_ai was split correctly
+      const whaleDetectionTopics = calls.find(
+        call => call[0]?.id === 'whale_detection_ai_topics'
+      )?.[0];
+      const whaleDetectionKeywords = calls.find(
+        call => call[0]?.id === 'whale_detection_ai_keywords'
+      )?.[0];
+
+      expect(whaleDetectionTopics).toBeDefined();
+      expect(whaleDetectionTopics?.topicsToSearch).toEqual([
+        'computer-vision',
+        'machine-learning',
+        'deep-learning',
+      ]);
+      expect(whaleDetectionTopics?.keywordsToSearch).toBeUndefined();
+      expect(whaleDetectionTopics?.limit).toBe(20);
+      expect(whaleDetectionTopics?.sort).toBe('stars');
+      expect(whaleDetectionTopics?.reasoning).toBe(
+        'Search for repositories specifically focused on whale detection using AI and computer vision (topics-based search)'
+      );
+
+      expect(whaleDetectionKeywords).toBeDefined();
+      expect(whaleDetectionKeywords?.keywordsToSearch).toEqual([
+        'whale',
+        'detection',
+        'AI',
+      ]);
+      expect(whaleDetectionKeywords?.topicsToSearch).toBeUndefined();
+      expect(whaleDetectionKeywords?.limit).toBe(20);
+      expect(whaleDetectionKeywords?.sort).toBe('stars');
+      expect(whaleDetectionKeywords?.reasoning).toBe(
+        'Search for repositories specifically focused on whale detection using AI and computer vision (keywords-based search)'
+      );
+
+      // Verify marine_mammal_detection was split correctly
+      const marineMammalTopics = calls.find(
+        call => call[0]?.id === 'marine_mammal_detection_topics'
+      )?.[0];
+      const marineMammalKeywords = calls.find(
+        call => call[0]?.id === 'marine_mammal_detection_keywords'
+      )?.[0];
+
+      expect(marineMammalTopics).toBeDefined();
+      expect(marineMammalTopics?.topicsToSearch).toEqual([
+        'computer-vision',
+        'object-detection',
+      ]);
+      expect(marineMammalTopics?.keywordsToSearch).toBeUndefined();
+
+      expect(marineMammalKeywords).toBeDefined();
+      expect(marineMammalKeywords?.keywordsToSearch).toEqual([
+        'marine',
+        'mammal',
+        'detection',
+      ]);
+      expect(marineMammalKeywords?.topicsToSearch).toBeUndefined();
+
+      // Verify underwater_computer_vision was split correctly
+      const underwaterTopics = calls.find(
+        call => call[0]?.id === 'underwater_computer_vision_topics'
+      )?.[0];
+      const underwaterKeywords = calls.find(
+        call => call[0]?.id === 'underwater_computer_vision_keywords'
+      )?.[0];
+
+      expect(underwaterTopics).toBeDefined();
+      expect(underwaterTopics?.topicsToSearch).toEqual([
+        'opencv',
+        'tensorflow',
+        'pytorch',
+      ]);
+      expect(underwaterTopics?.keywordsToSearch).toBeUndefined();
+
+      expect(underwaterKeywords).toBeDefined();
+      expect(underwaterKeywords?.keywordsToSearch).toEqual([
+        'underwater',
+        'computer',
+        'vision',
+      ]);
+      expect(underwaterKeywords?.topicsToSearch).toBeUndefined();
+
+      // Verify ocean_wildlife_detection was split correctly
+      const oceanWildlifeTopics = calls.find(
+        call => call[0]?.id === 'ocean_wildlife_detection_topics'
+      )?.[0];
+      const oceanWildlifeKeywords = calls.find(
+        call => call[0]?.id === 'ocean_wildlife_detection_keywords'
+      )?.[0];
+
+      expect(oceanWildlifeTopics).toBeDefined();
+      expect(oceanWildlifeTopics?.topicsToSearch).toEqual([
+        'yolo',
+        'object-detection',
+        'deep-learning',
+      ]);
+      expect(oceanWildlifeTopics?.keywordsToSearch).toBeUndefined();
+
+      expect(oceanWildlifeKeywords).toBeDefined();
+      expect(oceanWildlifeKeywords?.keywordsToSearch).toEqual([
+        'ocean',
+        'wildlife',
+        'detection',
+      ]);
+      expect(oceanWildlifeKeywords?.topicsToSearch).toBeUndefined();
+
+      // Verify cetacean_detection was NOT split (only has keywords)
+      const cetaceanQuery = calls.find(
+        call => call[0]?.id === 'cetacean_detection'
+      )?.[0];
+
+      expect(cetaceanQuery).toBeDefined();
+      expect(cetaceanQuery?.keywordsToSearch).toEqual([
+        'cetacean',
+        'detection',
+      ]);
+      expect(cetaceanQuery?.topicsToSearch).toBeUndefined();
+      expect(cetaceanQuery?.limit).toBe(15);
+
+      // Ensure no unexpected query IDs
+      const allQueryIds = calls.map(call => call[0]?.id);
+      const expectedIds = [
+        'whale_detection_ai_topics',
+        'whale_detection_ai_keywords',
+        'marine_mammal_detection_topics',
+        'marine_mammal_detection_keywords',
+        'underwater_computer_vision_topics',
+        'underwater_computer_vision_keywords',
+        'ocean_wildlife_detection_topics',
+        'ocean_wildlife_detection_keywords',
+        'cetacean_detection',
+      ];
+
+      expect(allQueryIds.sort()).toEqual(expectedIds.sort());
+    });
+  });
+
   describe('Response Structure', () => {
     it('should return results from both split queries in the response', async () => {
       const mockServer = createMockMcpServer();
