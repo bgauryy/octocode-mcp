@@ -38,7 +38,6 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       async (
         args: {
           queries: GitHubPullRequestSearchQuery[];
-          verbose?: boolean;
         },
         authInfo,
         userContext

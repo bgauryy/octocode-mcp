@@ -41,7 +41,6 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
       async (
         args: {
           queries: GitHubViewRepoStructureQuery[];
-          verbose?: boolean;
         },
         authInfo,
         userContext
@@ -96,7 +95,6 @@ async function exploreMultipleRepositoryStructures(
         const apiRequest: GitHubViewRepoStructureQuery = {
           id: String(query.id),
           reasoning: query.reasoning,
-          verbose: query.verbose || false,
           owner: String(query.owner),
           repo: String(query.repo),
           branch: String(query.branch),
@@ -191,8 +189,7 @@ async function exploreMultipleRepositoryStructures(
           },
         };
 
-        // Add summary and queryArgs to top level only if verbose (handled by bulk operations)
-        // These will be conditionally included by the bulk response processor
+        // Summary and queryArgs are handled by the bulk response processor
 
         return result;
       } catch (error) {

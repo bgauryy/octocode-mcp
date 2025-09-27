@@ -13,7 +13,7 @@ export interface ToolConfig {
   name: string;
   description: string;
   isDefault: boolean;
-  type: 'search' | 'content' | 'history';
+  type: 'search' | 'content' | 'history' | 'debug';
   fn: (server: McpServer) => RegisteredTool;
 }
 

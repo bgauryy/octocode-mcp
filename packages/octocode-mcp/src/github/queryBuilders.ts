@@ -156,9 +156,12 @@ abstract class BaseQueryBuilder {
  */
 class CodeSearchQueryBuilder extends BaseQueryBuilder {
   addQueryTerms(params: GitHubCodeSearchQuery): this {
-    if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
+    if (
+      Array.isArray(params.keywordsToSearch) &&
+      params.keywordsToSearch.length > 0
+    ) {
       // Filter out empty strings
-      const nonEmptyTerms = params.queryTerms.filter(
+      const nonEmptyTerms = params.keywordsToSearch.filter(
         term => term && term.trim()
       );
       if (nonEmptyTerms.length > 0) {
@@ -199,15 +202,18 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
  */
 class RepoSearchQueryBuilder extends BaseQueryBuilder {
   addQueryTerms(params: GitHubReposSearchQuery): this {
-    if (Array.isArray(params.queryTerms) && params.queryTerms.length > 0) {
-      this.queryParts.push(...params.queryTerms);
+    if (
+      Array.isArray(params.keywordsToSearch) &&
+      params.keywordsToSearch.length > 0
+    ) {
+      this.queryParts.push(...params.keywordsToSearch);
     }
     return this;
   }
 
   addRepoFilters(params: GitHubReposSearchQuery): this {
     this.addLanguageFilter(params.language);
-    this.addArrayFilter(params.topics, 'topic');
+    this.addArrayFilter(params.topicsToSearch, 'topic');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.size, 'size');
     this.addSimpleFilter(params.created, 'created');
@@ -239,7 +245,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
 
   addQualityFilters(): this {
     this.queryParts.push('is:not-archived');
-    this.queryParts.push('is:not-fork');
     return this;
   }
 }
@@ -333,8 +338,8 @@ class CommitSearchQueryBuilder extends BaseQueryBuilder {
   addQueryTerms(params: GitHubCommitSearchParams): this {
     if (params.exactQuery) {
       this.queryParts.push(`"${params.exactQuery}"`);
-    } else if (params.queryTerms && params.queryTerms.length > 0) {
-      this.queryParts.push(params.queryTerms.join(' '));
+    } else if (params.keywordsToSearch && params.keywordsToSearch.length > 0) {
+      this.queryParts.push(params.keywordsToSearch.join(' '));
     } else if (params.orTerms && params.orTerms.length > 0) {
       this.queryParts.push(params.orTerms.join(' OR '));
     }

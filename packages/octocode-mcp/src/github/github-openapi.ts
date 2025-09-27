@@ -269,7 +269,7 @@ export interface GitHubCommitSearchParams {
   page?: number;
 
   // Our custom fields
-  queryTerms?: string[];
+  keywordsToSearch?: string[];
   orTerms?: string[];
   exactQuery?: string;
   owner?: string;

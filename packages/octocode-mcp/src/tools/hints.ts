@@ -27,7 +27,7 @@ export interface HintContext {
   queryContext?: {
     owner?: string | string[];
     repo?: string | string[];
-    queryTerms?: string[];
+    keywordsToSearch?: string[];
     language?: string;
   };
 }
@@ -318,7 +318,9 @@ function generateToolNavigationHints(
           hints.push('Explore structure of most popular repositories first');
         }
       } else {
-        hints.push('Try broader search terms or use topics for discovery');
+        hints.push(
+          'Try broader search terms or use topicsToSearch for discovery'
+        );
         hints.push(TOOL_NAVIGATION_HINTS.USE_TOPICS_FOR_EXPLORATION);
         hints.push(NO_RESULTS_HINTS.PACKAGE_DISCOVERY);
         hints.push(NO_RESULTS_HINTS.RELATED_TECH);

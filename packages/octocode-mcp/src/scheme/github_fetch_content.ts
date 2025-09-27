@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  BaseBulkQueryItemSchema,
+  BaseQuerySchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
@@ -10,7 +10,7 @@ import {
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
-export const FileContentQuerySchema = BaseBulkQueryItemSchema.extend({
+export const FileContentQuerySchema = BaseQuerySchema.extend({
   owner: GitHubOwnerSchema,
   repo: GitHubRepoSchema,
   minified: MinifySchema,
@@ -47,7 +47,6 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
  */
 export interface GitHubFetchContentInput {
   queries: FileContentQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -77,7 +76,7 @@ export interface ContentResult {
   minificationType?: string;
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   originalQuery?: Record<string, unknown>; // Only on error
   securityWarnings?: string[];
   sampling?: Record<string, unknown>; // Beta feature

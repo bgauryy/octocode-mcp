@@ -54,11 +54,11 @@ async function searchGitHubCodeAPIInternal(
   try {
     const octokit = await getOctokit(authInfo);
 
-    // Check if queryTerms are empty before processing
+    // Check if keywordsToSearch are empty before processing
     if (
-      params.queryTerms &&
-      params.queryTerms.length > 0 &&
-      !params.queryTerms.some(term => term && term.trim())
+      params.keywordsToSearch &&
+      params.keywordsToSearch.length > 0 &&
+      !params.keywordsToSearch.some(term => term && term.trim())
     ) {
       return {
         error: 'Search query cannot be empty',

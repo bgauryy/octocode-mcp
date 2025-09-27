@@ -96,7 +96,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['config'],
+              keywordsToSearch: ['config'],
               owner: 'test',
               repo: 'repo',
             },
@@ -160,7 +160,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['utils'],
+              keywordsToSearch: ['utils'],
               owner: 'test',
               repo: 'repo',
             },
@@ -231,7 +231,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['app'],
+              keywordsToSearch: ['app'],
               owner: 'test',
               repo: 'repo',
             },
@@ -297,7 +297,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['python'],
+              keywordsToSearch: ['python'],
               owner: 'test',
               repo: 'repo',
             },
@@ -370,7 +370,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['dependencies'],
+              keywordsToSearch: ['dependencies'],
               owner: 'test',
               repo: 'repo',
             },
@@ -446,7 +446,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['config'],
+              keywordsToSearch: ['config'],
               owner: 'test',
               repo: 'repo',
             },
@@ -531,7 +531,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['main'],
+              keywordsToSearch: ['main'],
               owner: 'test',
               repo: 'repo',
             },
@@ -593,7 +593,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['styles'],
+              keywordsToSearch: ['styles'],
               owner: 'test',
               repo: 'repo',
             },
@@ -706,7 +706,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['service'],
+              keywordsToSearch: ['service'],
               owner: 'test',
               repo: 'repo',
             },
@@ -774,7 +774,7 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         {
           queries: [
             {
-              queryTerms: ['sensitive'],
+              keywordsToSearch: ['sensitive'],
               owner: 'test',
               repo: 'repo',
             },

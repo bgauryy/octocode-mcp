@@ -116,7 +116,6 @@ async function fetchMultipleGitHubFileContents(
               : 5,
           minified: typeof query.minified === 'boolean' ? query.minified : true,
           sanitize: typeof query.sanitize === 'boolean' ? query.sanitize : true,
-          verbose: typeof query.verbose === 'boolean' ? query.verbose : false,
         };
 
         const apiResult = await fetchGitHubFileContentAPI(
@@ -147,18 +146,7 @@ async function fetchMultipleGitHubFileContents(
           ...result, // Flatten all result properties (filePath, owner, repo, content, etc.)
         };
 
-        // Apply verbose filtering - only include verbose-only fields when verbose=true
-        const isVerbose =
-          typeof query.verbose === 'boolean' ? query.verbose : false;
         const resultObj = { ...baseResultObj };
-
-        // Remove verbose-only fields if verbose=false
-        if (!isVerbose) {
-          delete resultObj.branch;
-          delete resultObj.minified;
-          delete resultObj.minificationFailed;
-          delete resultObj.minificationType;
-        }
 
         // Add sampling result if BETA features are enabled
         if (
