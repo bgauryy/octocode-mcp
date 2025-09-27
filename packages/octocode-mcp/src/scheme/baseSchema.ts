@@ -54,7 +54,7 @@ export const LimitSchema = z
   .min(1)
   .max(20)
   .optional()
-  .describe('Max');
+  .describe('Maximum number of results to return (1-20)');
 
 export const MinifySchema = z
   .boolean()
@@ -84,7 +84,9 @@ export const SimpleArraySchema = {
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
   .optional()
-  .describe('Fields');
+  .describe(
+    'Search scope: "title" (PR titles), "body" (PR descriptions), "comments" (PR comments)'
+  );
 
 export const DateRangeSchema = z.object({
   created: z

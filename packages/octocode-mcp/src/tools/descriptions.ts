@@ -44,16 +44,28 @@ HINTS:
 - Get relevance of results by its content and its path
 - Search more if needed by given results`,
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `#Search repositories
+
 #GOAL:
 Find repositories for research
 
 #FEATURES:
 - GitHub search API
-- Use topicsToSearch for topics discovery (e.g., ["topi1", "topic2"]) 
-- Use keywordsToSearch for specific terms in names/descriptions
+- Bulk queries for comprehensive technique discovery
 
-#SEARCH STRATEGY:
-- Prefer popular and updated repos for better results`,
+#FILTERING:
+- keywordsToSearch: Search repo names, descriptions, README, docs, source code
+- topicsToSearch: Search by GitHub topics (tags)
+- match: Control search scope - "name", "description", "readme" (default searches all)
+- owner: Filter by organization/user
+- language: Filter by programming language
+- stars/size: Filter by popularity/size (e.g., ">1000", "<500")
+- created/updated: Filter by dates
+- sort: Order by "stars", "forks", "updated", "best-match"
+
+HINTS:
+- Use match parameter to reduce noise and focus results
+- Combine filters for targeted discovery
+- Popular repos (high stars) often have better examples`,
   [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `Explore repository structure
 
 GOAL:

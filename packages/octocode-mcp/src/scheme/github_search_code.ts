@@ -34,7 +34,13 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .describe(
       'Controls WHERE to search for keywords: (default - in content), "path" (search keywords in filenames/paths)'
     ),
-  limit: z.number().int().min(1).max(20).optional().describe('Max'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe('Maximum number of results to return (1-20)'),
   minify: z.boolean().optional().default(true).describe('minify content'),
   sanitize: z.boolean().optional().default(true).describe('sanitize content'),
 });

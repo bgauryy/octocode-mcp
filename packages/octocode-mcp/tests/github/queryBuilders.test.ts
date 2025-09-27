@@ -196,9 +196,9 @@ describe('Query Builders', () => {
     });
 
     it('should build query with single topic', () => {
-      const params = {
+      const params: Parameters<typeof buildRepoSearchQuery>[0] = {
         keywordsToSearch: ['framework'],
-        topicsToSearch: 'javascript',
+        topicsToSearch: ['javascript'],
       };
 
       const query = buildRepoSearchQuery(params);

@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   BaseQuerySchema,
   createBulkQuerySchema,
-  SimpleArraySchema,
   LimitSchema,
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
@@ -20,19 +19,28 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z
     .array(z.string())
     .optional()
-    .describe('terms for searching repos by name OR description'),
-  topicsToSearch: SimpleArraySchema.stringOrArray
+    .describe(
+      'terms for searching repos by name, description, README files, documentation files, and source code files'
+    ),
+  topicsToSearch: z
+    .array(z.string())
     .optional()
     .describe(
       'terms for searching repos by github topics- tag used to categorize repo'
     ),
-  owner: SimpleArraySchema.stringOrArray.describe('Owner(s)'),
+  owner: z.string().optional().describe('Repository owner'),
   language: z
     .string()
     .optional()
     .describe('Language - DO NOT USE ON EXPLORATORY SEARCHES'),
-  stars: SimpleArraySchema.numberOrStringRange.describe('Stars'),
-  size: z.string().optional().describe('Size KB'),
+  stars: z
+    .string()
+    .optional()
+    .describe('Stars filter (e.g., ">100", ">=1000")'),
+  size: z
+    .string()
+    .optional()
+    .describe('Repository size filter in KB (e.g., ">1000", "<500")'),
   created: z
     .string()
     .optional()
@@ -48,11 +56,15 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   match: z
     .array(z.enum(['name', 'description', 'readme']))
     .optional()
-    .describe('Scope'),
+    .describe(
+      'Restricts search scope - filters WHERE to search: "name" (repository names only), "description" (description field only), "readme" (README files only). Combinations work as OR. Default (no match) searches ALL fields. Use to reduce noise and focus results.'
+    ),
   sort: z
-    .enum(['forks', 'help-wanted-issues', 'stars', 'updated', 'best-match'])
+    .enum(['forks', 'stars', 'updated', 'best-match'])
     .optional()
-    .describe('Sort'),
+    .describe(
+      'Sort results by: "forks", "stars", "updated" (last update), "best-match" (relevance)'
+    ),
 
   limit: LimitSchema,
 });

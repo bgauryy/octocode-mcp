@@ -19,7 +19,7 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .max(2)
     .default(1)
     .optional()
-    .describe('Depth to expolore - max 2'),
+    .describe('Depth to explore - max 2'),
 });
 
 export type GitHubViewRepoStructureQuery = z.infer<

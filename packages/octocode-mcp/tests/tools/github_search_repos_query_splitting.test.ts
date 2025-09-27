@@ -229,7 +229,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       const originalQuery: GitHubReposSearchQuery = {
         id: 'string_topics',
         reasoning: 'Query with string topics',
-        topicsToSearch: 'computer-vision',
+        topicsToSearch: ['computer-vision'],
         keywordsToSearch: ['whale'],
         limit: 10,
       };
@@ -249,7 +249,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
         call[0]?.id?.includes('_keywords')
       )?.[0];
 
-      expect(topicsQuery?.topicsToSearch).toBe('computer-vision');
+      expect(topicsQuery?.topicsToSearch).toEqual(['computer-vision']);
       expect(keywordsQuery?.keywordsToSearch).toEqual(['whale']);
     });
 
