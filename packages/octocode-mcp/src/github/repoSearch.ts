@@ -70,7 +70,8 @@ async function searchGitHubReposAPIInternal(
 
     if (!query.trim()) {
       return {
-        error: 'Search query cannot be empty. Provide queryTerms or filters.',
+        error:
+          'Search query cannot be empty. Provide keywordsToSearch or filters.',
         type: 'http',
         status: 400,
       };

@@ -102,6 +102,8 @@ describe('GitHub Fetch Content Tool', () => {
     path: "README.md"
     contentLength: 35
     content: "# Hello World\\n\\nThis is a test file."
+    branch: "main"
+    minified: false
 hints:
   - "Use repository structure analysis to find similar implementations"
   - "Single result found - dive deep and look for related examples in the same repository"
@@ -533,7 +535,6 @@ End of file.`;
             repo: 'repo',
             path: 'src/app.js',
             minified: true,
-            verbose: true,
             id: 'minified-test',
           },
         ],
@@ -576,7 +577,6 @@ End of file.`;
             repo: 'repo',
             path: 'src/readable.js',
             minified: false,
-            verbose: true,
             id: 'not-minified-test',
           },
         ],
@@ -620,7 +620,6 @@ End of file.`;
             repo: 'repo',
             path: 'src/broken.js',
             minified: true,
-            verbose: true,
             id: 'minification-failed-test',
           },
         ],
@@ -846,7 +845,6 @@ End of file.`;
             repo: 'repo',
             path: 'feature.js',
             branch: 'feature-branch',
-            verbose: true,
             id: 'branch-test',
           },
         ],
@@ -1030,7 +1028,6 @@ End of file.`;
             fullContent: true,
             minified: true,
             sanitize: false,
-            verbose: true,
             id: 'boolean-params-test',
           },
         ],
@@ -1044,7 +1041,6 @@ End of file.`;
           fullContent: true,
           minified: true,
           sanitize: false,
-          verbose: true,
         }),
         undefined,
         undefined

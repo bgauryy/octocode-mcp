@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  BaseBulkQueryItemSchema,
+  BaseQuerySchema,
   createBulkQuerySchema,
   GitHubOwnerSchema,
   GitHubRepoSchema,
@@ -8,20 +8,19 @@ import {
 } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
-export const GitHubViewRepoStructureQuerySchema =
-  BaseBulkQueryItemSchema.extend({
-    owner: GitHubOwnerSchema,
-    repo: GitHubRepoSchema,
-    branch: GitHubBranchSchema,
-    path: z.string().default('').optional().describe('Path'),
-    depth: z
-      .number()
-      .min(1)
-      .max(2)
-      .default(1)
-      .optional()
-      .describe('Depth to expolore - max 2'),
-  });
+export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
+  owner: GitHubOwnerSchema,
+  repo: GitHubRepoSchema,
+  branch: GitHubBranchSchema,
+  path: z.string().default('').optional().describe('Path'),
+  depth: z
+    .number()
+    .min(1)
+    .max(2)
+    .default(1)
+    .optional()
+    .describe('Depth to explore - max 2'),
+});
 
 export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema
@@ -110,7 +109,6 @@ export interface GitHubRepositoryStructureError {
  */
 export interface GitHubViewRepoStructureInput {
   queries: GitHubViewRepoStructureQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -133,6 +131,6 @@ export interface RepoStructureResult {
   folders?: string[];
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   metadata: Record<string, unknown>; // Required for bulk operations compatibility
 }

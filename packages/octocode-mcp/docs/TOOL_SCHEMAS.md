@@ -23,7 +23,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
     {
       id?: string,                    // Optional query identifier
       reasoning?: string,             // Optional reasoning for research
-      verbose?: boolean,              // Per-query debug info
 
       queryTerms: string[],           // 1-5 search terms (AND logic)
       owner?: string | string[],      // Repository owner(s)
@@ -39,7 +38,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       sanitize?: boolean              // Sanitize content (default: true)
     }
   ],
-  verbose?: boolean                   // Global debug info
 }
 ```
 
@@ -68,7 +66,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
     {
       id?: string,                       // Optional query identifier
       reasoning?: string,                // Optional reasoning for research
-      verbose?: boolean,                 // Per-query debug info
 
       owner: string,                     // Repository owner
       repo: string,                      // Repository name
@@ -87,7 +84,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       sanitize?: boolean                 // Sanitize content (default: true)
     }
   ],
-  verbose?: boolean                      // Global debug info
 }
 ```
 
@@ -116,7 +112,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
     {
       id?: string,                    // Optional query identifier
       reasoning?: string,             // Optional reasoning for research
-      verbose?: boolean,              // Per-query debug info
 
       queryTerms?: string[],          // Search terms for name/desc/readme
       owner?: string | string[] | null,
@@ -131,7 +126,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       limit?: number | null           // Max results (1-20)
     }
   ],
-  verbose?: boolean                   // Global debug info
 }
 ```
 
@@ -159,7 +153,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
     {
       id?: string,                 // Optional query identifier
       reasoning?: string,          // Optional reasoning for research
-      verbose?: boolean,           // Per-query debug info
 
       owner: string,               // Repository owner
       repo: string,                // Repository name
@@ -170,7 +163,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       showMedia?: boolean          // Include media files (default: false)
     }
   ],
-  verbose?: boolean               // Global debug info
 }
 ```
 
@@ -198,7 +190,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
     {
       id?: string,                       // Optional query identifier
       reasoning?: string,                // Optional reasoning for research
-      verbose?: boolean,                 // Per-query debug info
 
       // Direct fetching or general search
       query?: string,                    // Search query for PR content
@@ -264,7 +255,6 @@ Octocode-MCP provides 7 specialized tools for GitHub repository analysis and pac
       getFileChanges?: boolean           // Include file changes/diffs (default: false)
     }
   ],
-  verbose?: boolean                      // Global debug info
 }
 ```
 

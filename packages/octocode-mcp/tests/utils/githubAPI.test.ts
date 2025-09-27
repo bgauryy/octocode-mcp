@@ -109,6 +109,7 @@ import {
   viewGitHubRepositoryStructureAPI,
   searchGitHubPullRequestsAPI,
 } from '../../src/github/githubAPI.js';
+import type { GitHubCodeSearchQuery } from '../../src/scheme/github_search_code.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
 // Helper function to create properly formatted test parameters
@@ -218,7 +219,7 @@ describe('GitHub API Utils', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockSearchResponse);
 
       const params = {
-        queryTerms: ['Button'],
+        keywordsToSearch: ['Button'],
         language: 'typescript',
         owner: 'facebook',
         repo: 'react',
@@ -257,7 +258,7 @@ describe('GitHub API Utils', () => {
       });
 
       const params = {
-        queryTerms: [''],
+        keywordsToSearch: [''],
         owner: 'test',
         repo: 'repo',
         minify: true,
@@ -298,7 +299,7 @@ describe('GitHub API Utils', () => {
       mockOctokit.rest.search.code.mockRejectedValue(rateLimitError);
 
       const params = {
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
         minify: true,
@@ -329,7 +330,7 @@ describe('GitHub API Utils', () => {
       mockOctokit.rest.search.code.mockRejectedValue(authError);
 
       const params = {
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
         minify: true,
@@ -360,7 +361,7 @@ describe('GitHub API Utils', () => {
       mockOctokit.rest.search.code.mockRejectedValue(validationError);
 
       const params = {
-        queryTerms: ['test'],
+        keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
         minify: true,
@@ -382,15 +383,15 @@ describe('GitHub API Utils', () => {
         data: { total_count: 0, items: [] },
       });
 
-      const params = {
-        queryTerms: ['function', 'export'],
+      const params: GitHubCodeSearchQuery = {
+        keywordsToSearch: ['function', 'export'],
         language: 'javascript',
         owner: 'microsoft',
         repo: 'vscode',
         filename: 'index.js',
         extension: 'js',
         path: 'src',
-        match: ['file'] as ('file' | 'path')[],
+        match: 'file',
         minify: true,
         sanitize: true,
       };
@@ -414,7 +415,7 @@ describe('GitHub API Utils', () => {
 
       // Test owner qualifier (automatically detects user vs org)
       const userParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'octocat',
         repo: 'test',
         minify: true,
@@ -434,7 +435,7 @@ describe('GitHub API Utils', () => {
 
       // Test org owner (implementation auto-detects)
       const orgParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'github',
         repo: 'test',
         minify: true,
@@ -454,7 +455,7 @@ describe('GitHub API Utils', () => {
 
       // Test multiple owners (array format)
       const multipleOwnersParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'octocat',
         repo: 'test',
         minify: true,
@@ -482,7 +483,7 @@ describe('GitHub API Utils', () => {
 
       // Test basic search without quality boost
       const forkTrueParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
         minify: true,
@@ -502,7 +503,7 @@ describe('GitHub API Utils', () => {
 
       // Test with specific repo (disables quality boost)
       const forkFalseParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'facebook',
         repo: 'react',
         minify: true,
@@ -522,7 +523,7 @@ describe('GitHub API Utils', () => {
 
       // Test with explicit stars and pushed filters
       const forkOnlyParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
         stars: '>100',
@@ -549,7 +550,7 @@ describe('GitHub API Utils', () => {
 
       // Test with quality boost enabled (adds stars and pushed filters)
       const archivedTrueParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
         minify: true,
@@ -569,7 +570,7 @@ describe('GitHub API Utils', () => {
 
       // Test with specific owner (disables quality boost)
       const archivedFalseParams = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'microsoft',
         repo: 'test',
         minify: true,
@@ -595,7 +596,7 @@ describe('GitHub API Utils', () => {
 
       // When both owner+repo and user/org are provided, owner+repo should take precedence
       const params = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'facebook',
         repo: 'react',
         minify: true,
@@ -620,7 +621,7 @@ describe('GitHub API Utils', () => {
       });
 
       const params = {
-        queryTerms: ['function'],
+        keywordsToSearch: ['function'],
         owner: 'octocat',
         repo: 'test',
         language: 'javascript',
@@ -664,7 +665,7 @@ describe('GitHub API Utils', () => {
         mockOctokit.rest.search.repos.mockResolvedValue(mockRepoResponse);
 
         const params = {
-          queryTerms: ['react'],
+          keywordsToSearch: ['react'],
           language: 'javascript',
           stars: '>1000',
         };
@@ -672,7 +673,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
-          q: 'react language:JavaScript stars:>1000 is:not-archived is:not-fork',
+          q: 'react language:JavaScript stars:>1000 is:not-archived',
           per_page: 30,
           page: 1,
         });
@@ -716,10 +717,10 @@ describe('GitHub API Utils', () => {
         });
 
         const params = {
-          queryTerms: ['machine', 'learning'],
+          keywordsToSearch: ['machine', 'learning'],
           language: 'python',
           owner: 'google',
-          topics: ['ml', 'ai'],
+          topicsToSearch: ['ml', 'ai'],
           stars: '>100',
           forks: '10..50',
           size: '<1000',
@@ -738,7 +739,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning user:google language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived is:not-fork';
+          'machine learning user:google language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,
@@ -772,7 +773,7 @@ describe('GitHub API Utils', () => {
 
         mockOctokit.rest.search.repos.mockRejectedValue(rateLimitError);
 
-        const params = { queryTerms: ['test'], verbose: false };
+        const params = { keywordsToSearch: ['test'] };
         const result = await searchGitHubReposAPI(params);
 
         expect(result).toEqual(
@@ -808,7 +809,7 @@ describe('GitHub API Utils', () => {
 
         mockOctokit.rest.search.repos.mockResolvedValue(mockRepoResponse);
 
-        const params = { queryTerms: ['test'], verbose: false };
+        const params = { keywordsToSearch: ['test'] };
         const result = await searchGitHubReposAPI(params);
 
         expect(result).toEqual(

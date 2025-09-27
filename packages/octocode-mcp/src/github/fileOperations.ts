@@ -28,7 +28,7 @@ export async function fetchGitHubFileContentAPI(
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<ContentResult>> {
-  // Generate cache key based on request parameters (verbose excluded by cache logic)
+  // Generate cache key based on request parameters
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
     {
@@ -43,7 +43,6 @@ export async function fetchGitHubFileContentAPI(
       matchString: params.matchString,
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
-      // verbose is now excluded automatically by cache logic
     },
     sessionId
   );

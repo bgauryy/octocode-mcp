@@ -134,7 +134,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         {
           queries: [
             {
-              queryTerms: ['function'],
+              keywordsToSearch: ['function'],
               owner: 'test',
               repo: 'repo',
             },
@@ -197,7 +197,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         {
           queries: [
             {
-              queryTerms: ['lock'],
+              keywordsToSearch: ['lock'],
               owner: 'test',
               repo: 'repo',
             },
@@ -268,7 +268,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         {
           queries: [
             {
-              queryTerms: ['js'],
+              keywordsToSearch: ['js'],
               owner: 'test',
               repo: 'repo',
             },
@@ -348,7 +348,7 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         {
           queries: [
             {
-              queryTerms: ['javascript'],
+              keywordsToSearch: ['javascript'],
               owner: 'test',
               repo: 'repo',
             },
@@ -433,13 +433,13 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
           queries: [
             {
               id: 'query1',
-              queryTerms: ['component'],
+              keywordsToSearch: ['component'],
               owner: 'test',
               repo: 'repo',
             },
             {
               id: 'query2',
-              queryTerms: ['utils'],
+              keywordsToSearch: ['utils'],
               owner: 'test',
               repo: 'repo',
             },
