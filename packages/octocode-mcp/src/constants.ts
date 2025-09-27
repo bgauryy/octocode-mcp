@@ -4,7 +4,6 @@ export const TOOL_NAMES = {
   GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
   GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
   GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
-  OCTOCODE_TEST: 'octocodeTest',
 } as const;
 
 export type ToolName = (typeof TOOL_NAMES)[keyof typeof TOOL_NAMES];
