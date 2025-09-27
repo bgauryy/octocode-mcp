@@ -58,7 +58,6 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
     fullContent: false,
     minified: false,
     sanitize: true,
-    verbose: false,
     matchStringContextLines: 5,
     ...overrides,
   };
@@ -204,7 +203,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const params = createTestParams({
         minified: false,
         sanitize: true,
-        verbose: false,
         // No fullContent, startLine, endLine, or matchString
       });
 

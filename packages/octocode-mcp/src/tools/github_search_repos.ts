@@ -52,7 +52,6 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       async (
         args: {
           queries: GitHubReposSearchQuery[];
-          verbose?: boolean;
         },
         authInfo,
         userContext

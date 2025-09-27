@@ -773,7 +773,7 @@ describe('GitHub API Utils', () => {
 
         mockOctokit.rest.search.repos.mockRejectedValue(rateLimitError);
 
-        const params = { keywordsToSearch: ['test'], verbose: false };
+        const params = { keywordsToSearch: ['test'] };
         const result = await searchGitHubReposAPI(params);
 
         expect(result).toEqual(
@@ -809,7 +809,7 @@ describe('GitHub API Utils', () => {
 
         mockOctokit.rest.search.repos.mockResolvedValue(mockRepoResponse);
 
-        const params = { keywordsToSearch: ['test'], verbose: false };
+        const params = { keywordsToSearch: ['test'] };
         const result = await searchGitHubReposAPI(params);
 
         expect(result).toEqual(

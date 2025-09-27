@@ -281,7 +281,7 @@ describe('Code Search Flows', () => {
     }
   });
 
-  it('should include query field when verbose is true', async () => {
+  it('should handle API response correctly', async () => {
     const mockResponse = {
       data: { total_count: 0, items: [] },
     };

@@ -109,7 +109,6 @@ export interface GitHubRepositoryStructureError {
  */
 export interface GitHubViewRepoStructureInput {
   queries: GitHubViewRepoStructureQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -132,6 +131,6 @@ export interface RepoStructureResult {
   folders?: string[];
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   metadata: Record<string, unknown>; // Required for bulk operations compatibility
 }

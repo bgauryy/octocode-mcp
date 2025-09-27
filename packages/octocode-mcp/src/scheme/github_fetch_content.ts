@@ -47,7 +47,6 @@ export const FileContentBulkQuerySchema = createBulkQuerySchema(
  */
 export interface GitHubFetchContentInput {
   queries: FileContentQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -77,7 +76,7 @@ export interface ContentResult {
   minificationType?: string;
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   originalQuery?: Record<string, unknown>; // Only on error
   securityWarnings?: string[];
   sampling?: Record<string, unknown>; // Beta feature

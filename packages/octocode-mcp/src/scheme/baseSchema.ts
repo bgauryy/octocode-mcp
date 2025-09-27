@@ -2,12 +2,6 @@ import { z } from 'zod';
 
 export const queryIdSchema = z.string().optional().describe('query id');
 
-export const verboseSchema = z
-  .boolean()
-  .optional()
-  .default(false)
-  .describe('add debug info');
-
 export const lockedSchema = z.boolean().optional().describe('Locked');
 
 export const draftSchema = z.boolean().optional().describe('Draft');
@@ -19,7 +13,6 @@ export const BaseQuerySchema = z.object({
     .string()
     .optional()
     .describe('Explanation or reasoning behind the query for the research'),
-  verbose: verboseSchema.optional(),
 });
 
 export function createBulkQuerySchema<T extends z.ZodTypeAny>(
@@ -28,7 +21,6 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
 ) {
   return z.object({
     queries: z.array(singleQuerySchema).min(1).max(10).describe(description),
-    verbose: verboseSchema,
   });
 }
 

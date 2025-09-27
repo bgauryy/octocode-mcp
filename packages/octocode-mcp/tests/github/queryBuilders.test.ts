@@ -179,7 +179,6 @@ describe('Query Builders', () => {
     it('should build basic repo search query', () => {
       const params = {
         keywordsToSearch: ['todo', 'app'],
-        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -190,7 +189,6 @@ describe('Query Builders', () => {
       const params = {
         keywordsToSearch: ['app'],
         topicsToSearch: ['react', 'typescript'],
-        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -201,7 +199,6 @@ describe('Query Builders', () => {
       const params = {
         keywordsToSearch: ['framework'],
         topicsToSearch: 'javascript',
-        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -213,7 +210,6 @@ describe('Query Builders', () => {
         keywordsToSearch: ['library'],
         stars: '>1000',
         size: '<10000',
-        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);
@@ -234,7 +230,6 @@ describe('Query Builders', () => {
       const params = {
         keywordsToSearch: ['active'],
         updated: '>2023-01-01',
-        verbose: false,
       };
 
       const query = buildRepoSearchQuery(params);

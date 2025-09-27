@@ -48,7 +48,6 @@ export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
 
 export interface GitHubSearchCodeInput {
   queries: GitHubCodeSearchQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -69,7 +68,7 @@ export interface SearchResult {
   files: SearchFile[];
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   metadata?: Record<string, unknown>; // Internal use
 }
 

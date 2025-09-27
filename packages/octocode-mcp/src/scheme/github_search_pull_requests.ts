@@ -163,7 +163,6 @@ export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
  */
 export interface GitHubSearchPullRequestsInput {
   queries: GitHubPullRequestSearchQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -185,7 +184,7 @@ export interface PullRequestSearchResult {
   incomplete_results?: boolean;
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   metadata: Record<string, unknown>; // Required for bulk operations compatibility
 }
 

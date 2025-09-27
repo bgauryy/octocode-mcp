@@ -76,7 +76,6 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
  */
 export interface GitHubSearchReposInput {
   queries: GitHubReposSearchQuery[];
-  verbose?: boolean;
 }
 
 /**
@@ -96,6 +95,6 @@ export interface RepoSearchResult {
   repositories: SimplifiedRepository[];
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only when verbose or error
+  query?: Record<string, unknown>; // Only on error
   metadata?: Record<string, unknown>; // Internal use
 }
