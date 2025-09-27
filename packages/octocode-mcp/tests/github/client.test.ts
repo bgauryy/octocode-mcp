@@ -74,7 +74,7 @@ describe('GitHub Client', () => {
       await getOctokit();
 
       expect(mockOctokit).toHaveBeenCalledWith({
-        userAgent: 'octocode-mcp/6.0.0',
+        userAgent: expect.stringMatching(/^octocode-mcp\//),
         baseUrl: 'https://api.github.com',
         request: { timeout: 30000 },
         throttle: {
@@ -91,7 +91,7 @@ describe('GitHub Client', () => {
       await getOctokit();
 
       expect(mockOctokit).toHaveBeenCalledWith({
-        userAgent: 'octocode-mcp/6.0.0',
+        userAgent: expect.stringMatching(/^octocode-mcp\//),
         baseUrl: 'https://api.github.com',
         request: { timeout: 30000 },
         throttle: {
@@ -112,7 +112,7 @@ describe('GitHub Client', () => {
       await getOctokit(authInfo);
 
       expect(mockOctokit).toHaveBeenCalledWith({
-        userAgent: 'octocode-mcp/6.0.0',
+        userAgent: expect.stringMatching(/^octocode-mcp\//),
         baseUrl: 'https://api.github.com',
         request: { timeout: 30000 },
         throttle: {
