@@ -5,6 +5,17 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.1] - 2025-09-27 - Schema Optimization & Tool Enhancements
+
+### Enhanced
+- **Schema Complexity Reduction**: Streamlined schema definitions to reduce token usage and improve parsing efficiency
+- **Token Optimization**: Comprehensive token reduction across all tool schemas and responses for better performance
+- **Tool Query Optimization**: Separated topics and keywords queries for more precise and efficient search operations
+- **Description Improvements**: Enhanced tool descriptions with clearer, more actionable guidance
+- **Schema Descriptors**: Improved schema descriptors for better parameter validation and user understanding
+
+---
+
 ## [5.0.0] - 2022-08-26 - HTTP Transport Layer & OAuth Integration
 
 ### Added
