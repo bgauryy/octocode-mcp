@@ -94,17 +94,19 @@ describe('GitHubCodeSearchQuerySchema', () => {
       }
     });
 
-    it('should validate array values for owner', () => {
+    it('should reject array values for owner (simplified schema)', () => {
       const arrayOwnerQuery = {
         keywordsToSearch: ['function'],
         owner: ['facebook', 'microsoft'],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(arrayOwnerQuery);
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(Array.isArray(result.data.owner)).toBe(true);
-        expect(result.data.owner).toEqual(['facebook', 'microsoft']);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        // Should fail because owner only accepts strings now
+        expect(
+          result.error.issues.some(issue => issue.path.includes('owner'))
+        ).toBe(true);
       }
     });
 

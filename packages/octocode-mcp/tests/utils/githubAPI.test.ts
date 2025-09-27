@@ -109,6 +109,7 @@ import {
   viewGitHubRepositoryStructureAPI,
   searchGitHubPullRequestsAPI,
 } from '../../src/github/githubAPI.js';
+import type { GitHubCodeSearchQuery } from '../../src/scheme/github_search_code.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
 // Helper function to create properly formatted test parameters
@@ -382,7 +383,7 @@ describe('GitHub API Utils', () => {
         data: { total_count: 0, items: [] },
       });
 
-      const params = {
+      const params: GitHubCodeSearchQuery = {
         keywordsToSearch: ['function', 'export'],
         language: 'javascript',
         owner: 'microsoft',
@@ -390,7 +391,7 @@ describe('GitHub API Utils', () => {
         filename: 'index.js',
         extension: 'js',
         path: 'src',
-        match: ['file'] as ('file' | 'path')[],
+        match: 'file',
         minify: true,
         sanitize: true,
       };

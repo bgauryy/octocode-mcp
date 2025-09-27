@@ -89,9 +89,6 @@ export const SimpleArraySchema = {
     .optional(),
 };
 
-export const FileMatchScopeSchema =
-  SimpleArraySchema.stringOrArray.describe('Scope');
-
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
   .optional()

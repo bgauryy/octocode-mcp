@@ -30,6 +30,11 @@ FEATURES:
 - GitHub search API
 - Bulk queries for comprehensive technique discovery
 
+FILTERING:
+- filename: Filter by patterns (e.g., "*.js", "App.js") - searches across all directories
+- path: Filter by location (e.g., "src/components", "test") - searches within specific paths
+- match: Control search scope - "file" (default, searches content) or "path" (searches in filenames/paths)
+
 HINTS:
 - SIMPLE keywordsToSearch: Use up to 3 focused terms per query for best results
 - AVOID multi-word patterns on exploratory research - they reduce result quality significantly
