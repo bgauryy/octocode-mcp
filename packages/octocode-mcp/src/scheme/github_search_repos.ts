@@ -1,12 +1,6 @@
 import { z } from 'zod';
-import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
-  LimitSchema,
-} from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { ToolResponse } from '../responses.js';
-
-// Simplified repository type for search results
 export interface SimplifiedRepository {
   repository: string;
   stars: number;
@@ -65,8 +59,13 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .describe(
       'Sort results by: "forks", "stars", "updated" (last update), "best-match" (relevance)'
     ),
-
-  limit: LimitSchema,
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe('Maximum number of results to return (1-20)'),
 });
 
 export type GitHubReposSearchQuery = z.infer<

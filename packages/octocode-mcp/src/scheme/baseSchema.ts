@@ -1,14 +1,7 @@
 import { z } from 'zod';
 
-export const queryIdSchema = z.string().optional().describe('query id');
-
-export const lockedSchema = z.boolean().optional().describe('Locked');
-
-export const draftSchema = z.boolean().optional().describe('Draft');
-
-// Single base schema for all queries
 export const BaseQuerySchema = z.object({
-  id: queryIdSchema,
+  id: z.string().optional().describe('query id'),
   reasoning: z
     .string()
     .optional()
@@ -22,73 +15,4 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
   return z.object({
     queries: z.array(singleQuerySchema).min(1).max(10).describe(description),
   });
-}
-
-export const SortingSchema = z.object({
-  sort: z.string().optional().describe('Sort field'),
-
-  order: z.enum(['asc', 'desc']).optional().default('desc').describe('Order'),
-});
-
-export const GitHubOwnerSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .describe('Repo owner/org');
-
-export const GitHubRepoSchema = z
-  .string()
-  .min(1)
-  .max(150)
-  .describe('Repo name');
-
-export const GitHubBranchSchema = z
-  .string()
-  .min(1)
-  .max(255)
-  .describe('Github Branch/tag/SHA');
-
-export const LimitSchema = z
-  .number()
-  .int()
-  .min(1)
-  .max(20)
-  .optional()
-  .describe('Maximum number of results to return (1-20)');
-
-export const MinifySchema = z
-  .boolean()
-  .optional()
-  .default(true)
-  .describe('minify content');
-
-export const SanitizeSchema = z
-  .boolean()
-  .optional()
-  .default(true)
-  .describe('sanitize content');
-
-export const PRMatchScopeSchema = z
-  .array(z.enum(['title', 'body', 'comments']))
-  .optional()
-  .describe(
-    'Search scope: "title" (PR titles), "body" (PR descriptions), "comments" (PR comments)'
-  );
-
-export const DateRangeSchema = z.object({
-  created: z
-    .string()
-    .optional()
-    .describe('Created date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)'),
-  updated: z
-    .string()
-    .optional()
-    .describe('Updated date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)'),
-});
-
-export interface BaseResult {
-  queryId?: string;
-  reasoning?: string;
-  failed?: boolean;
-  hints?: string[];
 }

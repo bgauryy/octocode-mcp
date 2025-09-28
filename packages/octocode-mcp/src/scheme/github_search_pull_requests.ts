@@ -1,14 +1,24 @@
 import { z } from 'zod';
-import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
-  DateRangeSchema,
-  PRMatchScopeSchema,
-  SortingSchema,
-  lockedSchema,
-  draftSchema,
-} from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { ToolResponse } from '../responses.js';
+
+export const PRMatchScopeSchema = z
+  .array(z.enum(['title', 'body', 'comments']))
+  .optional()
+  .describe(
+    'Search scope: "title" (PR titles), "body" (PR descriptions), "comments" (PR comments)'
+  );
+
+export const DateRangeSchema = z.object({
+  created: z
+    .string()
+    .optional()
+    .describe('Created date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)'),
+  updated: z
+    .string()
+    .optional()
+    .describe('Updated date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)'),
+});
 
 export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   query: z.string().optional().describe('Search query for PR content'),
@@ -22,12 +32,10 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .describe(
       'Specific PR number to fetch. When provided with owner/repo, fetches the exact PR instead of searching'
     ),
-
   state: z
     .enum(['open', 'closed'])
     .optional()
     .describe('PR state: "open" or "closed"'),
-
   assignee: z.string().optional().describe('GitHub username of assignee'),
   author: z.string().optional().describe('GitHub username of PR author'),
   commenter: z.string().optional().describe('User who commented on PR'),
@@ -42,24 +50,18 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .string()
     .optional()
     .describe('Team mentions (@org/team-name)'),
-
   label: z
     .union([z.string(), z.array(z.string())])
     .optional()
     .describe('Labels. Single label or array for OR logic'),
   'no-label': z.boolean().optional().describe('PRs without labels'),
-
   milestone: z.string().optional().describe('Milestone title'),
   'no-milestone': z.boolean().optional().describe('PRs without milestones'),
-
   project: z.string().optional().describe('Project board owner/number'),
   'no-project': z.boolean().optional().describe('PRs not in projects'),
-
   'no-assignee': z.boolean().optional().describe('PRs without assignees'),
-
   head: z.string().optional().describe('Filter on head branch name'),
   base: z.string().optional().describe('Filter on base branch name'),
-
   created: DateRangeSchema.shape.created,
   updated: DateRangeSchema.shape.updated,
   closed: z
@@ -100,8 +102,8 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     ),
 
   merged: z.boolean().optional().describe('Merged state'),
-  draft: draftSchema,
-  locked: lockedSchema,
+  draft: z.boolean().optional().describe('Draft'),
+  locked: z.boolean().optional().describe('Locked'),
 
   // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
 
@@ -111,17 +113,13 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .array(z.enum(['public', 'private', 'internal']))
     .optional()
     .describe('Repository visibility'),
-
   app: z.string().optional().describe('GitHub App author'),
-
   match: PRMatchScopeSchema,
-
   sort: z
     .enum(['created', 'updated', 'best-match'])
     .optional()
     .describe('Sort fetched results'),
-  order: SortingSchema.shape.order,
-
+  order: z.enum(['asc', 'desc']).optional().default('desc').describe('Order'),
   limit: z
     .number()
     .min(1)

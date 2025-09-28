@@ -1,26 +1,23 @@
 import { z } from 'zod';
-import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
-  GitHubOwnerSchema,
-  GitHubRepoSchema,
-  GitHubBranchSchema,
-  MinifySchema,
-  SanitizeSchema,
-} from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
 export const FileContentQuerySchema = BaseQuerySchema.extend({
-  owner: GitHubOwnerSchema,
-  repo: GitHubRepoSchema,
-  minified: MinifySchema,
-  sanitize: SanitizeSchema,
+  owner: z.string().min(1).max(200).describe('Repo owner/org'),
+  repo: z.string().min(1).max(150).describe('Repo name'),
+  minified: z.boolean().optional().default(true).describe('minify content'),
+  sanitize: z.boolean().optional().default(true).describe('sanitize content'),
   path: z
     .string()
     .describe(
       'Github File Path - MUST be exact absolute path from repo. Use github_view_repo_structure or github_search_code first to verify correct paths exist.'
     ),
-  branch: GitHubBranchSchema.optional(),
+  branch: z
+    .string()
+    .min(1)
+    .max(255)
+    .optional()
+    .describe('Github Branch/tag/SHA'),
   fullContent: z.boolean().default(false).describe('Return entire file'),
   startLine: z.number().int().min(1).optional().describe('Start line in file'),
   endLine: z.number().int().min(1).optional().describe('End line in file'),

@@ -1,17 +1,11 @@
 import { z } from 'zod';
-import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
-  GitHubOwnerSchema,
-  GitHubRepoSchema,
-  GitHubBranchSchema,
-} from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { ToolResponse } from '../responses.js';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
-  owner: GitHubOwnerSchema,
-  repo: GitHubRepoSchema,
-  branch: GitHubBranchSchema,
+  owner: z.string().min(1).max(200).describe('Repo owner/org'),
+  repo: z.string().min(1).max(150).describe('Repo name'),
+  branch: z.string().min(1).max(255).describe('Github Branch/tag/SHA'),
   path: z.string().default('').optional().describe('Path'),
   depth: z
     .number()
