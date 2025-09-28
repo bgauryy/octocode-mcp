@@ -94,19 +94,6 @@ describe('Query Builders', () => {
       );
     });
 
-    it('should build query with language filter', () => {
-      const params = toCodeSearchQuery({
-        keywordsToSearch: ['function'],
-        language: 'ts',
-
-        minify: true,
-        sanitize: true,
-      });
-
-      const query = buildCodeSearchQuery(params);
-      expect(query).toBe('function language:TypeScript');
-    });
-
     it('should build query with file filters', () => {
       const params = toCodeSearchQuery({
         keywordsToSearch: ['test'],
@@ -319,24 +306,6 @@ describe('Query Builders', () => {
       expect(query).toBe(
         'is:pr no:assignee no:label no:milestone no:project archived:false'
       );
-    });
-
-    it('should build query with milestone', () => {
-      const params = {
-        milestone: 'v1.0.0',
-      };
-
-      const query = buildPullRequestSearchQuery(params);
-      expect(query).toBe('is:pr milestone:"v1.0.0" archived:false');
-    });
-
-    it('should build query with checks status', () => {
-      const params = {
-        checks: 'success' as const,
-      };
-
-      const query = buildPullRequestSearchQuery(params);
-      expect(query).toBe('is:pr status:success archived:false');
     });
   });
 

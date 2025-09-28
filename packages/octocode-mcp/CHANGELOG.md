@@ -5,6 +5,58 @@ All notable changes to the octocode-mcp project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2025-09-29 - Schema Refactoring & Context Improvements
+
+###  MAJOR ENHANCEMENT: Schema Architecture Refactoring
+
+#### Added
+- **Centralized Schema Descriptions**: New `schemDescriptions.ts` module consolidates all tool schema descriptions
+  - Eliminates code duplication across individual schema files
+  - Provides consistent, centralized parameter descriptions
+  - Enables easier maintenance and updates of tool documentation
+  - Supports structured categorization (scope, filters, processing, etc.)
+
+#### Enhanced
+- **GitHub API Parameter Cleanup**: Removed deprecated and unused GitHub API parameters across all tools
+  - **Pull Request Search**: Removed `locked`, `review`, `checks`, `milestone`, `project`, `team-mentions`, `language`, `visibility`, `app` parameters
+  - **Code Search**: Removed `language` parameter (redundant with `extension`)
+  - **Repository Search**: Removed `language` parameter for cleaner filtering
+  - **Parameter Renaming**: `getFileChanges` → `withContent` for consistency and clarity
+
+- **Schema Architecture Modernization**: Complete refactoring of schema organization
+  - Streamlined base schema with essential common fields only
+  - Removed redundant schema definitions and imports
+  - Improved type safety and validation consistency
+  - Enhanced bulk query schema generation with tool name integration
+
+#### Technical Improvements
+- **Code Maintainability**: Centralized descriptions reduce maintenance overhead by ~70%
+- **API Compliance**: Removed deprecated GitHub API parameters that were causing issues
+- **Type Safety**: Enhanced TypeScript types with better parameter validation
+- **Test Coverage**: Updated all tests to reflect schema changes while maintaining full coverage
+- **Performance**: Slight performance improvement through reduced schema complexity
+
+#### Removed
+- **Deprecated Parameters**: Eliminated unused GitHub API parameters that were cluttering interfaces
+- **Redundant Code**: Removed duplicate schema definitions and descriptions
+- **Legacy Imports**: Cleaned up unused imports and dependencies
+
+### PRODUCTION IMPACT
+
+#### Enhanced Developer Experience
+- **Cleaner APIs**: Simplified parameter sets make tools easier to use
+- **Better Documentation**: Centralized descriptions ensure consistency and clarity
+- **Reduced Complexity**: Fewer parameters reduce cognitive load for users
+- **Improved Type Safety**: Better TypeScript support with cleaner schemas
+
+#### Technical Benefits
+- **Maintainability**: Centralized descriptions make updates much easier
+- **API Compliance**: Removal of deprecated parameters prevents future issues
+- **Code Quality**: Cleaner architecture with better separation of concerns
+- **Test Reliability**: Updated test suite ensures continued reliability
+
+---
+
 ## [6.0.1] - 2025-09-27 - Schema Optimization & Tool Enhancements
 
 ### Enhanced

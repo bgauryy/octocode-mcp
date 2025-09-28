@@ -321,7 +321,6 @@ export interface GitHubPullRequestsSearchParams {
   state?: 'open' | 'closed';
   draft?: boolean;
   merged?: boolean;
-  locked?: boolean;
   author?: string;
   assignee?: string;
   mentions?: string;
@@ -338,25 +337,15 @@ export interface GitHubPullRequestsSearchParams {
   comments?: number | string;
   reactions?: number | string;
   interactions?: number | string;
-  review?: 'none' | 'required' | 'approved' | 'changes_requested';
-  checks?: 'pending' | 'success' | 'failure';
   label?: string | string[];
-  milestone?: string;
-  project?: string;
-  'team-mentions'?: string;
   'no-assignee'?: boolean;
   'no-label'?: boolean;
   'no-milestone'?: boolean;
   'no-project'?: boolean;
-  language?: string;
-  visibility?:
-    | ('public' | 'private' | 'internal')
-    | ('public' | 'private' | 'internal')[];
-  app?: string;
   match?: ('title' | 'body' | 'comments')[];
   limit?: number;
   withComments?: boolean;
-  getFileChanges?: boolean;
+  withContent?: boolean;
   exhaustive?: boolean;
   maxPages?: number;
   pageSize?: number;

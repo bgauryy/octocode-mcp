@@ -365,7 +365,7 @@ async function transformPullRequestItem(
   }
 
   // Get additional PR details if needed (head/base SHA, etc.)
-  if (params.getFileChanges || item.pull_request) {
+  if (params.withContent || item.pull_request) {
     try {
       const [owner, repo] = result.repository.split('/');
       if (owner && repo) {
@@ -383,7 +383,7 @@ async function transformPullRequestItem(
           result.draft = prDetails.data.draft || false;
 
           // Fetch file changes if requested
-          if (params.getFileChanges) {
+          if (params.withContent) {
             const fileChanges = await fetchPRFileChangesAPI(
               owner,
               repo,
@@ -538,7 +538,7 @@ export async function transformPullRequestItemFromREST(
   }
 
   // Fetch file changes if requested
-  if (params.getFileChanges) {
+  if (params.withContent) {
     const fileChanges = await fetchPRFileChangesAPI(
       params.owner as string,
       params.repo as string,
@@ -599,7 +599,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
       owner: params.owner,
       repo: params.repo,
       prNumber: params.prNumber,
-      getFileChanges: params.getFileChanges,
+      withContent: params.withContent,
       withComments: params.withComments,
     },
     sessionId

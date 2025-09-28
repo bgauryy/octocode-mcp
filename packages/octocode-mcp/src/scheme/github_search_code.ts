@@ -1,55 +1,52 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import { GITHUB_SEARCH_CODE } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z
     .array(z.string())
     .min(1)
     .max(5)
-    .describe('Github search queries (AND logic in file)`'),
-  owner: z.string().optional().describe('Repository owner'),
-  repo: z.string().optional().describe('Repository name'),
-  language: z.string().optional().describe('file language'),
-  extension: z.string().optional().describe('file extension'),
-  stars: z
+    .describe(GITHUB_SEARCH_CODE.search.keywordsToSearch),
+  owner: z.string().optional().describe(GITHUB_SEARCH_CODE.scope.owner),
+  repo: z.string().optional().describe(GITHUB_SEARCH_CODE.scope.repo),
+  extension: z
     .string()
     .optional()
-    .describe('Stars filter (e.g., ">100", ">=1000")'),
-  filename: z
-    .string()
-    .optional()
-    .describe(
-      'Filter search results by filename patterns (e.g., "*.js", "*.tsx", "App.js")'
-    ),
-  path: z
-    .string()
-    .optional()
-    .describe(
-      'Filter search results by file/directory path (e.g., "src/components", "README.md")'
-    ),
+    .describe(GITHUB_SEARCH_CODE.filters.extension),
+  stars: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.stars),
+  filename: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.filename),
+  path: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.path),
   match: z
     .enum(['file', 'path'])
     .optional()
-    .describe(
-      'Controls WHERE to search for keywords: (default - in content), "path" (search keywords in filenames/paths)'
-    ),
+    .describe(GITHUB_SEARCH_CODE.filters.match),
   limit: z
     .number()
     .int()
     .min(1)
     .max(20)
     .optional()
-    .describe('Maximum number of results to return (1-20)'),
-  minify: z.boolean().optional().default(true).describe('minify content'),
-  sanitize: z.boolean().optional().default(true).describe('sanitize content'),
+    .describe(GITHUB_SEARCH_CODE.resultLimit.limit),
+  minify: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(GITHUB_SEARCH_CODE.processing.minify),
+  sanitize: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe(GITHUB_SEARCH_CODE.processing.sanitize),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
-  GitHubCodeSearchQuerySchema,
-  'Code search queries'
+  TOOL_NAMES.GITHUB_SEARCH_CODE,
+  GitHubCodeSearchQuerySchema
 );
 
 export interface GitHubSearchCodeInput {
