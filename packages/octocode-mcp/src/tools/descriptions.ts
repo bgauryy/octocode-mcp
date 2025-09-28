@@ -13,7 +13,7 @@ export const DESCRIPTIONS = {
 - matchString + matchStringContextLines for pattern-based extraction (used with ${TOOL_NAMES.GITHUB_SEARCH_CODE} tool)
 
 #MUST:
-- VERIFY path before fetching using other tools (${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} and ${TOOL_NAMES.GITHUB_SEARCH_CODE}) to explore repository and find correct file paths - DO NOT HALLUCINATE
+- VERIFY path before fetching using other tools (e.g. ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} and ${TOOL_NAMES.GITHUB_SEARCH_CODE}). DO NOT HALLUCINATE
 
 #HINTS:
 - Combine with search and structure tools after fetching for discovery and better research context

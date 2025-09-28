@@ -1,77 +1,200 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import { SCHEME_DESCRIPTIONS_STRUCTURED } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
 
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
   .optional()
   .describe(
-    'Search scope: "title" (PR titles), "body" (PR descriptions), "comments" (PR comments)'
+    SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.match
   );
 
 export const DateRangeSchema = z.object({
   created: z
     .string()
     .optional()
-    .describe('Created date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.created
+    ),
   updated: z
     .string()
     .optional()
-    .describe('Updated date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.updated
+    ),
 });
 
 export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
-  query: z.string().optional().describe('Search query for PR content'),
-  owner: z.string().optional().describe('Repository owner'),
-  repo: z.string().optional().describe('Repository name'),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.search.query
+    ),
+  owner: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.scope.owner
+    ),
+  repo: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.scope.repo
+    ),
   prNumber: z
     .number()
     .int()
     .positive()
     .optional()
     .describe(
-      'Specific PR number to fetch. When provided with owner/repo, fetches the exact PR instead of searching'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.scope.prNumber
     ),
   state: z
     .enum(['open', 'closed'])
     .optional()
-    .describe('PR state: "open" or "closed"'),
-  assignee: z.string().optional().describe('GitHub username of assignee'),
-  author: z.string().optional().describe('GitHub username of PR author'),
-  commenter: z.string().optional().describe('User who commented on PR'),
-  involves: z.string().optional().describe('User involved in any way'),
-  mentions: z.string().optional().describe('PRs mentioning this user'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.state
+    ),
+  assignee: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .assignee
+    ),
+  author: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.author
+    ),
+  commenter: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .commenter
+    ),
+  involves: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .involves
+    ),
+  mentions: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .mentions
+    ),
   'review-requested': z
     .string()
     .optional()
-    .describe('User/team requested for review'),
-  'reviewed-by': z.string().optional().describe('User who reviewed the PR'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'review-requested'
+      ]
+    ),
+  'reviewed-by': z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'reviewed-by'
+      ]
+    ),
   'team-mentions': z
     .string()
     .optional()
-    .describe('Team mentions (@org/team-name)'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'team-mentions'
+      ]
+    ),
   label: z
     .union([z.string(), z.array(z.string())])
     .optional()
-    .describe('Labels. Single label or array for OR logic'),
-  'no-label': z.boolean().optional().describe('PRs without labels'),
-  milestone: z.string().optional().describe('Milestone title'),
-  'no-milestone': z.boolean().optional().describe('PRs without milestones'),
-  project: z.string().optional().describe('Project board owner/number'),
-  'no-project': z.boolean().optional().describe('PRs not in projects'),
-  'no-assignee': z.boolean().optional().describe('PRs without assignees'),
-  head: z.string().optional().describe('Filter on head branch name'),
-  base: z.string().optional().describe('Filter on base branch name'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.label
+    ),
+  'no-label': z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'no-label'
+      ]
+    ),
+  milestone: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .milestone
+    ),
+  'no-milestone': z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'no-milestone'
+      ]
+    ),
+  project: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.project
+    ),
+  'no-project': z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'no-project'
+      ]
+    ),
+  'no-assignee': z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'no-assignee'
+      ]
+    ),
+  head: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.head
+    ),
+  base: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.base
+    ),
   created: DateRangeSchema.shape.created,
   updated: DateRangeSchema.shape.updated,
   closed: z
     .string()
     .optional()
-    .describe('Closed date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.closed
+    ),
   'merged-at': z
     .string()
     .optional()
-    .describe('Merged date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters[
+        'merged-at'
+      ]
+    ),
 
   comments: z
     .union([
@@ -80,7 +203,8 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     ])
     .optional()
     .describe(
-      'Comment count. Use ">10", ">=5", "<20", "5..10", or exact number'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .comments
     ),
   reactions: z
     .union([
@@ -89,7 +213,8 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     ])
     .optional()
     .describe(
-      'Reaction count. Use ">100", ">=10", "<50", "10..50", or exact number'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .reactions
     ),
   interactions: z
     .union([
@@ -98,49 +223,92 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     ])
     .optional()
     .describe(
-      'Total interactions (reactions + comments). Use ">50", "10..100", etc.'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .interactions
     ),
 
-  merged: z.boolean().optional().describe('Merged state'),
-  draft: z.boolean().optional().describe('Draft'),
-  locked: z.boolean().optional().describe('Locked'),
+  merged: z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.merged
+    ),
+  draft: z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.draft
+    ),
+  locked: z
+    .boolean()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.locked
+    ),
 
   // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
 
-  language: z.string().optional().describe('Programming language filter'),
+  language: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .language
+    ),
 
   visibility: z
     .array(z.enum(['public', 'private', 'internal']))
     .optional()
-    .describe('Repository visibility'),
-  app: z.string().optional().describe('GitHub App author'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters
+        .visibility
+    ),
+  app: z
+    .string()
+    .optional()
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.filters.app
+    ),
   match: PRMatchScopeSchema,
   sort: z
     .enum(['created', 'updated', 'best-match'])
     .optional()
-    .describe('Sort fetched results'),
-  order: z.enum(['asc', 'desc']).optional().default('desc').describe('Order'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.sorting.sort
+    ),
+  order: z
+    .enum(['asc', 'desc'])
+    .optional()
+    .default('desc')
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.sorting.order
+    ),
   limit: z
     .number()
     .min(1)
     .max(100)
     .default(30)
     .optional()
-    .describe('Maximum number of results to fetch'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.resultLimit
+        .limit
+    ),
 
   withComments: z
     .boolean()
     .default(false)
     .optional()
     .describe(
-      'Include full comment content in search results. WARNING: EXTREMELY expensive in tokens'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.outputShaping
+        .withComments
     ),
   getFileChanges: z
     .boolean()
     .default(false)
     .optional()
     .describe(
-      'Include file changes/diffs in the PR. WARNING: EXTREMELY expensive in tokens'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_PULL_REQUESTS.outputShaping
+        .getFileChanges
     ),
 });
 

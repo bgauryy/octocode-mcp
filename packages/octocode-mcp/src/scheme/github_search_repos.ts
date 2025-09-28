@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import { SCHEME_DESCRIPTIONS_STRUCTURED } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
 export interface SimplifiedRepository {
   repository: string;
@@ -14,58 +15,61 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .array(z.string())
     .optional()
     .describe(
-      'terms for searching repos by name, description, README files, documentation files, and source code files'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.search.keywordsToSearch
     ),
   topicsToSearch: z
     .array(z.string())
     .optional()
     .describe(
-      'terms for searching repos by github topics- tag used to categorize repo'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.search.topicsToSearch
     ),
-  owner: z.string().optional().describe('Repository owner'),
+  owner: z
+    .string()
+    .optional()
+    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.scope.owner),
   language: z
     .string()
     .optional()
-    .describe('Language - DO NOT USE ON EXPLORATORY SEARCHES'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.language
+    ),
   stars: z
     .string()
     .optional()
-    .describe('Stars filter (e.g., ">100", ">=1000")'),
+    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.stars),
   size: z
     .string()
     .optional()
-    .describe('Repository size filter in KB (e.g., ">1000", "<500")'),
+    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.size),
   created: z
     .string()
     .optional()
     .describe(
-      'Repository creation date filter (YYYY-MM-DD, >=YYYY-MM-DD, <=YYYY-MM-DD, YYYY-MM-DD..YYYY-MM-DD)'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.created
     ),
   updated: z
     .string()
     .optional()
     .describe(
-      'Repository last update date filter (YYYY-MM-DD, >=YYYY-MM-DD, <=YYYY-MM-DD, YYYY-MM-DD..YYYY-MM-DD)'
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.updated
     ),
   match: z
     .array(z.enum(['name', 'description', 'readme']))
     .optional()
-    .describe(
-      'Restricts search scope - filters WHERE to search: "name" (repository names only), "description" (description field only), "readme" (README files only). Combinations work as OR. Default (no match) searches ALL fields. Use to reduce noise and focus results.'
-    ),
+    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.match),
   sort: z
     .enum(['forks', 'stars', 'updated', 'best-match'])
     .optional()
-    .describe(
-      'Sort results by: "forks", "stars", "updated" (last update), "best-match" (relevance)'
-    ),
+    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.sorting.sort),
   limit: z
     .number()
     .int()
     .min(1)
     .max(20)
     .optional()
-    .describe('Maximum number of results to return (1-20)'),
+    .describe(
+      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.resultLimit.limit
+    ),
 });
 
 export type GitHubReposSearchQuery = z.infer<
