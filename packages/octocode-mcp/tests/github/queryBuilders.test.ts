@@ -320,15 +320,6 @@ describe('Query Builders', () => {
         'is:pr no:assignee no:label no:milestone no:project archived:false'
       );
     });
-
-    it('should build query with milestone', () => {
-      const params = {
-        milestone: 'v1.0.0',
-      };
-
-      const query = buildPullRequestSearchQuery(params);
-      expect(query).toBe('is:pr milestone:"v1.0.0" archived:false');
-    });
   });
 
   describe('buildCommitSearchQuery', () => {

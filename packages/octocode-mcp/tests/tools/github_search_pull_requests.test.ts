@@ -326,7 +326,6 @@ describe('GitHub Search Pull Requests Tool', () => {
             repo: 'repo',
             draft: true,
             merged: false,
-            locked: false,
           },
         ],
       });
@@ -338,7 +337,6 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: 'repo',
           draft: true,
           merged: false,
-          locked: false,
         }),
         undefined,
         expect.objectContaining({

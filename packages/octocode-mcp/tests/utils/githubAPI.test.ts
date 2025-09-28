@@ -1382,20 +1382,16 @@ describe('GitHub API Utils', () => {
               reactions: '>=10',
               interactions: '>20',
               label: ['enhancement', 'priority-medium'],
-              milestone: 'v2.0',
-              'team-mentions': 'frontend-team',
               'no-assignee': true,
               'no-label': false,
               'no-milestone': false,
               'no-project': true,
-              language: 'typescript',
-              visibility: ['public'] as ('public' | 'private' | 'internal')[],
             };
 
             await searchGitHubPullRequestsAPI(params);
 
             const expectedQuery =
-              'feature request is:pr is:closed -is:draft is:merged author:maintainer assignee:reviewer mentions:contributor commenter:user involves:team-member reviewed-by:senior-dev review-requested:code-owner head:feature-branch base:main created:>2023-01-01 updated:<2023-12-31 merged:2023-06-01..2023-06-30 closed:>2023-07-01 comments:>5 reactions:>=10 interactions:>20 label:"enhancement" label:"priority-medium" milestone:"v2.0" team:frontend-team no:assignee no:project language:typescript is:public';
+              'feature request is:pr is:closed -is:draft is:merged author:maintainer assignee:reviewer mentions:contributor commenter:user involves:team-member reviewed-by:senior-dev review-requested:code-owner head:feature-branch base:main created:>2023-01-01 updated:<2023-12-31 merged:2023-06-01..2023-06-30 closed:>2023-07-01 comments:>5 reactions:>=10 interactions:>20 label:"enhancement" label:"priority-medium" no:assignee no:project archived:false';
 
             expect(
               mockOctokit.rest.search.issuesAndPullRequests

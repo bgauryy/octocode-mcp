@@ -68,10 +68,6 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .string()
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters['reviewed-by']),
-  'team-mentions': z
-    .string()
-    .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.filters['team-mentions']),
   label: z
     .union([z.string(), z.array(z.string())])
     .optional()
@@ -80,18 +76,10 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .boolean()
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters['no-label']),
-  milestone: z
-    .string()
-    .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.milestone),
   'no-milestone': z
     .boolean()
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters['no-milestone']),
-  project: z
-    .string()
-    .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.project),
   'no-project': z
     .boolean()
     .optional()
@@ -118,7 +106,6 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .string()
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters['merged-at']),
-
   comments: z
     .union([
       z.number().int().min(0),
@@ -140,7 +127,6 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     ])
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.interactions),
-
   merged: z
     .boolean()
     .optional()
@@ -149,23 +135,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .boolean()
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.draft),
-  locked: z
-    .boolean()
-    .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.locked),
 
-  // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
-
-  language: z
-    .string()
-    .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.language),
-
-  visibility: z
-    .array(z.enum(['public', 'private', 'internal']))
-    .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.visibility),
-  app: z.string().optional().describe(GITHUB_SEARCH_PULL_REQUESTS.filters.app),
   match: PRMatchScopeSchema,
   sort: z
     .enum(['created', 'updated', 'best-match'])
@@ -183,17 +153,16 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .default(30)
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.resultLimit.limit),
-
   withComments: z
     .boolean()
     .default(false)
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withComments),
-  getFileChanges: z
+  withContent: z
     .boolean()
     .default(false)
     .optional()
-    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.getFileChanges),
+    .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withContent),
 });
 
 export type GitHubPullRequestSearchQuery = z.infer<
@@ -299,7 +268,7 @@ export interface PullRequestInfo {
   additions?: number;
   deletions?: number;
   changed_files?: number;
-  // Optional fields for when withComments=true or getFileChanges=true
+  // Optional fields for when withComments=true or withContent=true
   comment_details?: Array<{
     id: number;
     user: string;
