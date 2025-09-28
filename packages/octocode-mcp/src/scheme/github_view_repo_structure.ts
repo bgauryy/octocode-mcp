@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { SCHEME_DESCRIPTIONS_STRUCTURED } from './schemDescriptions';
+import { GITHUB_VIEW_REPO_STRUCTURE } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
@@ -8,39 +8,29 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .string()
     .min(1)
     .max(200)
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_VIEW_REPO_STRUCTURE.scope.owner
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.owner),
   repo: z
     .string()
     .min(1)
     .max(150)
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_VIEW_REPO_STRUCTURE.scope.repo
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.repo),
   branch: z
     .string()
     .min(1)
     .max(255)
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_VIEW_REPO_STRUCTURE.scope.branch
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.branch),
   path: z
     .string()
     .default('')
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_VIEW_REPO_STRUCTURE.scope.path
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.path),
   depth: z
     .number()
     .min(1)
     .max(2)
     .default(1)
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_VIEW_REPO_STRUCTURE.range.depth
-    ),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.range.depth),
 });
 
 export type GitHubViewRepoStructureQuery = z.infer<

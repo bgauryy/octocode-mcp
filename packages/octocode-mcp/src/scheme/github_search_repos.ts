@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { SCHEME_DESCRIPTIONS_STRUCTURED } from './schemDescriptions';
+import { GITHUB_SEARCH_REPOS } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
 export interface SimplifiedRepository {
   repository: string;
@@ -14,62 +14,35 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z
     .array(z.string())
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.search.keywordsToSearch
-    ),
+    .describe(GITHUB_SEARCH_REPOS.search.keywordsToSearch),
   topicsToSearch: z
     .array(z.string())
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.search.topicsToSearch
-    ),
-  owner: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.scope.owner),
+    .describe(GITHUB_SEARCH_REPOS.search.topicsToSearch),
+  owner: z.string().optional().describe(GITHUB_SEARCH_REPOS.scope.owner),
   language: z
     .string()
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.language
-    ),
-  stars: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.stars),
-  size: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.size),
-  created: z
-    .string()
-    .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.created
-    ),
-  updated: z
-    .string()
-    .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.updated
-    ),
+    .describe(GITHUB_SEARCH_REPOS.filters.language),
+  stars: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.stars),
+  size: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.size),
+  created: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.created),
+  updated: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.updated),
   match: z
     .array(z.enum(['name', 'description', 'readme']))
     .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.filters.match),
+    .describe(GITHUB_SEARCH_REPOS.filters.match),
   sort: z
     .enum(['forks', 'stars', 'updated', 'best-match'])
     .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.sorting.sort),
+    .describe(GITHUB_SEARCH_REPOS.sorting.sort),
   limit: z
     .number()
     .int()
     .min(1)
     .max(20)
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_REPOS.resultLimit.limit
-    ),
+    .describe(GITHUB_SEARCH_REPOS.resultLimit.limit),
 });
 
 export type GitHubReposSearchQuery = z.infer<

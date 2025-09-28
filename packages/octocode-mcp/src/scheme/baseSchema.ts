@@ -1,15 +1,9 @@
 import { z } from 'zod';
-import { SCHEME_DESCRIPTIONS_STRUCTURED } from './schemDescriptions';
+import { GENERAL } from './schemDescriptions';
 
 export const BaseQuerySchema = z.object({
-  id: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GENERAL.base.id),
-  reasoning: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GENERAL.base.reasoning),
+  id: z.string().optional().describe(GENERAL.base.id),
+  reasoning: z.string().optional().describe(GENERAL.base.reasoning),
 });
 
 export function createBulkQuerySchema<T extends z.ZodTypeAny>(

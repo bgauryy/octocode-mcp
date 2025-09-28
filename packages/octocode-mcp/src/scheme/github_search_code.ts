@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
-import { SCHEME_DESCRIPTIONS_STRUCTURED } from './schemDescriptions';
+import { GITHUB_SEARCH_CODE } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
@@ -8,70 +8,38 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .array(z.string())
     .min(1)
     .max(5)
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.search.keywordsToSearch
-    ),
-  owner: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.scope.owner),
-  repo: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.scope.repo),
-  language: z
-    .string()
-    .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.filters.language
-    ),
+    .describe(GITHUB_SEARCH_CODE.search.keywordsToSearch),
+  owner: z.string().optional().describe(GITHUB_SEARCH_CODE.scope.owner),
+  repo: z.string().optional().describe(GITHUB_SEARCH_CODE.scope.repo),
+  language: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.language),
   extension: z
     .string()
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.filters.extension
-    ),
-  stars: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.filters.stars),
-  filename: z
-    .string()
-    .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.filters.filename
-    ),
-  path: z
-    .string()
-    .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.filters.path),
+    .describe(GITHUB_SEARCH_CODE.filters.extension),
+  stars: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.stars),
+  filename: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.filename),
+  path: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.path),
   match: z
     .enum(['file', 'path'])
     .optional()
-    .describe(SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.filters.match),
+    .describe(GITHUB_SEARCH_CODE.filters.match),
   limit: z
     .number()
     .int()
     .min(1)
     .max(20)
     .optional()
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.resultLimit.limit
-    ),
+    .describe(GITHUB_SEARCH_CODE.resultLimit.limit),
   minify: z
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.processing.minify
-    ),
+    .describe(GITHUB_SEARCH_CODE.processing.minify),
   sanitize: z
     .boolean()
     .optional()
     .default(true)
-    .describe(
-      SCHEME_DESCRIPTIONS_STRUCTURED.GITHUB_SEARCH_CODE.processing.sanitize
-    ),
+    .describe(GITHUB_SEARCH_CODE.processing.sanitize),
 });
 
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
