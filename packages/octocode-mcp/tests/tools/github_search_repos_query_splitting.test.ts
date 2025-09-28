@@ -191,7 +191,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
         limit: 15,
         sort: 'updated',
         stars: '>=100',
-        language: 'python',
         owner: 'test-org',
         created: '>=2020-01-01',
         updated: '>=2023-01-01',
@@ -213,7 +212,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
         expect(query?.limit).toBe(15);
         expect(query?.sort).toBe('updated');
         expect(query?.stars).toBe('>=100');
-        expect(query?.language).toBe('python');
         expect(query?.owner).toBe('test-org');
         expect(query?.created).toBe('>=2020-01-01');
         expect(query?.updated).toBe('>=2023-01-01');

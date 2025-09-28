@@ -1,35 +1,46 @@
 import { z } from 'zod';
-import {
-  BaseQuerySchema,
-  createBulkQuerySchema,
-  GitHubOwnerSchema,
-  GitHubRepoSchema,
-  GitHubBranchSchema,
-} from './baseSchema';
+import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
+import { GITHUB_VIEW_REPO_STRUCTURE } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
-  owner: GitHubOwnerSchema,
-  repo: GitHubRepoSchema,
-  branch: GitHubBranchSchema,
-  path: z.string().default('').optional().describe('Path'),
+  owner: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.owner),
+  repo: z
+    .string()
+    .min(1)
+    .max(150)
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.repo),
+  branch: z
+    .string()
+    .min(1)
+    .max(255)
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.branch),
+  path: z
+    .string()
+    .default('')
+    .optional()
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.scope.path),
   depth: z
     .number()
     .min(1)
     .max(2)
     .default(1)
     .optional()
-    .describe('Depth to explore - max 2'),
+    .describe(GITHUB_VIEW_REPO_STRUCTURE.range.depth),
 });
 
 export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema
 >;
 
-// Bulk schema for multiple repository structure queries
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
-  GitHubViewRepoStructureQuerySchema,
-  'Repository structure exploration queries'
+  TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+  GitHubViewRepoStructureQuerySchema
 );
 
 export interface GitHubApiFileItem {

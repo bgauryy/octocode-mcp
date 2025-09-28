@@ -172,7 +172,6 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
   }
 
   addSearchFilters(params: GitHubCodeSearchQuery): this {
-    this.addLanguageFilter(params.language);
     this.addSimpleFilter(params.filename, 'filename');
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');
@@ -212,7 +211,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
   }
 
   addRepoFilters(params: GitHubReposSearchQuery): this {
-    this.addLanguageFilter(params.language);
     this.addArrayFilter(params.topicsToSearch, 'topic');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.size, 'size');
@@ -266,7 +264,6 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
     this.addSimpleFilter(params.state, 'is');
     this.addBooleanFilter(params.draft, 'is:draft', '-is:draft');
     this.addBooleanFilter(params.merged, 'is:merged', 'is:unmerged');
-    this.addBooleanFilter(params.locked, 'is:locked', '-is:locked');
     return this;
   }
 
@@ -294,24 +291,13 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
     return this;
   }
 
-  addReviewFilters(params: GitHubPullRequestsSearchParams): this {
-    this.addSimpleFilter(params.review, 'review');
-    if (params.checks) {
-      this.queryParts.push(`status:${params.checks}`);
-    }
+  addReviewFilters(_params: GitHubPullRequestsSearchParams): this {
+    // Review and checks filters removed
     return this;
   }
 
   addOrganizationFilters(params: GitHubPullRequestsSearchParams): this {
     this.addArrayFilter(params.label, 'label', true);
-    if (params.milestone) {
-      this.queryParts.push(`milestone:"${params.milestone}"`);
-    }
-    if (params['team-mentions']) {
-      this.queryParts.push(`team:${params['team-mentions']}`);
-    }
-    this.addSimpleFilter(params.project, 'project');
-    this.addSimpleFilter(params.app, 'app');
     return this;
   }
 
@@ -323,9 +309,7 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
     return this;
   }
 
-  addMiscFilters(params: GitHubPullRequestsSearchParams): this {
-    this.addLanguageFilter(params.language);
-    this.addArrayFilter(params.visibility, 'is');
+  addMiscFilters(_params: GitHubPullRequestsSearchParams): this {
     this.queryParts.push('archived:false');
     return this;
   }
@@ -536,28 +520,19 @@ export function shouldUseSearchForPRs(
     params.involves !== undefined ||
     params['reviewed-by'] !== undefined ||
     params['review-requested'] !== undefined ||
-    params.review !== undefined ||
-    params.checks !== undefined ||
     params.reactions !== undefined ||
     params.comments !== undefined ||
     params.interactions !== undefined ||
-    params.milestone !== undefined ||
-    params.project !== undefined ||
-    params['team-mentions'] !== undefined ||
     params['no-assignee'] !== undefined ||
     params['no-label'] !== undefined ||
     params['no-milestone'] !== undefined ||
     params['no-project'] !== undefined ||
-    params.language !== undefined ||
-    params.visibility !== undefined ||
     // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
-    params.app !== undefined ||
     params.created !== undefined ||
     params.updated !== undefined ||
     params['merged-at'] !== undefined ||
     params.closed !== undefined ||
     params.merged !== undefined ||
-    params.locked !== undefined ||
     Array.isArray(params.owner) ||
     Array.isArray(params.repo)
   );

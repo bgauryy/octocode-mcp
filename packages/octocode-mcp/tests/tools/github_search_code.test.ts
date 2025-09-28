@@ -72,7 +72,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         keywordsToSearch: ['function', 'component'],
         owner: 'facebook',
         repo: 'react',
-        language: 'javascript',
         path: 'src/components',
         filename: 'App.js',
         extension: 'js',
@@ -85,7 +84,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       if (result.success) {
         expect(result.data.owner).toBe('facebook');
         expect(result.data.repo).toBe('react');
-        expect(result.data.language).toBe('javascript');
         expect(result.data.path).toBe('src/components');
         expect(result.data.filename).toBe('App.js');
         expect(result.data.extension).toBe('js');
@@ -359,7 +357,6 @@ describe('Quality Boosting and Research Goals', () => {
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
-      language: 'javascript',
       limit: 5,
       minify: true,
       sanitize: true,
@@ -367,7 +364,7 @@ describe('Quality Boosting and Research Goals', () => {
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
+    expect(callArgs.q).toBe('useMemo React repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
     // Note: order parameter was deprecated by GitHub in April 2023
   });
@@ -386,7 +383,6 @@ describe('Quality Boosting and Research Goals', () => {
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
-      language: 'javascript',
       limit: 5,
       minify: true,
       sanitize: true,
@@ -394,7 +390,7 @@ describe('Quality Boosting and Research Goals', () => {
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
+    expect(callArgs.q).toBe('useMemo React repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
   });
 
@@ -412,7 +408,6 @@ describe('Quality Boosting and Research Goals', () => {
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
-      language: 'javascript',
       limit: 5,
       minify: true,
       sanitize: true,
@@ -420,7 +415,7 @@ describe('Quality Boosting and Research Goals', () => {
 
     expect(result).not.toHaveProperty('error');
     const callArgs = mockOctokit.rest.search.code.mock.calls[0]?.[0];
-    expect(callArgs.q).toBe('useMemo React language:JavaScript repo:test/repo');
+    expect(callArgs.q).toBe('useMemo React repo:test/repo');
     expect(callArgs.q).not.toMatch(/stars:>10/);
   });
 
@@ -438,7 +433,6 @@ describe('Quality Boosting and Research Goals', () => {
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'facebook',
       repo: 'react',
-      language: 'javascript',
       limit: 5,
 
       minify: true,
@@ -466,7 +460,6 @@ describe('Quality Boosting and Research Goals', () => {
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
-      language: 'javascript',
       stars: '>1000',
       limit: 5,
       minify: true,
