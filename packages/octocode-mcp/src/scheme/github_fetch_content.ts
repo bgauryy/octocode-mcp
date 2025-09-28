@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_FETCH_CONTENT } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 
 export const FileContentQuerySchema = BaseQuerySchema.extend({
   owner: z.string().min(1).max(200).describe(GITHUB_FETCH_CONTENT.scope.owner),
@@ -54,10 +55,9 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
 
 export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 
-// Bulk schema for multiple file content queries
 export const FileContentBulkQuerySchema = createBulkQuerySchema(
-  FileContentQuerySchema,
-  'File content fetch queries - Use github_view_repo_structure or github_search_code first to find correct file paths'
+  TOOL_NAMES.GITHUB_FETCH_CONTENT,
+  FileContentQuerySchema
 );
 
 /**

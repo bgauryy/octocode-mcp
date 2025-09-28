@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_PULL_REQUESTS } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
@@ -199,10 +200,9 @@ export type GitHubPullRequestSearchQuery = z.infer<
   typeof GitHubPullRequestSearchQuerySchema
 >;
 
-// Bulk schema for multiple pull request searches
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
-  GitHubPullRequestSearchQuerySchema,
-  'Pull request search queries'
+  TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+  GitHubPullRequestSearchQuerySchema
 );
 
 // ============================================================================

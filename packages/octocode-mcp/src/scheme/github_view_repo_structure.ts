@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_VIEW_REPO_STRUCTURE } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
   owner: z
@@ -37,10 +38,9 @@ export type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema
 >;
 
-// Bulk schema for multiple repository structure queries
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
-  GitHubViewRepoStructureQuerySchema,
-  'Repository structure exploration queries'
+  TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+  GitHubViewRepoStructureQuerySchema
 );
 
 export interface GitHubApiFileItem {

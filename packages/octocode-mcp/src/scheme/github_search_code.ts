@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_CODE } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z
@@ -45,8 +46,8 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
 export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
-  GitHubCodeSearchQuerySchema,
-  'Code search queries'
+  TOOL_NAMES.GITHUB_SEARCH_CODE,
+  GitHubCodeSearchQuerySchema
 );
 
 export interface GitHubSearchCodeInput {

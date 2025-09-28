@@ -7,10 +7,16 @@ export const BaseQuerySchema = z.object({
 });
 
 export function createBulkQuerySchema<T extends z.ZodTypeAny>(
-  singleQuerySchema: T,
-  description: string
+  toolName: string,
+  singleQuerySchema: T
 ) {
   return z.object({
-    queries: z.array(singleQuerySchema).min(1).max(10).describe(description),
+    queries: z
+      .array(singleQuerySchema)
+      .min(1)
+      .max(10)
+      .describe(
+        `Research queries for tool: ${toolName}. Before creating queries: check context and validate tool scheme and descriptions to generate the most effective queries`
+      ),
   });
 }

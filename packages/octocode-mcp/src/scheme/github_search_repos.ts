@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_REPOS } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
+import { TOOL_NAMES } from '../constants';
 export interface SimplifiedRepository {
   repository: string;
   stars: number;
@@ -49,10 +50,9 @@ export type GitHubReposSearchQuery = z.infer<
   typeof GitHubReposSearchSingleQuerySchema
 >;
 
-// Bulk schema for tool registration
 export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
-  GitHubReposSearchSingleQuerySchema,
-  'Repository search queries'
+  TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+  GitHubReposSearchSingleQuerySchema
 );
 
 // ============================================================================
