@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   BaseQuerySchema,
   createBulkQuerySchema,
-  SimpleArraySchema,
   DateRangeSchema,
   PRMatchScopeSchema,
   SortingSchema,
@@ -13,15 +12,8 @@ import { ToolResponse } from '../responses.js';
 
 export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
   query: z.string().optional().describe('Search query for PR content'),
-
-  owner: SimpleArraySchema.stringOrArray.describe(
-    'Repository owner - single owner or array'
-  ),
-  repo: SimpleArraySchema.stringOrArray.describe(
-    'Repository name - single repo or array'
-  ),
-
-  // New parameter for fetching specific PR by number
+  owner: z.string().optional().describe('Repository owner'),
+  repo: z.string().optional().describe('Repository name'),
   prNumber: z
     .number()
     .int()
@@ -51,9 +43,10 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Team mentions (@org/team-name)'),
 
-  label: SimpleArraySchema.stringOrArray.describe(
-    'Labels. Single label or array for OR logic'
-  ),
+  label: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe('Labels. Single label or array for OR logic'),
   'no-label': z.boolean().optional().describe('PRs without labels'),
 
   milestone: z.string().optional().describe('Milestone title'),
@@ -78,28 +71,37 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe('Merged date. Use ">2024-01-01", "2024-01-01..2024-12-31", etc.'),
 
-  comments: SimpleArraySchema.numberOrStringRange.describe(
-    'Comment count. Use ">10", ">=5", "<20", "5..10", or exact number'
-  ),
-  reactions: SimpleArraySchema.numberOrStringRange.describe(
-    'Reaction count. Use ">100", ">=10", "<50", "10..50", or exact number'
-  ),
-  interactions: SimpleArraySchema.numberOrStringRange.describe(
-    'Total interactions (reactions + comments). Use ">50", "10..100", etc.'
-  ),
+  comments: z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+    ])
+    .optional()
+    .describe(
+      'Comment count. Use ">10", ">=5", "<20", "5..10", or exact number'
+    ),
+  reactions: z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+    ])
+    .optional()
+    .describe(
+      'Reaction count. Use ">100", ">=10", "<50", "10..50", or exact number'
+    ),
+  interactions: z
+    .union([
+      z.number().int().min(0),
+      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
+    ])
+    .optional()
+    .describe(
+      'Total interactions (reactions + comments). Use ">50", "10..100", etc.'
+    ),
 
   merged: z.boolean().optional().describe('Merged state'),
   draft: draftSchema,
   locked: lockedSchema,
-
-  review: z
-    .enum(['none', 'required', 'approved', 'changes_requested'])
-    .optional()
-    .describe('Review status'),
-  checks: z
-    .enum(['pending', 'success', 'failure'])
-    .optional()
-    .describe('CI checks status'),
 
   // archived and fork parameters removed - always optimized to exclude archived repositories and forks for better quality
 

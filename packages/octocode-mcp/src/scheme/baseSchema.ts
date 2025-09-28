@@ -68,19 +68,6 @@ export const SanitizeSchema = z
   .default(true)
   .describe('sanitize content');
 
-export const SimpleArraySchema = {
-  /** Simple string or array of strings - no nulls */
-  stringOrArray: z.union([z.string(), z.array(z.string())]).optional(),
-
-  /** Numeric range - number or string pattern */
-  numberOrStringRange: z
-    .union([
-      z.number().int().min(0),
-      z.string().regex(/^(>=?\d+|<=?\d+|\d+\.\.\d+|\d+)$/),
-    ])
-    .optional(),
-};
-
 export const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))
   .optional()

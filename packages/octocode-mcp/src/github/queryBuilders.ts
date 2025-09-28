@@ -294,11 +294,8 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
     return this;
   }
 
-  addReviewFilters(params: GitHubPullRequestsSearchParams): this {
-    this.addSimpleFilter(params.review, 'review');
-    if (params.checks) {
-      this.queryParts.push(`status:${params.checks}`);
-    }
+  addReviewFilters(_params: GitHubPullRequestsSearchParams): this {
+    // Review and checks filters removed
     return this;
   }
 
@@ -536,8 +533,6 @@ export function shouldUseSearchForPRs(
     params.involves !== undefined ||
     params['reviewed-by'] !== undefined ||
     params['review-requested'] !== undefined ||
-    params.review !== undefined ||
-    params.checks !== undefined ||
     params.reactions !== undefined ||
     params.comments !== undefined ||
     params.interactions !== undefined ||

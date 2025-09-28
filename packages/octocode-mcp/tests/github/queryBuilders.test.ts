@@ -329,15 +329,6 @@ describe('Query Builders', () => {
       const query = buildPullRequestSearchQuery(params);
       expect(query).toBe('is:pr milestone:"v1.0.0" archived:false');
     });
-
-    it('should build query with checks status', () => {
-      const params = {
-        checks: 'success' as const,
-      };
-
-      const query = buildPullRequestSearchQuery(params);
-      expect(query).toBe('is:pr status:success archived:false');
-    });
   });
 
   describe('buildCommitSearchQuery', () => {

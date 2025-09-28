@@ -338,8 +338,6 @@ export interface GitHubPullRequestsSearchParams {
   comments?: number | string;
   reactions?: number | string;
   interactions?: number | string;
-  review?: 'none' | 'required' | 'approved' | 'changes_requested';
-  checks?: 'pending' | 'success' | 'failure';
   label?: string | string[];
   milestone?: string;
   project?: string;

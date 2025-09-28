@@ -1381,8 +1381,6 @@ describe('GitHub API Utils', () => {
               comments: '>5',
               reactions: '>=10',
               interactions: '>20',
-              review: 'approved' as const,
-              checks: 'success' as const,
               label: ['enhancement', 'priority-medium'],
               milestone: 'v2.0',
               'team-mentions': 'frontend-team',
@@ -1397,7 +1395,7 @@ describe('GitHub API Utils', () => {
             await searchGitHubPullRequestsAPI(params);
 
             const expectedQuery =
-              'feature request is:pr is:closed -is:draft is:merged author:maintainer assignee:reviewer mentions:contributor commenter:user involves:team-member reviewed-by:senior-dev review-requested:code-owner head:feature-branch base:main created:>2023-01-01 updated:<2023-12-31 merged:2023-06-01..2023-06-30 closed:>2023-07-01 comments:>5 reactions:>=10 interactions:>20 review:approved status:success label:"enhancement" label:"priority-medium" milestone:"v2.0" team:frontend-team no:assignee no:project language:typescript is:public';
+              'feature request is:pr is:closed -is:draft is:merged author:maintainer assignee:reviewer mentions:contributor commenter:user involves:team-member reviewed-by:senior-dev review-requested:code-owner head:feature-branch base:main created:>2023-01-01 updated:<2023-12-31 merged:2023-06-01..2023-06-30 closed:>2023-07-01 comments:>5 reactions:>=10 interactions:>20 label:"enhancement" label:"priority-medium" milestone:"v2.0" team:frontend-team no:assignee no:project language:typescript is:public';
 
             expect(
               mockOctokit.rest.search.issuesAndPullRequests
