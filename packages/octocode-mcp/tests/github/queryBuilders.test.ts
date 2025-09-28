@@ -94,19 +94,6 @@ describe('Query Builders', () => {
       );
     });
 
-    it('should build query with language filter', () => {
-      const params = toCodeSearchQuery({
-        keywordsToSearch: ['function'],
-        language: 'ts',
-
-        minify: true,
-        sanitize: true,
-      });
-
-      const query = buildCodeSearchQuery(params);
-      expect(query).toBe('function language:TypeScript');
-    });
-
     it('should build query with file filters', () => {
       const params = toCodeSearchQuery({
         keywordsToSearch: ['test'],

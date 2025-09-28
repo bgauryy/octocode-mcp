@@ -12,7 +12,6 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_SEARCH_CODE.search.keywordsToSearch),
   owner: z.string().optional().describe(GITHUB_SEARCH_CODE.scope.owner),
   repo: z.string().optional().describe(GITHUB_SEARCH_CODE.scope.repo),
-  language: z.string().optional().describe(GITHUB_SEARCH_CODE.filters.language),
   extension: z
     .string()
     .optional()

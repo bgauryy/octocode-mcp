@@ -230,7 +230,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'Button language:typescript repo:facebook/react',
+        q: 'Button repo:facebook/react',
         per_page: 30,
         page: 1,
         headers: {
@@ -385,7 +385,6 @@ describe('GitHub API Utils', () => {
 
       const params: GitHubCodeSearchQuery = {
         keywordsToSearch: ['function', 'export'],
-        language: 'javascript',
         owner: 'microsoft',
         repo: 'vscode',
         filename: 'index.js',
@@ -399,7 +398,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function export language:JavaScript filename:index.js extension:js path:src repo:microsoft/vscode in:file',
+        q: 'function export filename:index.js extension:js path:src repo:microsoft/vscode in:file',
         per_page: 30,
         page: 1,
         headers: {
@@ -632,7 +631,7 @@ describe('GitHub API Utils', () => {
       await searchGitHubCodeAPI(params);
 
       expect(mockOctokit.rest.search.code).toHaveBeenCalledWith({
-        q: 'function language:JavaScript repo:octocat/test',
+        q: 'function repo:octocat/test',
         per_page: 30,
         page: 1,
         headers: {

@@ -172,7 +172,6 @@ class CodeSearchQueryBuilder extends BaseQueryBuilder {
   }
 
   addSearchFilters(params: GitHubCodeSearchQuery): this {
-    this.addLanguageFilter(params.language);
     this.addSimpleFilter(params.filename, 'filename');
     this.addSimpleFilter(params.extension, 'extension');
     this.addSimpleFilter(params.path, 'path');

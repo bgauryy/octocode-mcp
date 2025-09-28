@@ -27,15 +27,13 @@ Find relevant content for research context
 GitHub search API, search several queries at once
 
 FILTERING:
-- filename: Filter by patterns (e.g., "*.js", "App.js") - searches across all directories
-- path: Filter by location (e.g., "src/components", "test") - searches within specific paths
-- match: Control search scope - "file" (default, searches content) or "path" (searches in filenames/paths)
+- Use Filters for targeted search (by scheme)
 
 HINTS:
-- SIMPLE keywordsToSearch: Use up to 3 focused one word terms per query for best results
+- keywordsToSearch: Use up to 3 focused one word terms per query for best results
 - AVOID complex keywords and terms on exploratory research 
-- Use separate queries rather than cramming multiple concepts into one query
-- ALWAYS fetch quality results for better research context
+- Use separate queries for separate search goals
+- fetch quality results for better research context
 - Get relevance of results by its content and its path
 - Search more if needed for better context`,
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `#Search repositories

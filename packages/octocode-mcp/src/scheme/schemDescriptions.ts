@@ -16,7 +16,6 @@ export const GITHUB_SEARCH_CODE = {
     repo: 'Scope: Repository name',
   },
   filters: {
-    language: 'Filter: Programming language',
     extension: 'Filter: File extension',
     stars: 'Filter: Stars (e.g., ">100", ">=1000")',
     filename: `Filter: by filename patterns (e.g., "*.js", "*.tsx", "App.js")`,
