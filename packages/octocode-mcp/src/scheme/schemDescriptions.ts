@@ -47,7 +47,7 @@ export const GITHUB_SEARCH_REPOS = {
     created: 'Filter: Creation date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)',
     updated: 'Filter: Last update date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)',
     match:
-      'Filter: search match scope (where to search). "name" (repo names), "description" (repo description), "readme" (repo README). Combinations work as OR. Default (no match) searches ALL fields',
+      'Filter: search scope). "name" - repo names, "description" - repo description, "readme" - repo README. Combinations work as OR. Default (no match) searches ALL fields',
   },
   sorting: {
     sort: 'Sort: results by: "forks", "stars", "updated" , "best-match"',
