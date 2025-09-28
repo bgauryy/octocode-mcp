@@ -21,10 +21,6 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe(GITHUB_SEARCH_REPOS.search.topicsToSearch),
   owner: z.string().optional().describe(GITHUB_SEARCH_REPOS.scope.owner),
-  language: z
-    .string()
-    .optional()
-    .describe(GITHUB_SEARCH_REPOS.filters.language),
   stars: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.stars),
   size: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.size),
   created: z.string().optional().describe(GITHUB_SEARCH_REPOS.filters.created),

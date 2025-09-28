@@ -42,16 +42,15 @@ export const GITHUB_SEARCH_REPOS = {
     owner: 'Scope: Repository owner',
   },
   filters: {
-    language: 'Filter: Programming language',
     stars: 'Filter: stars (e.g., ">100", ">=1000")',
     size: 'Filter: repository size filter in KB (e.g., ">1000", "<500")',
     created: 'Filter: Creation date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)',
     updated: 'Filter: Last update date (YYYY-MM-DD, >=YYYY-MM-DD, etc.)',
     match:
-      'Filter: Restricts search scope - filters WHERE to search: "name" (repository names only), "description" (description field only), "readme" (README files only). Combinations work as OR. Default (no match) searches ALL fields. Use to reduce noise and focus results.',
+      'Filter: search match scope (where to search). "name" (repo names), "description" (repo description), "readme" (repo README). Combinations work as OR. Default (no match) searches ALL fields',
   },
   sorting: {
-    sort: 'Sort: results by: "forks", "stars", "updated" (last update), "best-match" (relevance)',
+    sort: 'Sort: results by: "forks", "stars", "updated" , "best-match"',
   },
   resultLimit: {
     limit: 'ResultLimit: maximum number of results to return from search',

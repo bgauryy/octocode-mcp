@@ -665,14 +665,13 @@ describe('GitHub API Utils', () => {
 
         const params = {
           keywordsToSearch: ['react'],
-          language: 'javascript',
           stars: '>1000',
         };
 
         await searchGitHubReposAPI(params);
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
-          q: 'react language:JavaScript stars:>1000 is:not-archived',
+          q: 'react stars:>1000 is:not-archived',
           per_page: 30,
           page: 1,
         });
@@ -717,7 +716,6 @@ describe('GitHub API Utils', () => {
 
         const params = {
           keywordsToSearch: ['machine', 'learning'],
-          language: 'python',
           owner: 'google',
           topicsToSearch: ['ml', 'ai'],
           stars: '>100',
@@ -738,7 +736,7 @@ describe('GitHub API Utils', () => {
         await searchGitHubReposAPI(params);
 
         const expectedQuery =
-          'machine learning user:google language:python topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived';
+          'machine learning user:google topic:ml topic:ai stars:>100 size:<1000 created:>2020-01-01 pushed:<2023-12-31 in:name in:description is:not-archived';
 
         expect(mockOctokit.rest.search.repos).toHaveBeenCalledWith({
           q: expectedQuery,

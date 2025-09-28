@@ -211,7 +211,6 @@ class RepoSearchQueryBuilder extends BaseQueryBuilder {
   }
 
   addRepoFilters(params: GitHubReposSearchQuery): this {
-    this.addLanguageFilter(params.language);
     this.addArrayFilter(params.topicsToSearch, 'topic');
     this.addSimpleFilter(params.stars, 'stars');
     this.addSimpleFilter(params.size, 'size');
