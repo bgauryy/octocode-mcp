@@ -37,7 +37,7 @@ export const GITHUB_SEARCH_CODE = {
 export const GITHUB_SEARCH_REPOS = {
   search: {
     keywordsToSearch: 'Search: keywords',
-    topicsToSearch: 'Search: topics',
+    topicsToSearch: 'Search: by categories / github topics',
   },
   scope: {
     owner: 'Scope: Repository owner',

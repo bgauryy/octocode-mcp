@@ -41,15 +41,16 @@ HINTS:
   [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: `#Search repositories
 
 #GOAL:
-Find repositories for research
+Find repositories for research by keywords and topics
 
 #FEATURES:
 GitHub search API, search several queries at once
 
 #HINTS:
-- Use match parameter to reduce noise and focus results
-- Combine filters for targeted discovery
-- Popular repos (high stars) often have better examples`,
+- Use topicsToSearch for discovery by categories / github topics
+- Use filters for targeted discovery
+- Popular repos (high stars) often have better examples
+- Repositories from topics search should be verified for relevance using reasoning and content`,
   [TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE]: `#Explore repository structure
 
 #GOAL:
