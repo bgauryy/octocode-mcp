@@ -212,7 +212,6 @@ export BETA="1"
 
 - **Issues & Bugs:** [GitHub Issues](https://github.com/bgauryy/octocode-mcp/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/bgauryy/octocode-mcp/discussions)
-- **Community:** [Discord](https://discord.gg/octocode)
 - **Documentation:** [octocode.ai](https://octocode.ai)
 ---
 
