@@ -9,6 +9,10 @@ vi.mock('../../src/github/index.js', () => ({
   searchGitHubReposAPI: vi.fn(),
 }));
 
+vi.mock('../../src/serverConfig.js', () => ({
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 import { searchGitHubReposAPI } from '../../src/github/index.js';
 
 describe('GitHub Search Repositories Query Splitting', () => {

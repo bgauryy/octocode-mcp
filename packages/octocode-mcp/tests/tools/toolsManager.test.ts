@@ -56,6 +56,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -84,6 +85,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -113,6 +115,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -133,6 +136,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -157,6 +161,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       registerTools(mockServer);
@@ -179,6 +184,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       registerTools(mockServer);
@@ -198,6 +204,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       registerTools(mockServer);
@@ -217,6 +224,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -243,6 +251,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -269,6 +278,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -298,6 +308,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       const result = registerTools(mockServer);
@@ -319,6 +330,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       // Make first tool throw error
@@ -340,6 +352,7 @@ describe('ToolsManager', () => {
         betaEnabled: false,
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       // Make multiple tools throw errors

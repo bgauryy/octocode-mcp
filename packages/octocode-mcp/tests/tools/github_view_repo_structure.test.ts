@@ -10,6 +10,10 @@ vi.mock('../../src/github/index.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
+vi.mock('../../src/serverConfig.js', () => ({
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
 describe('GitHub View Repository Structure Tool', () => {

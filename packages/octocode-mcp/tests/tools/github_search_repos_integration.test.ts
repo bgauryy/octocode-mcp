@@ -29,6 +29,10 @@ vi.mock('../../src/github/index.js', () => ({
   }),
 }));
 
+vi.mock('../../src/serverConfig.js', () => ({
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 describe('GitHub Search Repositories Response Structure Test', () => {
   it('should return YAML response with correct structure (no total_count, forks, language)', async () => {
     const mockServer = createMockMcpServer();

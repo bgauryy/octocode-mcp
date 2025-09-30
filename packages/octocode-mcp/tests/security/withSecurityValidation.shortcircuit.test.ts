@@ -7,6 +7,8 @@ import { withSecurityValidation } from '../../src/security/withSecurityValidatio
 const mockIsEnterpriseMode = vi.hoisted(() => vi.fn());
 const mockGetUserContext = vi.hoisted(() => vi.fn());
 const mockOrgValidate = vi.hoisted(() => vi.fn());
+const mockIsLoggingEnabled = vi.hoisted(() => vi.fn(() => false));
+const mockLogToolCall = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../../src/utils/enterpriseUtils.js', () => ({
   isEnterpriseMode: mockIsEnterpriseMode,
@@ -14,6 +16,25 @@ vi.mock('../../src/utils/enterpriseUtils.js', () => ({
 
 vi.mock('../../src/github/userInfo.js', () => ({
   getUserContext: mockGetUserContext,
+}));
+
+vi.mock('../../src/serverConfig.js', () => ({
+  isLoggingEnabled: mockIsLoggingEnabled,
+}));
+
+vi.mock('../../src/session.js', () => ({
+  logToolCall: mockLogToolCall,
+}));
+
+vi.mock('../../src/security/contentSanitizer.js', () => ({
+  ContentSanitizer: {
+    validateInputParameters: vi.fn(params => ({
+      isValid: true,
+      sanitizedParams: params,
+      warnings: [],
+      hasSecrets: false,
+    })),
+  },
 }));
 
 describe('withSecurityValidation enterprise short-circuit', () => {
@@ -29,7 +50,7 @@ describe('withSecurityValidation enterprise short-circuit', () => {
       content: [{ type: 'text' as const, text: `ok:${args.a}` }],
     }));
 
-    const wrapped = withSecurityValidation(handler);
+    const wrapped = withSecurityValidation('test_tool', handler);
     const result = await wrapped(
       { a: 1 },
       { authInfo: undefined, sessionId: undefined }
@@ -55,7 +76,7 @@ describe('withSecurityValidation enterprise short-circuit', () => {
       content: [{ type: 'text' as const, text: `ok:${args.a}` }],
     }));
 
-    const wrapped = withSecurityValidation(handler);
+    const wrapped = withSecurityValidation('test_tool', handler);
     const result = await wrapped(
       { a: 2 },
       { authInfo: undefined, sessionId: undefined }

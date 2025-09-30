@@ -30,6 +30,10 @@ vi.mock('../../src/utils/cache.js', () => ({
   }),
 }));
 
+vi.mock('../../src/serverConfig.js', () => ({
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 // Import after mocking
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 
