@@ -8,6 +8,7 @@ import {
   getServerConfig,
   isBetaEnabled,
   isSamplingEnabled,
+  isLoggingEnabled,
 } from '../src/serverConfig.js';
 
 // Mock dependencies
@@ -37,6 +38,7 @@ describe('ServerConfig - Simplified Version', () => {
     delete process.env.TOOLS_TO_RUN;
     delete process.env.ENABLE_TOOLS;
     delete process.env.DISABLE_TOOLS;
+    delete process.env.LOG;
   });
 
   afterEach(() => {
@@ -209,6 +211,72 @@ describe('ServerConfig - Simplified Version', () => {
 
         expect(isBetaEnabled()).toBe(testCase.expected);
         expect(isSamplingEnabled()).toBe(testCase.expected);
+      }
+    });
+  });
+
+  describe('Logging Configuration', () => {
+    it('should enable logging by default when LOG is not set', async () => {
+      mockGetGithubCLIToken.mockResolvedValue(null);
+      delete process.env.LOG;
+
+      await initialize();
+
+      expect(isLoggingEnabled()).toBe(true);
+      expect(getServerConfig().loggingEnabled).toBe(true);
+    });
+
+    it('should enable logging when LOG is set to true', async () => {
+      mockGetGithubCLIToken.mockResolvedValue(null);
+      process.env.LOG = 'true';
+
+      await initialize();
+
+      expect(isLoggingEnabled()).toBe(true);
+      expect(getServerConfig().loggingEnabled).toBe(true);
+    });
+
+    it('should disable logging when LOG is set to false', async () => {
+      mockGetGithubCLIToken.mockResolvedValue(null);
+      process.env.LOG = 'false';
+
+      await initialize();
+
+      expect(isLoggingEnabled()).toBe(false);
+      expect(getServerConfig().loggingEnabled).toBe(false);
+    });
+
+    it('should handle various LOG flag formats', async () => {
+      const testCases = [
+        {
+          value: undefined,
+          expected: true,
+          description: 'undefined (default)',
+        },
+        { value: 'true', expected: true, description: 'true' },
+        { value: 'TRUE', expected: true, description: 'TRUE' },
+        { value: 'false', expected: false, description: 'false' },
+        { value: 'FALSE', expected: false, description: 'FALSE' },
+        { value: 'False', expected: false, description: 'False' },
+        { value: '1', expected: true, description: '1 (truthy)' },
+        { value: '0', expected: true, description: '0 (not false string)' },
+        { value: '', expected: true, description: 'empty string' },
+        { value: 'anything', expected: true, description: 'any other value' },
+      ];
+
+      for (const testCase of testCases) {
+        cleanup();
+        if (testCase.value === undefined) {
+          delete process.env.LOG;
+        } else {
+          process.env.LOG = testCase.value;
+        }
+        mockGetGithubCLIToken.mockResolvedValue(null);
+
+        await initialize();
+
+        expect(isLoggingEnabled()).toBe(testCase.expected);
+        expect(getServerConfig().loggingEnabled).toBe(testCase.expected);
       }
     });
   });

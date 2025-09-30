@@ -35,6 +35,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
       },
     },
     withSecurityValidation(
+      TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       async (
         args: {
           queries: GitHubPullRequestSearchQuery[];

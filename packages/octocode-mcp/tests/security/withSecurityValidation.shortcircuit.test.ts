@@ -29,7 +29,7 @@ describe('withSecurityValidation enterprise short-circuit', () => {
       content: [{ type: 'text' as const, text: `ok:${args.a}` }],
     }));
 
-    const wrapped = withSecurityValidation(handler);
+    const wrapped = withSecurityValidation('test_tool', handler);
     const result = await wrapped(
       { a: 1 },
       { authInfo: undefined, sessionId: undefined }
@@ -55,7 +55,7 @@ describe('withSecurityValidation enterprise short-circuit', () => {
       content: [{ type: 'text' as const, text: `ok:${args.a}` }],
     }));
 
-    const wrapped = withSecurityValidation(handler);
+    const wrapped = withSecurityValidation('test_tool', handler);
     const result = await wrapped(
       { a: 2 },
       { authInfo: undefined, sessionId: undefined }

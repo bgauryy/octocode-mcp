@@ -13,6 +13,11 @@ import {
   getGitHubToken,
 } from './serverConfig.js';
 import { createLogger, LoggerFactory } from './utils/logger.js';
+import {
+  initializeSession,
+  logSessionInit,
+  logSessionError,
+} from './session.js';
 import { version, name } from '../package.json';
 
 const SERVER_CONFIG: Implementation = {
@@ -28,6 +33,10 @@ async function startServer() {
 
   try {
     await initialize();
+
+    // Initialize session tracking
+    const session = initializeSession();
+
     const server = new McpServer(SERVER_CONFIG, {
       capabilities: {
         prompts: {},
@@ -38,7 +47,7 @@ async function startServer() {
       },
     });
     logger = createLogger(server, 'server');
-    await logger.info('Server starting');
+    await logger.info('Server starting', { sessionId: session.getSessionId() });
 
     await registerAllTools(server);
 
@@ -58,7 +67,15 @@ async function startServer() {
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    await logger.info('Server ready', { pid: process.pid });
+    await logger.info('Server ready', {
+      pid: process.pid,
+      sessionId: session.getSessionId(),
+    });
+
+    // Log session initialization (fire-and-forget)
+    logSessionInit().catch(() => {
+      // Silently ignore logging errors
+    });
 
     // Ensure all buffered output is sent
     process.stdout.uncork();
@@ -135,6 +152,9 @@ async function startServer() {
       if (logger) {
         logger.error('Uncaught exception', { error: error.message });
       }
+      logSessionError(`Uncaught exception: ${error.message}`).catch(() => {
+        // Silently ignore logging errors
+      });
       gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
 
@@ -142,6 +162,9 @@ async function startServer() {
       if (logger) {
         logger.error('Unhandled rejection', { reason: String(reason) });
       }
+      logSessionError(`Unhandled rejection: ${String(reason)}`).catch(() => {
+        // Silently ignore logging errors
+      });
       gracefulShutdown('UNHANDLED_REJECTION');
     });
 
@@ -151,6 +174,9 @@ async function startServer() {
     if (logger) {
       await logger.error('Startup failed', { error: String(startupError) });
     }
+    logSessionError(`Startup failed: ${String(startupError)}`).catch(() => {
+      // Silently ignore logging errors
+    });
     process.exit(1);
   }
 }

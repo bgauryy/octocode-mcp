@@ -38,6 +38,7 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
       },
     },
     withSecurityValidation(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       async (
         args: {
           queries: GitHubViewRepoStructureQuery[];

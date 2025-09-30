@@ -2,6 +2,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses.js';
 import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { logToolCall } from '../session.js';
 
 export interface UserContext {
   userId: string;
@@ -16,6 +17,7 @@ export interface UserContext {
  * Provides input sanitization and basic access controls
  */
 export function withSecurityValidation<T extends Record<string, unknown>>(
+  toolName: string,
   toolHandler: (
     sanitizedArgs: T,
     authInfo?: AuthInfo,
@@ -30,12 +32,9 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
     { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }
   ): Promise<CallToolResult> => {
     try {
-      // 1. Validate and sanitize input parameters for security
       const validation = ContentSanitizer.validateInputParameters(
         args as Record<string, unknown>
       );
-
-      // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
         return createResult({
           data: {
@@ -44,16 +43,20 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
           isError: true,
         });
       }
-
-      // 2. Provide basic session context for simplified implementation
+      const sanitizedParams = validation.sanitizedParams as Record<
+        string,
+        unknown
+      >;
+      const { repo, owner } = extractRepoOwnerFromParams(sanitizedParams);
+      logToolCall(toolName, repo, owner).catch(() => {
+        // Silently ignore logging errors
+      });
       const userContext: UserContext = {
         userId: 'anonymous',
         userLogin: 'anonymous',
         isEnterpriseMode: false,
         sessionId,
       };
-
-      // 5. Call the actual tool handler with sanitized parameters and user context
       return await toolHandler(
         validation.sanitizedParams as T,
         authInfo,
@@ -105,4 +108,35 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
       });
     }
   };
+}
+
+/**
+ * Extract repo and owner information from tool parameters for logging
+ */
+function extractRepoOwnerFromParams(params: Record<string, unknown>): {
+  repo?: string;
+  owner?: string;
+} {
+  let repo: string | undefined;
+  let owner: string | undefined;
+
+  // Check if params has queries array (bulk operations)
+  if (
+    params.queries &&
+    Array.isArray(params.queries) &&
+    params.queries.length > 0
+  ) {
+    const firstQuery = params.queries[0] as Record<string, unknown>;
+    if (firstQuery) {
+      repo = typeof firstQuery.repo === 'string' ? firstQuery.repo : undefined;
+      owner =
+        typeof firstQuery.owner === 'string' ? firstQuery.owner : undefined;
+    }
+  } else {
+    // Check direct params (single operations)
+    repo = typeof params.repo === 'string' ? params.repo : undefined;
+    owner = typeof params.owner === 'string' ? params.owner : undefined;
+  }
+
+  return { repo, owner };
 }

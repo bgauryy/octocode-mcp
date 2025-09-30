@@ -183,6 +183,7 @@ describe('Index Module', () => {
       betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
+      loggingEnabled: true,
     });
 
     // Mock registerTools to return success count based on config
@@ -673,6 +674,7 @@ describe('Index Module', () => {
         betaEnabled: true, // This is key
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       await import('../src/index.js');
@@ -696,6 +698,7 @@ describe('Index Module', () => {
         betaEnabled: true, // This is key
         timeout: 30000,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       await import('../src/index.js');

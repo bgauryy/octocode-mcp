@@ -39,6 +39,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
       },
     },
     withSecurityValidation(
+      TOOL_NAMES.GITHUB_SEARCH_CODE,
       async (
         args: Record<string, unknown>,
         authInfo,
