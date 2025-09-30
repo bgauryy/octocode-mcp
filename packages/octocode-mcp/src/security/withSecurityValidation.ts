@@ -58,7 +58,7 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
           : undefined;
 
         logToolCall(toolName, safeRepo, safeOwner).catch(() => {
-          // Silently ignore logging errors
+          // Ignore
         });
       }
       const userContext: UserContext = {

@@ -73,6 +73,7 @@ describe('Session Management', () => {
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
+          version: expect.any(String),
         }),
         {
           timeout: 5000,
@@ -96,6 +97,7 @@ describe('Session Management', () => {
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
+          version: expect.any(String),
         }),
         {
           timeout: 5000,
@@ -123,6 +125,7 @@ describe('Session Management', () => {
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
+          version: expect.any(String),
         }),
         {
           timeout: 5000,
@@ -146,6 +149,7 @@ describe('Session Management', () => {
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
+          version: expect.any(String),
         }),
         {
           timeout: 5000,
@@ -192,6 +196,7 @@ describe('Session Management', () => {
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
+        version: expect.any(String),
       });
     });
 
@@ -209,6 +214,7 @@ describe('Session Management', () => {
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
+        version: expect.any(String),
       });
     });
 
@@ -234,6 +240,7 @@ describe('Session Management', () => {
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
+        version: expect.any(String),
       });
     });
 
@@ -251,6 +258,7 @@ describe('Session Management', () => {
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
+        version: expect.any(String),
       });
     });
   });
