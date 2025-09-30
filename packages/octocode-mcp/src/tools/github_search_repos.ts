@@ -49,6 +49,7 @@ export function registerSearchGitHubReposTool(server: McpServer) {
       },
     },
     withSecurityValidation(
+      TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       async (
         args: {
           queries: GitHubReposSearchQuery[];

@@ -18,6 +18,7 @@ vi.mock('../../src/serverConfig.js', () => ({
   initialize: mockInitialize,
   getServerConfig: mockGetServerConfig,
   isSamplingEnabled: mockIsSamplingEnabled,
+  isLoggingEnabled: vi.fn(() => false),
 }));
 
 const mockPerformSampling = vi.hoisted(() => vi.fn());
@@ -48,6 +49,7 @@ describe('GitHub Fetch Content Tool', () => {
       betaEnabled: false,
       timeout: 30000,
       maxRetries: 3,
+      loggingEnabled: true,
     });
     mockInitialize.mockResolvedValue(undefined);
     mockIsSamplingEnabled.mockReturnValue(false);

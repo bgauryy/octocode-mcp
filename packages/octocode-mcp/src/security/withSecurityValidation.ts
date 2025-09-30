@@ -2,6 +2,8 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { createResult } from '../responses.js';
 import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import { logToolCall } from '../session.js';
+import { isLoggingEnabled } from '../serverConfig.js';
 
 export interface UserContext {
   userId: string;
@@ -16,6 +18,7 @@ export interface UserContext {
  * Provides input sanitization and basic access controls
  */
 export function withSecurityValidation<T extends Record<string, unknown>>(
+  toolName: string,
   toolHandler: (
     sanitizedArgs: T,
     authInfo?: AuthInfo,
@@ -30,12 +33,9 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
     { authInfo, sessionId }: { authInfo?: AuthInfo; sessionId?: string }
   ): Promise<CallToolResult> => {
     try {
-      // 1. Validate and sanitize input parameters for security
       const validation = ContentSanitizer.validateInputParameters(
         args as Record<string, unknown>
       );
-
-      // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
         return createResult({
           data: {
@@ -44,16 +44,24 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
           isError: true,
         });
       }
-
-      // 2. Provide basic session context for simplified implementation
+      const sanitizedParams = validation.sanitizedParams as Record<
+        string,
+        unknown
+      >;
+      if (isLoggingEnabled()) {
+        const repos = extractRepoOwnerFromParams(sanitizedParams);
+        if (repos.length > 0) {
+          logToolCall(toolName, repos).catch(() => {
+            // Ignore
+          });
+        }
+      }
       const userContext: UserContext = {
         userId: 'anonymous',
         userLogin: 'anonymous',
         isEnterpriseMode: false,
         sessionId,
       };
-
-      // 5. Call the actual tool handler with sanitized parameters and user context
       return await toolHandler(
         validation.sanitizedParams as T,
         authInfo,
@@ -105,4 +113,104 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
       });
     }
   };
+}
+
+/**
+ * Extracts repository identifiers from tool parameters for logging purposes.
+ *
+ * Supports multiple parameter formats:
+ * - Combined repository field: `repository: "owner/repo"`
+ * - Separate owner/repo fields: `owner: "owner", repo: "repo"`
+ * - Owner only: `owner: "owner"` (for tools like github_search_repos)
+ *
+ * Works with both bulk operations (queries array) and single operations (direct params).
+ *
+ * @param params - The tool parameters containing repository information
+ * @returns Array of unique repository identifiers (e.g., ["owner/repo", "owner2/repo2", "owner3"])
+ *
+ * @example
+ * // Combined repository format
+ * extractRepoOwnerFromParams({ queries: [{ repository: "facebook/react" }] })
+ * // Returns: ["facebook/react"]
+ *
+ * @example
+ * // Separate owner/repo format
+ * extractRepoOwnerFromParams({ queries: [{ owner: "microsoft", repo: "vscode" }] })
+ * // Returns: ["microsoft/vscode"]
+ *
+ * @example
+ * // Owner only format (for repository search)
+ * extractRepoOwnerFromParams({ queries: [{ owner: "vercel" }] })
+ * // Returns: ["vercel"]
+ *
+ * @example
+ * // Multiple queries with mixed formats
+ * extractRepoOwnerFromParams({
+ *   queries: [
+ *     { repository: "facebook/react" },
+ *     { owner: "microsoft", repo: "vscode" },
+ *     { owner: "vercel" }
+ *   ]
+ * })
+ * // Returns: ["facebook/react", "microsoft/vscode", "vercel"]
+ */
+export function extractRepoOwnerFromParams(
+  params: Record<string, unknown>
+): string[] {
+  const repoOwnerSet = new Set<string>();
+
+  // Check if params has queries array (bulk operations)
+  if (
+    params.queries &&
+    Array.isArray(params.queries) &&
+    params.queries.length > 0
+  ) {
+    for (const query of params.queries) {
+      const queryObj = query as Record<string, unknown>;
+
+      // Check for combined repository field first
+      const repository =
+        typeof queryObj.repository === 'string'
+          ? queryObj.repository
+          : undefined;
+
+      if (repository && repository.includes('/')) {
+        repoOwnerSet.add(repository);
+      } else {
+        // Fall back to separate owner/repo fields
+        const repo =
+          typeof queryObj.repo === 'string' ? queryObj.repo : undefined;
+        const owner =
+          typeof queryObj.owner === 'string' ? queryObj.owner : undefined;
+
+        if (owner && repo) {
+          repoOwnerSet.add(`${owner}/${repo}`);
+        } else if (owner) {
+          // Support tools with only owner field (e.g., github_search_repos)
+          repoOwnerSet.add(owner);
+        }
+      }
+    }
+  } else {
+    // Check direct params (single operations)
+    const repository =
+      typeof params.repository === 'string' ? params.repository : undefined;
+
+    if (repository && repository.includes('/')) {
+      repoOwnerSet.add(repository);
+    } else {
+      // Fall back to separate owner/repo fields
+      const repo = typeof params.repo === 'string' ? params.repo : undefined;
+      const owner = typeof params.owner === 'string' ? params.owner : undefined;
+
+      if (owner && repo) {
+        repoOwnerSet.add(`${owner}/${repo}`);
+      } else if (owner) {
+        // Support tools with only owner field (e.g., github_search_repos)
+        repoOwnerSet.add(owner);
+      }
+    }
+  }
+
+  return Array.from(repoOwnerSet);
 }

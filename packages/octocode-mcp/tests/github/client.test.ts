@@ -59,6 +59,7 @@ describe('GitHub Client', () => {
       enableLogging: false,
       betaEnabled: false,
       maxRetries: 3,
+      loggingEnabled: true,
     });
   });
 
@@ -154,6 +155,7 @@ describe('GitHub Client', () => {
         enableLogging: false,
         betaEnabled: false,
         maxRetries: 3,
+        loggingEnabled: true,
       });
 
       await getOctokit();

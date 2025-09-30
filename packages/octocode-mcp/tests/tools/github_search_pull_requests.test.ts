@@ -22,6 +22,10 @@ vi.mock('../../src/tools/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
+vi.mock('../../src/serverConfig.js', () => ({
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 // Import after mocking
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
 

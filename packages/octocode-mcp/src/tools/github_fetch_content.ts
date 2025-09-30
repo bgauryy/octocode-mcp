@@ -38,6 +38,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
       },
     },
     withSecurityValidation(
+      TOOL_NAMES.GITHUB_FETCH_CONTENT,
       async (
         args: {
           queries: FileContentQuery[];

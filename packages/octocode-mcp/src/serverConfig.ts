@@ -10,6 +10,7 @@ export interface ServerConfig {
   betaEnabled: boolean;
   timeout: number;
   maxRetries: number;
+  loggingEnabled: boolean;
 }
 
 // Simple module state
@@ -85,6 +86,10 @@ export async function initialize(): Promise<void> {
         0,
         Math.min(10, parseInt(process.env.MAX_RETRIES || '3') || 3)
       ),
+      loggingEnabled:
+        process.env.LOG === undefined ||
+        process.env.LOG === null ||
+        process.env.LOG?.toLowerCase() !== 'false',
     };
   })();
 
@@ -162,6 +167,13 @@ export function isBetaEnabled(): boolean {
  */
 export function isSamplingEnabled(): boolean {
   return isBetaEnabled();
+}
+
+/**
+ * Check if logging is enabled (default: true, disabled if LOG=false)
+ */
+export function isLoggingEnabled(): boolean {
+  return getServerConfig().loggingEnabled;
 }
 
 /**
