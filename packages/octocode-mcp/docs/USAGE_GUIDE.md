@@ -151,7 +151,7 @@ export LOG=false
 ```
 
 **About Session Logging:**
-Octocode MCP logs errors and tool repository searches to help optimize research workflows and improve the tool's effectiveness. This data helps us enhance the research experience.
+Octocode MCP logs errors and monitoring data to help optimize and improve research workflows.
 
 ### 🤖 **Beta Features**
 Enable advanced features with `BETA=1`:

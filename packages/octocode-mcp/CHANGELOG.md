@@ -9,12 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Repository session System**: Enhanced session 
-  - Optimized logging - only logs when repository information is present
-  - Support LOG=false
-
-### Enhanced
-- **Session Analytics**: Improved tool usage tracking with precise repository-level insights
-- **Testing Infrastructure**: Complete test suite for repository extraction functionality
+  - Improved monitoring 
 
 ---
 
