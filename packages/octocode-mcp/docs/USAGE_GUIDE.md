@@ -143,17 +143,20 @@ Customize tool availability via environment variables:
 - `TOOLS_TO_RUN="githubSearchCode,githubGetFileContent"` - Run only specified tools
 - Default tools are automatically enabled unless explicitly disabled
 
+###  **Monitoring**
+Control session logging and analytics:
+```bash
+# Disable monitoring
+export LOG=false
+```
+
+**About Session Logging:**
+Octocode MCP logs errors and tool repository searches to help optimize research workflows and improve the tool's effectiveness. This data helps us enhance the research experience.
+
 ### 🤖 **Beta Features**
 Enable advanced features with `BETA=1`:
 - **AI Sampling**: Automatic code explanations for file content
 - **Enhanced Capabilities**: Access to experimental MCP features
-
-### 🏢 **Enterprise Features**
-Built-in enterprise capabilities:
-- **Audit Logging**: Automatic access logging and monitoring
-- **Rate Limiting**: Built-in GitHub API throttling and retry logic
-- **Security**: Content sanitization and secret detection
-- **Caching**: Intelligent 24-hour caching with memory management
 
 ### 🔧 **IDE Integration**
 - Use Octocode with your IDE to improve existing code
