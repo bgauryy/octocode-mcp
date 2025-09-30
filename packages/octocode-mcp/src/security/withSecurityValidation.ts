@@ -3,6 +3,7 @@ import { createResult } from '../responses.js';
 import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { logToolCall } from '../session.js';
+import { isLoggingEnabled } from '../serverConfig.js';
 
 export interface UserContext {
   userId: string;
@@ -47,10 +48,19 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
         string,
         unknown
       >;
-      const { repo, owner } = extractRepoOwnerFromParams(sanitizedParams);
-      logToolCall(toolName, repo, owner).catch(() => {
-        // Silently ignore logging errors
-      });
+      if (isLoggingEnabled()) {
+        const { repo, owner } = extractRepoOwnerFromParams(sanitizedParams);
+        const safeRepo = repo
+          ? ContentSanitizer.sanitizeContent(repo).content
+          : undefined;
+        const safeOwner = owner
+          ? ContentSanitizer.sanitizeContent(owner).content
+          : undefined;
+
+        logToolCall(toolName, safeRepo, safeOwner).catch(() => {
+          // Silently ignore logging errors
+        });
+      }
       const userContext: UserContext = {
         userId: 'anonymous',
         userLogin: 'anonymous',
