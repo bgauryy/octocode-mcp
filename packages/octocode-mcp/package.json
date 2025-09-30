@@ -82,7 +82,7 @@
     "manifest.json"
   ],
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "yarn lint && yarn clean && tsc -p tsconfig.build.json && rollup -c",
     "build:dev": "yarn clean && rollup -c",
