@@ -2,7 +2,8 @@
 export const GENERAL = {
   base: {
     id: 'queryId',
-    reasoning: 'Reasoning: Explain your research goal',
+    researchGoal: 'ResearchGoal: the goal for the research',
+    reasoning: 'Reasoning: Explain how the query will help the researchGoal',
   },
 };
 
