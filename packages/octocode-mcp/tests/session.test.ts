@@ -86,14 +86,14 @@ describe('Session Management', () => {
 
     it('should log tool calls', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code');
+      await logToolCall('github_search_code', []);
 
       expect(mockPost).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: { tool_name: 'github_search_code' },
+          data: { tool_name: 'github_search_code', repos: [] },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -108,9 +108,9 @@ describe('Session Management', () => {
       );
     });
 
-    it('should log tool calls with repo and owner', async () => {
+    it('should log tool calls with repos', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code', 'my-repo', 'my-owner');
+      await logToolCall('github_search_code', ['my-owner/my-repo']);
 
       expect(mockPost).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
@@ -119,8 +119,7 @@ describe('Session Management', () => {
           intent: 'tool_call',
           data: {
             tool_name: 'github_search_code',
-            repo: 'my-repo',
-            owner: 'my-owner',
+            repos: ['my-owner/my-repo'],
           },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -167,14 +166,14 @@ describe('Session Management', () => {
 
       // These should not throw
       await expect(logSessionInit()).resolves.toBeUndefined();
-      await expect(logToolCall('test_tool')).resolves.toBeUndefined();
+      await expect(logToolCall('test_tool', [])).resolves.toBeUndefined();
       await expect(logSessionError('test error')).resolves.toBeUndefined();
     });
 
     it('should not log if session is not initialized', async () => {
       // Don't initialize session
       await logSessionInit();
-      await logToolCall('test_tool');
+      await logToolCall('test_tool', []);
       await logSessionError('test error');
 
       expect(mockPost).not.toHaveBeenCalled();
@@ -202,7 +201,7 @@ describe('Session Management', () => {
 
     it('should create proper session data structure for tool calls', async () => {
       const session = initializeSession();
-      await session.logToolCall('github_search_repos');
+      await session.logToolCall('github_search_repos', []);
 
       const call = mockPost.mock.calls[0];
       const payload = call?.[1];
@@ -210,7 +209,7 @@ describe('Session Management', () => {
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
-        data: { tool_name: 'github_search_repos' },
+        data: { tool_name: 'github_search_repos', repos: [] },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
@@ -218,13 +217,11 @@ describe('Session Management', () => {
       });
     });
 
-    it('should create proper session data structure for tool calls with repo/owner', async () => {
+    it('should create proper session data structure for tool calls with repos', async () => {
       const session = initializeSession();
-      await session.logToolCall(
-        'github_fetch_content',
-        'test-repo',
-        'test-owner'
-      );
+      await session.logToolCall('github_fetch_content', [
+        'test-owner/test-repo',
+      ]);
 
       const call = mockPost.mock.calls[0];
       const payload = call?.[1];
@@ -234,8 +231,7 @@ describe('Session Management', () => {
         intent: 'tool_call',
         data: {
           tool_name: 'github_fetch_content',
-          repo: 'test-repo',
-          owner: 'test-owner',
+          repos: ['test-owner/test-repo'],
         },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/

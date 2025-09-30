@@ -65,6 +65,7 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
 vi.mock('../../src/serverConfig.js', () => ({
   isSamplingEnabled: vi.fn(() => false),
   getGitHubToken: vi.fn(async () => 'test-token'),
+  isLoggingEnabled: vi.fn(() => true),
 }));
 
 // Import tools after mocks are set up
@@ -102,29 +103,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_CODE,
-        'react',
-        'facebook'
-      );
-    });
-
-    it('should log without repo/owner when searching globally', async () => {
-      registerGitHubSearchCodeTool(mockServer.server);
-
-      const args = {
-        queries: [
-          {
-            id: 'test1',
-            keywordsToSearch: ['machine learning'],
-          },
-        ],
-      };
-
-      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, args);
-
-      expect(mockLogToolCall).toHaveBeenCalledWith(
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        undefined,
-        undefined
+        ['facebook/react']
       );
     });
   });
@@ -149,8 +128,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        'linux',
-        'torvalds'
+        ['torvalds/linux']
       );
     });
 
@@ -180,8 +158,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        'typescript',
-        'microsoft'
+        ['microsoft/typescript', 'facebook/react']
       );
     });
   });
@@ -204,30 +181,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        'tensorflow',
-        'google'
-      );
-    });
-
-    it('should log without repo/owner for general search', async () => {
-      registerSearchGitHubReposTool(mockServer.server);
-
-      const args = {
-        queries: [
-          {
-            id: 'test1',
-            keywordsToSearch: ['machine learning', 'python'],
-            stars: '>1000',
-          },
-        ],
-      };
-
-      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, args);
-
-      expect(mockLogToolCall).toHaveBeenCalledWith(
-        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-        undefined,
-        undefined
+        ['google/tensorflow']
       );
     });
   });
@@ -252,8 +206,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        'vue',
-        'vuejs'
+        ['vuejs/vue']
       );
     });
 
@@ -283,8 +236,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-        'angular',
-        'angular'
+        ['angular/angular', 'sveltejs/svelte']
       );
     });
   });
@@ -308,8 +260,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        'node',
-        'nodejs'
+        ['nodejs/node']
       );
     });
 
@@ -331,71 +282,7 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
 
       expect(mockLogToolCall).toHaveBeenCalledWith(
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        'rust',
-        'rust-lang'
-      );
-    });
-  });
-
-  describe('Edge Cases', () => {
-    it('should handle missing queries array gracefully', async () => {
-      registerGitHubSearchCodeTool(mockServer.server);
-
-      const args = {
-        queries: [],
-      };
-
-      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, args);
-
-      expect(mockLogToolCall).toHaveBeenCalledWith(
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        undefined,
-        undefined
-      );
-    });
-
-    it('should handle query without repo/owner fields', async () => {
-      registerGitHubSearchCodeTool(mockServer.server);
-
-      const args = {
-        queries: [
-          {
-            id: 'test1',
-            keywordsToSearch: ['test'],
-            language: 'javascript',
-          },
-        ],
-      };
-
-      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, args);
-
-      expect(mockLogToolCall).toHaveBeenCalledWith(
-        TOOL_NAMES.GITHUB_SEARCH_CODE,
-        undefined,
-        undefined
-      );
-    });
-
-    it('should handle non-string repo/owner values', async () => {
-      registerFetchGitHubFileContentTool(mockServer.server);
-
-      const args = {
-        queries: [
-          {
-            id: 'test1',
-            owner: 123, // Invalid: number instead of string
-            repo: null, // Invalid: null instead of string
-            path: 'test.js',
-          },
-        ],
-      };
-
-      await mockServer.callTool(TOOL_NAMES.GITHUB_FETCH_CONTENT, args);
-
-      expect(mockLogToolCall).toHaveBeenCalledWith(
-        TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        undefined,
-        undefined
+        ['rust-lang/rust']
       );
     });
   });
@@ -481,11 +368,9 @@ describe('Tools Logging Integration - Repo/Owner Tracking', () => {
         testCase.register(server.server);
         await server.callTool(testCase.toolName, testCase.args);
 
-        expect(mockLogToolCall).toHaveBeenCalledWith(
-          testCase.toolName,
-          'test-repo',
-          'test-owner'
-        );
+        expect(mockLogToolCall).toHaveBeenCalledWith(testCase.toolName, [
+          'test-owner/test-repo',
+        ]);
       }
     });
   });

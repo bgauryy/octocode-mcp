@@ -49,17 +49,12 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
         unknown
       >;
       if (isLoggingEnabled()) {
-        const { repo, owner } = extractRepoOwnerFromParams(sanitizedParams);
-        const safeRepo = repo
-          ? ContentSanitizer.sanitizeContent(repo).content
-          : undefined;
-        const safeOwner = owner
-          ? ContentSanitizer.sanitizeContent(owner).content
-          : undefined;
-
-        logToolCall(toolName, safeRepo, safeOwner).catch(() => {
-          // Ignore
-        });
+        const repos = extractRepoOwnerFromParams(sanitizedParams);
+        if (repos.length > 0) {
+          logToolCall(toolName, repos).catch(() => {
+            // Ignore
+          });
+        }
       }
       const userContext: UserContext = {
         userId: 'anonymous',
@@ -121,14 +116,48 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
 }
 
 /**
- * Extract repo and owner information from tool parameters for logging
+ * Extracts repository identifiers from tool parameters for logging purposes.
+ *
+ * Supports multiple parameter formats:
+ * - Combined repository field: `repository: "owner/repo"`
+ * - Separate owner/repo fields: `owner: "owner", repo: "repo"`
+ * - Owner only: `owner: "owner"` (for tools like github_search_repos)
+ *
+ * Works with both bulk operations (queries array) and single operations (direct params).
+ *
+ * @param params - The tool parameters containing repository information
+ * @returns Array of unique repository identifiers (e.g., ["owner/repo", "owner2/repo2", "owner3"])
+ *
+ * @example
+ * // Combined repository format
+ * extractRepoOwnerFromParams({ queries: [{ repository: "facebook/react" }] })
+ * // Returns: ["facebook/react"]
+ *
+ * @example
+ * // Separate owner/repo format
+ * extractRepoOwnerFromParams({ queries: [{ owner: "microsoft", repo: "vscode" }] })
+ * // Returns: ["microsoft/vscode"]
+ *
+ * @example
+ * // Owner only format (for repository search)
+ * extractRepoOwnerFromParams({ queries: [{ owner: "vercel" }] })
+ * // Returns: ["vercel"]
+ *
+ * @example
+ * // Multiple queries with mixed formats
+ * extractRepoOwnerFromParams({
+ *   queries: [
+ *     { repository: "facebook/react" },
+ *     { owner: "microsoft", repo: "vscode" },
+ *     { owner: "vercel" }
+ *   ]
+ * })
+ * // Returns: ["facebook/react", "microsoft/vscode", "vercel"]
  */
-function extractRepoOwnerFromParams(params: Record<string, unknown>): {
-  repo?: string;
-  owner?: string;
-} {
-  let repo: string | undefined;
-  let owner: string | undefined;
+export function extractRepoOwnerFromParams(
+  params: Record<string, unknown>
+): string[] {
+  const repoOwnerSet = new Set<string>();
 
   // Check if params has queries array (bulk operations)
   if (
@@ -136,17 +165,52 @@ function extractRepoOwnerFromParams(params: Record<string, unknown>): {
     Array.isArray(params.queries) &&
     params.queries.length > 0
   ) {
-    const firstQuery = params.queries[0] as Record<string, unknown>;
-    if (firstQuery) {
-      repo = typeof firstQuery.repo === 'string' ? firstQuery.repo : undefined;
-      owner =
-        typeof firstQuery.owner === 'string' ? firstQuery.owner : undefined;
+    for (const query of params.queries) {
+      const queryObj = query as Record<string, unknown>;
+
+      // Check for combined repository field first
+      const repository =
+        typeof queryObj.repository === 'string'
+          ? queryObj.repository
+          : undefined;
+
+      if (repository && repository.includes('/')) {
+        repoOwnerSet.add(repository);
+      } else {
+        // Fall back to separate owner/repo fields
+        const repo =
+          typeof queryObj.repo === 'string' ? queryObj.repo : undefined;
+        const owner =
+          typeof queryObj.owner === 'string' ? queryObj.owner : undefined;
+
+        if (owner && repo) {
+          repoOwnerSet.add(`${owner}/${repo}`);
+        } else if (owner) {
+          // Support tools with only owner field (e.g., github_search_repos)
+          repoOwnerSet.add(owner);
+        }
+      }
     }
   } else {
     // Check direct params (single operations)
-    repo = typeof params.repo === 'string' ? params.repo : undefined;
-    owner = typeof params.owner === 'string' ? params.owner : undefined;
+    const repository =
+      typeof params.repository === 'string' ? params.repository : undefined;
+
+    if (repository && repository.includes('/')) {
+      repoOwnerSet.add(repository);
+    } else {
+      // Fall back to separate owner/repo fields
+      const repo = typeof params.repo === 'string' ? params.repo : undefined;
+      const owner = typeof params.owner === 'string' ? params.owner : undefined;
+
+      if (owner && repo) {
+        repoOwnerSet.add(`${owner}/${repo}`);
+      } else if (owner) {
+        // Support tools with only owner field (e.g., github_search_repos)
+        repoOwnerSet.add(owner);
+      }
+    }
   }
 
-  return { repo, owner };
+  return Array.from(repoOwnerSet);
 }

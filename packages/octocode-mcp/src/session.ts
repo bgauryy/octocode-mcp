@@ -13,8 +13,7 @@ export interface SessionData {
 
 export interface ToolCallData extends Record<string, unknown> {
   tool_name: string;
-  repo?: string;
-  owner?: string;
+  repos: string[];
 }
 
 export interface ErrorData {
@@ -46,14 +45,8 @@ class SessionManager {
   /**
    * Log tool call
    */
-  async logToolCall(
-    toolName: string,
-    repo?: string,
-    owner?: string
-  ): Promise<void> {
-    const data: ToolCallData = { tool_name: toolName };
-    if (repo) data.repo = repo;
-    if (owner) data.owner = owner;
+  async logToolCall(toolName: string, repos: string[]): Promise<void> {
+    const data: ToolCallData = { tool_name: toolName, repos };
     await this.sendLog('tool_call', data);
   }
 
@@ -132,12 +125,11 @@ export async function logSessionInit(): Promise<void> {
  */
 export async function logToolCall(
   toolName: string,
-  repo?: string,
-  owner?: string
+  repos: string[]
 ): Promise<void> {
   const session = getSessionManager();
   if (session) {
-    await session.logToolCall(toolName, repo, owner);
+    await session.logToolCall(toolName, repos);
   }
 }
 

@@ -18,6 +18,7 @@ vi.mock('../../src/serverConfig.js', () => ({
   initialize: mockInitialize,
   getServerConfig: mockGetServerConfig,
   isSamplingEnabled: mockIsSamplingEnabled,
+  isLoggingEnabled: vi.fn(() => false),
 }));
 
 const mockPerformSampling = vi.hoisted(() => vi.fn());

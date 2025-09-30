@@ -55,14 +55,14 @@ describe('Session Logging Control', () => {
 
     it('should send tool call log', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code');
+      await logToolCall('github_search_code', []);
 
       expect(mockPost).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: { tool_name: 'github_search_code' },
+          data: { tool_name: 'github_search_code', repos: [] },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -71,9 +71,9 @@ describe('Session Logging Control', () => {
       );
     });
 
-    it('should send tool call log with repo and owner', async () => {
+    it('should send tool call log with repos', async () => {
       const session = initializeSession();
-      await logToolCall('github_fetch_content', 'my-repo', 'my-owner');
+      await logToolCall('github_fetch_content', ['my-owner/my-repo']);
 
       expect(mockPost).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
@@ -82,8 +82,7 @@ describe('Session Logging Control', () => {
           intent: 'tool_call',
           data: {
             tool_name: 'github_fetch_content',
-            repo: 'my-repo',
-            owner: 'my-owner',
+            repos: ['my-owner/my-repo'],
           },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
@@ -127,14 +126,14 @@ describe('Session Logging Control', () => {
 
     it('should NOT send tool call log', async () => {
       initializeSession();
-      await logToolCall('github_search_code');
+      await logToolCall('github_search_code', []);
 
       expect(mockPost).not.toHaveBeenCalled();
     });
 
-    it('should NOT send tool call log with repo and owner', async () => {
+    it('should NOT send tool call log with repos', async () => {
       initializeSession();
-      await logToolCall('github_fetch_content', 'my-repo', 'my-owner');
+      await logToolCall('github_fetch_content', ['my-owner/my-repo']);
 
       expect(mockPost).not.toHaveBeenCalled();
     });
@@ -151,9 +150,9 @@ describe('Session Logging Control', () => {
 
       // All these should complete without errors
       await expect(logSessionInit()).resolves.toBeUndefined();
-      await expect(logToolCall('test_tool')).resolves.toBeUndefined();
+      await expect(logToolCall('test_tool', [])).resolves.toBeUndefined();
       await expect(
-        logToolCall('test_tool', 'repo', 'owner')
+        logToolCall('test_tool', ['owner/repo'])
       ).resolves.toBeUndefined();
       await expect(logSessionError('error')).resolves.toBeUndefined();
 
@@ -172,19 +171,19 @@ describe('Session Logging Control', () => {
       mockIsLoggingEnabled.mockReturnValue(true);
       initializeSession();
 
-      await logToolCall('tool1');
+      await logToolCall('tool1', []);
       expect(mockPost).toHaveBeenCalledTimes(1);
 
       // Disable logging
       mockIsLoggingEnabled.mockReturnValue(false);
 
-      await logToolCall('tool2');
+      await logToolCall('tool2', []);
       expect(mockPost).toHaveBeenCalledTimes(1); // Still 1, no new call
 
       // Re-enable logging
       mockIsLoggingEnabled.mockReturnValue(true);
 
-      await logToolCall('tool3');
+      await logToolCall('tool3', []);
       expect(mockPost).toHaveBeenCalledTimes(2); // New call made
     });
   });
@@ -201,7 +200,7 @@ describe('Session Logging Control', () => {
 
       // All should complete without throwing
       await expect(logSessionInit()).resolves.toBeUndefined();
-      await expect(logToolCall('test')).resolves.toBeUndefined();
+      await expect(logToolCall('test', [])).resolves.toBeUndefined();
       await expect(logSessionError('error')).resolves.toBeUndefined();
 
       // axios.post should not have been called since logging is disabled
