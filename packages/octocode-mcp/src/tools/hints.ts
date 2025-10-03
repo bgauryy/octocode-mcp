@@ -1,22 +1,4 @@
-/**
- * Consolidated Hints System for Octocode-MCP Tools
- *
- * This module consolidates all hint generation logic into a single, efficient system
- * that preserves the most effective patterns while eliminating complexity and duplication.
- *
- * Key improvements:
- * - 85% code reduction (3,021 lines → 450 lines)
- * - 90% function reduction (61 functions → 6 functions)
- * - 95% import reduction (68 imports → 3 imports)
- * - 83% performance improvement (47ms → 8ms average)
- * - 86% memory usage reduction (2.3MB → 320KB)
- */
-
 import { TOOL_NAMES, ToolName } from '../constants';
-
-// ============================================================================
-// CORE TYPES & INTERFACES
-// ============================================================================
 
 export interface HintContext {
   toolName: ToolName;
@@ -40,13 +22,6 @@ export interface BulkHintContext {
   successCount: number;
 }
 
-// ============================================================================
-// EFFECTIVE HINT PATTERNS (Preserved from analysis)
-// ============================================================================
-
-/**
- * Error recovery hints - High value patterns that work well
- */
 const ERROR_RECOVERY_HINTS = {
   RATE_LIMIT: 'Rate limit exceeded. Wait 60 seconds before retrying',
   AUTH_REQUIRED:
@@ -74,10 +49,6 @@ const ERROR_RECOVERY_HINTS = {
     'Use core concept keywords instead of compound library-specific names',
 } as const;
 
-/**
- * Tool navigation hints - Strategic guidance that improves research workflow with smart chaining
- * Focus on implementation files and quality verification
- */
 const TOOL_NAVIGATION_HINTS = {
   FETCH_CONTENT:
     'Use github_fetch_content with matchString from search results for precise context extraction',
@@ -120,11 +91,6 @@ const TOOL_NAVIGATION_HINTS = {
     'Use commit/PR search only when explicitly requested - focus on implementation files',
 } as const;
 
-// Progressive refinement hints are now inline in the functions
-
-/**
- * No results hints - Guidance when searches return empty with smart fallbacks
- */
 const NO_RESULTS_HINTS = {
   BROADER_TERMS:
     'No results found. Try broader search terms or related concepts',
@@ -152,13 +118,6 @@ const NO_RESULTS_HINTS = {
     'Start with core concepts, then progressively narrow to specific implementations and tools',
 } as const;
 
-// ============================================================================
-// ERROR ANALYSIS & RECOVERY
-// ============================================================================
-
-/**
- * Extract error context for intelligent hint generation
- */
 function extractErrorContext(errorMessage: string): {
   type:
     | 'rate_limit'
@@ -217,9 +176,6 @@ function extractErrorContext(errorMessage: string): {
   return { type: 'unknown', isRecoverable: false };
 }
 
-/**
- * Generate error recovery hints based on error type
- */
 function generateErrorRecoveryHints(errorMessage: string): string[] {
   const errorContext = extractErrorContext(errorMessage);
   const hints: string[] = [];
@@ -271,13 +227,6 @@ function generateErrorRecoveryHints(errorMessage: string): string[] {
   return hints;
 }
 
-// ============================================================================
-// TOOL-SPECIFIC HINT GENERATION
-// ============================================================================
-
-/**
- * Generate tool-specific navigation hints with smart fallbacks and research guidance
- */
 function generateToolNavigationHints(
   toolName: ToolName,
   hasResults: boolean,
@@ -378,108 +327,6 @@ function generateToolNavigationHints(
   return hints;
 }
 
-// ============================================================================
-// SMART FILE DISCOVERY LOGIC
-// ============================================================================
-
-/**
- * Extract implementation file paths from search results or content
- */
-export function discoverImplementationFiles(content: string): string[] {
-  const implementationFiles: string[] = [];
-
-  // Extract import/require patterns
-  const importRegex = /(?:import.*from|require\(|from)\s*['"]([^'"]+)['"];?/gi;
-  let match;
-  while ((match = importRegex.exec(content)) !== null) {
-    const path = match[1];
-    if (path && (path.startsWith('.') || path.includes('/'))) {
-      implementationFiles.push(path);
-    }
-  }
-
-  // Extract file references in comments or strings
-  const fileRefRegex =
-    /['"]([^'"]*\.(ts|js|py|go|rs|java|cpp|c|h)[^'"]*)['"];?/gi;
-  while ((match = fileRefRegex.exec(content)) !== null) {
-    if (match[1]) {
-      implementationFiles.push(match[1]);
-    }
-  }
-
-  return [...new Set(implementationFiles)];
-}
-
-/**
- * Discover documentation files from structure or content
- */
-export function discoverDocumentationFiles(structure: string[]): string[] {
-  const docFiles = structure.filter(
-    file =>
-      file.toLowerCase().match(/\.(md|rst|txt)$/) ||
-      file.toLowerCase().includes('readme') ||
-      file.toLowerCase().includes('docs/') ||
-      file.toLowerCase().includes('documentation')
-  );
-
-  // Prioritize key documentation
-  const priority = [
-    'README.md',
-    'docs/',
-    'CONTRIBUTING.md',
-    'API.md',
-    'USAGE.md',
-  ];
-  return docFiles.sort((a, b) => {
-    const aPriority = priority.findIndex(p => a.includes(p));
-    const bPriority = priority.findIndex(p => b.includes(p));
-    return (
-      (aPriority === -1 ? 999 : aPriority) -
-      (bPriority === -1 ? 999 : bPriority)
-    );
-  });
-}
-
-/**
- * Find related files based on naming patterns and structure
- */
-export function discoverRelatedFiles(
-  basePath: string,
-  allFiles: string[]
-): string[] {
-  const baseName =
-    basePath
-      .split('/')
-      .pop()
-      ?.replace(/\.(ts|js|py|go|rs|java)$/, '') || '';
-  const baseDir = basePath.split('/').slice(0, -1).join('/');
-
-  return allFiles
-    .filter(file => {
-      // Same directory files
-      if (file.startsWith(baseDir) && file !== basePath) return true;
-
-      // Test files
-      if (file.includes(baseName) && file.match(/\.(test|spec)\./)) return true;
-
-      // Type definition files
-      if (file.includes(baseName) && file.endsWith('.d.ts')) return true;
-
-      // Similar named files
-      if (file.includes(baseName) && file !== basePath) return true;
-
-      return false;
-    })
-    .slice(0, 10); // Limit to prevent overwhelming
-}
-
-// ============================================================================
-// MAIN HINT GENERATION FUNCTIONS
-// ============================================================================
-
-/**
- * Generate comprehensive hints for any tool operation
- */
 export function generateHints(context: HintContext): string[] {
   const hints: string[] = [];
 
@@ -529,9 +376,6 @@ export function generateHints(context: HintContext): string[] {
   return uniqueHints.slice(0, 6);
 }
 
-/**
- * Generate hints for bulk operations with smart analysis and fallbacks
- */
 export function generateBulkHints(context: BulkHintContext): string[] {
   const hints: string[] = [];
 
