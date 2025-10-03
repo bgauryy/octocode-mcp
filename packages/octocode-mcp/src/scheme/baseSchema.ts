@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { GENERAL } from './schemDescriptions';
 
 export const BaseQuerySchema = z.object({
-  id: z.string().optional().describe(GENERAL.base.id),
   researchGoal: z.string().optional().describe(GENERAL.base.researchGoal),
   reasoning: z.string().optional().describe(GENERAL.base.reasoning),
 });

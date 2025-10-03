@@ -1,7 +1,6 @@
 // General schema descriptions used across all tools
 export const GENERAL = {
   base: {
-    id: 'queryId',
     researchGoal: 'ResearchGoal: the goal for the research',
     reasoning: 'Reasoning: Explain how the query will help the researchGoal',
   },
