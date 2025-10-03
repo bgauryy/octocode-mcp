@@ -65,7 +65,7 @@ export interface GitHubSearchCodeOutput extends ToolResponse {
  * Individual search result
  */
 export interface SearchResult {
-  queryId?: string;
+  researchGoal?: string;
   reasoning?: string;
   repository?: string;
   files: SearchFile[];

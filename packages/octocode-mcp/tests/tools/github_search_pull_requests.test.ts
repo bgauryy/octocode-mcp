@@ -184,7 +184,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Provide at least one search query');
+      expect(responseText).toContain('Queries array is required');
     });
 
     it('should reject missing queries parameter', async () => {
@@ -193,7 +193,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Provide at least one search query');
+      expect(responseText).toContain('Queries array is required');
     });
 
     it('should accept query-based searches', async () => {
@@ -641,7 +641,6 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: 'test-owner',
           repo: 'test-repo',
           prNumber: 123,
-          id: expect.any(String),
         }),
         undefined,
         expect.objectContaining({

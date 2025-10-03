@@ -270,12 +270,17 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).not.toContain('branch:');
       expect(responseText).not.toContain('branch: "main"');
 
-      // Verify other expected fields are present
-      expect(responseText).toContain('queryId: "no-branch-test"');
+      // Verify other expected fields are present in new format
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('repository: "test/repo"');
       expect(responseText).toContain('path: "/"');
+      expect(responseText).toContain('1 results');
+      expect(responseText).toContain('better research strategies');
       expect(responseText).toContain('files:');
       expect(responseText).toContain('folders:');
+      // Should NOT contain empty sections
+      expect(responseText).not.toContain('noResults:');
+      expect(responseText).not.toContain('errors:');
     });
 
     it('should use correct field ordering: queryId, reasoning, repository, path, files, folders', async () => {
@@ -305,19 +310,15 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
-      // Extract the data section to check field ordering
-      const dataMatch = responseText.match(/data:\s*\n([\s\S]*?)(?=hints:|$)/);
-      expect(dataMatch).toBeTruthy();
+      // Extract the results.items section to check field ordering in new format
+      const itemsMatch = responseText.match(/items:\s*\n([\s\S]*?)hints:/);
+      expect(itemsMatch).toBeTruthy();
 
-      if (dataMatch?.[1]) {
-        const dataSection = dataMatch[1];
-        const lines = dataSection.split('\n').filter(line => line.trim());
+      if (itemsMatch?.[1]) {
+        const itemsSection = itemsMatch[1];
+        const lines = itemsSection.split('\n').filter(line => line.trim());
 
-        // Find the indices of each field
-        const queryIdIndex = lines.findIndex(line => line.includes('queryId:'));
-        const reasoningIndex = lines.findIndex(line =>
-          line.includes('reasoning:')
-        );
+        // Find the indices of each field (no queryId in new format)
         const repositoryIndex = lines.findIndex(line =>
           line.includes('repository:')
         );
@@ -325,9 +326,13 @@ describe('GitHub View Repository Structure Tool', () => {
         const filesIndex = lines.findIndex(line => line.includes('files:'));
         const foldersIndex = lines.findIndex(line => line.includes('folders:'));
 
-        // Verify the correct ordering
-        expect(queryIdIndex).toBeLessThan(reasoningIndex);
-        expect(reasoningIndex).toBeLessThan(repositoryIndex);
+        // Verify the correct ordering (no queryId in new format)
+        expect(repositoryIndex).toBeGreaterThanOrEqual(0);
+        expect(pathIndex).toBeGreaterThanOrEqual(0);
+        expect(filesIndex).toBeGreaterThanOrEqual(0);
+        expect(foldersIndex).toBeGreaterThanOrEqual(0);
+
+        // Verify field ordering
         expect(repositoryIndex).toBeLessThan(pathIndex);
         expect(pathIndex).toBeLessThan(filesIndex);
         expect(filesIndex).toBeLessThan(foldersIndex);

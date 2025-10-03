@@ -197,7 +197,7 @@ export interface GitHubSearchPullRequestsOutput extends ToolResponse {
  * Individual pull request search result
  */
 export interface PullRequestSearchResult {
-  queryId?: string;
+  researchGoal?: string;
   reasoning?: string;
   pull_requests?: PullRequestInfo[];
   total_count?: number;

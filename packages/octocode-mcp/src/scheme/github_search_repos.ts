@@ -74,7 +74,7 @@ export interface GitHubSearchReposOutput extends ToolResponse {
  * Individual repository search result
  */
 export interface RepoSearchResult {
-  queryId?: string;
+  researchGoal?: string;
   reasoning?: string;
   repositories: SimplifiedRepository[];
   error?: string;

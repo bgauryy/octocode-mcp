@@ -357,7 +357,8 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
       expect(responseText).not.toContain('dist');
       expect(responseText).not.toContain('build');
       expect(responseText).not.toContain('out');
-      expect(responseText).not.toContain('target');
+      // Note: "target" as a word can appear in hints, so checking for directory pattern
+      expect(responseText).not.toContain('/target');
       expect(responseText).not.toContain('release');
     });
 

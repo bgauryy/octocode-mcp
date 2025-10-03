@@ -134,7 +134,7 @@ export interface GitHubViewRepoStructureOutput extends ToolResponse {
  * Individual repository structure result
  */
 export interface RepoStructureResult {
-  queryId?: string;
+  researchGoal?: string;
   reasoning?: string;
   repository?: string;
   path?: string;

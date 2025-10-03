@@ -79,7 +79,7 @@ export interface GitHubFetchContentOutput extends ToolResponse {
  * Individual file content result
  */
 export interface ContentResult {
-  queryId?: string;
+  researchGoal?: string;
   reasoning?: string;
   repository?: string;
   path?: string;
