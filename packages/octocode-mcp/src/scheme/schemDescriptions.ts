@@ -114,7 +114,7 @@ export const GITHUB_FETCH_CONTENT = {
     owner: 'Scope: Repository owner',
     repo: 'Scope: Repository name',
     branch: 'Scope: Branch/tag/SHA',
-    path: 'Scope: File path - absolute path',
+    path: 'Scope: File path - absolute path from repo root. DO NOT HALLUCINATE',
   },
   processing: {
     minified: 'Processing: minify content',

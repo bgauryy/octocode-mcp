@@ -8,8 +8,8 @@ export const DESCRIPTIONS = {
 - Get implementation details from real code, docs, and config files
 
 #FETCHING FEATURES:
-- fullContent
-- startLine + endLine for specific line range
+- fullContent - return entire file
+- startLine + endLine for specific line range (token efficient)
 - matchString + matchStringContextLines for pattern-based extraction (used with ${TOOL_NAMES.GITHUB_SEARCH_CODE} tool)
 
 #MUST:
