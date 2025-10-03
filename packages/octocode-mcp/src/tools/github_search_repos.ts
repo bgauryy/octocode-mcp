@@ -93,7 +93,7 @@ function expandQueriesWithBothSearchTypes(
 ): GitHubReposSearchQuery[] {
   const expandedQueries: GitHubReposSearchQuery[] = [];
 
-  queries.forEach((query, index) => {
+  queries.forEach(query => {
     const hasTopics =
       query.topicsToSearch &&
       (Array.isArray(query.topicsToSearch)
@@ -111,7 +111,6 @@ function expandQueriesWithBothSearchTypes(
       // Topics-based query
       const topicsQuery: GitHubReposSearchQuery = {
         ...baseQuery,
-        id: query.id ? `${query.id}_topics` : `query_${index}_topics`,
         reasoning: query.reasoning
           ? `${query.reasoning} (topics-based search)`
           : 'Topics-based repository search',
@@ -121,7 +120,6 @@ function expandQueriesWithBothSearchTypes(
       // Keywords-based query
       const keywordsQuery: GitHubReposSearchQuery = {
         ...baseQuery,
-        id: query.id ? `${query.id}_keywords` : `query_${index}_keywords`,
         reasoning: query.reasoning
           ? `${query.reasoning} (keywords-based search)`
           : 'Keywords-based repository search',
@@ -149,7 +147,9 @@ async function searchMultipleGitHubRepos(
 
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
-    async (query: GitHubReposSearchQuery): Promise<ProcessedBulkResult> => {
+    async (
+      query: GitHubReposSearchQuery & { id: string }
+    ): Promise<ProcessedBulkResult> => {
       try {
         const apiResult = await searchGitHubReposAPI(
           query,

@@ -44,7 +44,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'test_query',
         reasoning: 'Test query with both search types',
         topicsToSearch: ['computer-vision', 'deep-learning'],
         keywordsToSearch: ['whale', 'detection'],
@@ -63,7 +62,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       // First call should be topics-based query
       const topicsQuery = calls[0]?.[0];
-      expect(topicsQuery?.id).toBe('test_query_topics');
       expect(topicsQuery?.reasoning).toBe(
         'Test query with both search types (topics-based search)'
       );
@@ -77,7 +75,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       // Second call should be keywords-based query
       const keywordsQuery = calls[1]?.[0];
-      expect(keywordsQuery?.id).toBe('test_query_keywords');
       expect(keywordsQuery?.reasoning).toBe(
         'Test query with both search types (keywords-based search)'
       );
@@ -92,7 +89,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'topics_only',
         reasoning: 'Test query with only topics',
         topicsToSearch: ['computer-vision', 'deep-learning'],
         limit: 10,
@@ -106,7 +102,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(1);
 
       const call = mockSearchGitHubReposAPI.mock.calls[0]?.[0];
-      expect(call?.id).toBe('topics_only');
       expect(call?.topicsToSearch).toEqual([
         'computer-vision',
         'deep-learning',
@@ -119,7 +114,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'keywords_only',
         reasoning: 'Test query with only keywords',
         keywordsToSearch: ['whale', 'detection'],
         limit: 10,
@@ -133,7 +127,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(1);
 
       const call = mockSearchGitHubReposAPI.mock.calls[0]?.[0];
-      expect(call?.id).toBe('keywords_only');
       expect(call?.keywordsToSearch).toEqual(['whale', 'detection']);
       expect(call?.topicsToSearch).toBeUndefined();
     });
@@ -144,20 +137,17 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       const queries: GitHubReposSearchQuery[] = [
         {
-          id: 'both_types',
           reasoning: 'Query with both types',
           topicsToSearch: ['ai'],
           keywordsToSearch: ['whale'],
           limit: 5,
         },
         {
-          id: 'topics_only',
           reasoning: 'Query with topics only',
           topicsToSearch: ['machine-learning'],
           limit: 5,
         },
         {
-          id: 'keywords_only',
           reasoning: 'Query with keywords only',
           keywordsToSearch: ['detection'],
           limit: 5,
@@ -175,12 +165,11 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(4);
 
       const calls = mockSearchGitHubReposAPI.mock.calls;
-      const queryIds = calls.map(call => call[0]?.id).filter(Boolean);
 
-      expect(queryIds).toContain('both_types_topics');
-      expect(queryIds).toContain('both_types_keywords');
-      expect(queryIds).toContain('topics_only');
-      expect(queryIds).toContain('keywords_only');
+      expect(calls).toContain('both_types_topics');
+      expect(calls).toContain('both_types_keywords');
+      expect(calls).toContain('topics_only');
+      expect(calls).toContain('keywords_only');
     });
 
     it('should preserve all other query parameters when splitting', async () => {
@@ -188,7 +177,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'complex_query',
         reasoning: 'Complex query with many parameters',
         topicsToSearch: ['ai'],
         keywordsToSearch: ['whale'],
@@ -229,7 +217,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'string_topics',
         reasoning: 'Query with string topics',
         topicsToSearch: ['computer-vision'],
         keywordsToSearch: ['whale'],
@@ -244,11 +231,14 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(2);
 
       const calls = mockSearchGitHubReposAPI.mock.calls;
-      const topicsQuery = calls.find(call =>
-        call[0]?.id?.includes('_topics')
+
+      // Find topics query (has topicsToSearch, no keywordsToSearch)
+      const topicsQuery = calls.find(
+        call => call[0]?.topicsToSearch && !call[0]?.keywordsToSearch
       )?.[0];
-      const keywordsQuery = calls.find(call =>
-        call[0]?.id?.includes('_keywords')
+      // Find keywords query (has keywordsToSearch, no topicsToSearch)
+      const keywordsQuery = calls.find(
+        call => call[0]?.keywordsToSearch && !call[0]?.topicsToSearch
       )?.[0];
 
       expect(topicsQuery?.topicsToSearch).toEqual(['computer-vision']);
@@ -260,7 +250,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'empty_arrays',
         reasoning: 'Query with empty arrays',
         topicsToSearch: [],
         keywordsToSearch: [],
@@ -275,7 +264,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(1);
 
       const call = mockSearchGitHubReposAPI.mock.calls[0]?.[0];
-      expect(call?.id).toBe('empty_arrays');
       expect(call?.topicsToSearch).toEqual([]);
       expect(call?.keywordsToSearch).toEqual([]);
     });
@@ -285,7 +273,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
-        id: 'no_reasoning',
         topicsToSearch: ['ai'],
         keywordsToSearch: ['whale'],
         limit: 10,
@@ -298,11 +285,13 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(2);
 
       const calls = mockSearchGitHubReposAPI.mock.calls;
-      const topicsQuery = calls.find(call =>
-        call[0]?.id?.includes('_topics')
+      // Find topics query (has topicsToSearch, no keywordsToSearch)
+      const topicsQuery = calls.find(
+        call => call[0]?.topicsToSearch && !call[0]?.keywordsToSearch
       )?.[0];
-      const keywordsQuery = calls.find(call =>
-        call[0]?.id?.includes('_keywords')
+      // Find keywords query (has keywordsToSearch, no topicsToSearch)
+      const keywordsQuery = calls.find(
+        call => call[0]?.keywordsToSearch && !call[0]?.topicsToSearch
       )?.[0];
 
       expect(topicsQuery?.reasoning).toBe('Topics-based repository search');
@@ -327,11 +316,12 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(2);
 
       const calls = mockSearchGitHubReposAPI.mock.calls;
-      const queryIds = calls.map(call => call[0]?.id).filter(Boolean);
 
-      // Should generate IDs based on array index
-      expect(queryIds).toContain('query_0_topics');
-      expect(queryIds).toContain('query_0_keywords');
+      // Should generate auto IDs
+      calls.forEach(call => {
+        expect(typeof call[0]?.topicsToSearch).toBe('string');
+        expect(typeof call[0]?.keywordsToSearch).toBe('string');
+      });
     });
   });
 
@@ -342,7 +332,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       const queries: GitHubReposSearchQuery[] = [
         {
-          id: 'whale_detection_ai',
           keywordsToSearch: ['whale', 'detection', 'AI'],
           topicsToSearch: [
             'computer-vision',
@@ -355,7 +344,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
             'Search for repositories specifically focused on whale detection using AI and computer vision',
         },
         {
-          id: 'marine_mammal_detection',
           keywordsToSearch: ['marine', 'mammal', 'detection'],
           topicsToSearch: ['computer-vision', 'object-detection'],
           sort: 'stars',
@@ -364,7 +352,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
             'Find repositories for marine mammal detection which would include whales',
         },
         {
-          id: 'underwater_computer_vision',
           keywordsToSearch: ['underwater', 'computer', 'vision'],
           topicsToSearch: ['opencv', 'tensorflow', 'pytorch'],
           sort: 'stars',
@@ -373,7 +360,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
             'Look for underwater computer vision projects that might include whale detection',
         },
         {
-          id: 'ocean_wildlife_detection',
           keywordsToSearch: ['ocean', 'wildlife', 'detection'],
           topicsToSearch: ['yolo', 'object-detection', 'deep-learning'],
           sort: 'stars',
@@ -382,7 +368,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
             'Search for ocean wildlife detection systems that could detect whales',
         },
         {
-          id: 'cetacean_detection',
           keywordsToSearch: ['cetacean', 'detection'],
           sort: 'stars',
           limit: 15,
@@ -407,10 +392,10 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       // Verify whale_detection_ai was split correctly
       const whaleDetectionTopics = calls.find(
-        call => call[0]?.id === 'whale_detection_ai_topics'
+        call => call[0]?.topicsToSearch
       )?.[0];
       const whaleDetectionKeywords = calls.find(
-        call => call[0]?.id === 'whale_detection_ai_keywords'
+        call => call[0]?.keywordsToSearch
       )?.[0];
 
       expect(whaleDetectionTopics).toBeDefined();
@@ -441,10 +426,10 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       // Verify marine_mammal_detection was split correctly
       const marineMammalTopics = calls.find(
-        call => call[0]?.id === 'marine_mammal_detection_topics'
+        call => call[0]?.topicsToSearch
       )?.[0];
       const marineMammalKeywords = calls.find(
-        call => call[0]?.id === 'marine_mammal_detection_keywords'
+        call => call[0]?.keywordsToSearch
       )?.[0];
 
       expect(marineMammalTopics).toBeDefined();
@@ -463,11 +448,9 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(marineMammalKeywords?.topicsToSearch).toBeUndefined();
 
       // Verify underwater_computer_vision was split correctly
-      const underwaterTopics = calls.find(
-        call => call[0]?.id === 'underwater_computer_vision_topics'
-      )?.[0];
+      const underwaterTopics = calls.find(call => call[0]?.topicsToSearch)?.[0];
       const underwaterKeywords = calls.find(
-        call => call[0]?.id === 'underwater_computer_vision_keywords'
+        call => call[0]?.keywordsToSearch
       )?.[0];
 
       expect(underwaterTopics).toBeDefined();
@@ -488,10 +471,10 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       // Verify ocean_wildlife_detection was split correctly
       const oceanWildlifeTopics = calls.find(
-        call => call[0]?.id === 'ocean_wildlife_detection_topics'
+        call => call[0]?.topicsToSearch
       )?.[0];
       const oceanWildlifeKeywords = calls.find(
-        call => call[0]?.id === 'ocean_wildlife_detection_keywords'
+        call => call[0]?.keywordsToSearch
       )?.[0];
 
       expect(oceanWildlifeTopics).toBeDefined();
@@ -511,9 +494,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(oceanWildlifeKeywords?.topicsToSearch).toBeUndefined();
 
       // Verify cetacean_detection was NOT split (only has keywords)
-      const cetaceanQuery = calls.find(
-        call => call[0]?.id === 'cetacean_detection'
-      )?.[0];
+      const cetaceanQuery = calls.find(call => call[0]?.keywordsToSearch)?.[0];
 
       expect(cetaceanQuery).toBeDefined();
       expect(cetaceanQuery?.keywordsToSearch).toEqual([
@@ -524,7 +505,9 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(cetaceanQuery?.limit).toBe(15);
 
       // Ensure no unexpected query IDs
-      const allQueryIds = calls.map(call => call[0]?.id);
+      const allQueryIds = calls.map(
+        call => call[0]?.topicsToSearch || call[0]?.keywordsToSearch
+      );
       const expectedIds = [
         'whale_detection_ai_topics',
         'whale_detection_ai_keywords',
@@ -551,7 +534,6 @@ describe('GitHub Search Repositories Query Splitting', () => {
         {
           queries: [
             {
-              id: 'whale_detection',
               reasoning: 'Search for whale detection repositories',
               topicsToSearch: ['computer-vision'],
               keywordsToSearch: ['whale', 'detection'],

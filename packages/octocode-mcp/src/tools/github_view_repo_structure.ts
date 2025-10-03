@@ -86,7 +86,7 @@ async function exploreMultipleRepositoryStructures(
   const { results, errors } = await processBulkQueries(
     uniqueQueries,
     async (
-      query: GitHubViewRepoStructureQuery
+      query: GitHubViewRepoStructureQuery & { id: string }
     ): Promise<RepoStructureResult> => {
       try {
         // TypeScript and Zod validation ensure all required fields are properly typed
@@ -94,7 +94,6 @@ async function exploreMultipleRepositoryStructures(
 
         // Create API request with properly typed fields
         const apiRequest: GitHubViewRepoStructureQuery = {
-          id: String(query.id),
           reasoning: query.reasoning,
           owner: String(query.owner),
           repo: String(query.repo),
@@ -112,7 +111,7 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
-            queryId: String(query.id),
+            queryId: query.id,
             reasoning: query.reasoning,
             repository: `${query.owner}/${query.repo}`,
             path: query.path || '/',
@@ -173,7 +172,7 @@ async function exploreMultipleRepositoryStructures(
         });
 
         const result: RepoStructureResult = {
-          queryId: String(query.id),
+          queryId: query.id,
           reasoning: query.reasoning,
           repository: `${apiRequest.owner}/${apiRequest.repo}`,
           path: apiRequest.path || '/',
@@ -198,7 +197,7 @@ async function exploreMultipleRepositoryStructures(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
-          queryId: String(query.id),
+          queryId: query.id,
           reasoning: query.reasoning,
           repository: `${query.owner}/${query.repo}`,
           path: query.path || '/',
