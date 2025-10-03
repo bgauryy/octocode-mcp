@@ -8,18 +8,11 @@
  * 4. Domain-specific interfaces for our use cases
  */
 
-// ============================================================================
-// DIRECT IMPORTS & RE-EXPORTS (for convenience)
-// ============================================================================
-
 export type { components } from '@octokit/openapi-types';
 export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 
-// Commonly used component types (direct re-exports for convenience)
 import type { components } from '@octokit/openapi-types';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
-
-// Core GitHub API types (commonly used, so we re-export for convenience)
 export type Repository = components['schemas']['full-repository'];
 export type PullRequest = components['schemas']['pull-request'];
 export type Commit = components['schemas']['commit'];
@@ -33,17 +26,10 @@ export type CommitSearchResultItem =
   components['schemas']['commit-search-result-item'];
 export type DiffEntry = components['schemas']['diff-entry'];
 
-// API parameter types
 export type GetContentParameters =
   RestEndpointMethodTypes['repos']['getContent']['parameters'];
 export type GetRepoResponse =
   RestEndpointMethodTypes['repos']['get']['response'];
-
-// ============================================================================
-// ENHANCED TYPES FOR OUR USE CASES
-// ============================================================================
-
-// Enhanced search result with metadata
 export interface EnhancedSearchResult<T> {
   total_count: number;
   incomplete_results: boolean;
@@ -56,7 +42,6 @@ export interface EnhancedSearchResult<T> {
   };
 }
 
-// Type-safe error response
 export interface GitHubAPIError {
   error: string;
   status?: number;
@@ -67,28 +52,20 @@ export interface GitHubAPIError {
   retryAfter?: number;
 }
 
-// Type-safe success response
 export interface GitHubAPISuccess<T> {
   data: T;
   status: number;
   headers?: Record<string, string>;
 }
 
-// Union type for API responses
 export type GitHubAPIResponse<T> = GitHubAPISuccess<T> | GitHubAPIError;
 
-// ============================================================================
-// CUSTOM TYPES FOR BUSINESS LOGIC
-// ============================================================================
-
-// Repository reference types
 export type RepositoryReference = {
   owner: string;
   repo: string;
   ref?: string;
 };
 
-// Enhanced diff types
 export interface GitHubDiffFile {
   filename: string;
   status: string;
@@ -113,7 +90,6 @@ export interface GitHubCommitDiff {
   files: GitHubDiffFile[];
 }
 
-// Optimized/custom result types
 export interface OptimizedCodeSearchResult {
   items: Array<{
     path: string;
@@ -126,7 +102,6 @@ export interface OptimizedCodeSearchResult {
       nameWithOwner: string;
       url: string;
     };
-    // Optional metadata: minifier strategy used for this file's text matches
     minificationType?: string;
   }>;
   total_count: number;
@@ -255,20 +230,12 @@ export interface GitHubPullRequestItem {
   _sanitization_warnings?: string[];
 }
 
-// ============================================================================
-// EXTENDED TYPES FOR CUSTOM PARAMETERS
-// ============================================================================
-
-// Extended search parameters with our custom fields
 export interface GitHubCommitSearchParams {
-  // Base search parameters
   q?: string;
   sort?: 'author-date' | 'committer-date';
   order?: 'asc' | 'desc';
   per_page?: number;
   page?: number;
-
-  // Our custom fields
   keywordsToSearch?: string[];
   orTerms?: string[];
   exactQuery?: string;
@@ -295,7 +262,6 @@ export interface GitHubCommitSearchParams {
 }
 
 export interface GitHubPullRequestsSearchParams {
-  // Base search parameters
   q?: string;
   sort?:
     | 'comments'
@@ -351,13 +317,6 @@ export interface GitHubPullRequestsSearchParams {
   pageSize?: number;
 }
 
-// ============================================================================
-// TYPE GUARDS
-// ============================================================================
-
-/**
- * Type guard to check if an object is a GitHub API error
- */
 export function isGitHubAPIError(obj: unknown): obj is GitHubAPIError {
   return !!(
     obj &&
@@ -369,9 +328,6 @@ export function isGitHubAPIError(obj: unknown): obj is GitHubAPIError {
   );
 }
 
-/**
- * Type guard to check if an object is a GitHub API success response
- */
 export function isGitHubAPISuccess<T>(
   obj: unknown
 ): obj is GitHubAPISuccess<T> {
@@ -385,9 +341,6 @@ export function isGitHubAPISuccess<T>(
   );
 }
 
-/**
- * Type guard to check if an object is a repository
- */
 export function isRepository(obj: unknown): obj is Repository {
   return !!(
     obj &&
@@ -404,9 +357,6 @@ export function isRepository(obj: unknown): obj is Repository {
   );
 }
 
-/**
- * Type guard to check if an object is a search result item
- */
 export function isSearchResultItem(obj: unknown): obj is CodeSearchResultItem {
   return !!(
     obj &&
@@ -422,9 +372,6 @@ export function isSearchResultItem(obj: unknown): obj is CodeSearchResultItem {
   );
 }
 
-/**
- * Type guard to check if an object is a pull request
- */
 export function isPullRequest(obj: unknown): obj is PullRequest {
   return !!(
     obj &&
@@ -439,9 +386,6 @@ export function isPullRequest(obj: unknown): obj is PullRequest {
   );
 }
 
-/**
- * Type guard to check if an object is a workflow run
- */
 export function isWorkflowRun(obj: unknown): obj is WorkflowRun {
   return !!(
     obj &&
@@ -454,9 +398,6 @@ export function isWorkflowRun(obj: unknown): obj is WorkflowRun {
   );
 }
 
-/**
- * Type guard to check if an object is a check run
- */
 export function isCheckRun(obj: unknown): obj is CheckRun {
   return !!(
     obj &&
@@ -471,11 +412,6 @@ export function isCheckRun(obj: unknown): obj is CheckRun {
   );
 }
 
-// ============================================================================
-// CONVENIENCE TYPE ALIASES FOR DIRECT OCTOKIT ACCESS
-// ============================================================================
-
-// For files that want to use Octokit types directly without imports
 export type SearchCodeParameters =
   RestEndpointMethodTypes['search']['code']['parameters'];
 export type SearchCodeResponse =
@@ -489,7 +425,6 @@ export type SearchCommitsParameters =
 export type SearchCommitsResponse =
   RestEndpointMethodTypes['search']['commits']['response'];
 
-// Common utility types
 export type GitHubID = number;
 export type GitHubSHA = string;
 export type GitHubURL = string;

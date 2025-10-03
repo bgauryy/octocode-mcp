@@ -433,7 +433,6 @@ function mapLanguageToGitHub(language: string): string {
     config: 'Configuration',
   };
 
-  // Return mapped value or original if not found
   return languageMap[language.toLowerCase()] || language;
 }
 

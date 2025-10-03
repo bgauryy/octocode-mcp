@@ -174,28 +174,14 @@ export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
   GitHubPullRequestSearchQuerySchema
 );
 
-// ============================================================================
-// Simple Input/Output Types
-// ============================================================================
-
-/**
- * Tool input - bulk pull request search queries
- */
 export interface GitHubSearchPullRequestsInput {
   queries: GitHubPullRequestSearchQuery[];
 }
 
-/**
- * Tool output - extends standardized ToolResponse format
- */
 export interface GitHubSearchPullRequestsOutput extends ToolResponse {
-  /** Primary data payload - array of pull request search results */
   data: PullRequestSearchResult[];
 }
 
-/**
- * Individual pull request search result
- */
 export interface PullRequestSearchResult {
   researchGoal?: string;
   reasoning?: string;
@@ -205,12 +191,9 @@ export interface PullRequestSearchResult {
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only on error
-  metadata: Record<string, unknown>; // Required for bulk operations compatibility
+  metadata: Record<string, unknown>;
 }
 
-/**
- * Simplified pull request information - preserves all essential GitHub API data
- */
 export interface PullRequestInfo {
   id: number;
   number: number;

@@ -1,36 +1,17 @@
 import { TOOL_NAMES, ToolName } from '../constants';
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-/**
- * Context for generating hints for a query result
- */
 export interface HintContext {
   toolName: ToolName;
   resultType: 'results' | 'noResults' | 'errors';
   errorMessage?: string;
 }
 
-/**
- * Organized hints structure with three main categories
- */
 export interface OrganizedHints {
   results?: string[];
   noResults?: string[];
   errors?: string[];
 }
 
-// ============================================================================
-// EXPORTS
-// ============================================================================
-
-/**
- * Generate organized hints based on query context
- * Returns hints categorized by result type (results, noResults, errors)
- * Only includes non-empty categories
- */
 export function getHints(context: HintContext): OrganizedHints {
   const hints: OrganizedHints = {};
 
@@ -58,7 +39,6 @@ export function getHints(context: HintContext): OrganizedHints {
   return hints;
 }
 
-// Legacy exports for backward compatibility
 export function generateHints(context: HintContext): OrganizedHints {
   return getHints(context);
 }
@@ -70,11 +50,6 @@ export function generateEmptyQueryHints(_toolName: ToolName): string[] {
   ];
 }
 
-// ============================================================================
-// INTERNALS
-// ============================================================================
-
-// General navigation hints (apply to all result types)
 const NAVIGATION_GENERAL: string[] = [
   'Chain tools: repository search → structure view → code search → content fetch',
   'Compare implementations across 3-5 repositories to identify best practices',
@@ -191,22 +166,16 @@ const ERROR_RECOVERY_TOOL: Record<string, string[]> = {
   ],
 };
 
-/**
- * Get combined hints for successful results (navigation + research)
- */
 function getResultsHints(toolName: ToolName): string[] {
   const hints: string[] = [];
 
-  // Add general research hints
   hints.push(...RESEARCH_GENERAL);
 
-  // Add tool-specific research hints
   const toolResearch = RESEARCH_TOOL[toolName];
   if (toolResearch) {
     hints.push(...toolResearch);
   }
 
-  // Add navigation hints
   hints.push(...NAVIGATION_GENERAL);
   const toolNavigation = NAVIGATION_TOOL[toolName];
   if (toolNavigation) {
@@ -216,22 +185,16 @@ function getResultsHints(toolName: ToolName): string[] {
   return hints;
 }
 
-/**
- * Get combined hints for no results (general + tool-specific + navigation)
- */
 function getNoResultsHints(toolName: ToolName): string[] {
   const hints: string[] = [];
 
-  // Add general no-results hints
   hints.push(...NO_RESULTS_GENERAL);
 
-  // Add tool-specific no-results hints
   const toolNoResults = NO_RESULTS_TOOL[toolName];
   if (toolNoResults) {
     hints.push(...toolNoResults);
   }
 
-  // Add navigation hints
   hints.push(...NAVIGATION_GENERAL);
   const toolNavigation = NAVIGATION_TOOL[toolName];
   if (toolNavigation) {
@@ -241,13 +204,9 @@ function getNoResultsHints(toolName: ToolName): string[] {
   return hints;
 }
 
-/**
- * Get combined hints for errors (recovery + navigation)
- */
 function getErrorsHints(toolName: ToolName, errorMessage?: string): string[] {
   const hints: string[] = [];
 
-  // Add general error hint based on error type
   if (errorMessage) {
     const errorType = detectErrorType(errorMessage);
     if (errorType && ERROR_RECOVERY_GENERAL[errorType]) {
@@ -255,13 +214,11 @@ function getErrorsHints(toolName: ToolName, errorMessage?: string): string[] {
     }
   }
 
-  // Add tool-specific error hints
   const toolHints = ERROR_RECOVERY_TOOL[toolName];
   if (toolHints) {
     hints.push(...toolHints);
   }
 
-  // Add navigation hints
   hints.push(...NAVIGATION_GENERAL);
   const toolNavigation = NAVIGATION_TOOL[toolName];
   if (toolNavigation) {
@@ -271,9 +228,6 @@ function getErrorsHints(toolName: ToolName, errorMessage?: string): string[] {
   return hints;
 }
 
-/**
- * Detect error type from error message
- */
 function detectErrorType(
   errorMessage: string
 ): keyof typeof ERROR_RECOVERY_GENERAL | null {

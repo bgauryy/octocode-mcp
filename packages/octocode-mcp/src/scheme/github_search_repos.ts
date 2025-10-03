@@ -51,28 +51,14 @@ export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
   GitHubReposSearchSingleQuerySchema
 );
 
-// ============================================================================
-// Simple Input/Output Types
-// ============================================================================
-
-/**
- * Tool input - bulk repository search queries
- */
 export interface GitHubSearchReposInput {
   queries: GitHubReposSearchQuery[];
 }
 
-/**
- * Tool output - extends standardized ToolResponse format
- */
 export interface GitHubSearchReposOutput extends ToolResponse {
-  /** Primary data payload - array of repository search results */
   data: RepoSearchResult[];
 }
 
-/**
- * Individual repository search result
- */
 export interface RepoSearchResult {
   researchGoal?: string;
   reasoning?: string;

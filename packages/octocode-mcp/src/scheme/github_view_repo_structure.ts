@@ -111,28 +111,14 @@ export interface GitHubRepositoryStructureError {
   rateLimitReset?: number;
 }
 
-// ============================================================================
-// Simple Input/Output Types
-// ============================================================================
-
-/**
- * Tool input - bulk repository structure queries
- */
 export interface GitHubViewRepoStructureInput {
   queries: GitHubViewRepoStructureQuery[];
 }
 
-/**
- * Tool output - extends standardized ToolResponse format
- */
 export interface GitHubViewRepoStructureOutput extends ToolResponse {
-  /** Primary data payload - array of repository structure results */
   data: RepoStructureResult[];
 }
 
-/**
- * Individual repository structure result
- */
 export interface RepoStructureResult {
   researchGoal?: string;
   reasoning?: string;
