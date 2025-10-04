@@ -138,14 +138,14 @@ describe('bulkOperations', () => {
       expect(responseText).toContain('data:');
       expect(responseText).toContain('results:');
       // Should NOT contain empty sections
-      expect(responseText).not.toContain('noResults:');
-      expect(responseText).not.toContain('errors:');
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
       expect(responseText).toContain('hints:');
       // Ensure success items present
       expect(responseText).toContain('name: "item1"');
       expect(responseText).toContain('name: "item2"');
       // Ensure research strategies hint exists
-      expect(responseText).toContain('better research strategies');
+      expect(responseText).toContain('improve your research strategy');
     });
 
     it('should create response with errors', () => {
@@ -173,7 +173,7 @@ describe('bulkOperations', () => {
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('errors:');
+      expect(responseText).toContain('failed:');
       expect(responseText).toContain('error: "API rate limit exceeded"');
       expect(responseText).toContain('originalQuery:');
       expect(responseText).toContain('keywordsToSearch:');
@@ -202,12 +202,12 @@ describe('bulkOperations', () => {
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
       // Should NOT contain any data sections since all are empty
-      expect(responseText).not.toContain('results:');
-      expect(responseText).not.toContain('noResults:');
-      expect(responseText).not.toContain('errors:');
+      expect(responseText).not.toContain('successful:');
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
       expect(responseText).toContain('hints:');
       // Should show empty state in summary
-      expect(responseText).toContain('better research strategies');
+      expect(responseText).toContain('No queries processed');
     });
 
     it('should handle config options', () => {
@@ -392,7 +392,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('errors:');
+      expect(yamlText).toContain('failed:');
       expect(yamlText).toContain('Processing failed for fail_query');
       expect(yamlText).toContain('originalQuery:');
     });
@@ -484,12 +484,12 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      // Successful queries with repositories are in noResults (they have empty content)
-      expect(yamlText).toContain('noResults:');
-      expect(yamlText).toContain('errors:');
+      // Successful queries with repositories are in empty (they have empty content)
+      expect(yamlText).toContain('empty:');
+      expect(yamlText).toContain('failed:');
       expect(yamlText).toContain('repositories:');
-      // No actual "results" section (all went to noResults or errors)
-      expect(yamlText).not.toContain('results:');
+      // No actual "successful" section (all went to empty or failed)
+      expect(yamlText).not.toContain('successful:');
       expect(yamlText).toContain('Processing failed for fail_query');
     });
 
@@ -609,7 +609,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('noResults:');
+      expect(yamlText).toContain('empty:');
       expect(yamlText).toContain('files: []');
     });
 
@@ -646,7 +646,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('noResults:');
+      expect(yamlText).toContain('empty:');
       expect(yamlText).toContain('repositories: []');
       expect(yamlText).toContain('repositories:');
     });
@@ -686,7 +686,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('noResults:');
+      expect(yamlText).toContain('empty:');
       expect(yamlText).toContain('pull_requests: []');
       expect(yamlText).toContain('pull_requests:');
     });
@@ -726,7 +726,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('noResults:');
+      expect(yamlText).toContain('empty:');
       expect(yamlText).toContain('files: []');
       expect(yamlText).toContain('folders: []');
       expect(yamlText).toContain('results:');
@@ -790,7 +790,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('errors:');
+      expect(yamlText).toContain('failed:');
       expect(yamlText).toContain(
         'error: "File is empty - no content to display"'
       );
@@ -809,7 +809,7 @@ describe('bulkOperations', () => {
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('errors:');
+      expect(yamlText).toContain('failed:');
       expect(yamlText).toContain('error: "GitHub API error"');
       expect(yamlText).toContain('originalQuery:');
     });

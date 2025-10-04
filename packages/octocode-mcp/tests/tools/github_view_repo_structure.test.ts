@@ -271,16 +271,16 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(responseText).not.toContain('branch: "main"');
 
       // Verify other expected fields are present in new format
-      expect(responseText).toContain('results:');
+      expect(responseText).toContain('successful:');
       expect(responseText).toContain('repository: "test/repo"');
       expect(responseText).toContain('path: "/"');
-      expect(responseText).toContain('1 results');
-      expect(responseText).toContain('better research strategies');
+      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('improve your research strategy');
       expect(responseText).toContain('files:');
       expect(responseText).toContain('folders:');
       // Should NOT contain empty sections
-      expect(responseText).not.toContain('noResults:');
-      expect(responseText).not.toContain('errors:');
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
     });
 
     it('should use correct field ordering: queryId, reasoning, repository, path, files, folders', async () => {
@@ -310,13 +310,15 @@ describe('GitHub View Repository Structure Tool', () => {
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
-      // Extract the results.items section to check field ordering in new format
-      const itemsMatch = responseText.match(/items:\s*\n([\s\S]*?)hints:/);
-      expect(itemsMatch).toBeTruthy();
+      // Extract the queries.successful section to check field ordering in new format
+      const successfulMatch = responseText.match(
+        /successful:\s*\n([\s\S]*?)hints:/
+      );
+      expect(successfulMatch).toBeTruthy();
 
-      if (itemsMatch?.[1]) {
-        const itemsSection = itemsMatch[1];
-        const lines = itemsSection.split('\n').filter(line => line.trim());
+      if (successfulMatch?.[1]) {
+        const successfulSection = successfulMatch[1];
+        const lines = successfulSection.split('\n').filter(line => line.trim());
 
         // Find the indices of each field (no queryId in new format)
         const repositoryIndex = lines.findIndex(line =>

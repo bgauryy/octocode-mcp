@@ -3,8 +3,19 @@
  *
  * This module provides common functionality for:
  * - Parallel query processing with error isolation
- * - Result aggregation into results/noResults/errors structure
- * - Organized hint generation per result type
+ * - Result aggregation into successful/empty/failed structure
+ * - Organized hint generation per query outcome
+ *
+ * Response structure:
+ * data:
+ *   queries:
+ *     successful: [...] // queries that returned results
+ *     empty: [...]      // queries that ran but found no matches
+ *     failed: [...]     // queries that encountered errors
+ *   hints:
+ *     successful: [...] // hints for working with results
+ *     empty: [...]      // hints for refining empty queries
+ *     failed: [...]     // hints for recovering from errors
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
@@ -155,54 +166,61 @@ export function createBulkResponse<
     }
   });
 
-  const data: Record<string, unknown> = {};
+  // Build queries object - only include sections with data
+  const queriesData: Record<string, unknown[]> = {};
+  const hintsData: Record<string, string[]> = {};
 
   if (successItems.length > 0) {
-    const resultsHints = generateHints({
+    queriesData.successful = successItems;
+    const successfulHints = generateHints({
       toolName: config.toolName,
-      resultType: 'results',
+      resultType: 'successful',
     });
-    data.results = {
-      items: successItems,
-      hints: resultsHints.results || [],
-    };
+    hintsData.successful = successfulHints.successful || [];
   }
 
   if (noResultItems.length > 0) {
-    const noResultsHints = generateHints({
+    queriesData.empty = noResultItems;
+    const emptyHints = generateHints({
       toolName: config.toolName,
-      resultType: 'noResults',
+      resultType: 'empty',
     });
-    data.noResults = {
-      items: noResultItems,
-      hints: noResultsHints.noResults || [],
-    };
+    hintsData.empty = emptyHints.empty || [];
   }
 
   if (errorItems.length > 0) {
-    const errorsHints = generateHints({
+    queriesData.failed = errorItems;
+    const failedHints = generateHints({
       toolName: config.toolName,
-      resultType: 'errors',
+      resultType: 'failed',
       errorMessage: errors[0]?.error || (errorItems[0]?.error as string),
     });
-    data.errors = {
-      items: errorItems,
-      hints: errorsHints.errors || [],
-    };
+    hintsData.failed = failedHints.failed || [];
+  }
+
+  // Build data object - only include if we have queries
+  const data: Record<string, unknown> = {};
+  if (Object.keys(queriesData).length > 0) {
+    data.queries = queriesData;
+  }
+  if (Object.keys(hintsData).length > 0) {
+    data.hints = hintsData;
   }
 
   const counts = [];
-  if (successItems.length > 0) counts.push(`${successItems.length} results`);
-  if (noResultItems.length > 0)
-    counts.push(`${noResultItems.length} no-results`);
-  if (errorItems.length > 0) counts.push(`${errorItems.length} errors`);
+  if (successItems.length > 0) counts.push(`${successItems.length} successful`);
+  if (noResultItems.length > 0) counts.push(`${noResultItems.length} empty`);
+  if (errorItems.length > 0) counts.push(`${errorItems.length} failed`);
 
   const responseData: ToolResponse = {
     data,
-    hints: [
-      counts.join(', '),
-      'Check hints in each section for better research strategies',
-    ],
+    hints:
+      counts.length > 0
+        ? [
+            `Query results: ${counts.join(', ')}`,
+            'Review hints for each query category to improve your research strategy',
+          ]
+        : ['No queries processed'],
   };
 
   return {

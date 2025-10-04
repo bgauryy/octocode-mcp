@@ -99,8 +99,8 @@ describe('GitHub Fetch Content Tool', () => {
 
       const responseText = result.content[0]?.text as string;
       // Verify new structured format with only non-empty sections
-      expect(responseText).toContain('results:');
-      expect(responseText).toContain('items:');
+      expect(responseText).toContain('queries:');
+      expect(responseText).toContain('successful:');
       expect(responseText).toContain('repository: "test/repo"');
       expect(responseText).toContain('path: "README.md"');
       expect(responseText).toContain('contentLength: 35');
@@ -108,11 +108,11 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).toContain('branch: "main"');
       expect(responseText).toContain('minified: false');
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('1 results');
-      expect(responseText).toContain('better research strategies');
+      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('improve your research strategy');
       // Should NOT contain empty sections
-      expect(responseText).not.toContain('noResults:');
-      expect(responseText).not.toContain('errors:');
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
     });
 
     it('should pass authInfo and userContext to GitHub API', async () => {
@@ -198,16 +198,16 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('data:');
-      expect(responseText).toContain('results:');
+      expect(responseText).toContain('successful:');
       expect(responseText).toContain('README.md');
       expect(responseText).toContain('package.json');
       expect(responseText).toContain('README'); // Content from README.md
       expect(responseText).toContain('test'); // Content from package.json name field
-      expect(responseText).toContain('2 results');
-      expect(responseText).toContain('better research strategies');
+      expect(responseText).toContain('2 successful');
+      expect(responseText).toContain('improve your research strategy');
       // Should NOT contain empty sections
-      expect(responseText).not.toContain('noResults:');
-      expect(responseText).not.toContain('errors:');
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
     });
   });
 
@@ -964,13 +964,13 @@ End of file.`;
       expect(responseText).toContain('File not found');
       expect(responseText).toContain('Network timeout');
       expect(responseText).toContain('success.js'); // Success result file path
-      expect(responseText).toContain('1 results, 2 errors');
-      expect(responseText).toContain('better research strategies');
+      expect(responseText).toContain('1 successful, 2 failed');
+      expect(responseText).toContain('improve your research strategy');
       // Error items should have metadata.originalQuery with query info
       expect(responseText).toContain('missing.js');
       expect(responseText).toContain('timeout.js');
-      // Should NOT contain noResults section
-      expect(responseText).not.toContain('noResults:');
+      // Should NOT contain empty section
+      expect(responseText).not.toContain('empty:');
     });
   });
 

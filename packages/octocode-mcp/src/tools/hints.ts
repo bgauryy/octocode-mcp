@@ -2,37 +2,37 @@ import { TOOL_NAMES, ToolName } from '../constants';
 
 export interface HintContext {
   toolName: ToolName;
-  resultType: 'results' | 'noResults' | 'errors';
+  resultType: 'successful' | 'empty' | 'failed';
   errorMessage?: string;
 }
 
 export interface OrganizedHints {
-  results?: string[];
-  noResults?: string[];
-  errors?: string[];
+  successful?: string[];
+  empty?: string[];
+  failed?: string[];
 }
 
 export function getHints(context: HintContext): OrganizedHints {
   const hints: OrganizedHints = {};
 
-  if (context.resultType === 'results') {
-    const resultHints = getResultsHints(context.toolName);
-    if (resultHints.length > 0) {
-      hints.results = resultHints;
+  if (context.resultType === 'successful') {
+    const successfulHints = getSuccessfulHints(context.toolName);
+    if (successfulHints.length > 0) {
+      hints.successful = successfulHints;
     }
   }
 
-  if (context.resultType === 'noResults') {
-    const noResultHints = getNoResultsHints(context.toolName);
-    if (noResultHints.length > 0) {
-      hints.noResults = noResultHints;
+  if (context.resultType === 'empty') {
+    const emptyHints = getEmptyHints(context.toolName);
+    if (emptyHints.length > 0) {
+      hints.empty = emptyHints;
     }
   }
 
-  if (context.resultType === 'errors') {
-    const errorHints = getErrorsHints(context.toolName, context.errorMessage);
-    if (errorHints.length > 0) {
-      hints.errors = errorHints;
+  if (context.resultType === 'failed') {
+    const failedHints = getFailedHints(context.toolName, context.errorMessage);
+    if (failedHints.length > 0) {
+      hints.failed = failedHints;
     }
   }
 
@@ -166,7 +166,7 @@ const ERROR_RECOVERY_TOOL: Record<string, string[]> = {
   ],
 };
 
-function getResultsHints(toolName: ToolName): string[] {
+function getSuccessfulHints(toolName: ToolName): string[] {
   const hints: string[] = [];
 
   hints.push(...RESEARCH_GENERAL);
@@ -185,7 +185,7 @@ function getResultsHints(toolName: ToolName): string[] {
   return hints;
 }
 
-function getNoResultsHints(toolName: ToolName): string[] {
+function getEmptyHints(toolName: ToolName): string[] {
   const hints: string[] = [];
 
   hints.push(...NO_RESULTS_GENERAL);
@@ -204,7 +204,7 @@ function getNoResultsHints(toolName: ToolName): string[] {
   return hints;
 }
 
-function getErrorsHints(toolName: ToolName, errorMessage?: string): string[] {
+function getFailedHints(toolName: ToolName, errorMessage?: string): string[] {
   const hints: string[] = [];
 
   if (errorMessage) {

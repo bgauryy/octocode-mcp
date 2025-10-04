@@ -457,15 +457,15 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       // Should have both query results
       expect(resultText).toContain('data:');
-      expect(resultText).toContain('results:');
+      expect(resultText).toContain('successful:');
       // Results have files from both queries
       expect(resultText).toContain('component.js');
       expect(resultText).toContain('utils.ts');
-      expect(resultText).toContain('2 results');
-      expect(resultText).toContain('better research strategies');
+      expect(resultText).toContain('2 successful');
+      expect(resultText).toContain('improve your research strategy');
       // Should NOT contain empty sections
-      expect(resultText).not.toContain('noResults:');
-      expect(resultText).not.toContain('errors:');
+      expect(resultText).not.toContain('empty:');
+      expect(resultText).not.toContain('failed:');
 
       // First query should filter out .log file
       expect(resultText).toContain('src/component.js');

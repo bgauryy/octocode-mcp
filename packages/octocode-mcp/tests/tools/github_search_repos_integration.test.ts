@@ -72,13 +72,13 @@ describe('GitHub Search Repositories Response Structure Test', () => {
     expect(responseText).toMatch(/hints:/m);
 
     // Validate the response structure matches our expected schema
-    expect(responseText).toContain('results:');
+    expect(responseText).toContain('successful:');
     expect(responseText).toContain('reasoning: "Testing response structure"');
-    expect(responseText).toContain('1 results');
-    expect(responseText).toContain('better research strategies');
+    expect(responseText).toContain('1 successful');
+    expect(responseText).toContain('improve your research strategy');
     // Should NOT contain empty sections
-    expect(responseText).not.toContain('noResults:');
-    expect(responseText).not.toContain('errors:');
+    expect(responseText).not.toContain('empty:');
+    expect(responseText).not.toContain('failed:');
 
     // Validate that only expected fields are present (SimplifiedRepository interface)
     expect(responseText).toContain('repository: "facebook/react"');
