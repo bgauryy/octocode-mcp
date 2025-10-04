@@ -87,12 +87,10 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
 ): (args: unknown) => Promise<CallToolResult> {
   return async (args: unknown): Promise<CallToolResult> => {
     try {
-      // Validate and sanitize input parameters for security
       const validation = ContentSanitizer.validateInputParameters(
         args as Record<string, unknown>
       );
 
-      // Check if validation failed due to structural/security issues
       if (!validation.isValid) {
         return createResult({
           data: {
@@ -102,7 +100,6 @@ export function withBasicSecurityValidation<T extends Record<string, unknown>>(
         });
       }
 
-      // Call the actual tool handler with sanitized parameters
       return await toolHandler(validation.sanitizedParams as T);
     } catch (error) {
       return createResult({
@@ -159,7 +156,6 @@ export function extractRepoOwnerFromParams(
 ): string[] {
   const repoOwnerSet = new Set<string>();
 
-  // Check if params has queries array (bulk operations)
   if (
     params.queries &&
     Array.isArray(params.queries) &&
@@ -192,7 +188,6 @@ export function extractRepoOwnerFromParams(
       }
     }
   } else {
-    // Check direct params (single operations)
     const repository =
       typeof params.repository === 'string' ? params.repository : undefined;
 

@@ -64,12 +64,9 @@ export async function initialize(): Promise<void> {
     return initializationPromise;
   }
 
-  // Start initialization
   initializationPromise = (async () => {
-    // Resolve token
     cachedToken = await resolveGitHubToken();
 
-    // Build config
     config = {
       version: version,
       toolsToRun: parseStringArray(process.env.TOOLS_TO_RUN),
@@ -132,12 +129,10 @@ export function getServerConfig(): ServerConfig {
  * Get GitHub token
  */
 export async function getGitHubToken(): Promise<string | null> {
-  // Return cached token if available
   if (cachedToken) {
     return cachedToken;
   }
 
-  // Try to resolve token again
   cachedToken = await resolveGitHubToken();
   return cachedToken;
 }

@@ -12,7 +12,6 @@ import {
   FileContentBulkQuerySchema,
 } from '../scheme/github_fetch_content.js';
 import {
-  ensureUniqueQueryIds,
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
@@ -22,6 +21,7 @@ import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
+import { generateEmptyQueryHints } from './hints.js';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   return server.registerTool(
@@ -54,7 +54,7 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         if (emptyQueries) {
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
-            hints: ['Provide at least one file content query'],
+            hints: generateEmptyQueryHints(TOOL_NAMES.GITHUB_FETCH_CONTENT),
             isError: true,
           });
         }
@@ -76,12 +76,11 @@ async function fetchMultipleGitHubFileContents(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  const uniqueQueries = ensureUniqueQueryIds(queries, 'file-content');
-
   const { results, errors } = await processBulkQueries(
-    uniqueQueries,
+    queries,
     async (
-      query: FileContentQuery & { id: string }
+      query: FileContentQuery,
+      _index: number
     ): Promise<ProcessedBulkResult> => {
       try {
         // Create properly typed request using smart type conversion
@@ -131,13 +130,9 @@ async function fetchMultipleGitHubFileContents(
         // Check if result is an error
         if ('error' in result) {
           return {
+            researchGoal: query.researchGoal,
+            reasoning: query.reasoning,
             error: result.error,
-            hints: [
-              'Verify repository owner, name, and file path are correct',
-              'Check that the branch exists (try "main" or "master")',
-              'Ensure you have access to the repository',
-              'Use github_view_repo_structure tool first to explore the repository structure and find correct file paths',
-            ],
             metadata: {},
           };
         }
@@ -193,6 +188,8 @@ async function fetchMultipleGitHubFileContents(
         }
 
         return {
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
           ...resultObj,
           metadata: {},
         } as ProcessedBulkResult;
@@ -201,33 +198,19 @@ async function fetchMultipleGitHubFileContents(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          researchGoal: query.researchGoal,
+          reasoning: query.reasoning,
           error: errorMessage,
-          hints: [
-            'Verify repository owner, name, and file path are correct',
-            'Check that the branch exists (try "main" or "master")',
-            'Ensure you have access to the repository',
-            'Use github_view_repo_structure tool first to explore the repository structure and find correct file paths',
-          ],
           metadata: {},
         } as ProcessedBulkResult;
       }
     }
   );
 
-  // Build aggregated context
-  const successfulCount = results.filter(r => !r.result.error).length;
-  const aggregatedContext = {
-    totalQueries: results.length,
-    successfulQueries: successfulCount,
-    failedQueries: results.length - successfulCount,
-    dataQuality: { hasResults: successfulCount > 0 },
-  };
-
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-    maxHints: 8,
     keysPriority: [
-      'queryId',
+      'researchGoal',
       'reasoning',
       'repository',
       'path',
@@ -236,12 +219,5 @@ async function fetchMultipleGitHubFileContents(
     ],
   };
 
-  // Create standardized response - bulk operations handles all hint generation and formatting
-  return createBulkResponse(
-    config,
-    results,
-    aggregatedContext,
-    errors,
-    uniqueQueries
-  );
+  return createBulkResponse(config, results, errors, queries);
 }

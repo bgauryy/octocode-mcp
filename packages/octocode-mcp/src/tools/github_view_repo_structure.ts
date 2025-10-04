@@ -12,9 +12,8 @@ import {
   GitHubViewRepoStructureBulkQuerySchema,
   RepoStructureResult,
 } from '../scheme/github_view_repo_structure.js';
-import { generateHints } from './hints';
+import { generateEmptyQueryHints } from './hints';
 import {
-  ensureUniqueQueryIds,
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
@@ -51,14 +50,9 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-            hasResults: false,
-            errorMessage: 'Queries array is required and cannot be empty',
-            customHints: [
-              'Provide at least one repository structure query with owner, repo, and branch',
-            ],
-          });
+          const hints = generateEmptyQueryHints(
+            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
+          );
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
@@ -82,11 +76,11 @@ async function exploreMultipleRepositoryStructures(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  const uniqueQueries = ensureUniqueQueryIds(queries, 'repo-structure');
   const { results, errors } = await processBulkQueries(
-    uniqueQueries,
+    queries,
     async (
-      query: GitHubViewRepoStructureQuery
+      query: GitHubViewRepoStructureQuery,
+      _index: number
     ): Promise<RepoStructureResult> => {
       try {
         // TypeScript and Zod validation ensure all required fields are properly typed
@@ -94,7 +88,6 @@ async function exploreMultipleRepositoryStructures(
 
         // Create API request with properly typed fields
         const apiRequest: GitHubViewRepoStructureQuery = {
-          id: String(query.id),
           reasoning: query.reasoning,
           owner: String(query.owner),
           repo: String(query.repo),
@@ -112,18 +105,14 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
-            queryId: String(query.id),
+            researchGoal: query.researchGoal,
             reasoning: query.reasoning,
-            repository: `${query.owner}/${query.repo}`,
+            owner: query.owner,
+            repo: query.repo,
             path: query.path || '/',
             files: [],
             folders: [],
             error: apiResult.error,
-            hints: [
-              'Verify repository owner and name are correct',
-              'Check that the branch exists (try "main" or "master")',
-              'Ensure you have access to the repository',
-            ],
             metadata: {
               error: apiResult.error,
               searchType: 'api_error',
@@ -173,9 +162,10 @@ async function exploreMultipleRepositoryStructures(
         });
 
         const result: RepoStructureResult = {
-          queryId: String(query.id),
+          researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          repository: `${apiRequest.owner}/${apiRequest.repo}`,
+          owner: apiRequest.owner,
+          repo: apiRequest.repo,
           path: apiRequest.path || '/',
           files: filePaths,
           folders: folderPaths,
@@ -198,18 +188,14 @@ async function exploreMultipleRepositoryStructures(
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
-          queryId: String(query.id),
+          researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          repository: `${query.owner}/${query.repo}`,
+          owner: query.owner,
+          repo: query.repo,
           path: query.path || '/',
           files: [],
           folders: [],
           error: `Failed to explore repository structure: ${errorMessage}`,
-          hints: [
-            'Verify repository owner and name are correct',
-            'Check that the branch exists (try "main" or "master")',
-            'Ensure you have access to the repository',
-          ],
           metadata: {
             queryArgs: { ...query },
             error: `Failed to explore repository structure: ${errorMessage}`,
@@ -220,87 +206,18 @@ async function exploreMultipleRepositoryStructures(
     }
   );
 
-  // Build aggregated context for intelligent hints
-  const successfulCount = results.filter(r => !r.result.error).length;
-  const failedCount = results.length - successfulCount;
-  const aggregatedContext = {
-    totalQueries: results.length,
-    successfulQueries: successfulCount,
-    failedQueries: failedCount,
-    foundDirectories: new Set<string>(),
-    foundFileTypes: new Set<string>(),
-    repositoryContexts: new Set<string>(),
-    exploredPaths: new Set<string>(),
-    dataQuality: {
-      hasResults: successfulCount > 0,
-      hasContent: results.some(
-        r =>
-          !r.result.error &&
-          ((Array.isArray(r.result.files) && r.result.files.length > 0) ||
-            (Array.isArray(r.result.folders) && r.result.folders.length > 0))
-      ),
-      hasStructure: results.some(
-        r =>
-          !r.result.error &&
-          ((Array.isArray(r.result.files) && r.result.files.length > 0) ||
-            (Array.isArray(r.result.folders) && r.result.folders.length > 0))
-      ),
-    },
-  };
-
-  // Extract context from successful results
-  results.forEach(({ result }) => {
-    if (!result.error && (result.files || result.folders)) {
-      if (result.repository) {
-        aggregatedContext.repositoryContexts.add(result.repository);
-      }
-      if (result.path) {
-        aggregatedContext.exploredPaths.add(String(result.path));
-      }
-
-      // Extract file types and directories
-      if (Array.isArray(result.files)) {
-        result.files.forEach((filePath: string) => {
-          const extension = filePath.split('.').pop();
-          if (extension) {
-            aggregatedContext.foundFileTypes.add(extension);
-          }
-
-          const directory = filePath.split('/').slice(0, -1).join('/');
-          if (directory) {
-            aggregatedContext.foundDirectories.add(directory);
-          }
-        });
-      }
-
-      // Add folders directly to foundDirectories
-      if (Array.isArray(result.folders)) {
-        result.folders.forEach((folderPath: string) => {
-          aggregatedContext.foundDirectories.add(folderPath);
-        });
-      }
-    }
-  });
-
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    maxHints: 8,
     keysPriority: [
-      'queryId',
+      'researchGoal',
       'reasoning',
-      'repository',
+      'owner',
+      'repo',
       'path',
       'files',
       'folders',
     ],
   };
 
-  // Create standardized response - bulk operations handles all hint generation and formatting
-  return createBulkResponse(
-    config,
-    results,
-    aggregatedContext,
-    errors,
-    uniqueQueries
-  );
+  return createBulkResponse(config, results, errors, queries);
 }
