@@ -81,7 +81,7 @@ describe('Empty Arrays Removal in Responses', () => {
       // Should not contain "files: []" or similar empty array indicators
       expect(responseText).not.toMatch(/files:\s*\[\]/);
       expect(responseText).not.toMatch(/files:\s*$/m);
-      
+
       // Should contain empty section with the query but no files field
       expect(responseText).toContain('empty:');
       expect(responseText).toContain('1 empty');
@@ -112,7 +112,7 @@ describe('Empty Arrays Removal in Responses', () => {
       // Should not contain "repositories: []"
       expect(responseText).not.toMatch(/repositories:\s*\[\]/);
       expect(responseText).not.toMatch(/repositories:\s*$/m);
-      
+
       // Should contain empty section
       expect(responseText).toContain('empty:');
       expect(responseText).toContain('1 empty');
@@ -146,7 +146,7 @@ describe('Empty Arrays Removal in Responses', () => {
       // Should not contain "files: []" or "folders: []"
       expect(responseText).not.toMatch(/files:\s*\[\]/);
       expect(responseText).not.toMatch(/folders:\s*\[\]/);
-      
+
       // Should contain empty section
       expect(responseText).toContain('empty:');
       expect(responseText).toContain('1 empty');
@@ -185,7 +185,7 @@ describe('Empty Arrays Removal in Responses', () => {
 
       // Should not have empty arrays anywhere
       expect(responseText).not.toMatch(/:\s*\[\]\s*$/m);
-      
+
       // Should have both successful and empty sections
       expect(responseText).toContain('successful:');
       expect(responseText).toContain('empty:');
@@ -223,7 +223,7 @@ describe('Empty Arrays Removal in Responses', () => {
 
       // Should not contain any empty array syntax
       expect(responseText).not.toMatch(/:\s*\[\]\s*/);
-      
+
       // File should still be present but without empty matches field
       expect(responseText).toContain('file1.js');
     });
@@ -255,10 +255,10 @@ describe('Empty Arrays Removal in Responses', () => {
       // Hints should exist and not be empty
       expect(responseText).toContain('hints:');
       expect(responseText).toContain('successful:');
-      
+
       // Should have actual hints (array with content)
       expect(responseText).toMatch(/successful:\s*\n\s*-/);
-      
+
       // Should not have empty hint sections
       expect(responseText).not.toMatch(/successful:\s*\[\]/);
       expect(responseText).not.toMatch(/empty:\s*\[\]/);
@@ -266,4 +266,3 @@ describe('Empty Arrays Removal in Responses', () => {
     });
   });
 });
-

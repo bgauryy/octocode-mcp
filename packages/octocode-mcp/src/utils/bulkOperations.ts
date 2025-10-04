@@ -21,6 +21,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateHints } from '../tools/hints.js';
+import { BULK_OPERATIONS_HINTS } from '../tools/hintsContent.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 import { createResponseFormat, type ToolResponse } from '../responses.js';
 
@@ -218,9 +219,9 @@ export function createBulkResponse<
       counts.length > 0
         ? [
             `Query results: ${counts.join(', ')}`,
-            'Review hints for each query category to improve your research strategy',
+            BULK_OPERATIONS_HINTS.QUERY_CATEGORY_GUIDANCE,
           ]
-        : ['No queries processed'],
+        : [BULK_OPERATIONS_HINTS.NO_QUERIES_PROCESSED],
   };
 
   return {
