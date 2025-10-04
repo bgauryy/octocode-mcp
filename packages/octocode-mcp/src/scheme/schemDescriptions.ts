@@ -18,7 +18,7 @@ export const GITHUB_SEARCH_CODE = {
   filters: {
     extension: 'Filter: File extension',
     stars: 'Filter: Stars (e.g., ">100", ">=1000")',
-    filename: `Filter: by filename patterns (e.g., "*.js", "*.tsx", "App.js")`,
+    filename: `Filter: by filename using substring matching (e.g., ".test.js", "index.js", "App"). No wildcards supported`,
     path: 'Filter: search results by file/directory path (e.g., "src/components", "README.md")',
     match:
       'Filter: WHERE to search for keywords: "file" (default - searches in content) or "path" (searches in filenames/paths)',
