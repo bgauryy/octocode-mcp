@@ -179,7 +179,8 @@ async function searchMultipleGitHubRepos(
     keysPriority: [
       'researchGoal',
       'reasoning',
-      'repository',
+      'owner',
+      'repo',
       'description',
       'url',
       'stars',

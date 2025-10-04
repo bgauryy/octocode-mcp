@@ -105,6 +105,16 @@ export const ERROR_RECOVERY_GENERAL: Record<string, string> = {
 
 // Tool-specific error recovery hints
 export const ERROR_RECOVERY_TOOL: Record<string, string[]> = {
+  [TOOL_NAMES.GITHUB_SEARCH_CODE]: [
+    'Verify search parameters are valid and not overly restrictive',
+    'Try removing filters (extension, path) to broaden search scope',
+    'Check repository exists and is accessible if using owner/repo filters',
+  ],
+  [TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: [
+    'Verify owner exists if using owner filter',
+    'Try broader search terms if using very specific topics',
+    'Check sort parameter is valid: "stars", "forks", "updated", or "best-match"',
+  ],
   [TOOL_NAMES.GITHUB_FETCH_CONTENT]: [
     'Verify repository owner, name, and file path are correct',
     'Check that the branch exists (try "main" or "master")',
@@ -114,6 +124,11 @@ export const ERROR_RECOVERY_TOOL: Record<string, string[]> = {
     'Verify repository owner and name are correct',
     'Check that the branch exists (try "main" or "master")',
     'Ensure you have access to the repository',
+  ],
+  [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]: [
+    'Check your query parameters and try again',
+    'Verify repository access and query syntax',
+    'Try simplifying your search filters',
   ],
 };
 
@@ -129,3 +144,26 @@ export const EMPTY_QUERY_VALIDATION_HINTS: string[] = [
   'Queries array is required and cannot be empty',
   'Provide at least one valid query with required parameters',
 ];
+
+// PR-specific validation hints
+export const PR_QUERY_LENGTH_VALIDATION: {
+  message: string;
+  hints: string[];
+} = {
+  message: 'Query too long. Maximum 256 characters allowed.',
+  hints: [
+    'Use shorter, more focused search terms',
+    'Maximum query length is 256 characters',
+  ],
+};
+
+export const PR_VALID_PARAMS_VALIDATION: {
+  message: string;
+  hints: string[];
+} = {
+  message:
+    'At least one valid search parameter, filter, or PR number is required.',
+  hints: [
+    'Each query must have: query terms, filters (owner/repo), or prNumber with owner/repo',
+  ],
+};

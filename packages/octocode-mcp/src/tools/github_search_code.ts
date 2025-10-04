@@ -19,7 +19,7 @@ import {
 } from '../utils/bulkOperations.js';
 import { generateEmptyQueryHints } from './hints.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
+import type { OptimizedCodeSearchResult } from '../github/githubAPI.js';
 import { DESCRIPTIONS } from './descriptions.js';
 import { shouldIgnoreFile } from '../utils/fileFilters.js';
 
@@ -97,13 +97,24 @@ async function searchMultipleGitHubCode(
           } as ProcessedBulkResult;
         }
 
-        // Extract repository context
-        const repository =
+        // Extract repository context from nameWithOwner
+        let owner: string | undefined;
+        let repo: string | undefined;
+
+        const nameWithOwner =
           apiResult.data.repository?.name ||
           (apiResult.data.items.length > 0 &&
           apiResult.data.items[0]?.repository?.nameWithOwner
             ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
+
+        if (nameWithOwner) {
+          const parts = nameWithOwner.split('/');
+          if (parts.length === 2) {
+            owner = parts[0];
+            repo = parts[1];
+          }
+        }
 
         // Filter out ignored files from results - additional filtering at tool level
         const filteredItems = apiResult.data.items.filter(
@@ -114,7 +125,8 @@ async function searchMultipleGitHubCode(
         const result: SearchResult = {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          repository,
+          owner,
+          repo,
           files: filteredItems.map(
             (item: OptimizedCodeSearchResult['items'][0]) => ({
               path: item.path,
@@ -144,7 +156,7 @@ async function searchMultipleGitHubCode(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    keysPriority: ['researchGoal', 'reasoning', 'repository', 'files'],
+    keysPriority: ['researchGoal', 'reasoning', 'owner', 'repo', 'files'],
   };
 
   return createBulkResponse(config, results, errors, queries);

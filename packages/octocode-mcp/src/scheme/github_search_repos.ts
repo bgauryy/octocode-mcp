@@ -4,7 +4,8 @@ import { GITHUB_SEARCH_REPOS } from './schemDescriptions';
 import { ToolResponse } from '../responses.js';
 import { TOOL_NAMES } from '../constants';
 export interface SimplifiedRepository {
-  repository: string;
+  owner: string;
+  repo: string;
   stars: number;
   description: string;
   url: string;

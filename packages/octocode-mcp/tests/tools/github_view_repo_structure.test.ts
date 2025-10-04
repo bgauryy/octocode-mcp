@@ -272,7 +272,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
       // Verify other expected fields are present in new format
       expect(responseText).toContain('successful:');
-      expect(responseText).toContain('repository: "test/repo"');
+      expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('path: "/"');
       expect(responseText).toContain('1 successful');
       expect(responseText).toContain('improve your research strategy');
@@ -322,7 +322,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
         // Find the indices of each field (no queryId in new format)
         const repositoryIndex = lines.findIndex(line =>
-          line.includes('repository:')
+          line.includes('owner:')
         );
         const pathIndex = lines.findIndex(line => line.includes('path:'));
         const filesIndex = lines.findIndex(line => line.includes('files:'));

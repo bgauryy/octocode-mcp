@@ -81,7 +81,8 @@ export interface GitHubFetchContentOutput extends ToolResponse {
 export interface ContentResult {
   researchGoal?: string;
   reasoning?: string;
-  repository?: string;
+  owner?: string;
+  repo?: string;
   path?: string;
   contentLength?: number;
   content?: string;
@@ -94,8 +95,8 @@ export interface ContentResult {
   minificationType?: string;
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only on error
-  originalQuery?: Record<string, unknown>; // Only on error
+  query?: Record<string, unknown>;
+  originalQuery?: Record<string, unknown>;
   securityWarnings?: string[];
-  sampling?: Record<string, unknown>; // Beta feature
+  sampling?: Record<string, unknown>;
 }

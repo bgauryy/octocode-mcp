@@ -107,7 +107,8 @@ async function exploreMultipleRepositoryStructures(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
-            repository: `${query.owner}/${query.repo}`,
+            owner: query.owner,
+            repo: query.repo,
             path: query.path || '/',
             files: [],
             folders: [],
@@ -163,7 +164,8 @@ async function exploreMultipleRepositoryStructures(
         const result: RepoStructureResult = {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          repository: `${apiRequest.owner}/${apiRequest.repo}`,
+          owner: apiRequest.owner,
+          repo: apiRequest.repo,
           path: apiRequest.path || '/',
           files: filePaths,
           folders: folderPaths,
@@ -188,7 +190,8 @@ async function exploreMultipleRepositoryStructures(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          repository: `${query.owner}/${query.repo}`,
+          owner: query.owner,
+          repo: query.repo,
           path: query.path || '/',
           files: [],
           folders: [],
@@ -208,7 +211,8 @@ async function exploreMultipleRepositoryStructures(
     keysPriority: [
       'researchGoal',
       'reasoning',
-      'repository',
+      'owner',
+      'repo',
       'path',
       'files',
       'folders',

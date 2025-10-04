@@ -8,9 +8,14 @@ import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
 } from '../scheme/github_search_pull_requests';
-import { GitHubPullRequestsSearchParams } from '../github/github-openapi';
+import { GitHubPullRequestsSearchParams } from '../github/githubAPI';
 import { generateEmptyQueryHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+import {
+  PR_QUERY_LENGTH_VALIDATION,
+  PR_VALID_PARAMS_VALIDATION,
+  ERROR_RECOVERY_TOOL,
+} from './hintsContent';
 import { DESCRIPTIONS } from './descriptions';
 import {
   processBulkQueries,
@@ -64,11 +69,8 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         );
         if (longQuery) {
           return createResult({
-            data: { error: 'Query too long. Maximum 256 characters allowed.' },
-            hints: [
-              'Use shorter, more focused search terms',
-              'Maximum query length is 256 characters',
-            ],
+            data: { error: PR_QUERY_LENGTH_VALIDATION.message },
+            hints: PR_QUERY_LENGTH_VALIDATION.hints,
             isError: true,
           });
         }
@@ -87,12 +89,9 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         if (!hasValidQueries) {
           return createResult({
             data: {
-              error:
-                'At least one valid search parameter, filter, or PR number is required.',
+              error: PR_VALID_PARAMS_VALIDATION.message,
             },
-            hints: [
-              'Each query must have: query terms, filters (owner/repo), or prNumber with owner/repo',
-            ],
+            hints: PR_VALID_PARAMS_VALIDATION.hints,
             isError: true,
           });
         }
@@ -109,7 +108,7 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
 
           return createResult({
             data: { error: `Failed to search pull requests: ${errorMessage}` },
-            hints: ['Check your query parameters and try again'],
+            hints: ERROR_RECOVERY_TOOL[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
             isError: true,
           });
         }

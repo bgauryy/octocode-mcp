@@ -77,7 +77,8 @@ export interface GitHubRepositoryContentsResult {
 }
 
 export interface GitHubRepositoryStructureResult {
-  repository: string;
+  owner: string;
+  repo: string;
   branch: string;
   path: string;
   apiSource: boolean;
@@ -122,12 +123,13 @@ export interface GitHubViewRepoStructureOutput extends ToolResponse {
 export interface RepoStructureResult {
   researchGoal?: string;
   reasoning?: string;
-  repository?: string;
+  owner?: string;
+  repo?: string;
   path?: string;
   files?: string[];
   folders?: string[];
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only on error
-  metadata: Record<string, unknown>; // Required for bulk operations compatibility
+  query?: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 }

@@ -1,9 +1,6 @@
 import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
 import { GitHubReposSearchQuery } from '../scheme/github_search_repos';
-import {
-  GitHubPullRequestsSearchParams,
-  GitHubCommitSearchParams,
-} from './github-openapi';
+import { GitHubPullRequestsSearchParams } from './githubAPI';
 
 /**
  * Helper function to intelligently detect if an owner is a user or organization
@@ -62,10 +59,7 @@ abstract class BaseQueryBuilder {
    * Add date filters to the query
    */
   addDateFilters(
-    params:
-      | Record<string, unknown>
-      | GitHubPullRequestsSearchParams
-      | GitHubCommitSearchParams
+    params: Record<string, unknown> | GitHubPullRequestsSearchParams
   ): this {
     const dateFields: Record<string, string> = {
       created: 'created',
@@ -316,53 +310,6 @@ class PullRequestSearchQueryBuilder extends BaseQueryBuilder {
 }
 
 /**
- * Commit search query builder
- */
-class CommitSearchQueryBuilder extends BaseQueryBuilder {
-  addQueryTerms(params: GitHubCommitSearchParams): this {
-    if (params.exactQuery) {
-      this.queryParts.push(`"${params.exactQuery}"`);
-    } else if (params.keywordsToSearch && params.keywordsToSearch.length > 0) {
-      this.queryParts.push(params.keywordsToSearch.join(' '));
-    } else if (params.orTerms && params.orTerms.length > 0) {
-      this.queryParts.push(params.orTerms.join(' OR '));
-    }
-    return this;
-  }
-
-  addAuthorFilters(params: GitHubCommitSearchParams): this {
-    this.addSimpleFilter(params.author, 'author');
-    if (params['author-name']) {
-      this.queryParts.push(`author-name:"${params['author-name']}"`);
-    }
-    this.addSimpleFilter(params['author-email'], 'author-email');
-    return this;
-  }
-
-  addCommitterFilters(params: GitHubCommitSearchParams): this {
-    this.addSimpleFilter(params.committer, 'committer');
-    if (params['committer-name']) {
-      this.queryParts.push(`committer-name:"${params['committer-name']}"`);
-    }
-    this.addSimpleFilter(params['committer-email'], 'committer-email');
-    return this;
-  }
-
-  addHashFilters(params: GitHubCommitSearchParams): this {
-    this.addSimpleFilter(params.hash, 'hash');
-    this.addSimpleFilter(params.parent, 'parent');
-    this.addSimpleFilter(params.tree, 'tree');
-    return this;
-  }
-
-  addMiscFilters(params: GitHubCommitSearchParams): this {
-    this.addBooleanFilter(params.merge, 'merge:true', 'merge:false');
-    this.addSimpleFilter(params.visibility, 'is');
-    return this;
-  }
-}
-
-/**
  * Map common language identifiers to GitHub's search API language values
  */
 function mapLanguageToGitHub(language: string): string {
@@ -479,24 +426,6 @@ export function buildPullRequestSearchQuery(
     .addReviewFilters(params)
     .addOrganizationFilters(params)
     .addNegativeFilters(params)
-    .addMiscFilters(params)
-    .build();
-}
-
-/**
- * Build commit search query string for GitHub API
- * GitHub commit search query building
- */
-export function buildCommitSearchQuery(
-  params: GitHubCommitSearchParams
-): string {
-  return new CommitSearchQueryBuilder()
-    .addQueryTerms(params)
-    .addOwnerRepo(params)
-    .addAuthorFilters(params)
-    .addCommitterFilters(params)
-    .addDateFilters(params)
-    .addHashFilters(params)
     .addMiscFilters(params)
     .build();
 }

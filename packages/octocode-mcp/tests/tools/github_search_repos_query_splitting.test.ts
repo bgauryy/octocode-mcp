@@ -25,7 +25,8 @@ describe('GitHub Search Repositories Query Splitting', () => {
       data: {
         repositories: [
           {
-            repository: 'test/repo',
+            owner: 'test',
+            repo: 'repo',
             stars: 100,
             description: 'Test repository',
             url: 'https://github.com/test/repo',
