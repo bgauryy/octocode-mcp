@@ -610,7 +610,7 @@ describe('bulkOperations', () => {
 
       const yamlText = resp.content[0]!.text as string;
       expect(yamlText).toContain('empty:');
-      expect(yamlText).toContain('files: []');
+      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
     });
 
     it('should handle repo search empty and non-empty', () => {
@@ -647,8 +647,8 @@ describe('bulkOperations', () => {
 
       const yamlText = resp.content[0]!.text as string;
       expect(yamlText).toContain('empty:');
-      expect(yamlText).toContain('repositories: []');
-      expect(yamlText).toContain('repositories:');
+      expect(yamlText).not.toContain('repositories: []'); // Empty arrays are removed
+      expect(yamlText).toContain('repositories:'); // Non-empty still present
     });
 
     it('should handle pull request search empty and non-empty', () => {
@@ -687,8 +687,8 @@ describe('bulkOperations', () => {
 
       const yamlText = resp.content[0]!.text as string;
       expect(yamlText).toContain('empty:');
-      expect(yamlText).toContain('pull_requests: []');
-      expect(yamlText).toContain('pull_requests:');
+      expect(yamlText).not.toContain('pull_requests: []'); // Empty arrays are removed
+      expect(yamlText).toContain('pull_requests:'); // Non-empty still present
     });
 
     it('should handle repo structure empty and non-empty', () => {
@@ -727,9 +727,9 @@ describe('bulkOperations', () => {
 
       const yamlText = resp.content[0]!.text as string;
       expect(yamlText).toContain('empty:');
-      expect(yamlText).toContain('files: []');
-      expect(yamlText).toContain('folders: []');
-      expect(yamlText).toContain('results:');
+      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
+      expect(yamlText).not.toContain('folders: []'); // Empty arrays are removed
+      expect(yamlText).toContain('successful:'); // Non-empty section still present
       expect(yamlText).toContain('path: "README.md"');
       expect(yamlText).toContain('path: "src"');
     });

@@ -25,7 +25,8 @@ describe('Response Utilities', () => {
       expect(result.content).toHaveLength(1);
       expect(result.content[0]!.type).toBe('text');
       const yaml = result.content[0]!.text as string;
-      const expectedYaml = `data:\n  message: "Hello"\nhints: []\n`;
+      // Empty hints array is removed
+      const expectedYaml = `data:\n  message: "Hello"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -40,7 +41,8 @@ describe('Response Utilities', () => {
       expect(result.content).toHaveLength(1);
       expect(result.content[0]!.type).toBe('text');
       const yaml = result.content[0]!.text as string;
-      const expectedYaml = `data:\n  error: "Something went wrong"\nhints: []\n`;
+      // Empty hints array is removed
+      const expectedYaml = `data:\n  error: "Something went wrong"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -52,7 +54,8 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(true);
       const yaml = result.content[0]!.text as string;
-      const expectedYaml = `data:\n  error: "Not found"\nhints: []\n`;
+      // Empty hints array is removed
+      const expectedYaml = `data:\n  error: "Not found"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -65,7 +68,8 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(true);
       const yaml = result.content[0]!.text as string;
-      const expectedYaml = `data:\n  error: "Test error"\nhints: []\n`;
+      // Empty hints array is removed
+      const expectedYaml = `data:\n  error: "Test error"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -75,7 +79,8 @@ describe('Response Utilities', () => {
 
       expect(result.isError).toBe(false);
       const yaml = result.content[0]!.text as string;
-      const expectedYaml = `data:\n  test: "value"\nhints: []\n`;
+      // Empty hints array is removed
+      const expectedYaml = `data:\n  test: "value"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
   });
@@ -301,13 +306,14 @@ describe('Response Utilities', () => {
       const result = createResult({ data: dirtyData });
       const yaml = result.content[0]!.text as string;
 
+      // Empty arrays are now removed during cleaning
       const expectedYaml =
-        'data:\n  arrayWithMixed:\n    - "valid"\n    - valid: "keep"\n  emptyArray: []\n  nestedObject:\n    deepNested:\n      valid: "keep"\n    nestedArray:\n      - 1\n      - 2\n    validProp: "test"\n  validArray:\n    - 1\n    - 2\n    - 3\n  validBoolean: true\n  validNumber: 42\n  validString: "hello"\nhints: []\n';
+        'data:\n  arrayWithMixed:\n    - "valid"\n    - valid: "keep"\n  nestedObject:\n    deepNested:\n      valid: "keep"\n    nestedArray:\n      - 1\n      - 2\n    validProp: "test"\n  validArray:\n    - 1\n    - 2\n    - 3\n  validBoolean: true\n  validNumber: 42\n  validString: "hello"\n';
 
       expect(yaml).toEqual(expectedYaml);
     });
 
-    it('should preserve meaningful empty arrays', () => {
+    it('should remove all empty arrays', () => {
       const data = {
         hints: [],
         results: [],
@@ -317,7 +323,8 @@ describe('Response Utilities', () => {
       const result = createResult({ data, hints: [] });
       const yaml = result.content[0]!.text as string;
 
-      const expectedYaml = `data:\n  hints: []\n  results: []\n  validData: "test"\nhints: []\n`;
+      // Empty arrays are now removed (including hints and results)
+      const expectedYaml = `data:\n  validData: "test"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -339,7 +346,8 @@ describe('Response Utilities', () => {
       const result = createResult({ data });
       const yaml = result.content[0]!.text as string;
 
-      const expectedYaml = `data:\n  level1:\n    level2:\n      level3:\n        valid: "keep"\nhints: []\n`;
+      // Empty hints array is removed
+      const expectedYaml = `data:\n  level1:\n    level2:\n      level3:\n        valid: "keep"\n`;
       expect(yaml).toEqual(expectedYaml);
     });
   });

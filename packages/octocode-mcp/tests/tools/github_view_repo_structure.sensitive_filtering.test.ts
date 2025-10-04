@@ -1306,8 +1306,10 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // All files and folders should be filtered out
-      expect(responseText).toContain('files: []');
+      // All files and folders should be filtered out (empty arrays removed)
+      expect(responseText).not.toContain('files: []'); // Empty arrays are removed
+      expect(responseText).not.toContain('folders: []'); // Empty arrays are removed
+      expect(responseText).toContain('empty:'); // Still in empty section
       expect(responseText).toContain('hints:');
       expect(responseText).not.toContain('node_modules');
       expect(responseText).not.toContain('.git');

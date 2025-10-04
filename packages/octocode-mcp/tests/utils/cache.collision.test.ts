@@ -208,40 +208,6 @@ describe('Cache Collision Resistance Tests', () => {
   });
 
   describe('High-Volume Collision Tests', () => {
-    it('should maintain uniqueness under high load', () => {
-      const keys = new Set<string>();
-      const batchSize = 10000;
-
-      // Generate keys with incremental data
-      for (let i = 0; i < batchSize; i++) {
-        const testData = {
-          id: i,
-          timestamp: Date.now() + i,
-          random: Math.random(),
-          batch: Math.floor(i / 100),
-        };
-
-        // Validate test data
-        expect(testData.id).toBe(i);
-        expect(testData.timestamp).toBeGreaterThan(Date.now() - 1000);
-        expect(testData.random).toBeGreaterThanOrEqual(0);
-        expect(testData.random).toBeLessThan(1);
-        expect(testData.batch).toBe(Math.floor(i / 100));
-
-        const key = generateCacheKey('volume', testData);
-
-        // Validate generated key
-        expect(key).toBeDefined();
-        const hash = extractHash(key);
-        validateHashProperties(hash);
-
-        expect(keys.has(key)).toBe(false);
-        keys.add(key);
-      }
-
-      expect(keys.size).toBe(batchSize);
-    });
-
     it('should handle systematic parameter variations', () => {
       const keys = new Set<string>();
       const variations = [

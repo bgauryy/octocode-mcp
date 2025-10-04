@@ -159,8 +159,8 @@ export function optimizeTextMatch(
 }
 
 /**
- * Recursively clean JSON object by removing empty objects, null, undefined, and NaN values
- * Preserves empty arrays as they may be meaningful (e.g., hints: [])
+ * Recursively clean JSON object by removing empty objects, empty arrays, null, undefined, and NaN values
+ * This ensures responses don't contain unnecessary empty data structures
  */
 function cleanJsonObject(obj: unknown): unknown {
   if (obj === null || obj === undefined || Number.isNaN(obj)) {
@@ -169,8 +169,8 @@ function cleanJsonObject(obj: unknown): unknown {
 
   if (Array.isArray(obj)) {
     const cleaned = obj.map(cleanJsonObject).filter(item => item !== undefined);
-    // Always return arrays, even if empty, as they may be meaningful
-    return cleaned;
+    // Remove empty arrays from response - they add no value
+    return cleaned.length > 0 ? cleaned : undefined;
   }
 
   if (typeof obj === 'object' && obj !== null) {

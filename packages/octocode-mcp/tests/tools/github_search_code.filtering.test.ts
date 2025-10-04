@@ -214,9 +214,10 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       // Parse the result
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have result with no files
+      // Should have result with no files (empty array removed)
       expect(resultText).toContain('data:');
-      expect(resultText).toContain('files: []');
+      expect(resultText).not.toContain('files: []'); // Empty arrays are removed
+      expect(resultText).toContain('empty:'); // Still in empty section
       expect(resultText).toContain('hints:');
       expect(resultText).toContain('broader');
     });
