@@ -658,9 +658,7 @@ describe('Response Structure - All Tools', () => {
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
-        ],
+        queries: [{ keywordsToSearch: ['found'], reasoning: 'Will succeed' }],
       });
 
       const responseText = result.content[0]?.text as string;
@@ -673,4 +671,3 @@ describe('Response Structure - All Tools', () => {
     });
   });
 });
-
