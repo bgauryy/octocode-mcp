@@ -16,7 +16,7 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
       .min(1)
       .max(10)
       .describe(
-        `Research queries for tool: ${toolName}. Before creating queries: check context and validate tool scheme and descriptions to generate the most effective queries`
+        `Research queries for ${toolName}. Review tool schema and descriptions before creating queries for optimal results`
       ),
   });
 }
