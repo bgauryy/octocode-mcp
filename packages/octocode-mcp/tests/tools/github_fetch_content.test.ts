@@ -98,23 +98,21 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content[0]?.type).toBe('text');
 
       const responseText = result.content[0]?.text as string;
-      const expectedYaml = `data:
-  - queryId: "test-query"
-    repository: "test/repo"
-    path: "README.md"
-    contentLength: 35
-    content: "# Hello World\\n\\nThis is a test file."
-    branch: "main"
-    minified: false
-hints:
-  - "Use repository structure analysis to find similar implementations"
-  - "Single result found - dive deep and look for related examples in the same repository"
-  - "From implementation files, find: imports, exports, tests, and related modules"
-  - "Always verify documentation claims against actual implementation code"
-  - "Look for main files, index files, and public APIs to understand code structure"
-  - "Examine imports/exports to understand dependencies and usage"
-`;
-      expect(responseText).toEqual(expectedYaml);
+      // Verify new structured format with only non-empty sections
+      expect(responseText).toContain('queries:');
+      expect(responseText).toContain('successful:');
+      expect(responseText).toContain('repository: "test/repo"');
+      expect(responseText).toContain('path: "README.md"');
+      expect(responseText).toContain('contentLength: 35');
+      expect(responseText).toContain('# Hello World');
+      expect(responseText).toContain('branch: "main"');
+      expect(responseText).toContain('minified: false');
+      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('improve your research strategy');
+      // Should NOT contain empty sections
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
     });
 
     it('should pass authInfo and userContext to GitHub API', async () => {
@@ -200,10 +198,16 @@ hints:
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('data:');
+      expect(responseText).toContain('successful:');
       expect(responseText).toContain('README.md');
       expect(responseText).toContain('package.json');
-      expect(responseText).toContain('readme');
-      expect(responseText).toContain('package');
+      expect(responseText).toContain('README'); // Content from README.md
+      expect(responseText).toContain('test'); // Content from package.json name field
+      expect(responseText).toContain('2 successful');
+      expect(responseText).toContain('improve your research strategy');
+      // Should NOT contain empty sections
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
     });
   });
 
@@ -956,12 +960,17 @@ End of file.`;
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('data:');
-      expect(responseText).toContain('const success = true;');
+      expect(responseText).toContain('const success = true');
       expect(responseText).toContain('File not found');
       expect(responseText).toContain('Network timeout');
-      expect(responseText).toContain('success-query');
-      expect(responseText).toContain('error-query');
-      expect(responseText).toContain('exception-query');
+      expect(responseText).toContain('success.js'); // Success result file path
+      expect(responseText).toContain('1 successful, 2 failed');
+      expect(responseText).toContain('improve your research strategy');
+      // Error items should have metadata.originalQuery with query info
+      expect(responseText).toContain('missing.js');
+      expect(responseText).toContain('timeout.js');
+      // Should NOT contain empty section
+      expect(responseText).not.toContain('empty:');
     });
   });
 
@@ -1061,7 +1070,7 @@ End of file.`;
       expect(responseText).toContain('data:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('at least one file content query');
+      expect(responseText).toContain('Queries array is required');
     });
 
     it('should reject missing queries parameter', async () => {
@@ -1072,7 +1081,7 @@ End of file.`;
       expect(responseText).toContain('data:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('at least one file content query');
+      expect(responseText).toContain('Queries array is required');
     });
   });
 });

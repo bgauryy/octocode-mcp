@@ -214,9 +214,10 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
       // Parse the result
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have result with no files
+      // Should have result with no files (empty array removed)
       expect(resultText).toContain('data:');
-      expect(resultText).toContain('files: []');
+      expect(resultText).not.toContain('files: []'); // Empty arrays are removed
+      expect(resultText).toContain('empty:'); // Still in empty section
       expect(resultText).toContain('hints:');
       expect(resultText).toContain('broader');
     });
@@ -457,8 +458,15 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       // Should have both query results
       expect(resultText).toContain('data:');
-      expect(resultText).toContain('query1');
-      expect(resultText).toContain('query2');
+      expect(resultText).toContain('successful:');
+      // Results have files from both queries
+      expect(resultText).toContain('component.js');
+      expect(resultText).toContain('utils.ts');
+      expect(resultText).toContain('2 successful');
+      expect(resultText).toContain('improve your research strategy');
+      // Should NOT contain empty sections
+      expect(resultText).not.toContain('empty:');
+      expect(resultText).not.toContain('failed:');
 
       // First query should filter out .log file
       expect(resultText).toContain('src/component.js');

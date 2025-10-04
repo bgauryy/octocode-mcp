@@ -2,7 +2,7 @@ import type {
   SearchReposParameters,
   RepoSearchResultItem,
   GitHubAPIResponse,
-} from './github-openapi';
+} from './githubAPI';
 import {
   GitHubReposSearchQuery,
   SimplifiedRepository,
@@ -93,17 +93,25 @@ async function searchGitHubReposAPIInternal(
 
     // Transform repository results to match CLI format with proper typing
     const repositories = result.data.items
-      .map((repo: RepoSearchResultItem) => ({
-        repository: repo.full_name,
-        stars: repo.stargazers_count || 0,
-        description: repo.description
-          ? repo.description.length > 150
-            ? repo.description.substring(0, 150) + '...'
-            : repo.description
-          : 'No description',
-        url: repo.html_url,
-        updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
-      }))
+      .map((repo: RepoSearchResultItem) => {
+        const fullName = repo.full_name;
+        const parts = fullName.split('/');
+        const owner = parts[0] || '';
+        const repoName = parts[1] || '';
+
+        return {
+          owner,
+          repo: repoName,
+          stars: repo.stargazers_count || 0,
+          description: repo.description
+            ? repo.description.length > 150
+              ? repo.description.substring(0, 150) + '...'
+              : repo.description
+            : 'No description',
+          url: repo.html_url,
+          updatedAt: new Date(repo.updated_at).toLocaleDateString('en-GB'),
+        };
+      })
       // Sort by stars (descending) then by updatedAt (descending)
       .sort((a: SimplifiedRepository, b: SimplifiedRepository) => {
         // First sort by stars (higher stars first)

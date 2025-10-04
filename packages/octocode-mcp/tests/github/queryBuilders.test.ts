@@ -4,7 +4,6 @@ import {
   buildCodeSearchQuery,
   buildRepoSearchQuery,
   buildPullRequestSearchQuery,
-  buildCommitSearchQuery,
   shouldUseSearchForPRs,
 } from '../../src/github/queryBuilders.js';
 
@@ -306,108 +305,6 @@ describe('Query Builders', () => {
       expect(query).toBe(
         'is:pr no:assignee no:label no:milestone no:project archived:false'
       );
-    });
-  });
-
-  describe('buildCommitSearchQuery', () => {
-    it('should build basic commit search query', () => {
-      const params = {
-        keywordsToSearch: ['fix', 'bug'],
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe('fix bug');
-    });
-
-    it('should build query with exact query', () => {
-      const params = {
-        exactQuery: 'fix critical bug',
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe('"fix critical bug"');
-    });
-
-    it('should build query with OR terms', () => {
-      const params = {
-        orTerms: ['fix', 'patch', 'update'],
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe('fix OR patch OR update');
-    });
-
-    it('should build query with author filters', () => {
-      const params = {
-        keywordsToSearch: ['feature'],
-        author: 'john',
-        'author-name': 'John Doe',
-        'author-email': 'john@example.com',
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe(
-        'feature author:john author-name:"John Doe" author-email:john@example.com'
-      );
-    });
-
-    it('should build query with committer filters', () => {
-      const params = {
-        keywordsToSearch: ['merge'],
-        committer: 'alice',
-        'committer-name': 'Alice Smith',
-        'committer-email': 'alice@example.com',
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe(
-        'merge committer:alice committer-name:"Alice Smith" committer-email:alice@example.com'
-      );
-    });
-
-    it('should build query with hash filters', () => {
-      const params = {
-        keywordsToSearch: ['refactor'],
-        hash: 'abc123',
-        parent: 'def456',
-        tree: 'ghi789',
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe('refactor hash:abc123 parent:def456 tree:ghi789');
-    });
-
-    it('should build query with date filters', () => {
-      const params = {
-        keywordsToSearch: ['update'],
-        'author-date': '>2023-01-01',
-        'committer-date': '2023-01-01..2023-12-31',
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe(
-        'update author-date:>2023-01-01 committer-date:2023-01-01..2023-12-31'
-      );
-    });
-
-    it('should build query with merge filter', () => {
-      const params = {
-        keywordsToSearch: ['feature'],
-        merge: true,
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe('feature merge:true');
-    });
-
-    it('should build query excluding merges', () => {
-      const params = {
-        keywordsToSearch: ['docs'],
-        merge: false,
-      };
-
-      const query = buildCommitSearchQuery(params);
-      expect(query).toBe('docs merge:false');
     });
   });
 

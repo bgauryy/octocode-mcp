@@ -1,5 +1,5 @@
 import { RequestError } from 'octokit';
-import type { GetContentParameters, GitHubAPIResponse } from './github-openapi';
+import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
 import {
   FileContentQuery,
   ContentResult,
@@ -358,7 +358,8 @@ async function processFileContentAPI(
   }
 
   return {
-    repository: `${owner}/${repo}`,
+    owner,
+    repo,
     path: filePath,
     contentLength: finalContent.length,
     content: finalContent,
@@ -603,7 +604,8 @@ async function viewGitHubRepositoryStructureAPIInternal(
       }));
 
     return {
-      repository: `${owner}/${repo}`,
+      owner,
+      repo,
       branch: workingBranch,
       path: cleanPath || '/',
       apiSource: true,

@@ -10,29 +10,17 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
-  RepoSearchResult,
   SimplifiedRepository,
 } from '../scheme/github_search_repos';
-import { ensureUniqueQueryIds } from '../utils/bulkOperations';
 import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
   ProcessedBulkResult,
 } from '../utils/bulkOperations';
-import { generateHints } from './hints';
+import { generateEmptyQueryHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
-
-// Simplified aggregated context
-interface AggregatedRepoContext {
-  totalQueries: number;
-  successfulQueries: number;
-  failedQueries: number;
-  dataQuality: {
-    hasResults: boolean;
-  };
-}
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   return server.registerTool(
@@ -62,14 +50,9 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-            hasResults: false,
-            errorMessage: 'Queries array is required and cannot be empty',
-            customHints: [
-              'Provide at least one search query with search terms or filters',
-            ],
-          });
+          const hints = generateEmptyQueryHints(
+            TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
+          );
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
@@ -93,7 +76,7 @@ function expandQueriesWithBothSearchTypes(
 ): GitHubReposSearchQuery[] {
   const expandedQueries: GitHubReposSearchQuery[] = [];
 
-  queries.forEach((query, index) => {
+  queries.forEach(query => {
     const hasTopics =
       query.topicsToSearch &&
       (Array.isArray(query.topicsToSearch)
@@ -111,7 +94,6 @@ function expandQueriesWithBothSearchTypes(
       // Topics-based query
       const topicsQuery: GitHubReposSearchQuery = {
         ...baseQuery,
-        id: query.id ? `${query.id}_topics` : `query_${index}_topics`,
         reasoning: query.reasoning
           ? `${query.reasoning} (topics-based search)`
           : 'Topics-based repository search',
@@ -121,7 +103,6 @@ function expandQueriesWithBothSearchTypes(
       // Keywords-based query
       const keywordsQuery: GitHubReposSearchQuery = {
         ...baseQuery,
-        id: query.id ? `${query.id}_keywords` : `query_${index}_keywords`,
         reasoning: query.reasoning
           ? `${query.reasoning} (keywords-based search)`
           : 'Keywords-based repository search',
@@ -145,11 +126,13 @@ async function searchMultipleGitHubRepos(
 ): Promise<CallToolResult> {
   // Split queries that have both topicsToSearch and keywordsToSearch
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
-  const uniqueQueries = ensureUniqueQueryIds(expandedQueries, 'repo-search');
 
   const { results, errors } = await processBulkQueries(
-    uniqueQueries,
-    async (query: GitHubReposSearchQuery): Promise<ProcessedBulkResult> => {
+    expandedQueries,
+    async (
+      query: GitHubReposSearchQuery,
+      _index: number
+    ): Promise<ProcessedBulkResult> => {
       try {
         const apiResult = await searchGitHubReposAPI(
           query,
@@ -158,18 +141,10 @@ async function searchMultipleGitHubRepos(
         );
 
         if ('error' in apiResult) {
-          // Generate hints for this specific query error
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-            hasResults: false,
-            errorMessage: apiResult.error,
-          });
-
           return {
-            queryId: query.id,
+            researchGoal: query.researchGoal,
             reasoning: query.reasoning,
             error: apiResult.error,
-            hints,
             metadata: {},
           } as ProcessedBulkResult;
         }
@@ -180,7 +155,7 @@ async function searchMultipleGitHubRepos(
           repositories as unknown as SimplifiedRepository[];
 
         return {
-          queryId: query.id,
+          researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           repositories: typedRepositories,
           metadata: {},
@@ -189,51 +164,23 @@ async function searchMultipleGitHubRepos(
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
-        const hints = generateHints({
-          toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-          hasResults: false,
-          errorMessage,
-        });
-
         return {
-          queryId: query.id,
+          researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           error: errorMessage,
-          hints,
           metadata: {},
         } as ProcessedBulkResult;
       }
     }
   );
 
-  const successfulCount = results.filter(r => !r.result.error).length;
-  const aggregatedContext: AggregatedRepoContext = {
-    totalQueries: results.length,
-    successfulQueries: successfulCount,
-    failedQueries: results.length - successfulCount,
-    dataQuality: {
-      hasResults: results.some(r => {
-        const repoResult = r.result as RepoSearchResult;
-        return (
-          !repoResult.error &&
-          repoResult.repositories &&
-          repoResult.repositories.length > 0
-        );
-      }),
-    },
-  };
-
-  // No need to extract detailed context - keep it simple
-
-  // Hints are now generated automatically by createBulkResponse
-
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    maxHints: 8,
     keysPriority: [
-      'queryId',
+      'researchGoal',
       'reasoning',
-      'repository',
+      'owner',
+      'repo',
       'description',
       'url',
       'stars',
@@ -241,14 +188,5 @@ async function searchMultipleGitHubRepos(
     ],
   };
 
-  // Create standardized response - bulk operations handles all hint generation and formatting
-  return createBulkResponse(
-    config,
-    results,
-    aggregatedContext,
-    errors,
-    uniqueQueries
-  );
+  return createBulkResponse(config, results, errors, expandedQueries);
 }
-
-// End of searchMultipleGitHubRepos function

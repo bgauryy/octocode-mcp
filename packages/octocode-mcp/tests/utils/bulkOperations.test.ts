@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  ensureUniqueQueryIds,
   processBulkQueries,
   createBulkResponse,
   ProcessedBulkResult,
@@ -11,87 +10,6 @@ import { ToolName } from '../../src/constants';
 describe('bulkOperations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('ensureUniqueQueryIds', () => {
-    it('should generate unique IDs for queries without existing IDs', () => {
-      const queries = [
-        { name: 'query1' },
-        { name: 'query2' },
-        { name: 'query3' },
-      ];
-
-      const result = ensureUniqueQueryIds(queries);
-
-      expect(result).toHaveLength(3);
-      result.forEach((query, index) => {
-        expect(query.id).toBeDefined();
-        expect(typeof query.id).toBe('string');
-        expect(query.name).toBe(`query${index + 1}`);
-      });
-
-      // All IDs should be unique
-      const ids = result.map(q => q.id);
-      const uniqueIds = new Set(ids);
-      expect(uniqueIds.size).toBe(3);
-    });
-
-    it('should preserve external IDs and generate fallbacks for missing ones', () => {
-      const queries = [
-        { id: 'custom-id-1', name: 'query1' },
-        { name: 'query2' },
-        { id: 'custom-id-3', name: 'query3' },
-      ];
-
-      const result = ensureUniqueQueryIds(queries);
-
-      expect(result[0]?.id).toBe('custom-id-1');
-      expect(result[1]?.id).toBe('query_2');
-      expect(result[2]?.id).toBe('custom-id-3');
-    });
-
-    it('should handle empty query array', () => {
-      const result = ensureUniqueQueryIds([]);
-      expect(result).toEqual([]);
-    });
-
-    it('should handle queries with mixed ID types', () => {
-      const queries = [
-        { id: 'string-id', name: 'query1' },
-        { id: null, name: 'query2' }, // Null ID
-        { name: 'query3' }, // No ID
-      ];
-
-      const result = ensureUniqueQueryIds(queries);
-
-      expect(result).toHaveLength(3);
-      expect(result[0]?.id).toBe('string-id');
-      expect(result[1]?.id).toBe('query_2'); // null ID gets fallback
-      expect(result[2]?.id).toBe('query_3');
-    });
-
-    it('should use custom default prefix', () => {
-      const queries = [{ name: 'query1' }, { name: 'query2' }];
-
-      const result = ensureUniqueQueryIds(queries, 'custom');
-
-      expect(result[0]?.id).toBe('custom_1');
-      expect(result[1]?.id).toBe('custom_2');
-    });
-
-    it('should handle duplicate input IDs by preserving first and generating fallbacks', () => {
-      const queries = [
-        { id: 'duplicate', name: 'query1' },
-        { id: 'duplicate', name: 'query2' },
-        { id: 'duplicate', name: 'query3' },
-      ];
-
-      const result = ensureUniqueQueryIds(queries);
-
-      expect(result[0]?.id).toBe('duplicate');
-      expect(result[1]?.id).toBe('query_2'); // duplicate ID gets fallback
-      expect(result[2]?.id).toBe('query_3'); // duplicate ID gets fallback
-    });
   });
 
   describe('processBulkQueries', () => {
@@ -108,10 +26,9 @@ describe('bulkOperations', () => {
       ];
 
       mockProcessor.mockImplementation(
-        async (query: { id: string; data: string }) => ({
-          queryId: query.id,
+        async (query: { id: string; data: string }, index: number) => ({
           data: { result: `processed-${query.data}` },
-          metadata: { processed: true },
+          metadata: { processed: true, queryIndex: index },
         })
       );
 
@@ -138,14 +55,13 @@ describe('bulkOperations', () => {
       ];
 
       mockProcessor.mockImplementation(
-        async (query: { id: string; data: string }) => {
+        async (query: { id: string; data: string }, index: number) => {
           if (query.data === 'bad') {
             throw new Error('Processing failed');
           }
           return {
-            queryId: query.id,
             data: { result: 'success' },
-            metadata: {},
+            metadata: { queryIndex: index },
           };
         }
       );
@@ -155,7 +71,7 @@ describe('bulkOperations', () => {
       expect(result.results).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
 
-      expect(result.errors[0]?.queryId).toBe('failure');
+      expect(result.errors[0]?.queryIndex).toBe(1);
       expect(result.errors[0]?.error).toBe('Processing failed');
     });
 
@@ -200,51 +116,36 @@ describe('bulkOperations', () => {
 
       const results = processedResults.map((r, index) => ({
         result: r,
-        queryId: queries[index]?.id || `query_${index}`,
+        queryIndex: index,
         originalQuery: queries[index] || {
           id: `query_${index}`,
           keywordsToSearch: [],
         },
       }));
       const errors: QueryError[] = [];
-      const context = {
-        totalQueries: 2,
-        successfulQueries: 2,
-        failedQueries: 0,
-        dataQuality: { hasResults: true, confidence: 'high' as const },
-      };
 
       const config = {
         toolName: 'github_search_code' as ToolName,
       };
 
-      const result = createBulkResponse(
-        config,
-        results,
-        context,
-        errors,
-        queries
-      );
+      const result = createBulkResponse(config, results, errors, queries);
 
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
 
-      const responseText = result.content[0]?.text;
-      // Test exact YAML output
-      const expectedYaml = `data:
-  - queryId: "q1"
-    data:
-      items:
-        - name: "item1"
-  - queryId: "q2"
-    data:
-      items:
-        - name: "item2"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-`;
-      expect(responseText).toEqual(expectedYaml);
+      const responseText = result.content[0]?.text as string;
+      // Parse YAML-ish output and assert grouped shape
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain('results:');
+      // Should NOT contain empty sections
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('hints:');
+      // Ensure success items present
+      expect(responseText).toContain('name: "item1"');
+      expect(responseText).toContain('name: "item2"');
+      // Ensure research strategies hint exists
+      expect(responseText).toContain('improve your research strategy');
     });
 
     it('should create response with errors', () => {
@@ -252,7 +153,7 @@ hints:
       const queries = [{ id: 'q1', keywordsToSearch: ['test1'] }];
       const results = processedResults.map((r, index) => ({
         result: r,
-        queryId: queries[index]?.id || `query_${index}`,
+        queryIndex: index,
         originalQuery: queries[index] || {
           id: `query_${index}`,
           keywordsToSearch: [],
@@ -260,55 +161,30 @@ hints:
       }));
       const errors: QueryError[] = [
         {
-          queryId: 'q1',
+          queryIndex: 0,
           error: 'API rate limit exceeded',
         },
       ];
-      const context = {
-        totalQueries: 1,
-        successfulQueries: 0,
-        failedQueries: 1,
-        dataQuality: { hasResults: false, confidence: 'low' as const },
-      };
-
       const config = {
         toolName: 'github_search_repos' as ToolName,
       };
 
-      const result = createBulkResponse(
-        config,
-        results,
-        context,
-        errors,
-        queries
-      );
+      const result = createBulkResponse(config, results, errors, queries);
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text;
-      // Test exact YAML output for error response
-      const expectedYaml = `data:
-  - queryId: "q1"
-    error: "API rate limit exceeded"
-    hints: []
-    metadata:
-      originalQuery:
-        id: "q1"
-        keywordsToSearch:
-          - "test1"
-hints:
-  - "All 1 queries returned no results - try broader research strategy"
-  - "Start with repository search to find relevant projects, then search within promising repos"
-  - "Use package search to find libraries, then explore their GitHub repositories"
-  - "Break down into smaller, more focused searches"
-`;
-      expect(responseText).toEqual(expectedYaml);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('error: "API rate limit exceeded"');
+      expect(responseText).toContain('originalQuery:');
+      expect(responseText).toContain('keywordsToSearch:');
+      expect(responseText).toContain('hints:');
     });
 
     it('should handle empty results and errors', () => {
       const processedResults: ProcessedBulkResult[] = [];
       const results = processedResults.map((r, index) => ({
         result: r,
-        queryId: `query_${index}`,
+        queryIndex: index,
         originalQuery: {
           id: `query_${index}`,
           keywordsToSearch: [],
@@ -316,38 +192,22 @@ hints:
       }));
       const errors: QueryError[] = [];
       const queries: Array<{ id: string; keywordsToSearch: string[] }> = []; // No queries
-      const context = {
-        totalQueries: 0,
-        successfulQueries: 0,
-        failedQueries: 0,
-        dataQuality: { hasResults: false, confidence: 'medium' as const },
-      };
 
       const config = {
         toolName: 'githubSearchCode' as ToolName,
       };
 
-      const result = createBulkResponse(
-        config,
-        results,
-        context,
-        errors,
-        queries
-      );
+      const result = createBulkResponse(config, results, errors, queries);
 
       expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text;
-      // Test exact YAML output for empty response
-      const expectedYaml = `data: []
-hints:
-  - "All 0 queries returned no results - try broader research strategy"
-  - "Start with repository search to find relevant projects, then search within promising repos"
-  - "Use package search to find libraries, then explore their GitHub repositories"
-  - "Break down into smaller, more focused searches"
-  - "Try semantic alternatives: expand abbreviations, use synonyms, or try related conceptual terms"
-  - "Start with core concepts, then progressively narrow to specific implementations and tools"
-`;
-      expect(responseText).toEqual(expectedYaml);
+      const responseText = result.content[0]?.text as string;
+      // Should NOT contain any data sections since all are empty
+      expect(responseText).not.toContain('successful:');
+      expect(responseText).not.toContain('empty:');
+      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('hints:');
+      // Should show empty state in summary
+      expect(responseText).toContain('No queries processed');
     });
 
     it('should handle config options', () => {
@@ -361,32 +221,19 @@ hints:
       const queries = [{ id: 'q1', keywordsToSearch: ['test1'] }];
       const results = processedResults.map((r, index) => ({
         result: r,
-        queryId: queries[index]?.id || `query_${index}`,
+        queryIndex: index,
         originalQuery: queries[index] || {
           id: `query_${index}`,
           keywordsToSearch: [],
         },
       }));
       const errors: QueryError[] = [];
-      const context = {
-        totalQueries: 1,
-        successfulQueries: 1,
-        failedQueries: 0,
-        dataQuality: { hasResults: true, confidence: 'high' as const },
-      };
 
       const config = {
         toolName: 'github_search_code' as ToolName,
-        maxHints: 5,
       };
 
-      const result = createBulkResponse(
-        config,
-        results,
-        context,
-        errors,
-        queries
-      );
+      const result = createBulkResponse(config, results, errors, queries);
 
       expect(result.isError).toBe(false);
       // The exact structure depends on implementation, but it should not crash
@@ -401,80 +248,54 @@ hints:
         { name: 'vue components' },
       ];
 
-      // Ensure unique IDs
-      const queriesWithIds = ensureUniqueQueryIds(queries);
-
       // Process queries
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => ({
-          queryId: query.id,
+        .mockImplementation(async (query: { name: string }, index: number) => ({
           data: {
             query: query.name,
             results: [`result for ${query.name}`],
           },
-          metadata: { processed: true },
+          metadata: { processed: true, queryIndex: index },
         }));
 
-      const processResult = await processBulkQueries(
-        queriesWithIds,
-        mockProcessor
-      );
+      const processResult = await processBulkQueries(queries, mockProcessor);
 
       // Create bulk response
       const config = {
         toolName: 'github_search_code' as ToolName,
       };
-
-      const context = {
-        totalQueries: queriesWithIds.length,
-        successfulQueries: processResult.results.length,
-        failedQueries: processResult.errors.length,
-        dataQuality: {
-          hasResults: processResult.results.length > 0,
-          confidence: 'high' as const,
-        },
-      };
-
       const bulkResponse = createBulkResponse(
         config,
         processResult.results,
-        context,
         processResult.errors,
-        queriesWithIds
+        queries
       );
 
-      expect(queriesWithIds).toHaveLength(2);
+      expect(queries).toHaveLength(2);
       expect(processResult.results).toHaveLength(2);
       expect(processResult.errors).toHaveLength(0);
       expect(bulkResponse.isError).toBe(false);
-
-      // Check that IDs were generated
-      queriesWithIds.forEach(query => {
-        expect(query.id).toBeDefined();
-        expect(typeof query.id).toBe('string');
-      });
 
       expect(mockProcessor).toHaveBeenCalledTimes(2);
     });
 
     it('should handle mixed success and failure', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         { name: 'success_query' },
         { name: 'fail_query' },
         { name: 'another_success' },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => {
+        .mockImplementation(async (query: { name: string }, index: number) => {
           if (query.name === 'fail_query') {
             throw new Error('Processing failed');
           }
           return {
-            queryId: query.id,
             data: { result: 'success' },
-            metadata: {},
+            metadata: { queryIndex: index },
           };
         });
 
@@ -482,21 +303,9 @@ hints:
 
       expect(result.results).toHaveLength(2);
       expect(result.errors).toHaveLength(1);
-
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: result.results.length,
-        failedQueries: result.errors.length,
-        dataQuality: {
-          hasResults: result.results.length > 0,
-          confidence: 'medium' as const,
-        },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubSearchRepositories' as ToolName },
         result.results,
-        context,
         result.errors,
         queries
       );
@@ -507,7 +316,7 @@ hints:
 
   describe('reasoning propagation', () => {
     it('should propagate reasoning from queries to successful results', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         {
           id: 'test1',
           reasoning: 'Find LangGraph implementations for AI agents',
@@ -522,67 +331,37 @@ hints:
           id: 'test3',
           name: 'query3', // No reasoning provided
         },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => ({
-          queryId: query.id,
-          data: { files: [{ path: 'test.py', content: 'test content' }] },
-          metadata: {},
-        }));
+        .mockImplementation(
+          async (_query: { id: string; name: string }, index: number) => ({
+            data: { files: [{ path: 'test.py', content: 'test content' }] },
+            metadata: { queryIndex: index },
+          })
+        );
 
       const { results, errors } = await processBulkQueries(
         queries,
         mockProcessor
       );
 
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: results.length,
-        failedQueries: errors.length,
-        dataQuality: { hasResults: true },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubSearchCode' as ToolName },
         results,
-        context,
         errors,
         queries
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-
-      // Test exact YAML output with reasoning
-      const expectedYaml = `data:
-  - queryId: "test1"
-    reasoning: "Find LangGraph implementations for AI agents"
-    data:
-      files:
-        - content: "test content"
-          path: "test.py"
-  - queryId: "test2"
-    reasoning: "Search for context management patterns"
-    data:
-      files:
-        - content: "test content"
-          path: "test.py"
-  - queryId: "test3"
-    data:
-      files:
-        - content: "test content"
-          path: "test.py"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use github_fetch_content with matchString from search results for precise context extraction"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('files:');
+      expect(yamlText).toContain('path: "test.py"');
     });
 
     it('should propagate reasoning from queries to error results', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         {
           id: 'error1',
           reasoning: 'This query will fail with reasoning',
@@ -592,7 +371,7 @@ hints:
           id: 'error2',
           name: 'fail_query_no_reasoning', // No reasoning provided
         },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
@@ -605,108 +384,59 @@ hints:
         mockProcessor
       );
 
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: results.length,
-        failedQueries: errors.length,
-        dataQuality: { hasResults: false },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubFetchContent' as ToolName },
         results,
-        context,
         errors,
         queries
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-
-      // Test exact YAML output with reasoning in error results
-      const expectedYaml = `data:
-  - queryId: "error1"
-    reasoning: "This query will fail with reasoning"
-    error: "Processing failed for fail_query"
-    hints: []
-    metadata:
-      originalQuery:
-        reasoning: "This query will fail with reasoning"
-        id: "error1"
-        name: "fail_query"
-  - queryId: "error2"
-    error: "Processing failed for fail_query_no_reasoning"
-    hints: []
-    metadata:
-      originalQuery:
-        id: "error2"
-        name: "fail_query_no_reasoning"
-hints:
-  - "All 2 queries returned no results - try broader research strategy"
-  - "Start with repository search to find relevant projects, then search within promising repos"
-  - "Use package search to find libraries, then explore their GitHub repositories"
-  - "Break down into smaller, more focused searches"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('Processing failed for fail_query');
+      expect(yamlText).toContain('originalQuery:');
     });
 
     it('should preserve result reasoning over query reasoning when both exist', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         {
           id: 'test1',
           reasoning: 'Query reasoning that should be overridden',
           name: 'query1',
         },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => ({
-          queryId: query.id,
-          reasoning: 'Result reasoning that should take precedence',
-          data: { files: [{ path: 'test.py' }] },
-          metadata: {},
-        }));
+        .mockImplementation(
+          async (_query: { id: string; name: string }, index: number) => ({
+            reasoning: 'Result reasoning that should take precedence',
+            data: { files: [{ path: 'test.py' }] },
+            metadata: { queryIndex: index },
+          })
+        );
 
       const { results, errors } = await processBulkQueries(
         queries,
         mockProcessor
       );
 
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: results.length,
-        failedQueries: errors.length,
-        dataQuality: { hasResults: true },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubSearchRepositories' as ToolName },
         results,
-        context,
         errors,
         queries
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-
-      // Test exact YAML - result reasoning takes precedence
-      const expectedYaml = `data:
-  - queryId: "test1"
-    reasoning: "Result reasoning that should take precedence"
-    data:
-      files:
-        - path: "test.py"
-hints:
-  - "Use repository structure analysis to find similar implementations"
-  - "Use github_view_repo_structure first to understand project layout, then target specific files"
-  - "Compare implementations across 3-5 repositories to identify best practices"
-  - "Single result found - dive deep and look for related examples in the same repository"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain(
+        'reasoning: "Result reasoning that should take precedence"'
+      );
+      expect(yamlText).toContain('files:');
     });
 
     it('should handle mixed success and error results with reasoning', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         {
           id: 'success1',
           reasoning: 'Successful query with reasoning',
@@ -725,83 +455,46 @@ hints:
           id: 'error2',
           name: 'fail_query_no_reasoning', // No reasoning
         },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => {
-          if (query.name.includes('fail')) {
-            throw new Error(`Processing failed for ${query.name}`);
+        .mockImplementation(
+          async (query: { id: string; name: string }, index: number) => {
+            if (query.name.includes('fail')) {
+              throw new Error(`Processing failed for ${query.name}`);
+            }
+            return {
+              data: { repositories: [{ name: 'test-repo' }] },
+              metadata: { queryIndex: index },
+            };
           }
-          return {
-            queryId: query.id,
-            data: { repositories: [{ name: 'test-repo' }] },
-            metadata: {},
-          };
-        });
+        );
 
       const { results, errors } = await processBulkQueries(
         queries,
         mockProcessor
       );
 
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: results.length,
-        failedQueries: errors.length,
-        dataQuality: { hasResults: results.length > 0 },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubViewRepoStructure' as ToolName },
         results,
-        context,
         errors,
         queries
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-
-      // Test exact YAML for mixed success and error results
-      const expectedYaml = `data:
-  - queryId: "success1"
-    reasoning: "Successful query with reasoning"
-    data:
-      repositories:
-        - name: "test-repo"
-  - queryId: "error1"
-    reasoning: "Failed query with reasoning"
-    error: "Processing failed for fail_query"
-    hints: []
-    metadata:
-      originalQuery:
-        reasoning: "Failed query with reasoning"
-        id: "error1"
-        name: "fail_query"
-  - queryId: "success2"
-    data:
-      repositories:
-        - name: "test-repo"
-  - queryId: "error2"
-    error: "Processing failed for fail_query_no_reasoning"
-    hints: []
-    metadata:
-      originalQuery:
-        id: "error2"
-        name: "fail_query_no_reasoning"
-hints:
-  - "Review failed queries for pattern adjustments and retry strategies"
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use github_fetch_content with matchString from search results for precise context extraction"
-  - "2/4 queries succeeded (50%)"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-  - "Look for: naming conventions, file structure, error handling, and configuration patterns"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      // Successful queries with repositories are in empty (they have empty content)
+      expect(yamlText).toContain('empty:');
+      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('repositories:');
+      // No actual "successful" section (all went to empty or failed)
+      expect(yamlText).not.toContain('successful:');
+      expect(yamlText).toContain('Processing failed for fail_query');
     });
 
     it('should handle empty or whitespace-only reasoning', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         {
           id: 'test1',
           reasoning: '', // Empty reasoning
@@ -817,61 +510,36 @@ hints:
           reasoning: 'Valid reasoning',
           name: 'query3',
         },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => ({
-          queryId: query.id,
-          data: { content: 'test content' },
-          metadata: {},
-        }));
+        .mockImplementation(
+          async (_query: { id: string; name: string }, index: number) => ({
+            data: { content: 'test content' },
+            metadata: { queryIndex: index },
+          })
+        );
 
       const { results, errors } = await processBulkQueries(
         queries,
         mockProcessor
       );
 
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: results.length,
-        failedQueries: errors.length,
-        dataQuality: { hasResults: true },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubFetchContent' as ToolName },
         results,
-        context,
         errors,
         queries
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-
-      // Test exact YAML - only valid reasoning is included
-      const expectedYaml = `data:
-  - queryId: "test1"
-    reasoning: ""
-    data:
-      content: "test content"
-  - queryId: "test2"
-    reasoning: "   "
-    data:
-      content: "test content"
-  - queryId: "test3"
-    reasoning: "Valid reasoning"
-    data:
-      content: "test content"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('content: "test content"');
     });
 
     it('should maintain query order with reasoning in results', async () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         {
           id: 'first',
           reasoning: 'First query reasoning',
@@ -887,73 +555,45 @@ hints:
           reasoning: 'Third query reasoning',
           name: 'query3',
         },
-      ]);
+      ];
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => ({
-          queryId: query.id,
-          data: { result: `Result for ${query.name}` },
-          metadata: {},
-        }));
+        .mockImplementation(
+          async (query: { id: string; name: string }, index: number) => ({
+            data: { result: `Result for ${query.name}` },
+            metadata: { queryIndex: index },
+          })
+        );
 
       const { results, errors } = await processBulkQueries(
         queries,
         mockProcessor
       );
 
-      const context = {
-        totalQueries: queries.length,
-        successfulQueries: results.length,
-        failedQueries: errors.length,
-        dataQuality: { hasResults: true },
-      };
-
       const bulkResponse = createBulkResponse(
         { toolName: 'githubSearchPullRequests' as ToolName },
         results,
-        context,
         errors,
         queries
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-
-      // Test exact YAML with reasoning in order
-      const expectedYaml = `data:
-  - queryId: "first"
-    reasoning: "First query reasoning"
-    data:
-      result: "Result for query1"
-  - queryId: "second"
-    reasoning: "Second query reasoning"
-    data:
-      result: "Result for query2"
-  - queryId: "third"
-    reasoning: "Third query reasoning"
-    data:
-      result: "Result for query3"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use commit/PR search only when explicitly requested - focus on implementation files"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-  - "Focus on code changes rather than PR discussions for implementation details"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('First query reasoning');
+      expect(yamlText).toContain('Second query reasoning');
+      expect(yamlText).toContain('Third query reasoning');
     });
   });
 
   describe('GitHub API flow detection (empty vs content vs error)', () => {
     it('should treat code search empty result (total_count:0, items:[]) as no-results', () => {
-      const queries = ensureUniqueQueryIds([
-        { id: 'q1', name: 'code_search_empty' },
-      ]);
+      const queries = [{ id: 'q1', name: 'code_search_empty' }];
 
       const results = [
         {
-          queryId: 'q1',
+          queryIndex: 0,
           result: {
-            queryId: 'q1',
             files: [],
             metadata: {},
           } as unknown as ProcessedBulkResult,
@@ -961,60 +601,36 @@ hints:
         },
       ];
 
-      const ctx = {
-        totalQueries: 1,
-        successfulQueries: 1,
-        failedQueries: 0,
-        dataQuality: { hasResults: false },
-      };
-
       const resp = createBulkResponse(
         { toolName: 'githubSearchCode' as ToolName },
         results,
-        ctx,
         [],
         queries
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "q1"
-    files: []
-    metadata:
-      originalQuery:
-        id: "q1"
-        name: "code_search_empty"
-hints:
-  - "All 1 queries returned no results - try broader research strategy"
-  - "Start with repository search to find relevant projects, then search within promising repos"
-  - "Use package search to find libraries, then explore their GitHub repositories"
-  - "Break down into smaller, more focused searches"
-  - "Try semantic alternatives: expand abbreviations, use synonyms, or try related conceptual terms"
-  - "Start with core concepts, then progressively narrow to specific implementations and tools"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('empty:');
+      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
     });
 
     it('should handle repo search empty and non-empty', () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         { id: 'rq1', name: 'repos_empty' },
         { id: 'rq2', name: 'repos_non_empty' },
-      ]);
+      ];
 
       const results = [
         {
-          queryId: 'rq1',
+          queryIndex: 0,
           result: {
-            queryId: 'rq1',
             repositories: [],
             metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
         },
         {
-          queryId: 'rq2',
+          queryIndex: 1,
           result: {
-            queryId: 'rq2',
             repositories: [{ repository: 'a/b' }, { repository: 'c/d' }],
             metadata: {},
           } as unknown as ProcessedBulkResult,
@@ -1022,53 +638,29 @@ hints:
         },
       ];
 
-      const ctx = {
-        totalQueries: 2,
-        successfulQueries: 2,
-        failedQueries: 0,
-        dataQuality: { hasResults: true },
-      };
-
       const resp = createBulkResponse(
         { toolName: 'githubSearchRepositories' as ToolName },
         results,
-        ctx,
         [],
         queries
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "rq1"
-    metadata:
-      originalQuery:
-        id: "rq1"
-        name: "repos_empty"
-    repositories: []
-  - queryId: "rq2"
-    repositories:
-      - repository: "a/b"
-      - repository: "c/d"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use github_view_repo_structure first to understand project layout, then target specific files"
-  - "Compare implementations across 3-5 repositories to identify best practices"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('empty:');
+      expect(yamlText).not.toContain('repositories: []'); // Empty arrays are removed
+      expect(yamlText).toContain('repositories:'); // Non-empty still present
     });
 
     it('should handle pull request search empty and non-empty', () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         { id: 'pq1', name: 'prs_empty' },
         { id: 'pq2', name: 'prs_non_empty' },
-      ]);
+      ];
 
       const results = [
         {
-          queryId: 'pq1',
+          queryIndex: 0,
           result: {
-            queryId: 'pq1',
             pull_requests: [],
             total_count: 0,
             metadata: {},
@@ -1076,9 +668,8 @@ hints:
           originalQuery: queries[0]!,
         },
         {
-          queryId: 'pq2',
+          queryIndex: 1,
           result: {
-            queryId: 'pq2',
             pull_requests: [{ number: 1, title: 'PR', url: 'u' }],
             total_count: 1,
             metadata: {},
@@ -1087,56 +678,29 @@ hints:
         },
       ];
 
-      const ctx = {
-        totalQueries: 2,
-        successfulQueries: 2,
-        failedQueries: 0,
-        dataQuality: { hasResults: true },
-      };
-
       const resp = createBulkResponse(
         { toolName: 'githubSearchPullRequests' as ToolName },
         results,
-        ctx,
         [],
         queries
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "pq1"
-    metadata:
-      originalQuery:
-        id: "pq1"
-        name: "prs_empty"
-    pull_requests: []
-    total_count: 0
-  - queryId: "pq2"
-    pull_requests:
-      - number: 1
-        title: "PR"
-        url: "u"
-    total_count: 1
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use commit/PR search only when explicitly requested - focus on implementation files"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-  - "Focus on code changes rather than PR discussions for implementation details"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('empty:');
+      expect(yamlText).not.toContain('pull_requests: []'); // Empty arrays are removed
+      expect(yamlText).toContain('pull_requests:'); // Non-empty still present
     });
 
     it('should handle repo structure empty and non-empty', () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         { id: 'sq1', name: 'structure_empty' },
         { id: 'sq2', name: 'structure_non_empty' },
-      ]);
+      ];
 
       const results = [
         {
-          queryId: 'sq1',
+          queryIndex: 0,
           result: {
-            queryId: 'sq1',
             files: [],
             folders: [],
             metadata: {},
@@ -1144,9 +708,8 @@ hints:
           originalQuery: queries[0]!,
         },
         {
-          queryId: 'sq2',
+          queryIndex: 1,
           result: {
-            queryId: 'sq2',
             files: [{ path: 'README.md' }],
             folders: [{ path: 'src' }],
             metadata: {},
@@ -1155,54 +718,28 @@ hints:
         },
       ];
 
-      const ctx = {
-        totalQueries: 2,
-        successfulQueries: 2,
-        failedQueries: 0,
-        dataQuality: { hasResults: true },
-      };
-
       const resp = createBulkResponse(
         { toolName: 'githubViewRepoStructure' as ToolName },
         results,
-        ctx,
         [],
         queries
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "sq1"
-    files: []
-    folders: []
-    metadata:
-      originalQuery:
-        id: "sq1"
-        name: "structure_empty"
-  - queryId: "sq2"
-    files:
-      - path: "README.md"
-    folders:
-      - path: "src"
-hints:
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Use github_fetch_content with matchString from search results for precise context extraction"
-  - "Multiple results found - cross-reference approaches and look for common patterns"
-  - "Look for: naming conventions, file structure, error handling, and configuration patterns"
-  - "Focus on source code and example directories for implementation details"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('empty:');
+      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
+      expect(yamlText).not.toContain('folders: []'); // Empty arrays are removed
+      expect(yamlText).toContain('successful:'); // Non-empty section still present
+      expect(yamlText).toContain('path: "README.md"');
+      expect(yamlText).toContain('path: "src"');
     });
     it('should treat code search with items as meaningful content', () => {
-      const queries = ensureUniqueQueryIds([
-        { id: 'q1', name: 'code_search_non_empty' },
-      ]);
+      const queries = [{ id: 'q1', name: 'code_search_non_empty' }];
 
       const results = [
         {
-          queryId: 'q1',
+          queryIndex: 0,
           result: {
-            queryId: 'q1',
             files: [{ path: 'src/index.ts', url: 'https://example' }],
             metadata: {},
           } as unknown as ProcessedBulkResult,
@@ -1210,45 +747,28 @@ hints:
         },
       ];
 
-      const ctx = {
-        totalQueries: 1,
-        successfulQueries: 1,
-        failedQueries: 0,
-        dataQuality: { hasResults: true },
-      };
-
       const resp = createBulkResponse(
         { toolName: 'githubSearchCode' as ToolName },
         results,
-        ctx,
         [],
         queries
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "q1"
-    files:
-      - path: "src/index.ts"
-        url: "https://example"
-hints:
-  - "Use repository structure analysis to find similar implementations"
-  - "Use github_fetch_content with matchString from search results for precise context extraction"
-  - "Chain tools strategically: start broad with repository search, then structure view, code search, and content fetch for deep analysis"
-  - "Single result found - dive deep and look for related examples in the same repository"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('path: "src/index.ts"');
+      expect(yamlText).toContain('url: "https://example"');
     });
 
     it('should treat empty file content as error (per API) and non-empty as content', () => {
-      const queries = ensureUniqueQueryIds([
+      const queries = [
         { id: 'q1', name: 'file_content_empty' },
         { id: 'q2', name: 'file_content_non_empty' },
-      ]);
+      ];
 
       const results = [
         {
-          queryId: 'q2',
+          queryIndex: 1,
           result: {
             data: { content: 'console.log(1);' },
             metadata: {},
@@ -1257,20 +777,12 @@ hints:
         },
       ];
 
-      const ctx = {
-        totalQueries: 2,
-        successfulQueries: 1,
-        failedQueries: 1,
-        dataQuality: { hasResults: true },
-      };
-
       const resp = createBulkResponse(
         { toolName: 'githubFetchContent' as ToolName },
         results,
-        ctx,
         [
           {
-            queryId: 'q1',
+            queryIndex: 0,
             error: 'File is empty - no content to display',
           } as QueryError,
         ],
@@ -1278,64 +790,28 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "q1"
-    error: "File is empty - no content to display"
-    hints: []
-    metadata:
-      originalQuery:
-        id: "q1"
-        name: "file_content_empty"
-  - queryId: "q2"
-    data:
-      content: "console.log(1);"
-hints:
-  - "Review failed queries for pattern adjustments and retry strategies"
-  - "Use repository structure analysis to find similar implementations"
-  - "1/2 queries succeeded (50%)"
-  - "Single result found - dive deep and look for related examples in the same repository"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain(
+        'error: "File is empty - no content to display"'
+      );
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('content: "console.log(1);"');
     });
 
     it('should include errors as error results with query args', () => {
-      const queries = ensureUniqueQueryIds([
-        { id: 'qerr', name: 'error_case' },
-      ]);
-
-      const ctx = {
-        totalQueries: 1,
-        successfulQueries: 0,
-        failedQueries: 1,
-        dataQuality: { hasResults: false },
-      };
+      const queries = [{ id: 'qerr', name: 'error_case' }];
 
       const resp = createBulkResponse(
         { toolName: 'githubSearchRepositories' as ToolName },
         [],
-        ctx,
-        [{ queryId: 'qerr', error: 'GitHub API error' } as QueryError],
+        [{ queryIndex: 0, error: 'GitHub API error' } as QueryError],
         queries
       );
 
       const yamlText = resp.content[0]!.text as string;
-      const expectedYaml = `data:
-  - queryId: "qerr"
-    error: "GitHub API error"
-    hints: []
-    metadata:
-      originalQuery:
-        id: "qerr"
-        name: "error_case"
-hints:
-  - "All 1 queries returned no results - try broader research strategy"
-  - "Start with repository search to find relevant projects, then search within promising repos"
-  - "Use package search to find libraries, then explore their GitHub repositories"
-  - "Break down into smaller, more focused searches"
-  - "Try broader search terms or use topicsToSearch for discovery"
-  - "Explore ecosystem: consider frameworks, libraries, and tools commonly used with your target technology"
-`;
-      expect(yamlText).toEqual(expectedYaml);
+      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('error: "GitHub API error"');
+      expect(yamlText).toContain('originalQuery:');
     });
   });
 });

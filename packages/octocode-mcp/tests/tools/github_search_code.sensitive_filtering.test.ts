@@ -790,8 +790,9 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // All files should be filtered out
-      expect(responseText).toContain('files: []');
+      // All files should be filtered out (empty array removed)
+      expect(responseText).not.toContain('files: []'); // Empty arrays are removed
+      expect(responseText).toContain('empty:'); // Still in empty section
       expect(responseText).toContain('hints:');
       expect(responseText).not.toContain('package-lock.json');
       expect(responseText).not.toContain('secrets.json');

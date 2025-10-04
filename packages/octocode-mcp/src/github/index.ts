@@ -13,27 +13,16 @@ export type {
   GitHubAPIResponse,
   GitHubAPISuccess,
   Repository,
-  WorkflowRun,
-  CheckRun,
   OptimizedCodeSearchResult,
-  OptimizedCommitSearchResult,
   GitHubPullRequestItem,
-  GitHubCommitSearchParams,
   GitHubPullRequestsSearchParams,
   RepositoryReference,
-  GitHubCommitDiff,
-  GitHubPullRequestDiff,
-  EnhancedSearchResult,
   GetContentParameters,
   GetRepoResponse,
   isGitHubAPIError,
   isGitHubAPISuccess,
   isRepository,
-  isSearchResultItem,
-  isPullRequest,
-  isWorkflowRun,
-  isCheckRun,
-} from './github-openapi';
+} from './githubAPI';
 
 // Re-export direct Octokit types for convenience
 export type { components } from '@octokit/openapi-types';
@@ -45,7 +34,6 @@ export {
   buildCodeSearchQuery,
   buildRepoSearchQuery,
   buildPullRequestSearchQuery,
-  buildCommitSearchQuery,
   shouldUseSearchForPRs,
 } from './queryBuilders';
 

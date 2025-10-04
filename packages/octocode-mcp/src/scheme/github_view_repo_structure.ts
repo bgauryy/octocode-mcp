@@ -77,7 +77,8 @@ export interface GitHubRepositoryContentsResult {
 }
 
 export interface GitHubRepositoryStructureResult {
-  repository: string;
+  owner: string;
+  repo: string;
   branch: string;
   path: string;
   apiSource: boolean;
@@ -111,37 +112,24 @@ export interface GitHubRepositoryStructureError {
   rateLimitReset?: number;
 }
 
-// ============================================================================
-// Simple Input/Output Types
-// ============================================================================
-
-/**
- * Tool input - bulk repository structure queries
- */
 export interface GitHubViewRepoStructureInput {
   queries: GitHubViewRepoStructureQuery[];
 }
 
-/**
- * Tool output - extends standardized ToolResponse format
- */
 export interface GitHubViewRepoStructureOutput extends ToolResponse {
-  /** Primary data payload - array of repository structure results */
   data: RepoStructureResult[];
 }
 
-/**
- * Individual repository structure result
- */
 export interface RepoStructureResult {
-  queryId?: string;
+  researchGoal?: string;
   reasoning?: string;
-  repository?: string;
+  owner?: string;
+  repo?: string;
   path?: string;
   files?: string[];
   folders?: string[];
   error?: string;
   hints?: string[];
-  query?: Record<string, unknown>; // Only on error
-  metadata: Record<string, unknown>; // Required for bulk operations compatibility
+  query?: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 }

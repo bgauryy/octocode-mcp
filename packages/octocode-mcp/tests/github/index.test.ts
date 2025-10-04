@@ -42,9 +42,6 @@ describe('GitHub Index Exports', () => {
       expect(githubIndex.buildPullRequestSearchQuery).toBeDefined();
       expect(typeof githubIndex.buildPullRequestSearchQuery).toBe('function');
 
-      expect(githubIndex.buildCommitSearchQuery).toBeDefined();
-      expect(typeof githubIndex.buildCommitSearchQuery).toBe('function');
-
       expect(githubIndex.shouldUseSearchForPRs).toBeDefined();
       expect(typeof githubIndex.shouldUseSearchForPRs).toBe('function');
     });
@@ -102,7 +99,6 @@ describe('GitHub Index Exports', () => {
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
         'buildPullRequestSearchQuery',
-        'buildCommitSearchQuery',
         'shouldUseSearchForPRs',
         'searchGitHubCodeAPI',
         'searchGitHubReposAPI',
@@ -142,7 +138,6 @@ describe('GitHub Index Exports', () => {
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
         'buildPullRequestSearchQuery',
-        'buildCommitSearchQuery',
         'shouldUseSearchForPRs',
         'searchGitHubCodeAPI',
         'searchGitHubReposAPI',

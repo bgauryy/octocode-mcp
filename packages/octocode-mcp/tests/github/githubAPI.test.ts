@@ -42,9 +42,6 @@ describe('GitHub API Re-exports', () => {
       expect(githubAPI.buildPullRequestSearchQuery).toBeDefined();
       expect(typeof githubAPI.buildPullRequestSearchQuery).toBe('function');
 
-      expect(githubAPI.buildCommitSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildCommitSearchQuery).toBe('function');
-
       expect(githubAPI.shouldUseSearchForPRs).toBeDefined();
       expect(typeof githubAPI.shouldUseSearchForPRs).toBe('function');
     });
@@ -129,7 +126,7 @@ describe('GitHub API Re-exports', () => {
       });
 
       // Ensure we have a reasonable number of function exports
-      expect(functionKeys.length).toBeGreaterThan(15);
+      expect(functionKeys.length).toBeGreaterThan(12);
     });
   });
 });

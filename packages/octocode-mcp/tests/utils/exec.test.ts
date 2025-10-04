@@ -84,7 +84,8 @@ describe('exec utilities', () => {
       expect(result.content).toHaveLength(1);
 
       const yaml = (result.content[0]?.text || '') as string;
-      const expectedYaml = 'data: "success output"\nhints: []\n';
+      // Empty hints array is removed
+      const expectedYaml = 'data: "success output"\n';
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -119,7 +120,8 @@ describe('exec utilities', () => {
       expect(result.content).toHaveLength(1);
 
       const yaml = (result.content[0]?.text || '') as string;
-      const expectedYaml = 'data: "output"\nhints: []\n';
+      // Empty hints array is removed
+      const expectedYaml = 'data: "output"\n';
       expect(yaml).toEqual(expectedYaml);
     });
 
@@ -264,8 +266,9 @@ describe('exec utilities', () => {
 
         expect(result.isError).toBe(false);
         const yaml = (result.content?.[0]?.text || '') as string;
+        // Empty hints array is removed
         const expectedYaml =
-          'data: "{\\"name\\":\\"test-package\\",\\"version\\":\\"1.0.0\\"}"\nhints: []\n';
+          'data: "{\\"name\\":\\"test-package\\",\\"version\\":\\"1.0.0\\"}"\n';
         expect(yaml).toEqual(expectedYaml);
       });
 
@@ -381,7 +384,8 @@ describe('exec utilities', () => {
         const result = await promise;
 
         const yaml = (result.content?.[0]?.text || '') as string;
-        const expectedYaml = 'data: "first second third"\nhints: []\n';
+        // Empty hints array is removed
+        const expectedYaml = 'data: "first second third"\n';
         expect(yaml).toEqual(expectedYaml);
       });
 
@@ -567,7 +571,8 @@ describe('exec utilities', () => {
       results.forEach((result, i) => {
         expect(result.isError).toBe(false);
         const yaml = (result.content?.[0]?.text || '') as string;
-        const expectedYaml = `data: "result${i}"\nhints: []\n`;
+        // Empty hints array is removed
+        const expectedYaml = `data: "result${i}"\n`;
         expect(yaml).toEqual(expectedYaml);
       });
     });
@@ -590,7 +595,8 @@ describe('exec utilities', () => {
 
       expect(result1.isError).toBe(false);
       const yaml1 = (result1.content?.[0]?.text || '') as string;
-      const expectedYaml1 = 'data: "success data"\nhints: []\n';
+      // Empty hints array is removed
+      const expectedYaml1 = 'data: "success data"\n';
       expect(yaml1).toEqual(expectedYaml1);
 
       expect(result2.isError).toBe(true);

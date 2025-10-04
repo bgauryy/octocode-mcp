@@ -17,10 +17,9 @@ import {
   processBulkQueries,
   ProcessedBulkResult,
 } from '../utils/bulkOperations.js';
-import { generateHints } from './hints.js';
-import { ensureUniqueQueryIds } from '../utils/bulkOperations.js';
+import { generateEmptyQueryHints } from './hints.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import type { OptimizedCodeSearchResult } from '../github/github-openapi.js';
+import type { OptimizedCodeSearchResult } from '../github/githubAPI.js';
 import { DESCRIPTIONS } from './descriptions.js';
 import { shouldIgnoreFile } from '../utils/fileFilters.js';
 
@@ -52,14 +51,7 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           !Array.isArray(typedArgs.queries) ||
           typedArgs.queries.length === 0
         ) {
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            hasResults: false,
-            errorMessage: 'Queries array is required and cannot be empty',
-            customHints: [
-              'Provide at least one search query with keywordsToSearch',
-            ],
-          });
+          const hints = generateEmptyQueryHints(TOOL_NAMES.GITHUB_SEARCH_CODE);
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
@@ -83,12 +75,11 @@ async function searchMultipleGitHubCode(
   authInfo?: AuthInfo,
   userContext?: import('../security/withSecurityValidation.js').UserContext
 ): Promise<CallToolResult> {
-  const uniqueQueries = ensureUniqueQueryIds(queries, 'code-search');
-
   const { results, errors } = await processBulkQueries(
-    uniqueQueries,
+    queries,
     async (
-      query: GitHubCodeSearchQuery & { id: string }
+      query: GitHubCodeSearchQuery,
+      _index: number
     ): Promise<ProcessedBulkResult> => {
       try {
         const apiResult = await searchGitHubCodeAPI(
@@ -98,29 +89,32 @@ async function searchMultipleGitHubCode(
         );
 
         if ('error' in apiResult) {
-          // Generate smart suggestions for this specific query error
-          const hints = generateHints({
-            toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-            hasResults: false,
-            errorMessage: apiResult.error,
-          });
-
           return {
-            queryId: query.id,
+            researchGoal: query.researchGoal,
             reasoning: query.reasoning,
             error: apiResult.error,
-            hints: hints,
             metadata: {},
           } as ProcessedBulkResult;
         }
 
-        // Extract repository context
-        const repository =
+        // Extract repository context from nameWithOwner
+        let owner: string | undefined;
+        let repo: string | undefined;
+
+        const nameWithOwner =
           apiResult.data.repository?.name ||
           (apiResult.data.items.length > 0 &&
           apiResult.data.items[0]?.repository?.nameWithOwner
             ? apiResult.data.items[0].repository.nameWithOwner
             : undefined);
+
+        if (nameWithOwner) {
+          const parts = nameWithOwner.split('/');
+          if (parts.length === 2) {
+            owner = parts[0];
+            repo = parts[1];
+          }
+        }
 
         // Filter out ignored files from results - additional filtering at tool level
         const filteredItems = apiResult.data.items.filter(
@@ -128,18 +122,14 @@ async function searchMultipleGitHubCode(
             !shouldIgnoreFile(item.path)
         );
 
-        // Check if there are no results after filtering
-        const hasNoResults = filteredItems.length === 0;
-
         const result: SearchResult = {
-          queryId: query.id,
+          researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          repository,
+          owner,
+          repo,
           files: filteredItems.map(
             (item: OptimizedCodeSearchResult['items'][0]) => ({
               path: item.path,
-              // text_matches contain actual file content processed through the same
-              // content optimization pipeline as file fetching (sanitization, minification)
               text_matches: item.matches.map(
                 (match: OptimizedCodeSearchResult['items'][0]['matches'][0]) =>
                   match.context
@@ -149,69 +139,25 @@ async function searchMultipleGitHubCode(
           metadata: {},
         };
 
-        // Add hints for no results case
-        if (hasNoResults) {
-          // Generate specific hints for no results
-          const noResultsHints = [
-            'Use broader search terms',
-            'Try repository search first',
-            'Consider related concepts',
-          ];
-
-          // Add repository-specific hints if searching in a specific repo
-          if (query.owner && query.repo) {
-            noResultsHints.unshift(
-              `No results found in ${query.owner}/${query.repo} - try searching across all repositories`
-            );
-          }
-
-          result.hints = noResultsHints;
-        }
-
         return result as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
-        const hints = generateHints({
-          toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-          hasResults: false,
-          errorMessage: errorMessage,
-        });
-
         return {
-          queryId: query.id,
+          researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           error: errorMessage,
-          hints: hints,
           metadata: {},
         } as ProcessedBulkResult;
       }
     }
   );
 
-  const successfulCount = results.filter(r => !r.result.error).length;
-  const aggregatedContext = {
-    totalQueries: results.length,
-    successfulQueries: successfulCount,
-    failedQueries: results.length - successfulCount,
-    dataQuality: { hasResults: successfulCount > 0 },
-  };
-
-  // No need to extract detailed context - keep it simple
-
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    maxHints: 8,
-    keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
+    keysPriority: ['researchGoal', 'reasoning', 'owner', 'repo', 'files'],
   };
 
-  // Create standardized response - bulk operations handles all hint generation and formatting
-  return createBulkResponse(
-    config,
-    results,
-    aggregatedContext,
-    errors,
-    uniqueQueries
-  );
+  return createBulkResponse(config, results, errors, queries);
 }
