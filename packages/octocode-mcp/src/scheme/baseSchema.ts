@@ -4,6 +4,10 @@ import { GENERAL } from './schemDescriptions';
 export const BaseQuerySchema = z.object({
   researchGoal: z.string().optional().describe(GENERAL.base.researchGoal),
   reasoning: z.string().optional().describe(GENERAL.base.reasoning),
+  suggestions: z
+    .array(z.string())
+    .optional()
+    .describe(GENERAL.base.suggestions),
 });
 
 export function createBulkQuerySchema<T extends z.ZodTypeAny>(

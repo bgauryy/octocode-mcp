@@ -28,6 +28,7 @@ import { createResponseFormat, type ToolResponse } from '../responses.js';
 export interface ProcessedBulkResult {
   researchGoal?: string;
   reasoning?: string;
+  suggestions?: string[];
   data?: unknown;
   error?: string;
   hints?: string[];
@@ -139,8 +140,10 @@ export function createBulkResponse<
 
     const researchGoal = safeExtractString(originalQuery, 'researchGoal');
     const reasoning = safeExtractString(originalQuery, 'reasoning');
+    const suggestions = safeExtractStringArray(originalQuery, 'suggestions');
     if (researchGoal) item.researchGoal = researchGoal;
     if (reasoning) item.reasoning = reasoning;
+    if (suggestions) item.suggestions = suggestions;
 
     errorItems.push(item);
   });
@@ -152,6 +155,8 @@ export function createBulkResponse<
     if (!item.researchGoal)
       item.researchGoal = safeExtractString(query, 'researchGoal');
     if (!item.reasoning) item.reasoning = safeExtractString(query, 'reasoning');
+    if (!item.suggestions)
+      item.suggestions = safeExtractStringArray(query, 'suggestions');
 
     if (item.error) {
       if (!item.metadata) item.metadata = {};
@@ -241,6 +246,17 @@ function safeExtractString(
 ): string | undefined {
   const value = obj[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+function safeExtractStringArray(
+  obj: Record<string, unknown>,
+  key: string
+): string[] | undefined {
+  const value = obj[key];
+  if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+    return value as string[];
+  }
+  return undefined;
 }
 
 function isNoResultsForTool(
