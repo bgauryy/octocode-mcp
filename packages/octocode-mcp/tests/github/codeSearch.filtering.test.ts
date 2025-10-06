@@ -79,7 +79,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
@@ -151,7 +151,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -213,7 +213,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -284,7 +284,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['config'],
         owner: 'test',
         repo: 'repo',
@@ -347,7 +347,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['env'],
         owner: 'test',
         repo: 'repo',
@@ -432,7 +432,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['app'],
         owner: 'test',
         repo: 'repo',
@@ -487,7 +487,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['app'],
         owner: 'test',
         repo: 'repo',
@@ -552,7 +552,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -623,7 +623,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -718,7 +718,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -777,7 +777,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['lock'],
         owner: 'test',
         repo: 'repo',
@@ -837,7 +837,7 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        suggestions: [],
+        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',

@@ -144,7 +144,7 @@ async function searchMultipleGitHubRepos(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
-            suggestions: query.suggestions,
+            researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
             metadata: {},
           } as ProcessedBulkResult;
@@ -158,7 +158,7 @@ async function searchMultipleGitHubRepos(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          suggestions: query.suggestions,
+          researchSuggestions: query.researchSuggestions,
           repositories: typedRepositories,
           metadata: {},
         } as ProcessedBulkResult;
@@ -169,7 +169,7 @@ async function searchMultipleGitHubRepos(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          suggestions: query.suggestions,
+          researchSuggestions: query.researchSuggestions,
           error: errorMessage,
           metadata: {},
         } as ProcessedBulkResult;
@@ -182,7 +182,7 @@ async function searchMultipleGitHubRepos(
     keysPriority: [
       'researchGoal',
       'reasoning',
-      'suggestions',
+      'researchSuggestions',
       'owner',
       'repo',
       'description',

@@ -142,7 +142,7 @@ async function searchMultipleGitHubPullRequests(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
-            suggestions: query.suggestions,
+            researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
             metadata: {},
           } as ProcessedBulkResult;
@@ -155,7 +155,7 @@ async function searchMultipleGitHubPullRequests(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          suggestions: query.suggestions,
+          researchSuggestions: query.researchSuggestions,
           pull_requests: pullRequests,
           total_count: apiResult.total_count || pullRequests.length,
           metadata: {
@@ -171,7 +171,7 @@ async function searchMultipleGitHubPullRequests(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
-          suggestions: query.suggestions,
+          researchSuggestions: query.researchSuggestions,
           error: errorMessage,
           metadata: {},
         } as ProcessedBulkResult;
@@ -184,7 +184,7 @@ async function searchMultipleGitHubPullRequests(
     keysPriority: [
       'researchGoal',
       'reasoning',
-      'suggestions',
+      'researchSuggestions',
       'pull_requests',
       'total_count',
     ],

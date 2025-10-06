@@ -28,7 +28,7 @@ import { createResponseFormat, type ToolResponse } from '../responses.js';
 export interface ProcessedBulkResult {
   researchGoal?: string;
   reasoning?: string;
-  suggestions?: string[];
+  researchSuggestions?: string[];
   data?: unknown;
   error?: string;
   hints?: string[];
@@ -141,11 +141,14 @@ export function createBulkResponse<
 
     const researchGoal = safeExtractString(originalQuery, 'researchGoal');
     const reasoning = safeExtractString(originalQuery, 'reasoning');
-    const suggestions = safeExtractStringArray(originalQuery, 'suggestions');
+    const researchSuggestions = safeExtractStringArray(
+      originalQuery,
+      'researchSuggestions'
+    );
     if (researchGoal) item.researchGoal = researchGoal;
     if (reasoning) item.reasoning = reasoning;
-    // Collect suggestions instead of adding to item
-    if (suggestions) allSuggestions.push(...suggestions);
+    // Collect researchSuggestions instead of adding to item
+    if (researchSuggestions) allSuggestions.push(...researchSuggestions);
 
     errorItems.push(item);
   });
@@ -158,14 +161,22 @@ export function createBulkResponse<
       item.researchGoal = safeExtractString(query, 'researchGoal');
     if (!item.reasoning) item.reasoning = safeExtractString(query, 'reasoning');
 
-    // Collect suggestions from both item and query
-    const itemSuggestions = safeExtractStringArray(item, 'suggestions');
-    const querySuggestions = safeExtractStringArray(query, 'suggestions');
-    if (itemSuggestions) allSuggestions.push(...itemSuggestions);
-    if (querySuggestions) allSuggestions.push(...querySuggestions);
+    // Collect researchSuggestions from both item and query
+    const itemResearchSuggestions = safeExtractStringArray(
+      item,
+      'researchSuggestions'
+    );
+    const queryResearchSuggestions = safeExtractStringArray(
+      query,
+      'researchSuggestions'
+    );
+    if (itemResearchSuggestions)
+      allSuggestions.push(...itemResearchSuggestions);
+    if (queryResearchSuggestions)
+      allSuggestions.push(...queryResearchSuggestions);
 
-    // Remove suggestions from individual items
-    delete item.suggestions;
+    // Remove researchSuggestions from individual items
+    delete item.researchSuggestions;
 
     if (item.error) {
       if (!item.metadata) item.metadata = {};
@@ -222,10 +233,10 @@ export function createBulkResponse<
     data.hints = hintsData;
   }
 
-  // Add unique suggestions at the data level (once per response)
-  const uniqueSuggestions = [...new Set(allSuggestions)];
-  if (uniqueSuggestions.length > 0) {
-    data.suggestions = uniqueSuggestions;
+  // Add unique researchSuggestions at the data level (once per response)
+  const uniqueResearchSuggestions = [...new Set(allSuggestions)];
+  if (uniqueResearchSuggestions.length > 0) {
+    data.researchSuggestions = uniqueResearchSuggestions;
   }
 
   const counts = [];
