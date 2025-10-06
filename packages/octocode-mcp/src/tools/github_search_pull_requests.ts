@@ -142,6 +142,7 @@ async function searchMultipleGitHubPullRequests(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
+            suggestions: query.suggestions,
             error: apiResult.error,
             metadata: {},
           } as ProcessedBulkResult;
@@ -154,6 +155,7 @@ async function searchMultipleGitHubPullRequests(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           pull_requests: pullRequests,
           total_count: apiResult.total_count || pullRequests.length,
           metadata: {
@@ -169,6 +171,7 @@ async function searchMultipleGitHubPullRequests(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           error: errorMessage,
           metadata: {},
         } as ProcessedBulkResult;
@@ -178,7 +181,13 @@ async function searchMultipleGitHubPullRequests(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-    keysPriority: ['researchGoal', 'reasoning', 'pull_requests', 'total_count'],
+    keysPriority: [
+      'researchGoal',
+      'reasoning',
+      'suggestions',
+      'pull_requests',
+      'total_count',
+    ],
   };
 
   return createBulkResponse(config, results, errors, queries);

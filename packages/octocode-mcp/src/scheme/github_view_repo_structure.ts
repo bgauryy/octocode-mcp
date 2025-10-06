@@ -123,6 +123,7 @@ export interface GitHubViewRepoStructureOutput extends ToolResponse {
 export interface RepoStructureResult {
   researchGoal?: string;
   reasoning?: string;
+  suggestions?: string[];
   owner?: string;
   repo?: string;
   path?: string;

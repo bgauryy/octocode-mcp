@@ -183,6 +183,7 @@ describe('Query Builders', () => {
 
     it('should build query with single topic', () => {
       const params: Parameters<typeof buildRepoSearchQuery>[0] = {
+        suggestions: [],
         keywordsToSearch: ['framework'],
         topicsToSearch: ['javascript'],
       };

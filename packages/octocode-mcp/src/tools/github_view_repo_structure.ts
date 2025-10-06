@@ -94,6 +94,7 @@ async function exploreMultipleRepositoryStructures(
           branch: String(query.branch),
           path: query.path ? String(query.path) : undefined,
           depth: typeof query.depth === 'number' ? query.depth : undefined,
+          suggestions: query.suggestions,
         };
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
@@ -107,6 +108,7 @@ async function exploreMultipleRepositoryStructures(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
+            suggestions: query.suggestions,
             owner: query.owner,
             repo: query.repo,
             path: query.path || '/',
@@ -164,6 +166,7 @@ async function exploreMultipleRepositoryStructures(
         const result: RepoStructureResult = {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           owner: apiRequest.owner,
           repo: apiRequest.repo,
           path: apiRequest.path || '/',
@@ -190,6 +193,7 @@ async function exploreMultipleRepositoryStructures(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           owner: query.owner,
           repo: query.repo,
           path: query.path || '/',
@@ -211,6 +215,7 @@ async function exploreMultipleRepositoryStructures(
     keysPriority: [
       'researchGoal',
       'reasoning',
+      'suggestions',
       'owner',
       'repo',
       'path',

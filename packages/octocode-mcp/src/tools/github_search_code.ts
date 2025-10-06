@@ -92,6 +92,7 @@ async function searchMultipleGitHubCode(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
+            suggestions: query.suggestions,
             error: apiResult.error,
             metadata: {},
           } as ProcessedBulkResult;
@@ -125,6 +126,7 @@ async function searchMultipleGitHubCode(
         const result: SearchResult = {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           owner,
           repo,
           files: filteredItems.map(
@@ -147,6 +149,7 @@ async function searchMultipleGitHubCode(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           error: errorMessage,
           metadata: {},
         } as ProcessedBulkResult;
@@ -156,7 +159,14 @@ async function searchMultipleGitHubCode(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    keysPriority: ['researchGoal', 'reasoning', 'owner', 'repo', 'files'],
+    keysPriority: [
+      'researchGoal',
+      'reasoning',
+      'suggestions',
+      'owner',
+      'repo',
+      'files',
+    ],
   };
 
   return createBulkResponse(config, results, errors, queries);

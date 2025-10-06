@@ -45,6 +45,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
+        suggestions: [],
         reasoning: 'Test query with both search types',
         topicsToSearch: ['computer-vision', 'deep-learning'],
         keywordsToSearch: ['whale', 'detection'],

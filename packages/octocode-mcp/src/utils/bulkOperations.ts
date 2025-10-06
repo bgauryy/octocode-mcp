@@ -127,6 +127,7 @@ export function createBulkResponse<
   const successItems: Record<string, unknown>[] = [];
   const noResultItems: Record<string, unknown>[] = [];
   const errorItems: Record<string, unknown>[] = [];
+  const allSuggestions: string[] = [];
 
   // Process errors
   errors.forEach(error => {
@@ -143,7 +144,8 @@ export function createBulkResponse<
     const suggestions = safeExtractStringArray(originalQuery, 'suggestions');
     if (researchGoal) item.researchGoal = researchGoal;
     if (reasoning) item.reasoning = reasoning;
-    if (suggestions) item.suggestions = suggestions;
+    // Collect suggestions instead of adding to item
+    if (suggestions) allSuggestions.push(...suggestions);
 
     errorItems.push(item);
   });
@@ -155,8 +157,15 @@ export function createBulkResponse<
     if (!item.researchGoal)
       item.researchGoal = safeExtractString(query, 'researchGoal');
     if (!item.reasoning) item.reasoning = safeExtractString(query, 'reasoning');
-    if (!item.suggestions)
-      item.suggestions = safeExtractStringArray(query, 'suggestions');
+
+    // Collect suggestions from both item and query
+    const itemSuggestions = safeExtractStringArray(item, 'suggestions');
+    const querySuggestions = safeExtractStringArray(query, 'suggestions');
+    if (itemSuggestions) allSuggestions.push(...itemSuggestions);
+    if (querySuggestions) allSuggestions.push(...querySuggestions);
+
+    // Remove suggestions from individual items
+    delete item.suggestions;
 
     if (item.error) {
       if (!item.metadata) item.metadata = {};
@@ -211,6 +220,12 @@ export function createBulkResponse<
   }
   if (Object.keys(hintsData).length > 0) {
     data.hints = hintsData;
+  }
+
+  // Add unique suggestions at the data level (once per response)
+  const uniqueSuggestions = [...new Set(allSuggestions)];
+  if (uniqueSuggestions.length > 0) {
+    data.suggestions = uniqueSuggestions;
   }
 
   const counts = [];

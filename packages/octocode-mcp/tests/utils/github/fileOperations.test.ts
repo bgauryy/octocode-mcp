@@ -75,6 +75,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         owner: 'test',
         repo: 'repo',
         path: 'test.js',
+        suggestions: [],
       };
 
       const parsed = FileContentQuerySchema.parse(minimalInput);
@@ -201,6 +202,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
     it('should fetch entire file when only non-content parameters are specified', async () => {
       const params = createTestParams({
+        suggestions: [],
         minified: false,
         sanitize: true,
         // No fullContent, startLine, endLine, or matchString
@@ -337,6 +339,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
     it('should extract specific line range with startLine and endLine', async () => {
       const params = createTestParams({
+        suggestions: [],
         startLine: 3,
         endLine: 6,
       });
@@ -452,6 +455,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
     it('should find match and return context with default matchStringContextLines (5)', async () => {
       const params = createTestParams({
+        suggestions: [],
         matchString: 'function MyComponent()',
       });
 

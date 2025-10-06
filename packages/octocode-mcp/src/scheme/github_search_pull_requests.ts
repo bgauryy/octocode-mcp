@@ -185,6 +185,7 @@ export interface GitHubSearchPullRequestsOutput extends ToolResponse {
 export interface PullRequestSearchResult {
   researchGoal?: string;
   reasoning?: string;
+  suggestions?: string[];
   pull_requests?: PullRequestInfo[];
   total_count?: number;
   incomplete_results?: boolean;

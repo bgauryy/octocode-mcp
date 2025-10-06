@@ -116,6 +116,7 @@ async function fetchMultipleGitHubFileContents(
               : 5,
           minified: typeof query.minified === 'boolean' ? query.minified : true,
           sanitize: typeof query.sanitize === 'boolean' ? query.sanitize : true,
+          suggestions: query.suggestions,
         };
 
         const apiResult = await fetchGitHubFileContentAPI(
@@ -132,6 +133,7 @@ async function fetchMultipleGitHubFileContents(
           return {
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
+            suggestions: query.suggestions,
             error: result.error,
             metadata: {},
           };
@@ -190,6 +192,7 @@ async function fetchMultipleGitHubFileContents(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           ...resultObj,
           metadata: {},
         } as ProcessedBulkResult;
@@ -200,6 +203,7 @@ async function fetchMultipleGitHubFileContents(
         return {
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          suggestions: query.suggestions,
           error: errorMessage,
           metadata: {},
         } as ProcessedBulkResult;
@@ -212,6 +216,7 @@ async function fetchMultipleGitHubFileContents(
     keysPriority: [
       'researchGoal',
       'reasoning',
+      'suggestions',
       'repository',
       'path',
       'contentLength',
