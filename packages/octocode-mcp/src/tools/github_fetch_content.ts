@@ -10,6 +10,7 @@ import { TOOL_NAMES } from '../constants.js';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
+  type ContentResult,
 } from '../scheme/github_fetch_content.js';
 import {
   processBulkQueries,
@@ -214,14 +215,23 @@ async function fetchMultipleGitHubFileContents(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'researchSuggestions',
-      'repository',
       'path',
       'contentLength',
       'content',
-    ],
+      'branch',
+      'startLine',
+      'endLine',
+      'isPartial',
+      'minified',
+      'minificationFailed',
+      'minificationType',
+      'securityWarnings',
+      'sampling',
+      'error',
+      'hints',
+      'query',
+      'originalQuery',
+    ] satisfies Array<keyof ContentResult>,
   };
 
   return createBulkResponse(config, results, errors, queries);

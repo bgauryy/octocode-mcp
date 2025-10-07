@@ -130,7 +130,16 @@ describe('GitHub Search Pull Requests Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: result.content[0]?.text as string,
+          },
+        ],
+      });
+
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           owner: 'facebook',
@@ -183,8 +192,13 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Queries array is required');
+
+      expect(responseText).toEqual(`data:
+  error: "Queries array is required and cannot be empty"
+hints:
+  - "Queries array is required and cannot be empty"
+  - "Provide at least one valid query with required parameters"
+`);
     });
 
     it('should reject missing queries parameter', async () => {
@@ -192,8 +206,13 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Queries array is required');
+
+      expect(responseText).toEqual(`data:
+  error: "Queries array is required and cannot be empty"
+hints:
+  - "Queries array is required and cannot be empty"
+  - "Provide at least one valid query with required parameters"
+`);
     });
 
     it('should accept query-based searches', async () => {
@@ -232,8 +251,13 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Use shorter, more focused search terms');
+
+      expect(responseText).toEqual(`data:
+  error: "Query too long. Maximum 256 characters allowed."
+hints:
+  - "Use shorter, more focused search terms"
+  - "Maximum query length is 256 characters"
+`);
     });
   });
 

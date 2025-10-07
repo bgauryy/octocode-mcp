@@ -3,80 +3,88 @@ import * as githubAPI from '../../src/github/githubAPI.js';
 
 describe('GitHub API Re-exports', () => {
   describe('Core client functions', () => {
-    it('should re-export client functions', () => {
-      expect(githubAPI.getOctokit).toBeDefined();
-      expect(typeof githubAPI.getOctokit).toBe('function');
+    it('should re-export getOctokit', () => {
+      expect(typeof githubAPI.getOctokit).toEqual('function');
+    });
 
-      expect(githubAPI.OctokitWithThrottling).toBeDefined();
-      expect(typeof githubAPI.OctokitWithThrottling).toBe('function');
+    it('should re-export OctokitWithThrottling', () => {
+      expect(typeof githubAPI.OctokitWithThrottling).toEqual('function');
+    });
 
-      expect(githubAPI.getDefaultBranch).toBeDefined();
-      expect(typeof githubAPI.getDefaultBranch).toBe('function');
+    it('should re-export getDefaultBranch', () => {
+      expect(typeof githubAPI.getDefaultBranch).toEqual('function');
+    });
 
-      expect(githubAPI.clearCachedToken).toBeDefined();
-      expect(typeof githubAPI.clearCachedToken).toBe('function');
+    it('should re-export clearCachedToken', () => {
+      expect(typeof githubAPI.clearCachedToken).toEqual('function');
     });
   });
 
   describe('Error handling functions', () => {
-    it('should re-export error handling functions', () => {
-      expect(githubAPI.handleGitHubAPIError).toBeDefined();
-      expect(typeof githubAPI.handleGitHubAPIError).toBe('function');
+    it('should re-export handleGitHubAPIError', () => {
+      expect(typeof githubAPI.handleGitHubAPIError).toEqual('function');
+    });
 
-      expect(githubAPI.generateFileAccessHints).toBeDefined();
-      expect(typeof githubAPI.generateFileAccessHints).toBe('function');
+    it('should re-export generateFileAccessHints', () => {
+      expect(typeof githubAPI.generateFileAccessHints).toEqual('function');
     });
   });
 
   describe('Query builder functions', () => {
-    it('should re-export query builder functions', () => {
-      expect(githubAPI.getOwnerQualifier).toBeDefined();
-      expect(typeof githubAPI.getOwnerQualifier).toBe('function');
+    it('should re-export getOwnerQualifier', () => {
+      expect(typeof githubAPI.getOwnerQualifier).toEqual('function');
+    });
 
-      expect(githubAPI.buildCodeSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildCodeSearchQuery).toBe('function');
+    it('should re-export buildCodeSearchQuery', () => {
+      expect(typeof githubAPI.buildCodeSearchQuery).toEqual('function');
+    });
 
-      expect(githubAPI.buildRepoSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildRepoSearchQuery).toBe('function');
+    it('should re-export buildRepoSearchQuery', () => {
+      expect(typeof githubAPI.buildRepoSearchQuery).toEqual('function');
+    });
 
-      expect(githubAPI.buildPullRequestSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildPullRequestSearchQuery).toBe('function');
+    it('should re-export buildPullRequestSearchQuery', () => {
+      expect(typeof githubAPI.buildPullRequestSearchQuery).toEqual('function');
+    });
 
-      expect(githubAPI.shouldUseSearchForPRs).toBeDefined();
-      expect(typeof githubAPI.shouldUseSearchForPRs).toBe('function');
+    it('should re-export shouldUseSearchForPRs', () => {
+      expect(typeof githubAPI.shouldUseSearchForPRs).toEqual('function');
     });
   });
 
   describe('Search operation functions', () => {
-    it('should re-export search operation functions', () => {
-      expect(githubAPI.searchGitHubCodeAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubCodeAPI).toBe('function');
+    it('should re-export searchGitHubCodeAPI', () => {
+      expect(typeof githubAPI.searchGitHubCodeAPI).toEqual('function');
+    });
 
-      expect(githubAPI.searchGitHubReposAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubReposAPI).toBe('function');
+    it('should re-export searchGitHubReposAPI', () => {
+      expect(typeof githubAPI.searchGitHubReposAPI).toEqual('function');
+    });
 
-      expect(githubAPI.searchGitHubPullRequestsAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubPullRequestsAPI).toBe('function');
+    it('should re-export searchGitHubPullRequestsAPI', () => {
+      expect(typeof githubAPI.searchGitHubPullRequestsAPI).toEqual('function');
+    });
 
-      expect(githubAPI.fetchGitHubPullRequestByNumberAPI).toBeDefined();
-      expect(typeof githubAPI.fetchGitHubPullRequestByNumberAPI).toBe(
+    it('should re-export fetchGitHubPullRequestByNumberAPI', () => {
+      expect(typeof githubAPI.fetchGitHubPullRequestByNumberAPI).toEqual(
         'function'
       );
+    });
 
-      expect(githubAPI.transformPullRequestItemFromREST).toBeDefined();
-      expect(typeof githubAPI.transformPullRequestItemFromREST).toBe(
+    it('should re-export transformPullRequestItemFromREST', () => {
+      expect(typeof githubAPI.transformPullRequestItemFromREST).toEqual(
         'function'
       );
     });
   });
 
   describe('File operation functions', () => {
-    it('should re-export file operation functions', () => {
-      expect(githubAPI.fetchGitHubFileContentAPI).toBeDefined();
-      expect(typeof githubAPI.fetchGitHubFileContentAPI).toBe('function');
+    it('should re-export fetchGitHubFileContentAPI', () => {
+      expect(typeof githubAPI.fetchGitHubFileContentAPI).toEqual('function');
+    });
 
-      expect(githubAPI.viewGitHubRepositoryStructureAPI).toBeDefined();
-      expect(typeof githubAPI.viewGitHubRepositoryStructureAPI).toBe(
+    it('should re-export viewGitHubRepositoryStructureAPI', () => {
+      expect(typeof githubAPI.viewGitHubRepositoryStructureAPI).toEqual(
         'function'
       );
     });
@@ -84,10 +92,8 @@ describe('GitHub API Re-exports', () => {
 
   describe('Backward compatibility', () => {
     it('should maintain same exports as main index', async () => {
-      // Import both to compare using import paths that work with test runner
       const githubAPI = await import('../../src/github/githubAPI');
 
-      // Core functions that should be available
       const coreFunctions = [
         'getOctokit',
         'getDefaultBranch',
@@ -101,32 +107,43 @@ describe('GitHub API Re-exports', () => {
         'fetchGitHubFileContentAPI',
       ];
 
-      coreFunctions.forEach(funcName => {
-        expect((githubAPI as Record<string, unknown>)[funcName]).toBeDefined();
-        expect(typeof (githubAPI as Record<string, unknown>)[funcName]).toBe(
-          'function'
-        );
-      });
+      const actualTypes = coreFunctions.map(
+        funcName => typeof (githubAPI as Record<string, unknown>)[funcName]
+      );
+
+      expect(actualTypes).toEqual([
+        'function',
+        'function',
+        'function',
+        'function',
+        'function',
+        'function',
+        'function',
+        'function',
+        'function',
+        'function',
+      ]);
     });
 
     it('should export all required functions without undefined values', async () => {
       const githubAPI = await import('../../src/github/githubAPI');
       const exportedKeys = Object.keys(githubAPI);
 
-      // Filter out type-only exports (they don't exist at runtime)
       const functionKeys = exportedKeys.filter(
         key => typeof (githubAPI as Record<string, unknown>)[key] === 'function'
       );
 
-      functionKeys.forEach(key => {
+      const allAreFunctions = functionKeys.every(key => {
         const exportedValue = (githubAPI as Record<string, unknown>)[key];
-        expect(exportedValue).toBeDefined();
-        expect(exportedValue).not.toBeNull();
-        expect(typeof exportedValue).toBe('function');
+        return (
+          exportedValue !== undefined &&
+          exportedValue !== null &&
+          typeof exportedValue === 'function'
+        );
       });
 
-      // Ensure we have a reasonable number of function exports
-      expect(functionKeys.length).toBeGreaterThan(12);
+      expect(allAreFunctions).toEqual(true);
+      expect(functionKeys.length >= 13).toEqual(true);
     });
   });
 });

@@ -141,12 +141,31 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include non-git directories and files
-      expect(responseText).toContain('src');
-      expect(responseText).not.toContain('.git');
-      expect(responseText).not.toContain('.github');
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('package.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/package.json"
+          - "/README.md"
+        folders:
+          - "/src"
+`);
     });
 
     it('should filter out node_modules directories', async () => {
@@ -240,13 +259,31 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source directories, not dependency directories
-      expect(responseText).toContain('src');
-      expect(responseText).toContain('lib');
-      expect(responseText).not.toContain('node_modules');
-      expect(responseText).not.toContain('vendor');
-      expect(responseText).not.toContain('third_party');
-      expect(responseText).toContain('package.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/package.json"
+        folders:
+          - "/lib"
+          - "/src"
+`);
     });
 
     it('should filter out build and distribution directories', async () => {
@@ -351,15 +388,29 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source directories, not build artifacts
-      expect(responseText).toContain('src');
-      expect(responseText).toContain('tests');
-      expect(responseText).not.toContain('dist');
-      expect(responseText).not.toContain('build');
-      expect(responseText).not.toContain('out');
-      // Note: "target" as a word can appear in hints, so checking for directory pattern
-      expect(responseText).not.toContain('/target');
-      expect(responseText).not.toContain('release');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        folders:
+          - "/src"
+          - "/tests"
+`);
     });
 
     it('should filter out cache directories', async () => {
@@ -475,15 +526,29 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source directories, not cache directories
-      expect(responseText).toContain('src');
-      expect(responseText).toContain('docs');
-      expect(responseText).not.toContain('.cache');
-      expect(responseText).not.toContain('.pytest_cache');
-      expect(responseText).not.toContain('.mypy_cache');
-      expect(responseText).not.toContain('__pycache__');
-      expect(responseText).not.toContain('.next');
-      expect(responseText).not.toContain('tmp');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        folders:
+          - "/docs"
+          - "/src"
+`);
     });
   });
 
@@ -590,12 +655,31 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include configuration files and filter out package-lock.json
-      expect(responseText).toContain('package.json');
-      expect(responseText).toContain('Cargo.toml');
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('pnpm-lock.yaml');
-      expect(responseText).not.toContain('package-lock.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/Cargo.toml"
+          - "/package.json"
+          - "/pnpm-lock.yaml"
+          - "/README.md"
+`);
     });
 
     it('should filter out sensitive credential files', async () => {
@@ -711,15 +795,29 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include non-sensitive configuration files
-      expect(responseText).toContain('config.js');
-      expect(responseText).toContain('settings.js');
-      expect(responseText).not.toContain('secrets.json');
-      expect(responseText).not.toContain('credentials.yaml');
-      expect(responseText).not.toContain('api-keys.json');
-      expect(responseText).not.toContain('private-key.pem');
-      expect(responseText).not.toContain('id_rsa');
-      expect(responseText).not.toContain('google-services.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/config.js"
+          - "/settings.js"
+`);
     });
 
     it('should filter out binary and compiled files', async () => {
@@ -846,16 +944,29 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not binary/compiled files
-      expect(responseText).toContain('app.js');
-      expect(responseText).toContain('main.py');
-      expect(responseText).not.toContain('app.exe');
-      expect(responseText).not.toContain('library.dll');
-      expect(responseText).not.toContain('module.so');
-      expect(responseText).not.toContain('Main.class');
-      expect(responseText).not.toContain('cache.pyc');
-      expect(responseText).not.toContain('app.jar');
-      expect(responseText).not.toContain('data.db');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/app.js"
+          - "/main.py"
+`);
     });
 
     it('should filter out minified files', async () => {
@@ -938,12 +1049,29 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not minified files
-      expect(responseText).toContain('app.js');
-      expect(responseText).toContain('styles.css');
-      expect(responseText).not.toContain('app.min.js');
-      expect(responseText).not.toContain('styles.min.css');
-      expect(responseText).not.toContain('bundle.min.js');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/app.js"
+          - "/styles.css"
+`);
     });
 
     it('should filter out OS-specific files', async () => {
@@ -1015,11 +1143,29 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include project files, not OS-specific files
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('package.json');
-      expect(responseText).not.toContain('.DS_Store');
-      expect(responseText).not.toContain('Thumbs.db');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/package.json"
+          - "/README.md"
+`);
     });
   });
 
@@ -1207,23 +1353,33 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include valid directories
-      expect(responseText).toContain('src');
-      expect(responseText).toContain('docs');
-      expect(responseText).not.toContain('node_modules');
-      expect(responseText).not.toContain('.git');
-      expect(responseText).not.toContain('dist');
-      expect(responseText).not.toContain('.cache');
-
-      // Should only include valid files
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('package.json');
-      expect(responseText).toContain('main.js');
-      expect(responseText).not.toContain('package-lock.json');
-      expect(responseText).not.toContain('secrets.json');
-      expect(responseText).not.toContain('app.exe');
-      expect(responseText).not.toContain('bundle.min.js');
-      expect(responseText).not.toContain('.DS_Store');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/main.js"
+          - "/package.json"
+          - "/README.md"
+        folders:
+          - "/docs"
+          - "/src"
+`);
     });
 
     it('should return empty results when all files/folders are filtered', async () => {
@@ -1306,16 +1462,47 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // All files and folders should be filtered out (empty arrays removed)
-      expect(responseText).not.toContain('files: []'); // Empty arrays are removed
-      expect(responseText).not.toContain('folders: []'); // Empty arrays are removed
-      expect(responseText).toContain('empty:'); // Still in empty section
-      expect(responseText).toContain('hints:');
-      expect(responseText).not.toContain('node_modules');
-      expect(responseText).not.toContain('.git');
-      expect(responseText).not.toContain('package-lock.json');
-      expect(responseText).not.toContain('secrets.json');
-      expect(responseText).not.toContain('app.exe');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 empty"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    empty:
+      - "Try broader search terms or related concepts"
+      - "Use functional descriptions that focus on what the code accomplishes"
+      - "Validate the file path using code search with matching patterns"
+      - "Try branch fallbacks: main, master, develop or omit branch to use default"
+      - "For monorepos, try path: \\"packages\\", \\"apps\\", or \\"services\\" and set depth: 2"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    empty:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        metadata:
+          path: "/"
+          folders:
+            count: 0
+          branch: "main"
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            path: ""
+            branch: "main"
+          queryArgs:
+            owner: "test"
+            repo: "repo"
+            branch: "main"
+          searchType: "success"
+          summary:
+            filtered: true
+            originalCount: 5
+            totalFiles: 0
+            totalFolders: 0
+            truncated: true
+`);
     });
 
     it('should handle nested sensitive paths correctly', async () => {
@@ -1389,17 +1576,30 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should include valid directory
-      expect(responseText).toContain('src');
-
-      // Should only include non-sensitive files
-      expect(responseText).toContain('src/config.js');
-
-      // Should filter out files in sensitive directories and sensitive file names
-      expect(responseText).not.toContain(
-        'node_modules/some-package/secrets.json'
-      );
-      expect(responseText).not.toContain('src/credentials.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/src/config.js"
+        folders:
+          - "/src"
+`);
     });
   });
 });

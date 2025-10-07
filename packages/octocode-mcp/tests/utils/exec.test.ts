@@ -80,61 +80,85 @@ describe('exec utilities', () => {
     it('should handle successful execution', () => {
       const result = parseExecResult('success output', '');
 
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-
-      const yaml = (result.content[0]?.text || '') as string;
-      // Empty hints array is removed
-      const expectedYaml = 'data: "success output"\n';
-      expect(yaml).toEqual(expectedYaml);
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: `data: "success output"\n`,
+          },
+        ],
+      });
     });
 
     it('should handle error with Error object', () => {
       const error = new Error('Command failed');
       const result = parseExecResult('', 'error output', error);
 
-      expect(result.isError).toBe(true);
-      expect(result.content).toHaveLength(1);
-
-      const yaml = (result.content[0]?.text || '') as string;
-      // Minimal check: structure and presence of hints line
-      expect(yaml).toContain('data:');
-      expect(yaml).toContain('hints:');
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `data:
+  error: true
+hints:
+  - "Command failed: Command failed"
+`,
+          },
+        ],
+      });
     });
 
     it('should handle stderr without error object', () => {
       const result = parseExecResult('', 'error in stderr');
 
-      expect(result.isError).toBe(true);
-      expect(result.content).toHaveLength(1);
-
-      const yaml = (result.content[0]?.text || '') as string;
-      expect(yaml).toContain('data:');
-      expect(yaml).toContain('hints:');
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `data:
+  error: true
+hints:
+  - "Command error: error in stderr"
+`,
+          },
+        ],
+      });
     });
 
     it('should handle empty stderr', () => {
       const result = parseExecResult('output', '   ');
 
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-
-      const yaml = (result.content[0]?.text || '') as string;
-      // Empty hints array is removed
-      const expectedYaml = 'data: "output"\n';
-      expect(yaml).toEqual(expectedYaml);
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: `data: "output"\n`,
+          },
+        ],
+      });
     });
 
     it('should prioritize Error object over stderr', () => {
       const error = new Error('Main error');
       const result = parseExecResult('', 'stderr message', error);
 
-      expect(result.isError).toBe(true);
-      expect(result.content).toHaveLength(1);
-
-      const yaml = (result.content[0]?.text || '') as string;
-      expect(yaml).toContain('data:');
-      expect(yaml).toContain('hints:');
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `data:
+  error: true
+hints:
+  - "Command failed: Main error"
+`,
+          },
+        ],
+      });
     });
   });
 
@@ -173,32 +197,116 @@ describe('exec utilities', () => {
           'package',
         ]);
 
-        expect(result.isError).toBe(true);
-        expect(result.content?.[0]?.text).toContain(
-          "Command 'install' is not allowed"
-        );
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: "Command 'install' is not allowed"
+hints:
+  - "Command 'install' is not allowed"
+`,
+            },
+          ],
+        });
       });
 
       it('should validate arguments for security', async () => {
-        const dangerousArgs = [
-          'package\0null-byte', // Null byte injection
-          'a'.repeat(1001), // Too long
-          '$(malicious)', // Command substitution
-          '`whoami`', // Backtick substitution
-          'package; rm -rf /', // Command chaining
-          'package | cat /etc/passwd', // Pipe to command
-          'package && evil-command', // AND chaining
-          'package || evil-command', // OR chaining
-          'package > /etc/passwd', // File redirection
-          'package < /etc/shadow', // File redirection
+        const testCases = [
+          {
+            arg: 'package\0null-byte',
+            expectedText: `data:
+  error: "Invalid arguments: Null bytes not allowed in arguments"
+hints:
+  - "Invalid arguments: Null bytes not allowed in arguments"
+`,
+          },
+          {
+            arg: 'a'.repeat(1001),
+            expectedText: `data:
+  error: "Invalid arguments: Argument too long"
+hints:
+  - "Invalid arguments: Argument too long"
+`,
+          },
+          {
+            arg: '$(malicious)',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: $(malicious)..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: $(malicious)..."
+`,
+          },
+          {
+            arg: '`whoami`',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: \`whoami\`..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: \`whoami\`..."
+`,
+          },
+          {
+            arg: 'package; rm -rf /',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: package; rm -rf /..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: package; rm -rf /..."
+`,
+          },
+          {
+            arg: 'package | cat /etc/passwd',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: package | cat /etc/passwd..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: package | cat /etc/passwd..."
+`,
+          },
+          {
+            arg: 'package && evil-command',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: package && evil-command..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: package && evil-command..."
+`,
+          },
+          {
+            arg: 'package || evil-command',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: package || evil-command..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: package || evil-command..."
+`,
+          },
+          {
+            arg: 'package > /etc/passwd',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: package > /etc/passwd..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: package > /etc/passwd..."
+`,
+          },
+          {
+            arg: 'package < /etc/shadow',
+            expectedText: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: package < /etc/shadow..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: package < /etc/shadow..."
+`,
+          },
         ];
 
-        for (const arg of dangerousArgs) {
-          const result = await executeNpmCommand('view', [arg]);
-          expect(result.isError).toBe(true);
-          expect(result.content?.[0]?.text).toMatch(
-            /Invalid arguments|Argument too long|Suspicious pattern|Null bytes not allowed/
-          );
+        for (const testCase of testCases) {
+          const result = await executeNpmCommand('view', [testCase.arg]);
+          expect(result).toEqual({
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: testCase.expectedText,
+              },
+            ],
+          });
         }
       });
     });
@@ -228,13 +336,19 @@ describe('exec utilities', () => {
           'test;package|with&operators',
         ]);
 
-        // Should reject dangerous input instead of sanitizing it
-        expect(result.isError).toBe(true);
-        expect(result.content?.[0]?.text).toContain(
-          'Suspicious pattern detected'
-        );
-
-        // Should not call spawn at all
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: "Invalid arguments: Suspicious pattern detected in argument: test;package|with&operators..."
+hints:
+  - "Invalid arguments: Suspicious pattern detected in argument: test;package|with&operators..."
+`,
+            },
+          ],
+        });
         expect(mockSpawn).not.toHaveBeenCalled();
       });
 
@@ -264,12 +378,15 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        expect(result.isError).toBe(false);
-        const yaml = (result.content?.[0]?.text || '') as string;
-        // Empty hints array is removed
-        const expectedYaml =
-          'data: "{\\"name\\":\\"test-package\\",\\"version\\":\\"1.0.0\\"}"\n';
-        expect(yaml).toEqual(expectedYaml);
+        expect(result).toEqual({
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: `data: "{\\"name\\":\\"test-package\\",\\"version\\":\\"1.0.0\\"}"\n`,
+            },
+          ],
+        });
       });
 
       it('should pass through options correctly', async () => {
@@ -319,10 +436,19 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        expect(result.isError).toBe(true);
-        expect(result.content?.[0]?.text).toContain(
-          'Process exited with code 1'
-        );
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: true
+hints:
+  - "Command failed: Process exited with code 1"
+`,
+            },
+          ],
+        });
       });
 
       it('should handle spawn errors', async () => {
@@ -331,10 +457,19 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        expect(result.isError).toBe(true);
-        expect(result.content?.[0]?.text).toContain(
-          'ENOENT: command not found'
-        );
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: true
+hints:
+  - "Command failed: ENOENT: command not found"
+`,
+            },
+          ],
+        });
       });
 
       it('should handle timeout', async () => {
@@ -345,8 +480,19 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        expect(result.isError).toBe(true);
-        expect(result.content?.[0]?.text).toContain('Command timeout');
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: true
+hints:
+  - "Command failed: Command timeout"
+`,
+            },
+          ],
+        });
       });
 
       it('should kill process on timeout', async () => {
@@ -357,13 +503,24 @@ describe('exec utilities', () => {
         });
         mockProcess.simulateTimeout();
 
-        // Fast-forward past timeout
         vi.advanceTimersByTime(1000);
 
         const result = await promise;
 
-        expect(mockProcess.killed).toBe(true);
-        expect(result.isError).toBe(true);
+        expect(mockProcess.killed).toEqual(true);
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: true
+hints:
+  - "Command failed: Command timeout"
+`,
+            },
+          ],
+        });
 
         vi.useRealTimers();
       });
@@ -373,7 +530,6 @@ describe('exec utilities', () => {
       it('should accumulate stdout data correctly', async () => {
         const promise = executeNpmCommand('view', ['test-package']);
 
-        // Simulate multiple data chunks
         setTimeout(() => {
           mockProcess.stdout.emit('data', 'first ');
           mockProcess.stdout.emit('data', 'second ');
@@ -383,10 +539,15 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        const yaml = (result.content?.[0]?.text || '') as string;
-        // Empty hints array is removed
-        const expectedYaml = 'data: "first second third"\n';
-        expect(yaml).toEqual(expectedYaml);
+        expect(result).toEqual({
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: `data: "first second third"\n`,
+            },
+          ],
+        });
       });
 
       it('should accumulate stderr data correctly', async () => {
@@ -400,10 +561,19 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        expect(result.isError).toBe(true);
-        expect(result.content?.[0]?.text).toContain(
-          'Process exited with code 1'
-        );
+        expect(result).toEqual({
+          isError: true,
+          content: [
+            {
+              type: 'text',
+              text: `data:
+  error: true
+hints:
+  - "Command failed: Process exited with code 1"
+`,
+            },
+          ],
+        });
       });
 
       it('should handle both stdout and stderr', async () => {
@@ -417,10 +587,18 @@ describe('exec utilities', () => {
 
         const result = await promise;
 
-        expect(result.isError).toBe(false);
-        const yaml = (result.content?.[0]?.text || '') as string;
-        const expectedYamlStartsWith = 'data: "output data"\n';
-        expect(yaml.startsWith(expectedYamlStartsWith)).toBe(true);
+        expect(result).toEqual({
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: `data: "output data"
+hints:
+  - "Warning: warning message"
+`,
+            },
+          ],
+        });
       });
     });
   });
@@ -552,7 +730,6 @@ describe('exec utilities', () => {
       const promises = [];
       const processes = [];
 
-      // Create multiple mock processes
       for (let i = 0; i < 3; i++) {
         const process = new MockChildProcess();
         processes.push(process);
@@ -561,20 +738,41 @@ describe('exec utilities', () => {
         promises.push(executeNpmCommand('view', [`package${i}`]));
       }
 
-      // Simulate all completing successfully
       processes.forEach((process, i) => {
         process.simulateSuccess(`result${i}`);
       });
 
       const results = await Promise.all(promises);
 
-      results.forEach((result, i) => {
-        expect(result.isError).toBe(false);
-        const yaml = (result.content?.[0]?.text || '') as string;
-        // Empty hints array is removed
-        const expectedYaml = `data: "result${i}"\n`;
-        expect(yaml).toEqual(expectedYaml);
-      });
+      expect(results).toEqual([
+        {
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: `data: "result0"\n`,
+            },
+          ],
+        },
+        {
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: `data: "result1"\n`,
+            },
+          ],
+        },
+        {
+          isError: false,
+          content: [
+            {
+              type: 'text',
+              text: `data: "result2"\n`,
+            },
+          ],
+        },
+      ]);
     });
 
     it('should handle mixed success/failure scenarios', async () => {
@@ -593,16 +791,29 @@ describe('exec utilities', () => {
 
       const [result1, result2] = await Promise.all([promise1, promise2]);
 
-      expect(result1.isError).toBe(false);
-      const yaml1 = (result1.content?.[0]?.text || '') as string;
-      // Empty hints array is removed
-      const expectedYaml1 = 'data: "success data"\n';
-      expect(yaml1).toEqual(expectedYaml1);
+      expect(result1).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: `data: "success data"\n`,
+          },
+        ],
+      });
 
-      expect(result2.isError).toBe(true);
-      expect(result2.content?.[0]?.text).toContain(
-        'Process exited with code 1'
-      );
+      expect(result2).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `data:
+  error: true
+hints:
+  - "Command failed: Process exited with code 1"
+`,
+          },
+        ],
+      });
     });
   });
 });

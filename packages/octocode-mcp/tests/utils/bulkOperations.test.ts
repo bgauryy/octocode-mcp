@@ -34,15 +34,26 @@ describe('bulkOperations', () => {
 
       const result = await processBulkQueries(queries, mockProcessor);
 
-      expect(result.results).toHaveLength(2);
-      expect(result.errors).toHaveLength(0);
-
-      expect(result.results[0]?.result.data).toEqual({
-        result: 'processed-test1',
-      });
-
-      expect(result.results[1]?.result.data).toEqual({
-        result: 'processed-test2',
+      expect(result).toEqual({
+        results: [
+          {
+            result: {
+              data: { result: 'processed-test1' },
+              metadata: { processed: true, queryIndex: 0 },
+            },
+            queryIndex: 0,
+            originalQuery: { id: 'q1', data: 'test1' },
+          },
+          {
+            result: {
+              data: { result: 'processed-test2' },
+              metadata: { processed: true, queryIndex: 1 },
+            },
+            queryIndex: 1,
+            originalQuery: { id: 'q2', data: 'test2' },
+          },
+        ],
+        errors: [],
       });
 
       expect(mockProcessor).toHaveBeenCalledTimes(2);
@@ -68,18 +79,33 @@ describe('bulkOperations', () => {
 
       const result = await processBulkQueries(queries, mockProcessor);
 
-      expect(result.results).toHaveLength(1);
-      expect(result.errors).toHaveLength(1);
-
-      expect(result.errors[0]?.queryIndex).toBe(1);
-      expect(result.errors[0]?.error).toBe('Processing failed');
+      expect(result).toEqual({
+        results: [
+          {
+            result: {
+              data: { result: 'success' },
+              metadata: { queryIndex: 0 },
+            },
+            queryIndex: 0,
+            originalQuery: { id: 'success', data: 'good' },
+          },
+        ],
+        errors: [
+          {
+            queryIndex: 1,
+            error: 'Processing failed',
+          },
+        ],
+      });
     });
 
     it('should handle empty queries array', async () => {
       const result = await processBulkQueries([], mockProcessor);
 
-      expect(result.results).toHaveLength(0);
-      expect(result.errors).toHaveLength(0);
+      expect(result).toEqual({
+        results: [],
+        errors: [],
+      });
       expect(mockProcessor).not.toHaveBeenCalled();
     });
 
@@ -90,9 +116,15 @@ describe('bulkOperations', () => {
 
       const result = await processBulkQueries(queries, mockProcessor);
 
-      expect(result.results).toHaveLength(0);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]?.error).toBe('string error');
+      expect(result).toEqual({
+        results: [],
+        errors: [
+          {
+            queryIndex: 0,
+            error: 'string error',
+          },
+        ],
+      });
     });
   });
 
@@ -130,22 +162,37 @@ describe('bulkOperations', () => {
 
       const result = createBulkResponse(config, results, errors, queries);
 
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-
       const responseText = result.content[0]?.text as string;
-      // Parse YAML-ish output and assert grouped shape
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('results:');
-      // Should NOT contain empty sections
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('hints:');
-      // Ensure success items present
-      expect(responseText).toContain('name: "item1"');
-      expect(responseText).toContain('name: "item2"');
-      // Ensure research strategies hint exists
-      expect(responseText).toContain('improve your research strategy');
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
+
+      expect(responseText).toEqual(`data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+  queries:
+    successful:
+      - data:
+          items:
+            - name: "item1"
+      - data:
+          items:
+            - name: "item2"
+hints:
+  - "Query results: 2 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+`);
     });
 
     it('should create response with errors', () => {
@@ -171,13 +218,36 @@ describe('bulkOperations', () => {
 
       const result = createBulkResponse(config, results, errors, queries);
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('error: "API rate limit exceeded"');
-      expect(responseText).toContain('originalQuery:');
-      expect(responseText).toContain('keywordsToSearch:');
-      expect(responseText).toContain('hints:');
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
+
+      expect(responseText).toEqual(`data:
+  hints:
+    failed:
+      - "Rate limit exceeded. Wait 60 seconds before retrying"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+  queries:
+    failed:
+      - error: "API rate limit exceeded"
+        metadata:
+          originalQuery:
+            id: "q1"
+            keywordsToSearch:
+              - "test1"
+hints:
+  - "Query results: 1 failed"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+`);
     });
 
     it('should handle empty results and errors', () => {
@@ -199,15 +269,21 @@ describe('bulkOperations', () => {
 
       const result = createBulkResponse(config, results, errors, queries);
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      // Should NOT contain any data sections since all are empty
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('hints:');
-      // Should show empty state in summary
-      expect(responseText).toContain('No queries processed');
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
+
+      expect(responseText).toEqual(`hints:
+  - "No queries processed"
+`);
     });
 
     it('should handle config options', () => {
@@ -235,9 +311,15 @@ describe('bulkOperations', () => {
 
       const result = createBulkResponse(config, results, errors, queries);
 
-      expect(result.isError).toBe(false);
-      // The exact structure depends on implementation, but it should not crash
-      expect(result.content).toHaveLength(1);
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: result.content[0]?.text as string,
+          },
+        ],
+      });
     });
   });
 
@@ -275,7 +357,7 @@ describe('bulkOperations', () => {
       expect(queries).toHaveLength(2);
       expect(processResult.results).toHaveLength(2);
       expect(processResult.errors).toHaveLength(0);
-      expect(bulkResponse.isError).toBe(false);
+      expect(bulkResponse.isError).toEqual(false);
 
       expect(mockProcessor).toHaveBeenCalledTimes(2);
     });
@@ -310,7 +392,7 @@ describe('bulkOperations', () => {
         queries
       );
 
-      expect(bulkResponse.isError).toBe(false);
+      expect(bulkResponse.isError).toEqual(false);
     });
   });
 
@@ -488,8 +570,13 @@ describe('bulkOperations', () => {
       expect(yamlText).toContain('empty:');
       expect(yamlText).toContain('failed:');
       expect(yamlText).toContain('repositories:');
-      // No actual "successful" section (all went to empty or failed)
-      expect(yamlText).not.toContain('successful:');
+      // Verify structure: should have empty and failed sections, but no successful section
+      expect(yamlText).toMatch(
+        /empty:\s+- reasoning: "Successful query with reasoning"/
+      );
+      expect(yamlText).toMatch(
+        /failed:\s+- reasoning: "Failed query with reasoning"/
+      );
       expect(yamlText).toContain('Processing failed for fail_query');
     });
 

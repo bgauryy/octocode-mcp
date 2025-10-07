@@ -84,10 +84,8 @@ describe('GitHub Index Exports', () => {
 
   describe('Type exports', () => {
     it('should provide type exports (runtime check for module structure)', () => {
-      // Since TypeScript types don't exist at runtime, we test the module structure
       const exportedKeys = Object.keys(githubIndex);
 
-      // Ensure we have the key functions exported
       const expectedFunctions = [
         'getOctokit',
         'OctokitWithThrottling',
@@ -109,9 +107,7 @@ describe('GitHub Index Exports', () => {
         'viewGitHubRepositoryStructureAPI',
       ];
 
-      expectedFunctions.forEach(funcName => {
-        expect(exportedKeys).toContain(funcName);
-      });
+      expect(exportedKeys.sort()).toEqual(expectedFunctions.sort());
     });
   });
 

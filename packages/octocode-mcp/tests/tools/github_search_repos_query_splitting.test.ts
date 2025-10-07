@@ -408,95 +408,125 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       // Verify whale_detection_ai was split correctly
       const whaleDetectionTopics = calls.find(
-        call => call[0]?.topicsToSearch
+        call =>
+          call[0]?.topicsToSearch &&
+          !call[0]?.keywordsToSearch &&
+          call[0]?.reasoning?.includes('whale detection using AI')
       )?.[0];
       const whaleDetectionKeywords = calls.find(
-        call => call[0]?.keywordsToSearch
+        call =>
+          call[0]?.keywordsToSearch &&
+          !call[0]?.topicsToSearch &&
+          call[0]?.reasoning?.includes('whale detection using AI')
       )?.[0];
 
-      expect(whaleDetectionTopics).toBeDefined();
-      expect(Array.isArray(whaleDetectionTopics?.topicsToSearch)).toBe(true);
-      expect(whaleDetectionTopics?.topicsToSearch?.length).toBeGreaterThan(0);
-      expect(whaleDetectionTopics?.keywordsToSearch).toBeUndefined();
-      expect(whaleDetectionTopics?.limit).toBe(20);
-      expect(whaleDetectionTopics?.sort).toBe('stars');
+      expect(whaleDetectionTopics).toEqual({
+        topicsToSearch: [
+          'computer-vision',
+          'machine-learning',
+          'deep-learning',
+        ],
+        reasoning:
+          'Search for repositories specifically focused on whale detection using AI and computer vision (topics-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      expect(whaleDetectionKeywords).toBeDefined();
-      expect(Array.isArray(whaleDetectionKeywords?.keywordsToSearch)).toBe(
-        true
-      );
-      expect(whaleDetectionKeywords?.keywordsToSearch).toContain('whale');
-      expect(whaleDetectionKeywords?.topicsToSearch).toBeUndefined();
-      expect(whaleDetectionKeywords?.limit).toBe(20);
-      expect(whaleDetectionKeywords?.sort).toBe('stars');
+      expect(whaleDetectionKeywords).toEqual({
+        keywordsToSearch: ['whale', 'detection', 'AI'],
+        reasoning:
+          'Search for repositories specifically focused on whale detection using AI and computer vision (keywords-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      // Verify marine_mammal_detection was split correctly
       const marineMammalTopics = calls.find(
-        call => call[0]?.topicsToSearch && !call[0]?.keywordsToSearch
+        call =>
+          call[0]?.topicsToSearch &&
+          !call[0]?.keywordsToSearch &&
+          call[0]?.reasoning?.includes('marine mammal')
       )?.[0];
       const marineMammalKeywords = calls.find(
-        call => call[0]?.keywordsToSearch && !call[0]?.topicsToSearch
+        call =>
+          call[0]?.keywordsToSearch &&
+          !call[0]?.topicsToSearch &&
+          call[0]?.reasoning?.includes('marine mammal')
       )?.[0];
 
-      expect(marineMammalTopics).toBeDefined();
-      // Topics should be present
-      expect(marineMammalTopics?.topicsToSearch).toBeDefined();
-      expect(Array.isArray(marineMammalTopics?.topicsToSearch)).toBe(true);
-      expect(marineMammalTopics?.topicsToSearch?.length).toBeGreaterThan(0);
-      expect(marineMammalTopics?.keywordsToSearch).toBeUndefined();
+      expect(marineMammalTopics).toEqual({
+        topicsToSearch: ['computer-vision', 'object-detection'],
+        reasoning:
+          'Find repositories for marine mammal detection which would include whales (topics-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      expect(marineMammalKeywords).toBeDefined();
-      expect(marineMammalKeywords?.keywordsToSearch).toBeDefined();
-      expect(Array.isArray(marineMammalKeywords?.keywordsToSearch)).toBe(true);
-      expect(marineMammalKeywords?.keywordsToSearch?.length).toBe(3);
-      expect(marineMammalKeywords?.topicsToSearch).toBeUndefined();
+      expect(marineMammalKeywords).toEqual({
+        keywordsToSearch: ['marine', 'mammal', 'detection'],
+        reasoning:
+          'Find repositories for marine mammal detection which would include whales (keywords-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      // Verify underwater_computer_vision was split correctly
-      const underwaterTopics = calls.find(call => call[0]?.topicsToSearch)?.[0];
+      const underwaterTopics = calls.find(
+        call =>
+          call[0]?.topicsToSearch &&
+          !call[0]?.keywordsToSearch &&
+          call[0]?.reasoning?.includes('underwater')
+      )?.[0];
       const underwaterKeywords = calls.find(
-        call => call[0]?.keywordsToSearch
+        call =>
+          call[0]?.keywordsToSearch &&
+          !call[0]?.topicsToSearch &&
+          call[0]?.reasoning?.includes('underwater')
       )?.[0];
 
-      expect(underwaterTopics).toBeDefined();
-      // Topics should be present (may vary based on which query this is from)
-      expect(underwaterTopics?.topicsToSearch).toBeDefined();
-      expect(Array.isArray(underwaterTopics?.topicsToSearch)).toBe(true);
-      expect(underwaterTopics?.topicsToSearch?.length).toBeGreaterThan(0);
-      expect(underwaterTopics?.keywordsToSearch).toBeUndefined();
+      expect(underwaterTopics).toEqual({
+        topicsToSearch: ['opencv', 'tensorflow', 'pytorch'],
+        reasoning:
+          'Look for underwater computer vision projects that might include whale detection (topics-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      expect(underwaterKeywords).toBeDefined();
-      // Keywords should be present
-      expect(underwaterKeywords?.keywordsToSearch).toBeDefined();
-      expect(Array.isArray(underwaterKeywords?.keywordsToSearch)).toBe(true);
-      expect(underwaterKeywords?.keywordsToSearch?.length).toBe(3);
-      expect(underwaterKeywords?.topicsToSearch).toBeUndefined();
+      expect(underwaterKeywords).toEqual({
+        keywordsToSearch: ['underwater', 'computer', 'vision'],
+        reasoning:
+          'Look for underwater computer vision projects that might include whale detection (keywords-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      // Verify ocean_wildlife_detection was split correctly
       const oceanWildlifeTopics = calls.find(
-        call => call[0]?.topicsToSearch
+        call =>
+          call[0]?.topicsToSearch &&
+          !call[0]?.keywordsToSearch &&
+          call[0]?.reasoning?.includes('ocean wildlife')
       )?.[0];
       const oceanWildlifeKeywords = calls.find(
-        call => call[0]?.keywordsToSearch
+        call =>
+          call[0]?.keywordsToSearch &&
+          !call[0]?.topicsToSearch &&
+          call[0]?.reasoning?.includes('ocean wildlife')
       )?.[0];
 
-      expect(oceanWildlifeTopics).toBeDefined();
-      // Topics should be present (values may vary based on query splitting order)
-      expect(oceanWildlifeTopics?.topicsToSearch).toBeDefined();
-      expect(Array.isArray(oceanWildlifeTopics?.topicsToSearch)).toBe(true);
-      expect(oceanWildlifeTopics?.topicsToSearch?.length).toBeGreaterThan(0);
-      expect(oceanWildlifeTopics?.keywordsToSearch).toBeUndefined();
+      expect(oceanWildlifeTopics).toEqual({
+        topicsToSearch: ['yolo', 'object-detection', 'deep-learning'],
+        reasoning:
+          'Search for ocean wildlife detection systems that could detect whales (topics-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      expect(oceanWildlifeKeywords).toBeDefined();
-      // Keywords should be present
-      expect(oceanWildlifeKeywords?.keywordsToSearch).toBeDefined();
-      expect(Array.isArray(oceanWildlifeKeywords?.keywordsToSearch)).toBe(true);
-      expect(oceanWildlifeKeywords?.keywordsToSearch?.length).toBeGreaterThan(
-        0
-      );
-      expect(oceanWildlifeKeywords?.topicsToSearch).toBeUndefined();
+      expect(oceanWildlifeKeywords).toEqual({
+        keywordsToSearch: ['ocean', 'wildlife', 'detection'],
+        reasoning:
+          'Search for ocean wildlife detection systems that could detect whales (keywords-based search)',
+        limit: 20,
+        sort: 'stars',
+      });
 
-      // Core assertion: verify that 9 queries were made (4 split + 1 non-split)
-      // This confirms the query splitting logic works correctly
       expect(mockSearchGitHubReposAPI).toHaveBeenCalledTimes(9);
 
       // Verify each call has either topics OR keywords, not both
@@ -533,18 +563,52 @@ describe('GitHub Search Repositories Query Splitting', () => {
         }
       );
 
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-
       const responseText = result.content[0]?.text as string;
 
-      // Should contain grouped results with two items and reasoning annotations
-      expect(responseText).toContain('results:');
-      expect(
-        (responseText.match(/repositories:/g) || []).length
-      ).toBeGreaterThanOrEqual(2);
-      expect(responseText).toContain('topics-based search');
-      expect(responseText).toContain('keywords-based search');
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
+
+      expect(responseText).toEqual(`hints:
+  - "Query results: 2 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prioritize via sort and analyze the top 3-5 repositories in depth"
+      - "After selection, run structure view first, then scoped code search"
+      - "Avoid curated list repos by using implementation-oriented keywords"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_view_repo_structure first to understand project layout"
+      - "Start with repository search to find relevant projects, then search within them"
+  queries:
+    successful:
+      - reasoning: "Search for whale detection repositories (topics-based search)"
+        repositories:
+          - owner: "test"
+            repo: "repo"
+            description: "Test repository"
+            stars: 100
+            updatedAt: "01/01/2024"
+            url: "https://github.com/test/repo"
+      - reasoning: "Search for whale detection repositories (keywords-based search)"
+        repositories:
+          - owner: "test"
+            repo: "repo"
+            description: "Test repository"
+            stars: 100
+            updatedAt: "01/01/2024"
+            url: "https://github.com/test/repo"
+`);
     });
   });
 });

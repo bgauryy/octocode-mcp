@@ -173,11 +173,11 @@ describe('GitHub API Utils', () => {
 
   describe('Basic Setup', () => {
     it('should import all API functions', () => {
-      expect(searchGitHubCodeAPI).toBeDefined();
-      expect(searchGitHubReposAPI).toBeDefined();
-      expect(fetchGitHubFileContentAPI).toBeDefined();
-      expect(viewGitHubRepositoryStructureAPI).toBeDefined();
-      expect(searchGitHubPullRequestsAPI).toBeDefined();
+      expect(typeof searchGitHubCodeAPI).toEqual('function');
+      expect(typeof searchGitHubReposAPI).toEqual('function');
+      expect(typeof fetchGitHubFileContentAPI).toEqual('function');
+      expect(typeof viewGitHubRepositoryStructureAPI).toEqual('function');
+      expect(typeof searchGitHubPullRequestsAPI).toEqual('function');
     });
   });
 

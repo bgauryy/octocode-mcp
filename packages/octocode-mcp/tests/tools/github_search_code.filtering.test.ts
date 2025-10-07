@@ -59,7 +59,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
   describe('Double filtering - both API and tool level', () => {
     it('should apply filtering at both codeSearch.ts and tool level', async () => {
-      // Mock API response with files that should be filtered at different levels
       const mockResponse = {
         data: {
           total_count: 5,
@@ -78,7 +77,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 },
               ],
             },
-            // This should be filtered at codeSearch.ts level
             {
               name: 'lodash.js',
               path: 'node_modules/lodash/lodash.js',
@@ -93,7 +91,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 },
               ],
             },
-            // This should be filtered at codeSearch.ts level
             {
               name: 'package-lock.json',
               path: 'package-lock.json',
@@ -117,7 +114,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 },
               ],
             },
-            // This should be filtered at codeSearch.ts level
             {
               name: 'test.min.js',
               path: 'dist/test.min.js',
@@ -133,7 +129,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
-      // Call the tool handler directly
       const result = await toolHandler(
         {
           queries: [
@@ -148,17 +143,37 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      // Parse the result
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have filtered results
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('src/index.js');
-      expect(resultText).toContain('src/components/component.js');
+      expect(resultText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/index.js"
+            text_matches:
+              - "function test(){}"
+          - path: "src/components/component.js"
+            text_matches:
+              - "const Component=()=>{};"
+`);
     });
 
     it('should handle empty results after filtering at tool level', async () => {
-      // Mock API response where all files get filtered out
       const mockResponse = {
         data: {
           total_count: 3,
@@ -196,7 +211,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
-      // Call the tool handler
       const result = await toolHandler(
         {
           queries: [
@@ -211,15 +225,33 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      // Parse the result
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have result with no files (empty array removed)
-      expect(resultText).toContain('data:');
-      expect(resultText).not.toContain('files: []'); // Empty arrays are removed
-      expect(resultText).toContain('empty:'); // Still in empty section
-      expect(resultText).toContain('hints:');
-      expect(resultText).toContain('broader');
+      expect(resultText).toEqual(`hints:
+  - "Query results: 1 empty"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    empty:
+      - "Try broader search terms or related concepts"
+      - "Use functional descriptions that focus on what the code accomplishes"
+      - "Use extension, filename, path filters to target specific directories and file names"
+      - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
+      - "After discovery, add owner/repo to narrow scope; set limit to cap results"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    empty:
+      - owner: "test"
+        repo: "repo"
+        metadata:
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            keywordsToSearch:
+              - "lock"
+`);
     });
 
     it('should filter vendor and third-party directories', async () => {
@@ -285,12 +317,28 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not vendor/third_party
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('src/utils.js');
-      expect(resultText).toContain('src/helper.js');
-      expect(resultText).not.toContain('vendor/jquery/jquery.js');
-      expect(resultText).not.toContain('third_party/bootstrap/bootstrap.js');
+      expect(resultText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/utils.js"
+          - path: "src/helper.js"
+`);
     });
 
     it('should filter build and dist directories', async () => {
@@ -365,17 +413,31 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not build output
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('src/app.js');
-      expect(resultText).toContain('src/index.js');
-      expect(resultText).not.toContain('dist/bundle.js');
-      expect(resultText).not.toContain('build/main.js');
-      expect(resultText).not.toContain('out/output.js');
+      expect(resultText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/app.js"
+          - path: "src/index.js"
+`);
     });
 
     it('should handle multiple queries with filtering', async () => {
-      // First query response
       const mockResponse1 = {
         data: {
           total_count: 2,
@@ -402,7 +464,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         },
       };
 
-      // Second query response
       const mockResponse2 = {
         data: {
           total_count: 2,
@@ -456,25 +517,32 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have both query results
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('successful:');
-      // Results have files from both queries
-      expect(resultText).toContain('component.js');
-      expect(resultText).toContain('utils.ts');
-      expect(resultText).toContain('2 successful');
-      expect(resultText).toContain('improve your research strategy');
-      // Should NOT contain empty sections
-      expect(resultText).not.toContain('empty:');
-      expect(resultText).not.toContain('failed:');
-
-      // First query should filter out .log file
-      expect(resultText).toContain('src/component.js');
-      expect(resultText).not.toContain('debug.log');
-
-      // Second query should include both files (.env is now allowed for context)
-      expect(resultText).toContain('src/utils.ts');
-      expect(resultText).toContain('.env');
+      expect(resultText).toEqual(`hints:
+  - "Query results: 2 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/component.js"
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/utils.ts"
+          - path: ".env"
+`);
     });
   });
 });

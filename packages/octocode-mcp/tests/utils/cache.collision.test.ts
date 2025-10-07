@@ -46,19 +46,13 @@ function validateCharacterDistribution(
 
 // Helper function to validate hash properties
 function validateHashProperties(hash: string): void {
-  // Check length
-  expect(hash).toBeDefined();
   expect(hash.length).toBe(64);
 
-  // Check format (hex only)
-  expect(hash).toMatch(/^[a-f0-9]{64}$/);
+  expect(/^[a-f0-9]{64}$/.test(hash)).toBe(true);
 
-  // Check entropy - no hash should be all the same character
   const uniqueChars = new Set(hash).size;
-  expect(uniqueChars).toBeGreaterThan(4); // At least 5 different hex chars
+  expect(uniqueChars >= 5).toBe(true);
 
-  // Check for obvious patterns (no repeating sequences > 16 chars)
-  // Only check for long repeating patterns that would indicate a serious issue
   for (let i = 0; i <= hash.length - 32; i += 16) {
     const segment = hash.substring(i, i + 16);
     const nextSegment = hash.substring(i + 16, i + 32);
@@ -101,26 +95,19 @@ describe('Cache Collision Resistance Tests', () => {
       ];
 
       for (const { prefix, data } of attacks) {
-        // Validate input parameters
-        expect(prefix).toBeDefined();
         expect(typeof prefix).toBe('string');
-        expect(prefix.length).toBeGreaterThan(0);
-        expect(data).toBeDefined();
+        expect(prefix.length >= 1).toBe(true);
 
         const key = generateCacheKey(prefix, data);
 
-        // Validate generated key
-        expect(key).toBeDefined();
         expect(typeof key).toBe('string');
-        expect(key.length).toBeGreaterThan(10); // Should have version + prefix + ':' + hash
-        expect(key).toContain(':');
+        expect(key.length >= 11).toBe(true);
+        expect(key.includes(':')).toBe(true);
 
-        // Validate hash part
         const hash = extractHash(key);
         validateHashProperties(hash);
 
-        // Check for uniqueness
-        expect(keys.has(key)).toBe(false); // No collisions
+        expect(keys.has(key)).toBe(false);
         keys.add(key);
       }
 
@@ -141,23 +128,12 @@ describe('Cache Collision Resistance Tests', () => {
         { data: '👩\u200d💻' }, // Woman technologist emoji
       ];
 
-      // Additional validation for each attack
-      for (const attack of unicodeAttacks) {
-        expect(attack).toBeDefined();
-        expect(attack.data).toBeDefined();
-        expect(typeof attack.data).toBe('string');
-      }
-
       const keys = new Set<string>();
       for (const attack of unicodeAttacks) {
-        // Validate attack object structure
-        expect(attack).toBeDefined();
-        expect(attack.data).toBeDefined();
+        expect(typeof attack.data).toBe('string');
 
         const key = generateCacheKey('unicode', attack);
 
-        // Validate generated key
-        expect(key).toBeDefined();
         expect(typeof key).toBe('string');
         const hash = extractHash(key);
         validateHashProperties(hash);
@@ -202,8 +178,7 @@ describe('Cache Collision Resistance Tests', () => {
         }
       }
 
-      // Should have consistent behavior for equivalent objects
-      expect(sortedKeys.size).toBeGreaterThan(0);
+      expect(sortedKeys.size >= 1).toBe(true);
     });
   });
 
@@ -230,7 +205,6 @@ describe('Cache Collision Resistance Tests', () => {
               combined: `${type1}-${type2}-${i}`,
             };
 
-            // Validate test data structure
             expect(testData.type1).toBe(type1);
             expect(testData.type2).toBe(type2);
             expect(testData.index).toBe(i);
@@ -238,8 +212,6 @@ describe('Cache Collision Resistance Tests', () => {
 
             const key = generateCacheKey('variation', testData);
 
-            // Validate key and hash
-            expect(key).toBeDefined();
             const hash = extractHash(key);
             validateHashProperties(hash);
 
@@ -267,16 +239,12 @@ describe('Cache Collision Resistance Tests', () => {
         for (let value = 0; value < 5; value++) {
           const obj = createDeepObject(depth, value);
 
-          // Validate deep object structure
-          expect(obj).toBeDefined();
           if (depth === 1) {
             expect(obj).toEqual({ nested: value });
           }
 
           const key = generateCacheKey('deep', obj);
 
-          // Validate key and hash
-          expect(key).toBeDefined();
           const hash = extractHash(key);
           validateHashProperties(hash);
 
@@ -326,15 +294,10 @@ describe('Cache Collision Resistance Tests', () => {
 
       const keys = new Set<string>();
       for (const input of maliciousInputs) {
-        // Validate input structure
-        expect(input).toBeDefined();
-        expect(input.type).toBeDefined();
         expect(typeof input.type).toBe('string');
 
         const key = generateCacheKey('proto', input);
 
-        // Validate key generation didn't fail
-        expect(key).toBeDefined();
         expect(typeof key).toBe('string');
         const hash = extractHash(key);
         validateHashProperties(hash);
@@ -353,9 +316,8 @@ describe('Cache Collision Resistance Tests', () => {
       const iterations = 1000;
 
       for (let i = 0; i < iterations; i++) {
-        const data = { id: i, data: 'x'.repeat(100) }; // Same length
+        const data = { id: i, data: 'x'.repeat(100) };
 
-        // Validate timing test data
         expect(data.id).toBe(i);
         expect(data.data.length).toBe(100);
         expect(data.data).toBe('x'.repeat(100));
@@ -364,36 +326,30 @@ describe('Cache Collision Resistance Tests', () => {
         const key = generateCacheKey('timing', data);
         const end = process.hrtime.bigint();
 
-        // Validate key was generated successfully during timing test
-        expect(key).toBeDefined();
         const hash = extractHash(key);
         validateHashProperties(hash);
 
-        timings.push(Number(end - start) / 1_000_000); // Convert to milliseconds
+        timings.push(Number(end - start) / 1_000_000);
       }
 
-      // Calculate statistics
       const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
       const variance =
         timings.reduce((acc, time) => acc + Math.pow(time - avg, 2), 0) /
         timings.length;
       const stdDev = Math.sqrt(variance);
 
-      // Validate timing statistics
       expect(timings.length).toBe(iterations);
-      expect(avg).toBeGreaterThan(0);
-      expect(variance).toBeGreaterThanOrEqual(0);
-      expect(stdDev).toBeGreaterThanOrEqual(0);
+      expect(avg > 0).toBe(true);
+      expect(variance >= 0).toBe(true);
+      expect(stdDev >= 0).toBe(true);
 
-      // Additional timing validation
       const sortedTimings = [...timings].sort((a, b) => a - b);
-      const medianTime = sortedTimings[Math.floor(timings.length / 2)];
-      expect(medianTime).toBeGreaterThan(0);
+      const medianTime = sortedTimings[Math.floor(timings.length / 2)]!;
+      expect(medianTime > 0).toBe(true);
 
-      // Check that most timings are reasonable (remove outliers)
       const q1 = sortedTimings[Math.floor(timings.length * 0.25)]!;
       const q3 = sortedTimings[Math.floor(timings.length * 0.75)]!;
-      expect(q3 - q1).toBeLessThan(avg * 2); // Interquartile range should be reasonable
+      expect(q3 - q1 < avg * 2).toBe(true);
     });
 
     it.skip('should not leak information through hash comparison timing', () => {
@@ -426,15 +382,12 @@ describe('Cache Collision Resistance Tests', () => {
         expect(isEqual).toBe(false); // All should be different
       }
 
-      // Timing should be consistent regardless of hash similarity
       const avg = timings.reduce((a, b) => a + b, 0) / timings.length;
       const maxTiming = Math.max(...timings);
       const minTiming = Math.min(...timings);
 
-      // More lenient timing expectations for local development
-      // The important thing is that we're not leaking massive timing differences
-      const tolerance = Math.max(avg * 3, 0.005); // 3x average or 5ms, whichever is larger
-      expect(maxTiming - minTiming).toBeLessThan(tolerance);
+      const tolerance = Math.max(avg * 3, 0.005);
+      expect(maxTiming - minTiming < tolerance).toBe(true);
     });
   });
 
@@ -455,8 +408,7 @@ describe('Cache Collision Resistance Tests', () => {
         }
       }
 
-      // Should have many differences (avalanche effect)
-      expect(differences).toBeGreaterThan(baseHash.length * 0.3); // At least 30% different
+      expect(differences > baseHash.length * 0.3).toBe(true);
     });
 
     it('should maintain uniform distribution of hash characters', () => {
@@ -480,7 +432,6 @@ describe('Cache Collision Resistance Tests', () => {
       }
 
       for (const hash of hashes) {
-        // Validate each hash before processing
         validateHashProperties(hash);
 
         for (const char of hash) {
@@ -492,13 +443,10 @@ describe('Cache Collision Resistance Tests', () => {
         }
       }
 
-      // Calculate expected frequency
-      const totalChars = hashes.length * 64; // 64 chars per hash
+      const totalChars = hashes.length * 64;
 
-      // Validate character distribution using helper function
       validateCharacterDistribution(charCounts, totalChars, 0.2);
 
-      // Additional statistical checks
       const frequencies = Object.values(charCounts);
       const minFreq = Math.min(...frequencies);
       const maxFreq = Math.max(...frequencies);
@@ -506,12 +454,10 @@ describe('Cache Collision Resistance Tests', () => {
       const avgFreq =
         frequencies.reduce((a, b) => a + b, 0) / frequencies.length;
 
-      // Range should not be too large (good distribution)
-      expect(range).toBeLessThan(avgFreq * 0.4);
+      expect(range < avgFreq * 0.4).toBe(true);
 
-      // No character should be completely missing or overly dominant
-      expect(minFreq).toBeGreaterThan(avgFreq * 0.6);
-      expect(maxFreq).toBeLessThan(avgFreq * 1.4);
+      expect(minFreq > avgFreq * 0.6).toBe(true);
+      expect(maxFreq < avgFreq * 1.4).toBe(true);
     });
   });
 
@@ -534,19 +480,14 @@ describe('Cache Collision Resistance Tests', () => {
 
       for (const testCase of testCases) {
         expect(() => {
-          // Should not throw any errors during key generation
           const key = generateCacheKey(testCase.prefix, testCase.data);
 
-          // Validate the generated key
-          expect(key).toBeDefined();
           expect(typeof key).toBe('string');
-          expect(key.length).toBeGreaterThan(10);
+          expect(key.length >= 11).toBe(true);
 
-          // Validate hash properties
           const hash = extractHash(key);
           validateHashProperties(hash);
 
-          // Ensure uniqueness
           expect(keys.has(key)).toBe(false);
           keys.add(key);
         }).not.toThrow();
@@ -565,7 +506,6 @@ describe('Cache Collision Resistance Tests', () => {
         keys.add(key);
       }
 
-      // Should always generate the same key for identical input
       expect(keys.size).toBe(1);
 
       const [key] = keys;
@@ -574,26 +514,22 @@ describe('Cache Collision Resistance Tests', () => {
     });
 
     it('should validate helper functions work correctly', () => {
-      // Test extractHash with valid input
       const validKey = 'v1-test:' + 'a'.repeat(64);
       expect(() => extractHash(validKey)).not.toThrow();
       expect(extractHash(validKey)).toBe('a'.repeat(64));
 
-      // Test extractHash with invalid inputs
       expect(() => extractHash('invalid')).toThrow();
       expect(() => extractHash('v1-test:short')).toThrow();
-      expect(() => extractHash('v1-test:' + 'g'.repeat(64))).toThrow(); // Invalid hex
+      expect(() => extractHash('v1-test:' + 'g'.repeat(64))).toThrow();
 
-      // Test validateHashProperties with a properly random-looking hash
       const validHash =
-        'a1b2c3d4e5f67890fedcba9876543210abcdef1234567890cafe123456780fed'; // 64 chars, valid hex, no repeating patterns
+        'a1b2c3d4e5f67890fedcba9876543210abcdef1234567890cafe123456780fed';
       expect(() => validateHashProperties(validHash)).not.toThrow();
 
-      // Test validateCharacterDistribution
       const perfectDistribution: Record<string, number> = {};
       const hexChars = '0123456789abcdef';
       for (const char of hexChars) {
-        perfectDistribution[char] = 100; // Perfect distribution
+        perfectDistribution[char] = 100;
       }
       expect(() =>
         validateCharacterDistribution(perfectDistribution, 1600)
@@ -618,20 +554,16 @@ describe('Cache Collision Resistance Tests', () => {
         const key = generateCacheKey(test.prefix, test.data);
         const hash = extractHash(key);
 
-        // Verify hash is always exactly 64 characters
         expect(hash.length).toBe(64);
 
-        // Verify hash is valid hex
-        expect(hash).toMatch(/^[a-f0-9]{64}$/);
+        expect(/^[a-f0-9]{64}$/.test(hash)).toBe(true);
 
-        // Verify hash has good entropy (not all same character)
         const uniqueChars = new Set(hash);
-        expect(uniqueChars.size).toBeGreaterThan(4);
+        expect(uniqueChars.size >= 5).toBe(true);
 
-        // Verify no obvious patterns
         const firstHalf = hash.substring(0, 32);
         const secondHalf = hash.substring(32, 64);
-        expect(firstHalf).not.toBe(secondHalf); // Not identical halves
+        expect(firstHalf).not.toBe(secondHalf);
       }
     });
   });

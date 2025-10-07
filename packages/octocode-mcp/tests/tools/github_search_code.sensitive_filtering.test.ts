@@ -112,11 +112,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include files not in .git directory
-      expect(responseText).toContain('src/config.js');
-      expect(responseText).toContain('src/main.js');
-      expect(responseText).not.toContain('.git/hooks/pre-commit');
-      expect(responseText).not.toContain('.git/config');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/config.js"
+            text_matches:
+              - "config;"
+          - path: "src/main.js"
+            text_matches:
+              - "main;"
+`);
     });
 
     it('should filter out files in node_modules directories', async () => {
@@ -176,12 +197,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include files not in node_modules
-      expect(responseText).toContain('src/utils.js');
-      expect(responseText).toContain('src/helpers/helper.js');
-      expect(responseText).not.toContain('node_modules/lodash/lodash.js');
-      expect(responseText).not.toContain('node_modules/react/index.js');
-      expect(responseText).not.toContain('node_modules/express/package.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/utils.js"
+            text_matches:
+              - "utils;"
+          - path: "src/helpers/helper.js"
+            text_matches:
+              - "helper;"
+`);
     });
 
     it('should filter out files in build/dist directories', async () => {
@@ -247,13 +288,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not build artifacts
-      expect(responseText).toContain('src/app.js');
-      expect(responseText).toContain('src/components/component.js');
-      expect(responseText).not.toContain('dist/bundle.js');
-      expect(responseText).not.toContain('build/main.js');
-      expect(responseText).not.toContain('out/output.js');
-      expect(responseText).not.toContain('target/app.jar');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/app.js"
+            text_matches:
+              - "app;"
+          - path: "src/components/component.js"
+            text_matches:
+              - "component;"
+`);
     });
 
     it('should filter out files in cache directories', async () => {
@@ -313,12 +373,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not cache files
-      expect(responseText).toContain('src/service.py');
-      expect(responseText).toContain('src/utils.py');
-      expect(responseText).not.toContain('.cache/cached_data.py');
-      expect(responseText).not.toContain('.pytest_cache/test_cache.py');
-      expect(responseText).not.toContain('.mypy_cache/cache.py');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/service.py"
+            text_matches:
+              - "service"
+          - path: "src/utils.py"
+            text_matches:
+              - "utils"
+`);
     });
   });
 
@@ -386,11 +466,35 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include configuration files and filter out package-lock.json
-      expect(responseText).toContain('package.json');
-      expect(responseText).toContain('Cargo.toml');
-      expect(responseText).toContain('pnpm-lock.yaml');
-      expect(responseText).not.toContain('package-lock.json');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "package.json"
+            text_matches:
+              - "package"
+          - path: "pnpm-lock.yaml"
+            text_matches:
+              - "pnpm"
+          - path: "Cargo.toml"
+            text_matches:
+              - "cargo"
+`);
     });
 
     it('should filter out sensitive credential files', async () => {
@@ -462,14 +566,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include non-sensitive configuration files
-      expect(responseText).toContain('src/config.js');
-      expect(responseText).toContain('src/settings.js');
-      expect(responseText).not.toContain('secrets.json');
-      expect(responseText).not.toContain('config/credentials.yaml');
-      expect(responseText).not.toContain('api-keys.json');
-      expect(responseText).not.toContain('certs/private-key.pem');
-      expect(responseText).not.toContain('.ssh/id_rsa');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/config.js"
+            text_matches:
+              - "config;"
+          - path: "src/settings.js"
+            text_matches:
+              - "settings;"
+`);
     });
 
     it('should filter out binary and compiled files', async () => {
@@ -547,15 +669,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not binary/compiled files
-      expect(responseText).toContain('src/app.js');
-      expect(responseText).toContain('src/main.py');
-      expect(responseText).not.toContain('bin/app.exe');
-      expect(responseText).not.toContain('lib/library.dll');
-      expect(responseText).not.toContain('lib/module.so');
-      expect(responseText).not.toContain('build/Main.class');
-      expect(responseText).not.toContain('__pycache__/cache.pyc');
-      expect(responseText).not.toContain('target/app.jar');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/app.js"
+            text_matches:
+              - "app;"
+          - path: "src/main.py"
+            text_matches:
+              - "main"
+`);
     });
 
     it('should filter out minified files', async () => {
@@ -609,11 +748,32 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not minified files
-      expect(responseText).toContain('src/app.js');
-      expect(responseText).toContain('src/styles.css');
-      expect(responseText).not.toContain('dist/app.min.js');
-      expect(responseText).not.toContain('dist/styles.min.css');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/app.js"
+            text_matches:
+              - "app;"
+          - path: "src/styles.css"
+            text_matches:
+              - ""
+`);
     });
   });
 
@@ -623,7 +783,6 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
         data: {
           total_count: 12,
           items: [
-            // Valid source files
             {
               name: 'UserService.js',
               path: 'src/services/UserService.js',
@@ -636,7 +795,6 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [{ fragment: 'AuthController', matches: [] }],
             },
-            // Sensitive - in ignored directories
             {
               name: 'express.js',
               path: 'node_modules/express/index.js',
@@ -655,7 +813,6 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [{ fragment: 'config', matches: [] }],
             },
-            // Sensitive - ignored file names
             {
               name: 'secrets.json',
               path: 'config/secrets.json',
@@ -674,7 +831,6 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [{ fragment: 'rsa', matches: [] }],
             },
-            // Sensitive - ignored extensions
             {
               name: 'app.exe',
               path: 'bin/app.exe',
@@ -693,7 +849,6 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
               repository: { full_name: 'test/repo', url: 'url' },
               text_matches: [{ fragment: 'styles', matches: [] }],
             },
-            // Valid configuration file
             {
               name: 'config.js',
               path: 'src/config.js',
@@ -722,21 +877,35 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // Valid files should be included
-      expect(responseText).toContain('src/services/UserService.js');
-      expect(responseText).toContain('src/controllers/AuthController.js');
-      expect(responseText).toContain('src/config.js');
-
-      // All sensitive files should be filtered out
-      expect(responseText).not.toContain('node_modules/express/index.js');
-      expect(responseText).not.toContain('dist/bundle.js');
-      expect(responseText).not.toContain('.git/config');
-      expect(responseText).not.toContain('config/secrets.json');
-      expect(responseText).not.toContain('package-lock.json');
-      expect(responseText).not.toContain('.ssh/id_rsa');
-      expect(responseText).not.toContain('bin/app.exe');
-      expect(responseText).not.toContain('__pycache__/cache.pyc');
-      expect(responseText).not.toContain('dist/styles.min.css');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        files:
+          - path: "src/services/UserService.js"
+            text_matches:
+              - "UserService;"
+          - path: "src/controllers/AuthController.js"
+            text_matches:
+              - "AuthController;"
+          - path: "src/config.js"
+            text_matches:
+              - "config;"
+`);
     });
 
     it('should return empty results when all files are filtered', async () => {
@@ -790,13 +959,31 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      // All files should be filtered out (empty array removed)
-      expect(responseText).not.toContain('files: []'); // Empty arrays are removed
-      expect(responseText).toContain('empty:'); // Still in empty section
-      expect(responseText).toContain('hints:');
-      expect(responseText).not.toContain('package-lock.json');
-      expect(responseText).not.toContain('secrets.json');
-      expect(responseText).not.toContain('app.exe');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 empty"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    empty:
+      - "Try broader search terms or related concepts"
+      - "Use functional descriptions that focus on what the code accomplishes"
+      - "Use extension, filename, path filters to target specific directories and file names"
+      - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
+      - "After discovery, add owner/repo to narrow scope; set limit to cap results"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    empty:
+      - owner: "test"
+        repo: "repo"
+        metadata:
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            keywordsToSearch:
+              - "sensitive"
+`);
     });
   });
 });

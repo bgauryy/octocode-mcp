@@ -7,6 +7,7 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
+  type PullRequestSearchResult,
 } from '../scheme/github_search_pull_requests';
 import { GitHubPullRequestsSearchParams } from '../github/githubAPI';
 import { generateEmptyQueryHints } from './hints';
@@ -182,12 +183,14 @@ async function searchMultipleGitHubPullRequests(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
     keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'researchSuggestions',
       'pull_requests',
       'total_count',
-    ],
+      'incomplete_results',
+      'error',
+      'hints',
+      'query',
+      'metadata',
+    ] satisfies Array<keyof PullRequestSearchResult>,
   };
 
   return createBulkResponse(config, results, errors, queries);

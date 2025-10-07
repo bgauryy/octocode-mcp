@@ -279,13 +279,46 @@ describe('Code Search Flows', () => {
     });
 
     // Should have flattened structure
-    if ('data' in result) {
-      expect(result.data).toHaveProperty('items');
-      expect(result.data).toHaveProperty('total_count');
-      expect(result.data).not.toHaveProperty('data'); // No nested data field
-    } else {
-      expect.fail('Expected successful result with data');
-    }
+    expect(result).toEqual({
+      data: {
+        _researchContext: {
+          foundFiles: ['src/test.js'],
+          foundPackages: [],
+          repositoryContext: {
+            owner: 'test',
+            repo: 'repo',
+          },
+        },
+        total_count: 1,
+        items: [
+          {
+            path: 'src/test.js',
+            repository: {
+              nameWithOwner: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            url: 'src/test.js',
+            matches: [
+              {
+                context: 'const x=1;',
+                positions: [],
+              },
+            ],
+            minificationType: 'terser',
+          },
+        ],
+        minified: true,
+        minificationTypes: ['terser'],
+        minificationFailed: false,
+        repository: {
+          name: 'test/repo',
+          url: 'https://api.github.com/repos/test/repo',
+        },
+        securityWarnings: undefined,
+      },
+      status: 200,
+      headers: undefined,
+    });
   });
 
   it('should handle API response correctly', async () => {

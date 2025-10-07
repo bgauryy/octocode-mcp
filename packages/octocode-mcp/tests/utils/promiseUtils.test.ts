@@ -209,18 +209,17 @@ describe('promiseUtils', () => {
           const options: PromiseExecutionOptions = { concurrency: 3 };
           const resultPromise = executeWithErrorIsolation(promises, options);
 
-          // Advance time to complete all promises
           vi.advanceTimersByTime(1000);
           await vi.runAllTimersAsync();
 
           const results = await resultPromise;
 
-          expect(results).toHaveLength(10);
-          expect(maxActivePromises).toBeLessThanOrEqual(3);
+          expect(results.length).toEqual(10);
+          expect(maxActivePromises <= 3).toEqual(true);
           results.forEach((result, index) => {
-            expect(result.success).toBe(true);
-            expect(result.data).toBe(`result${index}`);
-            expect(result.index).toBe(index);
+            expect(result.success).toEqual(true);
+            expect(result.data).toEqual(`result${index}`);
+            expect(result.index).toEqual(index);
           });
         } finally {
           vi.useRealTimers();

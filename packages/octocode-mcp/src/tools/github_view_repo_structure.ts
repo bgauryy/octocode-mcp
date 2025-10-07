@@ -10,7 +10,7 @@ import { TOOL_NAMES } from '../constants';
 import {
   GitHubViewRepoStructureQuery,
   GitHubViewRepoStructureBulkQuerySchema,
-  RepoStructureResult,
+  type RepoStructureResult,
 } from '../scheme/github_view_repo_structure.js';
 import { generateEmptyQueryHints } from './hints';
 import {
@@ -213,15 +213,14 @@ async function exploreMultipleRepositoryStructures(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'researchSuggestions',
-      'owner',
-      'repo',
       'path',
       'files',
       'folders',
-    ],
+      'error',
+      'hints',
+      'query',
+      'metadata',
+    ] satisfies Array<keyof RepoStructureResult>,
   };
 
   return createBulkResponse(config, results, errors, queries);

@@ -25,13 +25,17 @@ describe('GitHub View Repository Structure Tool', () => {
     registerViewGitHubRepoStructureTool(mockServer.server);
 
     mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
-      isError: false,
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ success: true, files: [], folders: [] }),
-        },
+      files: [
+        { path: '/README.md', size: 1024 },
+        { path: '/package.json', size: 512 },
       ],
+      folders: {
+        folders: [{ path: '/src' }, { path: '/tests' }],
+      },
+      summary: {
+        totalFiles: 2,
+        totalFolders: 2,
+      },
     });
   });
 
@@ -51,7 +55,40 @@ describe('GitHub View Repository Structure Tool', () => {
       ],
     });
 
-    expect(result.isError).toBe(false);
+    expect(result).toEqual({
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: `hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "/"
+        files:
+          - "/README.md"
+          - "/package.json"
+        folders:
+          - "/src"
+          - "/tests"
+`,
+        },
+      ],
+    });
   });
 
   it('should pass authInfo and userContext to GitHub API', async () => {
@@ -122,10 +159,45 @@ describe('GitHub View Repository Structure Tool', () => {
     });
 
     // With bulk operations, errors are handled gracefully and returned as data with hints
-    expect(result.isError).toBe(false);
     const responseText = result.content[0]?.text as string;
-    expect(responseText).toContain('hints:');
-    expect(responseText).toContain('error:');
+
+    expect(result).toEqual({
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: responseText,
+        },
+      ],
+    });
+
+    expect(responseText).toEqual(`hints:
+  - "Query results: 1 failed"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    failed:
+      - "Resource not found. Verify spelling and accessibility"
+      - "Verify repository owner and name are correct"
+      - "Check that the branch exists (try \\"main\\" or \\"master\\")"
+      - "Ensure you have access to the repository"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    failed:
+      - owner: "nonexistent"
+        repo: "repo"
+        path: "/"
+        error: "Repository not found or access denied"
+        metadata:
+          error: "Repository not found or access denied"
+          originalQuery:
+            owner: "nonexistent"
+            repo: "repo"
+            branch: "main"
+          searchType: "api_error"
+`);
   });
 
   it('should handle optional parameters', async () => {
@@ -141,7 +213,40 @@ describe('GitHub View Repository Structure Tool', () => {
       ],
     });
 
-    expect(result.isError).toBe(false);
+    expect(result).toEqual({
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: `hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Explore src/ or packages/ first for relevant files"
+      - "Use depth: 2 to surface key files/folders quickly"
+      - "Build targeted code searches from discovered path and filename patterns"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Focus on source code and example directories for implementation details"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "src"
+        files:
+          - "/README.md"
+          - "/package.json"
+        folders:
+          - "/src"
+          - "/tests"
+`,
+        },
+      ],
+    });
   });
 
   describe('New Features Tests', () => {
@@ -179,8 +284,17 @@ describe('GitHub View Repository Structure Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
 
       // Verify the path prefix is removed from files
       expect(responseText).toContain('/.gitignore');
@@ -228,8 +342,17 @@ describe('GitHub View Repository Structure Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
 
       // For root path, files and folders should keep their absolute paths
       expect(responseText).toContain('/.gitignore');
@@ -263,8 +386,17 @@ describe('GitHub View Repository Structure Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
 
       // Verify branch field is not in the output
       expect(responseText).not.toContain('branch:');
@@ -307,38 +439,40 @@ describe('GitHub View Repository Structure Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
-      // Extract the queries.successful section to check field ordering in new format
-      const successfulMatch = responseText.match(
-        /successful:\s*\n([\s\S]*?)hints:/
-      );
-      expect(successfulMatch).toBeTruthy();
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
 
-      if (successfulMatch?.[1]) {
-        const successfulSection = successfulMatch[1];
-        const lines = successfulSection.split('\n').filter(line => line.trim());
+      // Verify field ordering by checking the response contains the fields in the correct order
+      const reasoningIndex = responseText.indexOf('reasoning:');
+      const ownerIndex = responseText.indexOf('owner:');
+      const repoIndex = responseText.indexOf('repo:');
+      const pathIndex = responseText.indexOf('path:');
+      const filesIndex = responseText.indexOf('files:');
+      const foldersIndex = responseText.indexOf('folders:');
 
-        // Find the indices of each field (no queryId in new format)
-        const repositoryIndex = lines.findIndex(line =>
-          line.includes('owner:')
-        );
-        const pathIndex = lines.findIndex(line => line.includes('path:'));
-        const filesIndex = lines.findIndex(line => line.includes('files:'));
-        const foldersIndex = lines.findIndex(line => line.includes('folders:'));
+      // Verify all fields exist (must be found, not -1)
+      expect(reasoningIndex).not.toEqual(-1);
+      expect(ownerIndex).not.toEqual(-1);
+      expect(repoIndex).not.toEqual(-1);
+      expect(pathIndex).not.toEqual(-1);
+      expect(filesIndex).not.toEqual(-1);
+      expect(foldersIndex).not.toEqual(-1);
 
-        // Verify the correct ordering (no queryId in new format)
-        expect(repositoryIndex).toBeGreaterThanOrEqual(0);
-        expect(pathIndex).toBeGreaterThanOrEqual(0);
-        expect(filesIndex).toBeGreaterThanOrEqual(0);
-        expect(foldersIndex).toBeGreaterThanOrEqual(0);
-
-        // Verify field ordering
-        expect(repositoryIndex).toBeLessThan(pathIndex);
-        expect(pathIndex).toBeLessThan(filesIndex);
-        expect(filesIndex).toBeLessThan(foldersIndex);
-      }
+      // Verify strict field ordering: reasoning < owner < repo < path < files < folders
+      expect(reasoningIndex < ownerIndex).toEqual(true);
+      expect(ownerIndex < repoIndex).toEqual(true);
+      expect(repoIndex < pathIndex).toEqual(true);
+      expect(pathIndex < filesIndex).toEqual(true);
+      expect(filesIndex < foldersIndex).toEqual(true);
     });
 
     it('should handle empty path prefix removal correctly', async () => {
@@ -369,8 +503,17 @@ describe('GitHub View Repository Structure Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
 
       // Verify the /utils prefix is removed
       expect(responseText).toContain('/helper.js');
@@ -426,8 +569,17 @@ describe('GitHub View Repository Structure Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: responseText,
+          },
+        ],
+      });
 
       // Verify both queries have their prefixes removed correctly
       // First query (/src)

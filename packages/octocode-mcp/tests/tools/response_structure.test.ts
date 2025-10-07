@@ -101,10 +101,28 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Use function/class names or error strings as keywords to find definitions and usages"
+      - "Derive matchString for file fetches from code search text_matches"
+      - "Scope away from noise directories by setting path to src/, packages/*/src"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    successful:
+      - reasoning: "Test successful"
+        files:
+          - path: "file1.js"
+            text_matches:
+              - "test"
+`);
     });
 
     it('should handle empty queries only', async () => {
@@ -122,10 +140,29 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 empty');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 empty"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    empty:
+      - "Try broader search terms or related concepts"
+      - "Use functional descriptions that focus on what the code accomplishes"
+      - "Use extension, filename, path filters to target specific directories and file names"
+      - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
+      - "After discovery, add owner/repo to narrow scope; set limit to cap results"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    empty:
+      - reasoning: "Test empty"
+        metadata:
+          originalQuery:
+            reasoning: "Test empty"
+            keywordsToSearch:
+              - "nonexistent"
+`);
     });
 
     it('should handle failed queries only', async () => {
@@ -143,10 +180,28 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 failed"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    failed:
+      - "Verify search parameters are valid and not overly restrictive"
+      - "Try removing filters (extension, path) to broaden search scope"
+      - "Check repository exists and is accessible if using owner/repo filters"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_fetch_content with matchString from search results for precise context extraction"
+  queries:
+    failed:
+      - reasoning: "Test failed"
+        error: "API error"
+        metadata:
+          originalQuery:
+            reasoning: "Test failed"
+            keywordsToSearch:
+              - "error"
+`);
     });
 
     it('should handle successful + empty combination', async () => {

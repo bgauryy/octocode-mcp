@@ -68,7 +68,6 @@ describe('GitHub Fetch Content Tool', () => {
 
   describe('Success scenarios', () => {
     it('should handle single valid file request', async () => {
-      // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           repository: 'test/repo',
@@ -98,25 +97,32 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.content[0]?.type).toBe('text');
 
       const responseText = result.content[0]?.text as string;
-      // Verify new structured format with only non-empty sections
-      expect(responseText).toContain('queries:');
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('repository: "test/repo"');
-      expect(responseText).toContain('path: "README.md"');
-      expect(responseText).toContain('contentLength: 35');
-      expect(responseText).toContain('# Hello World');
-      expect(responseText).toContain('branch: "main"');
-      expect(responseText).toContain('minified: false');
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('1 successful');
-      expect(responseText).toContain('improve your research strategy');
-      // Should NOT contain empty sections
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "README.md"
+        contentLength: 35
+        content: "# Hello World\\n\\nThis is a test file."
+        branch: "main"
+        minified: false
+        repository: "test/repo"
+`);
     });
 
     it('should pass authInfo and userContext to GitHub API', async () => {
-      // Mock successful API response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         data: {
           path: 'test.js',
@@ -141,19 +147,22 @@ describe('GitHub Fetch Content Tool', () => {
         ],
       });
 
-      // Verify the API was called with authInfo and userContext
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledTimes(1);
       const apiCall = mockFetchGitHubFileContentAPI.mock.calls[0];
 
-      // Should be called with (apiRequest, authInfo, userContext)
-      expect(apiCall).toBeDefined();
-      expect(apiCall).toHaveLength(3);
-      expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
-      expect(apiCall?.[2]).toEqual(undefined); // userContext.sessionId (undefined)
+      expect(apiCall).toEqual([
+        expect.objectContaining({
+          owner: 'testowner',
+          repo: 'testrepo',
+          path: 'test.js',
+          branch: 'main',
+        }),
+        undefined,
+        undefined,
+      ]);
     });
 
     it('should handle multiple file requests', async () => {
-      // Mock successful API responses
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
@@ -197,23 +206,40 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('README.md');
-      expect(responseText).toContain('package.json');
-      expect(responseText).toContain('README'); // Content from README.md
-      expect(responseText).toContain('test'); // Content from package.json name field
-      expect(responseText).toContain('2 successful');
-      expect(responseText).toContain('improve your research strategy');
-      // Should NOT contain empty sections
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 2 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "README.md"
+        contentLength: 1
+        content: "# README"
+        branch: "main"
+      - owner: "test"
+        repo: "repo"
+        path: "package.json"
+        contentLength: 1
+        content: "{\\"name\\": \\"test\\"}"
+        branch: "main"
+`);
     });
   });
 
   describe('Error scenarios', () => {
     it('should handle file not found error', async () => {
-      // Mock API error response
       mockFetchGitHubFileContentAPI.mockResolvedValue({
         error: 'Repository, resource, or path not found',
         status: 404,
@@ -232,15 +258,34 @@ describe('GitHub Fetch Content Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(false); // Tool doesn't error, but result contains error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('error:');
-      expect(responseText).toContain('not found');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 failed"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    failed:
+      - "Resource not found. Verify spelling and accessibility"
+      - "Verify repository owner, name, and file path are correct"
+      - "Check that the branch exists (try \\"main\\" or \\"master\\")"
+      - "Use github_view_repo_structure first to find correct file paths"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    failed:
+      - error: "Repository, resource, or path not found"
+        metadata:
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            path: "nonexistent.md"
+            id: "error-test"
+`);
     });
 
     it('should handle API exception', async () => {
-      // Mock API throwing an exception
       mockFetchGitHubFileContentAPI.mockRejectedValue(
         new Error('Network error')
       );
@@ -258,10 +303,29 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('error:');
-      expect(responseText).toContain('Network error');
-      expect(responseText).toContain('exception-test');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 failed"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    failed:
+      - "Network error. Check connection and retry"
+      - "Verify repository owner, name, and file path are correct"
+      - "Check that the branch exists (try \\"main\\" or \\"master\\")"
+      - "Use github_view_repo_structure first to find correct file paths"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    failed:
+      - error: "Network error"
+        metadata:
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            path: "test.md"
+            id: "exception-test"
+`);
     });
   });
 
@@ -288,8 +352,8 @@ End of file.`;
           content: fullFileContent,
           contentLength: 12,
           minified: false,
-          isPartial: undefined, // Should not be partial for full content
-          startLine: undefined, // Should not have line boundaries for full content
+          isPartial: undefined,
+          startLine: undefined,
           endLine: undefined,
         },
         status: 200,
@@ -309,12 +373,30 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('Full File Content');
-      expect(responseText).toContain('contentLength: 12');
-      expect(responseText).toContain('README.md');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "README.md"
+        contentLength: 12
+        content: "# Full File Content\\nThis is a complete file with multiple lines.\\nIt has various sections and content.\\n\\n## Section 1\\nSome content here.\\n\\n## Section 2\\nMore content here.\\n\\n## Conclusion\\nEnd of file."
+        branch: "main"
+        minified: false
+        repository: "test/repo"
+`);
 
-      // Verify API was called with fullContent=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           fullContent: true,
@@ -403,13 +485,33 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('line 5');
-      expect(responseText).toContain('isPartial: true');
-      expect(responseText).toContain('startLine: 5');
-      expect(responseText).toContain('endLine: 7');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "src/index.js"
+        contentLength: 20
+        content: "line 5\\nline 6\\nline 7"
+        branch: "main"
+        startLine: 5
+        endLine: 7
+        isPartial: true
+        minified: false
+        repository: "test/repo"
+`);
 
-      // Verify API was called with correct line parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           fullContent: false,
@@ -455,14 +557,35 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('function main');
-      expect(responseText).toContain('isPartial: true');
-      expect(responseText).toContain('startLine: 8');
-      expect(responseText).toContain('securityWarnings');
-      expect(responseText).toContain('function main');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "src/utils.js"
+        contentLength: 50
+        content: "function helper() {\\n  return true;\\n}\\n\\nfunction main() {\\n  return helper();\\n}"
+        branch: "main"
+        startLine: 8
+        endLine: 14
+        isPartial: true
+        minified: false
+        securityWarnings:
+          - "Found \\"function main\\" on line 11"
+        repository: "test/repo"
+`);
 
-      // Verify API was called with matchString parameters
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           fullContent: false,
@@ -548,12 +671,32 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('minified: true');
-      expect(responseText).toContain('minificationType: "terser"');
-      expect(responseText).toContain('minificationFailed: false');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "src/app.js"
+        contentLength: 1
+        content: "const app=()=>{return\\"Hello\\"};"
+        branch: "main"
+        minified: true
+        minificationFailed: false
+        minificationType: "terser"
+        repository: "test/repo"
+`);
 
-      // Verify API was called with minified=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           minified: true,
@@ -590,11 +733,30 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('Hello World');
-      expect(responseText).toContain('minified: false');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "src/readable.js"
+        contentLength: 37
+        content: "const app = () => {\\n  return \\"Hello World\\";\\n};"
+        branch: "main"
+        minified: false
+        repository: "test/repo"
+`);
 
-      // Verify API was called with minified=false
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           minified: false,
@@ -633,10 +795,31 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('minificationFailed: true');
-      expect(responseText).toContain('minificationType: "failed"');
-      expect(responseText).toContain('// Syntax error');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "src/broken.js"
+        contentLength: 1
+        content: "const broken = () => { // Syntax error"
+        branch: "main"
+        minified: false
+        minificationFailed: true
+        minificationType: "failed"
+        repository: "test/repo"
+`);
     });
   });
 
@@ -672,14 +855,33 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('[REDACTED]');
-      expect(responseText).toContain('Secrets detected and redacted');
-      expect(responseText).toContain(
-        'Potentially sensitive configuration file detected'
-      );
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "config.env"
+        contentLength: 2
+        content: "API_KEY=[REDACTED]\\nDATABASE_URL=[REDACTED]"
+        branch: "main"
+        minified: false
+        securityWarnings:
+          - "Secrets detected and redacted: API_KEY, DATABASE_URL"
+          - "Potentially sensitive configuration file detected"
+        repository: "test/repo"
+`);
 
-      // Verify API was called with sanitize=true
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           sanitize: true,
@@ -729,17 +931,14 @@ End of file.`;
 
   describe('Sampling Feature', () => {
     beforeEach(() => {
-      // Enable sampling for these tests
       mockIsSamplingEnabled.mockReturnValue(true);
     });
 
     afterEach(() => {
-      // Reset sampling to disabled
       mockIsSamplingEnabled.mockReturnValue(false);
     });
 
     it('should include sampling when enabled and content is available', async () => {
-      // Setup sampling mocks
       mockCreateQASamplingRequest.mockReturnValue({
         method: 'sampling/createMessage',
         params: { messages: [] },
@@ -781,16 +980,21 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('sampling:');
-      expect(responseText).toContain('JavaScript utility function');
-      expect(responseText).toContain('utils.js');
-      expect(responseText).toContain('test/repo');
+      // Note: Sampling response structure includes nested sampling field and additional _samplingRequest
+      expect(responseText).toContain('path: "utils.js"');
+      expect(responseText).toContain('contentLength: 1');
+      expect(responseText).toContain(
+        'content: "export const helper = () => true;"'
+      );
+      expect(responseText).toContain(
+        'codeExplanation: "This is a JavaScript utility function that exports a helper method."'
+      );
+      expect(responseText).toContain('completionTokens: 50');
       expect(responseText).toContain('promptTokens: 100');
+      expect(responseText).toContain('totalTokens: 150');
     });
 
     it('should handle sampling failure gracefully', async () => {
-      // Setup sampling mocks to fail
       mockCreateQASamplingRequest.mockReturnValue({
         method: 'sampling/createMessage',
         params: { messages: [] },
@@ -823,10 +1027,29 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('console.log');
-      // Should not have sampling data when it fails
-      expect(responseText).not.toContain('sampling:');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "test.js"
+        contentLength: 1
+        content: "console.log(\\"test\\");"
+        branch: "main"
+        minified: false
+        repository: "test/repo"
+`);
     });
   });
 
@@ -858,11 +1081,30 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('branch: "feature-branch"');
-      expect(responseText).toContain('feature.js');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    successful:
+      - path: "feature.js"
+        contentLength: 1
+        content: "const feature = \\"new feature\\";"
+        branch: "feature-branch"
+        minified: false
+        repository: "test/repo"
+`);
 
-      // Verify API was called with correct branch
       expect(mockFetchGitHubFileContentAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           branch: 'feature-branch',
@@ -911,7 +1153,6 @@ End of file.`;
 
   describe('Mixed Success and Error Scenarios', () => {
     it('should handle mixed success and error results in bulk queries', async () => {
-      // First query succeeds
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
@@ -925,13 +1166,11 @@ End of file.`;
           },
           status: 200,
         })
-        // Second query fails
         .mockResolvedValueOnce({
           error: 'File not found',
           status: 404,
           type: 'http',
         })
-        // Third query throws exception
         .mockRejectedValueOnce(new Error('Network timeout'));
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -959,18 +1198,53 @@ End of file.`;
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('const success = true');
-      expect(responseText).toContain('File not found');
-      expect(responseText).toContain('Network timeout');
-      expect(responseText).toContain('success.js'); // Success result file path
-      expect(responseText).toContain('1 successful, 2 failed');
-      expect(responseText).toContain('improve your research strategy');
-      // Error items should have metadata.originalQuery with query info
-      expect(responseText).toContain('missing.js');
-      expect(responseText).toContain('timeout.js');
-      // Should NOT contain empty section
-      expect(responseText).not.toContain('empty:');
+      expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful, 2 failed"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    failed:
+      - "Resource not found. Verify spelling and accessibility"
+      - "Verify repository owner, name, and file path are correct"
+      - "Check that the branch exists (try \\"main\\" or \\"master\\")"
+      - "Use github_view_repo_structure first to find correct file paths"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prefer partial reads for token efficiency"
+      - "When readability matters (e.g., JSON/Markdown), consider minified: false"
+      - "Use matchString from code search text_matches and increase matchStringContextLines if needed"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Examine imports/exports to understand dependencies and usage"
+  queries:
+    failed:
+      - error: "File not found"
+        metadata:
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            path: "missing.js"
+            id: "error-query"
+      - error: "Network timeout"
+        metadata:
+          originalQuery:
+            owner: "test"
+            repo: "repo"
+            path: "timeout.js"
+            id: "exception-query"
+    successful:
+      - owner: "test"
+        repo: "repo"
+        path: "success.js"
+        contentLength: 1
+        content: "const success = true;"
+        branch: "main"
+        minified: false
+`);
     });
   });
 
@@ -1067,10 +1341,12 @@ End of file.`;
 
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('error:');
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Queries array is required');
+      expect(responseText).toEqual(`data:
+  error: "Queries array is required and cannot be empty"
+hints:
+  - "Queries array is required and cannot be empty"
+  - "Provide at least one valid query with required parameters"
+`);
     });
 
     it('should reject missing queries parameter', async () => {
@@ -1078,10 +1354,12 @@ End of file.`;
 
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('error:');
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Queries array is required');
+      expect(responseText).toEqual(`data:
+  error: "Queries array is required and cannot be empty"
+hints:
+  - "Queries array is required and cannot be empty"
+  - "Provide at least one valid query with required parameters"
+`);
     });
   });
 });

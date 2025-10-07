@@ -11,6 +11,7 @@ import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   SimplifiedRepository,
+  type RepoSearchResult,
 } from '../scheme/github_search_repos';
 import {
   processBulkQueries,
@@ -180,16 +181,12 @@ async function searchMultipleGitHubRepos(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'researchSuggestions',
-      'owner',
-      'repo',
-      'description',
-      'url',
-      'stars',
-      'updatedAt',
-    ],
+      'repositories',
+      'error',
+      'hints',
+      'query',
+      'metadata',
+    ] satisfies Array<keyof RepoSearchResult>,
   };
 
   return createBulkResponse(config, results, errors, expandedQueries);

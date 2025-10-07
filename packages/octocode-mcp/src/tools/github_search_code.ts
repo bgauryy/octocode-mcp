@@ -8,7 +8,7 @@ import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
   GitHubSearchCodeInput,
-  SearchResult,
+  type SearchResult,
 } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/index.js';
 import {
@@ -160,13 +160,12 @@ async function searchMultipleGitHubCode(
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
     keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'researchSuggestions',
-      'owner',
-      'repo',
       'files',
-    ],
+      'error',
+      'hints',
+      'query',
+      'metadata',
+    ] satisfies Array<keyof SearchResult>,
   };
 
   return createBulkResponse(config, results, errors, queries);

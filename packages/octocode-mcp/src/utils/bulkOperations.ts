@@ -124,10 +124,20 @@ export function createBulkResponse<
   errors: QueryError[],
   queries: Array<T>
 ): CallToolResult {
+  const standardFields = [
+    'researchGoal',
+    'reasoning',
+    'researchSuggestions',
+    'owner',
+    'repo',
+  ];
+  const fullKeysPriority = [
+    ...new Set([...standardFields, ...(config.keysPriority || [])]),
+  ];
+
   const successItems: Record<string, unknown>[] = [];
   const noResultItems: Record<string, unknown>[] = [];
   const errorItems: Record<string, unknown>[] = [];
-  const allSuggestions: string[] = [];
 
   // Process errors
   errors.forEach(error => {
@@ -147,8 +157,7 @@ export function createBulkResponse<
     );
     if (researchGoal) item.researchGoal = researchGoal;
     if (reasoning) item.reasoning = reasoning;
-    // Collect researchSuggestions instead of adding to item
-    if (researchSuggestions) allSuggestions.push(...researchSuggestions);
+    if (researchSuggestions) item.researchSuggestions = researchSuggestions;
 
     errorItems.push(item);
   });
@@ -161,7 +170,7 @@ export function createBulkResponse<
       item.researchGoal = safeExtractString(query, 'researchGoal');
     if (!item.reasoning) item.reasoning = safeExtractString(query, 'reasoning');
 
-    // Collect researchSuggestions from both item and query
+    // Keep researchSuggestions from both item and query
     const itemResearchSuggestions = safeExtractStringArray(
       item,
       'researchSuggestions'
@@ -170,13 +179,17 @@ export function createBulkResponse<
       query,
       'researchSuggestions'
     );
-    if (itemResearchSuggestions)
-      allSuggestions.push(...itemResearchSuggestions);
-    if (queryResearchSuggestions)
-      allSuggestions.push(...queryResearchSuggestions);
 
-    // Remove researchSuggestions from individual items
-    delete item.researchSuggestions;
+    // Merge researchSuggestions from both sources
+    if (itemResearchSuggestions || queryResearchSuggestions) {
+      const merged = [
+        ...(itemResearchSuggestions || []),
+        ...(queryResearchSuggestions || []),
+      ];
+      if (merged.length > 0) {
+        item.researchSuggestions = merged;
+      }
+    }
 
     if (item.error) {
       if (!item.metadata) item.metadata = {};
@@ -233,12 +246,6 @@ export function createBulkResponse<
     data.hints = hintsData;
   }
 
-  // Add unique researchSuggestions at the data level (once per response)
-  const uniqueResearchSuggestions = [...new Set(allSuggestions)];
-  if (uniqueResearchSuggestions.length > 0) {
-    data.researchSuggestions = uniqueResearchSuggestions;
-  }
-
   const counts = [];
   if (successItems.length > 0) counts.push(`${successItems.length} successful`);
   if (noResultItems.length > 0) counts.push(`${noResultItems.length} empty`);
@@ -259,7 +266,7 @@ export function createBulkResponse<
     content: [
       {
         type: 'text' as const,
-        text: createResponseFormat(responseData, config.keysPriority),
+        text: createResponseFormat(responseData, fullKeysPriority),
       },
     ],
     isError: false,

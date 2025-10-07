@@ -35,10 +35,14 @@ describe('Session Management', () => {
   describe('Session Initialization', () => {
     it('should create a session with UUID', () => {
       const session = initializeSession();
-      expect(session).toBeDefined();
-      expect(session.getSessionId()).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      );
+      const sessionId = session.getSessionId();
+      const isValidUUID =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          sessionId
+        );
+      expect(typeof session).toEqual('object');
+      expect(typeof sessionId).toEqual('string');
+      expect(isValidUUID).toEqual(true);
     });
 
     it('should return the same session instance on multiple calls', () => {
@@ -164,10 +168,13 @@ describe('Session Management', () => {
 
       initializeSession();
 
-      // These should not throw
-      await expect(logSessionInit()).resolves.toBeUndefined();
-      await expect(logToolCall('test_tool', [])).resolves.toBeUndefined();
-      await expect(logSessionError('test error')).resolves.toBeUndefined();
+      const result1 = await logSessionInit();
+      const result2 = await logToolCall('test_tool', []);
+      const result3 = await logSessionError('test error');
+
+      expect(result1).toEqual(undefined);
+      expect(result2).toEqual(undefined);
+      expect(result3).toEqual(undefined);
     });
 
     it('should not log if session is not initialized', async () => {

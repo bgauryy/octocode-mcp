@@ -52,38 +52,48 @@ describe('GitHub Search Repositories Response Structure Test', () => {
       }
     );
 
-    expect(result.isError).toBe(false);
-    expect(result.content).toHaveLength(1);
-    expect(result.content[0]?.type).toBe('text');
-
     const responseText = result.content[0]?.text as string;
 
-    // Validate YAML structure
-    expect(responseText).toContain('data:');
-    expect(responseText).toContain('hints:');
+    expect(result).toEqual({
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: responseText,
+        },
+      ],
+    });
 
-    // CRITICAL: Ensure removed fields are NOT present in the response (schema cleanup)
-    expect(responseText).not.toContain('total_count:');
-    expect(responseText).not.toContain('forks:');
-    expect(responseText).not.toContain('language:');
-
-    // Validate it's proper YAML format
-    expect(responseText).toMatch(/^data:/m);
-    expect(responseText).toMatch(/hints:/m);
-
-    // Validate the response structure matches our expected schema
-    expect(responseText).toContain('successful:');
-    expect(responseText).toContain('reasoning: "Testing response structure"');
-    expect(responseText).toContain('1 successful');
-    expect(responseText).toContain('improve your research strategy');
-    // Should NOT contain empty sections
-    expect(responseText).not.toContain('empty:');
-    expect(responseText).not.toContain('failed:');
-
-    // Validate that only expected fields are present (SimplifiedRepository interface)
-    expect(responseText).toContain('repository: "facebook/react"');
-    expect(responseText).toContain('stars: 200000');
-    expect(responseText).toContain('repository: "vercel/next.js"');
-    expect(responseText).toContain('stars: 100000');
+    // Verify exact YAML structure - no total_count, forks, or language fields
+    expect(responseText).toEqual(`hints:
+  - "Query results: 1 successful"
+  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+data:
+  hints:
+    successful:
+      - "Analyze top results in depth before expanding search"
+      - "Cross-reference findings across multiple sources"
+      - "Prioritize via sort and analyze the top 3-5 repositories in depth"
+      - "After selection, run structure view first, then scoped code search"
+      - "Avoid curated list repos by using implementation-oriented keywords"
+      - "Chain tools: repository search → structure view → code search → content fetch"
+      - "Compare implementations across 3-5 repositories to identify best practices"
+      - "Use github_view_repo_structure first to understand project layout"
+      - "Start with repository search to find relevant projects, then search within them"
+  queries:
+    successful:
+      - reasoning: "Testing response structure"
+        repositories:
+          - description: "A declarative, efficient, and flexible JavaScript library for building user interfaces."
+            repository: "facebook/react"
+            stars: 200000
+            updatedAt: "15/01/2024"
+            url: "https://github.com/facebook/react"
+          - description: "The React Framework for Production"
+            repository: "vercel/next.js"
+            stars: 100000
+            updatedAt: "14/01/2024"
+            url: "https://github.com/vercel/next.js"
+`);
   }, 5000);
 });
