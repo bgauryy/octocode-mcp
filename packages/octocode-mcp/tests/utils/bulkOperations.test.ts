@@ -175,23 +175,30 @@ describe('bulkOperations', () => {
       });
 
       expect(responseText).toEqual(`data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
   queries:
-    successful:
-      - data:
+    - status: "success"
+      data:
+        data:
           items:
             - name: "item1"
-      - data:
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+    - status: "success"
+      data:
+        data:
           items:
             - name: "item2"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
 hints:
   - "Query results: 2 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -231,22 +238,21 @@ hints:
       });
 
       expect(responseText).toEqual(`data:
-  hints:
-    failed:
-      - "Rate limit exceeded. Wait 60 seconds before retrying"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
   queries:
-    failed:
-      - error: "API rate limit exceeded"
-        metadata:
-          originalQuery:
-            id: "q1"
-            keywordsToSearch:
-              - "test1"
+    - status: "error"
+      data:
+        error: "API rate limit exceeded"
+      hints:
+        - "Rate limit exceeded. Wait 60 seconds before retrying"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+      query:
+        id: "q1"
+        keywordsToSearch:
+          - "test1"
 hints:
   - "Query results: 1 failed"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -437,7 +443,7 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('queries:');
       expect(yamlText).toContain('files:');
       expect(yamlText).toContain('path: "test.py"');
     });
@@ -474,9 +480,9 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain('Processing failed for fail_query');
-      expect(yamlText).toContain('originalQuery:');
+      expect(yamlText).toContain('query:');
     });
 
     it('should preserve result reasoning over query reasoning when both exist', async () => {
@@ -514,6 +520,7 @@ hints:
       expect(yamlText).toContain(
         'reasoning: "Result reasoning that should take precedence"'
       );
+      expect(yamlText).toContain('status: "success"');
       expect(yamlText).toContain('files:');
     });
 
@@ -566,17 +573,13 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      // Successful queries with repositories are in empty (they have empty content)
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('status: "empty"');
+      expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain('repositories:');
-      // Verify structure: should have empty and failed sections, but no successful section
-      expect(yamlText).toMatch(
-        /empty:\s+- reasoning: "Successful query with reasoning"/
+      expect(yamlText).toContain(
+        'reasoning: "Successful query with reasoning"'
       );
-      expect(yamlText).toMatch(
-        /failed:\s+- reasoning: "Failed query with reasoning"/
-      );
+      expect(yamlText).toContain('reasoning: "Failed query with reasoning"');
       expect(yamlText).toContain('Processing failed for fail_query');
     });
 
@@ -621,7 +624,8 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('queries:');
+      expect(yamlText).toContain('status: "success"');
       expect(yamlText).toContain('content: "test content"');
     });
 
@@ -666,7 +670,7 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('queries:');
       expect(yamlText).toContain('First query reasoning');
       expect(yamlText).toContain('Second query reasoning');
       expect(yamlText).toContain('Third query reasoning');
@@ -696,8 +700,8 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
+      expect(yamlText).toContain('status: "empty"');
+      expect(yamlText).not.toContain('files: []');
     });
 
     it('should handle repo search empty and non-empty', () => {
@@ -733,9 +737,9 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('repositories: []'); // Empty arrays are removed
-      expect(yamlText).toContain('repositories:'); // Non-empty still present
+      expect(yamlText).toContain('status: "empty"');
+      expect(yamlText).not.toContain('repositories: []');
+      expect(yamlText).toContain('repositories:');
     });
 
     it('should handle pull request search empty and non-empty', () => {
@@ -773,9 +777,9 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('pull_requests: []'); // Empty arrays are removed
-      expect(yamlText).toContain('pull_requests:'); // Non-empty still present
+      expect(yamlText).toContain('status: "empty"');
+      expect(yamlText).not.toContain('pull_requests: []');
+      expect(yamlText).toContain('pull_requests:');
     });
 
     it('should handle repo structure empty and non-empty', () => {
@@ -813,10 +817,10 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
-      expect(yamlText).not.toContain('folders: []'); // Empty arrays are removed
-      expect(yamlText).toContain('successful:'); // Non-empty section still present
+      expect(yamlText).toContain('status: "empty"');
+      expect(yamlText).not.toContain('files: []');
+      expect(yamlText).not.toContain('folders: []');
+      expect(yamlText).toContain('status: "success"');
       expect(yamlText).toContain('path: "README.md"');
       expect(yamlText).toContain('path: "src"');
     });
@@ -842,7 +846,7 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('status: "success"');
       expect(yamlText).toContain('path: "src/index.ts"');
       expect(yamlText).toContain('url: "https://example"');
     });
@@ -877,11 +881,11 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain(
         'error: "File is empty - no content to display"'
       );
-      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('status: "success"');
       expect(yamlText).toContain('content: "console.log(1);"');
     });
 
@@ -896,9 +900,9 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('failed:');
+      expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain('error: "GitHub API error"');
-      expect(yamlText).toContain('originalQuery:');
+      expect(yamlText).toContain('query:');
     });
   });
 });

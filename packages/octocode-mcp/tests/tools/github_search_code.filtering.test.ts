@@ -145,23 +145,11 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      expect(resultText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Use function/class names or error strings as keywords to find definitions and usages"
-      - "Derive matchString for file fetches from code search text_matches"
-      - "Scope away from noise directories by setting path to src/, packages/*/src"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(resultText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         files:
           - path: "src/index.js"
@@ -170,6 +158,18 @@ data:
           - path: "src/components/component.js"
             text_matches:
               - "const Component=()=>{};"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Use function/class names or error strings as keywords to find definitions and usages"
+        - "Derive matchString for file fetches from code search text_matches"
+        - "Scope away from noise directories by setting path to src/, packages/*/src"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -227,30 +227,29 @@ data:
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      expect(resultText).toEqual(`hints:
-  - "Query results: 1 empty"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    empty:
-      - "Try broader search terms or related concepts"
-      - "Use functional descriptions that focus on what the code accomplishes"
-      - "Use extension, filename, path filters to target specific directories and file names"
-      - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
-      - "After discovery, add owner/repo to narrow scope; set limit to cap results"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(resultText).toEqual(`data:
   queries:
-    empty:
-      - owner: "test"
+    - status: "empty"
+      data:
+        owner: "test"
         repo: "repo"
-        metadata:
-          originalQuery:
-            owner: "test"
-            repo: "repo"
-            keywordsToSearch:
-              - "lock"
+      hints:
+        - "Try broader search terms or related concepts"
+        - "Use functional descriptions that focus on what the code accomplishes"
+        - "Use extension, filename, path filters to target specific directories and file names"
+        - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
+        - "After discovery, add owner/repo to narrow scope; set limit to cap results"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+      query:
+        owner: "test"
+        repo: "repo"
+        keywordsToSearch:
+          - "lock"
+hints:
+  - "Query results: 1 empty"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -317,27 +316,27 @@ data:
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      expect(resultText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Use function/class names or error strings as keywords to find definitions and usages"
-      - "Derive matchString for file fetches from code search text_matches"
-      - "Scope away from noise directories by setting path to src/, packages/*/src"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(resultText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         files:
           - path: "src/utils.js"
           - path: "src/helper.js"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Use function/class names or error strings as keywords to find definitions and usages"
+        - "Derive matchString for file fetches from code search text_matches"
+        - "Scope away from noise directories by setting path to src/, packages/*/src"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -413,27 +412,27 @@ data:
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      expect(resultText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Use function/class names or error strings as keywords to find definitions and usages"
-      - "Derive matchString for file fetches from code search text_matches"
-      - "Scope away from noise directories by setting path to src/, packages/*/src"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(resultText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         files:
           - path: "src/app.js"
           - path: "src/index.js"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Use function/class names or error strings as keywords to find definitions and usages"
+        - "Derive matchString for file fetches from code search text_matches"
+        - "Scope away from noise directories by setting path to src/, packages/*/src"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -517,31 +516,42 @@ data:
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      expect(resultText).toEqual(`hints:
-  - "Query results: 2 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Use function/class names or error strings as keywords to find definitions and usages"
-      - "Derive matchString for file fetches from code search text_matches"
-      - "Scope away from noise directories by setting path to src/, packages/*/src"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(resultText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         files:
           - path: "src/component.js"
-      - owner: "test"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Use function/class names or error strings as keywords to find definitions and usages"
+        - "Derive matchString for file fetches from code search text_matches"
+        - "Scope away from noise directories by setting path to src/, packages/*/src"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         files:
           - path: "src/utils.ts"
           - path: ".env"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Use function/class names or error strings as keywords to find definitions and usages"
+        - "Derive matchString for file fetches from code search text_matches"
+        - "Scope away from noise directories by setting path to src/, packages/*/src"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+hints:
+  - "Query results: 2 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
   });

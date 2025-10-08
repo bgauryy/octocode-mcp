@@ -134,8 +134,7 @@ export const ERROR_RECOVERY_TOOL: Record<string, string[]> = {
 
 // Bulk operations hints
 export const BULK_OPERATIONS_HINTS = {
-  QUERY_CATEGORY_GUIDANCE:
-    'Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries',
+  REVIEW_HINTS_GUIDANCE: 'Review hints below for guidance on next steps',
   NO_QUERIES_PROCESSED: 'No queries processed',
 } as const;
 

@@ -78,28 +78,26 @@ describe('Empty Arrays Removal in Responses', () => {
 
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 empty"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    empty:
-      - "Try broader search terms or related concepts"
-      - "Use functional descriptions that focus on what the code accomplishes"
-      - "Use extension, filename, path filters to target specific directories and file names"
-      - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
-      - "After discovery, add owner/repo to narrow scope; set limit to cap results"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(responseText).toEqual(`data:
   queries:
-    empty:
-      - reasoning: "Test empty array removal"
-        metadata:
-          originalQuery:
-            reasoning: "Test empty array removal"
-            keywordsToSearch:
-              - "nonexistent"
+    - reasoning: "Test empty array removal"
+      status: "empty"
+      hints:
+        - "Try broader search terms or related concepts"
+        - "Use functional descriptions that focus on what the code accomplishes"
+        - "Use extension, filename, path filters to target specific directories and file names"
+        - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
+        - "After discovery, add owner/repo to narrow scope; set limit to cap results"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+      query:
+        reasoning: "Test empty array removal"
+        keywordsToSearch:
+          - "nonexistent"
+hints:
+  - "Query results: 1 empty"
+  - "Review hints below for guidance on next steps"
 `);
 
       // Should not contain "files: []" or similar empty array indicators
@@ -133,8 +131,7 @@ data:
       expect(responseText).not.toMatch(/repositories:\s*\[\]/);
       expect(responseText).not.toMatch(/repositories:\s*$/m);
 
-      // Should contain empty section
-      expect(responseText).toContain('empty:');
+      expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('1 empty');
     });
   });
@@ -167,8 +164,7 @@ data:
       expect(responseText).not.toMatch(/files:\s*\[\]/);
       expect(responseText).not.toMatch(/folders:\s*\[\]/);
 
-      // Should contain empty section
-      expect(responseText).toContain('empty:');
+      expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('1 empty');
     });
   });
@@ -206,9 +202,8 @@ data:
       // Should not have empty arrays anywhere
       expect(responseText).not.toMatch(/:\s*\[\]\s*$/m);
 
-      // Should have both successful and empty sections
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('1 successful, 1 empty');
     });
   });
@@ -244,7 +239,6 @@ data:
       // Should not contain any empty array syntax
       expect(responseText).not.toMatch(/:\s*\[\]\s*/);
 
-      // File should still be present but without empty matches field
       expect(responseText).toContain('file1.js');
     });
   });
@@ -272,17 +266,12 @@ data:
 
       const responseText = result.content[0]?.text as string;
 
-      // Hints should exist and not be empty
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('successful:');
+      expect(responseText).toContain('status: "success"');
 
-      // Should have actual hints (array with content)
-      expect(responseText).toMatch(/successful:\s*\n\s*-/);
+      expect(responseText).toMatch(/hints:\s*\n\s*-/);
 
-      // Should not have empty hint sections
-      expect(responseText).not.toMatch(/successful:\s*\[\]/);
-      expect(responseText).not.toMatch(/empty:\s*\[\]/);
-      expect(responseText).not.toMatch(/failed:\s*\[\]/);
+      expect(responseText).not.toMatch(/hints:\s*\[\]/);
     });
   });
 });

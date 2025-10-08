@@ -60,23 +60,11 @@ describe('GitHub View Repository Structure Tool', () => {
       content: [
         {
           type: 'text',
-          text: `hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+          text: `data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
@@ -85,6 +73,18 @@ data:
         folders:
           - "/src"
           - "/tests"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `,
         },
       ],
@@ -171,32 +171,26 @@ data:
       ],
     });
 
-    expect(responseText).toEqual(`hints:
-  - "Query results: 1 failed"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    failed:
-      - "Resource not found. Verify spelling and accessibility"
-      - "Verify repository owner and name are correct"
-      - "Check that the branch exists (try \\"main\\" or \\"master\\")"
-      - "Ensure you have access to the repository"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+    expect(responseText).toEqual(`data:
   queries:
-    failed:
-      - owner: "nonexistent"
-        repo: "repo"
-        path: "/"
+    - status: "error"
+      data:
         error: "Repository not found or access denied"
-        metadata:
-          error: "Repository not found or access denied"
-          originalQuery:
-            owner: "nonexistent"
-            repo: "repo"
-            branch: "main"
-          searchType: "api_error"
+      hints:
+        - "Resource not found. Verify spelling and accessibility"
+        - "Verify repository owner and name are correct"
+        - "Check that the branch exists (try \\"main\\" or \\"master\\")"
+        - "Ensure you have access to the repository"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+      query:
+        owner: "nonexistent"
+        repo: "repo"
+        branch: "main"
+hints:
+  - "Query results: 1 failed"
+  - "Review hints below for guidance on next steps"
 `);
   });
 
@@ -218,23 +212,11 @@ data:
       content: [
         {
           type: 'text',
-          text: `hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+          text: `data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "src"
         files:
@@ -243,6 +225,18 @@ data:
         folders:
           - "/src"
           - "/tests"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `,
         },
       ],
@@ -398,21 +392,15 @@ data:
         ],
       });
 
-      // Verify branch field is not in the output
       expect(responseText).not.toContain('branch:');
       expect(responseText).not.toContain('branch: "main"');
-
-      // Verify other expected fields are present in new format
-      expect(responseText).toContain('successful:');
+      expect(responseText).toContain('status: "success"');
       expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('path: "/"');
       expect(responseText).toContain('1 successful');
-      expect(responseText).toContain('improve your research strategy');
+      expect(responseText).toContain('guidance on next steps');
       expect(responseText).toContain('files:');
       expect(responseText).toContain('folders:');
-      // Should NOT contain empty sections
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
     });
 
     it('should use correct field ordering: queryId, reasoning, repository, path, files, folders', async () => {

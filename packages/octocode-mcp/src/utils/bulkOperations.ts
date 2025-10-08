@@ -1,29 +1,11 @@
-/**
- * Shared bulk operations utilities for consistent patterns across all MCP tools
- *
- * This module provides common functionality for:
- * - Parallel query processing with error isolation
- * - Result aggregation into successful/empty/failed structure
- * - Organized hint generation per query outcome
- *
- * Response structure:
- * data:
- *   queries:
- *     successful: [...] // queries that returned results
- *     empty: [...]      // queries that ran but found no matches
- *     failed: [...]     // queries that encountered errors
- *   hints:
- *     successful: [...] // hints for working with results
- *     empty: [...]      // hints for refining empty queries
- *     failed: [...]     // hints for recovering from errors
- */
-
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolName, TOOL_NAMES } from '../constants.js';
-import { generateHints } from '../tools/hints.js';
+import { generateHints, OrganizedHints } from '../tools/hints.js';
 import { BULK_OPERATIONS_HINTS } from '../tools/hintsContent.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 import { createResponseFormat, type ToolResponse } from '../responses.js';
+
+export type QueryStatus = 'success' | 'empty' | 'error';
 
 export interface ProcessedBulkResult {
   researchGoal?: string;
@@ -31,8 +13,20 @@ export interface ProcessedBulkResult {
   researchSuggestions?: string[];
   data?: unknown;
   error?: string;
+  status?: QueryStatus;
   hints?: string[];
+  query?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+}
+
+export interface FlatQueryResult {
+  researchGoal?: string;
+  reasoning?: string;
+  researchSuggestions?: string[];
+  status: QueryStatus;
+  data: Record<string, unknown>;
+  hints: string[];
+  query?: Record<string, unknown>;
 }
 
 export interface QueryError {
@@ -128,6 +122,10 @@ export function createBulkResponse<
     'researchGoal',
     'reasoning',
     'researchSuggestions',
+    'status',
+    'data',
+    'hints',
+    'query',
     'owner',
     'repo',
   ];
@@ -135,131 +133,97 @@ export function createBulkResponse<
     ...new Set([...standardFields, ...(config.keysPriority || [])]),
   ];
 
-  const successItems: Record<string, unknown>[] = [];
-  const noResultItems: Record<string, unknown>[] = [];
-  const errorItems: Record<string, unknown>[] = [];
+  const flatQueries: FlatQueryResult[] = [];
 
-  // Process errors
-  errors.forEach(error => {
-    const originalQuery = queries[error.queryIndex];
-    if (!originalQuery) return;
-
-    const item: Record<string, unknown> = {
-      error: error.error,
-      metadata: { originalQuery },
-    };
-
-    const researchGoal = safeExtractString(originalQuery, 'researchGoal');
-    const reasoning = safeExtractString(originalQuery, 'reasoning');
-    const researchSuggestions = safeExtractStringArray(
-      originalQuery,
-      'researchSuggestions'
-    );
-    if (researchGoal) item.researchGoal = researchGoal;
-    if (reasoning) item.reasoning = reasoning;
-    if (researchSuggestions) item.researchSuggestions = researchSuggestions;
-
-    errorItems.push(item);
-  });
+  let successCount = 0;
+  let emptyCount = 0;
+  let errorCount = 0;
 
   results.forEach(r => {
-    const item = { ...(r.result as Record<string, unknown>) };
-    const query = r.originalQuery as Record<string, unknown>;
+    const status = determineQueryStatus(config.toolName, r.result);
+    const toolData = extractToolData(r.result);
 
-    if (!item.researchGoal)
-      item.researchGoal = safeExtractString(query, 'researchGoal');
-    if (!item.reasoning) item.reasoning = safeExtractString(query, 'reasoning');
+    const queryHints = generateHints({
+      toolName: config.toolName,
+      resultType:
+        status === 'success'
+          ? 'successful'
+          : status === 'empty'
+            ? 'empty'
+            : 'failed',
+      errorMessage: r.result.error,
+    });
 
-    // Keep researchSuggestions from both item and query
-    const itemResearchSuggestions = safeExtractStringArray(
-      item,
-      'researchSuggestions'
-    );
-    const queryResearchSuggestions = safeExtractStringArray(
-      query,
-      'researchSuggestions'
-    );
+    const flatQuery: FlatQueryResult = {
+      researchGoal:
+        r.result.researchGoal ||
+        safeExtractString(r.originalQuery, 'researchGoal'),
+      reasoning:
+        r.result.reasoning || safeExtractString(r.originalQuery, 'reasoning'),
+      researchSuggestions: mergeResearchSuggestions(r.result, r.originalQuery),
+      status,
+      data:
+        status === 'error' && r.result.error
+          ? { error: r.result.error }
+          : toolData,
+      hints: extractHintsForStatus(queryHints, status),
+    };
 
-    // Merge researchSuggestions from both sources
-    if (itemResearchSuggestions || queryResearchSuggestions) {
-      const merged = [
-        ...(itemResearchSuggestions || []),
-        ...(queryResearchSuggestions || []),
-      ];
-      if (merged.length > 0) {
-        item.researchSuggestions = merged;
-      }
+    if (status !== 'success') {
+      flatQuery.query = r.originalQuery;
     }
 
-    if (item.error) {
-      if (!item.metadata) item.metadata = {};
-      (item.metadata as Record<string, unknown>).originalQuery = query;
-      errorItems.push(item);
-    } else if (isNoResultsForTool(config.toolName, item)) {
-      if (!item.metadata) item.metadata = {};
-      (item.metadata as Record<string, unknown>).originalQuery = query;
-      noResultItems.push(item);
-    } else {
-      delete item.metadata;
-      successItems.push(item);
-    }
+    flatQueries.push(flatQuery);
+
+    if (status === 'success') successCount++;
+    else if (status === 'empty') emptyCount++;
+    else errorCount++;
   });
 
-  // Build queries object - only include sections with data
-  const queriesData: Record<string, unknown[]> = {};
-  const hintsData: Record<string, string[]> = {};
+  errors.forEach(err => {
+    const originalQuery = queries[err.queryIndex];
+    if (!originalQuery) return;
 
-  if (successItems.length > 0) {
-    queriesData.successful = successItems;
-    const successfulHints = generateHints({
-      toolName: config.toolName,
-      resultType: 'successful',
-    });
-    hintsData.successful = successfulHints.successful || [];
-  }
-
-  if (noResultItems.length > 0) {
-    queriesData.empty = noResultItems;
-    const emptyHints = generateHints({
-      toolName: config.toolName,
-      resultType: 'empty',
-    });
-    hintsData.empty = emptyHints.empty || [];
-  }
-
-  if (errorItems.length > 0) {
-    queriesData.failed = errorItems;
-    const failedHints = generateHints({
+    const errorHints = generateHints({
       toolName: config.toolName,
       resultType: 'failed',
-      errorMessage: errors[0]?.error || (errorItems[0]?.error as string),
+      errorMessage: err.error,
     });
-    hintsData.failed = failedHints.failed || [];
-  }
 
-  // Build data object - only include if we have queries
-  const data: Record<string, unknown> = {};
-  if (Object.keys(queriesData).length > 0) {
-    data.queries = queriesData;
-  }
-  if (Object.keys(hintsData).length > 0) {
-    data.hints = hintsData;
-  }
+    flatQueries.push({
+      researchGoal: safeExtractString(originalQuery, 'researchGoal'),
+      reasoning: safeExtractString(originalQuery, 'reasoning'),
+      researchSuggestions: safeExtractStringArray(
+        originalQuery,
+        'researchSuggestions'
+      ),
+      status: 'error',
+      data: { error: err.error },
+      query: originalQuery,
+      hints: errorHints.failed || [],
+    });
+
+    errorCount++;
+  });
 
   const counts = [];
-  if (successItems.length > 0) counts.push(`${successItems.length} successful`);
-  if (noResultItems.length > 0) counts.push(`${noResultItems.length} empty`);
-  if (errorItems.length > 0) counts.push(`${errorItems.length} failed`);
+  if (successCount > 0) counts.push(`${successCount} successful`);
+  if (emptyCount > 0) counts.push(`${emptyCount} empty`);
+  if (errorCount > 0) counts.push(`${errorCount} failed`);
+
+  const topLevelHints =
+    counts.length > 0
+      ? [
+          `Query results: ${counts.join(', ')}`,
+          BULK_OPERATIONS_HINTS.REVIEW_HINTS_GUIDANCE,
+        ]
+      : [BULK_OPERATIONS_HINTS.NO_QUERIES_PROCESSED];
 
   const responseData: ToolResponse = {
-    data,
-    hints:
-      counts.length > 0
-        ? [
-            `Query results: ${counts.join(', ')}`,
-            BULK_OPERATIONS_HINTS.QUERY_CATEGORY_GUIDANCE,
-          ]
-        : [BULK_OPERATIONS_HINTS.NO_QUERIES_PROCESSED],
+    data: {
+      queries: flatQueries,
+    },
+    hints: topLevelHints,
   };
 
   return {
@@ -271,6 +235,68 @@ export function createBulkResponse<
     ],
     isError: false,
   };
+}
+
+function determineQueryStatus(
+  toolName: ToolName,
+  result: ProcessedBulkResult
+): QueryStatus {
+  if (result.error) return 'error';
+  if (isNoResultsForTool(toolName, result as Record<string, unknown>)) {
+    return 'empty';
+  }
+  return 'success';
+}
+
+function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
+  const resultObj = result as Record<string, unknown>;
+  const excludedKeys = new Set([
+    'researchGoal',
+    'reasoning',
+    'researchSuggestions',
+    'error',
+    'hints',
+    'metadata',
+    'status',
+    'query',
+  ]);
+
+  const toolData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(resultObj)) {
+    if (!excludedKeys.has(key)) {
+      toolData[key] = value;
+    }
+  }
+
+  return toolData;
+}
+
+function extractHintsForStatus(
+  hints: OrganizedHints,
+  status: QueryStatus
+): string[] {
+  if (status === 'success') return hints.successful || [];
+  if (status === 'empty') return hints.empty || [];
+  return hints.failed || [];
+}
+
+function mergeResearchSuggestions(
+  result: ProcessedBulkResult,
+  query: Record<string, unknown>
+): string[] | undefined {
+  const itemSuggestions = safeExtractStringArray(
+    result as Record<string, unknown>,
+    'researchSuggestions'
+  );
+  const querySuggestions = safeExtractStringArray(query, 'researchSuggestions');
+
+  if (itemSuggestions || querySuggestions) {
+    const merged = [...(itemSuggestions || []), ...(querySuggestions || [])];
+    if (merged.length > 0) {
+      return merged;
+    }
+  }
+  return undefined;
 }
 
 function safeExtractString(

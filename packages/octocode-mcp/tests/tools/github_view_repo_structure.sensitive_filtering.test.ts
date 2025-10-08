@@ -141,23 +141,11 @@ describe('GitHub View Repo Structure - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
@@ -165,6 +153,18 @@ data:
           - "/README.md"
         folders:
           - "/src"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -259,23 +259,11 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
@@ -283,6 +271,18 @@ data:
         folders:
           - "/lib"
           - "/src"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -388,28 +388,28 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         folders:
           - "/src"
           - "/tests"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -526,28 +526,28 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         folders:
           - "/docs"
           - "/src"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
   });
@@ -655,23 +655,11 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
@@ -679,6 +667,18 @@ data:
           - "/package.json"
           - "/pnpm-lock.yaml"
           - "/README.md"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -795,28 +795,28 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
           - "/config.js"
           - "/settings.js"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -944,28 +944,28 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
           - "/app.js"
           - "/main.py"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -1049,28 +1049,28 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
           - "/app.js"
           - "/styles.css"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -1143,28 +1143,28 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
           - "/package.json"
           - "/README.md"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
   });
@@ -1353,23 +1353,11 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
@@ -1379,6 +1367,18 @@ data:
         folders:
           - "/docs"
           - "/src"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -1462,46 +1462,30 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 empty"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    empty:
-      - "Try broader search terms or related concepts"
-      - "Use functional descriptions that focus on what the code accomplishes"
-      - "Validate the file path using code search with matching patterns"
-      - "Try branch fallbacks: main, master, develop or omit branch to use default"
-      - "For monorepos, try path: \\"packages\\", \\"apps\\", or \\"services\\" and set depth: 2"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    empty:
-      - owner: "test"
+    - status: "empty"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
-        metadata:
-          path: "/"
-          folders:
-            count: 0
-          branch: "main"
-          originalQuery:
-            owner: "test"
-            repo: "repo"
-            path: ""
-            branch: "main"
-          queryArgs:
-            owner: "test"
-            repo: "repo"
-            branch: "main"
-          searchType: "success"
-          summary:
-            filtered: true
-            originalCount: 5
-            totalFiles: 0
-            totalFolders: 0
-            truncated: true
+      hints:
+        - "Try broader search terms or related concepts"
+        - "Use functional descriptions that focus on what the code accomplishes"
+        - "Validate the file path using code search with matching patterns"
+        - "Try branch fallbacks: main, master, develop or omit branch to use default"
+        - "For monorepos, try path: \\"packages\\", \\"apps\\", or \\"services\\" and set depth: 2"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+      query:
+        owner: "test"
+        repo: "repo"
+        path: ""
+        branch: "main"
+hints:
+  - "Query results: 1 empty"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -1576,29 +1560,29 @@ data:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Explore src/ or packages/ first for relevant files"
-      - "Use depth: 2 to surface key files/folders quickly"
-      - "Build targeted code searches from discovered path and filename patterns"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Focus on source code and example directories for implementation details"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - owner: "test"
+    - status: "success"
+      data:
+        owner: "test"
         repo: "repo"
         path: "/"
         files:
           - "/src/config.js"
         folders:
           - "/src"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Explore src/ or packages/ first for relevant files"
+        - "Use depth: 2 to surface key files/folders quickly"
+        - "Build targeted code searches from discovered path and filename patterns"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Focus on source code and example directories for implementation details"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
   });

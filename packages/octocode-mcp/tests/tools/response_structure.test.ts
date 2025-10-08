@@ -101,27 +101,27 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Use function/class names or error strings as keywords to find definitions and usages"
-      - "Derive matchString for file fetches from code search text_matches"
-      - "Scope away from noise directories by setting path to src/, packages/*/src"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - reasoning: "Test successful"
+    - reasoning: "Test successful"
+      status: "success"
+      data:
         files:
           - path: "file1.js"
             text_matches:
               - "test"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Use function/class names or error strings as keywords to find definitions and usages"
+        - "Derive matchString for file fetches from code search text_matches"
+        - "Scope away from noise directories by setting path to src/, packages/*/src"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -140,28 +140,26 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 empty"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    empty:
-      - "Try broader search terms or related concepts"
-      - "Use functional descriptions that focus on what the code accomplishes"
-      - "Use extension, filename, path filters to target specific directories and file names"
-      - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
-      - "After discovery, add owner/repo to narrow scope; set limit to cap results"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(responseText).toEqual(`data:
   queries:
-    empty:
-      - reasoning: "Test empty"
-        metadata:
-          originalQuery:
-            reasoning: "Test empty"
-            keywordsToSearch:
-              - "nonexistent"
+    - reasoning: "Test empty"
+      status: "empty"
+      hints:
+        - "Try broader search terms or related concepts"
+        - "Use functional descriptions that focus on what the code accomplishes"
+        - "Use extension, filename, path filters to target specific directories and file names"
+        - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
+        - "After discovery, add owner/repo to narrow scope; set limit to cap results"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+      query:
+        reasoning: "Test empty"
+        keywordsToSearch:
+          - "nonexistent"
+hints:
+  - "Query results: 1 empty"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -180,27 +178,26 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toEqual(`hints:
-  - "Query results: 1 failed"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    failed:
-      - "Verify search parameters are valid and not overly restrictive"
-      - "Try removing filters (extension, path) to broaden search scope"
-      - "Check repository exists and is accessible if using owner/repo filters"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_fetch_content with matchString from search results for precise context extraction"
+      expect(responseText).toEqual(`data:
   queries:
-    failed:
-      - reasoning: "Test failed"
+    - reasoning: "Test failed"
+      status: "error"
+      data:
         error: "API error"
-        metadata:
-          originalQuery:
-            reasoning: "Test failed"
-            keywordsToSearch:
-              - "error"
+      hints:
+        - "Verify search parameters are valid and not overly restrictive"
+        - "Try removing filters (extension, path) to broaden search scope"
+        - "Check repository exists and is accessible if using owner/repo filters"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_fetch_content with matchString from search results for precise context extraction"
+      query:
+        reasoning: "Test failed"
+        keywordsToSearch:
+          - "error"
+hints:
+  - "Query results: 1 failed"
+  - "Review hints below for guidance on next steps"
 `);
     });
 
@@ -223,9 +220,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 empty');
     });
 
@@ -248,9 +245,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 failed');
     });
 
@@ -271,9 +268,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 empty, 1 failed');
     });
 
@@ -300,9 +297,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 empty, 1 failed');
     });
   });
@@ -335,9 +332,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 successful');
     });
 
@@ -358,9 +355,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 failed');
     });
 
@@ -397,9 +394,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 failed');
     });
   });
@@ -428,9 +425,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 successful');
     });
 
@@ -449,9 +446,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
     });
 
@@ -480,9 +477,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 empty, 1 failed');
     });
   });
@@ -508,9 +505,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 successful');
     });
 
@@ -530,9 +527,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
     });
 
@@ -559,9 +556,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 empty, 1 failed');
     });
   });
@@ -589,9 +586,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 successful');
     });
 
@@ -613,9 +610,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
     });
 
@@ -657,9 +654,9 @@ data:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 successful, 1 empty, 1 failed');
     });
   });
@@ -693,16 +690,12 @@ data:
 
       const responseText = result.content[0]?.text as string;
 
-      // Check hints structure
       expect(responseText).toContain('hints:');
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
 
-      // Check that hints are specific to each type
-      expect(responseText).toMatch(/hints:[\s\S]*successful:[\s\S]*-/); // has hints for successful
-      expect(responseText).toMatch(/hints:[\s\S]*empty:[\s\S]*-/); // has hints for empty
-      expect(responseText).toMatch(/hints:[\s\S]*failed:[\s\S]*-/); // has hints for failed
+      expect(responseText).toMatch(/hints:[\s\S]*-/);
     });
 
     it('should only include hint sections for result types that exist', async () => {
@@ -718,11 +711,9 @@ data:
 
       const responseText = result.content[0]?.text as string;
 
-      // Check hints structure - should only have successful hints
-      const hintsSection = responseText.match(/hints:[\s\S]*$/)?.[0] || '';
-      expect(hintsSection).toContain('successful:');
-      expect(hintsSection).not.toContain('empty:');
-      expect(hintsSection).not.toContain('failed:');
+      expect(responseText).toContain('status: "success"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
     });
   });
 });

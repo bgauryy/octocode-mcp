@@ -17,6 +17,7 @@ import {
   processBulkQueries,
   createBulkResponse,
   type BulkResponseConfig,
+  type ProcessedBulkResult,
 } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
@@ -81,7 +82,7 @@ async function exploreMultipleRepositoryStructures(
     async (
       query: GitHubViewRepoStructureQuery,
       _index: number
-    ): Promise<RepoStructureResult> => {
+    ): Promise<ProcessedBulkResult> => {
       try {
         // TypeScript and Zod validation ensure all required fields are properly typed
         // No manual validation needed - trust the type system!
@@ -119,7 +120,7 @@ async function exploreMultipleRepositoryStructures(
               error: apiResult.error,
               searchType: 'api_error',
             },
-          };
+          } as ProcessedBulkResult;
         }
 
         // Success case - use simplified structure with filtering
@@ -177,15 +178,12 @@ async function exploreMultipleRepositoryStructures(
             path: apiRequest.path || '/',
             folders: apiResult.folders,
             summary: apiResult.summary,
-            // Always include queryArgs for no-result cases (handled by bulk operations)
             ...(hasResults ? {} : { queryArgs: { ...apiRequest } }),
             searchType: 'success',
           },
         };
 
-        // Summary and queryArgs are handled by the bulk response processor
-
-        return result;
+        return result as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
@@ -205,7 +203,7 @@ async function exploreMultipleRepositoryStructures(
             error: `Failed to explore repository structure: ${errorMessage}`,
             searchType: 'api_error',
           },
-        };
+        } as ProcessedBulkResult;
       }
     }
   );

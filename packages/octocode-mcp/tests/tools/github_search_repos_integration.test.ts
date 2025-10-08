@@ -64,25 +64,11 @@ describe('GitHub Search Repositories Response Structure Test', () => {
       ],
     });
 
-    // Verify exact YAML structure - no total_count, forks, or language fields
-    expect(responseText).toEqual(`hints:
-  - "Query results: 1 successful"
-  - "Review hints for each query category, response hints, and researchSuggestions to improve your research strategy and refine follow-up queries"
-data:
-  hints:
-    successful:
-      - "Analyze top results in depth before expanding search"
-      - "Cross-reference findings across multiple sources"
-      - "Prioritize via sort and analyze the top 3-5 repositories in depth"
-      - "After selection, run structure view first, then scoped code search"
-      - "Avoid curated list repos by using implementation-oriented keywords"
-      - "Chain tools: repository search → structure view → code search → content fetch"
-      - "Compare implementations across 3-5 repositories to identify best practices"
-      - "Use github_view_repo_structure first to understand project layout"
-      - "Start with repository search to find relevant projects, then search within them"
+    expect(responseText).toEqual(`data:
   queries:
-    successful:
-      - reasoning: "Testing response structure"
+    - reasoning: "Testing response structure"
+      status: "success"
+      data:
         repositories:
           - description: "A declarative, efficient, and flexible JavaScript library for building user interfaces."
             repository: "facebook/react"
@@ -94,6 +80,19 @@ data:
             stars: 100000
             updatedAt: "14/01/2024"
             url: "https://github.com/vercel/next.js"
+      hints:
+        - "Analyze top results in depth before expanding search"
+        - "Cross-reference findings across multiple sources"
+        - "Prioritize via sort and analyze the top 3-5 repositories in depth"
+        - "After selection, run structure view first, then scoped code search"
+        - "Avoid curated list repos by using implementation-oriented keywords"
+        - "Chain tools: repository search → structure view → code search → content fetch"
+        - "Compare implementations across 3-5 repositories to identify best practices"
+        - "Use github_view_repo_structure first to understand project layout"
+        - "Start with repository search to find relevant projects, then search within them"
+hints:
+  - "Query results: 1 successful"
+  - "Review hints below for guidance on next steps"
 `);
   }, 5000);
 });
