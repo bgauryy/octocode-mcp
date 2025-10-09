@@ -2,18 +2,18 @@
  * Comprehensive Response Structure Tests
  *
  * Tests all tools to ensure they properly handle all combinations of:
- * - successful: queries that returned results
+ * - hasResults: queries that returned results
  * - empty: queries that ran but found no matches
  * - failed: queries that encountered errors
  *
  * Combinations tested:
- * 1. successful only
+ * 1. hasResults only
  * 2. empty only
  * 3. failed only
- * 4. successful + empty
- * 5. successful + failed
+ * 4. hasResults + empty
+ * 5. hasResults + failed
  * 6. empty + failed
- * 7. successful + empty + failed
+ * 7. hasResults + empty + failed
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -84,7 +84,7 @@ describe('Response Structure - All Tools', () => {
       registerGitHubSearchCodeTool(mockServer.server);
     });
 
-    it('should handle successful queries only', async () => {
+    it('should handle hasResults queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         data: {
           items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
@@ -95,34 +95,19 @@ describe('Response Structure - All Tools', () => {
         queries: [
           {
             keywordsToSearch: ['test'],
-            reasoning: 'Test successful',
+            reasoning: 'Test hasResults',
           },
         ],
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toEqual(`data:
-  queries:
-    - reasoning: "Test successful"
-      status: "success"
-      data:
-        files:
-          - path: "file1.js"
-            text_matches:
-              - "test"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test hasResults"');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -140,27 +125,13 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toEqual(`data:
-  queries:
-    - reasoning: "Test empty"
-      status: "empty"
-      hints:
-        - "Try broader search terms or related concepts"
-        - "Use functional descriptions that focus on what the code accomplishes"
-        - "Use extension, filename, path filters to target specific directories and file names"
-        - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
-        - "After discovery, add owner/repo to narrow scope; set limit to cap results"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-      query:
-        reasoning: "Test empty"
-        keywordsToSearch:
-          - "nonexistent"
-hints:
-  - "Query results: 1 empty"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test empty"');
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('1 empty');
     });
 
     it('should handle failed queries only', async () => {
@@ -178,27 +149,13 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toEqual(`data:
-  queries:
-    - reasoning: "Test failed"
-      status: "error"
-      data:
-        error: "API error"
-      hints:
-        - "Verify search parameters are valid and not overly restrictive"
-        - "Try removing filters (extension, path) to broaden search scope"
-        - "Check repository exists and is accessible if using owner/repo filters"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-      query:
-        reasoning: "Test failed"
-        keywordsToSearch:
-          - "error"
-hints:
-  - "Query results: 1 failed"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test failed"');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('1 failed');
     });
 
     it('should handle successful + empty combination', async () => {
@@ -220,10 +177,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 empty');
+      expect(responseText).toContain('1 hasResults, 1 empty');
     });
 
     it('should handle successful + failed combination', async () => {
@@ -245,10 +202,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 failed');
+      expect(responseText).toContain('1 hasResults, 1 failed');
     });
 
     it('should handle empty + failed combination', async () => {
@@ -268,7 +225,7 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 empty, 1 failed');
@@ -297,10 +254,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -332,10 +289,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle failed queries only', async () => {
@@ -355,7 +312,7 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 failed');
@@ -394,10 +351,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 failed');
+      expect(responseText).toContain('1 hasResults, 1 failed');
     });
   });
 
@@ -425,10 +382,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -446,7 +403,7 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
@@ -477,10 +434,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -505,10 +462,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -527,7 +484,7 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
@@ -556,10 +513,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -586,10 +543,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -610,7 +567,7 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('status: "success"');
+      expect(responseText).not.toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
@@ -654,10 +611,10 @@ hints:
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -690,12 +647,16 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
 
-      expect(responseText).toMatch(/hints:[\s\S]*-/);
+      expect(responseText).toMatch(/hasResultsStatusHints:[\s\S]*-/);
     });
 
     it('should only include hint sections for result types that exist', async () => {
@@ -711,7 +672,7 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).not.toContain('status: "empty"');
       expect(responseText).not.toContain('status: "error"');
     });

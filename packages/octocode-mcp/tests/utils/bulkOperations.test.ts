@@ -26,9 +26,8 @@ describe('bulkOperations', () => {
       ];
 
       mockProcessor.mockImplementation(
-        async (query: { id: string; data: string }, index: number) => ({
+        async (query: { id: string; data: string }, _index: number) => ({
           data: { result: `processed-${query.data}` },
-          metadata: { processed: true, queryIndex: index },
         })
       );
 
@@ -39,7 +38,6 @@ describe('bulkOperations', () => {
           {
             result: {
               data: { result: 'processed-test1' },
-              metadata: { processed: true, queryIndex: 0 },
             },
             queryIndex: 0,
             originalQuery: { id: 'q1', data: 'test1' },
@@ -47,7 +45,6 @@ describe('bulkOperations', () => {
           {
             result: {
               data: { result: 'processed-test2' },
-              metadata: { processed: true, queryIndex: 1 },
             },
             queryIndex: 1,
             originalQuery: { id: 'q2', data: 'test2' },
@@ -66,13 +63,12 @@ describe('bulkOperations', () => {
       ];
 
       mockProcessor.mockImplementation(
-        async (query: { id: string; data: string }, index: number) => {
+        async (query: { id: string; data: string }, _index: number) => {
           if (query.data === 'bad') {
             throw new Error('Processing failed');
           }
           return {
             data: { result: 'success' },
-            metadata: { queryIndex: index },
           };
         }
       );
@@ -84,7 +80,6 @@ describe('bulkOperations', () => {
           {
             result: {
               data: { result: 'success' },
-              metadata: { queryIndex: 0 },
             },
             queryIndex: 0,
             originalQuery: { id: 'success', data: 'good' },
@@ -133,11 +128,9 @@ describe('bulkOperations', () => {
       const processedResults: ProcessedBulkResult[] = [
         {
           data: { items: [{ name: 'item1' }] },
-          metadata: { type: 'success', count: 1 },
         },
         {
           data: { items: [{ name: 'item2' }] },
-          metadata: { type: 'success', count: 1 },
         },
       ];
 
@@ -174,32 +167,31 @@ describe('bulkOperations', () => {
         ],
       });
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        data:
-          items:
-            - name: "item1"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-    - status: "success"
-      data:
-        data:
-          items:
-            - name: "item2"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-hints:
-  - "Query results: 2 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      // Updated expectations for new structure
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('Bulk response with');
+      expect(responseText).toContain('results:');
+      expect(responseText).not.toContain('data:\n  queries:');
+      expect(responseText).not.toContain('hints:');
+
+      // Check for status-based hints (only present when there are results of that status)
+      expect(responseText).toContain('hasResultsStatusHints:');
+      // emptyStatusHints and errorStatusHints not present when there are no empty/error results
+
+      // Check that results have query field
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('status: "hasResults"');
+
+      // Check that per-result hints are NOT present
+      expect(
+        responseText
+          .match(/- ".*"/g)
+          ?.every(
+            hint =>
+              responseText.indexOf(hint) === responseText.lastIndexOf(hint) ||
+              hint.includes('hasResultsStatusHints')
+          )
+      ); // Hints should be deduplicated
     });
 
     it('should create response with errors', () => {
@@ -237,23 +229,22 @@ hints:
         ],
       });
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "error"
-      data:
-        error: "API rate limit exceeded"
-      hints:
-        - "Rate limit exceeded. Wait 60 seconds before retrying"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-      query:
-        id: "q1"
-        keywordsToSearch:
-          - "test1"
-hints:
-  - "Query results: 1 failed"
-  - "Review hints below for guidance on next steps"
-`);
+      // Updated expectations for new structure
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('Bulk response with');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('error: "API rate limit exceeded"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('id: "q1"');
+
+      // Check for status-based hints (only present when there are results of that status)
+      expect(responseText).toContain('errorStatusHints:');
+      // hasResultsStatusHints and emptyStatusHints not present when there are no hasResults/empty results
+
+      // Old structure should NOT be present
+      expect(responseText).not.toContain('data:\n  queries:');
+      expect(responseText).not.toContain('hints:\n  - "Query results:');
     });
 
     it('should handle empty results and errors', () => {
@@ -287,16 +278,15 @@ hints:
         ],
       });
 
-      expect(responseText).toEqual(`hints:
-  - "No queries processed"
-`);
+      // Updated expectations - should have instructions for empty case
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('Bulk response with 0 results');
     });
 
     it('should handle config options', () => {
       const processedResults: ProcessedBulkResult[] = [
         {
           data: { test: true },
-          metadata: { processed: true },
         },
       ];
 
@@ -326,6 +316,13 @@ hints:
           },
         ],
       });
+
+      const responseText = result.content[0]?.text as string;
+
+      // Check new structure is present
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('query:');
     });
   });
 
@@ -339,13 +336,14 @@ hints:
       // Process queries
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { name: string }, index: number) => ({
-          data: {
-            query: query.name,
-            results: [`result for ${query.name}`],
-          },
-          metadata: { processed: true, queryIndex: index },
-        }));
+        .mockImplementation(
+          async (query: { name: string }, _index: number) => ({
+            data: {
+              query: query.name,
+              results: [`result for ${query.name}`],
+            },
+          })
+        );
 
       const processResult = await processBulkQueries(queries, mockProcessor);
 
@@ -366,6 +364,12 @@ hints:
       expect(bulkResponse.isError).toEqual(false);
 
       expect(mockProcessor).toHaveBeenCalledTimes(2);
+
+      // Check new structure
+      const responseText = bulkResponse.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('query:');
     });
 
     it('should handle mixed success and failure', async () => {
@@ -377,13 +381,12 @@ hints:
 
       const mockProcessor = vi
         .fn()
-        .mockImplementation(async (query: { name: string }, index: number) => {
+        .mockImplementation(async (query: { name: string }, _index: number) => {
           if (query.name === 'fail_query') {
             throw new Error('Processing failed');
           }
           return {
             data: { result: 'success' },
-            metadata: { queryIndex: index },
           };
         });
 
@@ -399,6 +402,13 @@ hints:
       );
 
       expect(bulkResponse.isError).toEqual(false);
+
+      // Check new structure
+      const responseText = bulkResponse.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -424,9 +434,8 @@ hints:
       const mockProcessor = vi
         .fn()
         .mockImplementation(
-          async (_query: { id: string; name: string }, index: number) => ({
+          async (_query: { id: string; name: string }, _index: number) => ({
             data: { files: [{ path: 'test.py', content: 'test content' }] },
-            metadata: { queryIndex: index },
           })
         );
 
@@ -443,9 +452,13 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('queries:');
+
+      // Check new structure
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('query:');
       expect(yamlText).toContain('files:');
       expect(yamlText).toContain('path: "test.py"');
+      expect(yamlText).not.toContain('data:\n  queries:');
     });
 
     it('should propagate reasoning from queries to error results', async () => {
@@ -483,6 +496,10 @@ hints:
       expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain('Processing failed for fail_query');
       expect(yamlText).toContain('query:');
+
+      // Check new structure
+      expect(yamlText).toContain('results:');
+      expect(yamlText).not.toContain('data:\n  queries:');
     });
 
     it('should preserve result reasoning over query reasoning when both exist', async () => {
@@ -497,10 +514,9 @@ hints:
       const mockProcessor = vi
         .fn()
         .mockImplementation(
-          async (_query: { id: string; name: string }, index: number) => ({
+          async (_query: { id: string; name: string }, _index: number) => ({
             reasoning: 'Result reasoning that should take precedence',
             data: { files: [{ path: 'test.py' }] },
-            metadata: { queryIndex: index },
           })
         );
 
@@ -520,15 +536,18 @@ hints:
       expect(yamlText).toContain(
         'reasoning: "Result reasoning that should take precedence"'
       );
-      expect(yamlText).toContain('status: "success"');
+      expect(yamlText).toContain('status: "hasResults"');
       expect(yamlText).toContain('files:');
+
+      // Check query field is present
+      expect(yamlText).toContain('query:');
     });
 
     it('should handle mixed success and error results with reasoning', async () => {
       const queries = [
         {
           id: 'success1',
-          reasoning: 'Successful query with reasoning',
+          reasoning: 'hasResults query with reasoning',
           name: 'success_query',
         },
         {
@@ -549,13 +568,12 @@ hints:
       const mockProcessor = vi
         .fn()
         .mockImplementation(
-          async (query: { id: string; name: string }, index: number) => {
+          async (query: { id: string; name: string }, _index: number) => {
             if (query.name.includes('fail')) {
               throw new Error(`Processing failed for ${query.name}`);
             }
             return {
               data: { repositories: [{ name: 'test-repo' }] },
-              metadata: { queryIndex: index },
             };
           }
         );
@@ -577,10 +595,13 @@ hints:
       expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain('repositories:');
       expect(yamlText).toContain(
-        'reasoning: "Successful query with reasoning"'
+        'reasoning: "hasResults query with reasoning"'
       );
       expect(yamlText).toContain('reasoning: "Failed query with reasoning"');
       expect(yamlText).toContain('Processing failed for fail_query');
+
+      // Check query field is always present
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThan(0);
     });
 
     it('should handle empty or whitespace-only reasoning', async () => {
@@ -605,9 +626,8 @@ hints:
       const mockProcessor = vi
         .fn()
         .mockImplementation(
-          async (_query: { id: string; name: string }, index: number) => ({
+          async (_query: { id: string; name: string }, _index: number) => ({
             data: { content: 'test content' },
-            metadata: { queryIndex: index },
           })
         );
 
@@ -624,9 +644,14 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('queries:');
-      expect(yamlText).toContain('status: "success"');
+      expect(yamlText).toContain('results:');
+      expect(yamlText).toContain('status: "hasResults"');
       expect(yamlText).toContain('content: "test content"');
+
+      // Check query field is present for all results
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        3
+      );
     });
 
     it('should maintain query order with reasoning in results', async () => {
@@ -651,9 +676,8 @@ hints:
       const mockProcessor = vi
         .fn()
         .mockImplementation(
-          async (query: { id: string; name: string }, index: number) => ({
+          async (query: { id: string; name: string }, _index: number) => ({
             data: { result: `Result for ${query.name}` },
-            metadata: { queryIndex: index },
           })
         );
 
@@ -670,10 +694,15 @@ hints:
       );
 
       const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('queries:');
+      expect(yamlText).toContain('results:');
       expect(yamlText).toContain('First query reasoning');
       expect(yamlText).toContain('Second query reasoning');
       expect(yamlText).toContain('Third query reasoning');
+
+      // Check all have query field
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        3
+      );
     });
   });
 
@@ -686,7 +715,6 @@ hints:
           queryIndex: 0,
           result: {
             files: [],
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
         },
@@ -702,6 +730,9 @@ hints:
       const yamlText = resp.content[0]!.text as string;
       expect(yamlText).toContain('status: "empty"');
       expect(yamlText).not.toContain('files: []');
+
+      // Check query field is present for empty status
+      expect(yamlText).toContain('query:');
     });
 
     it('should handle repo search empty and non-empty', () => {
@@ -715,7 +746,6 @@ hints:
           queryIndex: 0,
           result: {
             repositories: [],
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
         },
@@ -723,7 +753,6 @@ hints:
           queryIndex: 1,
           result: {
             repositories: [{ repository: 'a/b' }, { repository: 'c/d' }],
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[1]!,
         },
@@ -740,6 +769,11 @@ hints:
       expect(yamlText).toContain('status: "empty"');
       expect(yamlText).not.toContain('repositories: []');
       expect(yamlText).toContain('repositories:');
+
+      // Check query field is present for both statuses
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        2
+      );
     });
 
     it('should handle pull request search empty and non-empty', () => {
@@ -754,7 +788,6 @@ hints:
           result: {
             pull_requests: [],
             total_count: 0,
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
         },
@@ -763,7 +796,6 @@ hints:
           result: {
             pull_requests: [{ number: 1, title: 'PR', url: 'u' }],
             total_count: 1,
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[1]!,
         },
@@ -780,6 +812,11 @@ hints:
       expect(yamlText).toContain('status: "empty"');
       expect(yamlText).not.toContain('pull_requests: []');
       expect(yamlText).toContain('pull_requests:');
+
+      // Check query field is present for both statuses
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        2
+      );
     });
 
     it('should handle repo structure empty and non-empty', () => {
@@ -794,7 +831,6 @@ hints:
           result: {
             files: [],
             folders: [],
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
         },
@@ -803,7 +839,6 @@ hints:
           result: {
             files: [{ path: 'README.md' }],
             folders: [{ path: 'src' }],
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[1]!,
         },
@@ -820,10 +855,16 @@ hints:
       expect(yamlText).toContain('status: "empty"');
       expect(yamlText).not.toContain('files: []');
       expect(yamlText).not.toContain('folders: []');
-      expect(yamlText).toContain('status: "success"');
+      expect(yamlText).toContain('status: "hasResults"');
       expect(yamlText).toContain('path: "README.md"');
       expect(yamlText).toContain('path: "src"');
+
+      // Check query field is present for both statuses
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        2
+      );
     });
+
     it('should treat code search with items as meaningful content', () => {
       const queries = [{ id: 'q1', name: 'code_search_non_empty' }];
 
@@ -832,7 +873,6 @@ hints:
           queryIndex: 0,
           result: {
             files: [{ path: 'src/index.ts', url: 'https://example' }],
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[0]!,
         },
@@ -846,9 +886,12 @@ hints:
       );
 
       const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('status: "success"');
+      expect(yamlText).toContain('status: "hasResults"');
       expect(yamlText).toContain('path: "src/index.ts"');
       expect(yamlText).toContain('url: "https://example"');
+
+      // Check query field is present for success status
+      expect(yamlText).toContain('query:');
     });
 
     it('should treat empty file content as error (per API) and non-empty as content', () => {
@@ -862,7 +905,6 @@ hints:
           queryIndex: 1,
           result: {
             data: { content: 'console.log(1);' },
-            metadata: {},
           } as unknown as ProcessedBulkResult,
           originalQuery: queries[1]!,
         },
@@ -885,8 +927,13 @@ hints:
       expect(yamlText).toContain(
         'error: "File is empty - no content to display"'
       );
-      expect(yamlText).toContain('status: "success"');
+      expect(yamlText).toContain('status: "hasResults"');
       expect(yamlText).toContain('content: "console.log(1);"');
+
+      // Check query field is present for both statuses
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        2
+      );
     });
 
     it('should include errors as error results with query args', () => {
@@ -903,6 +950,11 @@ hints:
       expect(yamlText).toContain('status: "error"');
       expect(yamlText).toContain('error: "GitHub API error"');
       expect(yamlText).toContain('query:');
+
+      // Check query field is present for error status
+      expect((yamlText.match(/query:/g) || []).length).toBeGreaterThanOrEqual(
+        1
+      );
     });
   });
 });

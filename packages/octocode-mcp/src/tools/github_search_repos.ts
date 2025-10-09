@@ -51,13 +51,16 @@ export function registerSearchGitHubReposTool(server: McpServer) {
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateEmptyQueryHints(
+          const hintsArray = generateEmptyQueryHints(
             TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
           );
+          const instructions = Array.isArray(hintsArray)
+            ? hintsArray.join('\n')
+            : String(hintsArray);
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
-            hints,
+            instructions,
             isError: true,
           });
         }
@@ -147,7 +150,6 @@ async function searchMultipleGitHubRepos(
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
-            metadata: {},
           } as ProcessedBulkResult;
         }
 
@@ -161,7 +163,6 @@ async function searchMultipleGitHubRepos(
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           repositories: typedRepositories,
-          metadata: {},
         } as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
@@ -172,7 +173,6 @@ async function searchMultipleGitHubRepos(
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-          metadata: {},
         } as ProcessedBulkResult;
       }
     }
@@ -180,13 +180,9 @@ async function searchMultipleGitHubRepos(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    keysPriority: [
-      'repositories',
-      'error',
-      'hints',
-      'query',
-      'metadata',
-    ] satisfies Array<keyof RepoSearchResult>,
+    keysPriority: ['repositories', 'error'] satisfies Array<
+      keyof RepoSearchResult
+    >,
   };
 
   return createBulkResponse(config, results, errors, expandedQueries);

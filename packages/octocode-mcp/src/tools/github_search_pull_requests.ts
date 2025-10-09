@@ -53,13 +53,16 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateEmptyQueryHints(
+          const hintsArray = generateEmptyQueryHints(
             TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
           );
+          const instructions = Array.isArray(hintsArray)
+            ? hintsArray.join('\n')
+            : String(hintsArray);
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
-            hints,
+            instructions,
             isError: true,
           });
         }
@@ -69,9 +72,14 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
           query => query?.query && String(query.query).length > 256
         );
         if (longQuery) {
+          const hintsArray = PR_QUERY_LENGTH_VALIDATION.hints;
+          const instructions = Array.isArray(hintsArray)
+            ? hintsArray.join('\n')
+            : String(hintsArray);
+
           return createResult({
             data: { error: PR_QUERY_LENGTH_VALIDATION.message },
-            hints: PR_QUERY_LENGTH_VALIDATION.hints,
+            instructions,
             isError: true,
           });
         }
@@ -88,11 +96,16 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         );
 
         if (!hasValidQueries) {
+          const hintsArray = PR_VALID_PARAMS_VALIDATION.hints;
+          const instructions = Array.isArray(hintsArray)
+            ? hintsArray.join('\n')
+            : String(hintsArray);
+
           return createResult({
             data: {
               error: PR_VALID_PARAMS_VALIDATION.message,
             },
-            hints: PR_VALID_PARAMS_VALIDATION.hints,
+            instructions,
             isError: true,
           });
         }
@@ -106,10 +119,15 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown error occurred';
+          const hintsArray =
+            ERROR_RECOVERY_TOOL[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS];
+          const instructions = Array.isArray(hintsArray)
+            ? hintsArray.join('\n')
+            : String(hintsArray);
 
           return createResult({
             data: { error: `Failed to search pull requests: ${errorMessage}` },
-            hints: ERROR_RECOVERY_TOOL[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+            instructions,
             isError: true,
           });
         }
@@ -145,13 +163,11 @@ async function searchMultipleGitHubPullRequests(
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
-            metadata: {},
           } as ProcessedBulkResult;
         }
 
         // Extract pull request data
         const pullRequests = apiResult.pull_requests || [];
-        const hasResults = pullRequests.length > 0;
 
         return {
           researchGoal: query.researchGoal,
@@ -159,11 +175,6 @@ async function searchMultipleGitHubPullRequests(
           researchSuggestions: query.researchSuggestions,
           pull_requests: pullRequests,
           total_count: apiResult.total_count || pullRequests.length,
-          metadata: {
-            resultCount: pullRequests.length,
-            hasResults,
-            searchType: 'success',
-          },
         } as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
@@ -174,7 +185,6 @@ async function searchMultipleGitHubPullRequests(
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-          metadata: {},
         } as ProcessedBulkResult;
       }
     }
@@ -187,9 +197,6 @@ async function searchMultipleGitHubPullRequests(
       'total_count',
       'incomplete_results',
       'error',
-      'hints',
-      'query',
-      'metadata',
     ] satisfies Array<keyof PullRequestSearchResult>,
   };
 

@@ -139,7 +139,7 @@ async function convertCodeSearchResult(
 }
 
 /**
- * Transform GitHub API response to optimized format with enhanced metadata
+ * Transform GitHub API response to optimized format with enhanced information
  */
 async function transformToOptimizedFormat(
   items: CodeSearchResultItem[],
@@ -149,7 +149,7 @@ async function transformToOptimizedFormat(
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
-  // Track security warnings and minification metadata
+  // Track security warnings and minification info
   const allSecurityWarningsSet = new Set<string>();
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
@@ -270,7 +270,7 @@ async function transformToOptimizedFormat(
     };
   }
 
-  // Add processing metadata
+  // Add processing information
   if (sanitize && allSecurityWarningsSet.size > 0) {
     result.securityWarnings = Array.from(allSecurityWarningsSet);
   }

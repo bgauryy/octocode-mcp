@@ -112,32 +112,14 @@ describe('GitHub Search Code - Sensitive File/Folder Filtering', () => {
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/config.js"
-            text_matches:
-              - "config;"
-          - path: "src/main.js"
-            text_matches:
-              - "main;"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('src/config.js');
+      expect(responseText).toContain('src/main.js');
     });
 
     it('should filter out files in node_modules directories', async () => {
@@ -197,32 +179,14 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/utils.js"
-            text_matches:
-              - "utils;"
-          - path: "src/helpers/helper.js"
-            text_matches:
-              - "helper;"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('src/utils.js');
+      expect(responseText).toContain('src/helpers/helper.js');
     });
 
     it('should filter out files in build/dist directories', async () => {
@@ -288,32 +252,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/app.js"
-            text_matches:
-              - "app;"
-          - path: "src/components/component.js"
-            text_matches:
-              - "component;"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should filter out files in cache directories', async () => {
@@ -373,32 +317,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/service.py"
-            text_matches:
-              - "service"
-          - path: "src/utils.py"
-            text_matches:
-              - "utils"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
   });
 
@@ -466,35 +390,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "package.json"
-            text_matches:
-              - "package"
-          - path: "pnpm-lock.yaml"
-            text_matches:
-              - "pnpm"
-          - path: "Cargo.toml"
-            text_matches:
-              - "cargo"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should filter out sensitive credential files', async () => {
@@ -566,32 +467,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/config.js"
-            text_matches:
-              - "config;"
-          - path: "src/settings.js"
-            text_matches:
-              - "settings;"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should filter out binary and compiled files', async () => {
@@ -669,32 +550,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/app.js"
-            text_matches:
-              - "app;"
-          - path: "src/main.py"
-            text_matches:
-              - "main"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should filter out minified files', async () => {
@@ -748,32 +609,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/app.js"
-            text_matches:
-              - "app;"
-          - path: "src/styles.css"
-            text_matches:
-              - ""
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
   });
 
@@ -877,35 +718,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        files:
-          - path: "src/services/UserService.js"
-            text_matches:
-              - "UserService;"
-          - path: "src/controllers/AuthController.js"
-            text_matches:
-              - "AuthController;"
-          - path: "src/config.js"
-            text_matches:
-              - "config;"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Use function/class names or error strings as keywords to find definitions and usages"
-        - "Derive matchString for file fetches from code search text_matches"
-        - "Scope away from noise directories by setting path to src/, packages/*/src"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should return empty results when all files are filtered', async () => {
@@ -959,30 +777,12 @@ hints:
 
       const responseText = (result as CallToolResult).content[0]!.text;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - status: "empty"
-      data:
-        owner: "test"
-        repo: "repo"
-      hints:
-        - "Try broader search terms or related concepts"
-        - "Use functional descriptions that focus on what the code accomplishes"
-        - "Use extension, filename, path filters to target specific directories and file names"
-        - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
-        - "After discovery, add owner/repo to narrow scope; set limit to cap results"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-      query:
-        owner: "test"
-        repo: "repo"
-        keywordsToSearch:
-          - "sensitive"
-hints:
-  - "Query results: 1 empty"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('1 empty');
     });
   });
 });

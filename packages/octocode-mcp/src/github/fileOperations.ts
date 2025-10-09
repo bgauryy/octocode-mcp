@@ -249,7 +249,7 @@ async function processFileContentAPI(
   let actualEndLine: number | undefined;
   let isPartial = false;
 
-  // Always calculate total lines for metadata
+  // Calculate total lines
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
@@ -370,13 +370,13 @@ async function processFileContentAPI(
       endLine: actualEndLine,
       isPartial,
     }),
-    // Minification metadata
+    // Minification info
     ...(minified && {
       minified: !minificationFailed,
       minificationFailed: minificationFailed,
       minificationType: minificationType,
     }),
-    // Security metadata
+    // Security warnings
     ...(securityWarnings.length > 0 && {
       securityWarnings,
     }),

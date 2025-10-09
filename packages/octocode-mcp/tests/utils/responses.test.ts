@@ -368,7 +368,7 @@ describe('Response Utilities', () => {
         validData: 'test',
       };
 
-      const result = createResult({ data, hints: [] });
+      const result = createResult({ data });
       const yaml = result.content[0]!.text as string;
 
       // Empty arrays are now removed (including hints and results)
@@ -558,13 +558,6 @@ describe('Response Utilities', () => {
                 name: 'test-repo',
                 owner: 'testuser',
                 url: 'https://github.com/testuser/test-repo',
-                metadata: {
-                  id: 'meta-456',
-                  type: 'public',
-                  stats: {
-                    stars: 100,
-                  },
-                },
               },
             ],
             pagination: {
@@ -579,7 +572,7 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:\n  pagination:\n    page: 1\n    total: 50\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\n      metadata:\n        id: "meta-456"\n        type: "public"\n        stats:\n          stars: 100\nhints:\n  - "Use pagination for large result sets"\n`;
+        const expectedYaml = `data:\n  pagination:\n    page: 1\n    total: 50\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\nhints:\n  - "Use pagination for large result sets"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });

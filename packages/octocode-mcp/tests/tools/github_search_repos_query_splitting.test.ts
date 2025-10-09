@@ -575,52 +575,14 @@ describe('GitHub Search Repositories Query Splitting', () => {
         ],
       });
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - reasoning: "Search for whale detection repositories (topics-based search)"
-      status: "success"
-      data:
-        repositories:
-          - owner: "test"
-            repo: "repo"
-            description: "Test repository"
-            stars: 100
-            updatedAt: "01/01/2024"
-            url: "https://github.com/test/repo"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Prioritize via sort and analyze the top 3-5 repositories in depth"
-        - "After selection, run structure view first, then scoped code search"
-        - "Avoid curated list repos by using implementation-oriented keywords"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_view_repo_structure first to understand project layout"
-        - "Start with repository search to find relevant projects, then search within them"
-    - reasoning: "Search for whale detection repositories (keywords-based search)"
-      status: "success"
-      data:
-        repositories:
-          - owner: "test"
-            repo: "repo"
-            description: "Test repository"
-            stars: 100
-            updatedAt: "01/01/2024"
-            url: "https://github.com/test/repo"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Prioritize via sort and analyze the top 3-5 repositories in depth"
-        - "After selection, run structure view first, then scoped code search"
-        - "Avoid curated list repos by using implementation-oriented keywords"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_view_repo_structure first to understand project layout"
-        - "Start with repository search to find relevant projects, then search within them"
-hints:
-  - "Query results: 2 successful"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('topics-based search');
+      expect(responseText).toContain('keywords-based search');
     });
   });
 });

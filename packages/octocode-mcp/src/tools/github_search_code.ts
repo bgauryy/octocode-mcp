@@ -52,10 +52,13 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
           typedArgs.queries.length === 0
         ) {
           const hints = generateEmptyQueryHints(TOOL_NAMES.GITHUB_SEARCH_CODE);
+          const instructions = Array.isArray(hints)
+            ? hints.join('\n')
+            : String(hints);
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
-            hints,
+            instructions,
             isError: true,
           });
         }
@@ -94,7 +97,6 @@ async function searchMultipleGitHubCode(
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
-            metadata: {},
           } as ProcessedBulkResult;
         }
 
@@ -138,7 +140,6 @@ async function searchMultipleGitHubCode(
               ),
             })
           ),
-          metadata: {},
         };
 
         return result as ProcessedBulkResult;
@@ -151,7 +152,6 @@ async function searchMultipleGitHubCode(
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-          metadata: {},
         } as ProcessedBulkResult;
       }
     }
@@ -159,13 +159,7 @@ async function searchMultipleGitHubCode(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    keysPriority: [
-      'files',
-      'error',
-      'hints',
-      'query',
-      'metadata',
-    ] satisfies Array<keyof SearchResult>,
+    keysPriority: ['files', 'error'] satisfies Array<keyof SearchResult>,
   };
 
   return createBulkResponse(config, results, errors, queries);

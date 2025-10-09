@@ -68,5 +68,4 @@ export interface RepoSearchResult {
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only on error
-  metadata?: Record<string, unknown>; // Internal use
 }

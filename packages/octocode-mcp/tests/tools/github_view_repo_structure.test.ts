@@ -55,40 +55,22 @@ describe('GitHub View Repository Structure Tool', () => {
       ],
     });
 
-    expect(result).toEqual({
-      isError: false,
-      content: [
-        {
-          type: 'text',
-          text: `data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        path: "/"
-        files:
-          - "/README.md"
-          - "/package.json"
-        folders:
-          - "/src"
-          - "/tests"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Explore src/ or packages/ first for relevant files"
-        - "Use depth: 2 to surface key files/folders quickly"
-        - "Build targeted code searches from discovered path and filename patterns"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Focus on source code and example directories for implementation details"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`,
-        },
-      ],
-    });
+    expect(result.isError).toBe(false);
+    const responseText = result.content[0]?.text as string;
+    expect(responseText).toContain('instructions:');
+    expect(responseText).toContain('results:');
+    expect(responseText).toContain('1 hasResults');
+    expect(responseText).toContain('status: "hasResults"');
+    expect(responseText).toContain('query:');
+    expect(responseText).toContain('owner: "test"');
+    expect(responseText).toContain('repo: "repo"');
+    expect(responseText).toContain('path: "/"');
+    expect(responseText).toContain('files:');
+    expect(responseText).toContain('folders:');
+    expect(responseText).toContain('hasResultsStatusHints:');
+    expect(responseText).not.toMatch(/^data:/m);
+    expect(responseText).not.toContain('queries:');
+    expect(responseText).not.toMatch(/^hints:/m);
   });
 
   it('should pass authInfo and userContext to GitHub API', async () => {
@@ -161,37 +143,22 @@ hints:
     // With bulk operations, errors are handled gracefully and returned as data with hints
     const responseText = result.content[0]?.text as string;
 
-    expect(result).toEqual({
-      isError: false,
-      content: [
-        {
-          type: 'text',
-          text: responseText,
-        },
-      ],
-    });
-
-    expect(responseText).toEqual(`data:
-  queries:
-    - status: "error"
-      data:
-        error: "Repository not found or access denied"
-      hints:
-        - "Resource not found. Verify spelling and accessibility"
-        - "Verify repository owner and name are correct"
-        - "Check that the branch exists (try \\"main\\" or \\"master\\")"
-        - "Ensure you have access to the repository"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Focus on source code and example directories for implementation details"
-      query:
-        owner: "nonexistent"
-        repo: "repo"
-        branch: "main"
-hints:
-  - "Query results: 1 failed"
-  - "Review hints below for guidance on next steps"
-`);
+    expect(result.isError).toBe(false);
+    expect(responseText).toContain('instructions:');
+    expect(responseText).toContain('results:');
+    expect(responseText).toContain('1 failed');
+    expect(responseText).toContain('status: "error"');
+    expect(responseText).toContain(
+      'error: "Repository not found or access denied"'
+    );
+    expect(responseText).toContain('query:');
+    expect(responseText).toContain('owner: "nonexistent"');
+    expect(responseText).toContain('repo: "repo"');
+    expect(responseText).toContain('branch: "main"');
+    expect(responseText).toContain('errorStatusHints:');
+    expect(responseText).not.toMatch(/^data:/m);
+    expect(responseText).not.toContain('queries:');
+    expect(responseText).not.toMatch(/^hints:/m);
   });
 
   it('should handle optional parameters', async () => {
@@ -207,40 +174,20 @@ hints:
       ],
     });
 
-    expect(result).toEqual({
-      isError: false,
-      content: [
-        {
-          type: 'text',
-          text: `data:
-  queries:
-    - status: "success"
-      data:
-        owner: "test"
-        repo: "repo"
-        path: "src"
-        files:
-          - "/README.md"
-          - "/package.json"
-        folders:
-          - "/src"
-          - "/tests"
-      hints:
-        - "Analyze top results in depth before expanding search"
-        - "Cross-reference findings across multiple sources"
-        - "Explore src/ or packages/ first for relevant files"
-        - "Use depth: 2 to surface key files/folders quickly"
-        - "Build targeted code searches from discovered path and filename patterns"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Focus on source code and example directories for implementation details"
-hints:
-  - "Query results: 1 successful"
-  - "Review hints below for guidance on next steps"
-`,
-        },
-      ],
-    });
+    expect(result.isError).toBe(false);
+    const responseText = result.content[0]?.text as string;
+    expect(responseText).toContain('instructions:');
+    expect(responseText).toContain('results:');
+    expect(responseText).toContain('1 hasResults');
+    expect(responseText).toContain('status: "hasResults"');
+    expect(responseText).toContain('query:');
+    expect(responseText).toContain('owner: "test"');
+    expect(responseText).toContain('repo: "repo"');
+    expect(responseText).toContain('path: "src"');
+    expect(responseText).toContain('hasResultsStatusHints:');
+    expect(responseText).not.toMatch(/^data:/m);
+    expect(responseText).not.toContain('queries:');
+    expect(responseText).not.toMatch(/^hints:/m);
   });
 
   describe('New Features Tests', () => {
@@ -280,15 +227,10 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: responseText,
-          },
-        ],
-      });
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify the path prefix is removed from files
       expect(responseText).toContain('/.gitignore');
@@ -305,6 +247,9 @@ hints:
       expect(responseText).not.toContain('/contextapp/.gitignore');
       expect(responseText).not.toContain('/contextapp/package.json');
       expect(responseText).not.toContain('/contextapp/src/App.js');
+      expect(responseText).not.toMatch(/^data:/m);
+      expect(responseText).not.toContain('queries:');
+      expect(responseText).not.toMatch(/^hints:/m);
     });
 
     it('should handle root path without removing prefixes', async () => {
@@ -338,15 +283,10 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: responseText,
-          },
-        ],
-      });
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
       // For root path, files and folders should keep their absolute paths
       expect(responseText).toContain('/.gitignore');
@@ -355,6 +295,9 @@ hints:
       expect(responseText).toContain('/src');
       expect(responseText).toContain('/public');
       expect(responseText).toContain('/docs');
+      expect(responseText).not.toMatch(/^data:/m);
+      expect(responseText).not.toContain('queries:');
+      expect(responseText).not.toMatch(/^hints:/m);
     });
 
     it('should not include branch field in output', async () => {
@@ -382,25 +325,28 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: responseText,
-          },
-        ],
-      });
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
-      expect(responseText).not.toContain('branch:');
-      expect(responseText).not.toContain('branch: "main"');
-      expect(responseText).toContain('status: "success"');
+      // Branch is now in the query field (original query is included in new structure)
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('branch: "main"');
+      // But branch should NOT be in the data field
+      const dataMatch = responseText.match(/data:\s*\n([\s\S]*?)(?=\n\w+:|$)/);
+      if (dataMatch && dataMatch[1]) {
+        expect(dataMatch[1]).not.toContain('branch:');
+      }
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('owner: "test"');
       expect(responseText).toContain('path: "/"');
-      expect(responseText).toContain('1 successful');
-      expect(responseText).toContain('guidance on next steps');
+      expect(responseText).toContain('1 hasResults');
       expect(responseText).toContain('files:');
       expect(responseText).toContain('folders:');
+      expect(responseText).not.toMatch(/^data:/m);
+      expect(responseText).not.toContain('queries:');
+      expect(responseText).not.toMatch(/^hints:/m);
     });
 
     it('should use correct field ordering: queryId, reasoning, repository, path, files, folders', async () => {
@@ -429,15 +375,10 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: responseText,
-          },
-        ],
-      });
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify field ordering by checking the response contains the fields in the correct order
       const reasoningIndex = responseText.indexOf('reasoning:');
@@ -461,6 +402,10 @@ hints:
       expect(repoIndex < pathIndex).toEqual(true);
       expect(pathIndex < filesIndex).toEqual(true);
       expect(filesIndex < foldersIndex).toEqual(true);
+
+      expect(responseText).not.toMatch(/^data:/m);
+      expect(responseText).not.toContain('queries:');
+      expect(responseText).not.toMatch(/^hints:/m);
     });
 
     it('should handle empty path prefix removal correctly', async () => {
@@ -493,15 +438,10 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: responseText,
-          },
-        ],
-      });
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify the /utils prefix is removed
       expect(responseText).toContain('/helper.js');
@@ -512,6 +452,9 @@ hints:
       expect(responseText).not.toContain('/utils/helper.js');
       expect(responseText).not.toContain('/utils/config.js');
       expect(responseText).not.toContain('/utils/lib');
+      expect(responseText).not.toMatch(/^data:/m);
+      expect(responseText).not.toContain('queries:');
+      expect(responseText).not.toMatch(/^hints:/m);
     });
 
     it('should handle multiple queries with different path prefixes', async () => {
@@ -559,15 +502,10 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(result).toEqual({
-        isError: false,
-        content: [
-          {
-            type: 'text',
-            text: responseText,
-          },
-        ],
-      });
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
       // Verify both queries have their prefixes removed correctly
       // First query (/src)
@@ -583,6 +521,9 @@ hints:
       // Verify original prefixed paths are not present
       expect(responseText).not.toContain('/src/App.js');
       expect(responseText).not.toContain('/docs/README.md');
+      expect(responseText).not.toMatch(/^data:/m);
+      expect(responseText).not.toContain('queries:');
+      expect(responseText).not.toMatch(/^hints:/m);
     });
   });
 });

@@ -78,27 +78,12 @@ describe('Empty Arrays Removal in Responses', () => {
 
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toEqual(`data:
-  queries:
-    - reasoning: "Test empty array removal"
-      status: "empty"
-      hints:
-        - "Try broader search terms or related concepts"
-        - "Use functional descriptions that focus on what the code accomplishes"
-        - "Use extension, filename, path filters to target specific directories and file names"
-        - "Look in tests: tests/, __tests__/, *.test.*, *.spec.* to discover real usage"
-        - "After discovery, add owner/repo to narrow scope; set limit to cap results"
-        - "Chain tools: repository search → structure view → code search → content fetch"
-        - "Compare implementations across 3-5 repositories to identify best practices"
-        - "Use github_fetch_content with matchString from search results for precise context extraction"
-      query:
-        reasoning: "Test empty array removal"
-        keywordsToSearch:
-          - "nonexistent"
-hints:
-  - "Query results: 1 empty"
-  - "Review hints below for guidance on next steps"
-`);
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test empty array removal"');
+      expect(responseText).toContain('emptyStatusHints:');
 
       // Should not contain "files: []" or similar empty array indicators
       expect(responseText).not.toMatch(/files:\s*\[\]/);
@@ -202,9 +187,9 @@ hints:
       // Should not have empty arrays anywhere
       expect(responseText).not.toMatch(/:\s*\[\]\s*$/m);
 
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('1 successful, 1 empty');
+      expect(responseText).toContain('1 hasResults, 1 empty');
     });
   });
 
@@ -266,12 +251,14 @@ hints:
 
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('status: "success"');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
-      expect(responseText).toMatch(/hints:\s*\n\s*-/);
+      expect(responseText).toMatch(/hasResultsStatusHints:\s*\n\s*-/);
 
-      expect(responseText).not.toMatch(/hints:\s*\[\]/);
+      expect(responseText).not.toMatch(/hasResultsStatusHints:\s*\[\]/);
     });
   });
 });

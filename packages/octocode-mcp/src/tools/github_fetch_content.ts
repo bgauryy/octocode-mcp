@@ -53,9 +53,16 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
           args.queries.length === 0;
 
         if (emptyQueries) {
+          const hints = generateEmptyQueryHints(
+            TOOL_NAMES.GITHUB_FETCH_CONTENT
+          );
+          const instructions = Array.isArray(hints)
+            ? hints.join('\n')
+            : String(hints);
+
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
-            hints: generateEmptyQueryHints(TOOL_NAMES.GITHUB_FETCH_CONTENT),
+            instructions,
             isError: true,
           });
         }
@@ -136,7 +143,6 @@ async function fetchMultipleGitHubFileContents(
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: result.error,
-            metadata: {},
           };
         }
 
@@ -195,7 +201,6 @@ async function fetchMultipleGitHubFileContents(
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           ...resultObj,
-          metadata: {},
         } as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
@@ -206,7 +211,6 @@ async function fetchMultipleGitHubFileContents(
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-          metadata: {},
         } as ProcessedBulkResult;
       }
     }
@@ -216,21 +220,20 @@ async function fetchMultipleGitHubFileContents(
     toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
     keysPriority: [
       'path',
+      'owner',
+      'repo',
+      'branch',
       'contentLength',
       'content',
-      'branch',
+      'isPartial',
       'startLine',
       'endLine',
-      'isPartial',
       'minified',
       'minificationFailed',
       'minificationType',
       'securityWarnings',
       'sampling',
       'error',
-      'hints',
-      'query',
-      'originalQuery',
     ] satisfies Array<keyof ContentResult>,
   };
 

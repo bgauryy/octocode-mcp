@@ -132,5 +132,4 @@ export interface RepoStructureResult {
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>;
-  metadata: Record<string, unknown>;
 }

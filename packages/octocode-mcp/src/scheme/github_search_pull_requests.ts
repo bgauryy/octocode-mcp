@@ -192,7 +192,6 @@ export interface PullRequestSearchResult {
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only on error
-  metadata: Record<string, unknown>;
 }
 
 export interface PullRequestInfo {

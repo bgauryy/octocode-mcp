@@ -193,12 +193,17 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toEqual(`data:
-  error: "Queries array is required and cannot be empty"
-hints:
-  - "Queries array is required and cannot be empty"
-  - "Provide at least one valid query with required parameters"
-`);
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain(
+        'error: "Queries array is required and cannot be empty"'
+      );
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain(
+        'Queries array is required and cannot be empty'
+      );
+      expect(responseText).toContain(
+        'Provide at least one valid query with required parameters'
+      );
     });
 
     it('should reject missing queries parameter', async () => {
@@ -207,12 +212,17 @@ hints:
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toEqual(`data:
-  error: "Queries array is required and cannot be empty"
-hints:
-  - "Queries array is required and cannot be empty"
-  - "Provide at least one valid query with required parameters"
-`);
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain(
+        'error: "Queries array is required and cannot be empty"'
+      );
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain(
+        'Queries array is required and cannot be empty'
+      );
+      expect(responseText).toContain(
+        'Provide at least one valid query with required parameters'
+      );
     });
 
     it('should accept query-based searches', async () => {
@@ -252,12 +262,13 @@ hints:
       expect(result.isError).toBe(true);
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toEqual(`data:
-  error: "Query too long. Maximum 256 characters allowed."
-hints:
-  - "Use shorter, more focused search terms"
-  - "Maximum query length is 256 characters"
-`);
+      expect(responseText).toContain('data:');
+      expect(responseText).toContain(
+        'error: "Query too long. Maximum 256 characters allowed."'
+      );
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('Use shorter, more focused search terms');
+      expect(responseText).toContain('Maximum query length is 256 characters');
     });
   });
 
@@ -525,9 +536,11 @@ hints:
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      // Meta field removed - operation counts no longer tracked in response
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('hints:');
+      // New bulk structure
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -545,8 +558,11 @@ hints:
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
       const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('API rate limit exceeded');
+      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle network errors', async () => {
@@ -560,8 +576,11 @@ hints:
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
       const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('Network error');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -582,7 +601,8 @@ hints:
       const responseText = result.content[0]?.text as string;
 
       // Check that the token was sanitized
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).not.toContain('ghp_');
       expect(responseText).toContain('[REDACTED-GITHUBTOKENS]');
     });
@@ -603,7 +623,8 @@ hints:
       const responseText = result.content[0]?.text as string;
 
       // Check that the API key was sanitized
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).not.toContain('T3BlbkFJ');
       expect(responseText).toContain('[REDACTED-OPENAIAPIKEY]');
     });
@@ -624,7 +645,8 @@ hints:
       const responseText = result.content[0]?.text as string;
 
       // Check that clean content is preserved
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain(
         'This is a normal PR description without sensitive information.'
       );
@@ -676,7 +698,8 @@ hints:
       );
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('Test PR');
       expect(responseText).toContain('test-user');
       expect(responseText).toContain('number: 123');
@@ -707,9 +730,11 @@ hints:
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
       const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('pull request #999');
-      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 });

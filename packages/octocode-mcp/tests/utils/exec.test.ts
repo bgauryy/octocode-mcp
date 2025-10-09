@@ -100,10 +100,9 @@ describe('exec utilities', () => {
         content: [
           {
             type: 'text',
-            text: `data:
+            text: `instructions: "Command failed: Command failed"
+data:
   error: true
-hints:
-  - "Command failed: Command failed"
 `,
           },
         ],
@@ -118,10 +117,9 @@ hints:
         content: [
           {
             type: 'text',
-            text: `data:
+            text: `instructions: "Command error: error in stderr"
+data:
   error: true
-hints:
-  - "Command error: error in stderr"
 `,
           },
         ],
@@ -151,10 +149,9 @@ hints:
         content: [
           {
             type: 'text',
-            text: `data:
+            text: `instructions: "Command failed: Main error"
+data:
   error: true
-hints:
-  - "Command failed: Main error"
 `,
           },
         ],
@@ -202,10 +199,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Command 'install' is not allowed"
+data:
   error: "Command 'install' is not allowed"
-hints:
-  - "Command 'install' is not allowed"
 `,
             },
           ],
@@ -216,82 +212,72 @@ hints:
         const testCases = [
           {
             arg: 'package\0null-byte',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Null bytes not allowed in arguments"
+data:
   error: "Invalid arguments: Null bytes not allowed in arguments"
-hints:
-  - "Invalid arguments: Null bytes not allowed in arguments"
 `,
           },
           {
             arg: 'a'.repeat(1001),
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Argument too long"
+data:
   error: "Invalid arguments: Argument too long"
-hints:
-  - "Invalid arguments: Argument too long"
 `,
           },
           {
             arg: '$(malicious)',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: $(malicious)..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: $(malicious)..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: $(malicious)..."
 `,
           },
           {
             arg: '`whoami`',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: \`whoami\`..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: \`whoami\`..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: \`whoami\`..."
 `,
           },
           {
             arg: 'package; rm -rf /',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: package; rm -rf /..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: package; rm -rf /..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: package; rm -rf /..."
 `,
           },
           {
             arg: 'package | cat /etc/passwd',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: package | cat /etc/passwd..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: package | cat /etc/passwd..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: package | cat /etc/passwd..."
 `,
           },
           {
             arg: 'package && evil-command',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: package && evil-command..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: package && evil-command..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: package && evil-command..."
 `,
           },
           {
             arg: 'package || evil-command',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: package || evil-command..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: package || evil-command..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: package || evil-command..."
 `,
           },
           {
             arg: 'package > /etc/passwd',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: package > /etc/passwd..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: package > /etc/passwd..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: package > /etc/passwd..."
 `,
           },
           {
             arg: 'package < /etc/shadow',
-            expectedText: `data:
+            expectedText: `instructions: "Invalid arguments: Suspicious pattern detected in argument: package < /etc/shadow..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: package < /etc/shadow..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: package < /etc/shadow..."
 `,
           },
         ];
@@ -341,10 +327,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Invalid arguments: Suspicious pattern detected in argument: test;package|with&operators..."
+data:
   error: "Invalid arguments: Suspicious pattern detected in argument: test;package|with&operators..."
-hints:
-  - "Invalid arguments: Suspicious pattern detected in argument: test;package|with&operators..."
 `,
             },
           ],
@@ -441,10 +426,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Command failed: Process exited with code 1"
+data:
   error: true
-hints:
-  - "Command failed: Process exited with code 1"
 `,
             },
           ],
@@ -462,10 +446,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Command failed: ENOENT: command not found"
+data:
   error: true
-hints:
-  - "Command failed: ENOENT: command not found"
 `,
             },
           ],
@@ -485,10 +468,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Command failed: Command timeout"
+data:
   error: true
-hints:
-  - "Command failed: Command timeout"
 `,
             },
           ],
@@ -513,10 +495,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Command failed: Command timeout"
+data:
   error: true
-hints:
-  - "Command failed: Command timeout"
 `,
             },
           ],
@@ -566,10 +547,9 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data:
+              text: `instructions: "Command failed: Process exited with code 1"
+data:
   error: true
-hints:
-  - "Command failed: Process exited with code 1"
 `,
             },
           ],
@@ -592,9 +572,8 @@ hints:
           content: [
             {
               type: 'text',
-              text: `data: "output data"
-hints:
-  - "Warning: warning message"
+              text: `instructions: "Warning: warning message"
+data: "output data"
 `,
             },
           ],
@@ -806,10 +785,9 @@ hints:
         content: [
           {
             type: 'text',
-            text: `data:
+            text: `instructions: "Command failed: Process exited with code 1"
+data:
   error: true
-hints:
-  - "Command failed: Process exited with code 1"
 `,
           },
         ],

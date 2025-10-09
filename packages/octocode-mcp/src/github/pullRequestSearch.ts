@@ -97,7 +97,6 @@ async function searchGitHubPullRequestsAPIInternal(
         total_count: 0,
         error: 'No valid search parameters provided',
         hints: ['Provide search query or filters like owner/repo'],
-        metadata: { error: 'No valid search parameters provided' },
       };
     }
 
@@ -200,7 +199,6 @@ async function searchGitHubPullRequestsAPIInternal(
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       incomplete_results: searchResult.data.incomplete_results,
-      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -209,7 +207,6 @@ async function searchGitHubPullRequestsAPIInternal(
       total_count: 0,
       error: `Pull request search failed: ${apiError.error}`,
       hints: [`Verify authentication and search parameters`],
-      metadata: { error: apiError.error },
     };
   }
 }
@@ -307,7 +304,6 @@ async function searchPullRequestsWithREST(
       pull_requests: formattedPRs,
       total_count: formattedPRs.length,
       incomplete_results: false,
-      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -316,7 +312,6 @@ async function searchPullRequestsWithREST(
       total_count: 0,
       error: `Pull request list failed: ${apiError.error}`,
       hints: [`Verify repository access and authentication`],
-      metadata: { error: apiError.error },
     };
   }
 }
@@ -734,7 +729,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       pull_requests: [formattedPR],
       total_count: 1,
       incomplete_results: false,
-      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -751,7 +745,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
         'Check if you have access to this repository',
         'Ensure the PR number is correct',
       ],
-      metadata: { error: apiError.error },
     };
   }
 }

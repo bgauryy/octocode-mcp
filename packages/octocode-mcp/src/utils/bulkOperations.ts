@@ -1,11 +1,10 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolName, TOOL_NAMES } from '../constants.js';
 import { generateHints, OrganizedHints } from '../tools/hints.js';
-import { BULK_OPERATIONS_HINTS } from '../tools/hintsContent.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 import { createResponseFormat, type ToolResponse } from '../responses.js';
 
-export type QueryStatus = 'success' | 'empty' | 'error';
+export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
 export interface ProcessedBulkResult {
   researchGoal?: string;
@@ -16,17 +15,15 @@ export interface ProcessedBulkResult {
   status?: QueryStatus;
   hints?: string[];
   query?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
 }
 
 export interface FlatQueryResult {
+  query: Record<string, unknown>;
+  status: QueryStatus;
+  data: Record<string, unknown>;
   researchGoal?: string;
   reasoning?: string;
   researchSuggestions?: string[];
-  status: QueryStatus;
-  data: Record<string, unknown>;
-  hints: string[];
-  query?: Record<string, unknown>;
 }
 
 export interface QueryError {
@@ -118,26 +115,36 @@ export function createBulkResponse<
   errors: QueryError[],
   queries: Array<T>
 ): CallToolResult {
-  const standardFields = [
+  const topLevelFields = [
+    'instructions',
+    'results',
+    'hasResultsStatusHints',
+    'emptyStatusHints',
+    'errorStatusHints',
+  ];
+  const resultFields = [
+    'query',
+    'status',
+    'data',
     'researchGoal',
     'reasoning',
     'researchSuggestions',
-    'status',
-    'data',
-    'hints',
-    'query',
-    'owner',
-    'repo',
   ];
+  const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
   const fullKeysPriority = [
     ...new Set([...standardFields, ...(config.keysPriority || [])]),
   ];
 
   const flatQueries: FlatQueryResult[] = [];
 
-  let successCount = 0;
+  let hasResultsCount = 0;
   let emptyCount = 0;
   let errorCount = 0;
+
+  // Collect hints by status for deduplication
+  const hasResultsHintsSet = new Set<string>();
+  const emptyHintsSet = new Set<string>();
+  const errorHintsSet = new Set<string>();
 
   results.forEach(r => {
     const status = determineQueryStatus(config.toolName, r.result);
@@ -146,36 +153,42 @@ export function createBulkResponse<
     const queryHints = generateHints({
       toolName: config.toolName,
       resultType:
-        status === 'success'
-          ? 'successful'
+        status === 'hasResults'
+          ? 'hasResults'
           : status === 'empty'
             ? 'empty'
             : 'failed',
       errorMessage: r.result.error,
     });
 
+    // Collect hints for deduplication
+    const hintsForStatus = extractHintsForStatus(queryHints, status);
+    if (status === 'hasResults') {
+      hintsForStatus.forEach(hint => hasResultsHintsSet.add(hint));
+    } else if (status === 'empty') {
+      hintsForStatus.forEach(hint => emptyHintsSet.add(hint));
+    } else {
+      hintsForStatus.forEach(hint => errorHintsSet.add(hint));
+    }
+
     const flatQuery: FlatQueryResult = {
+      query: r.originalQuery,
+      status,
+      data:
+        status === 'error' && r.result.error
+          ? { error: r.result.error }
+          : toolData,
       researchGoal:
         r.result.researchGoal ||
         safeExtractString(r.originalQuery, 'researchGoal'),
       reasoning:
         r.result.reasoning || safeExtractString(r.originalQuery, 'reasoning'),
       researchSuggestions: mergeResearchSuggestions(r.result, r.originalQuery),
-      status,
-      data:
-        status === 'error' && r.result.error
-          ? { error: r.result.error }
-          : toolData,
-      hints: extractHintsForStatus(queryHints, status),
     };
-
-    if (status !== 'success') {
-      flatQuery.query = r.originalQuery;
-    }
 
     flatQueries.push(flatQuery);
 
-    if (status === 'success') successCount++;
+    if (status === 'hasResults') hasResultsCount++;
     else if (status === 'empty') emptyCount++;
     else errorCount++;
   });
@@ -190,40 +203,56 @@ export function createBulkResponse<
       errorMessage: err.error,
     });
 
+    // Collect error hints for deduplication
+    const hintsForError = errorHints.failed || [];
+    hintsForError.forEach(hint => errorHintsSet.add(hint));
+
     flatQueries.push({
+      query: originalQuery,
+      status: 'error',
+      data: { error: err.error },
       researchGoal: safeExtractString(originalQuery, 'researchGoal'),
       reasoning: safeExtractString(originalQuery, 'reasoning'),
       researchSuggestions: safeExtractStringArray(
         originalQuery,
         'researchSuggestions'
       ),
-      status: 'error',
-      data: { error: err.error },
-      query: originalQuery,
-      hints: errorHints.failed || [],
     });
 
     errorCount++;
   });
 
   const counts = [];
-  if (successCount > 0) counts.push(`${successCount} successful`);
+  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
   if (emptyCount > 0) counts.push(`${emptyCount} empty`);
   if (errorCount > 0) counts.push(`${errorCount} failed`);
 
-  const topLevelHints =
-    counts.length > 0
-      ? [
-          `Query results: ${counts.join(', ')}`,
-          BULK_OPERATIONS_HINTS.REVIEW_HINTS_GUIDANCE,
-        ]
-      : [BULK_OPERATIONS_HINTS.NO_QUERIES_PROCESSED];
+  // Generate instructions string
+  const instructionsParts = [
+    `Bulk response with ${flatQueries.length} results: ${counts.join(', ')}.`,
+    'Each result includes the original query, status, and data.',
+  ];
+  if (hasResultsCount > 0) {
+    instructionsParts.push(
+      'Review hasResultsStatusHints for guidance on results with data.'
+    );
+  }
+  if (emptyCount > 0) {
+    instructionsParts.push('Review emptyStatusHints for no-results scenarios.');
+  }
+  if (errorCount > 0) {
+    instructionsParts.push(
+      'Review errorStatusHints for error recovery strategies.'
+    );
+  }
+  const instructions = instructionsParts.join('\n');
 
   const responseData: ToolResponse = {
-    data: {
-      queries: flatQueries,
-    },
-    hints: topLevelHints,
+    instructions,
+    results: flatQueries,
+    hasResultsStatusHints: [...hasResultsHintsSet],
+    emptyStatusHints: [...emptyHintsSet],
+    errorStatusHints: [...errorHintsSet],
   };
 
   return {
@@ -245,7 +274,7 @@ function determineQueryStatus(
   if (isNoResultsForTool(toolName, result as Record<string, unknown>)) {
     return 'empty';
   }
-  return 'success';
+  return 'hasResults';
 }
 
 function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
@@ -256,7 +285,6 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
     'researchSuggestions',
     'error',
     'hints',
-    'metadata',
     'status',
     'query',
   ]);
@@ -275,7 +303,7 @@ function extractHintsForStatus(
   hints: OrganizedHints,
   status: QueryStatus
 ): string[] {
-  if (status === 'success') return hints.successful || [];
+  if (status === 'hasResults') return hints.hasResults || [];
   if (status === 'empty') return hints.empty || [];
   return hints.failed || [];
 }

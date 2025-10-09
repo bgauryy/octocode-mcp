@@ -74,7 +74,6 @@ export interface SearchResult {
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
 }
 
 /**

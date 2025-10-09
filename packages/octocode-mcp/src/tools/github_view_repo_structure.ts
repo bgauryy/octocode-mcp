@@ -51,13 +51,16 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
           !Array.isArray(args.queries) ||
           args.queries.length === 0
         ) {
-          const hints = generateEmptyQueryHints(
+          const hintsArray = generateEmptyQueryHints(
             TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
           );
+          const instructions = Array.isArray(hintsArray)
+            ? hintsArray.join('\n')
+            : String(hintsArray);
 
           return createResult({
             data: { error: 'Queries array is required and cannot be empty' },
-            hints,
+            instructions,
             isError: true,
           });
         }
@@ -116,10 +119,6 @@ async function exploreMultipleRepositoryStructures(
             files: [],
             folders: [],
             error: apiResult.error,
-            metadata: {
-              error: apiResult.error,
-              searchType: 'api_error',
-            },
           } as ProcessedBulkResult;
         }
 
@@ -140,9 +139,6 @@ async function exploreMultipleRepositoryStructures(
             );
           }
         );
-
-        const hasResults =
-          filteredFiles.length > 0 || filteredFolders.length > 0;
 
         // Extract file paths and folder paths separately, removing the path prefix
         const pathPrefix = apiRequest.path || '/';
@@ -173,14 +169,6 @@ async function exploreMultipleRepositoryStructures(
           path: apiRequest.path || '/',
           files: filePaths,
           folders: folderPaths,
-          metadata: {
-            branch: apiRequest.branch,
-            path: apiRequest.path || '/',
-            folders: apiResult.folders,
-            summary: apiResult.summary,
-            ...(hasResults ? {} : { queryArgs: { ...apiRequest } }),
-            searchType: 'success',
-          },
         };
 
         return result as ProcessedBulkResult;
@@ -198,11 +186,6 @@ async function exploreMultipleRepositoryStructures(
           files: [],
           folders: [],
           error: `Failed to explore repository structure: ${errorMessage}`,
-          metadata: {
-            queryArgs: { ...query },
-            error: `Failed to explore repository structure: ${errorMessage}`,
-            searchType: 'api_error',
-          },
         } as ProcessedBulkResult;
       }
     }
@@ -210,15 +193,9 @@ async function exploreMultipleRepositoryStructures(
 
   const config: BulkResponseConfig = {
     toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    keysPriority: [
-      'path',
-      'files',
-      'folders',
-      'error',
-      'hints',
-      'query',
-      'metadata',
-    ] satisfies Array<keyof RepoStructureResult>,
+    keysPriority: ['path', 'files', 'folders', 'error'] satisfies Array<
+      keyof RepoStructureResult
+    >,
   };
 
   return createBulkResponse(config, results, errors, queries);

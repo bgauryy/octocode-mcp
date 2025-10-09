@@ -1,4 +1,5 @@
 import { ToolName } from '../constants';
+import type { QueryStatus } from '../utils/bulkOperations.js';
 import {
   NAVIGATION_GENERAL,
   NAVIGATION_TOOL,
@@ -13,12 +14,12 @@ import {
 
 export interface HintContext {
   toolName: ToolName;
-  resultType: 'successful' | 'empty' | 'failed';
+  resultType: 'hasResults' | 'empty' | 'failed';
   errorMessage?: string;
 }
 
 export interface OrganizedHints {
-  successful?: string[];
+  hasResults?: string[];
   empty?: string[];
   failed?: string[];
 }
@@ -26,10 +27,10 @@ export interface OrganizedHints {
 export function getHints(context: HintContext): OrganizedHints {
   const hints: OrganizedHints = {};
 
-  if (context.resultType === 'successful') {
-    const successfulHints = getSuccessfulHints(context.toolName);
-    if (successfulHints.length > 0) {
-      hints.successful = successfulHints;
+  if (context.resultType === 'hasResults') {
+    const hasResultsHints = getHasResultsHints(context.toolName);
+    if (hasResultsHints.length > 0) {
+      hints.hasResults = hasResultsHints;
     }
   }
 
@@ -58,7 +59,7 @@ export function generateEmptyQueryHints(_toolName: ToolName): string[] {
   return EMPTY_QUERY_VALIDATION_HINTS;
 }
 
-function getSuccessfulHints(toolName: ToolName): string[] {
+function getHasResultsHints(toolName: ToolName): string[] {
   const hints: string[] = [];
 
   hints.push(...RESEARCH_GENERAL);
@@ -154,4 +155,58 @@ function detectErrorType(
   }
 
   return null;
+}
+
+export function deduplicateHintsByStatus(
+  hints: Array<{ status: QueryStatus; hints: string[] }>
+): {
+  hasResultsStatusHints: string[];
+  emptyStatusHints: string[];
+  errorStatusHints: string[];
+} {
+  const hasResultsSet = new Set<string>();
+  const emptySet = new Set<string>();
+  const errorSet = new Set<string>();
+
+  hints.forEach(({ status, hints }) => {
+    if (status === 'hasResults') {
+      hints.forEach(h => hasResultsSet.add(h));
+    } else if (status === 'empty') {
+      hints.forEach(h => emptySet.add(h));
+    } else if (status === 'error') {
+      hints.forEach(h => errorSet.add(h));
+    }
+  });
+
+  return {
+    hasResultsStatusHints: Array.from(hasResultsSet),
+    emptyStatusHints: Array.from(emptySet),
+    errorStatusHints: Array.from(errorSet),
+  };
+}
+
+export function generateInstructions(
+  totalCount: number,
+  hasResultsCount: number,
+  emptyCount: number,
+  errorCount: number
+): string {
+  const lines: string[] = [
+    `Bulk response with ${totalCount} results: ${hasResultsCount} hasResults, ${emptyCount} empty, ${errorCount} failed.`,
+    'Each result includes the original query, status, and data.',
+  ];
+
+  if (hasResultsCount > 0) {
+    lines.push(
+      'Review hasResultsStatusHints for guidance on results with data.'
+    );
+  }
+  if (emptyCount > 0) {
+    lines.push('Review emptyStatusHints for no-results scenarios.');
+  }
+  if (errorCount > 0) {
+    lines.push('Review errorStatusHints for error recovery strategies.');
+  }
+
+  return lines.join('\n');
 }
