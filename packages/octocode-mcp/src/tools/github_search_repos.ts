@@ -4,7 +4,6 @@ import {
   UserContext,
   withSecurityValidation,
 } from '../security/withSecurityValidation';
-import { createResult } from '../responses';
 import { searchGitHubReposAPI } from '../github/index';
 import { TOOL_NAMES } from '../constants';
 import {
@@ -13,13 +12,7 @@ import {
   SimplifiedRepository,
   type RepoSearchResult,
 } from '../scheme/github_search_repos';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  type BulkResponseConfig,
-  ProcessedBulkResult,
-} from '../utils/bulkOperations';
-import { generateEmptyQueryHints } from './hints';
+import { executeBulkOperation } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
 
@@ -46,26 +39,12 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
-          const hintsArray = generateEmptyQueryHints(
-            TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
-          );
-          const instructions = Array.isArray(hintsArray)
-            ? hintsArray.join('\n')
-            : String(hintsArray);
-
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            instructions,
-            isError: true,
-          });
-        }
-
-        return searchMultipleGitHubRepos(args.queries, authInfo, userContext);
+        // executeBulkOperation handles empty arrays gracefully
+        return searchMultipleGitHubRepos(
+          args.queries || [],
+          authInfo,
+          userContext
+        );
       }
     )
   );
@@ -131,12 +110,9 @@ async function searchMultipleGitHubRepos(
   // Split queries that have both topicsToSearch and keywordsToSearch
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
 
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     expandedQueries,
-    async (
-      query: GitHubReposSearchQuery,
-      _index: number
-    ): Promise<ProcessedBulkResult> => {
+    async (query: GitHubReposSearchQuery, _index: number) => {
       try {
         const apiResult = await searchGitHubReposAPI(
           query,
@@ -146,44 +122,43 @@ async function searchMultipleGitHubRepos(
 
         if ('error' in apiResult) {
           return {
+            status: 'error',
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
-          } as ProcessedBulkResult;
+          };
         }
 
         // Extract repository data
-        const repositories = apiResult.data.repositories || [];
-        const typedRepositories =
-          repositories as unknown as SimplifiedRepository[];
+        const repositories = (apiResult.data.repositories ||
+          []) satisfies SimplifiedRepository[];
 
         return {
+          status: repositories.length === 0 ? 'empty' : 'hasResults',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
-          repositories: typedRepositories,
-        } as ProcessedBulkResult;
+          repositories,
+        };
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          status: 'error',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-        } as ProcessedBulkResult;
+        };
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      keysPriority: ['repositories', 'error'] satisfies Array<
+        keyof RepoSearchResult
+      >,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    keysPriority: ['repositories', 'error'] satisfies Array<
-      keyof RepoSearchResult
-    >,
-  };
-
-  return createBulkResponse(config, results, errors, expandedQueries);
 }

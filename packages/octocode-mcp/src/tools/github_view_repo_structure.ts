@@ -4,7 +4,6 @@ import {
   UserContext,
   withSecurityValidation,
 } from '../security/withSecurityValidation';
-import { createResult } from '../responses';
 import { viewGitHubRepositoryStructureAPI } from '../github/index';
 import { TOOL_NAMES } from '../constants';
 import {
@@ -12,13 +11,7 @@ import {
   GitHubViewRepoStructureBulkQuerySchema,
   type RepoStructureResult,
 } from '../scheme/github_view_repo_structure.js';
-import { generateEmptyQueryHints } from './hints';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  type BulkResponseConfig,
-  type ProcessedBulkResult,
-} from '../utils/bulkOperations';
+import { executeBulkOperation } from '../utils/bulkOperations';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters';
@@ -46,27 +39,9 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
-          const hintsArray = generateEmptyQueryHints(
-            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
-          );
-          const instructions = Array.isArray(hintsArray)
-            ? hintsArray.join('\n')
-            : String(hintsArray);
-
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            instructions,
-            isError: true,
-          });
-        }
-
+        // executeBulkOperation handles empty arrays gracefully
         return exploreMultipleRepositoryStructures(
-          args.queries,
+          args.queries || [],
           authInfo,
           userContext
         );
@@ -80,12 +55,9 @@ async function exploreMultipleRepositoryStructures(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     queries,
-    async (
-      query: GitHubViewRepoStructureQuery,
-      _index: number
-    ): Promise<ProcessedBulkResult> => {
+    async (query: GitHubViewRepoStructureQuery, _index: number) => {
       try {
         // TypeScript and Zod validation ensure all required fields are properly typed
         // No manual validation needed - trust the type system!
@@ -110,6 +82,7 @@ async function exploreMultipleRepositoryStructures(
         // Check if result is an error
         if ('error' in apiResult) {
           return {
+            status: 'error',
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
@@ -119,7 +92,7 @@ async function exploreMultipleRepositoryStructures(
             files: [],
             folders: [],
             error: apiResult.error,
-          } as ProcessedBulkResult;
+          };
         }
 
         // Success case - use simplified structure with filtering
@@ -160,7 +133,10 @@ async function exploreMultipleRepositoryStructures(
           return folder.path;
         });
 
-        const result: RepoStructureResult = {
+        const hasContent = filePaths.length > 0 || folderPaths.length > 0;
+
+        return {
+          status: hasContent ? 'hasResults' : 'empty',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
@@ -170,13 +146,12 @@ async function exploreMultipleRepositoryStructures(
           files: filePaths,
           folders: folderPaths,
         };
-
-        return result as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          status: 'error',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
@@ -186,17 +161,14 @@ async function exploreMultipleRepositoryStructures(
           files: [],
           folders: [],
           error: `Failed to explore repository structure: ${errorMessage}`,
-        } as ProcessedBulkResult;
+        };
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      keysPriority: ['path', 'files', 'folders', 'error'] satisfies Array<
+        keyof RepoStructureResult
+      >,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    keysPriority: ['path', 'files', 'folders', 'error'] satisfies Array<
-      keyof RepoStructureResult
-    >,
-  };
-
-  return createBulkResponse(config, results, errors, queries);
 }

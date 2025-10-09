@@ -1134,42 +1134,28 @@ End of file.`;
   });
 
   describe('Input validation', () => {
-    it('should reject empty queries array', async () => {
+    it('should handle empty queries array gracefully', async () => {
       const result = await mockServer.callTool('githubGetFileContent', {
         queries: [],
       });
 
-      expect(result.isError).toBe(true);
+      // Empty arrays now return 0 results instead of error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain(
-        'error: "Queries array is required and cannot be empty"'
-      );
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain(
-        'Queries array is required and cannot be empty'
-      );
-      expect(responseText).toContain(
-        'Provide at least one valid query with required parameters'
-      );
+      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('results:');
     });
 
-    it('should reject missing queries parameter', async () => {
+    it('should handle missing queries parameter gracefully', async () => {
       const result = await mockServer.callTool('githubGetFileContent', {});
 
-      expect(result.isError).toBe(true);
+      // Missing parameter now returns 0 results instead of error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain(
-        'error: "Queries array is required and cannot be empty"'
-      );
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain(
-        'Queries array is required and cannot be empty'
-      );
-      expect(responseText).toContain(
-        'Provide at least one valid query with required parameters'
-      );
+      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('results:');
     });
   });
 });

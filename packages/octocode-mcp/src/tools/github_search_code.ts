@@ -1,23 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-
-import { createResult } from '../responses.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
+import {
+  UserContext,
+  withSecurityValidation,
+} from '../security/withSecurityValidation.js';
 import { TOOL_NAMES } from '../constants.js';
-import { withSecurityValidation } from '../security/withSecurityValidation.js';
 import {
   GitHubCodeSearchQuery,
   GitHubCodeSearchBulkQuerySchema,
-  GitHubSearchCodeInput,
   type SearchResult,
 } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/index.js';
-import {
-  createBulkResponse,
-  BulkResponseConfig,
-  processBulkQueries,
-  ProcessedBulkResult,
-} from '../utils/bulkOperations.js';
-import { generateEmptyQueryHints } from './hints.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/githubAPI.js';
 import { DESCRIPTIONS } from './descriptions.js';
@@ -40,31 +34,15 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
     withSecurityValidation(
       TOOL_NAMES.GITHUB_SEARCH_CODE,
       async (
-        args: Record<string, unknown>,
+        args: {
+          queries: GitHubCodeSearchQuery[];
+        },
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        // Type assertion after validation
-        const typedArgs = args as unknown as GitHubSearchCodeInput;
-        if (
-          !typedArgs.queries ||
-          !Array.isArray(typedArgs.queries) ||
-          typedArgs.queries.length === 0
-        ) {
-          const hints = generateEmptyQueryHints(TOOL_NAMES.GITHUB_SEARCH_CODE);
-          const instructions = Array.isArray(hints)
-            ? hints.join('\n')
-            : String(hints);
-
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            instructions,
-            isError: true,
-          });
-        }
-
+        // executeBulkOperation handles empty arrays gracefully
         return searchMultipleGitHubCode(
-          typedArgs.queries,
+          args.queries || [],
           authInfo,
           userContext
         );
@@ -76,14 +54,11 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
 async function searchMultipleGitHubCode(
   queries: GitHubCodeSearchQuery[],
   authInfo?: AuthInfo,
-  userContext?: import('../security/withSecurityValidation.js').UserContext
+  userContext?: UserContext
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     queries,
-    async (
-      query: GitHubCodeSearchQuery,
-      _index: number
-    ): Promise<ProcessedBulkResult> => {
+    async (query: GitHubCodeSearchQuery, _index: number) => {
       try {
         const apiResult = await searchGitHubCodeAPI(
           query,
@@ -93,11 +68,12 @@ async function searchMultipleGitHubCode(
 
         if ('error' in apiResult) {
           return {
+            status: 'error',
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
-          } as ProcessedBulkResult;
+          };
         }
 
         // Extract repository context from nameWithOwner
@@ -125,42 +101,41 @@ async function searchMultipleGitHubCode(
             !shouldIgnoreFile(item.path)
         );
 
-        const result: SearchResult = {
+        const files = filteredItems.map(
+          (item: OptimizedCodeSearchResult['items'][0]) => ({
+            path: item.path,
+            text_matches: item.matches.map(
+              (match: OptimizedCodeSearchResult['items'][0]['matches'][0]) =>
+                match.context
+            ),
+          })
+        );
+
+        return {
+          status: files.length === 0 ? 'empty' : 'hasResults',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           owner,
           repo,
-          files: filteredItems.map(
-            (item: OptimizedCodeSearchResult['items'][0]) => ({
-              path: item.path,
-              text_matches: item.matches.map(
-                (match: OptimizedCodeSearchResult['items'][0]['matches'][0]) =>
-                  match.context
-              ),
-            })
-          ),
+          files,
         };
-
-        return result as ProcessedBulkResult;
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          status: 'error',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-        } as ProcessedBulkResult;
+        };
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      keysPriority: ['files', 'error'] satisfies Array<keyof SearchResult>,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
-    keysPriority: ['files', 'error'] satisfies Array<keyof SearchResult>,
-  };
-
-  return createBulkResponse(config, results, errors, queries);
 }

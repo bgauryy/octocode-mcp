@@ -1,7 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { withSecurityValidation } from '../security/withSecurityValidation';
-import { createResult } from '../responses';
+import {
+  UserContext,
+  withSecurityValidation,
+} from '../security/withSecurityValidation';
 import { searchGitHubPullRequestsAPI } from '../github/index';
 import { TOOL_NAMES } from '../constants';
 import {
@@ -9,21 +11,13 @@ import {
   GitHubPullRequestSearchBulkQuerySchema,
   type PullRequestSearchResult,
 } from '../scheme/github_search_pull_requests';
-import { GitHubPullRequestsSearchParams } from '../github/githubAPI';
-import { generateEmptyQueryHints } from './hints';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import {
   PR_QUERY_LENGTH_VALIDATION,
   PR_VALID_PARAMS_VALIDATION,
-  ERROR_RECOVERY_TOOL,
 } from './hintsContent';
 import { DESCRIPTIONS } from './descriptions';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  type BulkResponseConfig,
-  type ProcessedBulkResult,
-} from '../utils/bulkOperations';
+import { executeBulkOperation } from '../utils/bulkOperations';
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   return server.registerTool(
@@ -48,44 +42,24 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
-          const hintsArray = generateEmptyQueryHints(
-            TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
-          );
-          const instructions = Array.isArray(hintsArray)
-            ? hintsArray.join('\n')
-            : String(hintsArray);
+        // executeBulkOperation handles empty arrays gracefully
+        const queries = args.queries || [];
 
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            instructions,
-            isError: true,
-          });
-        }
-
+        // Custom validation for PR-specific rules
         // Check for overly long queries (business logic validation)
-        const longQuery = args.queries.find(
+        const longQueryIndex = queries.findIndex(
           query => query?.query && String(query.query).length > 256
         );
-        if (longQuery) {
-          const hintsArray = PR_QUERY_LENGTH_VALIDATION.hints;
-          const instructions = Array.isArray(hintsArray)
-            ? hintsArray.join('\n')
-            : String(hintsArray);
-
-          return createResult({
-            data: { error: PR_QUERY_LENGTH_VALIDATION.message },
-            instructions,
-            isError: true,
-          });
+        if (longQueryIndex !== -1) {
+          // Return error by modifying the query to trigger error in processor
+          queries[longQueryIndex] = {
+            ...queries[longQueryIndex],
+            _validationError: PR_QUERY_LENGTH_VALIDATION.message,
+          } as GitHubPullRequestSearchQuery;
         }
 
-        // Basic validation - schema handles detailed validation
-        const hasValidQueries = args.queries.some(
+        // Basic validation - check if at least one query has valid parameters
+        const hasValidQueries = queries.some(
           query =>
             query?.query?.trim() ||
             query?.owner ||
@@ -95,42 +69,15 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
             (query?.prNumber && query?.owner && query?.repo)
         );
 
-        if (!hasValidQueries) {
-          const hintsArray = PR_VALID_PARAMS_VALIDATION.hints;
-          const instructions = Array.isArray(hintsArray)
-            ? hintsArray.join('\n')
-            : String(hintsArray);
-
-          return createResult({
-            data: {
-              error: PR_VALID_PARAMS_VALIDATION.message,
-            },
-            instructions,
-            isError: true,
-          });
+        if (!hasValidQueries && queries.length > 0) {
+          // Add validation error to first query
+          queries[0] = {
+            ...queries[0],
+            _validationError: PR_VALID_PARAMS_VALIDATION.message,
+          } as GitHubPullRequestSearchQuery;
         }
 
-        try {
-          return await searchMultipleGitHubPullRequests(
-            args.queries,
-            authInfo,
-            userContext
-          );
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : 'Unknown error occurred';
-          const hintsArray =
-            ERROR_RECOVERY_TOOL[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS];
-          const instructions = Array.isArray(hintsArray)
-            ? hintsArray.join('\n')
-            : String(hintsArray);
-
-          return createResult({
-            data: { error: `Failed to search pull requests: ${errorMessage}` },
-            instructions,
-            isError: true,
-          });
-        }
+        return searchMultipleGitHubPullRequests(queries, authInfo, userContext);
       }
     )
   );
@@ -142,63 +89,75 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
 async function searchMultipleGitHubPullRequests(
   queries: GitHubPullRequestSearchQuery[],
   authInfo?: AuthInfo,
-  userContext?: import('../security/withSecurityValidation').UserContext
+  userContext?: UserContext
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     queries,
-    async (
-      query: GitHubPullRequestSearchQuery,
-      _index: number
-    ): Promise<ProcessedBulkResult> => {
+    async (query: GitHubPullRequestSearchQuery, _index: number) => {
       try {
+        // Check for validation errors passed from handler
+        const validationError = (query as unknown as Record<string, unknown>)
+          ?._validationError;
+        if (validationError && typeof validationError === 'string') {
+          return {
+            status: 'error',
+            researchGoal: query.researchGoal,
+            reasoning: query.reasoning,
+            researchSuggestions: query.researchSuggestions,
+            error: validationError,
+          };
+        }
+
+        // GitHubPullRequestSearchQuery is compatible with GitHubPullRequestsSearchParams
         const apiResult = await searchGitHubPullRequestsAPI(
-          query as GitHubPullRequestsSearchParams,
+          query,
           authInfo,
           userContext
         );
 
         if ('error' in apiResult) {
           return {
+            status: 'error',
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
             researchSuggestions: query.researchSuggestions,
             error: apiResult.error,
-          } as ProcessedBulkResult;
+          };
         }
 
         // Extract pull request data
         const pullRequests = apiResult.pull_requests || [];
 
         return {
+          status: pullRequests.length === 0 ? 'empty' : 'hasResults',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           pull_requests: pullRequests,
           total_count: apiResult.total_count || pullRequests.length,
-        } as ProcessedBulkResult;
+          incomplete_results: apiResult.incomplete_results,
+        };
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          status: 'error',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-        } as ProcessedBulkResult;
+        };
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      keysPriority: [
+        'pull_requests',
+        'total_count',
+        'incomplete_results',
+        'error',
+      ] satisfies Array<keyof PullRequestSearchResult>,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-    keysPriority: [
-      'pull_requests',
-      'total_count',
-      'incomplete_results',
-      'error',
-    ] satisfies Array<keyof PullRequestSearchResult>,
-  };
-
-  return createBulkResponse(config, results, errors, queries);
 }

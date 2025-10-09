@@ -185,44 +185,30 @@ describe('GitHub Search Pull Requests Tool', () => {
       }); // userContext
     });
 
-    it('should reject empty queries array', async () => {
+    it('should handle empty queries array gracefully', async () => {
       const result = await mockServer.callTool('githubSearchPullRequests', {
         queries: [],
       });
 
-      expect(result.isError).toBe(true);
+      // Empty arrays now return 0 results instead of error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain(
-        'error: "Queries array is required and cannot be empty"'
-      );
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain(
-        'Queries array is required and cannot be empty'
-      );
-      expect(responseText).toContain(
-        'Provide at least one valid query with required parameters'
-      );
+      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('results:');
     });
 
-    it('should reject missing queries parameter', async () => {
+    it('should handle missing queries parameter gracefully', async () => {
       const result = await mockServer.callTool('githubSearchPullRequests', {});
 
-      expect(result.isError).toBe(true);
+      // Missing parameter now returns 0 results instead of error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain(
-        'error: "Queries array is required and cannot be empty"'
-      );
       expect(responseText).toContain('instructions:');
-      expect(responseText).toContain(
-        'Queries array is required and cannot be empty'
-      );
-      expect(responseText).toContain(
-        'Provide at least one valid query with required parameters'
-      );
+      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('results:');
     });
 
     it('should accept query-based searches', async () => {
@@ -259,16 +245,18 @@ describe('GitHub Search Pull Requests Tool', () => {
         ],
       });
 
-      expect(result.isError).toBe(true);
+      // Validation errors now go through bulkOperations flow, so isError is false
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain(
         'error: "Query too long. Maximum 256 characters allowed."'
       );
-      expect(responseText).toContain('instructions:');
-      expect(responseText).toContain('Use shorter, more focused search terms');
-      expect(responseText).toContain('Maximum query length is 256 characters');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
