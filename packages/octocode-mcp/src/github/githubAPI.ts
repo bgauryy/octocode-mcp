@@ -210,7 +210,6 @@ export {
   clearCachedToken,
   handleGitHubAPIError,
   generateFileAccessHints,
-  getOwnerQualifier,
   buildCodeSearchQuery,
   buildRepoSearchQuery,
   buildPullRequestSearchQuery,

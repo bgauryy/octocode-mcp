@@ -31,10 +31,6 @@ describe('GitHub API Re-exports', () => {
   });
 
   describe('Query builder functions', () => {
-    it('should re-export getOwnerQualifier', () => {
-      expect(typeof githubAPI.getOwnerQualifier).toEqual('function');
-    });
-
     it('should re-export buildCodeSearchQuery', () => {
       expect(typeof githubAPI.buildCodeSearchQuery).toEqual('function');
     });
