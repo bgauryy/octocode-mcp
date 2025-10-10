@@ -8,12 +8,21 @@ import {
 const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/github/index.js', () => ({
+vi.mock('../../src/github/codeSearch.js', () => ({
   searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
+  getServerConfig: vi.fn(() => ({
+    version: '1.0.0',
+    enableLogging: false,
+    betaEnabled: false,
+    timeout: 30000,
+    maxRetries: 3,
+    loggingEnabled: false,
+  })),
 }));
 
 // Import after mocking

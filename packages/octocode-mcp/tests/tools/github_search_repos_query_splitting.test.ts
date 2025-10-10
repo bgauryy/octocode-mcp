@@ -5,15 +5,16 @@ import { TOOL_NAMES } from '../../src/constants.js';
 import { GitHubReposSearchQuery } from '../../src/scheme/github_search_repos.js';
 
 // Mock the searchGitHubReposAPI to capture the actual queries being made
-vi.mock('../../src/github/index.js', () => ({
+vi.mock('../../src/github/repoSearch.js', () => ({
   searchGitHubReposAPI: vi.fn(),
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
 }));
 
-import { searchGitHubReposAPI } from '../../src/github/index.js';
+import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
 
 describe('GitHub Search Repositories Query Splitting', () => {
   const mockSearchGitHubReposAPI = vi.mocked(searchGitHubReposAPI);

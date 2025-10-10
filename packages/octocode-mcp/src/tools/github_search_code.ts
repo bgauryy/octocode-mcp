@@ -10,7 +10,7 @@ import {
   GitHubCodeSearchBulkQuerySchema,
   type SearchResult,
 } from '../scheme/github_search_code.js';
-import { searchGitHubCodeAPI } from '../github/index.js';
+import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import type { OptimizedCodeSearchResult } from '../github/githubAPI.js';
@@ -63,7 +63,7 @@ async function searchMultipleGitHubCode(
         const apiResult = await searchGitHubCodeAPI(
           query,
           authInfo,
-          userContext?.sessionId
+          userContext
         );
 
         if ('error' in apiResult) {

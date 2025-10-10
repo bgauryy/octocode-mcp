@@ -4,7 +4,7 @@ import {
   UserContext,
   withSecurityValidation,
 } from '../security/withSecurityValidation';
-import { searchGitHubReposAPI } from '../github/index';
+import { searchGitHubReposAPI } from '../github/repoSearch';
 import { TOOL_NAMES } from '../constants';
 import {
   GitHubReposSearchQuery,

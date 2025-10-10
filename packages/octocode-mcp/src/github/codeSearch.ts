@@ -14,6 +14,7 @@ import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/fileFilters';
+import { UserContext } from '../security/withSecurityValidation';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
@@ -22,9 +23,13 @@ import { shouldIgnoreFile } from '../utils/fileFilters';
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  const cacheKey = generateCacheKey('gh-api-code', params, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-api-code',
+    params,
+    userContext?.sessionId
+  );
 
   const result = await withDataCache<
     GitHubAPIResponse<OptimizedCodeSearchResult>

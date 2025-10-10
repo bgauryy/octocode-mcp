@@ -4,7 +4,7 @@ import {
   UserContext,
   withSecurityValidation,
 } from '../security/withSecurityValidation';
-import { viewGitHubRepositoryStructureAPI } from '../github/index';
+import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations';
 import { TOOL_NAMES } from '../constants';
 import {
   GitHubViewRepoStructureQuery,

@@ -22,29 +22,76 @@ import {
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 
+// Mock GitHub client first
+const mockOctokit = vi.hoisted(() => ({
+  rest: {
+    search: {
+      code: vi.fn(),
+      repos: vi.fn(),
+      issuesAndPullRequests: vi.fn(),
+    },
+    repos: {
+      getContent: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../../src/github/client.js', () => ({
+  getOctokit: vi.fn(() => mockOctokit),
+}));
+
+// Mock cache to prevent interference
+vi.mock('../../src/utils/cache.js', () => ({
+  generateCacheKey: vi.fn(() => 'test-cache-key'),
+  withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
+    return await fn();
+  }),
+}));
+
 const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-// Mock all GitHub API functions
-vi.mock('../../src/github/index.js', () => ({
+// Mock specific GitHub module files (not the barrel export)
+vi.mock('../../src/github/codeSearch.js', () => ({
   searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
+}));
+
+vi.mock('../../src/github/fileOperations.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
-  searchGitHubReposAPI: mockSearchGitHubReposAPI,
-  searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
+}));
+
+vi.mock('../../src/github/repoSearch.js', () => ({
+  searchGitHubReposAPI: mockSearchGitHubReposAPI,
+}));
+
+vi.mock('../../src/github/pullRequestSearch.js', () => ({
+  searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
+  fetchGitHubPullRequestByNumberAPI: vi.fn(),
+  transformPullRequestItemFromREST: vi.fn(),
 }));
 
 const mockGetServerConfig = vi.hoisted(() => vi.fn());
 const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
+const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: vi.fn(),
   getServerConfig: mockGetServerConfig,
   isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: mockGetGitHubToken,
+}));
+
+// Mock session module to prevent timeouts
+const mockLogToolCall = vi.hoisted(() => vi.fn());
+vi.mock('../../src/session.js', () => ({
+  logToolCall: mockLogToolCall,
+  getSessionManager: vi.fn(() => null),
+  SessionManager: vi.fn(),
 }));
 
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
@@ -72,6 +119,8 @@ describe('Response Structure - All Tools', () => {
       loggingEnabled: false,
     });
     mockIsSamplingEnabled.mockReturnValue(false);
+    // Return a test token for authentication
+    mockGetGitHubToken.mockResolvedValue('test-token');
   });
 
   afterEach(() => {
@@ -87,8 +136,16 @@ describe('Response Structure - All Tools', () => {
     it('should handle hasResults queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         data: {
-          items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+          total_count: 1,
+          items: [
+            {
+              path: 'file1.js',
+              repository: { nameWithOwner: 'test/repo', url: '' },
+              matches: [{ context: 'test', positions: [] }],
+            },
+          ],
         },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -112,7 +169,11 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle empty queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
-        data: { items: [] },
+        data: {
+          total_count: 0,
+          items: [],
+        },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -162,11 +223,23 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -187,11 +260,20 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -211,10 +293,15 @@ describe('Response Structure - All Tools', () => {
     it('should handle empty + failed combination', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -235,14 +322,27 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -269,12 +369,14 @@ describe('Response Structure - All Tools', () => {
     it('should handle successful queries only', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValueOnce({
         data: {
+          repository: 'test/repo',
           path: 'file.js',
+          branch: 'main',
           content: 'console.log("test")',
           contentLength: 20,
-          owner: 'test',
-          repo: 'repo',
+          minified: false,
         },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -298,6 +400,7 @@ describe('Response Structure - All Tools', () => {
     it('should handle failed queries only', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValueOnce({
         error: 'File not found',
+        status: 404,
       });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -322,15 +425,18 @@ describe('Response Structure - All Tools', () => {
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
+            repository: 'test/repo',
             path: 'file.js',
+            branch: 'main',
             content: 'console.log("test")',
             contentLength: 20,
-            owner: 'test',
-            repo: 'repo',
+            minified: false,
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'File not found',
+          status: 404,
         });
 
       const result = await mockServer.callTool('githubGetFileContent', {
@@ -367,9 +473,17 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubReposAPI.mockResolvedValueOnce({
         data: {
           repositories: [
-            { repository: 'test/repo', description: 'Test', stars: 100 },
+            {
+              owner: 'test',
+              repo: 'repo',
+              stars: 100,
+              description: 'Test',
+              url: 'https://github.com/test/repo',
+              updatedAt: '01/01/2024',
+            },
           ],
         },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubSearchRepositories', {
@@ -390,7 +504,10 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle empty queries only', async () => {
       mockSearchGitHubReposAPI.mockResolvedValueOnce({
-        data: { repositories: [] },
+        data: {
+          repositories: [],
+        },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubSearchRepositories', {
@@ -414,15 +531,27 @@ describe('Response Structure - All Tools', () => {
         .mockResolvedValueOnce({
           data: {
             repositories: [
-              { repository: 'test/repo', description: 'Test', stars: 100 },
+              {
+                owner: 'test',
+                repo: 'repo',
+                stars: 100,
+                description: 'Test',
+                url: 'https://github.com/test/repo',
+                updatedAt: '01/01/2024',
+              },
             ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { repositories: [] },
+          data: {
+            repositories: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
       const result = await mockServer.callTool('githubSearchRepositories', {
@@ -527,8 +656,12 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle successful queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [{ path: 'README.md', size: 100 }],
-        folders: { folders: [{ path: 'src', size: 1000 }] },
+        files: [{ path: '/README.md', size: 100 }],
+        folders: { folders: [{ path: '/src' }] },
+        summary: {
+          totalFiles: 1,
+          totalDirectories: 1,
+        },
       });
 
       const result = await mockServer.callTool('githubViewRepoStructure', {
@@ -553,6 +686,10 @@ describe('Response Structure - All Tools', () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
         files: [],
         folders: { folders: [] },
+        summary: {
+          totalFiles: 0,
+          totalDirectories: 0,
+        },
       });
 
       const result = await mockServer.callTool('githubViewRepoStructure', {
@@ -576,12 +713,20 @@ describe('Response Structure - All Tools', () => {
     it('should handle successful + empty + failed combination', async () => {
       mockViewGitHubRepositoryStructureAPI
         .mockResolvedValueOnce({
-          files: [{ path: 'README.md', size: 100 }],
-          folders: { folders: [{ path: 'src', size: 1000 }] },
+          files: [{ path: '/README.md', size: 100 }],
+          folders: { folders: [{ path: '/src' }] },
+          summary: {
+            totalFiles: 1,
+            totalDirectories: 1,
+          },
         })
         .mockResolvedValueOnce({
           files: [],
           folders: { folders: [] },
+          summary: {
+            totalFiles: 0,
+            totalDirectories: 0,
+          },
         })
         .mockResolvedValueOnce({
           error: 'Repository not found',
@@ -627,14 +772,27 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
       const result = await mockServer.callTool('githubSearchCode', {
@@ -662,8 +820,16 @@ describe('Response Structure - All Tools', () => {
     it('should only include hint sections for result types that exist', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         data: {
-          items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+          total_count: 1,
+          items: [
+            {
+              path: 'file1.js',
+              repository: { nameWithOwner: 'test/repo', url: '' },
+              matches: [{ context: 'test', positions: [] }],
+            },
+          ],
         },
+        status: 200,
       });
 
       const result = await mockServer.callTool('githubSearchCode', {

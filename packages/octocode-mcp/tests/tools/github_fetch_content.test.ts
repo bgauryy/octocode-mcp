@@ -6,19 +6,22 @@ import {
 
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/github/index.js', () => ({
+vi.mock('../../src/github/fileOperations.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
+  viewGitHubRepositoryStructureAPI: vi.fn(),
 }));
 
 const mockInitialize = vi.hoisted(() => vi.fn());
 const mockGetServerConfig = vi.hoisted(() => vi.fn());
 const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
+const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: mockInitialize,
   getServerConfig: mockGetServerConfig,
   isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: mockGetGitHubToken,
 }));
 
 const mockPerformSampling = vi.hoisted(() => vi.fn());
@@ -150,8 +153,14 @@ describe('GitHub Fetch Content Tool', () => {
           path: 'test.js',
           branch: 'main',
         }),
-        undefined,
-        undefined,
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        }),
       ]);
     });
 
@@ -350,8 +359,14 @@ End of file.`;
           endLine: undefined,
           matchString: undefined,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -393,8 +408,14 @@ End of file.`;
           endLine: undefined,
           matchString: undefined,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
   });
@@ -451,8 +472,14 @@ End of file.`;
           endLine: 7,
           matchString: undefined,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -510,8 +537,14 @@ End of file.`;
           startLine: undefined,
           endLine: undefined,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -551,8 +584,14 @@ End of file.`;
           matchString: 'def test_function',
           matchStringContextLines: 5, // Default value
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
   });
@@ -603,8 +642,14 @@ End of file.`;
         expect.objectContaining({
           minified: true,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -650,8 +695,14 @@ End of file.`;
         expect.objectContaining({
           minified: false,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -745,8 +796,14 @@ End of file.`;
         expect.objectContaining({
           sanitize: true,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -782,8 +839,14 @@ End of file.`;
         expect.objectContaining({
           sanitize: false,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
   });
@@ -940,8 +1003,14 @@ End of file.`;
         expect.objectContaining({
           branch: 'feature-branch',
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -976,8 +1045,14 @@ End of file.`;
         expect.objectContaining({
           branch: undefined,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
   });
@@ -1086,8 +1161,14 @@ End of file.`;
           startLine: 5,
           endLine: 6,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
 
@@ -1127,8 +1208,14 @@ End of file.`;
           minified: true,
           sanitize: false,
         }),
-        undefined,
-        undefined
+        undefined, // authInfo
+        expect.objectContaining({
+          // userContext
+          userId: 'anonymous',
+          userLogin: 'anonymous',
+          isEnterpriseMode: false,
+          sessionId: undefined,
+        })
       );
     });
   });

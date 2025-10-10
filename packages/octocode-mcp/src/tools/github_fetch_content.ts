@@ -4,7 +4,7 @@ import {
   UserContext,
   withSecurityValidation,
 } from '../security/withSecurityValidation';
-import { fetchGitHubFileContentAPI } from '../github/index.js';
+import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
 import {
   FileContentQuery,
@@ -100,7 +100,7 @@ async function fetchMultipleGitHubFileContents(
         const apiResult = await fetchGitHubFileContentAPI(
           apiRequest,
           authInfo,
-          userContext?.sessionId
+          userContext
         );
 
         // Extract the actual result from the GitHubAPIResponse wrapper

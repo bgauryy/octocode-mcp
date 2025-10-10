@@ -202,23 +202,3 @@ export function isRepository(obj: unknown): obj is Repository {
     typeof (obj as Record<string, unknown>).private === 'boolean'
   );
 }
-
-export {
-  getOctokit,
-  OctokitWithThrottling,
-  getDefaultBranch,
-  clearCachedToken,
-  handleGitHubAPIError,
-  generateFileAccessHints,
-  buildCodeSearchQuery,
-  buildRepoSearchQuery,
-  buildPullRequestSearchQuery,
-  shouldUseSearchForPRs,
-  searchGitHubCodeAPI,
-  searchGitHubReposAPI,
-  searchGitHubPullRequestsAPI,
-  fetchGitHubPullRequestByNumberAPI,
-  transformPullRequestItemFromREST,
-  fetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI,
-} from '.';

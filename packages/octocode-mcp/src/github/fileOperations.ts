@@ -26,7 +26,7 @@ import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubAPIResponse<ContentResult>> {
   // Generate cache key based on request parameters
   const cacheKey = generateCacheKey(
@@ -44,7 +44,7 @@ export async function fetchGitHubFileContentAPI(
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
     },
-    sessionId
+    userContext?.sessionId
   );
 
   const result = await withDataCache<GitHubAPIResponse<ContentResult>>(

@@ -102,13 +102,13 @@ vi.mock('../../src/utils/exec.js', () => ({
 }));
 
 // Import after mocking
+import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
+import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
 import {
-  searchGitHubCodeAPI,
-  searchGitHubReposAPI,
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
-  searchGitHubPullRequestsAPI,
-} from '../../src/github/githubAPI.js';
+} from '../../src/github/fileOperations.js';
+import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
 import type { GitHubCodeSearchQuery } from '../../src/scheme/github_search_code.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 

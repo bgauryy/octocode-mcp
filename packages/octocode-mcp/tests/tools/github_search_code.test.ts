@@ -23,6 +23,12 @@ vi.mock('../../src/utils/cache.js', () => ({
   }),
 }));
 
+// Mock serverConfig
+vi.mock('../../src/serverConfig.js', () => ({
+  getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 

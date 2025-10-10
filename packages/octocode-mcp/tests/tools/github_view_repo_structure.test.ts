@@ -6,12 +6,34 @@ import {
 
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/github/index.js', () => ({
+const mockGetOctokit = vi.hoisted(() =>
+  vi.fn(() =>
+    Promise.resolve({
+      rest: {
+        repos: {
+          getContent: vi.fn(),
+          get: vi.fn(),
+        },
+      },
+    })
+  )
+);
+
+vi.mock('../../src/github/fileOperations.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
+}));
+
+vi.mock('../../src/github/client.js', () => ({
+  getOctokit: mockGetOctokit,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: vi.fn(async () => 'test-token'),
+  getServerConfig: vi.fn(() => ({
+    timeout: 30000,
+    version: '1.0.0',
+  })),
 }));
 
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
@@ -95,16 +117,23 @@ describe('GitHub View Repository Structure Tool', () => {
       },
     });
 
-    await mockServer.callTool('githubViewRepoStructure', {
-      queries: [
-        {
-          owner: 'test-owner',
-          repo: 'test-repo',
-          branch: 'main',
-          id: 'structure-auth-test',
-        },
-      ],
-    });
+    await mockServer.callTool(
+      'githubViewRepoStructure',
+      {
+        queries: [
+          {
+            owner: 'test-owner',
+            repo: 'test-repo',
+            branch: 'main',
+            id: 'structure-auth-test',
+          },
+        ],
+      },
+      {
+        authInfo: { token: 'mock-test-token' },
+        sessionId: 'test-session-id',
+      }
+    );
 
     // Verify the API was called with authInfo and userContext
     expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalledTimes(1);
@@ -113,12 +142,12 @@ describe('GitHub View Repository Structure Tool', () => {
     // Should be called with (apiRequest, authInfo, userContext)
     expect(apiCall).toBeDefined();
     expect(apiCall).toHaveLength(3);
-    expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+    expect(apiCall?.[1]).toEqual({ token: 'mock-test-token' }); // authInfo
     expect(apiCall?.[2]).toEqual({
       userId: 'anonymous',
       userLogin: 'anonymous',
       isEnterpriseMode: false,
-      sessionId: undefined,
+      sessionId: 'test-session-id',
     }); // userContext
   });
 

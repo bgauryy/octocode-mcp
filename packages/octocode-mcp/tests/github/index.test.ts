@@ -30,9 +30,6 @@ describe('GitHub Index Exports', () => {
 
   describe('Query builder exports', () => {
     it('should export query builder functions', () => {
-      expect(githubIndex.getOwnerQualifier).toBeDefined();
-      expect(typeof githubIndex.getOwnerQualifier).toBe('function');
-
       expect(githubIndex.buildCodeSearchQuery).toBeDefined();
       expect(typeof githubIndex.buildCodeSearchQuery).toBe('function');
 
@@ -93,7 +90,6 @@ describe('GitHub Index Exports', () => {
         'clearCachedToken',
         'handleGitHubAPIError',
         'generateFileAccessHints',
-        'getOwnerQualifier',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
         'buildPullRequestSearchQuery',
@@ -130,7 +126,6 @@ describe('GitHub Index Exports', () => {
         'clearCachedToken',
         'handleGitHubAPIError',
         'generateFileAccessHints',
-        'getOwnerQualifier',
         'buildCodeSearchQuery',
         'buildRepoSearchQuery',
         'buildPullRequestSearchQuery',

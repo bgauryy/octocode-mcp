@@ -12,9 +12,15 @@ const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/github/index.js', () => ({
+vi.mock('../../src/github/codeSearch.js', () => ({
   searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
+}));
+
+vi.mock('../../src/github/repoSearch.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
+}));
+
+vi.mock('../../src/github/fileOperations.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
@@ -24,6 +30,7 @@ const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: vi.fn(),
   getServerConfig: mockGetServerConfig,
+  getGitHubToken: vi.fn(() => Promise.resolve('mock-token')),
   isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
 }));
@@ -67,14 +74,18 @@ describe('Empty Arrays Removal in Responses', () => {
         data: { items: [] }, // Empty result
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent'],
-            reasoning: 'Test empty array removal',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        'githubSearchCode',
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent'],
+              reasoning: 'Test empty array removal',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -101,14 +112,18 @@ describe('Empty Arrays Removal in Responses', () => {
         data: { repositories: [] }, // Empty result
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent'],
-            reasoning: 'Test empty array removal',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        'githubSearchRepositories',
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent'],
+              reasoning: 'Test empty array removal',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -132,16 +147,20 @@ describe('Empty Arrays Removal in Responses', () => {
         folders: { folders: [] }, // Empty folders
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test empty arrays removal',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        'githubViewRepoStructure',
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test empty arrays removal',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -175,12 +194,16 @@ describe('Empty Arrays Removal in Responses', () => {
           data: { items: [] }, // Empty result
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          { keywordsToSearch: ['found'], reasoning: 'Will have results' },
-          { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
-        ],
-      });
+      const result = await mockServer.callTool(
+        'githubSearchCode',
+        {
+          queries: [
+            { keywordsToSearch: ['found'], reasoning: 'Will have results' },
+            { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -210,14 +233,18 @@ describe('Empty Arrays Removal in Responses', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Test nested empty arrays',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        'githubSearchCode',
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Test nested empty arrays',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -240,14 +267,18 @@ describe('Empty Arrays Removal in Responses', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Check hints structure',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        'githubSearchCode',
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Check hints structure',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 

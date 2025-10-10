@@ -29,6 +29,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
 }));
 
 // Import after mocking
