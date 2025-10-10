@@ -67,13 +67,13 @@ export interface GitHubSearchCodeOutput extends ToolResponse {
 export interface SearchResult {
   researchGoal?: string;
   reasoning?: string;
+  researchSuggestions?: string[];
   owner?: string;
   repo?: string;
   files: SearchFile[];
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
 }
 
 /**

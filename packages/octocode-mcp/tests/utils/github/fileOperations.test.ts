@@ -75,6 +75,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         owner: 'test',
         repo: 'repo',
         path: 'test.js',
+        researchSuggestions: [],
       };
 
       const parsed = FileContentQuerySchema.parse(minimalInput);
@@ -183,24 +184,22 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data).toBeDefined();
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.contentLength).toBe(34);
-        expect(result.data.isPartial).toBeUndefined();
-        expect(result.data.startLine).toBeUndefined();
-        expect(result.data.endLine).toBeUndefined();
-
-        // Verify it's treated as full content (not partial)
-        expect(result.data.isPartial).toBeFalsy();
-      }
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'abc123',
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+          contentLength: 34,
+        },
+      });
     });
 
     it('should fetch entire file when only non-content parameters are specified', async () => {
       const params = createTestParams({
+        researchSuggestions: [],
         minified: false,
         sanitize: true,
         // No fullContent, startLine, endLine, or matchString
@@ -208,17 +207,17 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        // Should return full content for backward compatibility
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.contentLength).toBe(34);
-        expect(result.data.isPartial).toBeUndefined();
-        expect(result.data.startLine).toBeUndefined();
-        expect(result.data.endLine).toBeUndefined();
-      }
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'abc123',
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+          contentLength: 34,
+        },
+      });
     });
 
     it('should explicitly handle fullContent=false as full content (backward compatibility)', async () => {
@@ -229,17 +228,17 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        // Should still return full content when fullContent=false and no other params
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.contentLength).toBe(34);
-        expect(result.data.isPartial).toBeUndefined();
-        expect(result.data.startLine).toBeUndefined();
-        expect(result.data.endLine).toBeUndefined();
-      }
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'abc123',
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+          contentLength: 34,
+        },
+      });
     });
 
     it('should apply minification when minified=true', async () => {
@@ -253,12 +252,20 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         'line 1\nline 2\nline 3\nline 4\nline 5',
         'test.txt'
       );
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe('minified content');
-        expect(result.data.minified).toBe(true);
-        expect(result.data.minificationType).toBe('general');
-      }
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'abc123',
+          content: 'minified content',
+          contentLength: 16,
+          minified: true,
+          minificationType: 'general',
+          minificationFailed: false,
+        },
+      });
     });
 
     it('should not apply minification when minified=false', async () => {
@@ -267,13 +274,18 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       const result = await fetchGitHubFileContentAPI(params);
 
       expect(mockminifyContent).not.toHaveBeenCalled();
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.minified).toBeUndefined();
-      }
+
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'abc123',
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+          contentLength: 34,
+        },
+      });
     });
 
     it('should return entire file when fullContent=true', async () => {
@@ -285,16 +297,17 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const result = await fetchGitHubFileContentAPI(params);
 
-      expect(result.status).toBe(200);
-      if ('data' in result) {
-        expect(result.data.content).toBe(
-          'line 1\nline 2\nline 3\nline 4\nline 5'
-        );
-        expect(result.data.startLine).toBeUndefined();
-        expect(result.data.endLine).toBeUndefined();
-        expect(result.data.contentLength).toBe(34);
-        expect(result.data.isPartial).toBeUndefined();
-      }
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'abc123',
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+          contentLength: 34,
+        },
+      });
     });
 
     it('should return entire file when fullContent=true and ignore matchString', async () => {
@@ -337,6 +350,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
     it('should extract specific line range with startLine and endLine', async () => {
       const params = createTestParams({
+        researchSuggestions: [],
         startLine: 3,
         endLine: 6,
       });
@@ -452,6 +466,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
     it('should find match and return context with default matchStringContextLines (5)', async () => {
       const params = createTestParams({
+        researchSuggestions: [],
         matchString: 'function MyComponent()',
       });
 

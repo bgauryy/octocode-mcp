@@ -1,132 +1,59 @@
 import { describe, it, expect } from 'vitest';
 import * as githubAPI from '../../src/github/githubAPI.js';
 
-describe('GitHub API Re-exports', () => {
-  describe('Core client functions', () => {
-    it('should re-export client functions', () => {
-      expect(githubAPI.getOctokit).toBeDefined();
-      expect(typeof githubAPI.getOctokit).toBe('function');
+describe('GitHub API Types', () => {
+  describe('Type guards', () => {
+    it('should export isGitHubAPIError type guard', () => {
+      expect(typeof githubAPI.isGitHubAPIError).toEqual('function');
+    });
 
-      expect(githubAPI.OctokitWithThrottling).toBeDefined();
-      expect(typeof githubAPI.OctokitWithThrottling).toBe('function');
+    it('should export isGitHubAPISuccess type guard', () => {
+      expect(typeof githubAPI.isGitHubAPISuccess).toEqual('function');
+    });
 
-      expect(githubAPI.getDefaultBranch).toBeDefined();
-      expect(typeof githubAPI.getDefaultBranch).toBe('function');
-
-      expect(githubAPI.clearCachedToken).toBeDefined();
-      expect(typeof githubAPI.clearCachedToken).toBe('function');
+    it('should export isRepository type guard', () => {
+      expect(typeof githubAPI.isRepository).toEqual('function');
     });
   });
 
-  describe('Error handling functions', () => {
-    it('should re-export error handling functions', () => {
-      expect(githubAPI.handleGitHubAPIError).toBeDefined();
-      expect(typeof githubAPI.handleGitHubAPIError).toBe('function');
+  describe('Type guard functionality', () => {
+    it('isGitHubAPIError should correctly identify error objects', () => {
+      const error: githubAPI.GitHubAPIError = {
+        error: 'Test error',
+        type: 'http',
+        status: 404,
+      };
 
-      expect(githubAPI.generateFileAccessHints).toBeDefined();
-      expect(typeof githubAPI.generateFileAccessHints).toBe('function');
-    });
-  });
-
-  describe('Query builder functions', () => {
-    it('should re-export query builder functions', () => {
-      expect(githubAPI.getOwnerQualifier).toBeDefined();
-      expect(typeof githubAPI.getOwnerQualifier).toBe('function');
-
-      expect(githubAPI.buildCodeSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildCodeSearchQuery).toBe('function');
-
-      expect(githubAPI.buildRepoSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildRepoSearchQuery).toBe('function');
-
-      expect(githubAPI.buildPullRequestSearchQuery).toBeDefined();
-      expect(typeof githubAPI.buildPullRequestSearchQuery).toBe('function');
-
-      expect(githubAPI.shouldUseSearchForPRs).toBeDefined();
-      expect(typeof githubAPI.shouldUseSearchForPRs).toBe('function');
-    });
-  });
-
-  describe('Search operation functions', () => {
-    it('should re-export search operation functions', () => {
-      expect(githubAPI.searchGitHubCodeAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubCodeAPI).toBe('function');
-
-      expect(githubAPI.searchGitHubReposAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubReposAPI).toBe('function');
-
-      expect(githubAPI.searchGitHubPullRequestsAPI).toBeDefined();
-      expect(typeof githubAPI.searchGitHubPullRequestsAPI).toBe('function');
-
-      expect(githubAPI.fetchGitHubPullRequestByNumberAPI).toBeDefined();
-      expect(typeof githubAPI.fetchGitHubPullRequestByNumberAPI).toBe(
-        'function'
-      );
-
-      expect(githubAPI.transformPullRequestItemFromREST).toBeDefined();
-      expect(typeof githubAPI.transformPullRequestItemFromREST).toBe(
-        'function'
-      );
-    });
-  });
-
-  describe('File operation functions', () => {
-    it('should re-export file operation functions', () => {
-      expect(githubAPI.fetchGitHubFileContentAPI).toBeDefined();
-      expect(typeof githubAPI.fetchGitHubFileContentAPI).toBe('function');
-
-      expect(githubAPI.viewGitHubRepositoryStructureAPI).toBeDefined();
-      expect(typeof githubAPI.viewGitHubRepositoryStructureAPI).toBe(
-        'function'
-      );
-    });
-  });
-
-  describe('Backward compatibility', () => {
-    it('should maintain same exports as main index', async () => {
-      // Import both to compare using import paths that work with test runner
-      const githubAPI = await import('../../src/github/githubAPI');
-
-      // Core functions that should be available
-      const coreFunctions = [
-        'getOctokit',
-        'getDefaultBranch',
-        'clearCachedToken',
-        'handleGitHubAPIError',
-        'generateFileAccessHints',
-        'buildCodeSearchQuery',
-        'buildRepoSearchQuery',
-        'searchGitHubCodeAPI',
-        'searchGitHubReposAPI',
-        'fetchGitHubFileContentAPI',
-      ];
-
-      coreFunctions.forEach(funcName => {
-        expect((githubAPI as Record<string, unknown>)[funcName]).toBeDefined();
-        expect(typeof (githubAPI as Record<string, unknown>)[funcName]).toBe(
-          'function'
-        );
-      });
+      expect(githubAPI.isGitHubAPIError(error)).toBe(true);
+      expect(githubAPI.isGitHubAPIError({})).toBe(false);
+      expect(githubAPI.isGitHubAPIError(null)).toBe(false);
+      expect(githubAPI.isGitHubAPIError({ error: 'test' })).toBe(false); // missing 'type'
     });
 
-    it('should export all required functions without undefined values', async () => {
-      const githubAPI = await import('../../src/github/githubAPI');
-      const exportedKeys = Object.keys(githubAPI);
+    it('isGitHubAPISuccess should correctly identify success objects', () => {
+      const success: githubAPI.GitHubAPISuccess<{ test: string }> = {
+        data: { test: 'value' },
+        status: 200,
+      };
 
-      // Filter out type-only exports (they don't exist at runtime)
-      const functionKeys = exportedKeys.filter(
-        key => typeof (githubAPI as Record<string, unknown>)[key] === 'function'
-      );
+      expect(githubAPI.isGitHubAPISuccess(success)).toBe(true);
+      expect(githubAPI.isGitHubAPISuccess({})).toBe(false);
+      expect(githubAPI.isGitHubAPISuccess(null)).toBe(false);
+      expect(githubAPI.isGitHubAPISuccess({ data: 'test' })).toBe(false); // missing 'status'
+    });
 
-      functionKeys.forEach(key => {
-        const exportedValue = (githubAPI as Record<string, unknown>)[key];
-        expect(exportedValue).toBeDefined();
-        expect(exportedValue).not.toBeNull();
-        expect(typeof exportedValue).toBe('function');
-      });
+    it('isRepository should correctly identify repository objects', () => {
+      const repo = {
+        id: 123,
+        name: 'test-repo',
+        full_name: 'owner/test-repo',
+        private: false,
+      };
 
-      // Ensure we have a reasonable number of function exports
-      expect(functionKeys.length).toBeGreaterThan(12);
+      expect(githubAPI.isRepository(repo)).toBe(true);
+      expect(githubAPI.isRepository({})).toBe(false);
+      expect(githubAPI.isRepository(null)).toBe(false);
+      expect(githubAPI.isRepository({ id: 123 })).toBe(false); // missing required fields
     });
   });
 });

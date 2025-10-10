@@ -63,9 +63,9 @@ export interface GitHubSearchReposOutput extends ToolResponse {
 export interface RepoSearchResult {
   researchGoal?: string;
   reasoning?: string;
+  researchSuggestions?: string[];
   repositories: SimplifiedRepository[];
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only on error
-  metadata?: Record<string, unknown>; // Internal use
 }

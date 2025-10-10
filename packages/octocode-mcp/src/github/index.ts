@@ -30,7 +30,6 @@ export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-meth
 
 // Query builders
 export {
-  getOwnerQualifier,
   buildCodeSearchQuery,
   buildRepoSearchQuery,
   buildPullRequestSearchQuery,

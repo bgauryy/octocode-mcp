@@ -185,13 +185,13 @@ export interface GitHubSearchPullRequestsOutput extends ToolResponse {
 export interface PullRequestSearchResult {
   researchGoal?: string;
   reasoning?: string;
+  researchSuggestions?: string[];
   pull_requests?: PullRequestInfo[];
   total_count?: number;
   incomplete_results?: boolean;
   error?: string;
   hints?: string[];
   query?: Record<string, unknown>; // Only on error
-  metadata: Record<string, unknown>;
 }
 
 export interface PullRequestInfo {

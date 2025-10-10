@@ -243,8 +243,8 @@ describe('Index Module', () => {
       await waitForAsyncOperations();
 
       const serverConfig = mockMcpServerConstructor.mock.calls[0]?.[0];
-      expect(serverConfig?.version).toBeDefined();
-      expect(typeof serverConfig?.version).toBe('string');
+      expect(typeof serverConfig?.version).toEqual('string');
+      expect((serverConfig?.version?.length ?? 0) > 0).toEqual(true);
     });
   });
 

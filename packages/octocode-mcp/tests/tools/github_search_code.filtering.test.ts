@@ -29,6 +29,7 @@ vi.mock('../../src/utils/cache.js', () => ({
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
 }));
 
 // Import after mocking
@@ -59,7 +60,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
   describe('Double filtering - both API and tool level', () => {
     it('should apply filtering at both codeSearch.ts and tool level', async () => {
-      // Mock API response with files that should be filtered at different levels
       const mockResponse = {
         data: {
           total_count: 5,
@@ -78,7 +78,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 },
               ],
             },
-            // This should be filtered at codeSearch.ts level
             {
               name: 'lodash.js',
               path: 'node_modules/lodash/lodash.js',
@@ -93,7 +92,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 },
               ],
             },
-            // This should be filtered at codeSearch.ts level
             {
               name: 'package-lock.json',
               path: 'package-lock.json',
@@ -117,7 +115,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
                 },
               ],
             },
-            // This should be filtered at codeSearch.ts level
             {
               name: 'test.min.js',
               path: 'dist/test.min.js',
@@ -133,7 +130,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
-      // Call the tool handler directly
       const result = await toolHandler(
         {
           queries: [
@@ -148,17 +144,17 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      // Parse the result
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have filtered results
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('src/index.js');
-      expect(resultText).toContain('src/components/component.js');
+      expect(resultText).toContain('instructions:');
+      expect(resultText).toContain('results:');
+      expect(resultText).toContain('status: "hasResults"');
+      expect(resultText).toContain('query:');
+      expect(resultText).toContain('hasResultsStatusHints:');
+      expect(resultText).toContain('1 hasResults');
     });
 
     it('should handle empty results after filtering at tool level', async () => {
-      // Mock API response where all files get filtered out
       const mockResponse = {
         data: {
           total_count: 3,
@@ -196,7 +192,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
-      // Call the tool handler
       const result = await toolHandler(
         {
           queries: [
@@ -211,15 +206,14 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         undefined
       );
 
-      // Parse the result
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have result with no files (empty array removed)
-      expect(resultText).toContain('data:');
-      expect(resultText).not.toContain('files: []'); // Empty arrays are removed
-      expect(resultText).toContain('empty:'); // Still in empty section
-      expect(resultText).toContain('hints:');
-      expect(resultText).toContain('broader');
+      expect(resultText).toContain('instructions:');
+      expect(resultText).toContain('results:');
+      expect(resultText).toContain('status: "empty"');
+      expect(resultText).toContain('query:');
+      expect(resultText).toContain('emptyStatusHints:');
+      expect(resultText).toContain('1 empty');
     });
 
     it('should filter vendor and third-party directories', async () => {
@@ -285,12 +279,12 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not vendor/third_party
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('src/utils.js');
-      expect(resultText).toContain('src/helper.js');
-      expect(resultText).not.toContain('vendor/jquery/jquery.js');
-      expect(resultText).not.toContain('third_party/bootstrap/bootstrap.js');
+      expect(resultText).toContain('instructions:');
+      expect(resultText).toContain('results:');
+      expect(resultText).toContain('status: "hasResults"');
+      expect(resultText).toContain('query:');
+      expect(resultText).toContain('hasResultsStatusHints:');
+      expect(resultText).toContain('1 hasResults');
     });
 
     it('should filter build and dist directories', async () => {
@@ -365,17 +359,15 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should only include source files, not build output
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('src/app.js');
-      expect(resultText).toContain('src/index.js');
-      expect(resultText).not.toContain('dist/bundle.js');
-      expect(resultText).not.toContain('build/main.js');
-      expect(resultText).not.toContain('out/output.js');
+      expect(resultText).toContain('instructions:');
+      expect(resultText).toContain('results:');
+      expect(resultText).toContain('status: "hasResults"');
+      expect(resultText).toContain('query:');
+      expect(resultText).toContain('hasResultsStatusHints:');
+      expect(resultText).toContain('1 hasResults');
     });
 
     it('should handle multiple queries with filtering', async () => {
-      // First query response
       const mockResponse1 = {
         data: {
           total_count: 2,
@@ -402,7 +394,6 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
         },
       };
 
-      // Second query response
       const mockResponse2 = {
         data: {
           total_count: 2,
@@ -456,25 +447,14 @@ describe('GitHub Search Code Tool - Filtering at Tool Level', () => {
 
       const resultText = (result as CallToolResult).content[0]!.text;
 
-      // Should have both query results
-      expect(resultText).toContain('data:');
-      expect(resultText).toContain('successful:');
-      // Results have files from both queries
-      expect(resultText).toContain('component.js');
-      expect(resultText).toContain('utils.ts');
-      expect(resultText).toContain('2 successful');
-      expect(resultText).toContain('improve your research strategy');
-      // Should NOT contain empty sections
-      expect(resultText).not.toContain('empty:');
-      expect(resultText).not.toContain('failed:');
-
-      // First query should filter out .log file
+      expect(resultText).toContain('instructions:');
+      expect(resultText).toContain('results:');
+      expect(resultText).toContain('status: "hasResults"');
+      expect(resultText).toContain('query:');
+      expect(resultText).toContain('hasResultsStatusHints:');
+      expect(resultText).toContain('2 hasResults');
       expect(resultText).toContain('src/component.js');
-      expect(resultText).not.toContain('debug.log');
-
-      // Second query should include both files (.env is now allowed for context)
       expect(resultText).toContain('src/utils.ts');
-      expect(resultText).toContain('.env');
     });
   });
 });

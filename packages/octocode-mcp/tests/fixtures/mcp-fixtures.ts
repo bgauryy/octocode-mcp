@@ -9,7 +9,8 @@ export interface MockMcpServer {
   server: McpServer;
   callTool: (
     name: string,
-    args?: Record<string, unknown>
+    args?: Record<string, unknown>,
+    options?: { authInfo?: { token?: string }; sessionId?: string }
   ) => Promise<CallToolResult>;
   cleanup: () => void;
 }
@@ -37,7 +38,8 @@ export function createMockMcpServer(): MockMcpServer {
 
   const callTool = async (
     name: string,
-    args?: Record<string, unknown>
+    args?: Record<string, unknown>,
+    options?: { authInfo?: { token?: string }; sessionId?: string }
   ): Promise<CallToolResult> => {
     const handler = toolHandlers.get(name);
     if (!handler) {
@@ -53,8 +55,8 @@ export function createMockMcpServer(): MockMcpServer {
     };
 
     return await handler(request.params.arguments, {
-      authInfo: undefined,
-      sessionId: undefined,
+      authInfo: options?.authInfo,
+      sessionId: options?.sessionId,
     });
   };
 

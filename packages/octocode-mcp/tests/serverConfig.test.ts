@@ -54,11 +54,11 @@ describe('ServerConfig - Simplified Version', () => {
       await initialize();
       const config = getServerConfig();
 
-      expect(config.version).toBeDefined();
-      expect(config.timeout).toBe(30000);
-      expect(config.maxRetries).toBe(3);
-      expect(config.enableLogging).toBe(false);
-      expect(config.betaEnabled).toBe(false);
+      expect(typeof config.version).toEqual('string');
+      expect(config.timeout).toEqual(30000);
+      expect(config.maxRetries).toEqual(3);
+      expect(config.enableLogging).toEqual(false);
+      expect(config.betaEnabled).toEqual(false);
     });
 
     it('should initialize with environment variables', async () => {
@@ -313,10 +313,17 @@ describe('ServerConfig - Simplified Version', () => {
       mockGetGithubCLIToken.mockResolvedValue(null);
 
       await initialize();
-      expect(getServerConfig()).toBeDefined();
+      const config = getServerConfig();
+      expect(typeof config).toEqual('object');
 
       cleanup();
-      expect(() => getServerConfig()).toThrow();
+      let didThrow = false;
+      try {
+        getServerConfig();
+      } catch (e) {
+        didThrow = true;
+      }
+      expect(didThrow).toEqual(true);
     });
 
     it('should handle multiple cleanup calls', () => {
@@ -352,9 +359,9 @@ describe('ServerConfig - Simplified Version', () => {
       await initialize();
       const config = getServerConfig();
 
-      expect(config.enableTools).toBeUndefined();
-      expect(config.disableTools).toBeUndefined();
-      expect(config.toolsToRun).toBeUndefined();
+      expect(config.enableTools).toEqual(undefined);
+      expect(config.disableTools).toEqual(undefined);
+      expect(config.toolsToRun).toEqual(undefined);
     });
 
     it('should parse toolsToRun correctly', async () => {

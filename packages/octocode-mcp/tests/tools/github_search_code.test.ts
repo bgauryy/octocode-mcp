@@ -23,6 +23,12 @@ vi.mock('../../src/utils/cache.js', () => ({
   }),
 }));
 
+// Mock serverConfig
+vi.mock('../../src/serverConfig.js', () => ({
+  getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
+  isLoggingEnabled: vi.fn(() => false),
+}));
+
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 
@@ -32,6 +38,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOwnerQuery = {
         keywordsToSearch: ['function'],
         owner: 'octocat',
+        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOwnerQuery);
@@ -45,6 +52,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOrgOwnerQuery = {
         keywordsToSearch: ['function'],
         owner: 'wix-private',
+        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOrgOwnerQuery);
@@ -58,6 +66,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const pathQuery = {
         keywordsToSearch: ['function'],
         path: 'src/components',
+        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(pathQuery);
@@ -77,6 +86,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
         extension: 'js',
         match: 'file',
         limit: 10,
+        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(complexQuery);
@@ -111,6 +121,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
     it('should maintain backward compatibility with existing fields', () => {
       const basicQuery = {
         keywordsToSearch: ['function'],
+        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(basicQuery);
@@ -122,187 +133,8 @@ describe('GitHubCodeSearchQuerySchema', () => {
   });
 });
 
-describe('Code Search Flows', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should handle successful search with results', async () => {
-    const mockResponse = {
-      data: {
-        total_count: 2,
-        items: [
-          {
-            name: 'component.js',
-            path: 'src/component.js',
-            repository: {
-              full_name: 'test/repo',
-              url: 'https://api.github.com/repos/test/repo',
-            },
-            text_matches: [
-              {
-                fragment: 'function test() {}',
-                matches: [{ indices: [0, 8] }],
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
-
-    const result = await searchGitHubCodeAPI({
-      keywordsToSearch: ['function'],
-      owner: 'test',
-      repo: 'repo',
-      limit: 5,
-      minify: true,
-      sanitize: true,
-    });
-
-    if ('data' in result) {
-      expect(result.data.items).toHaveLength(1);
-      expect(result.data.total_count).toBe(1); // Should match filtered item count
-      expect(result.data.items[0]?.path).toBe('src/component.js');
-    } else {
-      expect.fail('Expected successful result with data');
-    }
-  });
-
-  it('should handle search with no results', async () => {
-    const mockResponse = {
-      data: {
-        total_count: 0,
-        items: [],
-      },
-    };
-
-    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
-
-    const result = await searchGitHubCodeAPI({
-      keywordsToSearch: ['nonexistent'],
-      owner: 'test',
-      repo: 'repo',
-      limit: 5,
-      minify: true,
-      sanitize: true,
-    });
-
-    if ('data' in result) {
-      expect(result.data.items).toHaveLength(0);
-      expect(result.data.total_count).toBe(0);
-    } else {
-      expect.fail('Expected successful result with data');
-    }
-  });
-
-  it('should handle API errors gracefully', async () => {
-    // Clear all mocks first
-    vi.clearAllMocks();
-
-    // Create a proper RequestError-like error for proper handling
-    interface MockRequestError extends Error {
-      status: number;
-      response: {
-        headers: {
-          'x-ratelimit-remaining': string;
-          'x-ratelimit-reset': string;
-        };
-      };
-    }
-
-    const apiError = new Error('API rate limit exceeded') as MockRequestError;
-    apiError.status = 403;
-    apiError.response = {
-      headers: {
-        'x-ratelimit-remaining': '0',
-        'x-ratelimit-reset': Math.floor(Date.now() / 1000 + 3600).toString(),
-      },
-    };
-
-    mockOctokit.rest.search.code.mockRejectedValue(apiError);
-
-    const result = await searchGitHubCodeAPI({
-      keywordsToSearch: ['function'],
-      owner: 'test',
-      repo: 'repo',
-      limit: 5,
-      minify: true,
-      sanitize: true,
-    });
-
-    // When there's an error, the result should be a GitHubAPIError object
-    expect(result).toHaveProperty('error');
-    if ('error' in result) {
-      expect(result.error).toMatch(/rate limit/i);
-      expect(result).toHaveProperty('type');
-    }
-  });
-
-  it('should flatten results structure correctly', async () => {
-    const mockResponse = {
-      data: {
-        total_count: 1,
-        items: [
-          {
-            name: 'test.js',
-            path: 'src/test.js',
-            repository: {
-              full_name: 'test/repo',
-              url: 'https://api.github.com/repos/test/repo',
-            },
-            text_matches: [{ fragment: 'const x = 1', matches: [] }],
-          },
-        ],
-      },
-    };
-
-    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
-
-    const result = await searchGitHubCodeAPI({
-      keywordsToSearch: ['const'],
-      owner: 'test',
-      repo: 'repo',
-      limit: 1,
-      minify: true,
-      sanitize: true,
-    });
-
-    // Should have flattened structure
-    if ('data' in result) {
-      expect(result.data).toHaveProperty('items');
-      expect(result.data).toHaveProperty('total_count');
-      expect(result.data).not.toHaveProperty('data'); // No nested data field
-    } else {
-      expect.fail('Expected successful result with data');
-    }
-  });
-
-  it('should handle API response correctly', async () => {
-    const mockResponse = {
-      data: { total_count: 0, items: [] },
-    };
-
-    mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
-
-    const result = await searchGitHubCodeAPI({
-      keywordsToSearch: ['test'],
-      owner: 'test',
-      repo: 'repo',
-      limit: 1,
-      minify: true,
-      sanitize: true,
-    });
-
-    // This test is more about the tool wrapper, but verifies API compatibility
-    if ('data' in result) {
-      expect(result.data.total_count).toBe(0);
-    } else {
-      expect.fail('Expected successful result with data');
-    }
-  });
-});
+// Code Search Flow tests removed - redundant with github_search_code.tool.test.ts
+// which comprehensively tests all status flows (hasResults, empty, error) at the tool layer
 
 describe('Quality Boosting and Research Goals', () => {
   beforeEach(() => {
@@ -354,6 +186,7 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
+      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
@@ -380,6 +213,7 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
+      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
@@ -405,6 +239,7 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
+      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
@@ -430,6 +265,7 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
+      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'facebook',
       repo: 'react',
@@ -457,6 +293,7 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
+      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',

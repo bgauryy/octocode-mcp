@@ -61,30 +61,26 @@ describe('withDataCache typed data cache', () => {
     let calls = 0;
     const op = async () => {
       calls += 1;
-      // Alternate successful-like and error-like values
       return calls % 2 === 0 ? { data: calls } : { error: 'e', data: null };
     };
 
     const key = generateCacheKey('gh-api-code', { mode: 'should' });
 
-    // First returns error-like; should not be cached
     const a = await withDataCache(key, op, {
       shouldCache: v => !(v as { error?: unknown }).error,
     });
-    expect((a as { error?: unknown }).error).toBeDefined();
+    expect(typeof (a as { error?: unknown }).error).toEqual('string');
 
-    // Next returns data; should be cached
     const b = await withDataCache(key, op, {
       shouldCache: v => !(v as { error?: unknown }).error,
     });
-    expect((b as { error?: unknown }).error).toBeUndefined();
+    expect((b as { error?: unknown }).error).toEqual(undefined);
 
-    // Next call should hit cache and not increment calls
-    const before = calls; // 2 so far
+    const before = calls;
     const c = await withDataCache(key, op, {
       shouldCache: v => !(v as { error?: unknown }).error,
     });
     expect(c).toEqual(b);
-    expect(calls).toBe(before); // no extra execution
+    expect(calls).toEqual(before);
   });
 });

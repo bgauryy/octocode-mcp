@@ -57,7 +57,11 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     );
 
     expect(handler).toHaveBeenCalledOnce();
-    expect(result.isError).toBe(false);
+
+    expect(result).toEqual({
+      isError: false,
+      content: [{ type: 'text', text: 'ok:1' }],
+    });
 
     // Short-circuit: none of these should be called
     expect(mockGetUserContext).not.toHaveBeenCalled();
@@ -83,7 +87,11 @@ describe('withSecurityValidation enterprise short-circuit', () => {
     );
 
     expect(handler).toHaveBeenCalledOnce();
-    expect(result.isError).toBe(false);
+
+    expect(result).toEqual({
+      isError: false,
+      content: [{ type: 'text', text: 'ok:2' }],
+    });
 
     // Enterprise path hit
     expect(mockGetUserContext).toHaveBeenCalled();

@@ -9,179 +9,358 @@ import {
 
 describe('GitHub View Repo Structure Filters', () => {
   describe('IGNORED_FOLDER_NAMES', () => {
-    it('should contain hidden folders', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('.github');
-      expect(IGNORED_FOLDER_NAMES).toContain('.git');
-      expect(IGNORED_FOLDER_NAMES).toContain('.vscode');
-      expect(IGNORED_FOLDER_NAMES).toContain('.devcontainer');
-    });
-
-    it('should contain build/distribution folders', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('dist');
-      expect(IGNORED_FOLDER_NAMES).toContain('build');
-      expect(IGNORED_FOLDER_NAMES).toContain('out');
-      expect(IGNORED_FOLDER_NAMES).toContain('target');
-    });
-
-    it('should contain dependency folders', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('node_modules');
-      expect(IGNORED_FOLDER_NAMES).toContain('vendor');
-      expect(IGNORED_FOLDER_NAMES).toContain('third_party');
-    });
-
-    it('should contain temporary/cache directories', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('tmp');
-      expect(IGNORED_FOLDER_NAMES).toContain('temp');
-      expect(IGNORED_FOLDER_NAMES).toContain('cache');
-      expect(IGNORED_FOLDER_NAMES).toContain('.cache');
-    });
-
-    it('should contain language-specific cache/build directories', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('.pytest_cache');
-      expect(IGNORED_FOLDER_NAMES).toContain('.tox');
-      expect(IGNORED_FOLDER_NAMES).toContain('.venv');
-      expect(IGNORED_FOLDER_NAMES).toContain('.mypy_cache');
-      expect(IGNORED_FOLDER_NAMES).toContain('.next');
-      expect(IGNORED_FOLDER_NAMES).toContain('.svelte-kit');
-      expect(IGNORED_FOLDER_NAMES).toContain('.turbo');
-      expect(IGNORED_FOLDER_NAMES).toContain('.angular');
-      expect(IGNORED_FOLDER_NAMES).toContain('.dart_tool');
-    });
-
-    it('should contain IDE/Editor specific folders', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('.idea');
-      expect(IGNORED_FOLDER_NAMES).toContain('.idea_modules');
-      expect(IGNORED_FOLDER_NAMES).toContain('.vs');
-      expect(IGNORED_FOLDER_NAMES).toContain('.history');
-    });
-
-    it('should contain coverage and log directories', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('coverage');
-      expect(IGNORED_FOLDER_NAMES).toContain('.nyc_output');
-      expect(IGNORED_FOLDER_NAMES).toContain('logs');
-      expect(IGNORED_FOLDER_NAMES).toContain('log');
-    });
-
-    it('should contain OS specific folders', () => {
-      expect(IGNORED_FOLDER_NAMES).toContain('.DS_Store');
+    it('should have complete list of ignored folders', () => {
+      expect(IGNORED_FOLDER_NAMES).toEqual([
+        '.github',
+        '.git',
+        '.vscode',
+        '.devcontainer',
+        '.config',
+        '.cargo',
+        '.changeset',
+        '.husky',
+        '.aspect',
+        '.eslint-plugin-local',
+        '.yarn',
+        '.gemini',
+        '.ng-dev',
+        '.configurations',
+        '.tx',
+        'dist',
+        'build',
+        'out',
+        'output',
+        'target',
+        'release',
+        'node_modules',
+        'vendor',
+        'third_party',
+        'tmp',
+        'temp',
+        'cache',
+        '.cache',
+        '.tmp',
+        '.pytest_cache',
+        '.tox',
+        '.venv',
+        '.mypy_cache',
+        '.next',
+        '.svelte-kit',
+        '.turbo',
+        '.angular',
+        '.dart_tool',
+        '__pycache__',
+        '.ruff_cache',
+        '.nox',
+        'htmlcov',
+        'cover',
+        '.gradle',
+        '.m2',
+        '.sbt',
+        '.bloop',
+        '.metals',
+        '.bsp',
+        'bin',
+        'obj',
+        'TestResults',
+        'BenchmarkDotNet.Artifacts',
+        '.vendor-new',
+        'Godeps',
+        'composer.phar',
+        '.phpunit.result.cache',
+        '.bundle',
+        '.byebug_history',
+        '.rspec_status',
+        '.mvn',
+        '.aws',
+        '.gcp',
+        'fastlane',
+        'DerivedData',
+        'xcuserdata',
+        'local.properties',
+        '.navigation',
+        'captures',
+        '.externalNativeBuild',
+        '.cxx',
+        '.idea',
+        '.idea_modules',
+        '.vs',
+        '.history',
+        'coverage',
+        '.nyc_output',
+        'logs',
+        'log',
+        '.DS_Store',
+      ]);
     });
   });
 
   describe('IGNORED_FILE_NAMES', () => {
-    it('should contain hidden configuration files', () => {
-      // Note: These files are not currently in IGNORED_FILE_NAMES
-      // Only checking files that are actually in the current implementation
-      expect(IGNORED_FILE_NAMES).toContain('.DS_Store');
-    });
-
-    it('should contain lock files', () => {
-      expect(IGNORED_FILE_NAMES).toContain('package-lock.json');
-      // Note: Other lock files are not currently in IGNORED_FILE_NAMES
-    });
-
-    it('should contain configuration files', () => {
-      // Note: Configuration files are not currently in IGNORED_FILE_NAMES
-      // Only checking files that are actually in the current implementation
-      expect(IGNORED_FILE_NAMES.length).toBeGreaterThan(0);
-    });
-
-    it('should contain build/CI configuration files', () => {
-      // Note: Build/CI configuration files are not currently in IGNORED_FILE_NAMES
-      expect(IGNORED_FILE_NAMES.length).toBeGreaterThan(0);
-    });
-
-    it('should contain documentation/legal files', () => {
-      // Note: Documentation/legal files are not currently in IGNORED_FILE_NAMES
-      expect(IGNORED_FILE_NAMES.length).toBeGreaterThan(0);
-    });
-
-    it('should contain IDE/Editor files', () => {
-      expect(IGNORED_FILE_NAMES).toContain('.DS_Store');
-      expect(IGNORED_FILE_NAMES).toContain('Thumbs.db');
-    });
-
-    it('should contain language-specific files', () => {
-      // Note: Language-specific files are not currently in IGNORED_FILE_NAMES
-      expect(IGNORED_FILE_NAMES.length).toBeGreaterThan(0);
-    });
-
-    it('should contain project management files', () => {
-      // Note: Project management files are not currently in IGNORED_FILE_NAMES
-      expect(IGNORED_FILE_NAMES.length).toBeGreaterThan(0);
+    it('should have complete list of ignored files', () => {
+      expect(IGNORED_FILE_NAMES).toEqual([
+        'package-lock.json',
+        '.secrets',
+        '.secret',
+        'secrets.json',
+        'secrets.yaml',
+        'secrets.yml',
+        'credentials.json',
+        'credentials.yaml',
+        'credentials.yml',
+        'auth.json',
+        'auth.yaml',
+        'auth.yml',
+        'api-keys.json',
+        'api_keys.json',
+        'service-account.json',
+        'service_account.json',
+        'private-key.pem',
+        'private_key.pem',
+        'id_rsa',
+        'id_dsa',
+        'id_ecdsa',
+        'id_ed25519',
+        'keyfile',
+        'keyfile.json',
+        'gcloud-service-key.json',
+        'firebase-adminsdk.json',
+        'google-services.json',
+        'GoogleService-Info.plist',
+        '.DS_Store',
+        'Thumbs.db',
+        'db.sqlite3',
+        'db.sqlite3-journal',
+        '.eslintcache',
+        '.stylelintcache',
+        '.node_repl_history',
+        '.yarn-integrity',
+        'celerybeat-schedule',
+        'celerybeat.pid',
+        'ThirdPartyNoticeText.txt',
+        'ThirdPartyNotices.txt',
+        'cglicenses.json',
+        'cgmanifest.json',
+      ]);
     });
   });
 
   describe('IGNORED_FILE_EXTENSIONS', () => {
-    it('should contain common ignored extensions', () => {
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.lock');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.log');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.tmp');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.temp');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.cache');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.bak');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.backup');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.orig');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.swp');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.swo');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.rej');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.obj');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.bin');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.class');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.pdb');
-      expect(IGNORED_FILE_EXTENSIONS).toContain('.dSYM');
+    it('should have complete list of ignored extensions', () => {
+      expect(IGNORED_FILE_EXTENSIONS).toEqual([
+        '.lock',
+        '.log',
+        '.tmp',
+        '.temp',
+        '.cache',
+        '.bak',
+        '.backup',
+        '.orig',
+        '.swp',
+        '.swo',
+        '.rej',
+        '.pid',
+        '.seed',
+        '.old',
+        '.save',
+        '.temporary',
+        '.exe',
+        '.dll',
+        '.so',
+        '.dylib',
+        '.a',
+        '.lib',
+        '.o',
+        '.obj',
+        '.bin',
+        '.class',
+        '.pdb',
+        '.dSYM',
+        '.pyc',
+        '.pyo',
+        '.pyd',
+        '.jar',
+        '.war',
+        '.ear',
+        '.nar',
+        '.db',
+        '.sqlite',
+        '.sqlite3',
+        '.mdb',
+        '.accdb',
+        '.zip',
+        '.tar',
+        '.gz',
+        '.bz2',
+        '.xz',
+        '.lz',
+        '.lzma',
+        '.Z',
+        '.tgz',
+        '.rar',
+        '.7z',
+        '.deb',
+        '.rpm',
+        '.pkg',
+        '.dmg',
+        '.msi',
+        '.appx',
+        '.snap',
+        '.map',
+        '.d.ts.map',
+        '.min.js',
+        '.min.css',
+        '.key',
+        '.pem',
+        '.p12',
+        '.pfx',
+        '.crt',
+        '.cer',
+        '.der',
+        '.csr',
+        '.jks',
+        '.keystore',
+        '.truststore',
+        '.kate-swp',
+        '.gnome-desktop',
+        '.sublime-project',
+        '.sublime-workspace',
+        '.iml',
+        '.iws',
+        '.ipr',
+        '.patch',
+        '.diff',
+        '.prof',
+        '.profile',
+        '.trace',
+        '.perf',
+        '.coverage',
+        '.egg-info',
+        '.egg',
+        '.mo',
+        '.pot',
+        '.setup',
+        '.paket.template',
+      ]);
     });
   });
 
   describe('shouldIgnoreDir', () => {
     it('should ignore exact matches', () => {
-      expect(shouldIgnoreDir('.github')).toBe(true);
-      expect(shouldIgnoreDir('node_modules')).toBe(true);
-      expect(shouldIgnoreDir('dist')).toBe(true);
-      expect(shouldIgnoreDir('build')).toBe(true);
+      expect(shouldIgnoreDir('.github')).toEqual(true);
     });
 
-    it('should not ignore non-matching folders', () => {
-      expect(shouldIgnoreDir('src')).toBe(false);
-      expect(shouldIgnoreDir('components')).toBe(false);
-      expect(shouldIgnoreDir('utils')).toBe(false);
+    it('should ignore node_modules', () => {
+      expect(shouldIgnoreDir('node_modules')).toEqual(true);
+    });
+
+    it('should ignore dist', () => {
+      expect(shouldIgnoreDir('dist')).toEqual(true);
+    });
+
+    it('should ignore build', () => {
+      expect(shouldIgnoreDir('build')).toEqual(true);
+    });
+
+    it('should not ignore src', () => {
+      expect(shouldIgnoreDir('src')).toEqual(false);
+    });
+
+    it('should not ignore components', () => {
+      expect(shouldIgnoreDir('components')).toEqual(false);
+    });
+
+    it('should not ignore utils', () => {
+      expect(shouldIgnoreDir('utils')).toEqual(false);
     });
   });
 
   describe('shouldIgnoreFileByPath', () => {
-    it('should ignore files by exact name match', () => {
-      // Only test files that are actually in IGNORED_FILE_NAMES
-      expect(shouldIgnoreFile('package-lock.json')).toBe(true);
-      expect(shouldIgnoreFile('.DS_Store')).toBe(true);
-      expect(shouldIgnoreFile('Thumbs.db')).toBe(true);
-      // Files not in IGNORED_FILE_NAMES should not be ignored
-      expect(shouldIgnoreFile('.gitignore')).toBe(false);
-      expect(shouldIgnoreFile('tsconfig.json')).toBe(false);
-      expect(shouldIgnoreFile('LICENSE')).toBe(false);
+    it('should ignore package-lock.json', () => {
+      expect(shouldIgnoreFile('package-lock.json')).toEqual(true);
     });
 
-    it('should ignore files by extension', () => {
-      expect(shouldIgnoreFile('debug.log')).toBe(true);
-      expect(shouldIgnoreFile('temp.tmp')).toBe(true);
-      expect(shouldIgnoreFile('cache.cache')).toBe(true);
-      expect(shouldIgnoreFile('backup.bak')).toBe(true);
-      expect(shouldIgnoreFile('app.min.js')).toBe(true);
-      expect(shouldIgnoreFile('styles.min.css')).toBe(true);
-      expect(shouldIgnoreFile('bundle.map')).toBe(true);
+    it('should ignore .DS_Store', () => {
+      expect(shouldIgnoreFile('.DS_Store')).toEqual(true);
     });
 
-    it('should ignore files in ignored directories', () => {
-      expect(shouldIgnoreFile('.yarn/x/y/z.js')).toBe(true);
-      expect(shouldIgnoreFile('node_modules/package/index.js')).toBe(true);
-      expect(shouldIgnoreFile('dist/bundle.js')).toBe(true);
-      expect(shouldIgnoreFile('.git/config')).toBe(true);
+    it('should ignore Thumbs.db', () => {
+      expect(shouldIgnoreFile('Thumbs.db')).toEqual(true);
     });
 
-    it('should not ignore non-matching files', () => {
-      expect(shouldIgnoreFile('index.js')).toBe(false);
-      expect(shouldIgnoreFile('App.tsx')).toBe(false);
-      expect(shouldIgnoreFile('styles.css')).toBe(false);
-      expect(shouldIgnoreFile('README.md')).toBe(false);
-      expect(shouldIgnoreFile('src/components/Button.tsx')).toBe(false);
+    it('should not ignore .gitignore', () => {
+      expect(shouldIgnoreFile('.gitignore')).toEqual(false);
+    });
+
+    it('should not ignore tsconfig.json', () => {
+      expect(shouldIgnoreFile('tsconfig.json')).toEqual(false);
+    });
+
+    it('should not ignore LICENSE', () => {
+      expect(shouldIgnoreFile('LICENSE')).toEqual(false);
+    });
+
+    it('should ignore debug.log', () => {
+      expect(shouldIgnoreFile('debug.log')).toEqual(true);
+    });
+
+    it('should ignore temp.tmp', () => {
+      expect(shouldIgnoreFile('temp.tmp')).toEqual(true);
+    });
+
+    it('should ignore cache.cache', () => {
+      expect(shouldIgnoreFile('cache.cache')).toEqual(true);
+    });
+
+    it('should ignore backup.bak', () => {
+      expect(shouldIgnoreFile('backup.bak')).toEqual(true);
+    });
+
+    it('should ignore app.min.js', () => {
+      expect(shouldIgnoreFile('app.min.js')).toEqual(true);
+    });
+
+    it('should ignore styles.min.css', () => {
+      expect(shouldIgnoreFile('styles.min.css')).toEqual(true);
+    });
+
+    it('should ignore bundle.map', () => {
+      expect(shouldIgnoreFile('bundle.map')).toEqual(true);
+    });
+
+    it('should ignore .yarn/x/y/z.js', () => {
+      expect(shouldIgnoreFile('.yarn/x/y/z.js')).toEqual(true);
+    });
+
+    it('should ignore node_modules/package/index.js', () => {
+      expect(shouldIgnoreFile('node_modules/package/index.js')).toEqual(true);
+    });
+
+    it('should ignore dist/bundle.js', () => {
+      expect(shouldIgnoreFile('dist/bundle.js')).toEqual(true);
+    });
+
+    it('should ignore .git/config', () => {
+      expect(shouldIgnoreFile('.git/config')).toEqual(true);
+    });
+
+    it('should not ignore index.js', () => {
+      expect(shouldIgnoreFile('index.js')).toEqual(false);
+    });
+
+    it('should not ignore App.tsx', () => {
+      expect(shouldIgnoreFile('App.tsx')).toEqual(false);
+    });
+
+    it('should not ignore styles.css', () => {
+      expect(shouldIgnoreFile('styles.css')).toEqual(false);
+    });
+
+    it('should not ignore README.md', () => {
+      expect(shouldIgnoreFile('README.md')).toEqual(false);
+    });
+
+    it('should not ignore src/components/Button.tsx', () => {
+      expect(shouldIgnoreFile('src/components/Button.tsx')).toEqual(false);
     });
   });
 });

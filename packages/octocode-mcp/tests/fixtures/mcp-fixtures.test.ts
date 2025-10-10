@@ -19,10 +19,10 @@ describe('MCP Test Fixtures', () => {
 
   describe('createMockMcpServer', () => {
     it('should create a mock server with tool registration', () => {
-      expect(mockServer.server).toBeDefined();
-      expect(mockServer.callTool).toBeDefined();
-      expect(mockServer.cleanup).toBeDefined();
-      expect(typeof mockServer.server.tool).toBe('function');
+      expect(typeof mockServer.server).toEqual('object');
+      expect(typeof mockServer.callTool).toEqual('function');
+      expect(typeof mockServer.cleanup).toEqual('function');
+      expect(typeof mockServer.server.tool).toEqual('function');
     });
 
     it('should register and call tools correctly', async () => {
@@ -64,20 +64,20 @@ describe('MCP Test Fixtures', () => {
       const data = { message: 'success', value: 42 };
       const result = createMockResult(data);
 
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-      expect(result.content[0]?.type).toBe('text');
-      expect(result.content[0]?.text).toBe(JSON.stringify(data, null, 2));
+      expect(result.isError).toEqual(false);
+      expect(result.content.length).toEqual(1);
+      expect(result.content[0]?.type).toEqual('text');
+      expect(result.content[0]?.text).toEqual(JSON.stringify(data, null, 2));
     });
 
     it('should create error result with string message', () => {
       const errorMessage = 'Something went wrong';
       const result = createMockResult(errorMessage, true);
 
-      expect(result.isError).toBe(true);
-      expect(result.content).toHaveLength(1);
-      expect(result.content[0]?.type).toBe('text');
-      expect(result.content[0]?.text).toBe(errorMessage);
+      expect(result.isError).toEqual(true);
+      expect(result.content.length).toEqual(1);
+      expect(result.content[0]?.type).toEqual('text');
+      expect(result.content[0]?.text).toEqual(errorMessage);
     });
   });
 

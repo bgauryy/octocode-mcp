@@ -4,24 +4,18 @@ import {
   UserContext,
   withSecurityValidation,
 } from '../security/withSecurityValidation';
-import { createResult } from '../responses.js';
-import { fetchGitHubFileContentAPI } from '../github/index.js';
+import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
 import {
   FileContentQuery,
   FileContentBulkQuerySchema,
+  type ContentResult,
 } from '../scheme/github_fetch_content.js';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  type BulkResponseConfig,
-  type ProcessedBulkResult,
-} from '../utils/bulkOperations.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { DESCRIPTIONS } from './descriptions';
-import { generateEmptyQueryHints } from './hints.js';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   return server.registerTool(
@@ -46,22 +40,10 @@ export function registerFetchGitHubFileContentTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        const emptyQueries =
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0;
-
-        if (emptyQueries) {
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            hints: generateEmptyQueryHints(TOOL_NAMES.GITHUB_FETCH_CONTENT),
-            isError: true,
-          });
-        }
-
+        // executeBulkOperation handles empty arrays gracefully
         return fetchMultipleGitHubFileContents(
           server,
-          args.queries,
+          args.queries || [],
           authInfo,
           userContext
         );
@@ -76,12 +58,9 @@ async function fetchMultipleGitHubFileContents(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     queries,
-    async (
-      query: FileContentQuery,
-      _index: number
-    ): Promise<ProcessedBulkResult> => {
+    async (query: FileContentQuery, _index: number) => {
       try {
         // Create properly typed request using smart type conversion
         // Handle fullContent parameter - if true, ignore other content selection parameters
@@ -121,7 +100,7 @@ async function fetchMultipleGitHubFileContents(
         const apiResult = await fetchGitHubFileContentAPI(
           apiRequest,
           authInfo,
-          userContext?.sessionId
+          userContext
         );
 
         // Extract the actual result from the GitHubAPIResponse wrapper
@@ -130,10 +109,11 @@ async function fetchMultipleGitHubFileContents(
         // Check if result is an error
         if ('error' in result) {
           return {
+            status: 'error',
             researchGoal: query.researchGoal,
             reasoning: query.reasoning,
+            researchSuggestions: query.researchSuggestions,
             error: result.error,
-            metadata: {},
           };
         }
 
@@ -187,37 +167,53 @@ async function fetchMultipleGitHubFileContents(
           }
         }
 
+        // Determine status based on whether we have content
+        const hasContent =
+          result &&
+          typeof result === 'object' &&
+          'content' in result &&
+          result.content &&
+          String(result.content).length > 0;
+
         return {
+          status: hasContent ? 'hasResults' : 'empty',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          researchSuggestions: query.researchSuggestions,
           ...resultObj,
-          metadata: {},
-        } as ProcessedBulkResult;
+        };
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error occurred';
 
         return {
+          status: 'error',
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
+          researchSuggestions: query.researchSuggestions,
           error: errorMessage,
-          metadata: {},
-        } as ProcessedBulkResult;
+        };
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      keysPriority: [
+        'path',
+        'owner',
+        'repo',
+        'branch',
+        'contentLength',
+        'content',
+        'isPartial',
+        'startLine',
+        'endLine',
+        'minified',
+        'minificationFailed',
+        'minificationType',
+        'securityWarnings',
+        'sampling',
+        'error',
+      ] satisfies Array<keyof ContentResult>,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-    keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'repository',
-      'path',
-      'contentLength',
-      'content',
-    ],
-  };
-
-  return createBulkResponse(config, results, errors, queries);
 }

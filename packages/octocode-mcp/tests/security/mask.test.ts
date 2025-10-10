@@ -25,121 +25,140 @@ describe('maskSensitiveData', () => {
     });
 
     it('should mask sensitive data with alternating pattern', () => {
-      // Test with a known pattern that should be detected
       const text = 'API key: sk-1234567890abcdefT3BlbkFJ1234567890abcdef';
       const result = maskSensitiveData(text);
 
-      // Should contain masked content (alternating * and original chars)
-      expect(result).not.toBe(text);
-      expect(result).toContain('*');
+      expect(result).toEqual(
+        'API key: *k*1*3*5*7*9*a*c*e*T*B*b*F*1*3*5*7*9*a*c*e*'
+      );
     });
   });
 
   describe('Pattern Detection', () => {
-    it('should detect and mask GitHub tokens', () => {
-      const tests = [
-        'ghp_1234567890123456789012345678901234567890',
-        'gho_1234567890123456789012345678901234567890',
-        'ghu_1234567890123456789012345678901234567890',
-        'ghs_1234567890123456789012345678901234567890',
-        'ghr_1234567890123456789012345678901234567890',
-      ];
+    it('should detect and mask ghp GitHub tokens', () => {
+      const text = 'GitHub token: ghp_1234567890123456789012345678901234567890';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        'GitHub token: *h*_*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0'
+      );
+    });
 
-      tests.forEach(token => {
-        const text = `GitHub token: ${token}`;
-        const result = maskSensitiveData(text);
-        expect(result).not.toBe(text);
-        expect(result).toContain('*');
-        expect(result).toMatch(/GitHub token: [*]/);
-      });
+    it('should detect and mask gho GitHub tokens', () => {
+      const text = 'GitHub token: gho_1234567890123456789012345678901234567890';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        'GitHub token: *h*_*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0'
+      );
+    });
+
+    it('should detect and mask ghu GitHub tokens', () => {
+      const text = 'GitHub token: ghu_1234567890123456789012345678901234567890';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        'GitHub token: *h*_*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0'
+      );
+    });
+
+    it('should detect and mask ghs GitHub tokens', () => {
+      const text = 'GitHub token: ghs_1234567890123456789012345678901234567890';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        'GitHub token: *h*_*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0'
+      );
+    });
+
+    it('should detect and mask ghr GitHub tokens', () => {
+      const text = 'GitHub token: ghr_1234567890123456789012345678901234567890';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        'GitHub token: *h*_*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0'
+      );
     });
 
     it('should detect and mask OpenAI API keys', () => {
-      const apiKey = 'sk-1234567890abcdefT3BlbkFJ1234567890abcdef';
-      const text = `OpenAI API Key: ${apiKey}`;
+      const text =
+        'OpenAI API Key: sk-1234567890abcdefT3BlbkFJ1234567890abcdef';
       const result = maskSensitiveData(text);
 
-      expect(result).not.toBe(text);
-      expect(result).toContain('*');
-      expect(result).toMatch(/OpenAI API Key: [*]/);
+      expect(result).toEqual(
+        'OpenAI API Key: *k*1*3*5*7*9*a*c*e*T*B*b*F*1*3*5*7*9*a*c*e*'
+      );
     });
 
     it('should detect and mask AWS access keys', () => {
-      const accessKey = 'AKIAIOSFODNN7EXAMPLE';
-      const secretKey = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
-
-      const text = `AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${secretKey}`;
+      const text = `AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`;
       const result = maskSensitiveData(text);
 
-      expect(result).not.toBe(text);
-      expect(result).toContain('*');
+      expect(result).toEqual(`AWS_ACCESS_KEY_ID=*K*A*O*F*D*N*E*A*P*E
+*W*_*E*R*T*A*C*S*_*E*=*J*l*X*t*F*M*/*7*D*N*/*P*R*i*Y*X*M*L*K*Y`);
     });
 
-    it('should detect and mask common environment variable patterns', () => {
-      const tests = [
-        'jwt_secret="super_secret_jwt_token_123456789"',
-        'SECRET_token="very_long_secret_value_abcdef123456789"',
-        'password="complex_password_with_enough_length_12345"',
-        'key="base64_encoded_secret_value_abcdef1234567890abcdef123456"',
-      ];
+    it('should detect and mask jwt_secret environment variable', () => {
+      const text = 'jwt_secret="super_secret_jwt_token_123456789"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('*w*_*e*r*t*"*u*e*_*e*r*t*j*t*t*k*n*1*3*5*7*9*');
+    });
 
-      tests.forEach(envVar => {
-        const result = maskSensitiveData(envVar);
-        expect(result).not.toBe(envVar);
-        expect(result).toContain('*');
-      });
+    it('should detect and mask SECRET_token environment variable', () => {
+      const text = 'SECRET_token="very_long_secret_value_abcdef123456789"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        '*E*R*T*t*k*n*"*e*y*l*n*_*e*r*t*v*l*e*a*c*e*1*3*5*7*9*'
+      );
+    });
+
+    it('should detect and mask password environment variable', () => {
+      const text = 'password="complex_password_with_enough_length_12345"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        '*a*s*o*d*"*o*p*e*_*a*s*o*d*w*t*_*n*u*h*l*n*t*_*2*4*"'
+      );
+    });
+
+    it('should detect and mask key environment variable', () => {
+      const text =
+        'key="base64_encoded_secret_value_abcdef1234567890abcdef123456"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(
+        '*e*=*b*s*6*_*n*o*e*_*e*r*t*v*l*e*a*c*e*1*3*5*7*9*a*c*e*1*3*5*"'
+      );
     });
 
     it('should detect and mask JWT tokens', () => {
-      const jwt =
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
-      const text = `Bearer ${jwt}`;
+      const text =
+        'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
       const result = maskSensitiveData(text);
 
-      expect(result).not.toBe(text);
-      expect(result).toContain('*');
+      expect(result).toEqual(
+        'Bearer *y*h*G*i*i*I*z*1*i*s*n*5*C*6*k*X*C*9*e*J*d*I*O*I*M*M*N*Y*O*k*I*w*b*F*Z*I*I*p*a*4*R*9*I*w*a*F*I*o*N*E*M*M*M*I*f*.*f*K*w*J*M*K*F*Q*4*w*M*J*3*P*k*y*V*a*Q*s*5*'
+      );
     });
 
     it('should detect and mask private keys', () => {
-      const privateKey = `-----BEGIN PRIVATE KEY-----
+      const text = `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC...
 -----END PRIVATE KEY-----`;
+      const result = maskSensitiveData(text);
 
-      const result = maskSensitiveData(privateKey);
-      expect(result).not.toBe(privateKey);
-      expect(result).toContain('*');
+      expect(result).toEqual(`*-*-*B*G*N*P*I*A*E*K*Y*-*-*
+*I*E*Q*B*D*N*g*q*k*G*w*B*Q*F*A*C*K*w*g*j*g*A*o*B*Q*.*.*-*-*-*N* *R*V*T* *E*-*-*-`);
     });
   });
 
   describe('Masking Pattern', () => {
     it('should mask every second character correctly', () => {
-      const text = '1234567890';
-      // Assuming this gets detected as sensitive (might need adjustment based on actual regex patterns)
-      const sensitiveText = `SECRET=${text}`;
-      const result = maskSensitiveData(sensitiveText);
+      const text = 'SECRET="1234567890123456"';
+      const result = maskSensitiveData(text);
 
-      if (result !== sensitiveText) {
-        // If masking occurred, verify the pattern
-        const maskedPart = result.replace('SECRET=', '');
-
-        // Check alternating pattern: positions 0,2,4,6,8 should be '*'
-        // positions 1,3,5,7,9 should be original
-        for (let i = 0; i < maskedPart.length; i++) {
-          if (i % 2 === 0) {
-            // Even positions should be masked (if part of detected sensitive data)
-            // This test might need adjustment based on actual regex detection
-          }
-        }
-      }
+      expect(result).toEqual('*E*R*T*"*2*4*6*8*0*2*4*6*');
     });
 
     it('should preserve text structure around masked content', () => {
-      const text = 'Before SECRET=mysecret123 After';
+      const text = 'Before SECRET="mysecret123456789" After';
       const result = maskSensitiveData(text);
 
-      if (result !== text) {
-        expect(result).toMatch(/^Before .* After$/);
-      }
+      expect(result).toEqual('Before *E*R*T*"*y*e*r*t*2*4*6*8*" After');
     });
   });
 
@@ -147,91 +166,78 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC...
     it('should handle multiple sensitive patterns in same text', () => {
       const text = `
         GitHub token: ghp_1234567890123456789012345678901234567890
-        OpenAI key: sk-1234567890abcdef1234567890abcdef1234567890abcdef
+        OpenAI key: sk-1234567890abcdefT3BlbkFJ1234567890abcdef
         AWS key: AKIAIOSFODNN7EXAMPLE
       `;
-
       const result = maskSensitiveData(text);
-      expect(result).not.toBe(text);
-      expect(result).toContain('*');
 
-      // Should mask all instances
-      const maskCount = (result.match(/\*/g) || []).length;
-      expect(maskCount).toBeGreaterThan(0);
+      expect(result).toEqual(`
+        GitHub token: *h*_*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0*2*4*6*8*0
+        OpenAI key: *k*1*3*5*7*9*a*c*e*T*B*b*F*1*3*5*7*9*a*c*e*
+        AWS key: *K*A*O*F*D*N*E*A*P*E
+      `);
     });
 
     it('should handle overlapping matches correctly', () => {
-      // Create a scenario with potentially overlapping patterns
-      const text = 'SECRET_API_KEY=sk-1234567890abcdef SECRET_TOKEN=abc123';
+      const text =
+        'SECRET_API_KEY="sk-1234567890abcdefT3BlbkFJ" SECRET_TOKEN="abc1234567890123"';
       const result = maskSensitiveData(text);
 
-      if (result !== text) {
-        expect(result).toContain('*');
-        // Should not have broken the text structure
-        expect(result).toMatch(/SECRET_API_KEY=.* SECRET_TOKEN=.*/);
-      }
+      expect(result).toEqual(
+        '*E*R*T*A*I*K*Y*"*k*1*3*5*7*9*a*c*e*T*B*b*F*" *E*R*T*T*K*N*"*b*1*3*5*7*9*1*3*'
+      );
     });
 
     it('should maintain order when processing multiple matches', () => {
       const text =
-        'First: SECRET1=abc123 Second: SECRET2=def456 Third: SECRET3=ghi789';
+        'First: SECRET_ONE="abc1234567890123" Second: SECRET_TWO="def4567890123456" Third: SECRET_THREE="ghi7890123456789"';
       const result = maskSensitiveData(text);
 
-      if (result !== text) {
-        // Order should be maintained
-        const firstIndex = result.indexOf('First:');
-        const secondIndex = result.indexOf('Second:');
-        const thirdIndex = result.indexOf('Third:');
-
-        expect(firstIndex).toBeLessThan(secondIndex);
-        expect(secondIndex).toBeLessThan(thirdIndex);
-      }
+      expect(result).toEqual(
+        'First: *E*R*T*O*E*"*b*1*3*5*7*9*1*3* Second: *E*R*T*T*O*"*e*4*6*8*0*2*4*6* Third: *E*R*T*T*R*E*"*h*7*9*1*3*5*7*9*'
+      );
     });
   });
 
   describe('Edge Cases', () => {
     it('should handle very long strings', () => {
       const longString =
-        'x'.repeat(10000) + 'SECRET=mysecret123' + 'y'.repeat(10000);
+        'x'.repeat(10000) + 'SECRET="mysecret12345678"' + 'y'.repeat(10000);
       const result = maskSensitiveData(longString);
 
-      // Should complete without hanging or crashing
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
+      expect(typeof result).toEqual('string');
+      expect(result.length).toEqual(20025);
     });
 
     it('should handle strings with special characters', () => {
-      const text = `Special chars: !@#$%^&*(){}[]|\\:";'<>?,./\nSECRET=mysecret123\tAfter`;
+      const text = `Special chars: !@#$%^&*(){}[]|\\:";'<>?,./
+SECRET="mysecret12345678"	After`;
       const result = maskSensitiveData(text);
 
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
+      expect(result).toEqual(`Special chars: !@#$%^&*(){}[]|\\:";'<>?,./
+*E*R*T*"*y*e*r*t*2*4*6*8*	After`);
     });
 
     it('should handle zero-length matches gracefully', () => {
-      // This tests the zero-length match prevention logic
       const text = 'Test string with potential zero-length match issues';
       const result = maskSensitiveData(text);
 
-      // Should not hang or throw errors
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
+      expect(result).toEqual(
+        'Test string with potential zero-length match issues'
+      );
     });
 
     it('should handle newlines and multiline content', () => {
-      const multilineText = `Line 1: Normal text
-Line 2: SECRET=mysecret123
+      const text = `Line 1: Normal text
+Line 2: SECRET="mysecret12345678"
 Line 3: More normal text
-Line 4: API_KEY=anotherkey456`;
+Line 4: key="anotherkey456789"`;
+      const result = maskSensitiveData(text);
 
-      const result = maskSensitiveData(multilineText);
-
-      expect(result).toBeDefined();
-      // Should preserve line structure
-      const lines = result.split('\n');
-      expect(lines).toHaveLength(4);
-      expect(lines[0]).toBe('Line 1: Normal text');
-      expect(lines[2]).toBe('Line 3: More normal text');
+      expect(result).toEqual(`Line 1: Normal text
+Line 2: *E*R*T*"*y*e*r*t*2*4*6*8*
+Line 3: More normal text
+Line 4: *e*=*a*o*h*r*e*4*6*8*"`);
     });
 
     it('should handle empty matches array', () => {
@@ -244,60 +250,87 @@ Line 4: API_KEY=anotherkey456`;
 
   describe('Performance and Caching', () => {
     it('should handle repeated calls efficiently', () => {
-      const text = 'SECRET=mysecret123';
-
-      // Multiple calls should work consistently
+      const text = 'SECRET="mysecret12345678"';
       const result1 = maskSensitiveData(text);
       const result2 = maskSensitiveData(text);
       const result3 = maskSensitiveData(text);
 
-      expect(result1).toBe(result2);
-      expect(result2).toBe(result3);
+      expect(result1).toEqual('*E*R*T*"*y*e*r*t*2*4*6*8*');
+      expect(result2).toEqual('*E*R*T*"*y*e*r*t*2*4*6*8*');
+      expect(result3).toEqual('*E*R*T*"*y*e*r*t*2*4*6*8*');
     });
 
-    it('should work with different input strings', () => {
-      const texts = [
-        'SECRET=abc123',
-        'API_KEY=def456',
-        'TOKEN=ghi789',
-        'PASSWORD=jkl012',
-      ];
+    it('should work with SECRET input string', () => {
+      const text = 'SECRET="abc1234567890123"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('*E*R*T*"*b*1*3*5*7*9*1*3*');
+    });
 
-      const results = texts.map(text => maskSensitiveData(text));
+    it('should work with key input string', () => {
+      const text = 'key="def4567890123456"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('*e*=*d*f*5*7*9*1*3*5*"');
+    });
 
-      // Each should be processed correctly
-      results.forEach((result, _index) => {
-        expect(result).toBeDefined();
-        expect(typeof result).toBe('string');
-      });
+    it('should work with TOKEN input string', () => {
+      const text = 'TOKEN="ghi7890123456789"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('*O*E*=*g*i*8*0*2*4*6*8*"');
+    });
+
+    it('should work with PASSWORD input string', () => {
+      const text = 'PASSWORD="jkl0123456789012"';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('*A*S*O*D*"*k*0*2*4*6*8*0*2*');
     });
   });
 
   describe('Regex Edge Cases', () => {
-    it('should handle malformed patterns gracefully', () => {
-      // Test with strings that might confuse regex patterns
-      const edgeCases = [
-        'SECRET==doubleequals',
-        'SECRET=',
-        '=SECRET',
-        'SECRET===triple',
-        'SECRET=with\nnewline',
-        'SECRET=with\ttab',
-      ];
+    it('should handle SECRET==doubleequals', () => {
+      const text = 'SECRET==doubleequals';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('SECRET==doubleequals');
+    });
 
-      edgeCases.forEach(testCase => {
-        const result = maskSensitiveData(testCase);
-        expect(result).toBeDefined();
-        expect(typeof result).toBe('string');
-      });
+    it('should handle SECRET=', () => {
+      const text = 'SECRET=';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('SECRET=');
+    });
+
+    it('should handle =SECRET', () => {
+      const text = '=SECRET';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('=SECRET');
+    });
+
+    it('should handle SECRET===triple', () => {
+      const text = 'SECRET===triple';
+      const result = maskSensitiveData(text);
+      expect(result).toEqual('SECRET===triple');
+    });
+
+    it('should handle SECRET=with newline', () => {
+      const text = `SECRET=with
+newline`;
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(`SECRET=with
+newline`);
+    });
+
+    it('should handle SECRET=with tab', () => {
+      const text = `SECRET=with	tab`;
+      const result = maskSensitiveData(text);
+      expect(result).toEqual(`SECRET=with	tab`);
     });
 
     it('should handle Unicode characters', () => {
-      const unicodeText = 'SECRET=密码123🔑 API_KEY=токен456';
-      const result = maskSensitiveData(unicodeText);
+      const text = 'SECRET="密码1234567890123" API_KEY="токен45678901234"';
+      const result = maskSensitiveData(text);
 
-      expect(result).toBeDefined();
-      expect(typeof result).toBe('string');
+      expect(result).toEqual(
+        'SECRET="密码1234567890123" API_KEY="токен45678901234"'
+      );
     });
   });
 });
