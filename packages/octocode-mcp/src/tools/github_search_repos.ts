@@ -3,18 +3,23 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
   withSecurityValidation,
-} from '../security/withSecurityValidation';
-import { searchGitHubReposAPI } from '../github/repoSearch';
-import { TOOL_NAMES } from '../constants';
+} from '../security/withSecurityValidation.js';
+import { searchGitHubReposAPI } from '../github/repoSearch.js';
+import { TOOL_NAMES } from '../constants.js';
 import {
   GitHubReposSearchQuery,
   GitHubReposSearchQuerySchema,
   SimplifiedRepository,
   type RepoSearchResult,
-} from '../scheme/github_search_repos';
-import { executeBulkOperation } from '../utils/bulkOperations';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { DESCRIPTIONS } from './descriptions';
+} from '../scheme/github_search_repos.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { DESCRIPTIONS } from './descriptions.js';
+import {
+  handleApiError,
+  handleCatchError,
+  createSuccessResult,
+} from './utils.js';
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   return server.registerTool(
@@ -39,7 +44,6 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        // executeBulkOperation handles empty arrays gracefully
         return searchMultipleGitHubRepos(
           args.queries || [],
           authInfo,
@@ -51,6 +55,39 @@ export function registerSearchGitHubReposTool(server: McpServer) {
 }
 
 /**
+ * Check if a query has valid topics
+ */
+function hasValidTopics(query: GitHubReposSearchQuery): boolean {
+  return Boolean(
+    query.topicsToSearch &&
+      (Array.isArray(query.topicsToSearch)
+        ? query.topicsToSearch.length > 0
+        : query.topicsToSearch)
+  );
+}
+
+/**
+ * Check if a query has valid keywords
+ */
+function hasValidKeywords(query: GitHubReposSearchQuery): boolean {
+  return Boolean(query.keywordsToSearch && query.keywordsToSearch.length > 0);
+}
+
+/**
+ * Create a search-specific reasoning message
+ */
+function createSearchReasoning(
+  originalReasoning: string | undefined,
+  searchType: 'topics' | 'keywords'
+): string {
+  const suffix =
+    searchType === 'topics' ? 'topics-based search' : 'keywords-based search';
+  return originalReasoning
+    ? `${originalReasoning} (${suffix})`
+    : `${searchType.charAt(0).toUpperCase() + searchType.slice(1)}-based repository search`;
+}
+
+/**
  * Expands queries that have both topicsToSearch and keywordsToSearch into separate queries
  * This improves search effectiveness by allowing each search type to be optimized independently
  */
@@ -59,45 +96,30 @@ function expandQueriesWithBothSearchTypes(
 ): GitHubReposSearchQuery[] {
   const expandedQueries: GitHubReposSearchQuery[] = [];
 
-  queries.forEach(query => {
-    const hasTopics =
-      query.topicsToSearch &&
-      (Array.isArray(query.topicsToSearch)
-        ? query.topicsToSearch.length > 0
-        : query.topicsToSearch);
-    const hasKeywords =
-      query.keywordsToSearch && query.keywordsToSearch.length > 0;
+  for (const query of queries) {
+    const hasTopics = hasValidTopics(query);
+    const hasKeywords = hasValidKeywords(query);
 
     if (hasTopics && hasKeywords) {
-      // Split into two queries: one for topics, one for keywords
-      const baseQuery = { ...query };
-      delete baseQuery.topicsToSearch;
-      delete baseQuery.keywordsToSearch;
+      // Split into two separate queries for better search optimization
+      const { topicsToSearch, keywordsToSearch, ...baseQuery } = query;
 
-      // Topics-based query
-      const topicsQuery: GitHubReposSearchQuery = {
-        ...baseQuery,
-        reasoning: query.reasoning
-          ? `${query.reasoning} (topics-based search)`
-          : 'Topics-based repository search',
-        topicsToSearch: query.topicsToSearch,
-      };
-
-      // Keywords-based query
-      const keywordsQuery: GitHubReposSearchQuery = {
-        ...baseQuery,
-        reasoning: query.reasoning
-          ? `${query.reasoning} (keywords-based search)`
-          : 'Keywords-based repository search',
-        keywordsToSearch: query.keywordsToSearch,
-      };
-
-      expandedQueries.push(topicsQuery, keywordsQuery);
+      expandedQueries.push(
+        {
+          ...baseQuery,
+          reasoning: createSearchReasoning(query.reasoning, 'topics'),
+          topicsToSearch,
+        },
+        {
+          ...baseQuery,
+          reasoning: createSearchReasoning(query.reasoning, 'keywords'),
+          keywordsToSearch,
+        }
+      );
     } else {
-      // Keep original query if it doesn't have both search types
       expandedQueries.push(query);
     }
-  });
+  }
 
   return expandedQueries;
 }
@@ -107,7 +129,6 @@ async function searchMultipleGitHubRepos(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  // Split queries that have both topicsToSearch and keywordsToSearch
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
 
   return executeBulkOperation(
@@ -120,38 +141,22 @@ async function searchMultipleGitHubRepos(
           userContext
         );
 
-        if ('error' in apiResult) {
-          return {
-            status: 'error',
-            researchGoal: query.researchGoal,
-            reasoning: query.reasoning,
-            researchSuggestions: query.researchSuggestions,
-            error: apiResult.error,
-          };
-        }
+        const apiError = handleApiError(apiResult, query);
+        if (apiError) return apiError;
 
-        // Extract repository data
-        const repositories = (apiResult.data.repositories ||
-          []) satisfies SimplifiedRepository[];
+        const repositories =
+          'data' in apiResult
+            ? apiResult.data.repositories || []
+            : ([] satisfies SimplifiedRepository[]);
 
-        return {
-          status: repositories.length === 0 ? 'empty' : 'hasResults',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          researchSuggestions: query.researchSuggestions,
-          repositories,
-        };
+        return createSuccessResult(
+          query,
+          { repositories },
+          repositories.length > 0,
+          'GITHUB_SEARCH_REPOSITORIES'
+        );
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-
-        return {
-          status: 'error',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          researchSuggestions: query.researchSuggestions,
-          error: errorMessage,
-        };
+        return handleCatchError(error, query);
       }
     },
     {

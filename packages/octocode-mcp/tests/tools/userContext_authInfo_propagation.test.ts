@@ -58,6 +58,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
   let mockServer: MockMcpServer;
@@ -81,7 +82,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
 
       registerGitHubSearchCodeTool(mockServer.server);
 
-      await mockServer.callTool('githubSearchCode', {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['test'] }],
       });
 
@@ -109,7 +110,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
 
       registerFetchGitHubFileContentTool(mockServer.server);
 
-      await mockServer.callTool('githubGetFileContent', {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
         queries: [{ owner: 'test', repo: 'repo', path: 'test.js' }],
       });
 
@@ -136,7 +137,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
 
       registerSearchGitHubReposTool(mockServer.server);
 
-      await mockServer.callTool('githubSearchRepositories', {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
         queries: [{ keywordsToSearch: ['react'] }],
       });
 
@@ -163,7 +164,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
 
       registerViewGitHubRepoStructureTool(mockServer.server);
 
-      await mockServer.callTool('githubViewRepoStructure', {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE, {
         queries: [{ owner: 'test', repo: 'repo', branch: 'main' }],
       });
 
@@ -190,7 +191,7 @@ describe('UserContext and AuthInfo Propagation - ALL TOOLS', () => {
 
       registerSearchGitHubPullRequestsTool(mockServer.server);
 
-      await mockServer.callTool('githubSearchPullRequests', {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
         queries: [{ owner: 'test', repo: 'repo' }],
       });
 

@@ -3,7 +3,7 @@ import {
   executeBulkOperation,
   QueryStatus,
 } from '../../src/utils/bulkOperations';
-import { ToolName } from '../../src/constants';
+import { ToolName, TOOL_NAMES } from '../../src/constants';
 
 describe('executeBulkOperation', () => {
   describe('Single query scenarios', () => {
@@ -12,10 +12,11 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockResolvedValue({
         status: 'hasResults' as const,
         files: [{ path: 'test.ts', content: 'data' }],
+        hints: ['Test hint for hasResults'],
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
         keysPriority: ['files'],
       });
 
@@ -36,10 +37,11 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockResolvedValue({
         status: 'empty' as const,
         files: [],
+        hints: ['Test hint for empty'],
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -55,10 +57,11 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockResolvedValue({
         status: 'error' as const,
         error: 'Rate limit exceeded',
+        hints: ['Test hint for error'],
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -74,7 +77,7 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockRejectedValue(new Error('API error'));
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubFetchContent' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
       expect(result.isError).toBe(false);
@@ -82,7 +85,7 @@ describe('executeBulkOperation', () => {
       expect(responseText).toContain('1 failed');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API error"');
-      expect(responseText).toContain('errorStatusHints:');
+      // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
     });
   });
 
@@ -101,7 +104,7 @@ describe('executeBulkOperation', () => {
         }));
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchRepositories' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
       expect(result.isError).toBe(false);
@@ -125,10 +128,11 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockResolvedValue({
         status: 'empty' as const,
         files: [],
+        hints: ['Test hint for empty'],
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -145,10 +149,11 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockResolvedValue({
         status: 'error' as const,
         error: 'Authentication failed',
+        hints: ['Test hint for error'],
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubFetchContent' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
       expect(result.isError).toBe(false);
@@ -165,7 +170,7 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockRejectedValue(new Error('Network timeout'));
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubViewRepoStructure' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       });
 
       expect(result.isError).toBe(false);
@@ -190,11 +195,12 @@ describe('executeBulkOperation', () => {
           return {
             status: isFound ? ('hasResults' as const) : ('empty' as const),
             pull_requests: isFound ? [{ number: 1 }] : [],
+            hints: ['Test hint'],
           };
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchPullRequests' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       });
 
       expect(result.isError).toBe(false);
@@ -220,16 +226,18 @@ describe('executeBulkOperation', () => {
             return {
               status: 'error' as const,
               error: 'Failed to fetch',
+              hints: ['Test hint for error'],
             };
           }
           return {
             status: 'hasResults' as const,
             data: { result: 'success' },
+            hints: ['Test hint for success'],
           };
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubFetchContent' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
       expect(result.isError).toBe(false);
@@ -258,11 +266,12 @@ describe('executeBulkOperation', () => {
           return {
             status: 'empty' as const,
             files: [],
+            hints: ['Test hint for empty'],
           };
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -272,7 +281,7 @@ describe('executeBulkOperation', () => {
       expect(responseText).toContain('2 failed');
       expect(responseText).not.toContain('hasResults');
       expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
+      // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
     });
   });
 
@@ -294,16 +303,18 @@ describe('executeBulkOperation', () => {
             return {
               status: 'error' as const,
               error: 'Custom error',
+              hints: ['Test hint for error'],
             };
           }
           return {
             status: query.type as 'hasResults' | 'empty',
             data: query.type === 'hasResults' ? { result: 'data' } : {},
+            hints: ['Test hint'],
           };
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubViewRepoStructure' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       });
 
       expect(result.isError).toBe(false);
@@ -339,7 +350,7 @@ describe('executeBulkOperation', () => {
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchRepositories' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
       expect(result.isError).toBe(false);
@@ -365,7 +376,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -387,7 +398,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -409,7 +420,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -432,7 +443,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchRepositories' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -458,7 +469,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchRepositories' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -484,7 +495,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -505,7 +516,7 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn().mockRejectedValue(new Error('Failed'));
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -526,7 +537,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -544,7 +555,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -562,7 +573,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -580,7 +591,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -614,7 +625,7 @@ describe('executeBulkOperation', () => {
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -639,7 +650,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchPullRequests' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -664,7 +675,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -697,7 +708,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -722,7 +733,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
         keysPriority: ['owner', 'repo', 'files'],
       });
 
@@ -735,11 +746,11 @@ describe('executeBulkOperation', () => {
 
     it('should work with different tool names', async () => {
       const toolNames: ToolName[] = [
-        'githubSearchCode',
-        'githubSearchRepositories',
-        'githubSearchPullRequests',
-        'githubGetFileContent',
-        'githubViewRepoStructure',
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       ];
 
       for (const toolName of toolNames) {
@@ -767,7 +778,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -783,7 +794,7 @@ describe('executeBulkOperation', () => {
       const processor = vi.fn();
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -803,7 +814,7 @@ describe('executeBulkOperation', () => {
       });
 
       await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(processor).toHaveBeenCalledTimes(3);
@@ -822,7 +833,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubFetchContent' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -838,7 +849,7 @@ describe('executeBulkOperation', () => {
         .mockRejectedValue(new Error('Network error: Connection refused'));
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -856,7 +867,7 @@ describe('executeBulkOperation', () => {
         });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubViewRepoStructure' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       });
 
       const responseText = result.content[0]?.text as string;
@@ -881,7 +892,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -908,7 +919,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -943,7 +954,7 @@ describe('executeBulkOperation', () => {
       });
 
       const result = await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(result.isError).toBe(false);
@@ -970,7 +981,7 @@ describe('executeBulkOperation', () => {
       );
 
       await executeBulkOperation(queries, processor, {
-        toolName: 'githubSearchCode' as ToolName,
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       });
 
       expect(processor).toHaveBeenCalledTimes(3);

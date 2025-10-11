@@ -24,6 +24,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
   let mockServer: MockMcpServer;
@@ -62,14 +63,17 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['react'],
-            limit: 2,
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+              limit: 2,
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -101,14 +105,17 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['typescript'],
-            limit: 1,
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['typescript'],
+              limit: 1,
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -134,13 +141,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['nodejs'],
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nodejs'],
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -163,14 +173,17 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent-repo-xyz123'],
-            limit: 5,
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent-repo-xyz123'],
+              limit: 5,
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -191,13 +204,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            topicsToSearch: ['nonexistent-topic-xyz'],
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              topicsToSearch: ['nonexistent-topic-xyz'],
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -215,13 +231,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 429,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -239,13 +258,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         new Error('Network connection failed')
       );
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -253,6 +275,37 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network connection failed"');
       expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should include GitHub API error-derived hints (auth/scopes)', async () => {
+      mockSearchGitHubReposAPI.mockResolvedValue({
+        error: 'GitHub authentication required',
+        status: 401,
+        type: 'http',
+        scopesSuggestion: 'Set GITHUB_TOKEN or GH_TOKEN environment variable',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['react'],
+            },
+          ],
+        }
+      );
+
+      const responseText = result.content[0]?.text as string;
+      expect(result.isError).toBe(false);
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain(
+        'GitHub Octokit API Error: GitHub authentication required'
+      );
+      expect(responseText).toContain(
+        'Set GITHUB_TOKEN or GH_TOKEN environment variable'
+      );
     });
   });
 
@@ -302,13 +355,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['react'] },
-          { keywordsToSearch: ['angular'] },
-          { keywordsToSearch: ['vue'] },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['react'] },
+            { keywordsToSearch: ['angular'] },
+            { keywordsToSearch: ['vue'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -325,13 +381,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         .mockResolvedValueOnce({ data: { repositories: [] }, status: 200 })
         .mockResolvedValueOnce({ data: { repositories: [] }, status: 200 });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['xyz123'] },
-          { keywordsToSearch: ['abc456'] },
-          { keywordsToSearch: ['def789'] },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['xyz123'] },
+            { keywordsToSearch: ['abc456'] },
+            { keywordsToSearch: ['def789'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -353,12 +412,15 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
           status: 429,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['test1'] },
-          { keywordsToSearch: ['test2'] },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['test1'] },
+            { keywordsToSearch: ['test2'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -387,12 +449,15 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         })
         .mockResolvedValueOnce({ data: { repositories: [] }, status: 200 });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['react'] },
-          { keywordsToSearch: ['xyz'] },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['react'] },
+            { keywordsToSearch: ['xyz'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -425,12 +490,15 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['test1'] },
-          { keywordsToSearch: ['test2'] },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['test1'] },
+            { keywordsToSearch: ['test2'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -450,9 +518,15 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
           status: 404,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [{ keywordsToSearch: ['xyz'] }, { keywordsToSearch: ['abc'] }],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['xyz'] },
+            { keywordsToSearch: ['abc'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -486,13 +560,16 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['test'] },
-          { keywordsToSearch: ['nonexistent'] },
-          { keywordsToSearch: ['error'] },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['test'] },
+            { keywordsToSearch: ['nonexistent'] },
+            { keywordsToSearch: ['error'] },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -523,14 +600,17 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            researchGoal: 'Find testing frameworks',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              researchGoal: 'Find testing frameworks',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -543,14 +623,17 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Searching for popular repos',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Searching for popular repos',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -566,14 +649,20 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
         status: 500,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            researchSuggestions: ['Try different keywords', 'Check API status'],
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              researchSuggestions: [
+                'Try different keywords',
+                'Check API status',
+              ],
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -585,9 +674,12 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
 
   describe('Empty queries handling', () => {
     it('should handle empty queries array', async () => {
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -629,15 +721,18 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            topicsToSearch: ['javascript'],
-            keywordsToSearch: ['framework'],
-            reasoning: 'Find JS frameworks',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              topicsToSearch: ['javascript'],
+              keywordsToSearch: ['framework'],
+              reasoning: 'Find JS frameworks',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 

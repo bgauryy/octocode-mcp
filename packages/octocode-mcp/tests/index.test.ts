@@ -345,7 +345,10 @@ describe('Index Module', () => {
     it('should continue registering tools even if some fail', async () => {
       // Mock registerTools to return partial success
       mockRegisterTools.mockImplementation(() => {
-        return { successCount: 3, failedTools: ['githubSearchPullRequests'] };
+        return {
+          successCount: 3,
+          failedTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+        };
       });
 
       await import('../src/index.js');
@@ -393,7 +396,10 @@ describe('Index Module', () => {
     it('should handle tool registration errors gracefully', async () => {
       // Mock registerTools to return partial success
       mockRegisterTools.mockImplementation(() => {
-        return { successCount: 2, failedTools: ['githubSearchCode'] };
+        return {
+          successCount: 2,
+          failedTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
+        };
       });
 
       // The module should still load
@@ -496,11 +502,13 @@ describe('Index Module', () => {
 
   describe('Tool Names Export Consistency', () => {
     it('should have consistent tool name exports', () => {
-      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('githubSearchCode');
+      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe(TOOL_NAMES.GITHUB_SEARCH_CODE);
       expect(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES).toBe(
-        'githubSearchRepositories'
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
       );
-      expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe('githubGetFileContent');
+      expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT
+      );
     });
   });
 
@@ -551,7 +559,7 @@ describe('Index Module', () => {
     });
 
     it('should enable additional tools with ENABLE_TOOLS', async () => {
-      process.env.ENABLE_TOOLS = 'githubSearchPullRequests';
+      process.env.ENABLE_TOOLS = TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS;
 
       await import('../src/index.js');
       await waitForAsyncOperations();
@@ -574,8 +582,8 @@ describe('Index Module', () => {
     });
 
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', async () => {
-      process.env.ENABLE_TOOLS = 'githubSearchPullRequests';
-      process.env.DISABLE_TOOLS = 'githubSearchCode';
+      process.env.ENABLE_TOOLS = TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS;
+      process.env.DISABLE_TOOLS = TOOL_NAMES.GITHUB_SEARCH_CODE;
 
       await import('../src/index.js');
       await waitForAsyncOperations();

@@ -1,23 +1,66 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   UserContext,
   withSecurityValidation,
-} from '../security/withSecurityValidation';
-import { searchGitHubPullRequestsAPI } from '../github/pullRequestSearch';
-import { TOOL_NAMES } from '../constants';
+} from '../security/withSecurityValidation.js';
+import { searchGitHubPullRequestsAPI } from '../github/pullRequestSearch.js';
+import { TOOL_NAMES } from '../constants.js';
 import {
   GitHubPullRequestSearchQuery,
   GitHubPullRequestSearchBulkQuerySchema,
   type PullRequestSearchResult,
-} from '../scheme/github_search_pull_requests';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
+} from '../scheme/github_search_pull_requests.js';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { DESCRIPTIONS } from './descriptions.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
 import {
-  PR_QUERY_LENGTH_VALIDATION,
-  PR_VALID_PARAMS_VALIDATION,
-} from './hintsContent';
-import { DESCRIPTIONS } from './descriptions';
-import { executeBulkOperation } from '../utils/bulkOperations';
+  handleApiError,
+  handleCatchError,
+  createSuccessResult,
+  createErrorResult,
+} from './utils.js';
+
+// PR-specific validation messages
+const VALIDATION_MESSAGES = {
+  QUERY_TOO_LONG: 'Query too long. Maximum 256 characters allowed.',
+  MISSING_PARAMS:
+    'At least one valid search parameter, filter, or PR number is required.',
+} as const;
+
+/**
+ * Check if a query has a valid query string that exceeds the length limit
+ */
+function hasQueryLengthError(query: GitHubPullRequestSearchQuery): boolean {
+  return Boolean(query?.query && String(query.query).length > 256);
+}
+
+/**
+ * Check if a query has at least one valid search parameter
+ */
+function hasValidSearchParams(query: GitHubPullRequestSearchQuery): boolean {
+  return Boolean(
+    query?.query?.trim() ||
+      query?.owner ||
+      query?.repo ||
+      query?.author ||
+      query?.assignee ||
+      (query?.prNumber && query?.owner && query?.repo)
+  );
+}
+
+/**
+ * Add validation error to query
+ */
+function addValidationError(
+  query: GitHubPullRequestSearchQuery,
+  error: string
+): GitHubPullRequestSearchQuery {
+  return {
+    ...query,
+    _validationError: error,
+  } as GitHubPullRequestSearchQuery;
+}
 
 export function registerSearchGitHubPullRequestsTool(server: McpServer) {
   return server.registerTool(
@@ -42,39 +85,25 @@ export function registerSearchGitHubPullRequestsTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        // executeBulkOperation handles empty arrays gracefully
-        const queries = args.queries || [];
+        let queries = args.queries || [];
 
-        // Custom validation for PR-specific rules
-        // Check for overly long queries (business logic validation)
-        const longQueryIndex = queries.findIndex(
-          query => query?.query && String(query.query).length > 256
-        );
+        // Validate query length
+        const longQueryIndex = queries.findIndex(hasQueryLengthError);
         if (longQueryIndex !== -1) {
-          // Return error by modifying the query to trigger error in processor
-          queries[longQueryIndex] = {
-            ...queries[longQueryIndex],
-            _validationError: PR_QUERY_LENGTH_VALIDATION.message,
-          } as GitHubPullRequestSearchQuery;
+          queries = queries.map((q, i) =>
+            i === longQueryIndex
+              ? addValidationError(q, VALIDATION_MESSAGES.QUERY_TOO_LONG)
+              : q
+          );
         }
 
-        // Basic validation - check if at least one query has valid parameters
-        const hasValidQueries = queries.some(
-          query =>
-            query?.query?.trim() ||
-            query?.owner ||
-            query?.repo ||
-            query?.author ||
-            query?.assignee ||
-            (query?.prNumber && query?.owner && query?.repo)
-        );
-
-        if (!hasValidQueries && queries.length > 0) {
-          // Add validation error to first query
-          queries[0] = {
-            ...queries[0],
-            _validationError: PR_VALID_PARAMS_VALIDATION.message,
-          } as GitHubPullRequestSearchQuery;
+        // Validate at least one query has valid parameters
+        if (queries.length > 0 && !queries.some(hasValidSearchParams)) {
+          queries = queries.map((q, i) =>
+            i === 0
+              ? addValidationError(q, VALIDATION_MESSAGES.MISSING_PARAMS)
+              : q
+          );
         }
 
         return searchMultipleGitHubPullRequests(queries, authInfo, userContext);
@@ -95,59 +124,35 @@ async function searchMultipleGitHubPullRequests(
     queries,
     async (query: GitHubPullRequestSearchQuery, _index: number) => {
       try {
-        // Check for validation errors passed from handler
         const validationError = (query as unknown as Record<string, unknown>)
           ?._validationError;
         if (validationError && typeof validationError === 'string') {
-          return {
-            status: 'error',
-            researchGoal: query.researchGoal,
-            reasoning: query.reasoning,
-            researchSuggestions: query.researchSuggestions,
-            error: validationError,
-          };
+          return createErrorResult(query, validationError);
         }
 
-        // GitHubPullRequestSearchQuery is compatible with GitHubPullRequestsSearchParams
         const apiResult = await searchGitHubPullRequestsAPI(
           query,
           authInfo,
           userContext
         );
 
-        if ('error' in apiResult) {
-          return {
-            status: 'error',
-            researchGoal: query.researchGoal,
-            reasoning: query.reasoning,
-            researchSuggestions: query.researchSuggestions,
-            error: apiResult.error,
-          };
-        }
+        const apiError = handleApiError(apiResult, query);
+        if (apiError) return apiError;
 
-        // Extract pull request data
         const pullRequests = apiResult.pull_requests || [];
 
-        return {
-          status: pullRequests.length === 0 ? 'empty' : 'hasResults',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          researchSuggestions: query.researchSuggestions,
-          pull_requests: pullRequests,
-          total_count: apiResult.total_count || pullRequests.length,
-          incomplete_results: apiResult.incomplete_results,
-        };
+        return createSuccessResult(
+          query,
+          {
+            pull_requests: pullRequests,
+            total_count: apiResult.total_count || pullRequests.length,
+            incomplete_results: apiResult.incomplete_results,
+          },
+          pullRequests.length > 0,
+          'GITHUB_SEARCH_PULL_REQUESTS'
+        );
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-
-        return {
-          status: 'error',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          researchSuggestions: query.researchSuggestions,
-          error: errorMessage,
-        };
+        return handleCatchError(error, query);
       }
     },
     {

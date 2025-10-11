@@ -35,6 +35,7 @@ vi.mock('../../src/sampling.js', () => ({
 }));
 
 import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch_content.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('GitHub Fetch Content Tool', () => {
   let mockServer: MockMcpServer;
@@ -83,17 +84,20 @@ describe('GitHub Fetch Content Tool', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'README.md',
-            branch: 'main',
-            id: 'test-query',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'README.md',
+              branch: 'main',
+              id: 'test-query',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
@@ -131,7 +135,7 @@ describe('GitHub Fetch Content Tool', () => {
         status: 200,
       });
 
-      await mockServer.callTool('githubGetFileContent', {
+      await mockServer.callTool(TOOL_NAMES.GITHUB_FETCH_CONTENT, {
         queries: [
           {
             owner: 'testowner',
@@ -189,22 +193,25 @@ describe('GitHub Fetch Content Tool', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'README.md',
-            id: 'readme',
-          },
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'package.json',
-            id: 'package',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'README.md',
+              id: 'readme',
+            },
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'package.json',
+              id: 'package',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -234,16 +241,19 @@ describe('GitHub Fetch Content Tool', () => {
         hints: ['Verify the file path, repository name, and branch exist.'],
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'nonexistent.md',
-            id: 'error-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'nonexistent.md',
+              id: 'error-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -269,16 +279,19 @@ describe('GitHub Fetch Content Tool', () => {
         new Error('Network error')
       );
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'test.md',
-            id: 'exception-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'test.md',
+              id: 'exception-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -295,6 +308,42 @@ describe('GitHub Fetch Content Tool', () => {
       expect(responseText).not.toMatch(/^data:/m);
       expect(responseText).not.toContain('queries:');
       expect(responseText).not.toMatch(/^hints:/m);
+    });
+
+    it('should include GitHub API error-derived hints (forbidden/permissions)', async () => {
+      const resetAt = Date.now() + 600_000;
+      mockFetchGitHubFileContentAPI.mockResolvedValue({
+        error: 'Access forbidden - insufficient permissions',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 10,
+        rateLimitReset: resetAt,
+        scopesSuggestion: 'Check repository permissions or authentication',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'private',
+              path: 'secret.txt',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain(
+        'GitHub Octokit API Error: Access forbidden - insufficient permissions'
+      );
+      expect(responseText).toContain(
+        'Check repository permissions or authentication'
+      );
     });
   });
 
@@ -328,17 +377,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'README.md',
-            fullContent: true,
-            id: 'full-content-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'README.md',
+              fullContent: true,
+              id: 'full-content-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -383,20 +435,23 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'test.js',
-            fullContent: true,
-            startLine: 5, // Should be ignored
-            endLine: 10, // Should be ignored
-            matchString: 'function', // Should be ignored
-            id: 'ignore-params-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'test.js',
+              fullContent: true,
+              startLine: 5, // Should be ignored
+              endLine: 10, // Should be ignored
+              matchString: 'function', // Should be ignored
+              id: 'ignore-params-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -437,18 +492,21 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'src/index.js',
-            startLine: 5,
-            endLine: 7,
-            id: 'partial-lines-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'src/index.js',
+              startLine: 5,
+              endLine: 7,
+              id: 'partial-lines-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -501,18 +559,21 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'src/utils.js',
-            matchString: 'function main',
-            matchStringContextLines: 3,
-            id: 'match-string-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'src/utils.js',
+              matchString: 'function main',
+              matchStringContextLines: 3,
+              id: 'match-string-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -564,17 +625,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'test.py',
-            matchString: 'def test_function',
-            id: 'default-context-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'test.py',
+              matchString: 'def test_function',
+              id: 'default-context-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -612,17 +676,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'src/app.js',
-            minified: true,
-            id: 'minified-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'src/app.js',
+              minified: true,
+              id: 'minified-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -666,17 +733,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'src/readable.js',
-            minified: false,
-            id: 'not-minified-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'src/readable.js',
+              minified: false,
+              id: 'not-minified-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -721,17 +791,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'src/broken.js',
-            minified: true,
-            id: 'minification-failed-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'src/broken.js',
+              minified: true,
+              id: 'minification-failed-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -767,17 +840,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'config.env',
-            sanitize: true,
-            id: 'security-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'config.env',
+              sanitize: true,
+              id: 'security-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -820,17 +896,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'public.js',
-            sanitize: false,
-            id: 'no-sanitize-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'public.js',
+              sanitize: false,
+              id: 'no-sanitize-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -889,16 +968,19 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'utils.js',
-            id: 'sampling-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'utils.js',
+              id: 'sampling-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -936,16 +1018,19 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'test.js',
-            id: 'sampling-failure-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'test.js',
+              id: 'sampling-failure-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -975,17 +1060,20 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'feature.js',
-            branch: 'feature-branch',
-            id: 'branch-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'feature.js',
+              branch: 'feature-branch',
+              id: 'branch-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -1027,16 +1115,19 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'main.js',
-            id: 'no-branch-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'main.js',
+              id: 'no-branch-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -1079,28 +1170,31 @@ End of file.`;
         })
         .mockRejectedValueOnce(new Error('Network timeout'));
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'success.js',
-            id: 'success-query',
-          },
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'missing.js',
-            id: 'error-query',
-          },
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'timeout.js',
-            id: 'exception-query',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'success.js',
+              id: 'success-query',
+            },
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'missing.js',
+              id: 'error-query',
+            },
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'timeout.js',
+              id: 'exception-query',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
@@ -1140,18 +1234,21 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'test.js',
-            startLine: 5, // Should be converted to number
-            endLine: 6, // Should be converted to number
-            id: 'type-conversion-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'test.js',
+              startLine: 5, // Should be converted to number
+              endLine: 6, // Should be converted to number
+              id: 'type-conversion-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -1185,19 +1282,22 @@ End of file.`;
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'test.js',
-            fullContent: true,
-            minified: true,
-            sanitize: false,
-            id: 'boolean-params-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'test.js',
+              fullContent: true,
+              minified: true,
+              sanitize: false,
+              id: 'boolean-params-test',
+            },
+          ],
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -1222,9 +1322,12 @@ End of file.`;
 
   describe('Input validation', () => {
     it('should handle empty queries array gracefully', async () => {
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [],
+        }
+      );
 
       // Empty arrays now return 0 results instead of error
       expect(result.isError).toBe(false);
@@ -1235,7 +1338,10 @@ End of file.`;
     });
 
     it('should handle missing queries parameter gracefully', async () => {
-      const result = await mockServer.callTool('githubGetFileContent', {});
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {}
+      );
 
       // Missing parameter now returns 0 results instead of error
       expect(result.isError).toBe(false);

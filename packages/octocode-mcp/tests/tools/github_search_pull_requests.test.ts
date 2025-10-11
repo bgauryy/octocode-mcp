@@ -37,6 +37,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 
 // Import after mocking
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 // Helper function to create standard mock response
 function createMockPRResponse(overrides: Record<string, unknown> = {}) {
@@ -130,7 +131,7 @@ describe('GitHub Search Pull Requests Tool', () => {
   describe('Parameter Validation', () => {
     it('should accept filter-only searches', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -176,7 +177,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should pass authInfo and userContext to GitHub API', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -214,7 +215,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle empty queries array gracefully', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [],
         },
@@ -235,7 +236,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle missing queries parameter gracefully', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {},
         {
           authInfo: { token: 'mock-test-token' },
@@ -254,7 +255,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should accept query-based searches', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -288,7 +289,7 @@ describe('GitHub Search Pull Requests Tool', () => {
     it('should reject overly long queries', async () => {
       const longQuery = 'a'.repeat(300);
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -320,7 +321,7 @@ describe('GitHub Search Pull Requests Tool', () => {
   describe('Basic Functionality', () => {
     it('should handle successful pull request search', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -367,7 +368,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       };
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [searchParams],
         },
@@ -394,7 +395,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle array parameters', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -431,7 +432,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle boolean filters', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -470,7 +471,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle date range filters', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -511,7 +512,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle numeric range filters', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -552,7 +553,7 @@ describe('GitHub Search Pull Requests Tool', () => {
 
     it('should handle expensive options with warnings', async () => {
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [
             {
@@ -598,7 +599,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       ];
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries,
         },
@@ -650,7 +651,7 @@ describe('GitHub Search Pull Requests Tool', () => {
         .mockRejectedValueOnce(new Error('Network error'));
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries,
         },
@@ -679,7 +680,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       });
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [{ query: 'test' }],
         },
@@ -704,7 +705,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [{ query: 'test' }],
         },
@@ -722,6 +723,43 @@ describe('GitHub Search Pull Requests Tool', () => {
       expect(responseText).toContain('Network error');
       expect(responseText).toContain('errorStatusHints:');
     });
+
+    it('should include GitHub API error-derived hints (rate limit/scopes)', async () => {
+      const resetAt = Date.now() + 1800_000;
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        error: 'GitHub API rate limit exceeded',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        rateLimitReset: resetAt,
+        retryAfter: 1800,
+        scopesSuggestion:
+          'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'test' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain(
+        'GitHub Octokit API Error: GitHub API rate limit exceeded'
+      );
+      expect(responseText).toContain('Retry after');
+      expect(responseText).toContain(
+        'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)'
+      );
+    });
   });
 
   describe('Content Sanitization', () => {
@@ -734,7 +772,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [{ query: 'token' }],
         },
@@ -763,7 +801,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [{ query: 'api' }],
         },
@@ -792,7 +830,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       );
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [{ query: 'clean' }],
         },
@@ -840,7 +878,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       mockSearchGitHubPullRequestsAPI.mockResolvedValue(mockResponse);
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [args],
         },
@@ -895,7 +933,7 @@ describe('GitHub Search Pull Requests Tool', () => {
       mockSearchGitHubPullRequestsAPI.mockResolvedValue(mockError);
 
       const result = await mockServer.callTool(
-        'githubSearchPullRequests',
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         {
           queries: [args],
         },

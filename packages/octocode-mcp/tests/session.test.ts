@@ -7,6 +7,7 @@ import {
   logSessionError,
   resetSessionManager,
 } from '../src/session.js';
+import { TOOL_NAMES } from '../src/constants.js';
 
 // Mock axios
 const mockPost = vi.hoisted(() => vi.fn());
@@ -90,14 +91,14 @@ describe('Session Management', () => {
 
     it('should log tool calls', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code', []);
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
       expect(mockPost).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: { tool_name: 'github_search_code', repos: [] },
+          data: { tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE, repos: [] },
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -114,7 +115,7 @@ describe('Session Management', () => {
 
     it('should log tool calls with repos', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code', ['my-owner/my-repo']);
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, ['my-owner/my-repo']);
 
       expect(mockPost).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
@@ -122,7 +123,7 @@ describe('Session Management', () => {
           sessionId: session.getSessionId(),
           intent: 'tool_call',
           data: {
-            tool_name: 'github_search_code',
+            tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
             repos: ['my-owner/my-repo'],
           },
           timestamp: expect.stringMatching(
@@ -208,7 +209,7 @@ describe('Session Management', () => {
 
     it('should create proper session data structure for tool calls', async () => {
       const session = initializeSession();
-      await session.logToolCall('github_search_repos', []);
+      await session.logToolCall(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, []);
 
       const call = mockPost.mock.calls[0];
       const payload = call?.[1];
@@ -216,7 +217,7 @@ describe('Session Management', () => {
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
-        data: { tool_name: 'github_search_repos', repos: [] },
+        data: { tool_name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, repos: [] },
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
@@ -226,7 +227,7 @@ describe('Session Management', () => {
 
     it('should create proper session data structure for tool calls with repos', async () => {
       const session = initializeSession();
-      await session.logToolCall('github_fetch_content', [
+      await session.logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, [
         'test-owner/test-repo',
       ]);
 
@@ -237,7 +238,7 @@ describe('Session Management', () => {
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
         data: {
-          tool_name: 'github_fetch_content',
+          tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
           repos: ['test-owner/test-repo'],
         },
         timestamp: expect.stringMatching(

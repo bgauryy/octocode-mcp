@@ -27,6 +27,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 
 // Import after mocking
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('GitHub Search Code Tool - Tool Layer Integration', () => {
   let mockServer: MockMcpServer;
@@ -65,7 +66,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['test'],
@@ -105,7 +106,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['React'],
@@ -140,7 +141,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['function'] }],
       });
 
@@ -163,7 +164,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['nonexistent'],
@@ -206,7 +207,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['test'] }],
       });
 
@@ -227,7 +228,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 429,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['test'] }],
       });
 
@@ -244,7 +245,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
     it('should return error status when API throws exception', async () => {
       mockSearchGitHubCodeAPI.mockRejectedValue(new Error('Network timeout'));
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['test'] }],
       });
 
@@ -256,6 +257,36 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Network timeout"');
       expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should include GitHub API error-derived hints (rate limit, scopes)', async () => {
+      const resetAt = Date.now() + 3600_000;
+      mockSearchGitHubCodeAPI.mockResolvedValue({
+        error: 'GitHub API rate limit exceeded',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        rateLimitReset: resetAt,
+        retryAfter: 3600,
+        scopesSuggestion:
+          'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['test'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain(
+        'GitHub Octokit API Error: GitHub API rate limit exceeded'
+      );
+      expect(responseText).toContain(
+        'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)'
+      );
+      expect(responseText).toContain('Rate limit: 0 remaining');
     });
   });
 
@@ -302,7 +333,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['test1'] },
           { keywordsToSearch: ['test2'] },
@@ -325,7 +356,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['nonexistent1'] },
           { keywordsToSearch: ['nonexistent2'] },
@@ -344,7 +375,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
     it('should handle multiple queries all with errors', async () => {
       mockSearchGitHubCodeAPI.mockRejectedValue(new Error('API error'));
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['test1'] },
           { keywordsToSearch: ['test2'] },
@@ -396,7 +427,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'] },
           { keywordsToSearch: ['notfound'] },
@@ -447,7 +478,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['success1'] },
           { keywordsToSearch: ['error'] },
@@ -481,7 +512,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
           status: 429,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['empty1'] },
           { keywordsToSearch: ['error1'] },
@@ -525,7 +556,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         })
         .mockRejectedValueOnce(new Error('Exception'));
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'] },
           { keywordsToSearch: ['empty'] },
@@ -562,7 +593,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['test'],
@@ -583,7 +614,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['test'],
@@ -604,7 +635,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         status: 404,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['test'],
@@ -624,7 +655,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
   describe('Empty queries handling', () => {
     it('should handle empty queries array gracefully', async () => {
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [],
       });
 
@@ -634,7 +665,10 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
     });
 
     it('should handle missing queries parameter gracefully', async () => {
-      const result = await mockServer.callTool('githubSearchCode', {});
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {}
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;

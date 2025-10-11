@@ -13,9 +13,13 @@ import {
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import type { OptimizedCodeSearchResult } from '../github/githubAPI.js';
 import { DESCRIPTIONS } from './descriptions.js';
 import { shouldIgnoreFile } from '../utils/fileFilters.js';
+import {
+  handleApiError,
+  handleCatchError,
+  createSuccessResult,
+} from './utils.js';
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(
@@ -40,7 +44,6 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        // executeBulkOperation handles empty arrays gracefully
         return searchMultipleGitHubCode(
           args.queries || [],
           authInfo,
@@ -48,6 +51,34 @@ export function registerGitHubSearchCodeTool(server: McpServer) {
         );
       }
     )
+  );
+}
+
+/**
+ * Extract owner and repo from nameWithOwner format (owner/repo)
+ */
+function extractOwnerAndRepo(nameWithOwner: string | undefined): {
+  owner?: string;
+  repo?: string;
+} {
+  if (!nameWithOwner) return {};
+
+  const parts = nameWithOwner.split('/');
+  return parts.length === 2 ? { owner: parts[0], repo: parts[1] } : {};
+}
+
+/**
+ * Get nameWithOwner from API result
+ */
+function getNameWithOwner(apiResult: {
+  data: {
+    repository?: { name?: string };
+    items: Array<{ repository?: { nameWithOwner?: string } }>;
+  };
+}): string | undefined {
+  return (
+    apiResult.data.repository?.name ||
+    apiResult.data.items[0]?.repository?.nameWithOwner
   );
 }
 
@@ -66,71 +97,35 @@ async function searchMultipleGitHubCode(
           userContext
         );
 
-        if ('error' in apiResult) {
-          return {
-            status: 'error',
-            researchGoal: query.researchGoal,
-            reasoning: query.reasoning,
-            researchSuggestions: query.researchSuggestions,
-            error: apiResult.error,
-          };
+        const apiError = handleApiError(apiResult, query);
+        if (apiError) return apiError;
+
+        if (!('data' in apiResult)) {
+          return handleCatchError(
+            new Error('Invalid API response structure'),
+            query
+          );
         }
 
-        // Extract repository context from nameWithOwner
-        let owner: string | undefined;
-        let repo: string | undefined;
-
-        const nameWithOwner =
-          apiResult.data.repository?.name ||
-          (apiResult.data.items.length > 0 &&
-          apiResult.data.items[0]?.repository?.nameWithOwner
-            ? apiResult.data.items[0].repository.nameWithOwner
-            : undefined);
-
-        if (nameWithOwner) {
-          const parts = nameWithOwner.split('/');
-          if (parts.length === 2) {
-            owner = parts[0];
-            repo = parts[1];
-          }
-        }
-
-        // Filter out ignored files from results - additional filtering at tool level
-        const filteredItems = apiResult.data.items.filter(
-          (item: OptimizedCodeSearchResult['items'][0]) =>
-            !shouldIgnoreFile(item.path)
+        const { owner, repo } = extractOwnerAndRepo(
+          getNameWithOwner(apiResult)
         );
 
-        const files = filteredItems.map(
-          (item: OptimizedCodeSearchResult['items'][0]) => ({
+        const files = apiResult.data.items
+          .filter(item => !shouldIgnoreFile(item.path))
+          .map(item => ({
             path: item.path,
-            text_matches: item.matches.map(
-              (match: OptimizedCodeSearchResult['items'][0]['matches'][0]) =>
-                match.context
-            ),
-          })
+            text_matches: item.matches.map(match => match.context),
+          }));
+
+        return createSuccessResult(
+          query,
+          { owner, repo, files },
+          files.length > 0,
+          'GITHUB_SEARCH_CODE'
         );
-
-        return {
-          status: files.length === 0 ? 'empty' : 'hasResults',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          researchSuggestions: query.researchSuggestions,
-          owner,
-          repo,
-          files,
-        };
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-
-        return {
-          status: 'error',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          researchSuggestions: query.researchSuggestions,
-          error: errorMessage,
-        };
+        return handleCatchError(error, query);
       }
     },
     {

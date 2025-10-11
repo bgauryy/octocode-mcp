@@ -37,6 +37,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;
@@ -67,15 +68,18 @@ describe('GitHub View Repository Structure Tool', () => {
   });
 
   it('should handle valid requests', async () => {
-    const result = await mockServer.callTool('githubViewRepoStructure', {
-      queries: [
-        {
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-        },
-      ],
-    });
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
+      }
+    );
 
     expect(result.isError).toBe(false);
     const responseText = result.content[0]?.text as string;
@@ -118,7 +122,7 @@ describe('GitHub View Repository Structure Tool', () => {
     });
 
     await mockServer.callTool(
-      'githubViewRepoStructure',
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       {
         queries: [
           {
@@ -159,15 +163,18 @@ describe('GitHub View Repository Structure Tool', () => {
       type: 'http',
     });
 
-    const result = await mockServer.callTool('githubViewRepoStructure', {
-      queries: [
-        {
-          owner: 'nonexistent',
-          repo: 'repo',
-          branch: 'main',
-        },
-      ],
-    });
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'nonexistent',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
+      }
+    );
 
     // With bulk operations, errors are handled gracefully and returned as data with hints
     const responseText = result.content[0]?.text as string;
@@ -190,18 +197,50 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).not.toMatch(/^hints:/m);
   });
 
-  it('should handle optional parameters', async () => {
-    const result = await mockServer.callTool('githubViewRepoStructure', {
-      queries: [
-        {
-          owner: 'test',
-          repo: 'repo',
-          branch: 'main',
-          path: 'src',
-          depth: 2,
-        },
-      ],
+  it('should include GitHub API error-derived hints (not found)', async () => {
+    mockViewGitHubRepositoryStructureAPI.mockResolvedValue({
+      error: 'Repository, resource, or path not found',
+      status: 404,
+      type: 'http',
     });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'missing',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
+      }
+    );
+
+    const responseText = result.content[0]?.text as string;
+    expect(result.isError).toBe(false);
+    expect(responseText).toContain('status: "error"');
+    expect(responseText).toContain('errorStatusHints:');
+    expect(responseText).toContain(
+      'GitHub Octokit API Error: Repository, resource, or path not found'
+    );
+  });
+
+  it('should handle optional parameters', async () => {
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            path: 'src',
+            depth: 2,
+          },
+        ],
+      }
+    );
 
     expect(result.isError).toBe(false);
     const responseText = result.content[0]?.text as string;
@@ -242,17 +281,20 @@ describe('GitHub View Repository Structure Tool', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'iamshaunjp',
-            repo: 'react-context-hooks',
-            branch: 'main',
-            path: '/contextapp',
-            id: 'contextapp-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'iamshaunjp',
+              repo: 'react-context-hooks',
+              branch: 'main',
+              path: '/contextapp',
+              id: 'contextapp-test',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -298,17 +340,20 @@ describe('GitHub View Repository Structure Tool', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'facebook',
-            repo: 'react',
-            branch: 'main',
-            path: '/',
-            id: 'root-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              branch: 'main',
+              path: '/',
+              id: 'root-test',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -341,16 +386,19 @@ describe('GitHub View Repository Structure Tool', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            id: 'no-branch-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              id: 'no-branch-test',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -390,17 +438,20 @@ describe('GitHub View Repository Structure Tool', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test field ordering',
-            id: 'field-order-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test field ordering',
+              id: 'field-order-test',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -453,17 +504,20 @@ describe('GitHub View Repository Structure Tool', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            path: '/utils',
-            id: 'utils-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              path: '/utils',
+              id: 'utils-test',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -510,24 +564,27 @@ describe('GitHub View Repository Structure Tool', () => {
           summary: { totalFiles: 2, totalFolders: 1 },
         });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            path: '/src',
-            id: 'src-test',
-          },
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            path: '/docs',
-            id: 'docs-test',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              path: '/src',
+              id: 'src-test',
+            },
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              path: '/docs',
+              id: 'docs-test',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
 

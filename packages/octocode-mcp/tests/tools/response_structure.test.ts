@@ -99,6 +99,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('Response Structure - All Tools', () => {
   let mockServer: MockMcpServer;
@@ -148,7 +149,7 @@ describe('Response Structure - All Tools', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['test'],
@@ -176,7 +177,7 @@ describe('Response Structure - All Tools', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['nonexistent'],
@@ -200,7 +201,7 @@ describe('Response Structure - All Tools', () => {
         error: 'API error',
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['error'],
@@ -242,7 +243,7 @@ describe('Response Structure - All Tools', () => {
           status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
@@ -276,7 +277,7 @@ describe('Response Structure - All Tools', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['error'], reasoning: 'Will fail' },
@@ -304,7 +305,7 @@ describe('Response Structure - All Tools', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
           { keywordsToSearch: ['error'], reasoning: 'Will fail' },
@@ -345,7 +346,7 @@ describe('Response Structure - All Tools', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
@@ -379,16 +380,19 @@ describe('Response Structure - All Tools', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'file.js',
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'file.js',
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -403,16 +407,19 @@ describe('Response Structure - All Tools', () => {
         status: 404,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'missing.js',
-            reasoning: 'Test failed',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'missing.js',
+              reasoning: 'Test failed',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).not.toContain('status: "hasResults"');
@@ -439,22 +446,25 @@ describe('Response Structure - All Tools', () => {
           status: 404,
         });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'file.js',
-            reasoning: 'Will succeed',
-          },
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'missing.js',
-            reasoning: 'Will fail',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'file.js',
+              reasoning: 'Will succeed',
+            },
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'missing.js',
+              reasoning: 'Will fail',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -486,14 +496,17 @@ describe('Response Structure - All Tools', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -510,14 +523,17 @@ describe('Response Structure - All Tools', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent'],
-            reasoning: 'Test empty',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent'],
+              reasoning: 'Test empty',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).not.toContain('status: "hasResults"');
@@ -554,13 +570,16 @@ describe('Response Structure - All Tools', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
-          { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
-          { keywordsToSearch: ['error'], reasoning: 'Will fail' },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
+            { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
+            { keywordsToSearch: ['error'], reasoning: 'Will fail' },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -581,14 +600,17 @@ describe('Response Structure - All Tools', () => {
         total_count: 1,
       });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: 'test',
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'test',
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -603,14 +625,17 @@ describe('Response Structure - All Tools', () => {
         total_count: 0,
       });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: 'nonexistent',
-            reasoning: 'Test empty',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'nonexistent',
+              reasoning: 'Test empty',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).not.toContain('status: "hasResults"');
@@ -633,13 +658,16 @@ describe('Response Structure - All Tools', () => {
           error: 'API error',
         });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          { query: 'found', reasoning: 'Will succeed' },
-          { query: 'notfound', reasoning: 'Will be empty' },
-          { query: 'error', reasoning: 'Will fail' },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            { query: 'found', reasoning: 'Will succeed' },
+            { query: 'notfound', reasoning: 'Will be empty' },
+            { query: 'error', reasoning: 'Will fail' },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -664,16 +692,19 @@ describe('Response Structure - All Tools', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -692,16 +723,19 @@ describe('Response Structure - All Tools', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test empty',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test empty',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).not.toContain('status: "hasResults"');
@@ -732,28 +766,31 @@ describe('Response Structure - All Tools', () => {
           error: 'Repository not found',
         });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo1',
-            branch: 'main',
-            reasoning: 'Will succeed',
-          },
-          {
-            owner: 'test',
-            repo: 'empty',
-            branch: 'main',
-            reasoning: 'Will be empty',
-          },
-          {
-            owner: 'test',
-            repo: 'missing',
-            branch: 'main',
-            reasoning: 'Will fail',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo1',
+              branch: 'main',
+              reasoning: 'Will succeed',
+            },
+            {
+              owner: 'test',
+              repo: 'empty',
+              branch: 'main',
+              reasoning: 'Will be empty',
+            },
+            {
+              owner: 'test',
+              repo: 'missing',
+              branch: 'main',
+              reasoning: 'Will fail',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
       expect(responseText).toContain('status: "hasResults"');
@@ -795,7 +832,7 @@ describe('Response Structure - All Tools', () => {
           status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
@@ -832,7 +869,7 @@ describe('Response Structure - All Tools', () => {
         status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['found'], reasoning: 'Will succeed' }],
       });
 

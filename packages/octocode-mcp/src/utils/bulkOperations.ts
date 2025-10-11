@@ -12,9 +12,9 @@
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { ToolName } from '../constants.js';
-import { generateHints, OrganizedHints } from '../tools/hints.js';
 import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
 import { createResponseFormat, type ToolResponse } from '../responses.js';
+import { getGenericErrorHints, getToolHints } from '../tools/hints.js';
 
 // ============================================================================
 // EXPORTED TYPES
@@ -31,9 +31,8 @@ interface ProcessedBulkResult extends Record<string, unknown> {
   reasoning?: string;
   researchSuggestions?: string[];
   data?: unknown;
-  error?: string;
+  error?: unknown; // Can be string or GitHubAPIError
   status: QueryStatus; // Required: Tools must set status explicitly
-  hints?: string[];
   query?: Record<string, unknown>;
 }
 
@@ -136,7 +135,10 @@ function createBulkResponse<
   let emptyCount = 0;
   let errorCount = 0;
 
-  // Collect hints by status for deduplication
+  // Collect statuses and hints from all results
+  let hasAnyHasResults = false;
+  let hasAnyEmpty = false;
+  let hasAnyError = false;
   const hasResultsHintsSet = new Set<string>();
   const emptyHintsSet = new Set<string>();
   const errorHintsSet = new Set<string>();
@@ -146,28 +148,23 @@ function createBulkResponse<
     const status = r.result.status;
     const toolData = extractToolData(r.result);
 
-    const queryHints = generateHints({
-      toolName: config.toolName,
-      resultType:
-        status === 'hasResults'
-          ? 'hasResults'
-          : status === 'empty'
-            ? 'empty'
-            : 'failed',
-      errorMessage: r.result.error,
-    });
-
-    // Merge custom hints from the result with generated hints
-    mergeCustomHints(r.result.hints, queryHints, status);
-
-    // Collect hints for deduplication
-    const hintsForStatus = extractHintsForStatus(queryHints, status);
+    // Track status types and collect any custom hints from results
+    const hintsArray = r.result.hints;
     if (status === 'hasResults') {
-      hintsForStatus.forEach(hint => hasResultsHintsSet.add(hint));
+      hasAnyHasResults = true;
+      if (hintsArray && Array.isArray(hintsArray)) {
+        hintsArray.forEach(hint => hasResultsHintsSet.add(hint));
+      }
     } else if (status === 'empty') {
-      hintsForStatus.forEach(hint => emptyHintsSet.add(hint));
-    } else {
-      hintsForStatus.forEach(hint => errorHintsSet.add(hint));
+      hasAnyEmpty = true;
+      if (hintsArray && Array.isArray(hintsArray)) {
+        hintsArray.forEach(hint => emptyHintsSet.add(hint));
+      }
+    } else if (status === 'error') {
+      hasAnyError = true;
+      if (hintsArray && Array.isArray(hintsArray)) {
+        hintsArray.forEach(hint => errorHintsSet.add(hint));
+      }
     }
 
     const flatQuery: FlatQueryResult = {
@@ -196,18 +193,7 @@ function createBulkResponse<
     const originalQuery = queries[err.queryIndex];
     if (!originalQuery) return;
 
-    const errorHints = generateHints({
-      toolName: config.toolName,
-      resultType: 'failed',
-      errorMessage: err.error,
-    });
-
-    // Note: errors from processBulkQueries don't have custom hints attached
-    // Custom hints are only available when the processor returns a result with error field
-
-    // Collect error hints for deduplication
-    const hintsForError = errorHints.failed || [];
-    hintsForError.forEach(hint => errorHintsSet.add(hint));
+    hasAnyError = true;
 
     flatQueries.push({
       query: originalQuery,
@@ -223,6 +209,26 @@ function createBulkResponse<
 
     errorCount++;
   });
+
+  // Generate hints: prefer custom hints from results, fall back to tool-based hints
+  const hasResultsHints = hasAnyHasResults
+    ? hasResultsHintsSet.size > 0
+      ? [...hasResultsHintsSet]
+      : [...getToolHints(config.toolName, 'hasResults')]
+    : [];
+
+  const emptyHints = hasAnyEmpty
+    ? emptyHintsSet.size > 0
+      ? [...emptyHintsSet]
+      : [...getToolHints(config.toolName, 'empty')]
+    : [];
+
+  // For errors: use custom hints if available, otherwise generic hints
+  const errorHints = hasAnyError
+    ? errorHintsSet.size > 0
+      ? [...errorHintsSet]
+      : [...getGenericErrorHints()]
+    : [];
 
   const counts = [];
   if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
@@ -252,9 +258,9 @@ function createBulkResponse<
   const responseData: ToolResponse = {
     instructions,
     results: flatQueries,
-    hasResultsStatusHints: [...hasResultsHintsSet],
-    emptyStatusHints: [...emptyHintsSet],
-    errorStatusHints: [...errorHintsSet],
+    hasResultsStatusHints: hasResultsHints,
+    emptyStatusHints: emptyHints,
+    errorStatusHints: errorHints,
   };
 
   return {
@@ -348,9 +354,9 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
     'reasoning',
     'researchSuggestions',
     'error',
-    'hints',
     'status',
     'query',
+    'hints',
   ]);
 
   const toolData: Record<string, unknown> = {};
@@ -361,35 +367,6 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   }
 
   return toolData;
-}
-
-function extractHintsForStatus(
-  hints: OrganizedHints,
-  status: QueryStatus
-): string[] {
-  if (status === 'hasResults') return hints.hasResults || [];
-  if (status === 'empty') return hints.empty || [];
-  return hints.failed || [];
-}
-
-function mergeCustomHints(
-  customHints: string[] | undefined,
-  generatedHints: OrganizedHints,
-  status: QueryStatus
-): void {
-  if (!customHints || customHints.length === 0) return;
-
-  // Add custom hints to the appropriate status category
-  if (status === 'hasResults') {
-    if (!generatedHints.hasResults) generatedHints.hasResults = [];
-    generatedHints.hasResults.push(...customHints);
-  } else if (status === 'empty') {
-    if (!generatedHints.empty) generatedHints.empty = [];
-    generatedHints.empty.push(...customHints);
-  } else {
-    if (!generatedHints.failed) generatedHints.failed = [];
-    generatedHints.failed.push(...customHints);
-  }
 }
 
 function mergeResearchSuggestions(

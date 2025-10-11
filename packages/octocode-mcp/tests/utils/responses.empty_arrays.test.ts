@@ -38,6 +38,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('Empty Arrays Removal in Responses', () => {
   let mockServer: MockMcpServer;
@@ -75,7 +76,7 @@ describe('Empty Arrays Removal in Responses', () => {
       });
 
       const result = await mockServer.callTool(
-        'githubSearchCode',
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
         {
           queries: [
             {
@@ -113,7 +114,7 @@ describe('Empty Arrays Removal in Responses', () => {
       });
 
       const result = await mockServer.callTool(
-        'githubSearchRepositories',
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
         {
           queries: [
             {
@@ -148,7 +149,7 @@ describe('Empty Arrays Removal in Responses', () => {
       });
 
       const result = await mockServer.callTool(
-        'githubViewRepoStructure',
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
         {
           queries: [
             {
@@ -195,7 +196,7 @@ describe('Empty Arrays Removal in Responses', () => {
         });
 
       const result = await mockServer.callTool(
-        'githubSearchCode',
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
         {
           queries: [
             { keywordsToSearch: ['found'], reasoning: 'Will have results' },
@@ -234,7 +235,7 @@ describe('Empty Arrays Removal in Responses', () => {
       });
 
       const result = await mockServer.callTool(
-        'githubSearchCode',
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
         {
           queries: [
             {
@@ -268,7 +269,7 @@ describe('Empty Arrays Removal in Responses', () => {
       });
 
       const result = await mockServer.callTool(
-        'githubSearchCode',
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
         {
           queries: [
             {

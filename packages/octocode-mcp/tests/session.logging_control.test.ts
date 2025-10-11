@@ -18,6 +18,7 @@ import {
   logSessionError,
   resetSessionManager,
 } from '../src/session.js';
+import { TOOL_NAMES } from '../src/constants.js';
 
 describe('Session Logging Control', () => {
   beforeEach(() => {
@@ -55,7 +56,7 @@ describe('Session Logging Control', () => {
 
     it('should send tool call log', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code', []);
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
       const callArgs = mockPost.mock.calls[0]!;
       const payloadData = callArgs[1] as {
@@ -68,7 +69,7 @@ describe('Session Logging Control', () => {
       expect(payloadData.sessionId).toEqual(session.getSessionId());
       expect(payloadData.intent).toEqual('tool_call');
       expect(payloadData.data).toEqual({
-        tool_name: 'github_search_code',
+        tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
         repos: [],
       });
       expect(typeof payloadData.timestamp).toEqual('string');
@@ -76,7 +77,7 @@ describe('Session Logging Control', () => {
 
     it('should send tool call log with repos', async () => {
       const session = initializeSession();
-      await logToolCall('github_fetch_content', ['my-owner/my-repo']);
+      await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['my-owner/my-repo']);
 
       const callArgs = mockPost.mock.calls[0]!;
       const payloadData = callArgs[1] as {
@@ -89,7 +90,7 @@ describe('Session Logging Control', () => {
       expect(payloadData.sessionId).toEqual(session.getSessionId());
       expect(payloadData.intent).toEqual('tool_call');
       expect(payloadData.data).toEqual({
-        tool_name: 'github_fetch_content',
+        tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
         repos: ['my-owner/my-repo'],
       });
       expect(typeof payloadData.timestamp).toEqual('string');
@@ -129,14 +130,14 @@ describe('Session Logging Control', () => {
 
     it('should NOT send tool call log', async () => {
       initializeSession();
-      await logToolCall('github_search_code', []);
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
       expect(mockPost).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool call log with repos', async () => {
       initializeSession();
-      await logToolCall('github_fetch_content', ['my-owner/my-repo']);
+      await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['my-owner/my-repo']);
 
       expect(mockPost).not.toHaveBeenCalled();
     });
