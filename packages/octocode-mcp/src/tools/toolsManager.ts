@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DEFAULT_TOOLS } from './tools.js';
+import { DEFAULT_TOOLS } from './toolConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 
 /**
@@ -17,7 +17,6 @@ export function registerTools(server: McpServer): {
   let successCount = 0;
   const failedTools: string[] = [];
 
-  // Check for conflicting configurations
   if (
     toolsToRun.length > 0 &&
     (enableTools.length > 0 || disableTools.length > 0)
@@ -27,24 +26,19 @@ export function registerTools(server: McpServer): {
     );
   }
 
-  // Register tools based on configuration
   for (const tool of DEFAULT_TOOLS) {
     try {
       let shouldRegisterTool = false;
       let reason = '';
 
       if (toolsToRun.length > 0) {
-        // TOOLS_TO_RUN mode: run only specified tools
         shouldRegisterTool = toolsToRun.includes(tool.name);
         if (!shouldRegisterTool) {
           reason = 'not specified in TOOLS_TO_RUN configuration';
         }
       } else {
-        // Configuration mode: defaults + enableTools - disableTools
-        // Start with default tools
         shouldRegisterTool = tool.isDefault;
 
-        // Add tools from ENABLE_TOOLS (if not already default)
         if (enableTools.includes(tool.name)) {
           shouldRegisterTool = true;
         }
@@ -53,7 +47,6 @@ export function registerTools(server: McpServer): {
           reason = 'not a default tool';
         }
 
-        // Apply DISABLE_TOOLS
         if (disableTools.includes(tool.name)) {
           shouldRegisterTool = false;
           reason = 'disabled by DISABLE_TOOLS configuration';

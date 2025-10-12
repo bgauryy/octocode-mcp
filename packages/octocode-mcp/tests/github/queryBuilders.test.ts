@@ -6,10 +6,22 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from '../../src/github/queryBuilders.js';
+import type { GitHubCodeSearchQuery } from '../../src/types.js';
 
-// Type assertion helper for test data
-const toCodeSearchQuery = (params: Record<string, unknown>) =>
-  params as Parameters<typeof buildCodeSearchQuery>[0];
+// Type assertion helper for test data - allows arrays for test flexibility
+const toCodeSearchQuery = (params: {
+  keywordsToSearch: string[];
+  owner?: string | string[];
+  repo?: string | string[];
+  extension?: string;
+  stars?: string;
+  filename?: string;
+  path?: string;
+  match?: 'file' | 'path' | Array<'file' | 'path'>;
+  limit?: number;
+  minify?: boolean;
+  sanitize?: boolean;
+}): GitHubCodeSearchQuery => params as GitHubCodeSearchQuery;
 
 describe('Query Builders', () => {
   describe('getOwnerQualifier', () => {

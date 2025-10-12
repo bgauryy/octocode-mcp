@@ -9,7 +9,7 @@ const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
 const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 // Mock dependencies
-vi.mock('../../src/github/index.js', () => ({
+vi.mock('../../src/github/pullRequestSearch.js', () => ({
   searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
 }));
 
@@ -24,10 +24,20 @@ vi.mock('../../src/tools/utils/tokenManager.js', () => ({
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: mockGetGitHubToken,
+  getServerConfig: vi.fn(() => ({
+    version: '1.0.0',
+    enableLogging: false,
+    betaEnabled: false,
+    timeout: 30000,
+    maxRetries: 3,
+    loggingEnabled: false,
+  })),
 }));
 
 // Import after mocking
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 // Helper function to create standard mock response
 function createMockPRResponse(overrides: Record<string, unknown> = {}) {
@@ -120,43 +130,68 @@ describe('GitHub Search Pull Requests Tool', () => {
 
   describe('Parameter Validation', () => {
     it('should accept filter-only searches', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
           {
-            owner: 'facebook',
-            repo: 'react',
-            state: 'open',
+            type: 'text',
+            text: result.content[0]?.text as string,
           },
         ],
       });
 
-      expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           owner: 'facebook',
           repo: 'react',
           state: 'open',
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should pass authInfo and userContext to GitHub API', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            owner: 'auth-test-owner',
-            repo: 'auth-test-repo',
-            state: 'open',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'auth-test-owner',
+              repo: 'auth-test-repo',
+              state: 'open',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
 
@@ -167,87 +202,140 @@ describe('GitHub Search Pull Requests Tool', () => {
       // Should be called with (queryArgs, authInfo, userContext)
       expect(apiCall).toBeDefined();
       expect(apiCall).toHaveLength(3);
-      expect(apiCall?.[1]).toEqual(undefined); // authInfo (now undefined)
+      expect(apiCall?.[1]).toEqual(
+        expect.objectContaining({ token: 'mock-test-token' })
+      ); // authInfo
       expect(apiCall?.[2]).toEqual({
         userId: 'anonymous',
         userLogin: 'anonymous',
         isEnterpriseMode: false,
-        sessionId: undefined,
+        sessionId: 'test-session-id',
       }); // userContext
     });
 
-    it('should reject empty queries array', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [],
-      });
+    it('should handle empty queries array gracefully', async () => {
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
-      expect(result.isError).toBe(true);
+      // Empty arrays now return 0 results instead of error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Queries array is required');
+
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('results:');
     });
 
-    it('should reject missing queries parameter', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {});
+    it('should handle missing queries parameter gracefully', async () => {
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {},
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
-      expect(result.isError).toBe(true);
+      // Missing parameter now returns 0 results instead of error
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Queries array is required');
+
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('results:');
     });
 
     it('should accept query-based searches', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: 'bug fix',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'bug fix',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
           query: 'bug fix',
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should reject overly long queries', async () => {
       const longQuery = 'a'.repeat(300);
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: longQuery,
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: longQuery,
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
-      expect(result.isError).toBe(true);
+      // Validation errors now go through bulkOperations flow, so isError is false
+      expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('Use shorter, more focused search terms');
+
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain(
+        'error: "Query too long. Maximum 256 characters allowed."'
+      );
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
   describe('Basic Functionality', () => {
     it('should handle successful pull request search', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: 'feature',
-            owner: 'test',
-            repo: 'repo',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'feature',
+              owner: 'test',
+              repo: 'repo',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
@@ -256,12 +344,14 @@ describe('GitHub Search Pull Requests Tool', () => {
           owner: 'test',
           repo: 'repo',
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
@@ -277,33 +367,49 @@ describe('GitHub Search Pull Requests Tool', () => {
         limit: 50,
       };
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [searchParams],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [searchParams],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining(searchParams),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should handle array parameters', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            owner: ['facebook', 'microsoft'],
-            repo: ['react', 'vscode'],
-            label: ['bug', 'enhancement'],
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: ['facebook', 'microsoft'],
+              repo: ['react', 'vscode'],
+              label: ['bug', 'enhancement'],
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
@@ -312,27 +418,36 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: ['react', 'vscode'],
           label: ['bug', 'enhancement'],
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should handle boolean filters', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            draft: true,
-            merged: false,
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              draft: true,
+              merged: false,
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
@@ -342,28 +457,37 @@ describe('GitHub Search Pull Requests Tool', () => {
           draft: true,
           merged: false,
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should handle date range filters', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            created: '>2023-01-01',
-            updated: '2023-01-01..2023-12-31',
-            closed: '<2023-06-01',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              created: '>2023-01-01',
+              updated: '2023-01-01..2023-12-31',
+              closed: '<2023-06-01',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
@@ -374,28 +498,37 @@ describe('GitHub Search Pull Requests Tool', () => {
           updated: '2023-01-01..2023-12-31',
           closed: '<2023-06-01',
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should handle numeric range filters', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            comments: '>5',
-            reactions: '10..50',
-            interactions: '<100',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              comments: '>5',
+              reactions: '10..50',
+              interactions: '<100',
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
@@ -406,27 +539,36 @@ describe('GitHub Search Pull Requests Tool', () => {
           reactions: '10..50',
           interactions: '<100',
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
 
     it('should handle expensive options with warnings', async () => {
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            getCommitData: true,
-            withComments: true,
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              getCommitData: true,
+              withComments: true,
+            },
+          ],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
@@ -436,12 +578,14 @@ describe('GitHub Search Pull Requests Tool', () => {
           getCommitData: true,
           withComments: true,
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
@@ -454,32 +598,43 @@ describe('GitHub Search Pull Requests Tool', () => {
         { owner: 'test2', repo: 'repo2', query: 'bug' },
       ];
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries,
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries,
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledTimes(2);
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining(queries[0]),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining(queries[1]),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
     });
@@ -495,15 +650,24 @@ describe('GitHub Search Pull Requests Tool', () => {
         .mockResolvedValueOnce(createMockPRResponse())
         .mockRejectedValueOnce(new Error('Network error'));
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries,
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries,
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      // Meta field removed - operation counts no longer tracked in response
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('hints:');
+      // New bulk structure
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 
@@ -515,14 +679,24 @@ describe('GitHub Search Pull Requests Tool', () => {
         hints: ['Wait before retrying', 'Check rate limit status'],
       });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [{ query: 'test' }],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'test' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
       const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('API rate limit exceeded');
+      expect(responseText).toContain('errorStatusHints:');
     });
 
     it('should handle network errors', async () => {
@@ -530,14 +704,61 @@ describe('GitHub Search Pull Requests Tool', () => {
         new Error('Network error')
       );
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [{ query: 'test' }],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'test' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
       const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('Network error');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should include GitHub API error-derived hints (rate limit/scopes)', async () => {
+      const resetAt = Date.now() + 1800_000;
+      mockSearchGitHubPullRequestsAPI.mockResolvedValue({
+        error: 'GitHub API rate limit exceeded',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        rateLimitReset: resetAt,
+        retryAfter: 1800,
+        scopesSuggestion:
+          'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'test' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain(
+        'GitHub Octokit API Error: GitHub API rate limit exceeded'
+      );
+      expect(responseText).toContain('Retry after');
+      expect(responseText).toContain(
+        'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)'
+      );
     });
   });
 
@@ -550,15 +771,23 @@ describe('GitHub Search Pull Requests Tool', () => {
         })
       );
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [{ query: 'token' }],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'token' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
       // Check that the token was sanitized
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).not.toContain('ghp_');
       expect(responseText).toContain('[REDACTED-GITHUBTOKENS]');
     });
@@ -571,15 +800,23 @@ describe('GitHub Search Pull Requests Tool', () => {
         })
       );
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [{ query: 'api' }],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'api' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
       // Check that the API key was sanitized
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).not.toContain('T3BlbkFJ');
       expect(responseText).toContain('[REDACTED-OPENAIAPIKEY]');
     });
@@ -592,15 +829,23 @@ describe('GitHub Search Pull Requests Tool', () => {
         })
       );
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [{ query: 'clean' }],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ query: 'clean' }],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
 
       // Check that clean content is preserved
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain(
         'This is a normal PR description without sensitive information.'
       );
@@ -632,9 +877,16 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       mockSearchGitHubPullRequestsAPI.mockResolvedValue(mockResponse);
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [args],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [args],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(mockSearchGitHubPullRequestsAPI).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -642,17 +894,20 @@ describe('GitHub Search Pull Requests Tool', () => {
           repo: 'test-repo',
           prNumber: 123,
         }),
-        undefined,
+        expect.objectContaining({
+          token: 'mock-test-token',
+        }),
         expect.objectContaining({
           userId: 'anonymous',
           userLogin: 'anonymous',
           isEnterpriseMode: false,
-          sessionId: undefined,
+          sessionId: 'test-session-id',
         })
       );
       expect(result.isError).toBe(false);
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('data:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('Test PR');
       expect(responseText).toContain('test-user');
       expect(responseText).toContain('number: 123');
@@ -677,15 +932,24 @@ describe('GitHub Search Pull Requests Tool', () => {
 
       mockSearchGitHubPullRequestsAPI.mockResolvedValue(mockError);
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [args],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [args],
+        },
+        {
+          authInfo: { token: 'mock-test-token' },
+          sessionId: 'test-session-id',
+        }
+      );
 
       expect(result.isError).toBe(false); // Bulk operations don't fail on individual errors
       const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
       expect(responseText).toContain('error:');
       expect(responseText).toContain('pull request #999');
-      expect(responseText).toContain('hints:');
+      expect(responseText).toContain('errorStatusHints:');
     });
   });
 });

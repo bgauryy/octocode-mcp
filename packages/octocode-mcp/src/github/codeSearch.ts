@@ -5,7 +5,7 @@ import type {
   GitHubAPIResponse,
   OptimizedCodeSearchResult,
 } from './githubAPI';
-import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
+import { GitHubCodeSearchQuery } from '../types';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from 'octocode-utils';
 import { getOctokit } from './client';
@@ -14,6 +14,7 @@ import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/fileFilters';
+import type { UserContext } from '../types.js';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching
@@ -22,9 +23,13 @@ import { shouldIgnoreFile } from '../utils/fileFilters';
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubAPIResponse<OptimizedCodeSearchResult>> {
-  const cacheKey = generateCacheKey('gh-api-code', params, sessionId);
+  const cacheKey = generateCacheKey(
+    'gh-api-code',
+    params,
+    userContext?.sessionId
+  );
 
   const result = await withDataCache<
     GitHubAPIResponse<OptimizedCodeSearchResult>
@@ -139,7 +144,7 @@ async function convertCodeSearchResult(
 }
 
 /**
- * Transform GitHub API response to optimized format with enhanced metadata
+ * Transform GitHub API response to optimized format with enhanced information
  */
 async function transformToOptimizedFormat(
   items: CodeSearchResultItem[],
@@ -149,7 +154,7 @@ async function transformToOptimizedFormat(
   // Extract repository info if single repo search
   const singleRepo = extractSingleRepository(items);
 
-  // Track security warnings and minification metadata
+  // Track security warnings and minification info
   const allSecurityWarningsSet = new Set<string>();
   let hasMinificationFailures = false;
   const minificationTypes: string[] = [];
@@ -270,7 +275,7 @@ async function transformToOptimizedFormat(
     };
   }
 
-  // Add processing metadata
+  // Add processing information
   if (sanitize && allSecurityWarningsSet.size > 0) {
     result.securityWarnings = Array.from(allSecurityWarningsSet);
   }

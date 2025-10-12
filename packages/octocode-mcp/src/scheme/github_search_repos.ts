@@ -1,16 +1,7 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_REPOS } from './schemDescriptions';
-import { ToolResponse } from '../responses.js';
 import { TOOL_NAMES } from '../constants';
-export interface SimplifiedRepository {
-  owner: string;
-  repo: string;
-  stars: number;
-  description: string;
-  url: string;
-  updatedAt: string;
-}
 
 const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z
@@ -43,29 +34,7 @@ const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_SEARCH_REPOS.resultLimit.limit),
 });
 
-export type GitHubReposSearchQuery = z.infer<
-  typeof GitHubReposSearchSingleQuerySchema
->;
-
 export const GitHubReposSearchQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
   GitHubReposSearchSingleQuerySchema
 );
-
-export interface GitHubSearchReposInput {
-  queries: GitHubReposSearchQuery[];
-}
-
-export interface GitHubSearchReposOutput extends ToolResponse {
-  data: RepoSearchResult[];
-}
-
-export interface RepoSearchResult {
-  researchGoal?: string;
-  reasoning?: string;
-  repositories: SimplifiedRepository[];
-  error?: string;
-  hints?: string[];
-  query?: Record<string, unknown>; // Only on error
-  metadata?: Record<string, unknown>; // Internal use
-}

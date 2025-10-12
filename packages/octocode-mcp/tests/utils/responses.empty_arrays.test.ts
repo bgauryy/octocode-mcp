@@ -12,9 +12,15 @@ const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-vi.mock('../../src/github/index.js', () => ({
+vi.mock('../../src/github/codeSearch.js', () => ({
   searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
+}));
+
+vi.mock('../../src/github/repoSearch.js', () => ({
   searchGitHubReposAPI: mockSearchGitHubReposAPI,
+}));
+
+vi.mock('../../src/github/fileOperations.js', () => ({
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
 }));
 
@@ -24,6 +30,7 @@ const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: vi.fn(),
   getServerConfig: mockGetServerConfig,
+  getGitHubToken: vi.fn(() => Promise.resolve('mock-token')),
   isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
 }));
@@ -31,6 +38,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('Empty Arrays Removal in Responses', () => {
   let mockServer: MockMcpServer;
@@ -67,24 +75,31 @@ describe('Empty Arrays Removal in Responses', () => {
         data: { items: [] }, // Empty result
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent'],
-            reasoning: 'Test empty array removal',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent'],
+              reasoning: 'Test empty array removal',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
+
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test empty array removal"');
+      expect(responseText).toContain('emptyStatusHints:');
 
       // Should not contain "files: []" or similar empty array indicators
       expect(responseText).not.toMatch(/files:\s*\[\]/);
       expect(responseText).not.toMatch(/files:\s*$/m);
-
-      // Should contain empty section with the query but no files field
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('1 empty');
     });
   });
 
@@ -98,14 +113,18 @@ describe('Empty Arrays Removal in Responses', () => {
         data: { repositories: [] }, // Empty result
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent'],
-            reasoning: 'Test empty array removal',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent'],
+              reasoning: 'Test empty array removal',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -113,8 +132,7 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).not.toMatch(/repositories:\s*\[\]/);
       expect(responseText).not.toMatch(/repositories:\s*$/m);
 
-      // Should contain empty section
-      expect(responseText).toContain('empty:');
+      expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('1 empty');
     });
   });
@@ -130,16 +148,20 @@ describe('Empty Arrays Removal in Responses', () => {
         folders: { folders: [] }, // Empty folders
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test empty arrays removal',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test empty arrays removal',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
@@ -147,8 +169,7 @@ describe('Empty Arrays Removal in Responses', () => {
       expect(responseText).not.toMatch(/files:\s*\[\]/);
       expect(responseText).not.toMatch(/folders:\s*\[\]/);
 
-      // Should contain empty section
-      expect(responseText).toContain('empty:');
+      expect(responseText).toContain('status: "empty"');
       expect(responseText).toContain('1 empty');
     });
   });
@@ -174,22 +195,25 @@ describe('Empty Arrays Removal in Responses', () => {
           data: { items: [] }, // Empty result
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          { keywordsToSearch: ['found'], reasoning: 'Will have results' },
-          { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            { keywordsToSearch: ['found'], reasoning: 'Will have results' },
+            { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
       // Should not have empty arrays anywhere
       expect(responseText).not.toMatch(/:\s*\[\]\s*$/m);
 
-      // Should have both successful and empty sections
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('1 successful, 1 empty');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('1 hasResults, 1 empty');
     });
   });
 
@@ -210,21 +234,24 @@ describe('Empty Arrays Removal in Responses', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Test nested empty arrays',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Test nested empty arrays',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
       // Should not contain any empty array syntax
       expect(responseText).not.toMatch(/:\s*\[\]\s*/);
 
-      // File should still be present but without empty matches field
       expect(responseText).toContain('file1.js');
     });
   });
@@ -241,28 +268,29 @@ describe('Empty Arrays Removal in Responses', () => {
         },
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Check hints structure',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Check hints structure',
+            },
+          ],
+        },
+        { authInfo: { token: 'mock-token' } }
+      );
 
       const responseText = result.content[0]?.text as string;
 
-      // Hints should exist and not be empty
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('successful:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('hasResultsStatusHints:');
 
-      // Should have actual hints (array with content)
-      expect(responseText).toMatch(/successful:\s*\n\s*-/);
+      expect(responseText).toMatch(/hasResultsStatusHints:\s*\n\s*-/);
 
-      // Should not have empty hint sections
-      expect(responseText).not.toMatch(/successful:\s*\[\]/);
-      expect(responseText).not.toMatch(/empty:\s*\[\]/);
-      expect(responseText).not.toMatch(/failed:\s*\[\]/);
+      expect(responseText).not.toMatch(/hasResultsStatusHints:\s*\[\]/);
     });
   });
 });

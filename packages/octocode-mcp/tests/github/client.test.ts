@@ -322,8 +322,8 @@ describe('GitHub Client', () => {
 
   describe('OctokitWithThrottling', () => {
     it('should export OctokitWithThrottling class', () => {
-      expect(OctokitWithThrottling).toBeDefined();
-      expect(typeof OctokitWithThrottling).toBe('function');
+      expect(typeof OctokitWithThrottling).toEqual('function');
+      expect(OctokitWithThrottling.name.length > 0).toEqual(true);
     });
   });
 
@@ -334,12 +334,12 @@ describe('GitHub Client', () => {
       await getOctokit();
 
       const callArgs = mockOctokit.mock.calls[0][0];
-      expect(callArgs.throttle).toBeDefined();
-      expect(typeof callArgs.throttle.onRateLimit).toBe('function');
-      expect(typeof callArgs.throttle.onSecondaryRateLimit).toBe('function');
+      expect(typeof callArgs.throttle).toEqual('object');
+      expect(typeof callArgs.throttle.onRateLimit).toEqual('function');
+      expect(typeof callArgs.throttle.onSecondaryRateLimit).toEqual('function');
     });
 
-    it('should return true for first retry on rate limit', async () => {
+    it('should never retry on rate limit - fail immediately', async () => {
       mockGetGitHubToken.mockResolvedValue('test-token');
 
       await getOctokit();
@@ -347,13 +347,13 @@ describe('GitHub Client', () => {
       const callArgs = mockOctokit.mock.calls[0][0];
       const { onRateLimit } = callArgs.throttle;
 
-      // First retry should return true
-      expect(onRateLimit(3600, {}, {}, 0)).toBe(true);
-      // Second retry should return false
+      // Should always return false to prevent retries
+      expect(onRateLimit(3600, {}, {}, 0)).toBe(false);
       expect(onRateLimit(3600, {}, {}, 1)).toBe(false);
+      expect(onRateLimit(3600, {}, {}, 5)).toBe(false);
     });
 
-    it('should return true for first retry on secondary rate limit', async () => {
+    it('should never retry on secondary rate limit - fail immediately', async () => {
       mockGetGitHubToken.mockResolvedValue('test-token');
 
       await getOctokit();
@@ -361,10 +361,10 @@ describe('GitHub Client', () => {
       const callArgs = mockOctokit.mock.calls[0][0];
       const { onSecondaryRateLimit } = callArgs.throttle;
 
-      // First retry should return true
-      expect(onSecondaryRateLimit(60, {}, {}, 0)).toBe(true);
-      // Second retry should return false
+      // Should always return false to prevent retries
+      expect(onSecondaryRateLimit(60, {}, {}, 0)).toBe(false);
       expect(onSecondaryRateLimit(60, {}, {}, 1)).toBe(false);
+      expect(onSecondaryRateLimit(60, {}, {}, 5)).toBe(false);
     });
   });
 });

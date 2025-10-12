@@ -1,31 +1,21 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { maskSensitiveData } from './security/mask';
-import { ContentSanitizer } from './security/contentSanitizer';
+import { maskSensitiveData } from './security/mask.js';
+import { ContentSanitizer } from './security/contentSanitizer.js';
 import { jsonToYamlString } from 'octocode-utils';
-
-/**
- * Standardized response format for all tool responses
- */
-export interface ToolResponse {
-  /** Primary data payload (GitHub API responses, packages, file contents, etc.) */
-  data: unknown;
-
-  /** Helpful hints for AI assistants (recovery tips, usage guidance) */
-  hints: string[];
-}
+import type { ToolResponse } from './types.js';
 
 /**
  * Simplified result creation with standardized format
  */
 export function createResult(options: {
   data: unknown;
-  hints?: string[];
+  instructions?: string;
   isError?: boolean;
 }): CallToolResult {
-  const { data, hints = [], isError } = options;
+  const { data, instructions, isError } = options;
   const response: ToolResponse = {
     data,
-    hints,
+    instructions,
   };
 
   return {
@@ -72,90 +62,24 @@ export function createResponseFormat(
   // Convert to YAML if beta features are enabled (with safe fallback)
   const yamlData = jsonToYamlString(cleanedData, {
     keysPriority: keysPriority || [
-      'queryId',
+      // Single responses: instructions, data
+      // Bulk responses: instructions, results, hasResultsStatusHints, emptyStatusHints, errorStatusHints
+      'instructions',
+      'results',
+      'hasResultsStatusHints',
+      'emptyStatusHints',
+      'errorStatusHints',
+      'query',
+      'status',
+      'data',
+      'researchGoal',
       'reasoning',
-      'repository',
-      'files',
     ],
   });
   //sanitize for malicious content and prompt injection
   const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);
   //mask sensitive data
   return maskSensitiveData(sanitizationResult.content);
-}
-
-/**
- * Convert ISO timestamp to DDMMYYYY format
- */
-export function toDDMMYYYY(timestamp: string): string {
-  const date = new Date(timestamp);
-  const day = date.getDate().toString().padStart(2, '0');
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
-}
-
-/**
- * Convert repository URL to owner/repo format
- */
-export function simplifyRepoUrl(url: string): string {
-  const match = url.match(/github\.com\/([^/]+\/[^/]+)/);
-  return match?.[1] || url;
-}
-
-/**
- * Extract first line of commit message
- */
-export function getCommitTitle(message: string): string {
-  return message.split('\n')[0]?.trim() || '';
-}
-
-/**
- * Convert bytes to human readable format
- */
-export function humanizeBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return `${Math.round(bytes / Math.pow(k, i))} ${sizes[i]}`;
-}
-
-/**
- * Simplify GitHub URL to relative path
- */
-export function simplifyGitHubUrl(url: string): string {
-  const match = url.match(
-    /github\.com\/[^/]+\/[^/]+\/(?:blob|commit)\/[^/]+\/(.+)$/
-  );
-  return match?.[1] || url;
-}
-
-/**
- * Clean and optimize text match context
- */
-export function optimizeTextMatch(
-  fragment: string,
-  maxLength: number = 100
-): string {
-  // Remove excessive whitespace and normalize
-  const cleaned = fragment.replace(/\s+/g, ' ').trim();
-
-  if (cleaned.length <= maxLength) {
-    return cleaned;
-  }
-
-  // Try to cut at word boundary
-  const truncated = cleaned.substring(0, maxLength);
-  const lastSpace = truncated.lastIndexOf(' ');
-
-  if (lastSpace > maxLength * 0.7) {
-    return truncated.substring(0, lastSpace) + '…';
-  }
-
-  return truncated + '…';
 }
 
 /**

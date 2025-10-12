@@ -1,26 +1,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { withSecurityValidation } from '../security/withSecurityValidation.js';
+import type { UserContext } from '../types.js';
+import { searchGitHubReposAPI } from '../github/repoSearch.js';
+import { TOOL_NAMES } from '../constants.js';
+import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { DESCRIPTIONS } from './descriptions.js';
 import {
-  UserContext,
-  withSecurityValidation,
-} from '../security/withSecurityValidation';
-import { createResult } from '../responses';
-import { searchGitHubReposAPI } from '../github/index';
-import { TOOL_NAMES } from '../constants';
-import {
+  handleApiError,
+  handleCatchError,
+  createSuccessResult,
+} from './utils.js';
+import type {
   GitHubReposSearchQuery,
-  GitHubReposSearchQuerySchema,
   SimplifiedRepository,
-} from '../scheme/github_search_repos';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  type BulkResponseConfig,
-  ProcessedBulkResult,
-} from '../utils/bulkOperations';
-import { generateEmptyQueryHints } from './hints';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { DESCRIPTIONS } from './descriptions';
+  RepoSearchResult,
+} from '../types.js';
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   return server.registerTool(
@@ -45,26 +42,47 @@ export function registerSearchGitHubReposTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
-          const hints = generateEmptyQueryHints(
-            TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES
-          );
-
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            hints,
-            isError: true,
-          });
-        }
-
-        return searchMultipleGitHubRepos(args.queries, authInfo, userContext);
+        return searchMultipleGitHubRepos(
+          args.queries || [],
+          authInfo,
+          userContext
+        );
       }
     )
   );
+}
+
+/**
+ * Check if a query has valid topics
+ */
+function hasValidTopics(query: GitHubReposSearchQuery): boolean {
+  return Boolean(
+    query.topicsToSearch &&
+      (Array.isArray(query.topicsToSearch)
+        ? query.topicsToSearch.length > 0
+        : query.topicsToSearch)
+  );
+}
+
+/**
+ * Check if a query has valid keywords
+ */
+function hasValidKeywords(query: GitHubReposSearchQuery): boolean {
+  return Boolean(query.keywordsToSearch && query.keywordsToSearch.length > 0);
+}
+
+/**
+ * Create a search-specific reasoning message
+ */
+function createSearchReasoning(
+  originalReasoning: string | undefined,
+  searchType: 'topics' | 'keywords'
+): string {
+  const suffix =
+    searchType === 'topics' ? 'topics-based search' : 'keywords-based search';
+  return originalReasoning
+    ? `${originalReasoning} (${suffix})`
+    : `${searchType.charAt(0).toUpperCase() + searchType.slice(1)}-based repository search`;
 }
 
 /**
@@ -76,45 +94,30 @@ function expandQueriesWithBothSearchTypes(
 ): GitHubReposSearchQuery[] {
   const expandedQueries: GitHubReposSearchQuery[] = [];
 
-  queries.forEach(query => {
-    const hasTopics =
-      query.topicsToSearch &&
-      (Array.isArray(query.topicsToSearch)
-        ? query.topicsToSearch.length > 0
-        : query.topicsToSearch);
-    const hasKeywords =
-      query.keywordsToSearch && query.keywordsToSearch.length > 0;
+  for (const query of queries) {
+    const hasTopics = hasValidTopics(query);
+    const hasKeywords = hasValidKeywords(query);
 
     if (hasTopics && hasKeywords) {
-      // Split into two queries: one for topics, one for keywords
-      const baseQuery = { ...query };
-      delete baseQuery.topicsToSearch;
-      delete baseQuery.keywordsToSearch;
+      // Split into two separate queries for better search optimization
+      const { topicsToSearch, keywordsToSearch, ...baseQuery } = query;
 
-      // Topics-based query
-      const topicsQuery: GitHubReposSearchQuery = {
-        ...baseQuery,
-        reasoning: query.reasoning
-          ? `${query.reasoning} (topics-based search)`
-          : 'Topics-based repository search',
-        topicsToSearch: query.topicsToSearch,
-      };
-
-      // Keywords-based query
-      const keywordsQuery: GitHubReposSearchQuery = {
-        ...baseQuery,
-        reasoning: query.reasoning
-          ? `${query.reasoning} (keywords-based search)`
-          : 'Keywords-based repository search',
-        keywordsToSearch: query.keywordsToSearch,
-      };
-
-      expandedQueries.push(topicsQuery, keywordsQuery);
+      expandedQueries.push(
+        {
+          ...baseQuery,
+          reasoning: createSearchReasoning(query.reasoning, 'topics'),
+          topicsToSearch,
+        },
+        {
+          ...baseQuery,
+          reasoning: createSearchReasoning(query.reasoning, 'keywords'),
+          keywordsToSearch,
+        }
+      );
     } else {
-      // Keep original query if it doesn't have both search types
       expandedQueries.push(query);
     }
-  });
+  }
 
   return expandedQueries;
 }
@@ -124,15 +127,11 @@ async function searchMultipleGitHubRepos(
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  // Split queries that have both topicsToSearch and keywordsToSearch
   const expandedQueries = expandQueriesWithBothSearchTypes(queries);
 
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     expandedQueries,
-    async (
-      query: GitHubReposSearchQuery,
-      _index: number
-    ): Promise<ProcessedBulkResult> => {
+    async (query: GitHubReposSearchQuery, _index: number) => {
       try {
         const apiResult = await searchGitHubReposAPI(
           query,
@@ -140,53 +139,29 @@ async function searchMultipleGitHubRepos(
           userContext
         );
 
-        if ('error' in apiResult) {
-          return {
-            researchGoal: query.researchGoal,
-            reasoning: query.reasoning,
-            error: apiResult.error,
-            metadata: {},
-          } as ProcessedBulkResult;
-        }
+        const apiError = handleApiError(apiResult, query);
+        if (apiError) return apiError;
 
-        // Extract repository data
-        const repositories = apiResult.data.repositories || [];
-        const typedRepositories =
-          repositories as unknown as SimplifiedRepository[];
+        const repositories =
+          'data' in apiResult
+            ? apiResult.data.repositories || []
+            : ([] satisfies SimplifiedRepository[]);
 
-        return {
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          repositories: typedRepositories,
-          metadata: {},
-        } as ProcessedBulkResult;
+        return createSuccessResult(
+          query,
+          { repositories },
+          repositories.length > 0,
+          'GITHUB_SEARCH_REPOSITORIES'
+        );
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-
-        return {
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          error: errorMessage,
-          metadata: {},
-        } as ProcessedBulkResult;
+        return handleCatchError(error, query);
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      keysPriority: ['repositories', 'error'] satisfies Array<
+        keyof RepoSearchResult
+      >,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'owner',
-      'repo',
-      'description',
-      'url',
-      'stars',
-      'updatedAt',
-    ],
-  };
-
-  return createBulkResponse(config, results, errors, expandedQueries);
 }

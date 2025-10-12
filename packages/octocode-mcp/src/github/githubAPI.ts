@@ -1,6 +1,3 @@
-export type { components } from '@octokit/openapi-types';
-export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
-
 import type { components } from '@octokit/openapi-types';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 
@@ -202,24 +199,3 @@ export function isRepository(obj: unknown): obj is Repository {
     typeof (obj as Record<string, unknown>).private === 'boolean'
   );
 }
-
-export {
-  getOctokit,
-  OctokitWithThrottling,
-  getDefaultBranch,
-  clearCachedToken,
-  handleGitHubAPIError,
-  generateFileAccessHints,
-  getOwnerQualifier,
-  buildCodeSearchQuery,
-  buildRepoSearchQuery,
-  buildPullRequestSearchQuery,
-  shouldUseSearchForPRs,
-  searchGitHubCodeAPI,
-  searchGitHubReposAPI,
-  searchGitHubPullRequestsAPI,
-  fetchGitHubPullRequestByNumberAPI,
-  transformPullRequestItemFromREST,
-  fetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI,
-} from '.';

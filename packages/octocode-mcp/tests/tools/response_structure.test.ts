@@ -2,18 +2,18 @@
  * Comprehensive Response Structure Tests
  *
  * Tests all tools to ensure they properly handle all combinations of:
- * - successful: queries that returned results
+ * - hasResults: queries that returned results
  * - empty: queries that ran but found no matches
  * - failed: queries that encountered errors
  *
  * Combinations tested:
- * 1. successful only
+ * 1. hasResults only
  * 2. empty only
  * 3. failed only
- * 4. successful + empty
- * 5. successful + failed
+ * 4. hasResults + empty
+ * 5. hasResults + failed
  * 6. empty + failed
- * 7. successful + empty + failed
+ * 7. hasResults + empty + failed
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -22,29 +22,76 @@ import {
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 
+// Mock GitHub client first
+const mockOctokit = vi.hoisted(() => ({
+  rest: {
+    search: {
+      code: vi.fn(),
+      repos: vi.fn(),
+      issuesAndPullRequests: vi.fn(),
+    },
+    repos: {
+      getContent: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../../src/github/client.js', () => ({
+  getOctokit: vi.fn(() => mockOctokit),
+}));
+
+// Mock cache to prevent interference
+vi.mock('../../src/utils/cache.js', () => ({
+  generateCacheKey: vi.fn(() => 'test-cache-key'),
+  withDataCache: vi.fn(async (_key: string, fn: () => unknown) => {
+    return await fn();
+  }),
+}));
+
 const mockSearchGitHubCodeAPI = vi.hoisted(() => vi.fn());
 const mockFetchGitHubFileContentAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
 const mockSearchGitHubPullRequestsAPI = vi.hoisted(() => vi.fn());
 const mockViewGitHubRepositoryStructureAPI = vi.hoisted(() => vi.fn());
 
-// Mock all GitHub API functions
-vi.mock('../../src/github/index.js', () => ({
+// Mock specific GitHub module files (not the barrel export)
+vi.mock('../../src/github/codeSearch.js', () => ({
   searchGitHubCodeAPI: mockSearchGitHubCodeAPI,
+}));
+
+vi.mock('../../src/github/fileOperations.js', () => ({
   fetchGitHubFileContentAPI: mockFetchGitHubFileContentAPI,
-  searchGitHubReposAPI: mockSearchGitHubReposAPI,
-  searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
   viewGitHubRepositoryStructureAPI: mockViewGitHubRepositoryStructureAPI,
+}));
+
+vi.mock('../../src/github/repoSearch.js', () => ({
+  searchGitHubReposAPI: mockSearchGitHubReposAPI,
+}));
+
+vi.mock('../../src/github/pullRequestSearch.js', () => ({
+  searchGitHubPullRequestsAPI: mockSearchGitHubPullRequestsAPI,
+  fetchGitHubPullRequestByNumberAPI: vi.fn(),
+  transformPullRequestItemFromREST: vi.fn(),
 }));
 
 const mockGetServerConfig = vi.hoisted(() => vi.fn());
 const mockIsSamplingEnabled = vi.hoisted(() => vi.fn());
+const mockGetGitHubToken = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   initialize: vi.fn(),
   getServerConfig: mockGetServerConfig,
   isSamplingEnabled: mockIsSamplingEnabled,
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: mockGetGitHubToken,
+}));
+
+// Mock session module to prevent timeouts
+const mockLogToolCall = vi.hoisted(() => vi.fn());
+vi.mock('../../src/session.js', () => ({
+  logToolCall: mockLogToolCall,
+  getSessionManager: vi.fn(() => null),
+  SessionManager: vi.fn(),
 }));
 
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code.js';
@@ -52,6 +99,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 describe('Response Structure - All Tools', () => {
   let mockServer: MockMcpServer;
@@ -72,6 +120,8 @@ describe('Response Structure - All Tools', () => {
       loggingEnabled: false,
     });
     mockIsSamplingEnabled.mockReturnValue(false);
+    // Return a test token for authentication
+    mockGetGitHubToken.mockResolvedValue('test-token');
   });
 
   afterEach(() => {
@@ -84,35 +134,50 @@ describe('Response Structure - All Tools', () => {
       registerGitHubSearchCodeTool(mockServer.server);
     });
 
-    it('should handle successful queries only', async () => {
+    it('should handle hasResults queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         data: {
-          items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+          total_count: 1,
+          items: [
+            {
+              path: 'file1.js',
+              repository: { nameWithOwner: 'test/repo', url: '' },
+              matches: [{ context: 'test', positions: [] }],
+            },
+          ],
         },
+        status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['test'],
-            reasoning: 'Test successful',
+            reasoning: 'Test hasResults',
           },
         ],
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test hasResults"');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
-        data: { items: [] },
+        data: {
+          total_count: 0,
+          items: [],
+        },
+        status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['nonexistent'],
@@ -122,9 +187,12 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test empty"');
+      expect(responseText).toContain('emptyStatusHints:');
       expect(responseText).toContain('1 empty');
     });
 
@@ -133,7 +201,7 @@ describe('Response Structure - All Tools', () => {
         error: 'API error',
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           {
             keywordsToSearch: ['error'],
@@ -143,9 +211,12 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('query:');
+      expect(responseText).toContain('reasoning: "Test failed"');
+      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('1 failed');
     });
 
@@ -153,14 +224,26 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
@@ -168,24 +251,33 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 empty');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 empty');
     });
 
     it('should handle successful + failed combination', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['error'], reasoning: 'Will fail' },
@@ -193,22 +285,27 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 failed');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 failed');
     });
 
     it('should handle empty + failed combination', async () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
           { keywordsToSearch: ['error'], reasoning: 'Will fail' },
@@ -216,9 +313,9 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).not.toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 empty, 1 failed');
     });
 
@@ -226,17 +323,30 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
@@ -245,10 +355,10 @@ describe('Response Structure - All Tools', () => {
       });
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -260,52 +370,61 @@ describe('Response Structure - All Tools', () => {
     it('should handle successful queries only', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValueOnce({
         data: {
+          repository: 'test/repo',
           path: 'file.js',
+          branch: 'main',
           content: 'console.log("test")',
           contentLength: 20,
-          owner: 'test',
-          repo: 'repo',
+          minified: false,
         },
+        status: 200,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'file.js',
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'file.js',
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle failed queries only', async () => {
       mockFetchGitHubFileContentAPI.mockResolvedValueOnce({
         error: 'File not found',
+        status: 404,
       });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'missing.js',
-            reasoning: 'Test failed',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'missing.js',
+              reasoning: 'Test failed',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).not.toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('1 failed');
     });
 
@@ -313,39 +432,45 @@ describe('Response Structure - All Tools', () => {
       mockFetchGitHubFileContentAPI
         .mockResolvedValueOnce({
           data: {
+            repository: 'test/repo',
             path: 'file.js',
+            branch: 'main',
             content: 'console.log("test")',
             contentLength: 20,
-            owner: 'test',
-            repo: 'repo',
+            minified: false,
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'File not found',
+          status: 404,
         });
 
-      const result = await mockServer.callTool('githubGetFileContent', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'file.js',
-            reasoning: 'Will succeed',
-          },
-          {
-            owner: 'test',
-            repo: 'repo',
-            path: 'missing.js',
-            reasoning: 'Will fail',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'file.js',
+              reasoning: 'Will succeed',
+            },
+            {
+              owner: 'test',
+              repo: 'repo',
+              path: 'missing.js',
+              reasoning: 'Will fail',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 failed');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 failed');
     });
   });
 
@@ -358,45 +483,62 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubReposAPI.mockResolvedValueOnce({
         data: {
           repositories: [
-            { repository: 'test/repo', description: 'Test', stars: 100 },
+            {
+              owner: 'test',
+              repo: 'repo',
+              stars: 100,
+              description: 'Test',
+              url: 'https://github.com/test/repo',
+              updatedAt: '01/01/2024',
+            },
           ],
         },
+        status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['test'],
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['test'],
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
       mockSearchGitHubReposAPI.mockResolvedValueOnce({
-        data: { repositories: [] },
+        data: {
+          repositories: [],
+        },
+        status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          {
-            keywordsToSearch: ['nonexistent'],
-            reasoning: 'Test empty',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['nonexistent'],
+              reasoning: 'Test empty',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).not.toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
     });
 
@@ -405,30 +547,45 @@ describe('Response Structure - All Tools', () => {
         .mockResolvedValueOnce({
           data: {
             repositories: [
-              { repository: 'test/repo', description: 'Test', stars: 100 },
+              {
+                owner: 'test',
+                repo: 'repo',
+                stars: 100,
+                description: 'Test',
+                url: 'https://github.com/test/repo',
+                updatedAt: '01/01/2024',
+              },
             ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { repositories: [] },
+          data: {
+            repositories: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchRepositories', {
-        queries: [
-          { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
-          { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
-          { keywordsToSearch: ['error'], reasoning: 'Will fail' },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
+            { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
+            { keywordsToSearch: ['error'], reasoning: 'Will fail' },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -443,20 +600,23 @@ describe('Response Structure - All Tools', () => {
         total_count: 1,
       });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: 'test',
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'test',
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
@@ -465,19 +625,22 @@ describe('Response Structure - All Tools', () => {
         total_count: 0,
       });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          {
-            query: 'nonexistent',
-            reasoning: 'Test empty',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              query: 'nonexistent',
+              reasoning: 'Test empty',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).not.toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
     });
 
@@ -495,19 +658,22 @@ describe('Response Structure - All Tools', () => {
           error: 'API error',
         });
 
-      const result = await mockServer.callTool('githubSearchPullRequests', {
-        queries: [
-          { query: 'found', reasoning: 'Will succeed' },
-          { query: 'notfound', reasoning: 'Will be empty' },
-          { query: 'error', reasoning: 'Will fail' },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            { query: 'found', reasoning: 'Will succeed' },
+            { query: 'notfound', reasoning: 'Will be empty' },
+            { query: 'error', reasoning: 'Will fail' },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -518,94 +684,119 @@ describe('Response Structure - All Tools', () => {
 
     it('should handle successful queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
-        files: [{ path: 'README.md', size: 100 }],
-        folders: { folders: [{ path: 'src', size: 1000 }] },
+        files: [{ path: '/README.md', size: 100 }],
+        folders: { folders: [{ path: '/src' }] },
+        summary: {
+          totalFiles: 1,
+          totalDirectories: 1,
+        },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test successful',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test successful',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('1 successful');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults');
     });
 
     it('should handle empty queries only', async () => {
       mockViewGitHubRepositoryStructureAPI.mockResolvedValueOnce({
         files: [],
         folders: { folders: [] },
+        summary: {
+          totalFiles: 0,
+          totalDirectories: 0,
+        },
       });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo',
-            branch: 'main',
-            reasoning: 'Test empty',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              branch: 'main',
+              reasoning: 'Test empty',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).not.toContain('failed:');
+      expect(responseText).not.toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
       expect(responseText).toContain('1 empty');
     });
 
     it('should handle successful + empty + failed combination', async () => {
       mockViewGitHubRepositoryStructureAPI
         .mockResolvedValueOnce({
-          files: [{ path: 'README.md', size: 100 }],
-          folders: { folders: [{ path: 'src', size: 1000 }] },
+          files: [{ path: '/README.md', size: 100 }],
+          folders: { folders: [{ path: '/src' }] },
+          summary: {
+            totalFiles: 1,
+            totalDirectories: 1,
+          },
         })
         .mockResolvedValueOnce({
           files: [],
           folders: { folders: [] },
+          summary: {
+            totalFiles: 0,
+            totalDirectories: 0,
+          },
         })
         .mockResolvedValueOnce({
           error: 'Repository not found',
         });
 
-      const result = await mockServer.callTool('githubViewRepoStructure', {
-        queries: [
-          {
-            owner: 'test',
-            repo: 'repo1',
-            branch: 'main',
-            reasoning: 'Will succeed',
-          },
-          {
-            owner: 'test',
-            repo: 'empty',
-            branch: 'main',
-            reasoning: 'Will be empty',
-          },
-          {
-            owner: 'test',
-            repo: 'missing',
-            branch: 'main',
-            reasoning: 'Will fail',
-          },
-        ],
-      });
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo1',
+              branch: 'main',
+              reasoning: 'Will succeed',
+            },
+            {
+              owner: 'test',
+              repo: 'empty',
+              branch: 'main',
+              reasoning: 'Will be empty',
+            },
+            {
+              owner: 'test',
+              repo: 'missing',
+              branch: 'main',
+              reasoning: 'Will fail',
+            },
+          ],
+        }
+      );
 
       const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('1 successful, 1 empty, 1 failed');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('1 hasResults, 1 empty, 1 failed');
     });
   });
 
@@ -618,17 +809,30 @@ describe('Response Structure - All Tools', () => {
       mockSearchGitHubCodeAPI
         .mockResolvedValueOnce({
           data: {
-            items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+            total_count: 1,
+            items: [
+              {
+                path: 'file1.js',
+                repository: { nameWithOwner: 'test/repo', url: '' },
+                matches: [{ context: 'test', positions: [] }],
+              },
+            ],
           },
+          status: 200,
         })
         .mockResolvedValueOnce({
-          data: { items: [] },
+          data: {
+            total_count: 0,
+            items: [],
+          },
+          status: 200,
         })
         .mockResolvedValueOnce({
           error: 'API error',
+          status: 500,
         });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [
           { keywordsToSearch: ['found'], reasoning: 'Will succeed' },
           { keywordsToSearch: ['notfound'], reasoning: 'Will be empty' },
@@ -638,36 +842,42 @@ describe('Response Structure - All Tools', () => {
 
       const responseText = result.content[0]?.text as string;
 
-      // Check hints structure
-      expect(responseText).toContain('hints:');
-      expect(responseText).toContain('successful:');
-      expect(responseText).toContain('empty:');
-      expect(responseText).toContain('failed:');
+      expect(responseText).toContain('instructions:');
+      expect(responseText).toContain('results:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
 
-      // Check that hints are specific to each type
-      expect(responseText).toMatch(/hints:[\s\S]*successful:[\s\S]*-/); // has hints for successful
-      expect(responseText).toMatch(/hints:[\s\S]*empty:[\s\S]*-/); // has hints for empty
-      expect(responseText).toMatch(/hints:[\s\S]*failed:[\s\S]*-/); // has hints for failed
+      expect(responseText).toMatch(/hasResultsStatusHints:[\s\S]*-/);
     });
 
     it('should only include hint sections for result types that exist', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValueOnce({
         data: {
-          items: [{ path: 'file1.js', matches: [{ context: 'test' }] }],
+          total_count: 1,
+          items: [
+            {
+              path: 'file1.js',
+              repository: { nameWithOwner: 'test/repo', url: '' },
+              matches: [{ context: 'test', positions: [] }],
+            },
+          ],
         },
+        status: 200,
       });
 
-      const result = await mockServer.callTool('githubSearchCode', {
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
         queries: [{ keywordsToSearch: ['found'], reasoning: 'Will succeed' }],
       });
 
       const responseText = result.content[0]?.text as string;
 
-      // Check hints structure - should only have successful hints
-      const hintsSection = responseText.match(/hints:[\s\S]*$/)?.[0] || '';
-      expect(hintsSection).toContain('successful:');
-      expect(hintsSection).not.toContain('empty:');
-      expect(hintsSection).not.toContain('failed:');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).not.toContain('status: "empty"');
+      expect(responseText).not.toContain('status: "error"');
     });
   });
 });

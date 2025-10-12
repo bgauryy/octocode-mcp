@@ -1,11 +1,11 @@
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
-import {
+import type {
   FileContentQuery,
   ContentResult,
-} from '../scheme/github_fetch_content.js';
-import {
   GitHubViewRepoStructureQuery,
+} from '../types';
+import type {
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
@@ -16,7 +16,7 @@ import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { UserContext } from '../security/withSecurityValidation';
+import type { UserContext } from '../types.js';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 
 /**
@@ -26,7 +26,7 @@ import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<GitHubAPIResponse<ContentResult>> {
   // Generate cache key based on request parameters
   const cacheKey = generateCacheKey(
@@ -44,7 +44,7 @@ export async function fetchGitHubFileContentAPI(
       minified: params.minified,
       matchStringContextLines: params.matchStringContextLines,
     },
-    sessionId
+    userContext?.sessionId
   );
 
   const result = await withDataCache<GitHubAPIResponse<ContentResult>>(
@@ -249,7 +249,7 @@ async function processFileContentAPI(
   let actualEndLine: number | undefined;
   let isPartial = false;
 
-  // Always calculate total lines for metadata
+  // Calculate total lines
   const lines = decodedContent.split('\n');
   const totalLines = lines.length;
 
@@ -370,13 +370,13 @@ async function processFileContentAPI(
       endLine: actualEndLine,
       isPartial,
     }),
-    // Minification metadata
+    // Minification info
     ...(minified && {
       minified: !minificationFailed,
       minificationFailed: minificationFailed,
       minificationType: minificationType,
     }),
-    // Security metadata
+    // Security warnings
     ...(securityWarnings.length > 0 && {
       securityWarnings,
     }),

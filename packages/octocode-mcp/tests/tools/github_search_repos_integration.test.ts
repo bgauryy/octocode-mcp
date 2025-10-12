@@ -1,40 +1,57 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
-import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { TOOL_NAMES } from '../../src/constants.js';
 
 // Mock the GitHub API to avoid real network calls
-vi.mock('../../src/github/index.js', () => ({
-  searchGitHubReposAPI: vi.fn().mockResolvedValue({
-    data: {
-      repositories: [
-        {
-          repository: 'facebook/react',
-          stars: 200000,
-          description:
-            'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
-          url: 'https://github.com/facebook/react',
-          updatedAt: '15/01/2024',
-        },
-        {
-          repository: 'vercel/next.js',
-          stars: 100000,
-          description: 'The React Framework for Production',
-          url: 'https://github.com/vercel/next.js',
-          updatedAt: '14/01/2024',
-        },
-      ],
-    },
-    status: 200,
-  }),
+const mockSearchGitHubReposAPI = vi.hoisted(() => vi.fn());
+
+vi.mock('../../src/github/repoSearch.js', () => ({
+  searchGitHubReposAPI: mockSearchGitHubReposAPI,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
+  getGitHubToken: vi.fn(() => Promise.resolve('mock-token')),
+  getServerConfig: vi.fn(() => ({
+    version: '7.0.0',
+    enableTools: [],
+    disableTools: [],
+    enableLogging: false,
+    betaEnabled: false,
+    timeout: 30000,
+    maxRetries: 3,
+  })),
 }));
+
+import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 
 describe('GitHub Search Repositories Response Structure Test', () => {
   it('should return YAML response with correct structure (no total_count, forks, language)', async () => {
+    mockSearchGitHubReposAPI.mockResolvedValue({
+      data: {
+        repositories: [
+          {
+            owner: 'facebook',
+            repo: 'react',
+            stars: 200000,
+            description:
+              'A declarative, efficient, and flexible JavaScript library for building user interfaces.',
+            url: 'https://github.com/facebook/react',
+            updatedAt: '15/01/2024',
+          },
+          {
+            owner: 'vercel',
+            repo: 'next.js',
+            stars: 100000,
+            description: 'The React Framework for Production',
+            url: 'https://github.com/vercel/next.js',
+            updatedAt: '14/01/2024',
+          },
+        ],
+      },
+      status: 200,
+    });
+
     const mockServer = createMockMcpServer();
     registerSearchGitHubReposTool(mockServer.server);
 
@@ -52,38 +69,30 @@ describe('GitHub Search Repositories Response Structure Test', () => {
       }
     );
 
-    expect(result.isError).toBe(false);
-    expect(result.content).toHaveLength(1);
-    expect(result.content[0]?.type).toBe('text');
-
     const responseText = result.content[0]?.text as string;
 
-    // Validate YAML structure
-    expect(responseText).toContain('data:');
-    expect(responseText).toContain('hints:');
+    expect(result).toEqual({
+      isError: false,
+      content: [
+        {
+          type: 'text',
+          text: responseText,
+        },
+      ],
+    });
 
-    // CRITICAL: Ensure removed fields are NOT present in the response (schema cleanup)
-    expect(responseText).not.toContain('total_count:');
-    expect(responseText).not.toContain('forks:');
-    expect(responseText).not.toContain('language:');
-
-    // Validate it's proper YAML format
-    expect(responseText).toMatch(/^data:/m);
-    expect(responseText).toMatch(/hints:/m);
-
-    // Validate the response structure matches our expected schema
-    expect(responseText).toContain('successful:');
+    expect(responseText).toContain('instructions:');
+    expect(responseText).toContain('results:');
+    expect(responseText).toContain('1 hasResults');
     expect(responseText).toContain('reasoning: "Testing response structure"');
-    expect(responseText).toContain('1 successful');
-    expect(responseText).toContain('improve your research strategy');
-    // Should NOT contain empty sections
-    expect(responseText).not.toContain('empty:');
-    expect(responseText).not.toContain('failed:');
-
-    // Validate that only expected fields are present (SimplifiedRepository interface)
-    expect(responseText).toContain('repository: "facebook/react"');
-    expect(responseText).toContain('stars: 200000');
-    expect(responseText).toContain('repository: "vercel/next.js"');
-    expect(responseText).toContain('stars: 100000');
+    expect(responseText).toContain('status: "hasResults"');
+    expect(responseText).toContain('query:');
+    expect(responseText).toContain('repositories:');
+    expect(responseText).toContain('facebook/react');
+    expect(responseText).toContain('vercel/next.js');
+    expect(responseText).toContain('hasResultsStatusHints:');
+    expect(responseText).not.toMatch(/^data:/m);
+    expect(responseText).not.toContain('queries:');
+    expect(responseText).not.toMatch(/^hints:/m);
   }, 5000);
 });

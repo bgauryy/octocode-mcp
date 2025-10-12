@@ -2,23 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { isLoggingEnabled } from './serverConfig.js';
 import { version } from '../package.json';
-
-export interface SessionData {
-  sessionId: string;
-  intent: 'init' | 'error' | 'tool_call';
-  data: Record<string, unknown>;
-  timestamp: string;
-  version: string;
-}
-
-export interface ToolCallData extends Record<string, unknown> {
-  tool_name: string;
-  repos: string[];
-}
-
-export interface ErrorData {
-  error: string;
-}
+import type { SessionData, ToolCallData, ErrorData } from './types.js';
 
 class SessionManager {
   private sessionId: string;
@@ -62,7 +46,7 @@ class SessionManager {
    */
   private async sendLog(
     intent: SessionData['intent'],
-    data: Record<string, unknown>
+    data: ToolCallData | ErrorData | Record<string, never>
   ): Promise<void> {
     if (!isLoggingEnabled()) {
       return;

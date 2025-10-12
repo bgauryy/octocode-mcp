@@ -1,13 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  createResult,
-  toDDMMYYYY,
-  simplifyRepoUrl,
-  getCommitTitle,
-  humanizeBytes,
-  simplifyGitHubUrl,
-  optimizeTextMatch,
-} from '../../src/responses';
+import { createResult } from '../../src/responses';
 import { jsonToYamlString } from 'octocode-utils';
 
 // Mock the isBetaEnabled function
@@ -21,13 +13,21 @@ describe('Response Utilities', () => {
       const data = { message: 'Hello' };
       const result = createResult({ data });
 
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-      expect(result.content[0]!.type).toBe('text');
       const yaml = result.content[0]!.text as string;
       // Empty hints array is removed
       const expectedYaml = `data:\n  message: "Hello"\n`;
+
       expect(yaml).toEqual(expectedYaml);
+
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: expectedYaml,
+          },
+        ],
+      });
     });
 
     it('should create error result with string message', () => {
@@ -37,13 +37,21 @@ describe('Response Utilities', () => {
         isError: true,
       });
 
-      expect(result.isError).toBe(true);
-      expect(result.content).toHaveLength(1);
-      expect(result.content[0]!.type).toBe('text');
       const yaml = result.content[0]!.text as string;
       // Empty hints array is removed
       const expectedYaml = `data:\n  error: "Something went wrong"\n`;
+
       expect(yaml).toEqual(expectedYaml);
+
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: expectedYaml,
+          },
+        ],
+      });
     });
 
     it('should include suggestions in error result', () => {
@@ -52,11 +60,21 @@ describe('Response Utilities', () => {
         isError: true,
       });
 
-      expect(result.isError).toBe(true);
       const yaml = result.content[0]!.text as string;
       // Empty hints array is removed
       const expectedYaml = `data:\n  error: "Not found"\n`;
+
       expect(yaml).toEqual(expectedYaml);
+
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: expectedYaml,
+          },
+        ],
+      });
     });
 
     it('should handle error object', () => {
@@ -66,204 +84,41 @@ describe('Response Utilities', () => {
         isError: true,
       });
 
-      expect(result.isError).toBe(true);
       const yaml = result.content[0]!.text as string;
       // Empty hints array is removed
       const expectedYaml = `data:\n  error: "Test error"\n`;
+
       expect(yaml).toEqual(expectedYaml);
+
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: expectedYaml,
+          },
+        ],
+      });
     });
 
     it('should create success result when no error provided', () => {
       const data = { test: 'value' };
       const result = createResult({ data });
 
-      expect(result.isError).toBe(false);
       const yaml = result.content[0]!.text as string;
       // Empty hints array is removed
       const expectedYaml = `data:\n  test: "value"\n`;
       expect(yaml).toEqual(expectedYaml);
-    });
-  });
 
-  describe('toDDMMYYYY', () => {
-    it('should convert ISO timestamp to DD/MM/YYYY format', () => {
-      const result = toDDMMYYYY('2023-12-25T10:30:45Z');
-      expect(result).toBe('25/12/2023');
-    });
-
-    it('should handle different ISO formats', () => {
-      expect(toDDMMYYYY('2023-01-01T00:00:00.000Z')).toBe('01/01/2023');
-      expect(toDDMMYYYY('2023-06-15T14:30:20Z')).toBe('15/06/2023');
-    });
-
-    it('should pad single digit days and months', () => {
-      expect(toDDMMYYYY('2023-05-09T12:00:00Z')).toBe('09/05/2023');
-      expect(toDDMMYYYY('2023-01-03T12:00:00Z')).toBe('03/01/2023');
-    });
-  });
-
-  describe('simplifyRepoUrl', () => {
-    it('should extract owner/repo from GitHub URL', () => {
-      const url = 'https://github.com/facebook/react';
-      expect(simplifyRepoUrl(url)).toBe('facebook/react');
-    });
-
-    it('should handle GitHub URLs with additional paths', () => {
-      const url = 'https://github.com/microsoft/vscode/tree/main/src';
-      expect(simplifyRepoUrl(url)).toBe('microsoft/vscode');
-    });
-
-    it('should return original URL if no match found', () => {
-      const url = 'https://example.com/repo';
-      expect(simplifyRepoUrl(url)).toBe(url);
-    });
-
-    it('should handle various GitHub URL formats', () => {
-      expect(simplifyRepoUrl('https://github.com/owner/repo.git')).toBe(
-        'owner/repo.git'
-      );
-      expect(simplifyRepoUrl('https://github.com/org/project/')).toBe(
-        'org/project'
-      );
-    });
-  });
-
-  describe('getCommitTitle', () => {
-    it('should extract first line of commit message', () => {
-      const message =
-        'Fix bug in authentication\n\nThis commit fixes the issue with...';
-      expect(getCommitTitle(message)).toBe('Fix bug in authentication');
-    });
-
-    it('should handle single line commit messages', () => {
-      const message = 'Update README';
-      expect(getCommitTitle(message)).toBe('Update README');
-    });
-
-    it('should trim whitespace from first line', () => {
-      const message = '  Add new feature  \n\nDetailed description';
-      expect(getCommitTitle(message)).toBe('Add new feature');
-    });
-
-    it('should handle empty commit messages', () => {
-      expect(getCommitTitle('')).toBe('');
-      expect(getCommitTitle('\n\n')).toBe('');
-    });
-  });
-
-  describe('humanizeBytes', () => {
-    it('should handle zero bytes', () => {
-      expect(humanizeBytes(0)).toBe('0 B');
-    });
-
-    it('should format bytes correctly', () => {
-      expect(humanizeBytes(500)).toBe('500 B');
-      expect(humanizeBytes(1023)).toBe('1023 B');
-    });
-
-    it('should format kilobytes correctly', () => {
-      expect(humanizeBytes(1024)).toBe('1 KB');
-      expect(humanizeBytes(2048)).toBe('2 KB');
-      expect(humanizeBytes(1536)).toBe('2 KB'); // 1.5KB rounds to 2KB
-    });
-
-    it('should format megabytes correctly', () => {
-      expect(humanizeBytes(1024 * 1024)).toBe('1 MB');
-      expect(humanizeBytes(2 * 1024 * 1024)).toBe('2 MB');
-      expect(humanizeBytes(1.5 * 1024 * 1024)).toBe('2 MB'); // rounds to 2MB
-    });
-
-    it('should format gigabytes correctly', () => {
-      expect(humanizeBytes(1024 * 1024 * 1024)).toBe('1 GB');
-      expect(humanizeBytes(2.5 * 1024 * 1024 * 1024)).toBe('3 GB'); // rounds to 3GB
-    });
-  });
-
-  describe('simplifyGitHubUrl', () => {
-    it('should extract file path from GitHub blob URL', () => {
-      const url = 'https://github.com/facebook/react/blob/main/src/index.js';
-      expect(simplifyGitHubUrl(url)).toBe('src/index.js');
-    });
-
-    it('should extract file path from GitHub commit URL', () => {
-      const url =
-        'https://github.com/facebook/react/commit/abc123/src/components/Button.tsx';
-      expect(simplifyGitHubUrl(url)).toBe('src/components/Button.tsx');
-    });
-
-    it('should handle nested directory paths', () => {
-      const url =
-        'https://github.com/microsoft/vscode/blob/main/src/vs/base/common/utils.ts';
-      expect(simplifyGitHubUrl(url)).toBe('src/vs/base/common/utils.ts');
-    });
-
-    it('should return original URL if no match found', () => {
-      const url = 'https://github.com/owner/repo';
-      expect(simplifyGitHubUrl(url)).toBe(url);
-    });
-
-    it('should handle various GitHub URL formats', () => {
-      expect(
-        simplifyGitHubUrl(
-          'https://github.com/owner/repo/blob/feature-branch/test.js'
-        )
-      ).toBe('test.js');
-      expect(
-        simplifyGitHubUrl(
-          'https://github.com/owner/repo/commit/hash/deep/nested/file.ts'
-        )
-      ).toBe('deep/nested/file.ts');
-    });
-  });
-
-  describe('optimizeTextMatch', () => {
-    it('should return short text as-is', () => {
-      const text = 'Short text';
-      expect(optimizeTextMatch(text)).toBe('Short text');
-    });
-
-    it('should normalize whitespace', () => {
-      const text = 'Text  with   multiple    spaces';
-      expect(optimizeTextMatch(text)).toBe('Text with multiple spaces');
-    });
-
-    it('should truncate long text at word boundary', () => {
-      const text =
-        'This is a very long text that should be truncated at a word boundary to avoid breaking words in the middle';
-      const result = optimizeTextMatch(text, 50);
-
-      expect(result.length).toBeLessThanOrEqual(52); // 50 + '…'
-      expect(result.endsWith('…')).toBe(true);
-      expect(result).not.toContain('  '); // No double spaces
-    });
-
-    it('should truncate at character boundary if no good word boundary', () => {
-      const text =
-        'verylongtextwithoutspacesorwordsthatcanbebrokenatwordboundaries';
-      const result = optimizeTextMatch(text, 30);
-
-      expect(result.length).toBe(31); // 30 + '…'
-      expect(result.endsWith('…')).toBe(true);
-    });
-
-    it('should use default max length of 100', () => {
-      const longText = 'A'.repeat(150);
-      const result = optimizeTextMatch(longText);
-
-      expect(result.length).toBe(101); // 100 + '…'
-      expect(result.endsWith('…')).toBe(true);
-    });
-
-    it('should handle text with newlines and tabs', () => {
-      const text = 'Text\nwith\ttabs\nand\nnewlines';
-      const result = optimizeTextMatch(text);
-      expect(result).toBe('Text with tabs and newlines');
-    });
-
-    it('should trim leading and trailing whitespace', () => {
-      const text = '  \n  Leading and trailing whitespace  \n  ';
-      const result = optimizeTextMatch(text);
-      expect(result).toBe('Leading and trailing whitespace');
+      expect(result).toEqual({
+        isError: false,
+        content: [
+          {
+            type: 'text',
+            text: expectedYaml,
+          },
+        ],
+      });
     });
   });
 
@@ -320,7 +175,7 @@ describe('Response Utilities', () => {
         validData: 'test',
       };
 
-      const result = createResult({ data, hints: [] });
+      const result = createResult({ data });
       const yaml = result.content[0]!.text as string;
 
       // Empty arrays are now removed (including hints and results)
@@ -510,13 +365,6 @@ describe('Response Utilities', () => {
                 name: 'test-repo',
                 owner: 'testuser',
                 url: 'https://github.com/testuser/test-repo',
-                metadata: {
-                  id: 'meta-456',
-                  type: 'public',
-                  stats: {
-                    stars: 100,
-                  },
-                },
               },
             ],
             pagination: {
@@ -531,7 +379,7 @@ describe('Response Utilities', () => {
           keysPriority: ['id', 'name', 'type', 'owner', 'repo', 'path', 'url'],
         });
 
-        const expectedYaml = `data:\n  pagination:\n    page: 1\n    total: 50\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\n      metadata:\n        id: "meta-456"\n        type: "public"\n        stats:\n          stars: 100\nhints:\n  - "Use pagination for large result sets"\n`;
+        const expectedYaml = `data:\n  pagination:\n    page: 1\n    total: 50\n  repositories:\n    - id: "repo-123"\n      name: "test-repo"\n      owner: "testuser"\n      url: "https://github.com/testuser/test-repo"\nhints:\n  - "Use pagination for large result sets"\n`;
 
         expect(yamlResult).toEqual(expectedYaml);
       });
@@ -596,7 +444,7 @@ describe('Response Utilities', () => {
         });
 
         // Should fallback to JSON format or error message
-        expect(typeof result).toBe('string');
+        expect(typeof result).toEqual('string');
         expect(result.length).toBeGreaterThan(0);
       });
     });
@@ -647,11 +495,222 @@ describe('Response Utilities', () => {
         });
 
         // Should still produce valid YAML
-        expect(yamlResult).not.toMatch(/^\s*{/);
-        expect(yamlResult).toContain('apple: "value2"');
-        expect(yamlResult).toContain('banana: "value3"');
-        expect(yamlResult).toContain('zebra: "value1"');
+        expect(yamlResult).toEqual(`apple: "value2"
+banana: "value3"
+zebra: "value1"
+`);
       });
+    });
+  });
+
+  describe('Real Response Objects YAML Conversion', () => {
+    it('should convert repository structure response to YAML with priority keys', () => {
+      const response = {
+        data: {
+          queries: {
+            successful: [
+              {
+                researchGoal:
+                  'Explore React repository structure to locate hooks implementation',
+                reasoning:
+                  'Understanding the overall structure will help identify where useState and other hooks are implemented',
+                owner: 'facebook',
+                repo: 'react',
+                path: '/',
+                files: [
+                  '/.editorconfig',
+                  '/.eslintignore',
+                  '/.eslintrc.js',
+                  '/.git-blame-ignore-revs',
+                  '/.gitattributes',
+                  '/.gitignore',
+                  '/.mailmap',
+                  '/.nvmrc',
+                  '/.prettierignore',
+                  '/.prettierrc.js',
+                  '/.watchmanconfig',
+                  '/babel.config-react-compiler.js',
+                  '/babel.config-ts.js',
+                  '/babel.config.js',
+                  '/CHANGELOG.md',
+                  '/CODE_OF_CONDUCT.md',
+                  '/CONTRIBUTING.md',
+                  '/dangerfile.js',
+                  '/flow-typed.config.json',
+                  '/LICENSE',
+                  '/MAINTAINERS',
+                  '/package.json',
+                  '/react.code-workspace',
+                  '/ReactVersions.js',
+                  '/README.md',
+                  '/SECURITY.md',
+                ],
+                folders: [
+                  '/.codesandbox',
+                  '/compiler',
+                  '/fixtures',
+                  '/flow-typed',
+                  '/packages',
+                  '/scripts',
+                ],
+              },
+            ],
+          },
+        },
+        hints: {
+          successful: [
+            'Analyze top results in depth before expanding search',
+            'Cross-reference findings across multiple sources',
+            'Explore src/ or packages/ first for relevant files',
+            'Use depth: 2 to surface key files/folders quickly',
+            'Build targeted code searches from discovered path and filename patterns',
+            'Chain tools: repository search → structure view → code search → content fetch',
+            'Compare implementations across 3-5 repositories to identify best practices',
+            'Focus on source code and example directories for implementation details',
+          ],
+          researchSuggestions: [
+            'Search for useState in the hooks directory',
+            'Look at React reconciler implementation',
+            'Check packages/react/src for hooks',
+          ],
+        },
+      };
+
+      const yamlResult = jsonToYamlString(response, {
+        keysPriority: ['queryId', 'reasoning', 'repository', 'files'],
+      });
+
+      const expectedYaml = `data:\n  queries:\n    successful:\n      - reasoning: "Understanding the overall structure will help identify where useState and other hooks are implemented"\n        files:\n          - "/.editorconfig"\n          - "/.eslintignore"\n          - "/.eslintrc.js"\n          - "/.git-blame-ignore-revs"\n          - "/.gitattributes"\n          - "/.gitignore"\n          - "/.mailmap"\n          - "/.nvmrc"\n          - "/.prettierignore"\n          - "/.prettierrc.js"\n          - "/.watchmanconfig"\n          - "/babel.config-react-compiler.js"\n          - "/babel.config-ts.js"\n          - "/babel.config.js"\n          - "/CHANGELOG.md"\n          - "/CODE_OF_CONDUCT.md"\n          - "/CONTRIBUTING.md"\n          - "/dangerfile.js"\n          - "/flow-typed.config.json"\n          - "/LICENSE"\n          - "/MAINTAINERS"\n          - "/package.json"\n          - "/react.code-workspace"\n          - "/ReactVersions.js"\n          - "/README.md"\n          - "/SECURITY.md"\n        folders:\n          - "/.codesandbox"\n          - "/compiler"\n          - "/fixtures"\n          - "/flow-typed"\n          - "/packages"\n          - "/scripts"\n        owner: "facebook"\n        path: "/"\n        repo: "react"\n        researchGoal: "Explore React repository structure to locate hooks implementation"\nhints:\n  researchSuggestions:\n    - "Search for useState in the hooks directory"\n    - "Look at React reconciler implementation"\n    - "Check packages/react/src for hooks"\n  successful:\n    - "Analyze top results in depth before expanding search"\n    - "Cross-reference findings across multiple sources"\n    - "Explore src/ or packages/ first for relevant files"\n    - "Use depth: 2 to surface key files/folders quickly"\n    - "Build targeted code searches from discovered path and filename patterns"\n    - "Chain tools: repository search → structure view → code search → content fetch"\n    - "Compare implementations across 3-5 repositories to identify best practices"\n    - "Focus on source code and example directories for implementation details"\n`;
+
+      expect(yamlResult).toEqual(expectedYaml);
+    });
+
+    it('should convert file content response with dispatcher definitions to YAML', () => {
+      const response = {
+        data: {
+          queries: {
+            successful: [
+              {
+                researchGoal:
+                  'Read the end of ReactFiberHooks.js to find dispatcher definitions',
+                reasoning:
+                  'The dispatcher and hook implementations are typically at the end of the file',
+                researchSuggestions: [
+                  'Look for the exported dispatcher objects',
+                  'Find useState assignments',
+                  'Check the module exports',
+                ],
+                owner: 'facebook',
+                repo: 'react',
+                path: 'packages/react-reconciler/src/ReactFiberHooks.js',
+                contentLength: 3309,
+                content:
+                  "\n markUpdateInDevTools(fiber, lane, action);\n}\n\nfunction isRenderPhaseUpdate(fiber: Fiber): boolean {\n const alternate = fiber.alternate;\n return (\n fiber === currentlyRenderingFiber ||\n (alternate !== null && alternate === currentlyRenderingFiber)\n );\n}\n\nfunction enqueueRenderPhaseUpdate<S, A>(\n queue: UpdateQueue<S, A>,\n update: Update<S, A>,\n): void {\n // This is a render phase update. Stash it in a lazily-created map of\n // queue -> linked list of updates. After this render pass, we'll restart\n // and apply the stashed updates on top of the work-in-progress hook.\n didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate =\n true;\n const pending = queue.pending;\n if (pending === null) {\n // This is the first update. Create a circular list.\n update.next = update;\n } else {\n update.next = pending.next;\n pending.next = update;\n }\n queue.pending = update;\n}\n\n// TODO: Move to ReactFiberConcurrentUpdates?\nfunction entangleTransitionUpdate<S, A>(\n root: FiberRoot,\n queue: UpdateQueue<S, A>,\n lane: Lane,\n): void {\n if (isTransitionLane(lane)) {\n let queueLanes = queue.lanes;\n\n // If any entangled lanes are no longer pending on the root, then they\n // must have finished. We can remove them from the shared queue, which\n // represents a superset of the actually pending lanes. In some cases we\n // may entangle more than we need to, but that's OK. In fact it's worse if\n // we don't entangle when we should.\n queueLanes = intersectLanes(queueLanes, root.pendingLanes);\n\n // Entangle the new transition lane with the other transition lanes.\n const newQueueLanes = mergeLanes(queueLanes, lane);\n queue.lanes = newQueueLanes;\n // Even if queue.lanes already include lane, we don't know for certain if\n // the lane finished since the last time we entangled it. So we need to\n // entangle it again, just to be sure.\n markRootEntangled(root, newQueueLanes);\n }\n}\n\nfunction markUpdateInDevTools<A>(fiber: Fiber, lane: Lane, action: A): void {\n if (enableSchedulingProfiler) {\n markStateUpdateScheduled(fiber, lane);\n }\n}\n\nexport const ContextOnlyDispatcher: Dispatcher = {\n readContext,\n\n use,\n useCallback: throwInvalidHookError,\n useContext: throwInvalidHookError,\n useEffect: throwInvalidHookError,\n useImperativeHandle: throwInvalidHookError,\n useLayoutEffect: throwInvalidHookError,\n useInsertionEffect: throwInvalidHookError,\n useMemo: throwInvalidHookError,\n useReducer: throwInvalidHookError,\n useRef: throwInvalidHookError,\n useState: throwInvalidHookError,\n useDebugValue: throwInvalidHookError,\n useDeferredValue: throwInvalidHookError,\n useTransition: throwInvalidHookError,\n useSyncExternalStore: throwInvalidHookError,\n useId: throwInvalidHookError,\n useHostTransitionStatus: throwInvalidHookError,\n useFormState: throwInvalidHookError,\n useActionState: throwInvalidHookError,\n useOptimistic: throwInvalidHookError,\n useMemoCache: throwInvalidHookError,\n useCacheRefresh: throwInvalidHookError,\n};\nif (enableUseEffectEventHook) {\n (ContextOnlyDispatcher: Dispatcher).useEffectEvent = throwInvalidHookError;\n}\n\nconst HooksDispatcherOnMount: Dispatcher = {\n readContext,\n\n use,\n useCallback: mountCallback,\n useContext: readContext,\n useEffect: mountEffect,",
+                branch: '66a390ebb815065b1e5ac7ae504dadb22989f0d4',
+                startLine: 3800,
+                endLine: 3900,
+                isPartial: true,
+                minified: false,
+                minificationFailed: true,
+                minificationType: 'failed',
+              },
+            ],
+          },
+        },
+        hints: {
+          successful: [
+            'Analyze top results in depth before expanding search',
+            'Cross-reference findings across multiple sources',
+            'Prefer partial reads for token efficiency',
+            'When readability matters (e.g., JSON/Markdown), consider minified: false',
+            'Use matchString from code search text_matches and increase matchStringContextLines if needed',
+            'Chain tools: repository search → structure view → code search → content fetch',
+            'Compare implementations across 3-5 repositories to identify best practices',
+            'Examine imports/exports to understand dependencies and usage',
+          ],
+        },
+      };
+
+      const yamlResult = jsonToYamlString(response, {
+        keysPriority: [
+          'researchGoal',
+          'reasoning',
+          'researchSuggestions',
+          'owner',
+          'repo',
+          'path',
+          'contentLength',
+          'content',
+        ],
+      });
+
+      const expectedYaml = `data:\n  queries:\n    successful:\n      - researchGoal: "Read the end of ReactFiberHooks.js to find dispatcher definitions"\n        reasoning: "The dispatcher and hook implementations are typically at the end of the file"\n        researchSuggestions:\n          - "Look for the exported dispatcher objects"\n          - "Find useState assignments"\n          - "Check the module exports"\n        owner: "facebook"\n        repo: "react"\n        path: "packages/react-reconciler/src/ReactFiberHooks.js"\n        contentLength: 3309\n        content: "\\n markUpdateInDevTools(fiber, lane, action);\\n}\\n\\nfunction isRenderPhaseUpdate(fiber: Fiber): boolean {\\n const alternate = fiber.alternate;\\n return (\\n fiber === currentlyRenderingFiber ||\\n (alternate !== null && alternate === currentlyRenderingFiber)\\n );\\n}\\n\\nfunction enqueueRenderPhaseUpdate<S, A>(\\n queue: UpdateQueue<S, A>,\\n update: Update<S, A>,\\n): void {\\n // This is a render phase update. Stash it in a lazily-created map of\\n // queue -> linked list of updates. After this render pass, we'll restart\\n // and apply the stashed updates on top of the work-in-progress hook.\\n didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate =\\n true;\\n const pending = queue.pending;\\n if (pending === null) {\\n // This is the first update. Create a circular list.\\n update.next = update;\\n } else {\\n update.next = pending.next;\\n pending.next = update;\\n }\\n queue.pending = update;\\n}\\n\\n// TODO: Move to ReactFiberConcurrentUpdates?\\nfunction entangleTransitionUpdate<S, A>(\\n root: FiberRoot,\\n queue: UpdateQueue<S, A>,\\n lane: Lane,\\n): void {\\n if (isTransitionLane(lane)) {\\n let queueLanes = queue.lanes;\\n\\n // If any entangled lanes are no longer pending on the root, then they\\n // must have finished. We can remove them from the shared queue, which\\n // represents a superset of the actually pending lanes. In some cases we\\n // may entangle more than we need to, but that's OK. In fact it's worse if\\n // we don't entangle when we should.\\n queueLanes = intersectLanes(queueLanes, root.pendingLanes);\\n\\n // Entangle the new transition lane with the other transition lanes.\\n const newQueueLanes = mergeLanes(queueLanes, lane);\\n queue.lanes = newQueueLanes;\\n // Even if queue.lanes already include lane, we don't know for certain if\\n // the lane finished since the last time we entangled it. So we need to\\n // entangle it again, just to be sure.\\n markRootEntangled(root, newQueueLanes);\\n }\\n}\\n\\nfunction markUpdateInDevTools<A>(fiber: Fiber, lane: Lane, action: A): void {\\n if (enableSchedulingProfiler) {\\n markStateUpdateScheduled(fiber, lane);\\n }\\n}\\n\\nexport const ContextOnlyDispatcher: Dispatcher = {\\n readContext,\\n\\n use,\\n useCallback: throwInvalidHookError,\\n useContext: throwInvalidHookError,\\n useEffect: throwInvalidHookError,\\n useImperativeHandle: throwInvalidHookError,\\n useLayoutEffect: throwInvalidHookError,\\n useInsertionEffect: throwInvalidHookError,\\n useMemo: throwInvalidHookError,\\n useReducer: throwInvalidHookError,\\n useRef: throwInvalidHookError,\\n useState: throwInvalidHookError,\\n useDebugValue: throwInvalidHookError,\\n useDeferredValue: throwInvalidHookError,\\n useTransition: throwInvalidHookError,\\n useSyncExternalStore: throwInvalidHookError,\\n useId: throwInvalidHookError,\\n useHostTransitionStatus: throwInvalidHookError,\\n useFormState: throwInvalidHookError,\\n useActionState: throwInvalidHookError,\\n useOptimistic: throwInvalidHookError,\\n useMemoCache: throwInvalidHookError,\\n useCacheRefresh: throwInvalidHookError,\\n};\\nif (enableUseEffectEventHook) {\\n (ContextOnlyDispatcher: Dispatcher).useEffectEvent = throwInvalidHookError;\\n}\\n\\nconst HooksDispatcherOnMount: Dispatcher = {\\n readContext,\\n\\n use,\\n useCallback: mountCallback,\\n useContext: readContext,\\n useEffect: mountEffect,"\n        branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"\n        endLine: 3900\n        isPartial: true\n        minificationFailed: true\n        minificationType: "failed"\n        minified: false\n        startLine: 3800\nhints:\n  successful:\n    - "Analyze top results in depth before expanding search"\n    - "Cross-reference findings across multiple sources"\n    - "Prefer partial reads for token efficiency"\n    - "When readability matters (e.g., JSON/Markdown), consider minified: false"\n    - "Use matchString from code search text_matches and increase matchStringContextLines if needed"\n    - "Chain tools: repository search → structure view → code search → content fetch"\n    - "Compare implementations across 3-5 repositories to identify best practices"\n    - "Examine imports/exports to understand dependencies and usage"\n`;
+
+      expect(yamlResult).toEqual(expectedYaml);
+    });
+
+    it('should convert file content response with mountState function to YAML', () => {
+      const response = {
+        data: {
+          queries: {
+            successful: [
+              {
+                researchGoal:
+                  'Find the mountState function before mountStateImpl',
+                reasoning:
+                  'The mountState function should be defined before mountStateImpl',
+                researchSuggestions: [
+                  'Read earlier lines',
+                  'Look for the function definition',
+                  'Check the complete implementation',
+                ],
+                owner: 'facebook',
+                repo: 'react',
+                path: 'packages/react-reconciler/src/ReactFiberHooks.js',
+                contentLength: 1211,
+                content:
+                  " forceStoreRerender(fiber);\n }\n };\n // Subscribe to the store and return a clean-up function.\n return subscribe(handleStoreChange);\n}\n\nfunction checkIfSnapshotChanged<T>(inst: StoreInstance<T>): boolean {\n const latestGetSnapshot = inst.getSnapshot;\n const prevValue = inst.value;\n try {\n const nextValue = latestGetSnapshot();\n return !is(prevValue, nextValue);\n } catch (error) {\n return true;\n }\n}\n\nfunction forceStoreRerender(fiber: Fiber) {\n const root = enqueueConcurrentRenderForLane(fiber, SyncLane);\n if (root !== null) {\n scheduleUpdateOnFiber(root, fiber, SyncLane);\n }\n}\n\nfunction mountStateImpl<S>(initialState: (() => S) | S): Hook {\n const hook = mountWorkInProgressHook();\n if (typeof initialState === 'function') {\n const initialStateInitializer = initialState;\n // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types\n initialState = initialStateInitializer();\n if (shouldDoubleInvokeUserFnsInHooksDEV) {\n setIsStrictModeForDevtools(true);\n try {\n // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types\n initialStateInitializer();\n } finally {\n setIsStrictModeForDevtools(false);\n }\n }\n }",
+                branch: '66a390ebb815065b1e5ac7ae504dadb22989f0d4',
+                startLine: 1870,
+                endLine: 1910,
+                isPartial: true,
+                minified: false,
+                minificationFailed: true,
+                minificationType: 'failed',
+              },
+            ],
+          },
+        },
+        hints: {
+          successful: [
+            'Analyze top results in depth before expanding search',
+            'Cross-reference findings across multiple sources',
+            'Prefer partial reads for token efficiency',
+            'When readability matters (e.g., JSON/Markdown), consider minified: false',
+            'Use matchString from code search text_matches and increase matchStringContextLines if needed',
+            'Chain tools: repository search → structure view → code search → content fetch',
+            'Compare implementations across 3-5 repositories to identify best practices',
+            'Examine imports/exports to understand dependencies and usage',
+          ],
+        },
+      };
+
+      const yamlResult = jsonToYamlString(response, {
+        keysPriority: [
+          'researchGoal',
+          'reasoning',
+          'researchSuggestions',
+          'owner',
+          'repo',
+          'path',
+          'contentLength',
+          'content',
+        ],
+      });
+
+      const expectedYaml = `data:\n  queries:\n    successful:\n      - researchGoal: "Find the mountState function before mountStateImpl"\n        reasoning: "The mountState function should be defined before mountStateImpl"\n        researchSuggestions:\n          - "Read earlier lines"\n          - "Look for the function definition"\n          - "Check the complete implementation"\n        owner: "facebook"\n        repo: "react"\n        path: "packages/react-reconciler/src/ReactFiberHooks.js"\n        contentLength: 1211\n        content: " forceStoreRerender(fiber);\\n }\\n };\\n // Subscribe to the store and return a clean-up function.\\n return subscribe(handleStoreChange);\\n}\\n\\nfunction checkIfSnapshotChanged<T>(inst: StoreInstance<T>): boolean {\\n const latestGetSnapshot = inst.getSnapshot;\\n const prevValue = inst.value;\\n try {\\n const nextValue = latestGetSnapshot();\\n return !is(prevValue, nextValue);\\n } catch (error) {\\n return true;\\n }\\n}\\n\\nfunction forceStoreRerender(fiber: Fiber) {\\n const root = enqueueConcurrentRenderForLane(fiber, SyncLane);\\n if (root !== null) {\\n scheduleUpdateOnFiber(root, fiber, SyncLane);\\n }\\n}\\n\\nfunction mountStateImpl<S>(initialState: (() => S) | S): Hook {\\n const hook = mountWorkInProgressHook();\\n if (typeof initialState === 'function') {\\n const initialStateInitializer = initialState;\\n // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types\\n initialState = initialStateInitializer();\\n if (shouldDoubleInvokeUserFnsInHooksDEV) {\\n setIsStrictModeForDevtools(true);\\n try {\\n // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types\\n initialStateInitializer();\\n } finally {\\n setIsStrictModeForDevtools(false);\\n }\\n }\\n }"\n        branch: "66a390ebb815065b1e5ac7ae504dadb22989f0d4"\n        endLine: 1910\n        isPartial: true\n        minificationFailed: true\n        minificationType: "failed"\n        minified: false\n        startLine: 1870\nhints:\n  successful:\n    - "Analyze top results in depth before expanding search"\n    - "Cross-reference findings across multiple sources"\n    - "Prefer partial reads for token efficiency"\n    - "When readability matters (e.g., JSON/Markdown), consider minified: false"\n    - "Use matchString from code search text_matches and increase matchStringContextLines if needed"\n    - "Chain tools: repository search → structure view → code search → content fetch"\n    - "Compare implementations across 3-5 repositories to identify best practices"\n    - "Examine imports/exports to understand dependencies and usage"\n`;
+
+      expect(yamlResult).toEqual(expectedYaml);
     });
   });
 });

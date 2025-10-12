@@ -1,26 +1,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { withSecurityValidation } from '../security/withSecurityValidation.js';
+import type { UserContext } from '../types.js';
+import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
+import { TOOL_NAMES } from '../constants.js';
+import { GitHubViewRepoStructureBulkQuerySchema } from '../scheme/github_view_repo_structure.js';
+import { executeBulkOperation } from '../utils/bulkOperations.js';
+import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { DESCRIPTIONS } from './descriptions.js';
+import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters.js';
 import {
-  UserContext,
-  withSecurityValidation,
-} from '../security/withSecurityValidation';
-import { createResult } from '../responses';
-import { viewGitHubRepositoryStructureAPI } from '../github/index';
-import { TOOL_NAMES } from '../constants';
-import {
+  handleApiError,
+  handleCatchError,
+  createSuccessResult,
+} from './utils.js';
+import type {
   GitHubViewRepoStructureQuery,
-  GitHubViewRepoStructureBulkQuerySchema,
   RepoStructureResult,
-} from '../scheme/github_view_repo_structure.js';
-import { generateEmptyQueryHints } from './hints';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  type BulkResponseConfig,
-} from '../utils/bulkOperations';
-import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { DESCRIPTIONS } from './descriptions';
-import { shouldIgnoreFile, shouldIgnoreDir } from '../utils/fileFilters';
+} from '../types.js';
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(
@@ -45,24 +42,8 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
         authInfo,
         userContext
       ): Promise<CallToolResult> => {
-        if (
-          !args.queries ||
-          !Array.isArray(args.queries) ||
-          args.queries.length === 0
-        ) {
-          const hints = generateEmptyQueryHints(
-            TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
-          );
-
-          return createResult({
-            data: { error: 'Queries array is required and cannot be empty' },
-            hints,
-            isError: true,
-          });
-        }
-
         return exploreMultipleRepositoryStructures(
-          args.queries,
+          args.queries || [],
           authInfo,
           userContext
         );
@@ -71,30 +52,93 @@ export function registerViewGitHubRepoStructureTool(server: McpServer) {
   );
 }
 
+/**
+ * Build API request from query with proper type conversions
+ */
+function buildStructureApiRequest(
+  query: GitHubViewRepoStructureQuery
+): GitHubViewRepoStructureQuery {
+  return {
+    reasoning: query.reasoning,
+    owner: String(query.owner),
+    repo: String(query.repo),
+    branch: String(query.branch),
+    path: query.path ? String(query.path) : undefined,
+    depth: typeof query.depth === 'number' ? query.depth : undefined,
+  };
+}
+
+/**
+ * Filter files and folders to exclude ignored items
+ */
+function filterStructureItems(apiResult: {
+  files: Array<{ path: string }>;
+  folders?: { folders?: Array<{ path: string }> };
+}) {
+  const filteredFiles = apiResult.files.filter(
+    file => !shouldIgnoreFile(file.path)
+  );
+
+  const filteredFolders = (apiResult.folders?.folders || []).filter(folder => {
+    const folderName = folder.path.split('/').pop() || '';
+    return !shouldIgnoreDir(folderName) && !shouldIgnoreFile(folder.path);
+  });
+
+  return { filteredFiles, filteredFolders };
+}
+
+/**
+ * Remove path prefix from file/folder paths
+ */
+function removePathPrefix(path: string, prefix: string): string {
+  return prefix && path.startsWith(prefix)
+    ? path.substring(prefix.length)
+    : path;
+}
+
+/**
+ * Create empty structure result for error cases
+ */
+function createEmptyStructureResult(
+  query: GitHubViewRepoStructureQuery,
+  error: NonNullable<
+    ReturnType<typeof handleApiError | typeof handleCatchError>
+  >
+): Record<string, unknown> & {
+  status: 'error';
+  owner: string;
+  repo: string;
+  path: string;
+  files: string[];
+  folders: string[];
+} {
+  return {
+    owner: query.owner,
+    repo: query.repo,
+    path: query.path || '/',
+    files: [],
+    folders: [],
+    ...error,
+  } as Record<string, unknown> & {
+    status: 'error';
+    owner: string;
+    repo: string;
+    path: string;
+    files: string[];
+    folders: string[];
+  };
+}
+
 async function exploreMultipleRepositoryStructures(
   queries: GitHubViewRepoStructureQuery[],
   authInfo?: AuthInfo,
   userContext?: UserContext
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries(
+  return executeBulkOperation(
     queries,
-    async (
-      query: GitHubViewRepoStructureQuery,
-      _index: number
-    ): Promise<RepoStructureResult> => {
+    async (query: GitHubViewRepoStructureQuery, _index: number) => {
       try {
-        // TypeScript and Zod validation ensure all required fields are properly typed
-        // No manual validation needed - trust the type system!
-
-        // Create API request with properly typed fields
-        const apiRequest: GitHubViewRepoStructureQuery = {
-          reasoning: query.reasoning,
-          owner: String(query.owner),
-          repo: String(query.repo),
-          branch: String(query.branch),
-          path: query.path ? String(query.path) : undefined,
-          depth: typeof query.depth === 'number' ? query.depth : undefined,
-        };
+        const apiRequest = buildStructureApiRequest(query);
 
         const apiResult = await viewGitHubRepositoryStructureAPI(
           apiRequest,
@@ -102,122 +146,63 @@ async function exploreMultipleRepositoryStructures(
           userContext
         );
 
-        // Check if result is an error
-        if ('error' in apiResult) {
-          return {
-            researchGoal: query.researchGoal,
-            reasoning: query.reasoning,
-            owner: query.owner,
-            repo: query.repo,
-            path: query.path || '/',
-            files: [],
-            folders: [],
-            error: apiResult.error,
-            metadata: {
-              error: apiResult.error,
-              searchType: 'api_error',
-            },
-          };
+        const apiError = handleApiError(apiResult, query);
+        if (apiError) {
+          return createEmptyStructureResult(query, apiError);
         }
 
-        // Success case - use simplified structure with filtering
+        if (!('files' in apiResult) || !Array.isArray(apiResult.files)) {
+          return createEmptyStructureResult(
+            query,
+            handleCatchError(
+              new Error('Invalid API response structure'),
+              query
+            )!
+          );
+        }
 
-        // Filter files using the centralized file filtering logic
-        const filteredFiles = apiResult.files.filter(
-          file => !shouldIgnoreFile(file.path)
-        );
+        const { filteredFiles, filteredFolders } =
+          filterStructureItems(apiResult);
 
-        // Filter folders using the centralized directory filtering logic
-        const filteredFolders = (apiResult.folders?.folders || []).filter(
-          folder => {
-            // Extract folder name from path for shouldIgnoreDir check
-            const folderName = folder.path.split('/').pop() || '';
-            return (
-              !shouldIgnoreDir(folderName) && !shouldIgnoreFile(folder.path)
-            );
-          }
-        );
-
-        const hasResults =
-          filteredFiles.length > 0 || filteredFolders.length > 0;
-
-        // Extract file paths and folder paths separately, removing the path prefix
         const pathPrefix = apiRequest.path || '/';
         const normalizedPrefix = pathPrefix === '/' ? '' : pathPrefix;
 
-        const filePaths = filteredFiles.map(file => {
-          // Remove the path prefix if it exists
-          if (normalizedPrefix && file.path.startsWith(normalizedPrefix)) {
-            return file.path.substring(normalizedPrefix.length);
-          }
-          return file.path;
-        });
+        const filePaths = filteredFiles.map(file =>
+          removePathPrefix(file.path, normalizedPrefix)
+        );
 
-        const folderPaths = filteredFolders.map(folder => {
-          // Remove the path prefix if it exists
-          if (normalizedPrefix && folder.path.startsWith(normalizedPrefix)) {
-            return folder.path.substring(normalizedPrefix.length);
-          }
-          return folder.path;
-        });
+        const folderPaths = filteredFolders.map(folder =>
+          removePathPrefix(folder.path, normalizedPrefix)
+        );
 
-        const result: RepoStructureResult = {
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          owner: apiRequest.owner,
-          repo: apiRequest.repo,
-          path: apiRequest.path || '/',
-          files: filePaths,
-          folders: folderPaths,
-          metadata: {
-            branch: apiRequest.branch,
+        const hasContent = filePaths.length > 0 || folderPaths.length > 0;
+
+        return createSuccessResult(
+          query,
+          {
+            owner: apiRequest.owner,
+            repo: apiRequest.repo,
             path: apiRequest.path || '/',
-            folders: apiResult.folders,
-            summary: apiResult.summary,
-            // Always include queryArgs for no-result cases (handled by bulk operations)
-            ...(hasResults ? {} : { queryArgs: { ...apiRequest } }),
-            searchType: 'success',
+            files: filePaths,
+            folders: folderPaths,
           },
-        };
-
-        // Summary and queryArgs are handled by the bulk response processor
-
-        return result;
+          hasContent,
+          'GITHUB_VIEW_REPO_STRUCTURE'
+        );
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-
-        return {
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-          owner: query.owner,
-          repo: query.repo,
-          path: query.path || '/',
-          files: [],
-          folders: [],
-          error: `Failed to explore repository structure: ${errorMessage}`,
-          metadata: {
-            queryArgs: { ...query },
-            error: `Failed to explore repository structure: ${errorMessage}`,
-            searchType: 'api_error',
-          },
-        };
+        const catchError = handleCatchError(
+          error,
+          query,
+          'Failed to explore repository structure'
+        );
+        return createEmptyStructureResult(query, catchError);
       }
+    },
+    {
+      toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      keysPriority: ['path', 'files', 'folders', 'error'] satisfies Array<
+        keyof RepoStructureResult
+      >,
     }
   );
-
-  const config: BulkResponseConfig = {
-    toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    keysPriority: [
-      'researchGoal',
-      'reasoning',
-      'owner',
-      'repo',
-      'path',
-      'files',
-      'folders',
-    ],
-  };
-
-  return createBulkResponse(config, results, errors, queries);
 }
