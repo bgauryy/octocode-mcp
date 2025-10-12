@@ -3,7 +3,7 @@
  */
 
 import type { GitHubAPIError } from '../github/githubAPI';
-import type { ToolErrorResult, ToolSuccessResult } from './types.js';
+import type { ToolErrorResult, ToolSuccessResult } from '../types.js';
 import { TOOL_NAMES } from '../constants.js';
 
 /**

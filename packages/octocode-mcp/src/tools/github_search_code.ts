@@ -5,11 +5,7 @@ import {
   withSecurityValidation,
 } from '../security/withSecurityValidation.js';
 import { TOOL_NAMES } from '../constants.js';
-import {
-  GitHubCodeSearchQuery,
-  GitHubCodeSearchBulkQuerySchema,
-  type SearchResult,
-} from '../scheme/github_search_code.js';
+import { GitHubCodeSearchBulkQuerySchema } from '../scheme/github_search_code.js';
 import { searchGitHubCodeAPI } from '../github/codeSearch.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
@@ -20,6 +16,7 @@ import {
   handleCatchError,
   createSuccessResult,
 } from './utils.js';
+import type { GitHubCodeSearchQuery, SearchResult } from '../types.js';
 
 export function registerGitHubSearchCodeTool(server: McpServer) {
   return server.registerTool(

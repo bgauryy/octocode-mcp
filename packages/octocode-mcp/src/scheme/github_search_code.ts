@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_CODE } from './schemDescriptions';
-import { ToolResponse } from '../responses.js';
 import { TOOL_NAMES } from '../constants';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
@@ -42,43 +41,7 @@ export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_SEARCH_CODE.processing.sanitize),
 });
 
-export type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
-
 export const GitHubCodeSearchBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_SEARCH_CODE,
   GitHubCodeSearchQuerySchema
 );
-
-export interface GitHubSearchCodeInput {
-  queries: GitHubCodeSearchQuery[];
-}
-
-/**
- * Tool output - extends standardized ToolResponse format
- */
-export interface GitHubSearchCodeOutput extends ToolResponse {
-  /** Primary data payload - array of search results */
-  data: SearchResult[];
-}
-
-/**
- * Individual search result
- */
-export interface SearchResult {
-  researchGoal?: string;
-  reasoning?: string;
-  owner?: string;
-  repo?: string;
-  files: SearchFile[];
-  error?: string;
-  hints?: string[];
-  query?: Record<string, unknown>;
-}
-
-/**
- * File match in search results
- */
-export interface SearchFile {
-  path: string;
-  text_matches: string[];
-}

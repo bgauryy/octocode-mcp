@@ -6,11 +6,7 @@ import {
 } from '../security/withSecurityValidation.js';
 import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
-import {
-  GitHubViewRepoStructureQuery,
-  GitHubViewRepoStructureBulkQuerySchema,
-  type RepoStructureResult,
-} from '../scheme/github_view_repo_structure.js';
+import { GitHubViewRepoStructureBulkQuerySchema } from '../scheme/github_view_repo_structure.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { DESCRIPTIONS } from './descriptions.js';
@@ -20,6 +16,10 @@ import {
   handleCatchError,
   createSuccessResult,
 } from './utils.js';
+import type {
+  GitHubViewRepoStructureQuery,
+  RepoStructureResult,
+} from '../types.js';
 
 export function registerViewGitHubRepoStructureTool(server: McpServer) {
   return server.registerTool(

@@ -109,7 +109,7 @@ import {
   viewGitHubRepositoryStructureAPI,
 } from '../../src/github/fileOperations.js';
 import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
-import type { GitHubCodeSearchQuery } from '../../src/scheme/github_search_code.js';
+import type { GitHubCodeSearchQuery } from '../../src/types.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
 // Helper function to create properly formatted test parameters

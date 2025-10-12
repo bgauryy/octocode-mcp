@@ -6,11 +6,7 @@ import {
 } from '../security/withSecurityValidation.js';
 import { searchGitHubPullRequestsAPI } from '../github/pullRequestSearch.js';
 import { TOOL_NAMES } from '../constants.js';
-import {
-  GitHubPullRequestSearchQuery,
-  GitHubPullRequestSearchBulkQuerySchema,
-  type PullRequestSearchResult,
-} from '../scheme/github_search_pull_requests.js';
+import { GitHubPullRequestSearchBulkQuerySchema } from '../scheme/github_search_pull_requests.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { DESCRIPTIONS } from './descriptions.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
@@ -20,6 +16,10 @@ import {
   createSuccessResult,
   createErrorResult,
 } from './utils.js';
+import type {
+  GitHubPullRequestSearchQuery,
+  PullRequestSearchResult,
+} from '../types.js';
 
 // PR-specific validation messages
 const VALIDATION_MESSAGES = {

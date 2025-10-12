@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos.js';
 import { TOOL_NAMES } from '../../src/constants.js';
-import { GitHubReposSearchQuery } from '../../src/scheme/github_search_repos.js';
+import type { GitHubReposSearchQuery } from '../../src/types.js';
 
 // Mock the searchGitHubReposAPI to capture the actual queries being made
 vi.mock('../../src/github/repoSearch.js', () => ({

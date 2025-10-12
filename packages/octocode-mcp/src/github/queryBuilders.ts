@@ -1,5 +1,4 @@
-import { GitHubCodeSearchQuery } from '../scheme/github_search_code';
-import { GitHubReposSearchQuery } from '../scheme/github_search_repos';
+import type { GitHubCodeSearchQuery, GitHubReposSearchQuery } from '../types';
 import { GitHubPullRequestsSearchParams } from './githubAPI';
 
 /**

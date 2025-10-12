@@ -6,11 +6,7 @@ import {
 } from '../security/withSecurityValidation.js';
 import { fetchGitHubFileContentAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
-import {
-  FileContentQuery,
-  FileContentBulkQuerySchema,
-  type ContentResult,
-} from '../scheme/github_fetch_content.js';
+import { FileContentBulkQuerySchema } from '../scheme/github_fetch_content.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { isSamplingEnabled } from '../serverConfig.js';
 import { SamplingUtils, performSampling } from '../sampling.js';
@@ -21,6 +17,7 @@ import {
   createSuccessResult,
   handleApiError,
 } from './utils.js';
+import type { FileContentQuery, ContentResult } from '../types.js';
 
 export function registerFetchGitHubFileContentTool(server: McpServer) {
   return server.registerTool(

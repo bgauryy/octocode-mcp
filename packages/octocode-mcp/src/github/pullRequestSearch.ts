@@ -3,7 +3,7 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from './githubAPI';
-import { PullRequestSearchResult } from '../scheme/github_search_pull_requests.js';
+import type { PullRequestSearchResult } from '../types';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];

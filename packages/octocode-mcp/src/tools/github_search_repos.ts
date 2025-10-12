@@ -6,12 +6,7 @@ import {
 } from '../security/withSecurityValidation.js';
 import { searchGitHubReposAPI } from '../github/repoSearch.js';
 import { TOOL_NAMES } from '../constants.js';
-import {
-  GitHubReposSearchQuery,
-  GitHubReposSearchQuerySchema,
-  SimplifiedRepository,
-  type RepoSearchResult,
-} from '../scheme/github_search_repos.js';
+import { GitHubReposSearchQuerySchema } from '../scheme/github_search_repos.js';
 import { executeBulkOperation } from '../utils/bulkOperations.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { DESCRIPTIONS } from './descriptions.js';
@@ -20,6 +15,11 @@ import {
   handleCatchError,
   createSuccessResult,
 } from './utils.js';
+import type {
+  GitHubReposSearchQuery,
+  SimplifiedRepository,
+  RepoSearchResult,
+} from '../types.js';
 
 export function registerSearchGitHubReposTool(server: McpServer) {
   return server.registerTool(

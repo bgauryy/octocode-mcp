@@ -1,11 +1,11 @@
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
-import {
+import type {
   FileContentQuery,
   ContentResult,
-} from '../scheme/github_fetch_content.js';
-import {
   GitHubViewRepoStructureQuery,
+} from '../types';
+import type {
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
