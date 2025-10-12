@@ -100,7 +100,6 @@ export function createResponseFormat(
       'data',
       'researchGoal',
       'reasoning',
-      'researchSuggestions',
     ],
   });
   //sanitize for malicious content and prompt injection

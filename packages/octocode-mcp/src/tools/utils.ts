@@ -45,7 +45,6 @@ export function createErrorResult(
   query: {
     researchGoal?: string;
     reasoning?: string;
-    researchSuggestions?: string[];
   },
   error: string | GitHubAPIError,
   apiError?: GitHubAPIError
@@ -57,7 +56,6 @@ export function createErrorResult(
     status: 'error',
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-    researchSuggestions: query.researchSuggestions,
     error,
   };
 
@@ -77,7 +75,6 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   query: {
     researchGoal?: string;
     reasoning?: string;
-    researchSuggestions?: string[];
   },
   data: T,
   hasContent: boolean,
@@ -89,7 +86,6 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     status,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-    researchSuggestions: query.researchSuggestions,
     ...data,
   };
 }
@@ -127,7 +123,6 @@ export function handleApiError(
   query: {
     researchGoal?: string;
     reasoning?: string;
-    researchSuggestions?: string[];
   }
 ): ToolErrorResult | null {
   if (!hasError(apiResult)) {
@@ -190,7 +185,6 @@ export function handleCatchError(
   query: {
     researchGoal?: string;
     reasoning?: string;
-    researchSuggestions?: string[];
   },
   contextMessage?: string
 ): ToolErrorResult {

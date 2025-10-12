@@ -81,7 +81,6 @@ export interface GitHubFetchContentOutput extends ToolResponse {
 export interface ContentResult {
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
   owner?: string;
   repo?: string;
   path?: string;

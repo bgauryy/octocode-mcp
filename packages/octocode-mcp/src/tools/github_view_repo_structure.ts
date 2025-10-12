@@ -67,7 +67,6 @@ function buildStructureApiRequest(
     branch: String(query.branch),
     path: query.path ? String(query.path) : undefined,
     depth: typeof query.depth === 'number' ? query.depth : undefined,
-    researchSuggestions: query.researchSuggestions,
   };
 }
 

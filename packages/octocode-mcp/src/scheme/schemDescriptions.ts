@@ -2,8 +2,6 @@ export const GENERAL = {
   base: {
     researchGoal: 'What you want to find or understand',
     reasoning: 'Why this query helps achieve the goal',
-    suggestions:
-      'Actionable next steps to explore based on expected findings from this query',
   },
 };
 

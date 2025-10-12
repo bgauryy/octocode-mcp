@@ -29,7 +29,6 @@ export type QueryStatus = 'hasResults' | 'empty' | 'error';
 interface ProcessedBulkResult extends Record<string, unknown> {
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
   data?: unknown;
   error?: unknown; // Can be string or GitHubAPIError
   status: QueryStatus; // Required: Tools must set status explicitly
@@ -42,7 +41,6 @@ interface FlatQueryResult {
   data: Record<string, unknown>;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
 }
 
 interface QueryError {
@@ -116,14 +114,7 @@ function createBulkResponse<
     'emptyStatusHints',
     'errorStatusHints',
   ];
-  const resultFields = [
-    'query',
-    'status',
-    'data',
-    'researchGoal',
-    'reasoning',
-    'researchSuggestions',
-  ];
+  const resultFields = ['query', 'status', 'data', 'researchGoal', 'reasoning'];
   const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
   const fullKeysPriority = [
     ...new Set([...standardFields, ...(config.keysPriority || [])]),
@@ -179,7 +170,6 @@ function createBulkResponse<
         safeExtractString(r.originalQuery, 'researchGoal'),
       reasoning:
         r.result.reasoning || safeExtractString(r.originalQuery, 'reasoning'),
-      researchSuggestions: mergeResearchSuggestions(r.result, r.originalQuery),
     };
 
     flatQueries.push(flatQuery);
@@ -201,10 +191,6 @@ function createBulkResponse<
       data: { error: err.error },
       researchGoal: safeExtractString(originalQuery, 'researchGoal'),
       reasoning: safeExtractString(originalQuery, 'reasoning'),
-      researchSuggestions: safeExtractStringArray(
-        originalQuery,
-        'researchSuggestions'
-      ),
     });
 
     errorCount++;
@@ -352,7 +338,6 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   const excludedKeys = new Set([
     'researchGoal',
     'reasoning',
-    'researchSuggestions',
     'error',
     'status',
     'query',
@@ -369,37 +354,10 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   return toolData;
 }
 
-function mergeResearchSuggestions(
-  result: ProcessedBulkResult,
-  query: Record<string, unknown>
-): string[] | undefined {
-  const itemSuggestions = safeExtractStringArray(result, 'researchSuggestions');
-  const querySuggestions = safeExtractStringArray(query, 'researchSuggestions');
-
-  if (itemSuggestions || querySuggestions) {
-    const merged = [...(itemSuggestions || []), ...(querySuggestions || [])];
-    if (merged.length > 0) {
-      return merged;
-    }
-  }
-  return undefined;
-}
-
 function safeExtractString(
   obj: Record<string, unknown>,
   key: string
 ): string | undefined {
   const value = obj[key];
   return typeof value === 'string' ? value : undefined;
-}
-
-function safeExtractStringArray(
-  obj: Record<string, unknown>,
-  key: string
-): string[] | undefined {
-  const value = obj[key];
-  if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
-    return value as string[];
-  }
-  return undefined;
 }

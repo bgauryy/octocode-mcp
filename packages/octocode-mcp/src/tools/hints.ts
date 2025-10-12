@@ -10,7 +10,6 @@ export const TOOL_HINTS = {
       `Use ${TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE} to locate entry points, config files, and documentation`,
       'Run bulk queries: multiple focused variations (by filename, extension, path) in one call for efficiency',
       'Narrow by directory and extension once patterns emerge to focus search scope',
-      'Use researchSuggestions to inform and create the next set of targeted searches',
     ],
     empty: [
       'Rephrase using researchGoal concepts; use broader, higher-level terms and synonyms',
@@ -47,7 +46,6 @@ export const TOOL_HINTS = {
       `Turn discovered paths into targeted ${TOOL_NAMES.GITHUB_SEARCH_CODE} queries (add extension filters)`,
       'Identify entry points, configs, and docs to guide next content fetches',
       'Focus on source directories for implementations and examples for usage',
-      'Derive researchSuggestions for follow-up queries by area/module',
     ],
     empty: [
       'Start at repo root with depth=1; then increase depth as needed',

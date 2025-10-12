@@ -223,7 +223,7 @@ describe('GitHub API Utils', () => {
         language: 'typescript',
         owner: 'facebook',
         repo: 'react',
-        researchSuggestions: [],
+
         minify: true,
         sanitize: true,
       };

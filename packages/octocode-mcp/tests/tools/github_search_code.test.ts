@@ -38,7 +38,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOwnerQuery = {
         keywordsToSearch: ['function'],
         owner: 'octocat',
-        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOwnerQuery);
@@ -52,7 +51,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const validOrgOwnerQuery = {
         keywordsToSearch: ['function'],
         owner: 'wix-private',
-        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validOrgOwnerQuery);
@@ -66,7 +64,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
       const pathQuery = {
         keywordsToSearch: ['function'],
         path: 'src/components',
-        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(pathQuery);
@@ -86,7 +83,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
         extension: 'js',
         match: 'file',
         limit: 10,
-        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(complexQuery);
@@ -121,7 +117,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
     it('should maintain backward compatibility with existing fields', () => {
       const basicQuery = {
         keywordsToSearch: ['function'],
-        researchSuggestions: [],
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(basicQuery);
@@ -186,7 +181,6 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
-      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
@@ -213,7 +207,6 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
-      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
@@ -239,7 +232,6 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
-      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',
@@ -265,7 +257,6 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
-      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'facebook',
       repo: 'react',
@@ -293,7 +284,6 @@ describe('Quality Boosting and Research Goals', () => {
     mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
     const result = await searchGitHubCodeAPI({
-      researchSuggestions: [],
       keywordsToSearch: ['useMemo', 'React'],
       owner: 'test',
       repo: 'repo',

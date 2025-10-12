@@ -31,7 +31,6 @@ export interface ToolResult extends Record<string, unknown> {
   status: QueryStatus;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
   hints?: string[];
 }
 

@@ -79,7 +79,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['function'],
         owner: 'test',
         repo: 'repo',
@@ -164,7 +163,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -230,7 +228,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -306,7 +303,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['config'],
         owner: 'test',
         repo: 'repo',
@@ -400,7 +396,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['env'],
         owner: 'test',
         repo: 'repo',
@@ -496,7 +491,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['app'],
         owner: 'test',
         repo: 'repo',
@@ -554,7 +548,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['app'],
         owner: 'test',
         repo: 'repo',
@@ -624,7 +617,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -700,7 +692,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -800,7 +791,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
@@ -870,7 +860,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['lock'],
         owner: 'test',
         repo: 'repo',
@@ -928,7 +917,6 @@ describe('Code Search Filtering - File Filters', () => {
       mockOctokit.rest.search.code.mockResolvedValue(mockResponse);
 
       const result = await searchGitHubCodeAPI({
-        researchSuggestions: [],
         keywordsToSearch: ['test'],
         owner: 'test',
         repo: 'repo',
