@@ -1,6 +1,3 @@
-export type { components } from '@octokit/openapi-types';
-export type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
-
 import type { components } from '@octokit/openapi-types';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 

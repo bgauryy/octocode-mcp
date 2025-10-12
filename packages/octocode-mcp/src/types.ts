@@ -54,7 +54,6 @@ export interface GitHubCodeSearchQuery extends Record<string, unknown> {
   sanitize?: boolean;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
 }
 
 export interface SearchFile {
@@ -91,7 +90,6 @@ export interface FileContentQuery extends Record<string, unknown> {
   sanitize?: boolean;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
 }
 
 export interface ContentResult {
@@ -134,7 +132,6 @@ export interface GitHubReposSearchQuery extends Record<string, unknown> {
   limit?: number;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
 }
 
 export interface SimplifiedRepository {
@@ -167,7 +164,6 @@ export interface GitHubViewRepoStructureQuery extends Record<string, unknown> {
   depth?: number;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
 }
 
 export interface RepoStructureResult {
@@ -224,7 +220,6 @@ export interface GitHubPullRequestSearchQuery extends Record<string, unknown> {
   withContent?: boolean;
   researchGoal?: string;
   reasoning?: string;
-  researchSuggestions?: string[];
 }
 
 export interface PullRequestInfo {
