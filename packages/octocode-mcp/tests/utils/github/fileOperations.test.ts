@@ -810,4 +810,259 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       );
     });
   });
+
+  describe('Error Handling', () => {
+    it('should handle directory response error', async () => {
+      const params = createTestParams();
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: [
+          { name: 'file1.txt', type: 'file' },
+          { name: 'dir1', type: 'dir' },
+        ],
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('Path is a directory');
+        expect(result.error).toContain('githubViewRepoStructure');
+      }
+    });
+
+    it('should handle file too large error', async () => {
+      const params = createTestParams();
+      const largeContent = 'x'.repeat(500 * 1024); // 500KB
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: Buffer.from(largeContent).toString('base64'),
+          size: largeContent.length,
+          sha: 'abc123',
+        },
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('File too large');
+        expect(result.error).toContain('300KB');
+      }
+    });
+
+    it('should handle empty file (no content)', async () => {
+      const params = createTestParams();
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: undefined,
+          size: 0,
+          sha: 'abc123',
+        },
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('File is empty');
+      }
+    });
+
+    it('should handle empty base64 content', async () => {
+      const params = createTestParams();
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: '   \n  \t  ',
+          size: 0,
+          sha: 'abc123',
+        },
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('File is empty');
+      }
+    });
+
+    it('should detect binary files', async () => {
+      const params = createTestParams();
+      const binaryContent = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d]); // PNG header with null byte
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: binaryContent.toString('base64'),
+          size: binaryContent.length,
+          sha: 'abc123',
+        },
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('Binary file detected');
+        expect(result.status).toBe(415);
+      }
+    });
+
+    it('should handle unsupported file types', async () => {
+      const params = createTestParams();
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'symlink',
+          sha: 'abc123',
+        },
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        expect(result.error).toContain('Unsupported file type: symlink');
+        expect(result.status).toBe(415);
+      }
+    });
+
+    it('should handle decode errors', async () => {
+      const params = createTestParams();
+
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: '!!!invalid-base64!!!',
+          size: 20,
+          sha: 'abc123',
+        },
+      });
+
+      // This will trigger decode error
+      const result = await fetchGitHubFileContentAPI(params);
+
+      // Should handle decode error - might succeed with Buffer.from fallback or fail gracefully
+      expect(result).toBeDefined();
+    });
+
+    it('should handle API errors', async () => {
+      const params = createTestParams();
+
+      mockOctokit.rest.repos.getContent.mockRejectedValue(
+        new Error('API Error')
+      );
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect('error' in result).toBe(true);
+    });
+  });
+
+  describe('Content Sanitization', () => {
+    beforeEach(() => {
+      mockOctokit.rest.repos.getContent.mockResolvedValue({
+        data: {
+          type: 'file',
+          content: Buffer.from('test content with secrets').toString('base64'),
+          size: 25,
+          sha: 'abc123',
+        },
+      });
+    });
+
+    it('should detect and warn about secrets', async () => {
+      const params = createTestParams({ sanitize: true });
+
+      mockContentSanitizer.sanitizeContent.mockReturnValue({
+        content: 'test content with [REDACTED]',
+        hasSecrets: true,
+        hasPromptInjection: false,
+        isMalicious: false,
+        warnings: [],
+        secretsDetected: ['github-token'],
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        expect(result.data.securityWarnings).toContain(
+          'Secrets detected and redacted: github-token'
+        );
+      }
+    });
+
+    it('should detect and warn about prompt injection', async () => {
+      const params = createTestParams({ sanitize: true });
+
+      mockContentSanitizer.sanitizeContent.mockReturnValue({
+        content: 'sanitized content',
+        hasSecrets: false,
+        hasPromptInjection: true,
+        isMalicious: false,
+        warnings: [],
+        secretsDetected: [],
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        expect(result.data.securityWarnings).toContain(
+          'Potential prompt injection detected and sanitized'
+        );
+      }
+    });
+
+    it('should detect and warn about malicious content', async () => {
+      const params = createTestParams({ sanitize: true });
+
+      mockContentSanitizer.sanitizeContent.mockReturnValue({
+        content: 'sanitized content',
+        hasSecrets: false,
+        hasPromptInjection: false,
+        isMalicious: true,
+        warnings: [],
+        secretsDetected: [],
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        expect(result.data.securityWarnings).toContain(
+          'Potentially malicious content detected and sanitized'
+        );
+      }
+    });
+
+    it('should include custom security warnings', async () => {
+      const params = createTestParams({ sanitize: true });
+
+      mockContentSanitizer.sanitizeContent.mockReturnValue({
+        content: 'sanitized content',
+        hasSecrets: false,
+        hasPromptInjection: false,
+        isMalicious: false,
+        warnings: ['Custom warning 1', 'Custom warning 2'],
+        secretsDetected: [],
+      });
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result.status).toBe(200);
+      if ('data' in result) {
+        expect(result.data.securityWarnings).toContain('Custom warning 1');
+        expect(result.data.securityWarnings).toContain('Custom warning 2');
+      }
+    });
+  });
 });

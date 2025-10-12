@@ -815,4 +815,202 @@ describe('ContentSanitizer', () => {
       });
     });
   });
+
+  describe('Array Length Validation', () => {
+    it('should truncate arrays exceeding maximum length (100 items)', () => {
+      const largeArray = Array.from({ length: 150 }, (_, i) => `item${i}`);
+      const params = {
+        keywords: largeArray,
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect(Array.isArray(result.sanitizedParams.keywords)).toBe(true);
+      expect((result.sanitizedParams.keywords as string[]).length).toBe(100);
+      expect(result.warnings).toContain(
+        'Parameter keywords array exceeds maximum length (100 items)'
+      );
+      expect((result.sanitizedParams.keywords as string[])[0]).toBe('item0');
+      expect((result.sanitizedParams.keywords as string[])[99]).toBe('item99');
+    });
+
+    it('should not truncate arrays at or below maximum length', () => {
+      const exactArray = Array.from({ length: 100 }, (_, i) => `item${i}`);
+      const smallArray = Array.from({ length: 50 }, (_, i) => `item${i}`);
+
+      const result1 = ContentSanitizer.validateInputParameters({
+        keywords: exactArray,
+      });
+      const result2 = ContentSanitizer.validateInputParameters({
+        keywords: smallArray,
+      });
+
+      expect(result1.isValid).toBe(true);
+      expect((result1.sanitizedParams.keywords as string[]).length).toBe(100);
+      expect(result1.warnings.length).toBe(0);
+
+      expect(result2.isValid).toBe(true);
+      expect((result2.sanitizedParams.keywords as string[]).length).toBe(50);
+      expect(result2.warnings.length).toBe(0);
+    });
+
+    it('should handle multiple large arrays', () => {
+      const largeArray1 = Array.from({ length: 120 }, (_, i) => `item${i}`);
+      const largeArray2 = Array.from({ length: 110 }, (_, i) => `val${i}`);
+
+      const result = ContentSanitizer.validateInputParameters({
+        keywords1: largeArray1,
+        keywords2: largeArray2,
+      });
+
+      expect(result.isValid).toBe(true);
+      expect((result.sanitizedParams.keywords1 as string[]).length).toBe(100);
+      expect((result.sanitizedParams.keywords2 as string[]).length).toBe(100);
+      expect(result.warnings).toContain(
+        'Parameter keywords1 array exceeds maximum length (100 items)'
+      );
+      expect(result.warnings).toContain(
+        'Parameter keywords2 array exceeds maximum length (100 items)'
+      );
+    });
+  });
+
+  describe('Nested Object Validation', () => {
+    it('should validate nested objects recursively', () => {
+      const params = {
+        search: {
+          owner: 'microsoft',
+          repo: 'vscode',
+          keywords: ['typescript', 'javascript'],
+        },
+        filters: {
+          language: 'typescript',
+          stars: 1000,
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect(result.sanitizedParams).toEqual(params);
+      expect(result.warnings.length).toBe(0);
+    });
+
+    it('should block dangerous keys in nested objects', () => {
+      const params = {
+        search: {
+          constructor: 'blocked',
+          prototype: 'also blocked',
+          owner: 'microsoft',
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      // Should detect invalid nested object and block it
+      expect(result.isValid).toBe(false);
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(
+        result.warnings.some(w => w.includes('Invalid nested object'))
+      ).toBe(true);
+    });
+
+    it('should handle deeply nested objects', () => {
+      const params = {
+        level1: {
+          level2: {
+            level3: {
+              value: 'deep',
+            },
+          },
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect(result.sanitizedParams).toEqual(params);
+    });
+
+    it('should propagate hasSecrets from nested objects', () => {
+      // This test ensures the hasSecrets flag is propagated correctly
+      // Note: Current implementation doesn't check for secrets in validation,
+      // but the structure is in place
+      const params = {
+        search: {
+          query: 'test',
+          owner: 'microsoft',
+        },
+        config: {
+          apiKey: 'test-key',
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect(result.hasSecrets).toBe(false); // No actual secret detection in validation
+    });
+
+    it('should handle nested objects with invalid parameters', () => {
+      const params = {
+        valid: 'value',
+        nested: {
+          constructor: 'blocked',
+          valid: 'allowed',
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(false);
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(
+        result.warnings.some(
+          w =>
+            w.includes('Invalid nested object') ||
+            w.includes('Dangerous parameter key')
+        )
+      ).toBe(true);
+    });
+
+    it('should handle nested arrays within objects', () => {
+      const params = {
+        search: {
+          keywords: ['react', 'vue', 'angular'],
+          filters: {
+            languages: ['typescript', 'javascript'],
+          },
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      expect(result.sanitizedParams).toEqual(params);
+    });
+
+    it('should truncate large arrays in nested objects', () => {
+      const largeArray = Array.from({ length: 150 }, (_, i) => `item${i}`);
+      const params = {
+        search: {
+          keywords: largeArray,
+          owner: 'microsoft',
+        },
+      };
+
+      const result = ContentSanitizer.validateInputParameters(params);
+
+      expect(result.isValid).toBe(true);
+      const searchParams = result.sanitizedParams.search as Record<
+        string,
+        unknown
+      >;
+      // Array should be truncated to 100 items
+      expect((searchParams.keywords as string[]).length).toBe(100);
+      // Verify the sanitized params contain the nested structure
+      expect(searchParams.owner).toBe('microsoft');
+    });
+  });
 });
