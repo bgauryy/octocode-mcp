@@ -14,21 +14,22 @@ export const OctokitWithThrottling = Octokit.plugin(throttling);
 let octokitInstance: InstanceType<typeof OctokitWithThrottling> | null = null;
 
 /**
- * Throttle options following official Octokit.js best practices
+ * Throttle options - fail immediately on rate limits (no retries)
+ * Returns false to prevent any retry attempts when rate limit is hit
  */
 const createThrottleOptions = () => ({
   onRateLimit: (
     _retryAfter: number,
     _options: unknown,
     _octokit: Octokit,
-    retryCount: number
-  ) => retryCount === 0,
+    _retryCount: number
+  ) => false, // Never retry on rate limit - fail immediately
   onSecondaryRateLimit: (
     _retryAfter: number,
     _options: unknown,
     _octokit: Octokit,
-    retryCount: number
-  ) => retryCount === 0,
+    _retryCount: number
+  ) => false, // Never retry on secondary rate limit - fail immediately
 });
 
 /**

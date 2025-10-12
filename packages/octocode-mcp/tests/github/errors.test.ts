@@ -33,7 +33,7 @@ describe('GitHub Error Handling', () => {
       });
     });
 
-    it('should handle 403 rate limit error', () => {
+    it('should handle 403 rate limit error with reset time', () => {
       const error = new RequestError('Rate limit exceeded', 403, {
         response: {
           status: 403,
@@ -53,18 +53,165 @@ describe('GitHub Error Handling', () => {
       });
 
       const result = handleGitHubAPIError(error);
-      const resetTime = new Date(1640995200 * 1000).getTime();
+      const resetTime = new Date(1640995200 * 1000);
 
-      expect(result).toEqual({
-        error: 'GitHub API rate limit exceeded',
+      expect(result).toMatchObject({
+        error: expect.stringContaining('GitHub API rate limit exceeded'),
         status: 403,
         type: 'http',
         rateLimitRemaining: 0,
-        rateLimitReset: resetTime,
+        rateLimitReset: resetTime.getTime(),
         retryAfter: expect.any(Number),
         scopesSuggestion:
           'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
       });
+      expect(result.error).toContain(resetTime.toISOString());
+      expect(result.error).toContain('seconds');
+    });
+
+    it('should handle 403 rate limit error without reset time', () => {
+      const error = new RequestError('Rate limit exceeded', 403, {
+        response: {
+          status: 403,
+          headers: {
+            'x-ratelimit-remaining': '0',
+          },
+          data: {},
+          url: 'https://api.github.com',
+          retryCount: 0,
+        },
+        request: {
+          method: 'GET',
+          url: 'https://api.github.com',
+          headers: {},
+        },
+      });
+
+      const result = handleGitHubAPIError(error);
+
+      expect(result).toEqual({
+        error:
+          'GitHub API rate limit exceeded. Reset time unavailable - check GitHub status or try again later',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        rateLimitReset: undefined,
+        retryAfter: undefined,
+        scopesSuggestion:
+          'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
+      });
+    });
+
+    it('should handle 403 secondary rate limit error', () => {
+      const error = new RequestError(
+        'You have exceeded a secondary rate limit',
+        403,
+        {
+          response: {
+            status: 403,
+            headers: {
+              'retry-after': '120',
+            },
+            data: {},
+            url: 'https://api.github.com',
+            retryCount: 0,
+          },
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com',
+            headers: {},
+          },
+        }
+      );
+
+      const result = handleGitHubAPIError(error);
+
+      expect(result).toEqual({
+        error: 'GitHub secondary rate limit triggered. Retry after 120 seconds',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        retryAfter: 120,
+        scopesSuggestion: 'Reduce request frequency to avoid abuse detection',
+      });
+    });
+
+    it('should handle 403 secondary rate limit without retry-after header', () => {
+      const error = new RequestError(
+        'You have triggered the secondary rate limit',
+        403,
+        {
+          response: {
+            status: 403,
+            headers: {},
+            data: {},
+            url: 'https://api.github.com',
+            retryCount: 0,
+          },
+          request: {
+            method: 'GET',
+            url: 'https://api.github.com',
+            headers: {},
+          },
+        }
+      );
+
+      const result = handleGitHubAPIError(error);
+
+      expect(result).toEqual({
+        error: 'GitHub secondary rate limit triggered. Retry after 60 seconds',
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        retryAfter: 60,
+        scopesSuggestion: 'Reduce request frequency to avoid abuse detection',
+      });
+    });
+
+    it('should handle GraphQL rate limit error', () => {
+      // Use a future timestamp (current time + 1 hour)
+      const futureResetTime = Math.floor(Date.now() / 1000) + 3600;
+      const error = new RequestError('GraphQL rate limit exceeded', 403, {
+        response: {
+          status: 403,
+          headers: {
+            'x-ratelimit-reset': String(futureResetTime),
+          },
+          data: {
+            errors: [
+              {
+                type: 'RATE_LIMITED',
+                message: 'API rate limit exceeded',
+              },
+            ],
+          },
+          url: 'https://api.github.com/graphql',
+          retryCount: 0,
+        },
+        request: {
+          method: 'POST',
+          url: 'https://api.github.com/graphql',
+          headers: {},
+        },
+      });
+
+      const result = handleGitHubAPIError(error);
+      const resetTime = new Date(futureResetTime * 1000);
+
+      expect(result).toMatchObject({
+        error: expect.stringContaining('GitHub API rate limit exceeded'),
+        status: 403,
+        type: 'http',
+        rateLimitRemaining: 0,
+        rateLimitReset: resetTime.getTime(),
+        retryAfter: expect.any(Number),
+        scopesSuggestion:
+          'Set GITHUB_TOKEN for higher rate limits (5000/hour vs 60/hour)',
+      });
+      expect(result.error).toContain(resetTime.toISOString());
+      // Verify +1 second buffer is included - should be roughly 3600 seconds + 1
+      expect(result.retryAfter).toBeGreaterThan(3600);
+      expect(result.retryAfter).toBeLessThan(3610); // Allow small time difference
     });
 
     it('should handle 403 permissions error with scope suggestions', () => {
@@ -190,7 +337,7 @@ describe('GitHub Error Handling', () => {
       const result = handleGitHubAPIError(error);
 
       expect(result).toEqual({
-        error: 'Unknown error occurred',
+        error: 'String error', // Uses the string itself for better context
         type: 'unknown',
       });
     });
