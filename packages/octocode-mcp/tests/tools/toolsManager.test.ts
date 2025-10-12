@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
 // Mock dependencies
-vi.mock('../../src/tools/tools.js', () => {
+vi.mock('../../src/tools/toolConfig.js', () => {
   const mockTools = [
     { name: 'githubSearchCode', isDefault: true, fn: vi.fn() },
     { name: 'githubGetFileContent', isDefault: true, fn: vi.fn() },
@@ -32,7 +32,7 @@ vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
 }));
 
-import { DEFAULT_TOOLS } from '../../src/tools/tools.js';
+import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';
 import { getServerConfig } from '../../src/serverConfig.js';
 import { TOOL_NAMES } from '../../src/constants.js';
 

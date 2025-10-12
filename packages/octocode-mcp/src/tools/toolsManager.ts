@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { DEFAULT_TOOLS } from './tools.js';
+import { DEFAULT_TOOLS } from './toolConfig.js';
 import { getServerConfig } from '../serverConfig.js';
 
 /**
