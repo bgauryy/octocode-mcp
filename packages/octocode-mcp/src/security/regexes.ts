@@ -1,10 +1,5 @@
-interface SensitiveDataPattern {
-  name: string;
-  description: string;
-  regex: RegExp;
-  fileContext?: RegExp;
-  matchAccuracy?: 'high' | 'medium';
-}
+import type { SensitiveDataPattern } from '../types.js';
+
 const aiProviderPatterns: SensitiveDataPattern[] = [
   // OpenAI & Compatible
   {

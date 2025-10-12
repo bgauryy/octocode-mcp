@@ -1,817 +1,989 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  processBulkQueries,
-  createBulkResponse,
-  ProcessedBulkResult,
-  QueryError,
-} from '../../src/utils/bulkOperations';
-import { ToolName } from '../../src/constants';
+import { describe, it, expect, vi } from 'vitest';
+import { executeBulkOperation } from '../../src/utils/bulkOperations';
+import type { QueryStatus } from '../../src/types';
+import { ToolName, TOOL_NAMES } from '../../src/constants';
 
-describe('bulkOperations', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('executeBulkOperation', () => {
+  describe('Single query scenarios', () => {
+    it('should process single query with hasResults status', async () => {
+      const queries = [{ id: 'q1', name: 'test1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [{ path: 'test.ts', content: 'data' }],
+        hints: ['Test hint for hasResults'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        keysPriority: ['files'],
+      });
+
+      expect(result.isError).toBe(false);
+      expect(processor).toHaveBeenCalledTimes(1);
+      expect(processor).toHaveBeenCalledWith(queries[0], 0);
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 1 results');
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('status: "hasResults"');
+      expect(responseText).toContain('path: "test.ts"');
+      expect(responseText).toContain('hasResultsStatusHints:');
+    });
+
+    it('should process single query with empty status', async () => {
+      const queries = [{ id: 'q1', search: 'nonexistent' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'empty' as const,
+        files: [],
+        hints: ['Test hint for empty'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 1 results');
+      expect(responseText).toContain('1 empty');
+      expect(responseText).toContain('status: "empty"');
+      expect(responseText).toContain('emptyStatusHints:');
+    });
+
+    it('should process single query with error status', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Rate limit exceeded',
+        hints: ['Test hint for error'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('error: "Rate limit exceeded"');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should handle processor throwing error', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockRejectedValue(new Error('API error'));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('error: "API error"');
+      // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
+    });
   });
 
-  describe('processBulkQueries', () => {
-    const mockProcessor = vi.fn();
-
-    beforeEach(() => {
-      mockProcessor.mockClear();
-    });
-
-    it('should process queries successfully', async () => {
+  describe('Multiple queries - same status', () => {
+    it('should process multiple queries all with hasResults status', async () => {
       const queries = [
-        { id: 'q1', data: 'test1' },
-        { id: 'q2', data: 'test2' },
+        { id: 'q1', name: 'react' },
+        { id: 'q2', name: 'vue' },
+        { id: 'q3', name: 'angular' },
       ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; name: string }) => ({
+          status: 'hasResults' as const,
+          repositories: [{ name: `${query.name}-repo` }],
+        }));
 
-      mockProcessor.mockImplementation(
-        async (query: { id: string; data: string }, index: number) => ({
-          data: { result: `processed-${query.data}` },
-          metadata: { processed: true, queryIndex: index },
-        })
-      );
-
-      const result = await processBulkQueries(queries, mockProcessor);
-
-      expect(result.results).toHaveLength(2);
-      expect(result.errors).toHaveLength(0);
-
-      expect(result.results[0]?.result.data).toEqual({
-        result: 'processed-test1',
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       });
 
-      expect(result.results[1]?.result.data).toEqual({
-        result: 'processed-test2',
-      });
+      expect(result.isError).toBe(false);
+      expect(processor).toHaveBeenCalledTimes(3);
 
-      expect(mockProcessor).toHaveBeenCalledTimes(2);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 3 results');
+      expect(responseText).toContain('3 hasResults');
+      expect(responseText).not.toContain('empty');
+      expect(responseText).not.toContain('failed');
+      expect(responseText).toContain('name: "react-repo"');
+      expect(responseText).toContain('name: "vue-repo"');
+      expect(responseText).toContain('name: "angular-repo"');
     });
 
-    it('should handle processing errors', async () => {
+    it('should process multiple queries all with empty status', async () => {
       const queries = [
-        { id: 'success', data: 'good' },
-        { id: 'failure', data: 'bad' },
+        { id: 'q1', search: 'xyz123' },
+        { id: 'q2', search: 'abc456' },
       ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'empty' as const,
+        files: [],
+        hints: ['Test hint for empty'],
+      });
 
-      mockProcessor.mockImplementation(
-        async (query: { id: string; data: string }, index: number) => {
-          if (query.data === 'bad') {
-            throw new Error('Processing failed');
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 2 results');
+      expect(responseText).toContain('2 empty');
+      expect(responseText).not.toContain('hasResults');
+      expect(responseText).not.toContain('failed');
+      expect(responseText).toContain('emptyStatusHints:');
+    });
+
+    it('should process multiple queries all with error status', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Authentication failed',
+        hints: ['Test hint for error'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 3 results');
+      expect(responseText).toContain('3 failed');
+      expect(responseText).not.toContain('hasResults');
+      expect(responseText).not.toContain('empty');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should process multiple queries all throwing errors', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }];
+      const processor = vi.fn().mockRejectedValue(new Error('Network timeout'));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 2 results');
+      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('error: "Network timeout"');
+    });
+  });
+
+  describe('Multiple queries - mixed statuses (2 types)', () => {
+    it('should handle hasResults + empty mix', async () => {
+      const queries = [
+        { id: 'q1', name: 'found' },
+        { id: 'q2', name: 'notfound' },
+        { id: 'q3', name: 'found2' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; name: string }) => {
+          const isFound = !query.name.startsWith('notfound');
+          return {
+            status: isFound ? ('hasResults' as const) : ('empty' as const),
+            pull_requests: isFound ? [{ number: 1 }] : [],
+            hints: ['Test hint'],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 3 results');
+      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('1 empty');
+      expect(responseText).not.toContain('failed');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('emptyStatusHints:');
+    });
+
+    it('should handle hasResults + error mix', async () => {
+      const queries = [
+        { id: 'q1', type: 'success' },
+        { id: 'q2', type: 'error' },
+        { id: 'q3', type: 'success' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; type: string }) => {
+          if (query.type === 'error') {
+            return {
+              status: 'error' as const,
+              error: 'Failed to fetch',
+              hints: ['Test hint for error'],
+            };
           }
           return {
+            status: 'hasResults' as const,
             data: { result: 'success' },
-            metadata: { queryIndex: index },
+            hints: ['Test hint for success'],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 3 results');
+      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('1 failed');
+      expect(responseText).not.toContain(': 0 empty');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should handle empty + error mix', async () => {
+      const queries = [
+        { id: 'q1', type: 'empty' },
+        { id: 'q2', type: 'error' },
+        { id: 'q3', type: 'empty' },
+        { id: 'q4', type: 'error' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; type: string }) => {
+          if (query.type === 'error') {
+            throw new Error('Query failed');
+          }
+          return {
+            status: 'empty' as const,
+            files: [],
+            hints: ['Test hint for empty'],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 4 results');
+      expect(responseText).toContain('2 empty');
+      expect(responseText).toContain('2 failed');
+      expect(responseText).not.toContain('hasResults');
+      expect(responseText).toContain('emptyStatusHints:');
+      // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
+    });
+  });
+
+  describe('Multiple queries - all 3 status types', () => {
+    it('should handle hasResults + empty + error mix', async () => {
+      const queries = [
+        { id: 'q1', type: 'hasResults' },
+        { id: 'q2', type: 'empty' },
+        { id: 'q3', type: 'error' },
+        { id: 'q4', type: 'throw' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; type: string }) => {
+          if (query.type === 'throw') {
+            throw new Error('Processing failed');
+          }
+          if (query.type === 'error') {
+            return {
+              status: 'error' as const,
+              error: 'Custom error',
+              hints: ['Test hint for error'],
+            };
+          }
+          return {
+            status: query.type as 'hasResults' | 'empty',
+            data: query.type === 'hasResults' ? { result: 'data' } : {},
+            hints: ['Test hint'],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 4 results');
+      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 empty');
+      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('errorStatusHints:');
+    });
+
+    it('should handle balanced mix of all statuses', async () => {
+      const queries = [
+        { id: 'q1', type: 'hasResults' },
+        { id: 'q2', type: 'hasResults' },
+        { id: 'q3', type: 'empty' },
+        { id: 'q4', type: 'empty' },
+        { id: 'q5', type: 'error' },
+        { id: 'q6', type: 'error' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; type: string }) => {
+          if (query.type === 'error') {
+            return { status: 'error' as const, error: 'Error occurred' };
+          }
+          return {
+            status: query.type as QueryStatus,
+            repositories: query.type === 'hasResults' ? [{ name: 'repo' }] : [],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 6 results');
+      expect(responseText).toContain('2 hasResults');
+      expect(responseText).toContain('2 empty');
+      expect(responseText).toContain('2 failed');
+    });
+  });
+
+  describe('Research fields propagation', () => {
+    it('should propagate researchGoal from query when not in result', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          researchGoal: 'Find LangGraph implementations',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [{ path: 'test.py' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain(
+        'researchGoal: "Find LangGraph implementations"'
+      );
+    });
+
+    it('should propagate reasoning from query when not in result', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          reasoning: 'Looking for AI agent patterns',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'empty' as const,
+        files: [],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain(
+        'reasoning: "Looking for AI agent patterns"'
+      );
+    });
+
+    it('should propagate researchSuggestions from query when not in result', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          researchSuggestions: ['Check documentation', 'Review examples'],
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [{ path: 'test.py' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('- "Check documentation"');
+      expect(responseText).toContain('- "Review examples"');
+    });
+
+    it('should propagate all research fields from query', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          researchGoal: 'Find implementations',
+          reasoning: 'Looking for patterns',
+          researchSuggestions: ['Suggestion 1', 'Suggestion 2'],
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('researchGoal: "Find implementations"');
+      expect(responseText).toContain('reasoning: "Looking for patterns"');
+      expect(responseText).toContain('- "Suggestion 1"');
+      expect(responseText).toContain('- "Suggestion 2"');
+    });
+
+    it('should prefer result fields over query fields when both exist', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          reasoning: 'Query reasoning',
+          researchGoal: 'Query goal',
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        reasoning: 'Result reasoning',
+        researchGoal: 'Result goal',
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      // Result fields should appear at result level
+      expect(responseText).toContain('reasoning: "Result reasoning"');
+      expect(responseText).toContain('researchGoal: "Result goal"');
+      // Query fields appear in the query section, which is expected behavior
+      expect(responseText).toContain('reasoning: "Query reasoning"');
+      expect(responseText).toContain('researchGoal: "Query goal"');
+    });
+
+    it('should merge researchSuggestions from both query and result', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          researchSuggestions: ['Query suggestion 1', 'Query suggestion 2'],
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        researchSuggestions: ['Result suggestion 1'],
+        files: [{ path: 'test.ts' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('- "Result suggestion 1"');
+      expect(responseText).toContain('- "Query suggestion 1"');
+      expect(responseText).toContain('- "Query suggestion 2"');
+    });
+
+    it('should handle research fields in error scenarios', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          researchGoal: 'Test goal',
+          reasoning: 'Test reasoning',
+          researchSuggestions: ['Suggestion'],
+        },
+      ];
+      const processor = vi.fn().mockRejectedValue(new Error('Failed'));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('researchGoal: "Test goal"');
+      expect(responseText).toContain('reasoning: "Test reasoning"');
+      expect(responseText).toContain('- "Suggestion"');
+    });
+  });
+
+  describe('Custom hints handling', () => {
+    it('should include custom hints for hasResults status', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        hints: ['Custom hint 1', 'Custom hint 2'],
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('Custom hint 1');
+      expect(responseText).toContain('Custom hint 2');
+    });
+
+    it('should include custom hints for empty status', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'empty' as const,
+        hints: ['Try broadening search', 'Check spelling'],
+        files: [],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('Try broadening search');
+      expect(responseText).toContain('Check spelling');
+    });
+
+    it('should include custom hints for error status', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Rate limited',
+        hints: ['Wait before retrying', 'Use authentication'],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('Wait before retrying');
+      expect(responseText).toContain('Use authentication');
+    });
+
+    it('should deduplicate hints across multiple queries with same hints', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        hints: ['Same hint for all'],
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      const hintMatches = (responseText.match(/Same hint for all/g) || [])
+        .length;
+      expect(hintMatches).toBe(1);
+    });
+
+    it('should collect and deduplicate hints from mixed statuses', async () => {
+      const queries = [
+        { id: 'q1', type: 'hasResults' },
+        { id: 'q2', type: 'hasResults' },
+        { id: 'q3', type: 'empty' },
+        { id: 'q4', type: 'empty' },
+      ];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string; type: string }) => {
+          if (query.type === 'hasResults') {
+            return {
+              status: 'hasResults' as const,
+              hints: ['Success hint'],
+              data: { result: true },
+            };
+          }
+          return {
+            status: 'empty' as const,
+            hints: ['Empty hint'],
+            files: [],
+          };
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('emptyStatusHints:');
+      const successHintMatches = (responseText.match(/Success hint/g) || [])
+        .length;
+      const emptyHintMatches = (responseText.match(/Empty hint/g) || []).length;
+      expect(successHintMatches).toBe(1);
+      expect(emptyHintMatches).toBe(1);
+    });
+  });
+
+  describe('Tool-specific data fields', () => {
+    it('should preserve all tool-specific fields in response', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        pull_requests: [{ number: 123, title: 'Test PR' }],
+        total_count: 1,
+        incomplete_results: false,
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('pull_requests:');
+      expect(responseText).toContain('number: 123');
+      expect(responseText).toContain('title: "Test PR"');
+      expect(responseText).toContain('total_count: 1');
+      expect(responseText).toContain('incomplete_results: false');
+    });
+
+    it('should exclude metadata fields from data section', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        researchGoal: 'Test goal',
+        reasoning: 'Test reasoning',
+        researchSuggestions: ['Test'],
+        error: 'Should not appear in data',
+        hints: ['Test hint'],
+        query: { test: 'query' },
+        actualData: 'This should appear',
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      // Metadata fields should appear at result level, not in data section
+      expect(responseText).toContain('researchGoal: "Test goal"');
+      expect(responseText).toContain('reasoning: "Test reasoning"');
+      // Extract data section more precisely - between "data:" and next top-level field
+      const dataSectionMatch = responseText.match(/data:\s*\n\s+actualData:/);
+      expect(dataSectionMatch).toBeTruthy();
+      expect(responseText).toContain('actualData: "This should appear"');
+    });
+
+    it('should handle complex nested data structures', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [
+          {
+            path: 'src/index.ts',
+            matches: [
+              { line: 10, content: 'match1' },
+              { line: 20, content: 'match2' },
+            ],
+          },
+        ],
+        metadata: {
+          total: 2,
+          page: 1,
+        },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('path: "src/index.ts"');
+      expect(responseText).toContain('line: 10');
+      expect(responseText).toContain('content: "match1"');
+      expect(responseText).toContain('line: 20');
+      expect(responseText).toContain('content: "match2"');
+      expect(responseText).toContain('total: 2');
+      expect(responseText).toContain('page: 1');
+    });
+  });
+
+  describe('Config options', () => {
+    it('should respect keysPriority for field ordering', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        owner: 'testowner',
+        repo: 'testrepo',
+        files: [{ path: 'src/index.ts' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        keysPriority: ['owner', 'repo', 'files'],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('owner: "testowner"');
+      expect(responseText).toContain('repo: "testrepo"');
+      expect(responseText).toContain('files:');
+    });
+
+    it('should work with different tool names', async () => {
+      const toolNames: ToolName[] = [
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      ];
+
+      for (const toolName of toolNames) {
+        const queries = [{ id: 'q1' }];
+        const processor = vi.fn().mockResolvedValue({
+          status: 'hasResults' as const,
+          data: { test: true },
+        });
+
+        const result = await executeBulkOperation(queries, processor, {
+          toolName,
+        });
+
+        expect(result.isError).toBe(false);
+        const responseText = result.content[0]?.text as string;
+        expect(responseText).toContain('Bulk response with 1 results');
+      }
+    });
+
+    it('should work without keysPriority', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        files: [{ path: 'test.ts' }],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('files:');
+      expect(responseText).toContain('path: "test.ts"');
+    });
+  });
+
+  describe('Empty queries array', () => {
+    it('should handle empty array gracefully', async () => {
+      const queries: Array<{ id: string }> = [];
+      const processor = vi.fn();
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      expect(processor).not.toHaveBeenCalled();
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('Bulk response with 0 results');
+    });
+  });
+
+  describe('Query indexing', () => {
+    it('should pass correct index to processor for each query', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(processor).toHaveBeenCalledTimes(3);
+      expect(processor).toHaveBeenNthCalledWith(1, queries[0], 0);
+      expect(processor).toHaveBeenNthCalledWith(2, queries[1], 1);
+      expect(processor).toHaveBeenNthCalledWith(3, queries[2], 2);
+    });
+  });
+
+  describe('Error message preservation', () => {
+    it('should preserve error messages from processor returning error status', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'error' as const,
+        error: 'Specific error: Repository not found',
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain(
+        'error: "Specific error: Repository not found"'
+      );
+    });
+
+    it('should preserve error messages from thrown errors', async () => {
+      const queries = [{ id: 'q1' }];
+      const processor = vi
+        .fn()
+        .mockRejectedValue(new Error('Network error: Connection refused'));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain(
+        'error: "Network error: Connection refused"'
+      );
+    });
+
+    it('should handle different error messages for different queries', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string }) => {
+          throw new Error(`Error for ${query.id}`);
+        });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      });
+
+      const responseText = result.content[0]?.text as string;
+      expect(responseText).toContain('error: "Error for q1"');
+      expect(responseText).toContain('error: "Error for q2"');
+      expect(responseText).toContain('error: "Error for q3"');
+    });
+  });
+
+  describe('Non-standard query field types', () => {
+    it('should handle queries with non-string researchGoal gracefully', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          researchGoal: 123 as any, // Invalid type for testing
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      // Invalid types should be included in the query section as-is
+      expect(responseText).toContain('researchGoal: 123');
+      // But should not appear at the result level since they're not strings
+      const resultsSection = responseText.split('results:')[1] || '';
+      const querySection = resultsSection.split('query:')[0] || '';
+      expect(querySection).not.toContain('researchGoal: 123');
+    });
+
+    it('should handle queries with non-string reasoning gracefully', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          reasoning: { nested: 'object' } as any, // Invalid type for testing
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      // Invalid types should be included in the query section
+      expect(responseText).toContain('nested:');
+      // But should not appear at the result level since they're not strings
+      const lines = responseText.split('\n');
+      let foundResultReasoning = false;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+        if (line.includes('query:')) break; // Stop at query section
+        if (line.includes('reasoning:') && !line.includes('nested')) {
+          foundResultReasoning = true;
+        }
+      }
+      expect(foundResultReasoning).toBe(false);
+    });
+
+    it('should handle queries with non-array researchSuggestions gracefully', async () => {
+      const queries = [
+        {
+          id: 'q1',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          researchSuggestions: 'not an array' as any, // Invalid type for testing
+        },
+      ];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        data: { test: true },
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = result.content[0]?.text as string;
+      // Invalid types should be included in the query section
+      expect(responseText).toContain('researchSuggestions: "not an array"');
+    });
+  });
+
+  describe('Parallel processing', () => {
+    it('should process queries in parallel', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processingOrder: number[] = [];
+      const processor = vi.fn().mockImplementation(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async (_query: any, index: number) => {
+          processingOrder.push(index);
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return {
+            status: 'hasResults' as const,
+            data: { processed: true },
           };
         }
       );
 
-      const result = await processBulkQueries(queries, mockProcessor);
-
-      expect(result.results).toHaveLength(1);
-      expect(result.errors).toHaveLength(1);
-
-      expect(result.errors[0]?.queryIndex).toBe(1);
-      expect(result.errors[0]?.error).toBe('Processing failed');
-    });
-
-    it('should handle empty queries array', async () => {
-      const result = await processBulkQueries([], mockProcessor);
-
-      expect(result.results).toHaveLength(0);
-      expect(result.errors).toHaveLength(0);
-      expect(mockProcessor).not.toHaveBeenCalled();
-    });
-
-    it('should handle non-Error rejections', async () => {
-      const queries = [{ id: 'test', data: 'data' }];
-
-      mockProcessor.mockRejectedValue('string error');
-
-      const result = await processBulkQueries(queries, mockProcessor);
-
-      expect(result.results).toHaveLength(0);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]?.error).toBe('string error');
-    });
-  });
-
-  describe('createBulkResponse', () => {
-    it('should create response with successful results', () => {
-      const processedResults: ProcessedBulkResult[] = [
-        {
-          data: { items: [{ name: 'item1' }] },
-          metadata: { type: 'success', count: 1 },
-        },
-        {
-          data: { items: [{ name: 'item2' }] },
-          metadata: { type: 'success', count: 1 },
-        },
-      ];
-
-      const queries = [
-        { id: 'q1', keywordsToSearch: ['test1'] },
-        { id: 'q2', keywordsToSearch: ['test2'] },
-      ];
-
-      const results = processedResults.map((r, index) => ({
-        result: r,
-        queryIndex: index,
-        originalQuery: queries[index] || {
-          id: `query_${index}`,
-          keywordsToSearch: [],
-        },
-      }));
-      const errors: QueryError[] = [];
-
-      const config = {
-        toolName: 'github_search_code' as ToolName,
-      };
-
-      const result = createBulkResponse(config, results, errors, queries);
-
-      expect(result.isError).toBe(false);
-      expect(result.content).toHaveLength(1);
-
-      const responseText = result.content[0]?.text as string;
-      // Parse YAML-ish output and assert grouped shape
-      expect(responseText).toContain('data:');
-      expect(responseText).toContain('results:');
-      // Should NOT contain empty sections
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('hints:');
-      // Ensure success items present
-      expect(responseText).toContain('name: "item1"');
-      expect(responseText).toContain('name: "item2"');
-      // Ensure research strategies hint exists
-      expect(responseText).toContain('improve your research strategy');
-    });
-
-    it('should create response with errors', () => {
-      const processedResults: ProcessedBulkResult[] = [];
-      const queries = [{ id: 'q1', keywordsToSearch: ['test1'] }];
-      const results = processedResults.map((r, index) => ({
-        result: r,
-        queryIndex: index,
-        originalQuery: queries[index] || {
-          id: `query_${index}`,
-          keywordsToSearch: [],
-        },
-      }));
-      const errors: QueryError[] = [
-        {
-          queryIndex: 0,
-          error: 'API rate limit exceeded',
-        },
-      ];
-      const config = {
-        toolName: 'github_search_repos' as ToolName,
-      };
-
-      const result = createBulkResponse(config, results, errors, queries);
-
-      expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
-      expect(responseText).toContain('failed:');
-      expect(responseText).toContain('error: "API rate limit exceeded"');
-      expect(responseText).toContain('originalQuery:');
-      expect(responseText).toContain('keywordsToSearch:');
-      expect(responseText).toContain('hints:');
-    });
-
-    it('should handle empty results and errors', () => {
-      const processedResults: ProcessedBulkResult[] = [];
-      const results = processedResults.map((r, index) => ({
-        result: r,
-        queryIndex: index,
-        originalQuery: {
-          id: `query_${index}`,
-          keywordsToSearch: [],
-        },
-      }));
-      const errors: QueryError[] = [];
-      const queries: Array<{ id: string; keywordsToSearch: string[] }> = []; // No queries
-
-      const config = {
-        toolName: 'githubSearchCode' as ToolName,
-      };
-
-      const result = createBulkResponse(config, results, errors, queries);
-
-      expect(result.isError).toBe(false);
-      const responseText = result.content[0]?.text as string;
-      // Should NOT contain any data sections since all are empty
-      expect(responseText).not.toContain('successful:');
-      expect(responseText).not.toContain('empty:');
-      expect(responseText).not.toContain('failed:');
-      expect(responseText).toContain('hints:');
-      // Should show empty state in summary
-      expect(responseText).toContain('No queries processed');
-    });
-
-    it('should handle config options', () => {
-      const processedResults: ProcessedBulkResult[] = [
-        {
-          data: { test: true },
-          metadata: { processed: true },
-        },
-      ];
-
-      const queries = [{ id: 'q1', keywordsToSearch: ['test1'] }];
-      const results = processedResults.map((r, index) => ({
-        result: r,
-        queryIndex: index,
-        originalQuery: queries[index] || {
-          id: `query_${index}`,
-          keywordsToSearch: [],
-        },
-      }));
-      const errors: QueryError[] = [];
-
-      const config = {
-        toolName: 'github_search_code' as ToolName,
-      };
-
-      const result = createBulkResponse(config, results, errors, queries);
-
-      expect(result.isError).toBe(false);
-      // The exact structure depends on implementation, but it should not crash
-      expect(result.content).toHaveLength(1);
-    });
-  });
-
-  describe('Integration Tests', () => {
-    it('should work end-to-end with real-like scenario', async () => {
-      const queries = [
-        { name: 'react components' },
-        { name: 'vue components' },
-      ];
-
-      // Process queries
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(async (query: { name: string }, index: number) => ({
-          data: {
-            query: query.name,
-            results: [`result for ${query.name}`],
-          },
-          metadata: { processed: true, queryIndex: index },
-        }));
-
-      const processResult = await processBulkQueries(queries, mockProcessor);
-
-      // Create bulk response
-      const config = {
-        toolName: 'github_search_code' as ToolName,
-      };
-      const bulkResponse = createBulkResponse(
-        config,
-        processResult.results,
-        processResult.errors,
-        queries
-      );
-
-      expect(queries).toHaveLength(2);
-      expect(processResult.results).toHaveLength(2);
-      expect(processResult.errors).toHaveLength(0);
-      expect(bulkResponse.isError).toBe(false);
-
-      expect(mockProcessor).toHaveBeenCalledTimes(2);
-    });
-
-    it('should handle mixed success and failure', async () => {
-      const queries = [
-        { name: 'success_query' },
-        { name: 'fail_query' },
-        { name: 'another_success' },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(async (query: { name: string }, index: number) => {
-          if (query.name === 'fail_query') {
-            throw new Error('Processing failed');
-          }
-          return {
-            data: { result: 'success' },
-            metadata: { queryIndex: index },
-          };
-        });
-
-      const result = await processBulkQueries(queries, mockProcessor);
-
-      expect(result.results).toHaveLength(2);
-      expect(result.errors).toHaveLength(1);
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubSearchRepositories' as ToolName },
-        result.results,
-        result.errors,
-        queries
-      );
-
-      expect(bulkResponse.isError).toBe(false);
-    });
-  });
-
-  describe('reasoning propagation', () => {
-    it('should propagate reasoning from queries to successful results', async () => {
-      const queries = [
-        {
-          id: 'test1',
-          reasoning: 'Find LangGraph implementations for AI agents',
-          name: 'query1',
-        },
-        {
-          id: 'test2',
-          reasoning: 'Search for context management patterns',
-          name: 'query2',
-        },
-        {
-          id: 'test3',
-          name: 'query3', // No reasoning provided
-        },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(
-          async (_query: { id: string; name: string }, index: number) => ({
-            data: { files: [{ path: 'test.py', content: 'test content' }] },
-            metadata: { queryIndex: index },
-          })
-        );
-
-      const { results, errors } = await processBulkQueries(
-        queries,
-        mockProcessor
-      );
-
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubSearchCode' as ToolName },
-        results,
-        errors,
-        queries
-      );
-
-      const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('results:');
-      expect(yamlText).toContain('files:');
-      expect(yamlText).toContain('path: "test.py"');
-    });
-
-    it('should propagate reasoning from queries to error results', async () => {
-      const queries = [
-        {
-          id: 'error1',
-          reasoning: 'This query will fail with reasoning',
-          name: 'fail_query',
-        },
-        {
-          id: 'error2',
-          name: 'fail_query_no_reasoning', // No reasoning provided
-        },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(async (query: { id: string; name: string }) => {
-          throw new Error(`Processing failed for ${query.name}`);
-        });
-
-      const { results, errors } = await processBulkQueries(
-        queries,
-        mockProcessor
-      );
-
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubFetchContent' as ToolName },
-        results,
-        errors,
-        queries
-      );
-
-      const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('failed:');
-      expect(yamlText).toContain('Processing failed for fail_query');
-      expect(yamlText).toContain('originalQuery:');
-    });
-
-    it('should preserve result reasoning over query reasoning when both exist', async () => {
-      const queries = [
-        {
-          id: 'test1',
-          reasoning: 'Query reasoning that should be overridden',
-          name: 'query1',
-        },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(
-          async (_query: { id: string; name: string }, index: number) => ({
-            reasoning: 'Result reasoning that should take precedence',
-            data: { files: [{ path: 'test.py' }] },
-            metadata: { queryIndex: index },
-          })
-        );
-
-      const { results, errors } = await processBulkQueries(
-        queries,
-        mockProcessor
-      );
-
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubSearchRepositories' as ToolName },
-        results,
-        errors,
-        queries
-      );
-
-      const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain(
-        'reasoning: "Result reasoning that should take precedence"'
-      );
-      expect(yamlText).toContain('files:');
-    });
-
-    it('should handle mixed success and error results with reasoning', async () => {
-      const queries = [
-        {
-          id: 'success1',
-          reasoning: 'Successful query with reasoning',
-          name: 'success_query',
-        },
-        {
-          id: 'error1',
-          reasoning: 'Failed query with reasoning',
-          name: 'fail_query',
-        },
-        {
-          id: 'success2',
-          name: 'success_query_no_reasoning', // No reasoning
-        },
-        {
-          id: 'error2',
-          name: 'fail_query_no_reasoning', // No reasoning
-        },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(
-          async (query: { id: string; name: string }, index: number) => {
-            if (query.name.includes('fail')) {
-              throw new Error(`Processing failed for ${query.name}`);
-            }
-            return {
-              data: { repositories: [{ name: 'test-repo' }] },
-              metadata: { queryIndex: index },
-            };
-          }
-        );
-
-      const { results, errors } = await processBulkQueries(
-        queries,
-        mockProcessor
-      );
-
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubViewRepoStructure' as ToolName },
-        results,
-        errors,
-        queries
-      );
-
-      const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      // Successful queries with repositories are in empty (they have empty content)
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).toContain('failed:');
-      expect(yamlText).toContain('repositories:');
-      // No actual "successful" section (all went to empty or failed)
-      expect(yamlText).not.toContain('successful:');
-      expect(yamlText).toContain('Processing failed for fail_query');
-    });
-
-    it('should handle empty or whitespace-only reasoning', async () => {
-      const queries = [
-        {
-          id: 'test1',
-          reasoning: '', // Empty reasoning
-          name: 'query1',
-        },
-        {
-          id: 'test2',
-          reasoning: '   ', // Whitespace-only reasoning
-          name: 'query2',
-        },
-        {
-          id: 'test3',
-          reasoning: 'Valid reasoning',
-          name: 'query3',
-        },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(
-          async (_query: { id: string; name: string }, index: number) => ({
-            data: { content: 'test content' },
-            metadata: { queryIndex: index },
-          })
-        );
-
-      const { results, errors } = await processBulkQueries(
-        queries,
-        mockProcessor
-      );
-
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubFetchContent' as ToolName },
-        results,
-        errors,
-        queries
-      );
-
-      const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('results:');
-      expect(yamlText).toContain('content: "test content"');
-    });
-
-    it('should maintain query order with reasoning in results', async () => {
-      const queries = [
-        {
-          id: 'first',
-          reasoning: 'First query reasoning',
-          name: 'query1',
-        },
-        {
-          id: 'second',
-          reasoning: 'Second query reasoning',
-          name: 'query2',
-        },
-        {
-          id: 'third',
-          reasoning: 'Third query reasoning',
-          name: 'query3',
-        },
-      ];
-
-      const mockProcessor = vi
-        .fn()
-        .mockImplementation(
-          async (query: { id: string; name: string }, index: number) => ({
-            data: { result: `Result for ${query.name}` },
-            metadata: { queryIndex: index },
-          })
-        );
-
-      const { results, errors } = await processBulkQueries(
-        queries,
-        mockProcessor
-      );
-
-      const bulkResponse = createBulkResponse(
-        { toolName: 'githubSearchPullRequests' as ToolName },
-        results,
-        errors,
-        queries
-      );
-
-      const yamlText = (bulkResponse.content[0]?.text as string) || '';
-      expect(yamlText).toContain('results:');
-      expect(yamlText).toContain('First query reasoning');
-      expect(yamlText).toContain('Second query reasoning');
-      expect(yamlText).toContain('Third query reasoning');
-    });
-  });
-
-  describe('GitHub API flow detection (empty vs content vs error)', () => {
-    it('should treat code search empty result (total_count:0, items:[]) as no-results', () => {
-      const queries = [{ id: 'q1', name: 'code_search_empty' }];
-
-      const results = [
-        {
-          queryIndex: 0,
-          result: {
-            files: [],
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[0]!,
-        },
-      ];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubSearchCode' as ToolName },
-        results,
-        [],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
-    });
-
-    it('should handle repo search empty and non-empty', () => {
-      const queries = [
-        { id: 'rq1', name: 'repos_empty' },
-        { id: 'rq2', name: 'repos_non_empty' },
-      ];
-
-      const results = [
-        {
-          queryIndex: 0,
-          result: {
-            repositories: [],
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[0]!,
-        },
-        {
-          queryIndex: 1,
-          result: {
-            repositories: [{ repository: 'a/b' }, { repository: 'c/d' }],
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[1]!,
-        },
-      ];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubSearchRepositories' as ToolName },
-        results,
-        [],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('repositories: []'); // Empty arrays are removed
-      expect(yamlText).toContain('repositories:'); // Non-empty still present
-    });
-
-    it('should handle pull request search empty and non-empty', () => {
-      const queries = [
-        { id: 'pq1', name: 'prs_empty' },
-        { id: 'pq2', name: 'prs_non_empty' },
-      ];
-
-      const results = [
-        {
-          queryIndex: 0,
-          result: {
-            pull_requests: [],
-            total_count: 0,
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[0]!,
-        },
-        {
-          queryIndex: 1,
-          result: {
-            pull_requests: [{ number: 1, title: 'PR', url: 'u' }],
-            total_count: 1,
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[1]!,
-        },
-      ];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubSearchPullRequests' as ToolName },
-        results,
-        [],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('pull_requests: []'); // Empty arrays are removed
-      expect(yamlText).toContain('pull_requests:'); // Non-empty still present
-    });
-
-    it('should handle repo structure empty and non-empty', () => {
-      const queries = [
-        { id: 'sq1', name: 'structure_empty' },
-        { id: 'sq2', name: 'structure_non_empty' },
-      ];
-
-      const results = [
-        {
-          queryIndex: 0,
-          result: {
-            files: [],
-            folders: [],
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[0]!,
-        },
-        {
-          queryIndex: 1,
-          result: {
-            files: [{ path: 'README.md' }],
-            folders: [{ path: 'src' }],
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[1]!,
-        },
-      ];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubViewRepoStructure' as ToolName },
-        results,
-        [],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('empty:');
-      expect(yamlText).not.toContain('files: []'); // Empty arrays are removed
-      expect(yamlText).not.toContain('folders: []'); // Empty arrays are removed
-      expect(yamlText).toContain('successful:'); // Non-empty section still present
-      expect(yamlText).toContain('path: "README.md"');
-      expect(yamlText).toContain('path: "src"');
-    });
-    it('should treat code search with items as meaningful content', () => {
-      const queries = [{ id: 'q1', name: 'code_search_non_empty' }];
-
-      const results = [
-        {
-          queryIndex: 0,
-          result: {
-            files: [{ path: 'src/index.ts', url: 'https://example' }],
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[0]!,
-        },
-      ];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubSearchCode' as ToolName },
-        results,
-        [],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('results:');
-      expect(yamlText).toContain('path: "src/index.ts"');
-      expect(yamlText).toContain('url: "https://example"');
-    });
-
-    it('should treat empty file content as error (per API) and non-empty as content', () => {
-      const queries = [
-        { id: 'q1', name: 'file_content_empty' },
-        { id: 'q2', name: 'file_content_non_empty' },
-      ];
-
-      const results = [
-        {
-          queryIndex: 1,
-          result: {
-            data: { content: 'console.log(1);' },
-            metadata: {},
-          } as unknown as ProcessedBulkResult,
-          originalQuery: queries[1]!,
-        },
-      ];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubFetchContent' as ToolName },
-        results,
-        [
-          {
-            queryIndex: 0,
-            error: 'File is empty - no content to display',
-          } as QueryError,
-        ],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('failed:');
-      expect(yamlText).toContain(
-        'error: "File is empty - no content to display"'
-      );
-      expect(yamlText).toContain('results:');
-      expect(yamlText).toContain('content: "console.log(1);"');
-    });
-
-    it('should include errors as error results with query args', () => {
-      const queries = [{ id: 'qerr', name: 'error_case' }];
-
-      const resp = createBulkResponse(
-        { toolName: 'githubSearchRepositories' as ToolName },
-        [],
-        [{ queryIndex: 0, error: 'GitHub API error' } as QueryError],
-        queries
-      );
-
-      const yamlText = resp.content[0]!.text as string;
-      expect(yamlText).toContain('failed:');
-      expect(yamlText).toContain('error: "GitHub API error"');
-      expect(yamlText).toContain('originalQuery:');
+      await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+      });
+
+      expect(processor).toHaveBeenCalledTimes(3);
+      expect(processingOrder).toHaveLength(3);
     });
   });
 });

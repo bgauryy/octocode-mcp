@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_SEARCH_PULL_REQUESTS } from './schemDescriptions';
-import { ToolResponse } from '../responses.js';
 import { TOOL_NAMES } from '../constants';
 
 export const PRMatchScopeSchema = z
@@ -165,106 +164,7 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputShaping.withContent),
 });
 
-export type GitHubPullRequestSearchQuery = z.infer<
-  typeof GitHubPullRequestSearchQuerySchema
->;
-
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
   GitHubPullRequestSearchQuerySchema
 );
-
-export interface GitHubSearchPullRequestsInput {
-  queries: GitHubPullRequestSearchQuery[];
-}
-
-export interface GitHubSearchPullRequestsOutput extends ToolResponse {
-  data: PullRequestSearchResult[];
-}
-
-export interface PullRequestSearchResult {
-  researchGoal?: string;
-  reasoning?: string;
-  pull_requests?: PullRequestInfo[];
-  total_count?: number;
-  incomplete_results?: boolean;
-  error?: string;
-  hints?: string[];
-  query?: Record<string, unknown>; // Only on error
-  metadata: Record<string, unknown>;
-}
-
-export interface PullRequestInfo {
-  id: number;
-  number: number;
-  title: string;
-  url: string;
-  html_url: string;
-  state: 'open' | 'closed';
-  draft: boolean;
-  merged: boolean;
-  created_at: string;
-  updated_at: string;
-  closed_at?: string;
-  merged_at?: string;
-  author: {
-    login: string;
-    id: number;
-    avatar_url: string;
-    html_url: string;
-  };
-  assignees?: Array<{
-    login: string;
-    id: number;
-    avatar_url: string;
-    html_url: string;
-  }>;
-  labels?: Array<{
-    id: number;
-    name: string;
-    color: string;
-    description?: string;
-  }>;
-  milestone?: {
-    id: number;
-    title: string;
-    description?: string;
-    state: 'open' | 'closed';
-    created_at: string;
-    updated_at: string;
-    due_on?: string;
-  };
-  head: {
-    ref: string;
-    sha: string;
-    repo?: string; // Simplified to repository name
-  };
-  base: {
-    ref: string;
-    sha: string;
-    repo: string; // Simplified to repository name
-  };
-  body?: string;
-  comments?: number;
-  review_comments?: number;
-  commits?: number;
-  additions?: number;
-  deletions?: number;
-  changed_files?: number;
-  // Optional fields for when withComments=true or withContent=true
-  comment_details?: Array<{
-    id: number;
-    user: string;
-    body: string;
-    created_at: string;
-    updated_at: string;
-  }>;
-  file_changes?: Array<{
-    filename: string;
-    status: string;
-    additions: number;
-    deletions: number;
-    changes: number;
-    patch?: string;
-  }>;
-}

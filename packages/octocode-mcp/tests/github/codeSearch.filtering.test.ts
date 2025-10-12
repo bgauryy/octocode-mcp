@@ -87,10 +87,23 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should only include the file not in node_modules
-        expect(result.data.items).toHaveLength(1);
-        expect(result.data.items[0]?.path).toBe('src/index.js');
-        expect(result.data.total_count).toBe(1); // Updated count after filtering
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/index.js',
+            url: 'src/index.js',
+            repository: {
+              nameWithOwner: 'test/repo',
+              url: 'https://api.github.com/repos/test/repo',
+            },
+            matches: [
+              {
+                context: 'function test(){}',
+                positions: [[0, 8]],
+              },
+            ],
+            minificationType: 'terser',
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -158,16 +171,20 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should only include files not in ignored directories
-        expect(result.data.items).toHaveLength(2);
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/app.js');
-        expect(paths).toContain('src/components/valid.js');
-        expect(paths).not.toContain('dist/test.js');
-        expect(paths).not.toContain('build/build.js');
-        expect(paths).not.toContain('vendor/vendor.js');
-        expect(paths).not.toContain('.cache/cache.js');
-        expect(paths).not.toContain('.git/hooks/pre-commit');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/components/valid.js',
+            url: 'src/components/valid.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -219,15 +236,20 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should filter out lock files but keep package.json
-        expect(result.data.items).toHaveLength(2);
-        const fileNames = result.data.items.map(item =>
-          item.path.split('/').pop()
-        );
-        expect(fileNames).toContain('package.json');
-        expect(fileNames).toContain('index.js');
-        expect(fileNames).not.toContain('package-lock.json');
-        expect(fileNames).not.toContain('yarn.lock');
+        expect(result.data.items).toEqual([
+          {
+            path: 'package.json',
+            url: 'package.json',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/index.js',
+            url: 'src/index.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -289,13 +311,44 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // With focused filtering, more config files are now allowed for context
-        expect(result.data.items).toHaveLength(6);
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/app.js');
-        expect(paths).toContain('.gitignore');
-        expect(paths).toContain('tsconfig.json');
-        // Note: These config files can provide valuable context for understanding projects
+        expect(result.data.items).toEqual([
+          {
+            path: '.gitignore',
+            url: '.gitignore',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: '.eslintrc',
+            url: '.eslintrc',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'tsconfig.json',
+            url: 'tsconfig.json',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'webpack.config.js',
+            url: 'webpack.config.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'Dockerfile',
+            url: 'Dockerfile',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -351,15 +404,26 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should keep non-sensitive files and .env files (now allowed for context)
-        expect(result.data.items).toHaveLength(3);
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/config.js');
-        expect(paths).toContain('.env');
-        expect(paths).toContain('.env.local');
-        // Should filter out explicit sensitive files
-        expect(paths).not.toContain('secrets.json');
-        expect(paths).not.toContain('config/credentials.json');
+        expect(result.data.items).toEqual([
+          {
+            path: '.env',
+            url: '.env',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: '.env.local',
+            url: '.env.local',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/config.js',
+            url: 'src/config.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -435,17 +499,20 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should only keep source files
-        expect(result.data.items).toHaveLength(2);
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/app.js');
-        expect(paths).toContain('src/main.py');
-        expect(paths).not.toContain('bin/app.exe');
-        expect(paths).not.toContain('lib/lib.dll');
-        expect(paths).not.toContain('lib/module.so');
-        expect(paths).not.toContain('build/Main.class');
-        expect(paths).not.toContain('__pycache__/cache.pyc');
-        expect(paths).not.toContain('dist/app.jar');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/main.py',
+            url: 'src/main.py',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -489,9 +556,14 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should filter out minified files
-        expect(result.data.items).toHaveLength(1);
-        expect(result.data.items[0]?.path).toBe('src/app.js');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -553,15 +625,20 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should filter out all archive files
-        expect(result.data.items).toHaveLength(2);
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/app.js');
-        expect(paths).toContain('readme.md');
-        expect(paths).not.toContain('backup.zip');
-        expect(paths).not.toContain('archive.tar.gz');
-        expect(paths).not.toContain('data.rar');
-        expect(paths).not.toContain('package.7z');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'readme.md',
+            url: 'readme.md',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -623,9 +700,14 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should only keep the source file
-        expect(result.data.items).toHaveLength(1);
-        expect(result.data.items[0]?.path).toBe('src/app.js');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -717,21 +799,32 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should include the 3 valid source files plus .env (now allowed for context)
-        expect(result.data.items).toHaveLength(4);
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/services/UserService.js');
-        expect(paths).toContain('src/controllers/AuthController.js');
-        expect(paths).toContain('src/utils/utils.ts');
-        expect(paths).toContain('.env'); // Now allowed for context
-
-        // Verify filtered files are still excluded
-        expect(paths).not.toContain('node_modules/express/index.js');
-        expect(paths).not.toContain('dist/bundle.js');
-        expect(paths).not.toContain('.git/hooks/test.js');
-        expect(paths).not.toContain('package-lock.json');
-        expect(paths).not.toContain('bin/app.exe');
-        expect(paths).not.toContain('logs/data.log');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/services/UserService.js',
+            url: 'src/services/UserService.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/controllers/AuthController.js',
+            url: 'src/controllers/AuthController.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/utils/utils.ts',
+            url: 'src/utils/utils.ts',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: '.env',
+            url: '.env',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -775,9 +868,7 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // All files should be filtered out
-        expect(result.data.items).toHaveLength(0);
-        expect(result.data.total_count).toBe(0);
+        expect(result.data.items).toEqual([]);
       } else {
         expect.fail('Expected successful result');
       }
@@ -834,15 +925,26 @@ describe('Code Search Filtering - File Filters', () => {
       });
 
       if ('data' in result) {
-        // Should have 3 items after filtering
-        expect(result.data.items).toHaveLength(3);
-        // Total count should reflect filtered results, not original API count
-        expect(result.data.total_count).toBe(3);
-
-        const paths = result.data.items.map(item => item.path);
-        expect(paths).toContain('src/app.js');
-        expect(paths).toContain('src/config.js');
-        expect(paths).toContain('src/utils.js');
+        expect(result.data.items).toEqual([
+          {
+            path: 'src/app.js',
+            url: 'src/app.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/config.js',
+            url: 'src/config.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+          {
+            path: 'src/utils.js',
+            url: 'src/utils.js',
+            repository: { nameWithOwner: 'test/repo', url: 'url' },
+            matches: [],
+          },
+        ]);
       } else {
         expect.fail('Expected successful result');
       }

@@ -1,5 +1,6 @@
 import NodeCache from 'node-cache';
 import crypto from 'crypto';
+import type { CacheStats } from '../types.js';
 
 const VERSION = 'v1';
 
@@ -11,15 +12,6 @@ const cache = new NodeCache({
   deleteOnExpire: true, // Automatically delete expired keys
   useClones: false, // Better performance
 });
-
-// Simple cache statistics tracking
-interface CacheStats {
-  hits: number;
-  misses: number;
-  sets: number;
-  totalKeys: number;
-  lastReset: Date;
-}
 
 const cacheStats: CacheStats = {
   hits: 0,

@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses';
+import { createResult } from '../responses.js';
+import type { ExecOptions } from '../types.js';
 
 const ALLOWED_NPM_COMMANDS = [
   'view',
@@ -11,13 +12,6 @@ const ALLOWED_NPM_COMMANDS = [
 ] as const;
 
 export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
-
-type ExecOptions = {
-  timeout?: number;
-  cwd?: string;
-  env?: Record<string, string>;
-  cache?: boolean;
-};
 
 /**
  * Parse execution result into a standardized format
@@ -31,7 +25,7 @@ export function parseExecResult(
   if (error) {
     return createResult({
       data: { error: true },
-      hints: [`Command failed: ${error.message}`],
+      instructions: `Command failed: ${error.message}`,
       isError: true,
     });
   }
@@ -40,20 +34,20 @@ export function parseExecResult(
   if (stderr && stderr.trim() && exitCode !== 0) {
     return createResult({
       data: { error: true },
-      hints: [`Command error: ${stderr.trim()}`],
+      instructions: `Command error: ${stderr.trim()}`,
       isError: true,
     });
   }
 
   // Include stderr as warnings if present but command succeeded
-  const hints =
+  const instructions =
     stderr && stderr.trim() && exitCode === 0
-      ? [`Warning: ${stderr.trim()}`]
+      ? `Warning: ${stderr.trim()}`
       : undefined;
 
   return createResult({
     data: stdout,
-    hints,
+    instructions,
   });
 }
 
@@ -119,7 +113,7 @@ export async function executeNpmCommand(
   if (!ALLOWED_NPM_COMMANDS.includes(command)) {
     return createResult({
       data: { error: `Command '${command}' is not allowed` },
-      hints: [`Command '${command}' is not allowed`],
+      instructions: `Command '${command}' is not allowed`,
       isError: true,
     });
   }
@@ -129,7 +123,7 @@ export async function executeNpmCommand(
   if (!validation.valid) {
     return createResult({
       data: { error: `Invalid arguments: ${validation.error}` },
-      hints: [`Invalid arguments: ${validation.error}`],
+      instructions: `Invalid arguments: ${validation.error}`,
       isError: true,
     });
   }

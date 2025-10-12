@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_FETCH_CONTENT } from './schemDescriptions';
-import { ToolResponse } from '../responses.js';
 import { TOOL_NAMES } from '../constants';
 
 export const FileContentQuerySchema = BaseQuerySchema.extend({
@@ -53,50 +52,7 @@ export const FileContentQuerySchema = BaseQuerySchema.extend({
     .describe(GITHUB_FETCH_CONTENT.range.matchStringContextLines),
 });
 
-export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
-
 export const FileContentBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_FETCH_CONTENT,
   FileContentQuerySchema
 );
-
-/**
- * Tool input - bulk file content queries
- */
-export interface GitHubFetchContentInput {
-  queries: FileContentQuery[];
-}
-
-/**
- * Tool output - extends standardized ToolResponse format
- */
-export interface GitHubFetchContentOutput extends ToolResponse {
-  /** Primary data payload - array of file content results */
-  data: ContentResult[];
-}
-
-/**
- * Individual file content result
- */
-export interface ContentResult {
-  researchGoal?: string;
-  reasoning?: string;
-  owner?: string;
-  repo?: string;
-  path?: string;
-  contentLength?: number;
-  content?: string;
-  branch?: string;
-  startLine?: number;
-  endLine?: number;
-  isPartial?: boolean;
-  minified?: boolean;
-  minificationFailed?: boolean;
-  minificationType?: string;
-  error?: string;
-  hints?: string[];
-  query?: Record<string, unknown>;
-  originalQuery?: Record<string, unknown>;
-  securityWarnings?: string[];
-  sampling?: Record<string, unknown>;
-}

@@ -102,14 +102,14 @@ vi.mock('../../src/utils/exec.js', () => ({
 }));
 
 // Import after mocking
+import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
+import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
 import {
-  searchGitHubCodeAPI,
-  searchGitHubReposAPI,
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
-  searchGitHubPullRequestsAPI,
-} from '../../src/github/githubAPI.js';
-import type { GitHubCodeSearchQuery } from '../../src/scheme/github_search_code.js';
+} from '../../src/github/fileOperations.js';
+import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
+import type { GitHubCodeSearchQuery } from '../../src/types.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
 // Helper function to create properly formatted test parameters
@@ -173,11 +173,11 @@ describe('GitHub API Utils', () => {
 
   describe('Basic Setup', () => {
     it('should import all API functions', () => {
-      expect(searchGitHubCodeAPI).toBeDefined();
-      expect(searchGitHubReposAPI).toBeDefined();
-      expect(fetchGitHubFileContentAPI).toBeDefined();
-      expect(viewGitHubRepositoryStructureAPI).toBeDefined();
-      expect(searchGitHubPullRequestsAPI).toBeDefined();
+      expect(typeof searchGitHubCodeAPI).toEqual('function');
+      expect(typeof searchGitHubReposAPI).toEqual('function');
+      expect(typeof fetchGitHubFileContentAPI).toEqual('function');
+      expect(typeof viewGitHubRepositoryStructureAPI).toEqual('function');
+      expect(typeof searchGitHubPullRequestsAPI).toEqual('function');
     });
   });
 
@@ -223,6 +223,7 @@ describe('GitHub API Utils', () => {
         language: 'typescript',
         owner: 'facebook',
         repo: 'react',
+
         minify: true,
         sanitize: true,
       };

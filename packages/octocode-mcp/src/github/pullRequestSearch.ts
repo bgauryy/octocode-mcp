@@ -3,7 +3,7 @@ import {
   GitHubPullRequestsSearchParams,
   GitHubPullRequestItem,
 } from './githubAPI';
-import { PullRequestSearchResult } from '../scheme/github_search_pull_requests.js';
+import type { PullRequestSearchResult } from '../types';
 
 // GitHub API types for pull request files
 type DiffEntry = components['schemas']['diff-entry'];
@@ -16,7 +16,7 @@ import {
 } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { UserContext } from '../security/withSecurityValidation';
+import type { UserContext } from '../types.js';
 
 /**
  * Search GitHub pull requests using Octokit API with caching
@@ -97,7 +97,6 @@ async function searchGitHubPullRequestsAPIInternal(
         total_count: 0,
         error: 'No valid search parameters provided',
         hints: ['Provide search query or filters like owner/repo'],
-        metadata: { error: 'No valid search parameters provided' },
       };
     }
 
@@ -200,7 +199,6 @@ async function searchGitHubPullRequestsAPIInternal(
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       incomplete_results: searchResult.data.incomplete_results,
-      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -209,7 +207,6 @@ async function searchGitHubPullRequestsAPIInternal(
       total_count: 0,
       error: `Pull request search failed: ${apiError.error}`,
       hints: [`Verify authentication and search parameters`],
-      metadata: { error: apiError.error },
     };
   }
 }
@@ -307,7 +304,6 @@ async function searchPullRequestsWithREST(
       pull_requests: formattedPRs,
       total_count: formattedPRs.length,
       incomplete_results: false,
-      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -316,19 +312,17 @@ async function searchPullRequestsWithREST(
       total_count: 0,
       error: `Pull request list failed: ${apiError.error}`,
       hints: [`Verify repository access and authentication`],
-      metadata: { error: apiError.error },
     };
   }
 }
 
 /**
- * Transform pull request item from Search API response
+ * Shared helper: Create base PR transformation with sanitization
  */
-async function transformPullRequestItem(
-  item: Record<string, unknown>,
-  params: GitHubPullRequestsSearchParams,
-  octokit: InstanceType<typeof OctokitWithThrottling>
-): Promise<GitHubPullRequestItem> {
+function createBasePRTransformation(item: Record<string, unknown>): {
+  prData: GitHubPullRequestItem;
+  sanitizationWarnings: Set<string>;
+} {
   // Sanitize title and body content
   const titleSanitized = ContentSanitizer.sanitizeContent(
     (item.title as string) || ''
@@ -343,7 +337,7 @@ async function transformPullRequestItem(
     ...bodySanitized.warnings,
   ]);
 
-  const result: GitHubPullRequestItem = {
+  const prData: GitHubPullRequestItem = {
     number: item.number as number,
     title: titleSanitized.content,
     body: bodySanitized.content,
@@ -374,6 +368,75 @@ async function transformPullRequestItem(
     base_sha: (item.base as Record<string, unknown>)?.sha as string,
   };
 
+  // Add optional merged_at field if present
+  if (item.merged_at) {
+    prData.merged_at = new Date(item.merged_at as string).toLocaleDateString(
+      'en-GB'
+    );
+  }
+
+  return { prData, sanitizationWarnings };
+}
+
+/**
+ * Shared helper: Fetch PR comments
+ */
+async function fetchPRComments(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<GitHubPullRequestItem['comments']> {
+  try {
+    const commentsResult = await octokit.rest.issues.listComments({
+      owner,
+      repo,
+      issue_number: prNumber,
+    });
+
+    return commentsResult.data.map((comment: Record<string, unknown>) => ({
+      id: comment.id as string,
+      user:
+        ((comment.user as Record<string, unknown>)?.login as string) ||
+        'unknown',
+      body: ContentSanitizer.sanitizeContent((comment.body as string) || '')
+        .content,
+      created_at: new Date(comment.created_at as string).toLocaleDateString(
+        'en-GB'
+      ),
+      updated_at: new Date(comment.updated_at as string).toLocaleDateString(
+        'en-GB'
+      ),
+    }));
+  } catch (e) {
+    // Return empty array if comments fetch fails
+    return [];
+  }
+}
+
+/**
+ * Shared helper: Normalize owner/repo from params
+ */
+function normalizeOwnerRepo(params: GitHubPullRequestsSearchParams): {
+  owner: string | undefined;
+  repo: string | undefined;
+} {
+  const owner = Array.isArray(params.owner) ? params.owner[0] : params.owner;
+  const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
+  return { owner, repo };
+}
+
+/**
+ * Transform pull request item from Search API response
+ */
+async function transformPullRequestItem(
+  item: Record<string, unknown>,
+  params: GitHubPullRequestsSearchParams,
+  octokit: InstanceType<typeof OctokitWithThrottling>
+): Promise<GitHubPullRequestItem> {
+  const { prData: result, sanitizationWarnings } =
+    createBasePRTransformation(item);
+
   // Add sanitization warnings if any were detected
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
@@ -382,11 +445,7 @@ async function transformPullRequestItem(
   // Get additional PR details if needed (head/base SHA, etc.)
   if (params.withContent || item.pull_request) {
     try {
-      // Normalize owner/repo from params
-      const owner = Array.isArray(params.owner)
-        ? params.owner[0]
-        : params.owner;
-      const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
+      const { owner, repo } = normalizeOwnerRepo(params);
 
       if (owner && repo) {
         const prDetails = await octokit.rest.pulls.get({
@@ -422,40 +481,14 @@ async function transformPullRequestItem(
 
   // Fetch comments if requested
   if (params.withComments) {
-    try {
-      // Normalize owner/repo from params
-      const owner = Array.isArray(params.owner)
-        ? params.owner[0]
-        : params.owner;
-      const repo = Array.isArray(params.repo) ? params.repo[0] : params.repo;
-
-      if (owner && repo) {
-        const commentsResult = await octokit.rest.issues.listComments({
-          owner,
-          repo,
-          issue_number: item.number as number,
-        });
-
-        result.comments = commentsResult.data.map(
-          (comment: Record<string, unknown>) => ({
-            id: comment.id as string,
-            user:
-              ((comment.user as Record<string, unknown>)?.login as string) ||
-              'unknown',
-            body: ContentSanitizer.sanitizeContent(
-              (comment.body as string) || ''
-            ).content,
-            created_at: new Date(
-              comment.created_at as string
-            ).toLocaleDateString('en-GB'),
-            updated_at: new Date(
-              comment.updated_at as string
-            ).toLocaleDateString('en-GB'),
-          })
-        );
-      }
-    } catch (e) {
-      // Continue without comments if API call fails
+    const { owner, repo } = normalizeOwnerRepo(params);
+    if (owner && repo) {
+      result.comments = await fetchPRComments(
+        octokit,
+        owner,
+        repo,
+        item.number as number
+      );
     }
   }
 
@@ -502,61 +535,12 @@ export async function transformPullRequestItemFromREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   authInfo?: AuthInfo
 ): Promise<GitHubPullRequestItem> {
-  // Sanitize title and body content
-  const titleSanitized = ContentSanitizer.sanitizeContent(
-    (item.title as string) || ''
-  );
-  const bodySanitized = item.body
-    ? ContentSanitizer.sanitizeContent(item.body as string)
-    : { content: undefined, warnings: [] };
-
-  // Collect all sanitization warnings
-  const sanitizationWarnings = new Set<string>([
-    ...titleSanitized.warnings,
-    ...bodySanitized.warnings,
-  ]);
-
-  const result: GitHubPullRequestItem = {
-    number: item.number as number,
-    title: titleSanitized.content,
-    body: bodySanitized.content,
-    state: ((item.state as string)?.toLowerCase() || 'unknown') as
-      | 'open'
-      | 'closed',
-    author: ((item.user as Record<string, unknown>)?.login as string) || '',
-    labels:
-      (item.labels as Array<Record<string, unknown>>)?.map(
-        (l: Record<string, unknown>) => l.name as string
-      ) || [],
-    created_at: item.created_at
-      ? new Date(item.created_at as string).toLocaleDateString('en-GB')
-      : '',
-    updated_at: item.updated_at
-      ? new Date(item.updated_at as string).toLocaleDateString('en-GB')
-      : '',
-    closed_at: item.closed_at
-      ? new Date(item.closed_at as string).toLocaleDateString('en-GB')
-      : null,
-    url: item.html_url as string,
-    comments: [], // Will be populated if withComments is true
-    reactions: 0, // REST API doesn't provide reactions in list
-    draft: (item.draft as boolean) ?? false,
-    head: (item.head as Record<string, unknown>)?.ref as string,
-    head_sha: (item.head as Record<string, unknown>)?.sha as string,
-    base: (item.base as Record<string, unknown>)?.ref as string,
-    base_sha: (item.base as Record<string, unknown>)?.sha as string,
-  };
+  const { prData: result, sanitizationWarnings } =
+    createBasePRTransformation(item);
 
   // Add sanitization warnings if any were detected
   if (sanitizationWarnings.size > 0) {
     result._sanitization_warnings = Array.from(sanitizationWarnings);
-  }
-
-  // Add optional merged_at field
-  if (item.merged_at) {
-    result.merged_at = new Date(item.merged_at as string).toLocaleDateString(
-      'en-GB'
-    );
   }
 
   // Fetch file changes if requested
@@ -574,32 +558,12 @@ export async function transformPullRequestItemFromREST(
 
   // Fetch comments if requested
   if (params.withComments) {
-    try {
-      const commentsResult = await octokit.rest.issues.listComments({
-        owner: params.owner as string,
-        repo: params.repo as string,
-        issue_number: item.number as number,
-      });
-
-      result.comments = commentsResult.data.map(
-        (comment: Record<string, unknown>) => ({
-          id: comment.id as string,
-          user:
-            ((comment.user as Record<string, unknown>)?.login as string) ||
-            'unknown',
-          body: ContentSanitizer.sanitizeContent((comment.body as string) || '')
-            .content,
-          created_at: new Date(comment.created_at as string).toLocaleDateString(
-            'en-GB'
-          ),
-          updated_at: new Date(comment.updated_at as string).toLocaleDateString(
-            'en-GB'
-          ),
-        })
-      );
-    } catch (e) {
-      // Continue without comments if API call fails
-    }
+    result.comments = await fetchPRComments(
+      octokit,
+      params.owner as string,
+      params.repo as string,
+      item.number as number
+    );
   }
 
   return result;
@@ -612,7 +576,7 @@ export async function transformPullRequestItemFromREST(
 export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
-  sessionId?: string
+  userContext?: UserContext
 ): Promise<PullRequestSearchResult> {
   // Generate cache key for specific PR fetch (NO TOKEN DATA)
   const cacheKey = generateCacheKey(
@@ -624,7 +588,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
       withContent: params.withContent,
       withComments: params.withComments,
     },
-    sessionId
+    userContext?.sessionId
   );
 
   const result = await withDataCache<PullRequestSearchResult>(
@@ -734,7 +698,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
       pull_requests: [formattedPR],
       total_count: 1,
       incomplete_results: false,
-      metadata: {},
     };
   } catch (error: unknown) {
     const apiError = handleGitHubAPIError(error);
@@ -751,7 +714,6 @@ async function fetchGitHubPullRequestByNumberAPIInternal(
         'Check if you have access to this repository',
         'Ensure the PR number is correct',
       ],
-      metadata: { error: apiError.error },
     };
   }
 }

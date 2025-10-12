@@ -1,67 +1,286 @@
 /**
- * Shared bulk operations utilities for consistent patterns across all MCP tools
+ * Bulk Operations Utility
  *
- * This module provides common functionality for:
- * - Parallel query processing with error isolation
- * - Result aggregation into successful/empty/failed structure
- * - Organized hint generation per query outcome
+ * This module provides utilities for processing and formatting bulk query operations.
  *
- * Response structure:
- * data:
- *   queries:
- *     successful: [...] // queries that returned results
- *     empty: [...]      // queries that ran but found no matches
- *     failed: [...]     // queries that encountered errors
- *   hints:
- *     successful: [...] // hints for working with results
- *     empty: [...]      // hints for refining empty queries
- *     failed: [...]     // hints for recovering from errors
+ * ## Public API
+ * - `executeBulkOperation()` - Primary function for tools to process bulk queries
+ * - `QueryStatus` - Type for query status ('hasResults' | 'empty' | 'error')
+ *
+ * @module bulkOperations
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { ToolName, TOOL_NAMES } from '../constants.js';
-import { generateHints } from '../tools/hints.js';
-import { BULK_OPERATIONS_HINTS } from '../tools/hintsContent.js';
-import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
-import { createResponseFormat, type ToolResponse } from '../responses.js';
+import { executeWithErrorIsolation } from './promiseUtils.js';
+import { createResponseFormat } from '../responses.js';
+import { getGenericErrorHints, getToolHints } from '../tools/hints.js';
+import type {
+  ProcessedBulkResult,
+  FlatQueryResult,
+  QueryError,
+  BulkResponseConfig,
+  ToolResponse,
+  PromiseResult,
+} from '../types.js';
 
-export interface ProcessedBulkResult {
-  researchGoal?: string;
-  reasoning?: string;
-  data?: unknown;
-  error?: string;
-  hints?: string[];
-  metadata?: Record<string, unknown>;
-}
+// ============================================================================
+// EXPORTED FUNCTIONS
+// ============================================================================
 
-export interface QueryError {
-  queryIndex: number;
-  error: string;
-}
-
-export interface BulkResponseConfig {
-  toolName: ToolName;
-  keysPriority?: string[];
-}
-
-export async function processBulkQueries<
-  T extends Record<string, unknown>,
-  R extends ProcessedBulkResult,
+/**
+ * Execute bulk queries and format the response in a single operation.
+ *
+ * @param queries - Array of query objects to process
+ * @param processor - Async function that processes each query, must return object with status field
+ * @param config - Configuration for response formatting (toolName, keysPriority)
+ * @returns Formatted MCP CallToolResult ready to send to client
+ *
+ * @example
+ * return executeBulkOperation(queries, async (query) => {
+ *   const result = await searchGitHubCodeAPI(query);
+ *   return { status: 'hasResults', data: result };
+ * }, {
+ *   toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
+ *   keysPriority: ['files', 'error']
+ * });
+ */
+export async function executeBulkOperation<
+  TQuery extends object,
+  TData = Record<string, unknown>,
+  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
+    TData,
+    TQuery
+  >,
 >(
-  queries: Array<T>,
-  processor: (query: T, index: number) => Promise<R>
+  queries: Array<TQuery>,
+  processor: (query: TQuery, index: number) => Promise<R>,
+  config: BulkResponseConfig
+): Promise<CallToolResult> {
+  const { results, errors } = await processBulkQueries<TQuery, TData, R>(
+    queries,
+    processor
+  );
+  return createBulkResponse<TQuery, TData, R>(config, results, errors, queries);
+}
+
+// ============================================================================
+// INTERNAL FUNCTIONS
+// ============================================================================
+
+/**
+ * Format bulk query results into an MCP CallToolResult.
+ * Internal function used by executeBulkOperation().
+ */
+function createBulkResponse<
+  TQuery extends object,
+  TData = Record<string, unknown>,
+  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
+    TData,
+    TQuery
+  >,
+>(
+  config: BulkResponseConfig,
+  results: Array<{
+    result: R;
+    queryIndex: number;
+    originalQuery: TQuery;
+  }>,
+  errors: QueryError[],
+  queries: Array<TQuery>
+): CallToolResult {
+  const topLevelFields = [
+    'instructions',
+    'results',
+    'hasResultsStatusHints',
+    'emptyStatusHints',
+    'errorStatusHints',
+  ];
+  const resultFields = ['query', 'status', 'data', 'researchGoal', 'reasoning'];
+  const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
+  const fullKeysPriority = [
+    ...new Set([...standardFields, ...(config.keysPriority || [])]),
+  ];
+
+  const flatQueries: FlatQueryResult<TQuery>[] = [];
+
+  let hasResultsCount = 0;
+  let emptyCount = 0;
+  let errorCount = 0;
+
+  // Collect statuses and hints from all results
+  let hasAnyHasResults = false;
+  let hasAnyEmpty = false;
+  let hasAnyError = false;
+  const hasResultsHintsSet = new Set<string>();
+  const emptyHintsSet = new Set<string>();
+  const errorHintsSet = new Set<string>();
+
+  results.forEach(r => {
+    // Use status directly from tool result
+    const status = r.result.status;
+    const toolData = extractToolData(r.result);
+
+    // Track status types and collect any custom hints from results
+    const hintsArray = r.result.hints;
+    if (status === 'hasResults') {
+      hasAnyHasResults = true;
+      if (hintsArray && Array.isArray(hintsArray)) {
+        hintsArray.forEach(hint => hasResultsHintsSet.add(hint));
+      }
+    } else if (status === 'empty') {
+      hasAnyEmpty = true;
+      if (hintsArray && Array.isArray(hintsArray)) {
+        hintsArray.forEach(hint => emptyHintsSet.add(hint));
+      }
+    } else if (status === 'error') {
+      hasAnyError = true;
+      if (hintsArray && Array.isArray(hintsArray)) {
+        hintsArray.forEach(hint => errorHintsSet.add(hint));
+      }
+    }
+
+    const flatQuery: FlatQueryResult<TQuery> = {
+      query: r.originalQuery,
+      status,
+      data:
+        status === 'error' && r.result.error
+          ? { error: r.result.error }
+          : toolData,
+      researchGoal:
+        r.result.researchGoal ||
+        safeExtractString(r.originalQuery, 'researchGoal'),
+      reasoning:
+        r.result.reasoning || safeExtractString(r.originalQuery, 'reasoning'),
+    };
+
+    flatQueries.push(flatQuery);
+
+    if (status === 'hasResults') hasResultsCount++;
+    else if (status === 'empty') emptyCount++;
+    else errorCount++;
+  });
+
+  errors.forEach(err => {
+    const originalQuery = queries[err.queryIndex];
+    if (!originalQuery) return;
+
+    hasAnyError = true;
+
+    flatQueries.push({
+      query: originalQuery,
+      status: 'error',
+      data: { error: err.error },
+      researchGoal: safeExtractString(originalQuery, 'researchGoal'),
+      reasoning: safeExtractString(originalQuery, 'reasoning'),
+    });
+
+    errorCount++;
+  });
+
+  // Generate hints: prefer custom hints from results, fall back to tool-based hints
+  const hasResultsHints = hasAnyHasResults
+    ? hasResultsHintsSet.size > 0
+      ? [...hasResultsHintsSet]
+      : [
+          ...getToolHints(
+            config.toolName as Parameters<typeof getToolHints>[0],
+            'hasResults'
+          ),
+        ]
+    : [];
+
+  const emptyHints = hasAnyEmpty
+    ? emptyHintsSet.size > 0
+      ? [...emptyHintsSet]
+      : [
+          ...getToolHints(
+            config.toolName as Parameters<typeof getToolHints>[0],
+            'empty'
+          ),
+        ]
+    : [];
+
+  // For errors: use custom hints if available, otherwise generic hints
+  const errorHints = hasAnyError
+    ? errorHintsSet.size > 0
+      ? [...errorHintsSet]
+      : [...getGenericErrorHints()]
+    : [];
+
+  const counts = [];
+  if (hasResultsCount > 0) counts.push(`${hasResultsCount} hasResults`);
+  if (emptyCount > 0) counts.push(`${emptyCount} empty`);
+  if (errorCount > 0) counts.push(`${errorCount} failed`);
+
+  // Generate instructions string
+  const instructionsParts = [
+    `Bulk response with ${flatQueries.length} results: ${counts.join(', ')}.`,
+    'Each result includes the original query, status, and data.',
+  ];
+  if (hasResultsCount > 0) {
+    instructionsParts.push(
+      'Review hasResultsStatusHints for guidance on results with data.'
+    );
+  }
+  if (emptyCount > 0) {
+    instructionsParts.push('Review emptyStatusHints for no-results scenarios.');
+  }
+  if (errorCount > 0) {
+    instructionsParts.push(
+      'Review errorStatusHints for error recovery strategies.'
+    );
+  }
+  const instructions = instructionsParts.join('\n');
+
+  const responseData: ToolResponse = {
+    instructions,
+    results: flatQueries,
+    hasResultsStatusHints: hasResultsHints,
+    emptyStatusHints: emptyHints,
+    errorStatusHints: errorHints,
+  };
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: createResponseFormat(responseData, fullKeysPriority),
+      },
+    ],
+    isError: false,
+  };
+}
+
+/**
+ * Process multiple queries in parallel with error isolation.
+ * Internal function used by executeBulkOperation().
+ *
+ * @param queries - Array of query objects to process
+ * @param processor - Async function that processes each query
+ * @returns Object containing successful results and errors
+ */
+async function processBulkQueries<
+  TQuery extends object,
+  TData = Record<string, unknown>,
+  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
+    TData,
+    TQuery
+  >,
+>(
+  queries: Array<TQuery>,
+  processor: (query: TQuery, index: number) => Promise<R>
 ): Promise<{
   results: Array<{
     result: R;
     queryIndex: number;
-    originalQuery: T;
+    originalQuery: TQuery;
   }>;
   errors: QueryError[];
 }> {
   const results: Array<{
     result: R;
     queryIndex: number;
-    originalQuery: T;
+    originalQuery: TQuery;
   }> = [];
   const errors: QueryError[] = [];
 
@@ -94,7 +313,7 @@ export async function processBulkQueries<
       result: PromiseResult<{
         result: R;
         queryIndex: number;
-        originalQuery: T;
+        originalQuery: TQuery;
       }>
     ) => {
       if (result.success && result.data) {
@@ -110,168 +329,32 @@ export async function processBulkQueries<
   return { results, errors };
 }
 
-export function createBulkResponse<
-  T extends Record<string, unknown>,
-  R extends ProcessedBulkResult,
->(
-  config: BulkResponseConfig,
-  results: Array<{
-    result: R;
-    queryIndex: number;
-    originalQuery: T;
-  }>,
-  errors: QueryError[],
-  queries: Array<T>
-): CallToolResult {
-  const successItems: Record<string, unknown>[] = [];
-  const noResultItems: Record<string, unknown>[] = [];
-  const errorItems: Record<string, unknown>[] = [];
+function extractToolData<TData = Record<string, unknown>, TQuery = object>(
+  result: ProcessedBulkResult<TData, TQuery>
+): Record<string, unknown> {
+  const excludedKeys = new Set([
+    'researchGoal',
+    'reasoning',
+    'error',
+    'status',
+    'query',
+    'hints',
+  ]);
 
-  // Process errors
-  errors.forEach(error => {
-    const originalQuery = queries[error.queryIndex];
-    if (!originalQuery) return;
-
-    const item: Record<string, unknown> = {
-      error: error.error,
-      metadata: { originalQuery },
-    };
-
-    const researchGoal = safeExtractString(originalQuery, 'researchGoal');
-    const reasoning = safeExtractString(originalQuery, 'reasoning');
-    if (researchGoal) item.researchGoal = researchGoal;
-    if (reasoning) item.reasoning = reasoning;
-
-    errorItems.push(item);
-  });
-
-  results.forEach(r => {
-    const item = { ...(r.result as Record<string, unknown>) };
-    const query = r.originalQuery as Record<string, unknown>;
-
-    if (!item.researchGoal)
-      item.researchGoal = safeExtractString(query, 'researchGoal');
-    if (!item.reasoning) item.reasoning = safeExtractString(query, 'reasoning');
-
-    if (item.error) {
-      if (!item.metadata) item.metadata = {};
-      (item.metadata as Record<string, unknown>).originalQuery = query;
-      errorItems.push(item);
-    } else if (isNoResultsForTool(config.toolName, item)) {
-      if (!item.metadata) item.metadata = {};
-      (item.metadata as Record<string, unknown>).originalQuery = query;
-      noResultItems.push(item);
-    } else {
-      delete item.metadata;
-      successItems.push(item);
+  const toolData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(result)) {
+    if (!excludedKeys.has(key)) {
+      toolData[key] = value;
     }
-  });
-
-  // Build queries object - only include sections with data
-  const queriesData: Record<string, unknown[]> = {};
-  const hintsData: Record<string, string[]> = {};
-
-  if (successItems.length > 0) {
-    queriesData.successful = successItems;
-    const successfulHints = generateHints({
-      toolName: config.toolName,
-      resultType: 'successful',
-    });
-    hintsData.successful = successfulHints.successful || [];
   }
 
-  if (noResultItems.length > 0) {
-    queriesData.empty = noResultItems;
-    const emptyHints = generateHints({
-      toolName: config.toolName,
-      resultType: 'empty',
-    });
-    hintsData.empty = emptyHints.empty || [];
-  }
-
-  if (errorItems.length > 0) {
-    queriesData.failed = errorItems;
-    const failedHints = generateHints({
-      toolName: config.toolName,
-      resultType: 'failed',
-      errorMessage: errors[0]?.error || (errorItems[0]?.error as string),
-    });
-    hintsData.failed = failedHints.failed || [];
-  }
-
-  // Build data object - only include if we have queries
-  const data: Record<string, unknown> = {};
-  if (Object.keys(queriesData).length > 0) {
-    data.queries = queriesData;
-  }
-  if (Object.keys(hintsData).length > 0) {
-    data.hints = hintsData;
-  }
-
-  const counts = [];
-  if (successItems.length > 0) counts.push(`${successItems.length} successful`);
-  if (noResultItems.length > 0) counts.push(`${noResultItems.length} empty`);
-  if (errorItems.length > 0) counts.push(`${errorItems.length} failed`);
-
-  const responseData: ToolResponse = {
-    data,
-    hints:
-      counts.length > 0
-        ? [
-            `Query results: ${counts.join(', ')}`,
-            BULK_OPERATIONS_HINTS.QUERY_CATEGORY_GUIDANCE,
-          ]
-        : [BULK_OPERATIONS_HINTS.NO_QUERIES_PROCESSED],
-  };
-
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: createResponseFormat(responseData, config.keysPriority),
-      },
-    ],
-    isError: false,
-  };
+  return toolData;
 }
 
-function safeExtractString(
-  obj: Record<string, unknown>,
+function safeExtractString<T extends object>(
+  obj: T,
   key: string
 ): string | undefined {
-  const value = obj[key];
+  const value = (obj as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
-}
-
-function isNoResultsForTool(
-  toolName: ToolName,
-  resultObj: Record<string, unknown>
-): boolean {
-  if ('error' in resultObj) return false;
-
-  switch (toolName) {
-    case TOOL_NAMES.GITHUB_FETCH_CONTENT:
-      return false;
-    case TOOL_NAMES.GITHUB_SEARCH_CODE:
-      return Array.isArray(resultObj.files) && resultObj.files.length === 0;
-    case TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES:
-      return (
-        Array.isArray(resultObj.repositories) &&
-        resultObj.repositories.length === 0
-      );
-    case TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS:
-      return (
-        Array.isArray(resultObj.pull_requests) &&
-        resultObj.pull_requests.length === 0
-      );
-    case TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE: {
-      const files = resultObj.files as unknown[];
-      const folders = resultObj.folders as unknown[];
-      return (
-        (!files || files.length === 0) && (!folders || folders.length === 0)
-      );
-    }
-    default:
-      return false;
-  }
 }

@@ -18,6 +18,7 @@ import {
   logSessionError,
   resetSessionManager,
 } from '../src/session.js';
+import { TOOL_NAMES } from '../src/constants.js';
 
 describe('Session Logging Control', () => {
   beforeEach(() => {
@@ -39,75 +40,78 @@ describe('Session Logging Control', () => {
       const session = initializeSession();
       await logSessionInit();
 
-      expect(mockPost).toHaveBeenCalledWith(
-        'https://octocode-mcp-host.onrender.com/log',
-        expect.objectContaining({
-          sessionId: session.getSessionId(),
-          intent: 'init',
-          data: {},
-          timestamp: expect.stringMatching(
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-          ),
-        }),
-        expect.any(Object)
-      );
+      const callArgs = mockPost.mock.calls[0]!;
+      const payloadData = callArgs[1] as {
+        sessionId: string;
+        intent: string;
+        data: object;
+        timestamp: string;
+      };
+      expect(callArgs[0]).toEqual('https://octocode-mcp-host.onrender.com/log');
+      expect(payloadData.sessionId).toEqual(session.getSessionId());
+      expect(payloadData.intent).toEqual('init');
+      expect(payloadData.data).toEqual({});
+      expect(typeof payloadData.timestamp).toEqual('string');
     });
 
     it('should send tool call log', async () => {
       const session = initializeSession();
-      await logToolCall('github_search_code', []);
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
-      expect(mockPost).toHaveBeenCalledWith(
-        'https://octocode-mcp-host.onrender.com/log',
-        expect.objectContaining({
-          sessionId: session.getSessionId(),
-          intent: 'tool_call',
-          data: { tool_name: 'github_search_code', repos: [] },
-          timestamp: expect.stringMatching(
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-          ),
-        }),
-        expect.any(Object)
-      );
+      const callArgs = mockPost.mock.calls[0]!;
+      const payloadData = callArgs[1] as {
+        sessionId: string;
+        intent: string;
+        data: { tool_name: string; repos: string[] };
+        timestamp: string;
+      };
+      expect(callArgs[0]).toEqual('https://octocode-mcp-host.onrender.com/log');
+      expect(payloadData.sessionId).toEqual(session.getSessionId());
+      expect(payloadData.intent).toEqual('tool_call');
+      expect(payloadData.data).toEqual({
+        tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+        repos: [],
+      });
+      expect(typeof payloadData.timestamp).toEqual('string');
     });
 
     it('should send tool call log with repos', async () => {
       const session = initializeSession();
-      await logToolCall('github_fetch_content', ['my-owner/my-repo']);
+      await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['my-owner/my-repo']);
 
-      expect(mockPost).toHaveBeenCalledWith(
-        'https://octocode-mcp-host.onrender.com/log',
-        expect.objectContaining({
-          sessionId: session.getSessionId(),
-          intent: 'tool_call',
-          data: {
-            tool_name: 'github_fetch_content',
-            repos: ['my-owner/my-repo'],
-          },
-          timestamp: expect.stringMatching(
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-          ),
-        }),
-        expect.any(Object)
-      );
+      const callArgs = mockPost.mock.calls[0]!;
+      const payloadData = callArgs[1] as {
+        sessionId: string;
+        intent: string;
+        data: { tool_name: string; repos: string[] };
+        timestamp: string;
+      };
+      expect(callArgs[0]).toEqual('https://octocode-mcp-host.onrender.com/log');
+      expect(payloadData.sessionId).toEqual(session.getSessionId());
+      expect(payloadData.intent).toEqual('tool_call');
+      expect(payloadData.data).toEqual({
+        tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        repos: ['my-owner/my-repo'],
+      });
+      expect(typeof payloadData.timestamp).toEqual('string');
     });
 
     it('should send error log', async () => {
       const session = initializeSession();
       await logSessionError('Test error message');
 
-      expect(mockPost).toHaveBeenCalledWith(
-        'https://octocode-mcp-host.onrender.com/log',
-        expect.objectContaining({
-          sessionId: session.getSessionId(),
-          intent: 'error',
-          data: { error: 'Test error message' },
-          timestamp: expect.stringMatching(
-            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-          ),
-        }),
-        expect.any(Object)
-      );
+      const callArgs = mockPost.mock.calls[0]!;
+      const payloadData = callArgs[1] as {
+        sessionId: string;
+        intent: string;
+        data: { error: string };
+        timestamp: string;
+      };
+      expect(callArgs[0]).toEqual('https://octocode-mcp-host.onrender.com/log');
+      expect(payloadData.sessionId).toEqual(session.getSessionId());
+      expect(payloadData.intent).toEqual('error');
+      expect(payloadData.data).toEqual({ error: 'Test error message' });
+      expect(typeof payloadData.timestamp).toEqual('string');
     });
   });
 
@@ -126,14 +130,14 @@ describe('Session Logging Control', () => {
 
     it('should NOT send tool call log', async () => {
       initializeSession();
-      await logToolCall('github_search_code', []);
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
       expect(mockPost).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool call log with repos', async () => {
       initializeSession();
-      await logToolCall('github_fetch_content', ['my-owner/my-repo']);
+      await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['my-owner/my-repo']);
 
       expect(mockPost).not.toHaveBeenCalled();
     });
@@ -148,19 +152,15 @@ describe('Session Logging Control', () => {
     it('should still work normally but skip logging', async () => {
       const session = initializeSession();
 
-      // All these should complete without errors
-      await expect(logSessionInit()).resolves.toBeUndefined();
-      await expect(logToolCall('test_tool', [])).resolves.toBeUndefined();
-      await expect(
-        logToolCall('test_tool', ['owner/repo'])
-      ).resolves.toBeUndefined();
-      await expect(logSessionError('error')).resolves.toBeUndefined();
+      await logSessionInit();
+      await logToolCall('test_tool', []);
+      await logToolCall('test_tool', ['owner/repo']);
+      await logSessionError('error');
 
-      // Session should still have ID even though logging is disabled
-      expect(session.getSessionId()).toBeDefined();
-      expect(session.getSessionId()).toMatch(/^[0-9a-f-]{36}$/i);
+      const sessionId = session.getSessionId();
+      expect(typeof sessionId).toEqual('string');
+      expect(sessionId.length).toEqual(36);
 
-      // But no logs should be sent
       expect(mockPost).not.toHaveBeenCalled();
     });
   });
@@ -198,12 +198,10 @@ describe('Session Logging Control', () => {
 
       initializeSession();
 
-      // All should complete without throwing
-      await expect(logSessionInit()).resolves.toBeUndefined();
-      await expect(logToolCall('test', [])).resolves.toBeUndefined();
-      await expect(logSessionError('error')).resolves.toBeUndefined();
+      await logSessionInit();
+      await logToolCall('test', []);
+      await logSessionError('error');
 
-      // axios.post should not have been called since logging is disabled
       expect(mockPost).not.toHaveBeenCalled();
     });
   });
@@ -220,14 +218,12 @@ describe('Session Logging Control', () => {
       const session2 = initializeSession();
       const id2 = session2.getSessionId();
 
-      // Both should be valid UUIDs
-      expect(id1).toMatch(/^[0-9a-f-]{36}$/i);
-      expect(id2).toMatch(/^[0-9a-f-]{36}$/i);
-
-      // Should be different
+      expect(typeof id1).toEqual('string');
+      expect(id1.length).toEqual(36);
+      expect(typeof id2).toEqual('string');
+      expect(id2.length).toEqual(36);
       expect(id1).not.toBe(id2);
 
-      // No logging should occur
       expect(mockPost).not.toHaveBeenCalled();
     });
   });

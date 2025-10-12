@@ -3,13 +3,25 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
 // Mock dependencies
-vi.mock('../../src/tools/tools.js', () => {
+vi.mock('../../src/tools/toolConfig.js', () => {
   const mockTools = [
     { name: 'githubSearchCode', isDefault: true, fn: vi.fn() },
     { name: 'githubGetFileContent', isDefault: true, fn: vi.fn() },
-    { name: 'githubViewRepoStructure', isDefault: true, fn: vi.fn() },
-    { name: 'githubSearchRepositories', isDefault: true, fn: vi.fn() },
-    { name: 'githubSearchPullRequests', isDefault: false, fn: vi.fn() },
+    {
+      name: 'githubViewRepoStructure',
+      isDefault: true,
+      fn: vi.fn(),
+    },
+    {
+      name: 'githubSearchRepositories',
+      isDefault: true,
+      fn: vi.fn(),
+    },
+    {
+      name: 'githubSearchPullRequests',
+      isDefault: false,
+      fn: vi.fn(),
+    },
   ];
   return {
     DEFAULT_TOOLS: mockTools,
@@ -20,8 +32,9 @@ vi.mock('../../src/serverConfig.js', () => ({
   getServerConfig: vi.fn(),
 }));
 
-import { DEFAULT_TOOLS } from '../../src/tools/tools.js';
+import { DEFAULT_TOOLS } from '../../src/tools/toolConfig.js';
 import { getServerConfig } from '../../src/serverConfig.js';
+import { TOOL_NAMES } from '../../src/constants.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 
@@ -80,7 +93,10 @@ describe('ToolsManager', () => {
     it('should register only specified tools when TOOLS_TO_RUN is set', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        toolsToRun: ['githubSearchCode', 'githubSearchPullRequests'],
+        toolsToRun: [
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        ],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -107,9 +123,9 @@ describe('ToolsManager', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         toolsToRun: [
-          'githubSearchCode',
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
           'nonExistentTool',
-          'githubSearchPullRequests',
+          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
         ],
         enableLogging: false,
         betaEnabled: false,
@@ -155,8 +171,8 @@ describe('ToolsManager', () => {
     it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        toolsToRun: ['githubSearchCode'],
-        enableTools: ['githubSearchPullRequests'],
+        toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
+        enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -178,8 +194,8 @@ describe('ToolsManager', () => {
     it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        toolsToRun: ['githubSearchCode'],
-        disableTools: ['githubGetFileContent'],
+        toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
+        disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -197,9 +213,9 @@ describe('ToolsManager', () => {
     it('should warn when TOOLS_TO_RUN is used with both ENABLE_TOOLS and DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        toolsToRun: ['githubSearchCode'],
-        enableTools: ['githubSearchPullRequests'],
-        disableTools: ['githubGetFileContent'],
+        toolsToRun: [TOOL_NAMES.GITHUB_SEARCH_CODE],
+        enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+        disableTools: [TOOL_NAMES.GITHUB_FETCH_CONTENT],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -219,7 +235,7 @@ describe('ToolsManager', () => {
     it('should add non-default tools with ENABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        enableTools: ['githubSearchPullRequests'],
+        enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -246,7 +262,10 @@ describe('ToolsManager', () => {
     it('should remove default tools with DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        disableTools: ['githubSearchCode', 'githubGetFileContent'],
+        disableTools: [
+          TOOL_NAMES.GITHUB_SEARCH_CODE,
+          TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        ],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -272,8 +291,8 @@ describe('ToolsManager', () => {
     it('should handle both ENABLE_TOOLS and DISABLE_TOOLS', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        enableTools: ['githubSearchPullRequests'],
-        disableTools: ['githubSearchCode'],
+        enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+        disableTools: [TOOL_NAMES.GITHUB_SEARCH_CODE],
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -302,8 +321,8 @@ describe('ToolsManager', () => {
     it('should handle disabling enabled tools (DISABLE_TOOLS takes precedence)', () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
-        enableTools: ['githubSearchPullRequests'],
-        disableTools: ['githubSearchPullRequests'], // Same tool in both lists
+        enableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
+        disableTools: [TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS], // Same tool in both lists
         enableLogging: false,
         betaEnabled: false,
         timeout: 30000,
@@ -342,7 +361,7 @@ describe('ToolsManager', () => {
 
       // Should register 3 successful tools, 1 failed
       expect(result.successCount).toBe(3);
-      expect(result.failedTools).toEqual(['githubSearchCode']);
+      expect(result.failedTools).toEqual([TOOL_NAMES.GITHUB_SEARCH_CODE]);
     });
 
     it('should continue registering tools after failures', () => {
@@ -368,8 +387,8 @@ describe('ToolsManager', () => {
       // Should register 2 successful tools, 2 failed
       expect(result.successCount).toBe(2);
       expect(result.failedTools).toEqual([
-        'githubSearchCode',
-        'githubViewRepoStructure',
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       ]);
 
       // Verify successful tools were still called

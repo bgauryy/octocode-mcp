@@ -5,6 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ToolName } from './constants.js';
+import type { SamplingResponse } from './types.js';
 
 /**
  * Sampling request schema for input validation
@@ -25,19 +26,6 @@ const SamplingRequestSchema = z.object({
 });
 
 export type SamplingRequest = z.infer<typeof SamplingRequestSchema>;
-
-/**
- * Sampling response interface
- */
-export interface SamplingResponse {
-  content: string;
-  stopReason?: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-}
 
 /**
  * Register sampling capabilities with the MCP server

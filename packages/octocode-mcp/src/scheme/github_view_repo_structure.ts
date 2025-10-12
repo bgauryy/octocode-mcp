@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { BaseQuerySchema, createBulkQuerySchema } from './baseSchema';
 import { GITHUB_VIEW_REPO_STRUCTURE } from './schemDescriptions';
-import { ToolResponse } from '../responses.js';
 import { TOOL_NAMES } from '../constants';
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
@@ -33,10 +32,6 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe(GITHUB_VIEW_REPO_STRUCTURE.range.depth),
 });
-
-export type GitHubViewRepoStructureQuery = z.infer<
-  typeof GitHubViewRepoStructureQuerySchema
->;
 
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
@@ -110,26 +105,4 @@ export interface GitHubRepositoryStructureError {
   defaultBranch?: string;
   rateLimitRemaining?: number;
   rateLimitReset?: number;
-}
-
-export interface GitHubViewRepoStructureInput {
-  queries: GitHubViewRepoStructureQuery[];
-}
-
-export interface GitHubViewRepoStructureOutput extends ToolResponse {
-  data: RepoStructureResult[];
-}
-
-export interface RepoStructureResult {
-  researchGoal?: string;
-  reasoning?: string;
-  owner?: string;
-  repo?: string;
-  path?: string;
-  files?: string[];
-  folders?: string[];
-  error?: string;
-  hints?: string[];
-  query?: Record<string, unknown>;
-  metadata: Record<string, unknown>;
 }

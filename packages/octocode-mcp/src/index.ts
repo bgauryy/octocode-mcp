@@ -74,7 +74,7 @@ async function startServer() {
 
     // Log session initialization (fire-and-forget)
     logSessionInit().catch(() => {
-      // Silently ignore logging errors
+      // Silently ignore logging errors to avoid breaking MCP protocol
     });
 
     // Ensure all buffered output is sent
@@ -153,7 +153,7 @@ async function startServer() {
         logger.error('Uncaught exception', { error: error.message });
       }
       logSessionError(`Uncaught exception: ${error.message}`).catch(() => {
-        // Silently ignore logging errors
+        // Silently ignore logging errors to avoid breaking shutdown
       });
       gracefulShutdown('UNCAUGHT_EXCEPTION');
     });
@@ -163,7 +163,7 @@ async function startServer() {
         logger.error('Unhandled rejection', { reason: String(reason) });
       }
       logSessionError(`Unhandled rejection: ${String(reason)}`).catch(() => {
-        // Silently ignore logging errors
+        // Silently ignore logging errors to avoid breaking shutdown
       });
       gracefulShutdown('UNHANDLED_REJECTION');
     });
@@ -175,7 +175,7 @@ async function startServer() {
       await logger.error('Startup failed', { error: String(startupError) });
     }
     logSessionError(`Startup failed: ${String(startupError)}`).catch(() => {
-      // Silently ignore logging errors
+      // Silently ignore logging errors to avoid breaking shutdown
     });
     process.exit(1);
   }
