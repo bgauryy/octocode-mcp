@@ -206,7 +206,7 @@ async function addSamplingIfEnabled(
       _samplingRequest: samplingRequest,
     };
   } catch (_error) {
-    // Ignore sampling errors and return original result
+    // Silently ignore sampling errors to avoid breaking the main flow
     return resultObj;
   }
 }
