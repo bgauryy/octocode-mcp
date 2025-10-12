@@ -3,13 +3,16 @@ import type {
   RepoSearchResultItem,
   GitHubAPIResponse,
 } from './githubAPI';
-import type { GitHubReposSearchQuery, SimplifiedRepository } from '../types';
+import type {
+  GitHubReposSearchQuery,
+  SimplifiedRepository,
+  UserContext,
+} from '../types';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { UserContext } from '../security/withSecurityValidation';
 
 /**
  * Search GitHub repositories using Octokit API with proper TypeScript types and caching

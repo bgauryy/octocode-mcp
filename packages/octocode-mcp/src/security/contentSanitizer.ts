@@ -1,20 +1,5 @@
-import { allRegexPatterns } from './regexes';
-
-interface SanitizationResult {
-  content: string;
-  hasSecrets: boolean;
-  secretsDetected: string[];
-  warnings: string[]; // Alias for secretsDetected for compatibility
-  hasPromptInjection?: boolean;
-  isMalicious?: boolean;
-}
-
-interface ValidationResult {
-  sanitizedParams: Record<string, unknown>;
-  isValid: boolean;
-  hasSecrets: boolean; // Add flag to track if secrets were detected
-  warnings: string[];
-}
+import { allRegexPatterns } from './regexes.js';
+import type { SanitizationResult, ValidationResult } from '../types.js';
 
 export class ContentSanitizer {
   public static sanitizeContent(content: string): SanitizationResult {

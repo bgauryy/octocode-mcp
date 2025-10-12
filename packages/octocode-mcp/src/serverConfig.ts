@@ -1,17 +1,6 @@
 import { getGithubCLIToken } from './utils/exec.js';
 import { version } from '../package.json';
-
-export interface ServerConfig {
-  version: string;
-  toolsToRun?: string[];
-  enableTools?: string[];
-  disableTools?: string[];
-  enableLogging: boolean;
-  betaEnabled: boolean;
-  timeout: number;
-  maxRetries: number;
-  loggingEnabled: boolean;
-}
+import type { ServerConfig } from './types.js';
 
 // Simple module state
 let config: ServerConfig | null = null;

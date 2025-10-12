@@ -14,7 +14,7 @@ import { buildCodeSearchQuery } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/fileFilters';
-import { UserContext } from '../security/withSecurityValidation';
+import type { UserContext } from '../types.js';
 
 /**
  * Search GitHub code using Octokit API with optimized performance and caching

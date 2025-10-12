@@ -1,26 +1,4 @@
-/**
- * Result of a promise operation with error isolation
- */
-export interface PromiseResult<T> {
-  success: boolean;
-  data?: T;
-  error?: Error;
-  index: number;
-}
-
-/**
- * Options for promise execution
- */
-export interface PromiseExecutionOptions {
-  /** Maximum time to wait for all promises in milliseconds */
-  timeout?: number;
-  /** Whether to continue execution if some promises fail */
-  continueOnError?: boolean;
-  /** Maximum number of concurrent promises */
-  concurrency?: number;
-  /** Custom error handler */
-  onError?: (error: Error, index: number) => void;
-}
+import type { PromiseResult, PromiseExecutionOptions } from '../types.js';
 
 /**
  * Execute promises with error isolation - prevents one failure from affecting others

@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  executeBulkOperation,
-  QueryStatus,
-} from '../../src/utils/bulkOperations';
+import { executeBulkOperation } from '../../src/utils/bulkOperations';
+import type { QueryStatus } from '../../src/types';
 import { ToolName, TOOL_NAMES } from '../../src/constants';
 
 describe('executeBulkOperation', () => {

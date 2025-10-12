@@ -1,34 +1,8 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { maskSensitiveData } from './security/mask';
-import { ContentSanitizer } from './security/contentSanitizer';
+import { maskSensitiveData } from './security/mask.js';
+import { ContentSanitizer } from './security/contentSanitizer.js';
 import { jsonToYamlString } from 'octocode-utils';
-
-/**
- * Standardized response format for all tool responses.
- * Supports both single responses (data, instructions) and bulk responses (instructions, results, status-based hints).
- */
-export interface ToolResponse {
-  /** Primary data payload (GitHub API responses, packages, file contents, etc.) - used in single responses */
-  data?: unknown;
-
-  /** Helpful hints for AI assistants (recovery tips, usage guidance) - DEPRECATED: Use instructions instead */
-  hints?: string[];
-
-  /** Instructions for processing responses - used in both single and bulk responses */
-  instructions?: string;
-
-  /** Results array for bulk operations - replaces data.queries */
-  results?: unknown[];
-
-  /** Hints for results that have data in bulk operations */
-  hasResultsStatusHints?: string[];
-
-  /** Hints for empty results in bulk operations */
-  emptyStatusHints?: string[];
-
-  /** Hints for error results in bulk operations */
-  errorStatusHints?: string[];
-}
+import type { ToolResponse } from './types.js';
 
 /**
  * Simplified result creation with standardized format

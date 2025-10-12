@@ -71,7 +71,7 @@ export function createErrorResult(
  * Create standardized success result for bulk operations
  * Returns a strongly-typed success result with status='hasResults' or status='empty'
  */
-export function createSuccessResult<T extends Record<string, unknown>>(
+export function createSuccessResult<T>(
   query: {
     researchGoal?: string;
     reasoning?: string;
@@ -79,7 +79,7 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   data: T,
   hasContent: boolean,
   _toolName: keyof typeof TOOL_NAMES
-): ToolSuccessResult<T> & T {
+): ToolSuccessResult<T extends Record<string, unknown> ? T : never> & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
 
   return {
@@ -87,31 +87,30 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
     ...data,
-  };
+  } as ToolSuccessResult<T extends Record<string, unknown> ? T : never> & T;
 }
 
 /**
  * Type guard to check if an object has an error property
  */
-function hasError(value: unknown): value is Record<string, unknown> {
+interface ErrorObject {
+  error: string;
+  type?: 'http' | 'graphql' | 'network' | 'unknown';
+  status?: number;
+  scopesSuggestion?: string;
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
+  retryAfter?: number;
+  hints?: string[];
+}
+
+function hasError(value: unknown): value is ErrorObject {
   return (
     typeof value === 'object' &&
     value !== null &&
     'error' in value &&
-    typeof (value as Record<string, unknown>).error === 'string'
+    typeof (value as ErrorObject).error === 'string'
   );
-}
-
-/**
- * Safely extract a typed property from an object
- */
-function extractTypedProperty<T>(
-  obj: Record<string, unknown>,
-  key: string,
-  type: 'string' | 'number'
-): T | undefined {
-  const value = obj[key];
-  return typeof value === type ? (value as T) : undefined;
 }
 
 /**
@@ -129,36 +128,18 @@ export function handleApiError(
     return null;
   }
 
-  const resultObj = apiResult as Record<string, unknown>;
-
   const apiError: GitHubAPIError = {
-    error: apiResult.error as string,
-    type:
-      (resultObj.type as 'http' | 'graphql' | 'network' | 'unknown') ||
-      'unknown',
-    status: extractTypedProperty<number>(apiResult, 'status', 'number'),
-    scopesSuggestion: extractTypedProperty<string>(
-      apiResult,
-      'scopesSuggestion',
-      'string'
-    ),
-    rateLimitRemaining: extractTypedProperty<number>(
-      apiResult,
-      'rateLimitRemaining',
-      'number'
-    ),
-    rateLimitReset: extractTypedProperty<number>(
-      apiResult,
-      'rateLimitReset',
-      'number'
-    ),
-    retryAfter: extractTypedProperty<number>(apiResult, 'retryAfter', 'number'),
+    error: apiResult.error,
+    type: apiResult.type || 'unknown',
+    status: apiResult.status,
+    scopesSuggestion: apiResult.scopesSuggestion,
+    rateLimitRemaining: apiResult.rateLimitRemaining,
+    rateLimitReset: apiResult.rateLimitReset,
+    retryAfter: apiResult.retryAfter,
   };
 
   // Extract hints from the apiResult if they exist (from API error responses)
-  const apiHints = Array.isArray(resultObj.hints)
-    ? (resultObj.hints as string[])
-    : undefined;
+  const apiHints = apiResult.hints;
 
   // Combine API error hints with hints from the error object
   const combinedHints = [

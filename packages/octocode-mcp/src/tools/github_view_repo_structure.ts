@@ -1,9 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import {
-  UserContext,
-  withSecurityValidation,
-} from '../security/withSecurityValidation.js';
+import { withSecurityValidation } from '../security/withSecurityValidation.js';
+import type { UserContext } from '../types.js';
 import { viewGitHubRepositoryStructureAPI } from '../github/fileOperations.js';
 import { TOOL_NAMES } from '../constants.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from '../scheme/github_view_repo_structure.js';

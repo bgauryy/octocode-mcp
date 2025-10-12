@@ -11,47 +11,17 @@
  */
 
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { ToolName } from '../constants.js';
-import { executeWithErrorIsolation, PromiseResult } from './promiseUtils.js';
-import { createResponseFormat, type ToolResponse } from '../responses.js';
+import { executeWithErrorIsolation } from './promiseUtils.js';
+import { createResponseFormat } from '../responses.js';
 import { getGenericErrorHints, getToolHints } from '../tools/hints.js';
-
-// ============================================================================
-// EXPORTED TYPES
-// ============================================================================
-
-export type QueryStatus = 'hasResults' | 'empty' | 'error';
-
-// ============================================================================
-// INTERNAL TYPES
-// ============================================================================
-
-interface ProcessedBulkResult extends Record<string, unknown> {
-  researchGoal?: string;
-  reasoning?: string;
-  data?: unknown;
-  error?: unknown; // Can be string or GitHubAPIError
-  status: QueryStatus; // Required: Tools must set status explicitly
-  query?: Record<string, unknown>;
-}
-
-interface FlatQueryResult {
-  query: Record<string, unknown>;
-  status: QueryStatus;
-  data: Record<string, unknown>;
-  researchGoal?: string;
-  reasoning?: string;
-}
-
-interface QueryError {
-  queryIndex: number;
-  error: string;
-}
-
-interface BulkResponseConfig {
-  toolName: ToolName;
-  keysPriority?: string[];
-}
+import type {
+  ProcessedBulkResult,
+  FlatQueryResult,
+  QueryError,
+  BulkResponseConfig,
+  ToolResponse,
+  PromiseResult,
+} from '../types.js';
 
 // ============================================================================
 // EXPORTED FUNCTIONS
@@ -75,15 +45,22 @@ interface BulkResponseConfig {
  * });
  */
 export async function executeBulkOperation<
-  T extends Record<string, unknown>,
-  R extends ProcessedBulkResult,
+  TQuery extends object,
+  TData = Record<string, unknown>,
+  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
+    TData,
+    TQuery
+  >,
 >(
-  queries: Array<T>,
-  processor: (query: T, index: number) => Promise<R>,
+  queries: Array<TQuery>,
+  processor: (query: TQuery, index: number) => Promise<R>,
   config: BulkResponseConfig
 ): Promise<CallToolResult> {
-  const { results, errors } = await processBulkQueries(queries, processor);
-  return createBulkResponse(config, results, errors, queries);
+  const { results, errors } = await processBulkQueries<TQuery, TData, R>(
+    queries,
+    processor
+  );
+  return createBulkResponse<TQuery, TData, R>(config, results, errors, queries);
 }
 
 // ============================================================================
@@ -95,17 +72,21 @@ export async function executeBulkOperation<
  * Internal function used by executeBulkOperation().
  */
 function createBulkResponse<
-  T extends Record<string, unknown>,
-  R extends ProcessedBulkResult,
+  TQuery extends object,
+  TData = Record<string, unknown>,
+  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
+    TData,
+    TQuery
+  >,
 >(
   config: BulkResponseConfig,
   results: Array<{
     result: R;
     queryIndex: number;
-    originalQuery: T;
+    originalQuery: TQuery;
   }>,
   errors: QueryError[],
-  queries: Array<T>
+  queries: Array<TQuery>
 ): CallToolResult {
   const topLevelFields = [
     'instructions',
@@ -120,7 +101,7 @@ function createBulkResponse<
     ...new Set([...standardFields, ...(config.keysPriority || [])]),
   ];
 
-  const flatQueries: FlatQueryResult[] = [];
+  const flatQueries: FlatQueryResult<TQuery>[] = [];
 
   let hasResultsCount = 0;
   let emptyCount = 0;
@@ -158,7 +139,7 @@ function createBulkResponse<
       }
     }
 
-    const flatQuery: FlatQueryResult = {
+    const flatQuery: FlatQueryResult<TQuery> = {
       query: r.originalQuery,
       status,
       data:
@@ -200,13 +181,23 @@ function createBulkResponse<
   const hasResultsHints = hasAnyHasResults
     ? hasResultsHintsSet.size > 0
       ? [...hasResultsHintsSet]
-      : [...getToolHints(config.toolName, 'hasResults')]
+      : [
+          ...getToolHints(
+            config.toolName as Parameters<typeof getToolHints>[0],
+            'hasResults'
+          ),
+        ]
     : [];
 
   const emptyHints = hasAnyEmpty
     ? emptyHintsSet.size > 0
       ? [...emptyHintsSet]
-      : [...getToolHints(config.toolName, 'empty')]
+      : [
+          ...getToolHints(
+            config.toolName as Parameters<typeof getToolHints>[0],
+            'empty'
+          ),
+        ]
     : [];
 
   // For errors: use custom hints if available, otherwise generic hints
@@ -269,23 +260,27 @@ function createBulkResponse<
  * @returns Object containing successful results and errors
  */
 async function processBulkQueries<
-  T extends Record<string, unknown>,
-  R extends ProcessedBulkResult,
+  TQuery extends object,
+  TData = Record<string, unknown>,
+  R extends ProcessedBulkResult<TData, TQuery> = ProcessedBulkResult<
+    TData,
+    TQuery
+  >,
 >(
-  queries: Array<T>,
-  processor: (query: T, index: number) => Promise<R>
+  queries: Array<TQuery>,
+  processor: (query: TQuery, index: number) => Promise<R>
 ): Promise<{
   results: Array<{
     result: R;
     queryIndex: number;
-    originalQuery: T;
+    originalQuery: TQuery;
   }>;
   errors: QueryError[];
 }> {
   const results: Array<{
     result: R;
     queryIndex: number;
-    originalQuery: T;
+    originalQuery: TQuery;
   }> = [];
   const errors: QueryError[] = [];
 
@@ -318,7 +313,7 @@ async function processBulkQueries<
       result: PromiseResult<{
         result: R;
         queryIndex: number;
-        originalQuery: T;
+        originalQuery: TQuery;
       }>
     ) => {
       if (result.success && result.data) {
@@ -334,7 +329,9 @@ async function processBulkQueries<
   return { results, errors };
 }
 
-function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
+function extractToolData<TData = Record<string, unknown>, TQuery = object>(
+  result: ProcessedBulkResult<TData, TQuery>
+): Record<string, unknown> {
   const excludedKeys = new Set([
     'researchGoal',
     'reasoning',
@@ -354,10 +351,10 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   return toolData;
 }
 
-function safeExtractString(
-  obj: Record<string, unknown>,
+function safeExtractString<T extends object>(
+  obj: T,
   key: string
 ): string | undefined {
-  const value = obj[key];
+  const value = (obj as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
 }

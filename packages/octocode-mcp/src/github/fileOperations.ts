@@ -16,7 +16,7 @@ import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { UserContext } from '../security/withSecurityValidation';
+import type { UserContext } from '../types.js';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/fileFilters';
 
 /**

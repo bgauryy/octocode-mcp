@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { createResult } from '../responses';
+import { createResult } from '../responses.js';
+import type { ExecOptions } from '../types.js';
 
 const ALLOWED_NPM_COMMANDS = [
   'view',
@@ -11,13 +12,6 @@ const ALLOWED_NPM_COMMANDS = [
 ] as const;
 
 export type NpmCommand = (typeof ALLOWED_NPM_COMMANDS)[number];
-
-type ExecOptions = {
-  timeout?: number;
-  cwd?: string;
-  env?: Record<string, string>;
-  cache?: boolean;
-};
 
 /**
  * Parse execution result into a standardized format

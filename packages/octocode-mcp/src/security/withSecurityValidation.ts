@@ -4,14 +4,7 @@ import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { logToolCall } from '../session.js';
 import { isLoggingEnabled } from '../serverConfig.js';
-
-export interface UserContext {
-  userId: string;
-  userLogin: string;
-  organizationId?: string;
-  isEnterpriseMode: boolean;
-  sessionId?: string;
-}
+import type { UserContext } from '../types.js';
 
 /**
  * Security validation decorator

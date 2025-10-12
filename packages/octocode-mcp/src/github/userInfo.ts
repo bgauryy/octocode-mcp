@@ -4,43 +4,9 @@
  * Adds user identification and enhanced rate limiting to GitHub API calls
  */
 
-import { getOctokit } from './client';
-import { generateCacheKey, withDataCache } from '../utils/cache';
-
-export interface GitHubUserInfo {
-  login: string;
-  id: number;
-  name: string | null;
-  email: string | null;
-  company: string | null;
-  type: 'User' | 'Organization';
-  plan?: {
-    name: string;
-    space: number;
-    private_repos: number;
-  };
-}
-
-export interface GitHubRateLimitInfo {
-  core: {
-    limit: number;
-    used: number;
-    remaining: number;
-    reset: number;
-  };
-  search: {
-    limit: number;
-    used: number;
-    remaining: number;
-    reset: number;
-  };
-  graphql: {
-    limit: number;
-    used: number;
-    remaining: number;
-    reset: number;
-  };
-}
+import { getOctokit } from './client.js';
+import { generateCacheKey, withDataCache } from '../utils/cache.js';
+import type { GitHubUserInfo, GitHubRateLimitInfo } from '../types.js';
 
 /**
  * Get authenticated user information from GitHub API
