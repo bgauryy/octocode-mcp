@@ -1,0 +1,22 @@
+{
+  "name": "octocode-vibe",
+  "version": "1.0.0",
+  "description": "AI-powered development plugin with coordinated agents for complete project generation using octocode-mcp for context research",
+  "author": "Guy Bary <bgauryy@gmail.com>",
+  "homepage": "https://github.com/bgauryy/octocode-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bgauryy/octocode-mcp"
+  },
+  "license": "MIT",
+  "mcp": {
+    "servers": {
+      "octocode": {
+        "command": "npx",
+        "args": ["-y", "octocode-mcp@latest"]
+      }
+    }
+  },
+  "commands": "./commands",
+  "agents": "./agents"
+}
