@@ -6,6 +6,7 @@ tools:
   - Read
   - Write
   - Grep
+  - Glob
   - TodoWrite
 ---
 

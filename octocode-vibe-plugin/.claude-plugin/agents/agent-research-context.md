@@ -5,6 +5,7 @@ model: sonnet
 tools:
   - Read
   - Write
+  - TodoWrite
 ---
 
 # Research Specialist Agent
