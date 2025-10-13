@@ -20,6 +20,7 @@ Requirements → Architecture & UX (parallel) → Design Validation
 - **Professional UX Design**: Wireframes, design systems, component libraries
 - **Parallel Implementation**: Multiple agents work simultaneously
 - **GitHub Research**: Uses octocode-mcp to find best practices and patterns
+- **Runtime Testing**: Uses chrome-devtools-mcp to test applications in real Chrome browser, monitor console errors, verify network requests, and validate user flows
 - **Human-in-the-Loop**: 5 approval gates for full control
 - **State Persistence**: Resume from crashes with checkpoints
 - **Full Observability**: Debug decisions, research, and communications
@@ -186,6 +187,14 @@ View decisions, communications, and research:
 - Checks performance criteria
 - Performs static code analysis (type safety, complexity, dead code)
 - Validates production readiness (environment, monitoring, health checks)
+- **Runtime testing with Chrome DevTools** (chrome-devtools-mcp):
+  - Starts local dev server
+  - Opens application in Chrome browser
+  - Monitors console for errors and warnings
+  - Verifies network requests
+  - Tests user interactions in real browser
+  - Captures screenshots of issues
+  - Fixes runtime errors
 - Scans for critical bugs and security issues
 - **Gate 5:** User approves final deliverable
 
@@ -317,9 +326,9 @@ All agent decisions, communications, and research are logged for full transparen
 
 ### QA Engineer (`agent-verification`)
 - Model: Sonnet
-- Tools: Read, Bash, Grep, Glob, TodoWrite
+- Tools: Read, Bash, Grep, Glob, TodoWrite, chrome-devtools-mcp
 - Role: Quality assurance and verification
-- Capabilities: Static code analysis (type safety, complexity, dead code), production readiness verification (environment config, monitoring, health checks, security headers), comprehensive testing and feature validation
+- Capabilities: Static code analysis (type safety, complexity, dead code), production readiness verification (environment config, monitoring, health checks, security headers), **runtime testing in Chrome browser** (console errors, network monitoring, user flow testing, performance metrics), comprehensive testing and feature validation
 
 ## Examples
 
@@ -368,9 +377,24 @@ Active tasks found: 4
 
 ## Configuration
 
-### MCP Server
+### MCP Servers
 
-The plugin automatically configures octocode-mcp:
+The plugin automatically configures two MCP servers:
+
+**octocode-mcp** - GitHub research and best practices:
+- Search repositories by keywords and stars
+- View repository structures
+- Extract file contents from high-quality repos
+- Search code patterns across GitHub
+
+**chrome-devtools-mcp** - Runtime testing and browser automation:
+- Launch local development servers
+- Open applications in Chrome browser
+- Monitor console logs and errors
+- Track network requests and responses
+- Test user interactions in real browser
+- Capture screenshots of issues
+- Verify performance metrics
 
 ```json
 {
@@ -379,6 +403,10 @@ The plugin automatically configures octocode-mcp:
       "octocode": {
         "command": "npx",
         "args": ["-y", "octocode-mcp@latest"]
+      },
+      "chrome-devtools": {
+        "command": "npx",
+        "args": ["chrome-devtools-mcp@latest"]
       }
     }
   }

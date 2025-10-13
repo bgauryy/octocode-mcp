@@ -14,6 +14,10 @@
       "octocode": {
         "command": "npx",
         "args": ["-y", "octocode-mcp@latest"]
+      },
+      "chrome-devtools": {
+        "command": "npx",
+        "args": ["chrome-devtools-mcp@latest"]
       }
     }
   },
