@@ -1,8 +1,31 @@
 # Frontend Development Resources
 
-> Comprehensive collection of frontend frameworks, libraries, and best practices for React, UI components, animations, forms, and styling.
+> Comprehensive Node.js/TypeScript frontend frameworks, libraries, and React ecosystem for web + mobile
+
+**🎯 Purpose:** Frontend resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers building React web and React Native mobile applications
+**🌐 Focus:** React 19, Next.js 15, TypeScript - Modern JavaScript ecosystem
+**📱 Mobile:** React Native components, state management, animations included
+**⚙️ Runtime:** All frontend tooling runs on Node.js (Vite, Next.js, Metro bundler)
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **frontend building blocks** to help AI agents:
+1. **Choose state management** - Zustand vs Redux, Context vs URL state
+2. **Select UI libraries** - Shadcn UI, Material UI, Chakra UI comparisons
+3. **Implement forms** - React Hook Form with Zod validation
+4. **Add animations** - Framer Motion, Lottie, React Spring
+5. **Build mobile apps** - React Native with same state/form libraries
+
+**Generation Priorities:**
+- ⚡ **Zustand + TanStack Query** - Modern state management for 2025
+- ⚡ **Shadcn UI** - Copy-paste components with Tailwind (web)
+- ⚡ **React Hook Form** - Best form library for web + mobile
+- ⚡ **React Native** - Cross-platform mobile with shared logic
 
 ---
 

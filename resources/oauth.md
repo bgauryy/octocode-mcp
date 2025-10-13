@@ -1,8 +1,31 @@
 # OAuth & Authentication Resources
 
-> Comprehensive collection of OAuth, authentication, and authorization libraries, platforms, and best practices for Node.js applications in 2025.
+> Authentication, OAuth, and authorization for Node.js/TypeScript web and mobile applications
+
+**🎯 Purpose:** Auth resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers implementing authentication in Node.js apps
+**🌐 Focus:** NextAuth.js, Passport.js, SuperTokens - Node.js authentication
+**📱 Mobile:** OAuth flows, JWT, and session management for React Native apps
+**⚙️ Runtime:** 100% Node.js authentication libraries and middleware
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **authentication guidance** to help AI agents:
+1. **Choose auth strategy** - NextAuth.js vs Passport.js vs SuperTokens
+2. **Implement OAuth** - OAuth 2.0/2.1, social login (Google, GitHub, etc.)
+3. **Handle sessions** - JWT vs session cookies, refresh tokens
+4. **Add 2FA** - WebAuthn, TOTP, SMS verification
+5. **Secure mobile** - Same auth for web and React Native mobile apps
+
+**Generation Priorities:**
+- ⚡ **NextAuth.js** - Best for Next.js with 80+ OAuth providers (2025 default)
+- ⚡ **Passport.js** - Battle-tested for Express/NestJS/Fastify
+- ⚡ **SuperTokens** - Open-source Auth0 alternative with full control
+- ⚡ **JWT + OAuth 2.1** - Modern token-based authentication
 
 ---
 

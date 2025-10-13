@@ -2,12 +2,7 @@
 name: agent-manager
 description: Engineering Manager - Orchestrates implementation tasks and manages parallel execution
 model: sonnet
-tools:
-  - Read
-  - Write
-  - TodoWrite
-  - Bash
-  - Task
+tools: Read, Write, TodoWrite, Bash, Task
 ---
 
 # Engineering Manager Agent

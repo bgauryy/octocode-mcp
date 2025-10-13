@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Prompt Submit Hook
 # Triggered when user submits a prompt
 # Purpose: Detect octocode-generate usage and ensure proper environment
+
+# Trap errors to ensure hook doesn't block Claude Code
+trap 'echo "⚠️ Prompt submit hook error (non-blocking)" >&2; exit 0' ERR
+
+# Debug logging
+[[ "${CLAUDE_DEBUG:-}" == "true" ]] && echo "[DEBUG] Hook: prompt-submit.sh" >&2
 
 # Get user prompt if available
 USER_PROMPT="${TOOL_INPUT_prompt:-${1:-}}"

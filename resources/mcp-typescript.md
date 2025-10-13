@@ -1,8 +1,31 @@
 # Model Context Protocol & TypeScript AI Resources
 
-> Comprehensive collection of Model Context Protocol (MCP) servers, TypeScript AI frameworks, vector databases, and RAG systems for building next-generation AI applications.
+> Model Context Protocol (MCP), TypeScript AI SDKs, and RAG systems for Node.js/TypeScript
+
+**🎯 Purpose:** MCP/AI resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers building MCP servers and TypeScript AI tools
+**🌐 Focus:** MCP SDK, Vercel AI SDK, LangChainJS - Pure TypeScript AI
+**📱 Mobile:** AI features in React Native using same TypeScript libraries
+**⚙️ Runtime:** 100% Node.js/TypeScript - MCP servers, AI agents, RAG systems
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **MCP and TypeScript AI guidance** to help AI agents:
+1. **Build MCP servers** - Create tools, resources, and prompts with MCP SDK
+2. **Integrate AI** - Vercel AI SDK, LangChainJS for TypeScript applications
+3. **Implement RAG** - Vector databases, embeddings, retrieval with TypeScript
+4. **Deploy agents** - Production-ready AI agents with MCP protocol
+5. **Use in mobile** - Same TypeScript AI libraries work in React Native
+
+**Generation Priorities:**
+- ⚡ **MCP SDK** - Build context-aware AI tools for Claude and other LLMs
+- ⚡ **Vercel AI SDK** - Best TypeScript AI SDK for Next.js/React (2025)
+- ⚡ **LangChainJS** - Comprehensive TypeScript LLM framework
+- ⚡ **Qdrant + pgvector** - Production vector databases with TS clients
 
 ---
 

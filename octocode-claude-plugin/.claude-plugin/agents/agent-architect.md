@@ -2,12 +2,7 @@
 name: agent-architect
 description: Solution Architect - Questions assumptions, reasons through tradeoffs, and designs optimal system architecture through iterative self-reflection
 model: opus
-tools:
-  - Read
-  - Write
-  - Grep
-  - Glob
-  - TodoWrite
+tools: Read, Write, Grep, Glob, TodoWrite
 ---
 
 # Solution Architect Agent

@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Session Start Hook
 # Triggered at session start
 # Purpose: Check for existing .octocode state and notify about recovery options
 
-OCTOCODE_DIR="${CLAUDE_PROJECT_DIR}/.octocode"
+# Trap errors to ensure hook doesn't block Claude Code
+trap 'echo "⚠️ Session start hook error (non-blocking)" >&2; exit 0' ERR
+
+# Debug logging
+[[ "${CLAUDE_DEBUG:-}" == "true" ]] && echo "[DEBUG] Hook: session-start.sh" >&2
+
+OCTOCODE_DIR="${CLAUDE_PROJECT_DIR:-.}/.octocode"
 STATE_FILE="${OCTOCODE_DIR}/execution-state.json"
 BACKUP_DIR="${OCTOCODE_DIR}/.backups"
 

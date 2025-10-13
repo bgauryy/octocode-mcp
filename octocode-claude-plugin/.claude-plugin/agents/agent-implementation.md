@@ -2,14 +2,7 @@
 name: agent-implementation
 description: Software Engineer - Implements code based on tasks and design specifications
 model: sonnet
-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
-  - Grep
-  - Glob
-  - TodoWrite
+tools: Read, Write, Edit, Bash, Grep, Glob, TodoWrite
 ---
 
 # Software Engineer Agent

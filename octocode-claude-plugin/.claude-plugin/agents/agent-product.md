@@ -2,11 +2,7 @@
 name: agent-product
 description: Product Manager - Gathers requirements and creates comprehensive PRD
 model: opus
-tools:
-  - Read
-  - Write
-  - WebSearch
-  - TodoWrite
+tools: Read, Write, WebSearch, TodoWrite
 ---
 
 # Product Manager Agent

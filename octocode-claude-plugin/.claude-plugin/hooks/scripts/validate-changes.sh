@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Validate Changes Hook
 # Triggered after Edit operations on critical plugin files
 # Purpose: Validate YAML frontmatter in agent files and JSON in other config files
+
+# Trap errors to ensure hook doesn't block Claude Code
+trap 'echo "⚠️ Validation hook error (non-blocking)" >&2; exit 0' ERR
+
+# Debug logging
+[[ "${CLAUDE_DEBUG:-}" == "true" ]] && echo "[DEBUG] Hook: validate-changes.sh" >&2
 
 # Get the file path from TOOL_INPUT if available
 FILE_PATH="${TOOL_INPUT_file_path:-}"

@@ -1,8 +1,31 @@
 # Backend Development Resources
 
-> Comprehensive collection of backend frameworks, API design patterns, and server-side best practices for Node.js, Express, NestJS, and API development.
+> Node.js backend frameworks, API design patterns, and server-side architecture
+
+**🎯 Purpose:** Backend resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers building production-ready Node.js servers
+**🌐 Focus:** Node.js, Express, NestJS, Fastify - Pure JavaScript/TypeScript backend
+**📱 Mobile:** Backend APIs serving web and React Native mobile clients
+**⚙️ Runtime:** 100% Node.js - no other server runtimes
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **backend building blocks** to help AI agents:
+1. **Choose framework** - NestJS vs Fastify vs Express comparisons
+2. **Design APIs** - REST vs GraphQL vs tRPC with type safety
+3. **Implement validation** - Zod, Joi, class-validator patterns
+4. **Structure code** - Clean architecture, layered architecture, DDD
+5. **Serve all clients** - Same backend for web, mobile, and third-party APIs
+
+**Generation Priorities:**
+- ⚡ **NestJS** - Enterprise-grade applications with DI and modularity
+- ⚡ **Fastify** - High-performance APIs with TypeScript
+- ⚡ **tRPC** - End-to-end type safety without code generation
+- ⚡ **Zod** - Runtime validation with TypeScript inference
 
 ---
 

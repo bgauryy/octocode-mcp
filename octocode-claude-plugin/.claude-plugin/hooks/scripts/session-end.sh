@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Session End Hook
 # Triggered at session end
 # Purpose: Create final checkpoint and summary
 
-OCTOCODE_DIR="${CLAUDE_PROJECT_DIR}/.octocode"
+# Trap errors to ensure hook doesn't block Claude Code
+trap 'echo "⚠️ Session end hook error (non-blocking)" >&2; exit 0' ERR
+
+# Debug logging
+[[ "${CLAUDE_DEBUG:-}" == "true" ]] && echo "[DEBUG] Hook: session-end.sh" >&2
+
+OCTOCODE_DIR="${CLAUDE_PROJECT_DIR:-.}/.octocode"
 STATE_FILE="${OCTOCODE_DIR}/execution-state.json"
 LOGS_DIR="${OCTOCODE_DIR}/logs"
 

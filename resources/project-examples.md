@@ -1,10 +1,31 @@
 # Full Stack Project Examples
 
-> Real-world Node.js/TypeScript project structures based on recommended technology stacks from the Agent Architect Resources
+> Real-world Node.js/TypeScript project structures for production-ready applications
+
+**🎯 Purpose:** Reference architectures for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers building production applications
+**🌐 Focus:** Modern TypeScript/JavaScript stacks - Web + Mobile (Node.js)
+**📱 Mobile:** React Native monorepo examples with shared codebase
+**⚙️ Runtime:** All projects run on Node.js - builds, tests, development, deployment
 
 **Last Updated:** October 13, 2025
-**Purpose:** Reference architectures for building production-ready Node.js full stack applications
-**Focus:** Modern TypeScript/JavaScript stacks with Node.js backend
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **complete project structures** to help AI agents:
+1. **Scaffold full-stack applications** - Ready-to-use templates and boilerplates
+2. **Choose architecture patterns** - Monorepo vs multi-repo, feature-based vs layer-based
+3. **Reference real production apps** - Learn from battle-tested projects (Cal.com, Supabase)
+4. **Understand modern stacks** - T3 Stack, Bulletproof React, Enterprise TypeScript
+
+**Generation Priorities:**
+- ⚡ **T3 Stack** - Fastest MVP generation with end-to-end type safety
+- ⚡ **Bulletproof React** - Scalable feature-based architecture
+- ⚡ **Enterprise Stack** - Large-scale applications with microservices
+
+---
 
 ---
 

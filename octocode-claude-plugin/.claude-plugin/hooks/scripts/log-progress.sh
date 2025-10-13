@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Log Progress Hook
 # Triggered after TodoWrite operations to track agent progress
 # Purpose: Log todo state changes for debugging and progress tracking
 
-OCTOCODE_DIR="${CLAUDE_PROJECT_DIR}/.octocode"
+# Trap errors to ensure hook doesn't block Claude Code
+trap 'echo "⚠️ Log progress hook error (non-blocking)" >&2; exit 0' ERR
+
+# Debug logging
+[[ "${CLAUDE_DEBUG:-}" == "true" ]] && echo "[DEBUG] Hook: log-progress.sh" >&2
+
+OCTOCODE_DIR="${CLAUDE_PROJECT_DIR:-.}/.octocode"
 LOGS_DIR="${OCTOCODE_DIR}/logs"
 PROGRESS_LOG="${LOGS_DIR}/todo-history.log"
 
