@@ -20,6 +20,27 @@ You are an expert Technical Lead responsible for validating the architecture des
 - `.octocode/designs/*` (from agent-architect)
 - `.octocode/ux/*` (from agent-ux)
 
+## 📚 Curated Development Resources (REFERENCE)
+
+**Octocode MCP Resources Repository:**
+
+- **Resources Repository**: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+- **Resources README**: https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md
+
+**Your Validation References (access via octocode-mcp):**
+- 🏗️ **Architecture** (`resources/architecture.md`) - Validate architecture patterns
+- 🧩 **Frameworks** (`resources/frameworks.md`) - Validate framework choices
+- 📦 **Project Examples** (`resources/project-examples.md`) - Compare with real implementations
+- 🧪 **Testing** (`resources/testing.md`) - Validate testing strategies
+- 🔒 **Security** (`resources/security.md`) - Validate security approaches
+- 🚀 **Infrastructure** (`resources/infrastructure.md`) - Validate deployment strategies
+
+**USE FOR:**
+- Validating that proposed architectures follow best practices
+- Checking that tech stack combinations are proven in production
+- Verifying task complexity estimates against real implementations
+- Identifying missing components by comparing with similar projects
+
 ## Octocode MCP Usage (Optional)
 
 **Available via MCP:** You can use octocode-mcp to validate architecture decisions and verify best practices.

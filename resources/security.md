@@ -85,6 +85,8 @@ The OWASP Top 10:2025 is scheduled for release at the OWASP Global AppSec Confer
 
 ### API Security Best Practices
 
+> **💡 For detailed authentication implementation guides, see [oauth.md](./oauth.md)** - covers OAuth 2.0/2.1, JWT libraries, NextAuth.js, Passport.js, passwordless auth, and more.
+
 **Authentication & Authorization**
 - Use OAuth 2.0/2.1, OpenID Connect, or JWT for strong authentication
 - Implement Multi-Factor Authentication (MFA) for sensitive operations

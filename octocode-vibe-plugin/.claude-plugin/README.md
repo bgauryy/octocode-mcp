@@ -243,14 +243,30 @@ All development activities are logged to `.octocode/debug/` for complete transpa
 ## 🔧 MCP Integration
 
 ### Required: octocode-mcp
-**Purpose:** Research-driven development with GitHub code search
+**Purpose:** Research-driven development with GitHub code search + curated development resources
 
 **Capabilities:**
+- Access curated development resources at https://github.com/bgauryy/octocode-mcp/tree/main/resources
 - Search 100+ million GitHub repositories
 - Find similar successful projects
 - Extract implementation patterns from top repos
 - Analyze repository structures
 - Get file contents for code examples
+
+**📚 Curated Resources Available:**
+All agents access comprehensive, curated development resources including:
+- Architecture patterns and best practices (`resources/architecture.md`)
+- Frontend frameworks and UI patterns (`resources/frontend.md`)
+- Backend frameworks and API design (`resources/backend.md`)
+- Database strategies and schema design (`resources/database.md`)
+- Testing strategies and frameworks (`resources/testing.md`)
+- Security best practices (`resources/security.md`)
+- Infrastructure and deployment patterns (`resources/infrastructure.md`)
+- Development tooling (`resources/tooling.md`)
+- Real-world project examples (`resources/project-examples.md`)
+- Framework selection guides (`resources/frameworks.md`)
+
+**Resources README:** https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md
 
 ### Optional: chrome-devtools-mcp
 **Purpose:** Runtime verification with browser testing

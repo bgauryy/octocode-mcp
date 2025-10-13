@@ -31,6 +31,11 @@ User Request → Requirements → Architecture & UX → Validation → Research 
 Orchestration → Implementation → Verification → Production-Ready Code
 ```
 
+**📚 All agents access curated development resources:**
+- Resources: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+- README: https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md
+- Includes: Architecture, Frontend, Backend, Database, Testing, Security, Infrastructure, Tooling, Project Examples, Frameworks
+
 **Timeline (estimated):**
 - Traditional sequential: 8-12 hours
 - Octocode Vibe parallel: 3-5 hours (50-60% faster)

@@ -8,6 +8,13 @@
 
 Octocode transforms your idea into production-ready code through a **7-phase workflow** orchestrated by **8 specialized AI agents** with **5 human approval gates**.
 
+**📚 All agents access curated development resources via octocode-mcp:**
+- **Resources**: https://github.com/bgauryy/octocode-mcp/tree/main/resources
+- **README**: https://github.com/bgauryy/octocode-mcp/blob/main/resources/README.md
+- **Includes**: Architecture, Frontend, Backend, Database, Testing, Security, Infrastructure, Tooling, Project Examples, Frameworks, AI Agents, Learning resources
+
+These curated resources provide expert guidance on best frameworks, tech stacks, patterns, and real-world implementations.
+
 ```
 USER REQUEST
      ↓
@@ -168,6 +175,8 @@ PRODUCTION-READY CODE
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │  2. Research Phase (octocode-mcp)                       │
+│     • ACCESS CURATED RESOURCES FIRST (priority!)        │
+│       https://github.com/bgauryy/octocode-mcp/resources │
 │     • Search GitHub for similar projects (>1000 stars)   │
 │     • Analyze tech stack patterns                        │
 │     • Extract architecture patterns                      │
@@ -214,6 +223,8 @@ PRODUCTION-READY CODE
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │  2. Research Phase (octocode-mcp)                       │
+│     • ACCESS CURATED RESOURCES FIRST (priority!)        │
+│       https://github.com/bgauryy/octocode-mcp/resources │
 │     • UI patterns in successful apps                     │
 │     • Component library analysis                         │
 │     • Design systems                                     │
@@ -394,6 +405,8 @@ Updated: .octocode/designs/api-design.md
 ┌─────────────────────────────────────────────────────────┐
 │  2. Parallel Research (octocode-mcp PRIMARY TOOL)       │
 │     For each topic:                                      │
+│     • ACCESS CURATED RESOURCES FIRST (priority!)        │
+│       https://github.com/bgauryy/octocode-mcp/resources │
 │     • Search 5-10 high-quality repos (>500 stars)        │
 │     • Analyze repository structures                      │
 │     • Extract actual code examples (50-100 lines)        │
