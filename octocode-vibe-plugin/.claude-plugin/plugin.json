@@ -9,6 +9,18 @@
     "url": "https://github.com/bgauryy/octocode-mcp"
   },
   "license": "MIT",
+  "engines": {
+    "claude-code": ">=1.0.0"
+  },
+  "keywords": [
+    "development",
+    "ai-agents",
+    "code-generation",
+    "architecture",
+    "full-stack",
+    "octocode",
+    "mcp"
+  ],
   "mcp": {
     "servers": {
       "octocode": {
