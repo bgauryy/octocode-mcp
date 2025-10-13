@@ -1,8 +1,31 @@
 # Learning & Career Development Resources
 
-> Comprehensive collection of learning resources, roadmaps, books, interview preparation, and curated awesome lists. Prioritized for full-stack JavaScript/TypeScript developers in 2025.
+> Learning paths, roadmaps, and career development for Node.js/TypeScript developers
+
+**🎯 Purpose:** Learning resources for AI agents helping users learn Node.js/TypeScript
+**🤖 For:** AI agents guiding developers and learners in Node.js/TypeScript career paths
+**🌐 Focus:** JavaScript, TypeScript, Node.js, React learning paths
+**📱 Mobile:** React Native learning paths and mobile development skills
+**⚙️ Runtime:** Node.js/TypeScript ecosystem career development
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **learning guidance** to help AI agents:
+1. **Guide career paths** - Full-stack, frontend, backend, mobile with Node.js/TypeScript
+2. **Recommend resources** - roadmap.sh, freeCodeCamp, coding challenges
+3. **Prep interviews** - LeetCode, system design, Node.js interview questions
+4. **Curate learning** - Best books, courses, and tutorials for JavaScript/TypeScript
+5. **Track progress** - Skills roadmaps and competency frameworks
+
+**Generation Priorities:**
+- ⚡ **roadmap.sh** - Interactive career roadmaps (340K+ stars)
+- ⚡ **freeCodeCamp** - Free coding certifications with job placement
+- ⚡ **LeetCode** - Interview preparation for FAANG companies
+- ⚡ **TypeScript Handbook** - Official TypeScript documentation
 
 ---
 

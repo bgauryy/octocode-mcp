@@ -1,8 +1,31 @@
 # Database & ORM Resources
 
-> Comprehensive collection of database design patterns, ORMs, and database management tools for modern TypeScript/Node.js development.
+> Database design, ORMs, and data management for Node.js/TypeScript applications
+
+**🎯 Purpose:** Database resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers choosing databases and ORMs for Node.js
+**🌐 Focus:** Prisma, TypeORM, Drizzle - TypeScript-first ORMs
+**📱 Mobile:** Same database/ORM for web and mobile backends
+**⚙️ Runtime:** Node.js database clients and TypeScript ORMs
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **database guidance** to help AI agents:
+1. **Choose ORM** - Prisma vs TypeORM vs Drizzle comparisons
+2. **Design schemas** - Schema-first vs code-first approaches
+3. **Select database** - PostgreSQL, MySQL, MongoDB with Node.js
+4. **Handle migrations** - Version control and database evolution
+5. **Optimize queries** - TypeScript-safe query builders
+
+**Generation Priorities:**
+- ⚡ **Prisma** - Best-in-class type safety and DX (2025 default)
+- ⚡ **PostgreSQL** - Most recommended database for production
+- ⚡ **TypedSQL** - Direct SQL with TypeScript types
+- ⚡ **ZenStack** - Prisma + authorization rules
 
 ---
 

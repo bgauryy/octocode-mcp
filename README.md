@@ -189,6 +189,39 @@ export BETA="1"
 | **[🏗️ Architecture Overview](./packages/octocode-mcp/docs/summary.md)** | System design and performance details |
 | **[🧰 octocode-utils](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-utils)** | Utility library for token-efficient minification and helpers used by Octocode |
 
+### 🤖 Claude Plugin & Agent System
+
+**[Octocode Claude Plugin](./octocode-claude-plugin/)** - Multi-agent system for Claude AI with specialized agents for product, architecture, UX, implementation, and verification workflows.
+
+**Key Features:**
+- Multi-agent workflow orchestration for complex development tasks
+- Specialized agents (Product, Architect, UX, Implementation, Verification)
+- Integration with Octocode MCP for enhanced code context
+- Session management and progress tracking
+- Comprehensive testing and verification workflows
+
+### 📚 Code Generation Resources
+
+**[Octocode Resources](./resources/)** - Curated collection of 610+ GitHub repositories for building production-ready Node.js/TypeScript applications with 2025 best practices.
+
+**What's Included:**
+- **[project-examples.md](./resources/project-examples.md)** - T3 Stack, production boilerplates, monorepo patterns
+- **[frontend.md](./resources/frontend.md)** - React 19, Next.js 15, state management, UI libraries, React Native
+- **[backend.md](./resources/backend.md)** - NestJS, Fastify, tRPC, API design patterns
+- **[oauth.md](./resources/oauth.md)** - Authentication, OAuth 2.0/2.1, NextAuth.js, security patterns
+- **[architecture.md](./resources/architecture.md)** - System design, Clean Architecture, DDD, microservices
+- **[database.md](./resources/database.md)** - Prisma, TypeORM, database design, ORMs comparison
+- **[frameworks.md](./resources/frameworks.md)** - Next.js features, UI libraries, charts, 3D graphics
+- **[testing.md](./resources/testing.md)** - Vitest, Playwright, testing strategies
+- **[security.md](./resources/security.md)** - OWASP Top 10 2025, secrets management, zero-trust
+- **[infrastructure.md](./resources/infrastructure.md)** - Docker, Kubernetes, CI/CD, monitoring
+- **[ai-agents.md](./resources/ai-agents.md)** - AI frameworks, RAG, vector databases, LangChain
+- **[mcp-typescript.md](./resources/mcp-typescript.md)** - Model Context Protocol, AI SDK, TypeScript AI tools
+- **[tooling.md](./resources/tooling.md)** - Development tools, linters, monorepo tooling
+- **[learning.md](./resources/learning.md)** - Career roadmaps, interview prep, learning paths
+
+**Purpose:** Context resources for AI agents using Octocode MCP to generate applications with proven patterns and best practices from the Node.js/TypeScript ecosystem.
+
 ## 🌟 Featured On
 
 ### Official Community MCP Server

@@ -1,8 +1,31 @@
 # Software Architecture Resources
 
-> Comprehensive collection of architecture patterns, design principles, system design, and microservices resources for building scalable applications.
+> Architecture patterns, design principles, and system design for Node.js/TypeScript applications
+
+**🎯 Purpose:** Architecture resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers designing scalable Node.js systems
+**🌐 Focus:** Clean Architecture, DDD, CQRS, Microservices - TypeScript patterns
+**📱 Mobile:** Same architecture patterns apply to backend serving mobile apps
+**⚙️ Runtime:** Node.js-based systems with TypeScript design patterns
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **architectural guidance** to help AI agents:
+1. **Choose patterns** - Clean Architecture, Hexagonal, DDD, CQRS
+2. **Design systems** - Monoliths, microservices, serverless, event-driven
+3. **Scale applications** - Load balancing, caching, distributed systems
+4. **Structure code** - Layer-based, feature-based, domain-driven organization
+5. **Apply best practices** - SOLID principles, design patterns, refactoring
+
+**Generation Priorities:**
+- ⚡ **Clean Architecture** - Dependency inversion with NestJS/TypeScript
+- ⚡ **Feature-based structure** - Scalable code organization
+- ⚡ **DDD** - Domain-driven design for complex business logic
+- ⚡ **CQRS** - Command-query separation with event sourcing
 
 ---
 
