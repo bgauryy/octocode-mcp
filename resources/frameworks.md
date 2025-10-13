@@ -1,8 +1,31 @@
 # Full-Stack Frameworks & UI Libraries
 
-> Comprehensive collection of full-stack frameworks, UI component libraries, charting solutions, and 3D graphics frameworks for modern web development.
+> Node.js-based full-stack frameworks, UI component libraries, and visualization for web applications
+
+**🎯 Purpose:** Framework resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers choosing frameworks for Node.js web applications
+**🌐 Focus:** Next.js 15, React frameworks - JavaScript/TypeScript ecosystem
+**📱 Mobile:** See frontend.md for React Native frameworks
+**⚙️ Runtime:** All frameworks run on Node.js (Next.js, Remix, Astro)
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **framework guidance** to help AI agents:
+1. **Choose framework** - Next.js vs Remix vs Astro vs Vite
+2. **Select UI library** - Shadcn UI vs Material UI vs Chakra UI
+3. **Pick charting** - Recharts vs Chart.js vs D3 for data visualization
+4. **Add 3D graphics** - Three.js, React Three Fiber for 3D
+5. **Understand features** - SSR, SSG, ISR, Server Components, Streaming
+
+**Generation Priorities:**
+- ⚡ **Next.js 15** - Default choice for full-stack React apps (2025)
+- ⚡ **Shadcn UI** - Best component library for Tailwind + TypeScript
+- ⚡ **Recharts** - Best charts for React with TypeScript
+- ⚡ **Server Components** - Modern React with streaming SSR
 
 ---
 

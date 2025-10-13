@@ -1,8 +1,31 @@
 # Security Best Practices Resources
 
-> Comprehensive collection of security guidelines, tools, and best practices for building secure applications in 2025.
+> Security guidelines, tools, and best practices for Node.js/TypeScript applications
+
+**🎯 Purpose:** Security resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers securing Node.js applications
+**🌐 Focus:** OWASP Top 10, Node.js security, secrets management
+**📱 Mobile:** Mobile app security, API security for React Native backends
+**⚙️ Runtime:** Node.js security tools, npm audit, dependency scanning
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **security guidance** to help AI agents:
+1. **Apply OWASP Top 10** - Prevent injection, broken auth, XSS, CSRF
+2. **Secure Node.js** - Node.js security best practices and patterns
+3. **Manage secrets** - Environment variables, vaults, secret scanning
+4. **Scan dependencies** - npm audit, Snyk, supply chain security
+5. **Secure APIs** - Rate limiting, CORS, authentication for web + mobile
+
+**Generation Priorities:**
+- ⚡ **OWASP Top 10 2025** - Essential security vulnerabilities to prevent
+- ⚡ **Helmet.js** - Security headers for Express/Node.js
+- ⚡ **Zod validation** - Runtime input validation with TypeScript
+- ⚡ **Secrets management** - Never commit secrets, use env vars/vaults
 
 ---
 
@@ -84,6 +107,8 @@ The OWASP Top 10:2025 is scheduled for release at the OWASP Global AppSec Confer
 - **Shift-left security** starting at commit time through CI/CD pipelines
 
 ### API Security Best Practices
+
+> **💡 For detailed authentication implementation guides, see [oauth.md](./oauth.md)** - covers OAuth 2.0/2.1, JWT libraries, NextAuth.js, Passport.js, passwordless auth, and more.
 
 **Authentication & Authorization**
 - Use OAuth 2.0/2.1, OpenID Connect, or JWT for strong authentication

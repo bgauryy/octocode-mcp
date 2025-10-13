@@ -1,8 +1,31 @@
 # Infrastructure & DevOps Resources
 
-> Production-ready infrastructure tools and modern DevOps practices for containerization, orchestration, serverless, monitoring, and CI/CD.
+> DevOps, containerization, CI/CD, and infrastructure for Node.js/TypeScript applications
+
+**🎯 Purpose:** Infrastructure resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers deploying Node.js applications to production
+**🌐 Focus:** Docker, Kubernetes, CI/CD, monitoring for Node.js
+**📱 Mobile:** CI/CD for React Native builds (runs on Node.js infrastructure)
+**⚙️ Runtime:** Node.js containers, npm scripts, GitHub Actions, serverless
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **infrastructure guidance** to help AI agents:
+1. **Containerize apps** - Docker best practices for Node.js applications
+2. **Setup CI/CD** - GitHub Actions, GitLab CI with Node.js pipelines
+3. **Deploy serverless** - Vercel, Netlify, AWS Lambda for Node.js
+4. **Monitor production** - Logging, metrics, tracing for Node.js services
+5. **Build mobile apps** - EAS Build, Fastlane with Node.js tooling
+
+**Generation Priorities:**
+- ⚡ **Docker** - Containerize Node.js apps with multi-stage builds
+- ⚡ **GitHub Actions** - CI/CD for Node.js projects (test, build, deploy)
+- ⚡ **Vercel** - Best deployment for Next.js applications
+- ⚡ **Grafana + Prometheus** - Monitoring Node.js in production
 
 ---
 

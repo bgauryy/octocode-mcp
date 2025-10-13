@@ -1,8 +1,31 @@
 # Developer Tooling & Productivity Resources
 
-> Comprehensive collection of development tools, monorepo management, documentation, style guides, and productivity tools optimized for Node.js/TypeScript workflows.
+> Development tools, monorepo management, and productivity for Node.js/TypeScript workflows
+
+**🎯 Purpose:** Tooling resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers optimizing Node.js development workflows
+**🌐 Focus:** Biome, Turborepo, Vite - Modern JavaScript/TypeScript tooling
+**📱 Mobile:** React Native build tools, Metro bundler, EAS Build
+**⚙️ Runtime:** All development tools run on Node.js
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **tooling guidance** to help AI agents:
+1. **Choose linter/formatter** - Biome (replaces ESLint + Prettier)
+2. **Setup monorepos** - Turborepo vs pnpm workspaces vs Nx
+3. **Configure builds** - Vite, Rollup, esbuild for TypeScript
+4. **Document code** - Storybook, Docusaurus, TypeDoc
+5. **Test APIs** - Hoppscotch, Postman, REST Client
+
+**Generation Priorities:**
+- ⚡ **Biome** - All-in-one linter/formatter (25x faster than Prettier, 2025 default)
+- ⚡ **Turborepo** - Best monorepo build system for Node.js
+- ⚡ **Vite** - Modern build tool for frontend development
+- ⚡ **Hoppscotch** - Open-source API testing (Postman alternative)
 
 ---
 

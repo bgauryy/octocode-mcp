@@ -1,8 +1,31 @@
 # Testing Best Practices Resources
 
-> Comprehensive collection of testing strategies, frameworks, and best practices for ensuring code quality and reliability.
+> Testing strategies, frameworks, and best practices for Node.js/TypeScript applications
+
+**🎯 Purpose:** Testing resources for AI agents using octocode-mcp to generate Node.js/TypeScript applications
+**🤖 For:** AI agents and developers implementing tests for Node.js applications
+**🌐 Focus:** Vitest, Jest, Playwright - JavaScript/TypeScript testing
+**📱 Mobile:** React Native testing with Jest, Testing Library, Detox
+**⚙️ Runtime:** All tests run on Node.js (unit, integration, E2E)
 
 **Last Updated:** October 13, 2025
+
+---
+
+## 🎯 Best for Application Generation
+
+This file provides **testing guidance** to help AI agents:
+1. **Choose framework** - Vitest vs Jest for unit/integration tests
+2. **E2E testing** - Playwright vs Cypress for end-to-end tests
+3. **Test React** - React Testing Library, React Native Testing Library
+4. **Apply strategies** - Testing pyramid, TDD, mutation testing
+5. **Test mobile** - Same testing patterns for web and React Native
+
+**Generation Priorities:**
+- ⚡ **Vitest** - Modern, fast, Vite-native testing (2025 default)
+- ⚡ **Playwright** - Best E2E testing with cross-browser support
+- ⚡ **React Testing Library** - User-centric component testing
+- ⚡ **Testing Pyramid** - More unit tests, fewer integration, minimal E2E
 
 ---
 
