@@ -27,8 +27,8 @@ if [[ -f "$STATE_FILE" ]]; then
     echo "Last Phase: $PHASE" >&2
     echo "Last Update: $TIMESTAMP" >&2
     echo "" >&2
-    echo "💡 To resume: Use '/octocode-vibe --resume' command" >&2
-    echo "💡 To start fresh: Use '/octocode-vibe [your request]' command" >&2
+    echo "💡 To resume: Use '/octocode-generate --resume' command" >&2
+    echo "💡 To start fresh: Use '/octocode-generate [your request]' command" >&2
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
   fi
 fi

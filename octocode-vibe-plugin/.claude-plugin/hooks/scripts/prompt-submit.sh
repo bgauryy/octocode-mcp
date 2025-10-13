@@ -3,13 +3,13 @@ set -euo pipefail
 
 # Prompt Submit Hook
 # Triggered when user submits a prompt
-# Purpose: Detect octocode-vibe usage and ensure proper environment
+# Purpose: Detect octocode-generate usage and ensure proper environment
 
 # Get user prompt if available
 USER_PROMPT="${TOOL_INPUT_prompt:-${1:-}}"
 
-# Check if this is an octocode-vibe command
-if [[ ! "$USER_PROMPT" =~ /octocode-vibe ]]; then
+# Check if this is an octocode-generate command
+if [[ ! "$USER_PROMPT" =~ /octocode-generate ]]; then
   exit 0
 fi
 

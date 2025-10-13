@@ -28,7 +28,7 @@ if [[ -f "$STATE_FILE" ]]; then
   echo "Final checkpoint saved to:" >&2
   echo ".octocode/.backups/execution-state_final_${TIMESTAMP}.json" >&2
   echo "" >&2
-  echo "💡 To resume next time: Use '/octocode-vibe --resume'" >&2
+  echo "💡 To resume next time: Use '/octocode-generate --resume'" >&2
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
 fi
 

@@ -64,7 +64,7 @@
     ],
     "UserPromptSubmit": [
       {
-        "description": "Detect octocode-vibe command and ensure proper initialization",
+        "description": "Detect octocode-generate command and ensure proper initialization",
         "matcher": ".*",
         "hooks": [
           {

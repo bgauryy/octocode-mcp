@@ -1,38 +1,69 @@
 {
-  "name": "octocode-vibe",
+  "name": "octocode",
   "version": "1.0.0",
-  "description": "AI-powered development plugin with coordinated agents for complete project generation using octocode-mcp for context research",
+  "displayName": "Octocode Vibe",
+  "description": "Complete AI development team with 8 specialized agents for requirements gathering, architecture design, UX design, implementation, and QA. Features gate-based workflow with human approval, comprehensive observability, and octocode-mcp integration for research-driven decisions.",
+  "icon": "🏗️",
   "author": "Guy Bary <bgauryy@gmail.com>",
   "homepage": "https://github.com/bgauryy/octocode-mcp",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bgauryy/octocode-mcp"
+    "url": "https://github.com/bgauryy/octocode-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bgauryy/octocode-mcp/issues"
   },
   "license": "MIT",
   "engines": {
-    "claude-code": ">=1.0.0"
+    "claude-code": ">=1.0.0",
+    "node": ">=18.0.0"
   },
   "keywords": [
     "development",
     "ai-agents",
+    "multi-agent",
     "code-generation",
     "architecture",
+    "ux-design",
     "full-stack",
+    "tdd",
     "octocode",
-    "mcp"
+    "mcp",
+    "workflow-automation",
+    "gate-based",
+    "observability"
+  ],
+  "category": "development",
+  "tags": [
+    "productivity",
+    "automation",
+    "ai-agents",
+    "orchestration",
+    "full-stack",
+    "architecture",
+    "ux-design",
+    "tdd",
+    "code-review",
+    "qa"
   ],
   "mcp": {
     "servers": {
       "octocode": {
         "command": "npx",
-        "args": ["-y", "octocode-mcp@latest"]
+        "args": ["-y", "octocode-mcp@latest"],
+        "description": "Research-driven development with GitHub code search and repository analysis",
+        "required": true
       },
       "chrome-devtools": {
         "command": "npx",
-        "args": ["chrome-devtools-mcp@latest"]
+        "args": ["chrome-devtools-mcp@latest"],
+        "description": "Runtime verification with browser testing and debugging",
+        "required": false
       }
     }
   },
   "commands": "./commands",
-  "agents": "./agents"
+  "agents": "./agents",
+  "documentation": "https://github.com/bgauryy/octocode-mcp/tree/main/octocode-vibe-plugin"
 }
+
