@@ -1,0 +1,14 @@
+{
+  "name": "octocode-marketplace",
+  "owner": {
+    "name": "Guy Bary"
+  },
+  "plugins": [
+    {
+      "name": "octocode",
+      "source": ".",
+      "description": "Complete AI development team with 8 specialized agents for requirements gathering, architecture design, UX design, implementation, and QA"
+    }
+  ]
+}
+

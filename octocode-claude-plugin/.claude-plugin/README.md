@@ -71,21 +71,46 @@ Orchestration → Implementation → Verification
 
 ### Installation
 
+#### Method 1: GitHub Plugin (Recommended when published)
 In Claude Code:
 ```
-/plugin add bgauryy/octocode-mcp/octocode-vibe-plugin
+/plugin add bgauryy/octocode-mcp/octocode-claude-plugin
 /restart
 ```
 
-Or from local directory:
+#### Method 2: Local Directory Installation
 ```bash
 git clone https://github.com/bgauryy/octocode-mcp.git
-cd octocode-mcp/octocode-vibe-plugin
+cd octocode-mcp/octocode-claude-plugin
 ```
 
 Then in Claude Code:
 ```
 /plugin add .
+/restart
+```
+
+#### Method 3: Local Marketplace (Development/Testing)
+For iterative development and testing:
+```bash
+# Clone the repository
+git clone https://github.com/bgauryy/octocode-mcp.git
+cd octocode-mcp
+```
+
+In Claude Code:
+```
+# Add the marketplace
+/plugin marketplace add ./octocode-claude-plugin
+
+# Install the plugin from the marketplace
+/plugin install octocode@octocode-marketplace
+
+# To update after changes:
+/plugin uninstall octocode@octocode-marketplace
+/plugin install octocode@octocode-marketplace
+
+# Restart Claude Code
 /restart
 ```
 

@@ -19,10 +19,10 @@ Before running tests, verify:
 
 ### 1. Plugin Installation
 
-**Test A: Local Installation**
+**Test A: Local Directory Installation**
 
 ```bash
-cd /path/to/octocode-mcp/octocode-vibe-plugin
+cd /path/to/octocode-mcp/octocode-claude-plugin
 ```
 
 In Claude Code:
@@ -44,11 +44,48 @@ Should show "octocode" plugin with version 1.0.0
 
 ---
 
-**Test B: GitHub Installation (when published)**
+**Test B: Marketplace Installation (Recommended for Development)**
+
+```bash
+cd /path/to/octocode-mcp
+```
 
 In Claude Code:
 ```
-/plugin add bgauryy/octocode-mcp/octocode-vibe-plugin
+# Add marketplace
+/plugin marketplace add ./octocode-claude-plugin
+
+# Verify marketplace is added
+/plugin marketplace list
+
+# Install plugin from marketplace
+/plugin install octocode@octocode-marketplace
+
+# Restart
+/restart
+```
+
+**Expected Result:**
+- ✅ Marketplace appears in marketplace list
+- ✅ Plugin installs successfully from marketplace
+- ✅ Plugin appears in `/plugin list`
+- ✅ MCP servers start automatically
+
+**For iterative testing:**
+```
+# After making changes to plugin code
+/plugin uninstall octocode@octocode-marketplace
+/plugin install octocode@octocode-marketplace
+/restart
+```
+
+---
+
+**Test C: GitHub Installation (when published)**
+
+In Claude Code:
+```
+/plugin add bgauryy/octocode-mcp/octocode-claude-plugin
 /restart
 ```
 
