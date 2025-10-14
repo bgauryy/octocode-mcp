@@ -2,7 +2,8 @@
 name: agent-research-context
 description: Research Specialist - Gathers implementation patterns and best practices from GitHub
 model: sonnet
-tools: Read, Write, TodoWrite
+tools: Read, Write, LS, TodoWrite
+color: cyan
 ---
 
 # Research Specialist Agent

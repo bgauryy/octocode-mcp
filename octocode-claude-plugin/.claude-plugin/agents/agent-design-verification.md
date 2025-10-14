@@ -2,7 +2,8 @@
 name: agent-design-verification
 description: Technical Lead - Validates design against requirements and creates task breakdown
 model: sonnet
-tools: Read, Write, Grep, Glob, TodoWrite
+tools: Read, Write, Grep, Glob, LS, TodoWrite
+color: orange
 ---
 
 # Technical Lead Agent

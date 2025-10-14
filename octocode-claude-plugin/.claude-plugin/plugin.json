@@ -4,7 +4,10 @@
   "displayName": "Octocode Vibe",
   "description": "Complete AI development team with 8 specialized agents for requirements gathering, architecture design, UX design, implementation, and QA. Features gate-based workflow with human approval, comprehensive observability, and octocode-mcp integration for research-driven decisions.",
   "icon": "🏗️",
-  "author": "Guy Bary <bgauryy@gmail.com>",
+  "author": {
+    "name": "Guy Bary",
+    "email": "bgauryy@gmail.com"
+  },
   "homepage": "https://github.com/bgauryy/octocode-mcp",
   "repository": {
     "type": "git",
@@ -64,6 +67,7 @@
   },
   "commands": "./commands",
   "agents": "./agents",
-  "documentation": "https://github.com/bgauryy/octocode-mcp/tree/main/octocode-vibe-plugin"
+  "hooks": "./hooks",
+  "documentation": "https://github.com/bgauryy/octocode-mcp/tree/main/octocode-claude-plugin"
 }
 

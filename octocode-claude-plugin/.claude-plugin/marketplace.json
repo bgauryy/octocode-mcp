@@ -1,13 +1,40 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "octocode-marketplace",
+  "version": "1.0.0",
+  "description": "Professional AI development team plugins for Claude Code",
   "owner": {
-    "name": "Guy Bary"
+    "name": "Guy Bary",
+    "email": "bgauryy@gmail.com",
+    "url": "https://github.com/bgauryy"
   },
   "plugins": [
     {
       "name": "octocode",
-      "source": ".",
-      "description": "Complete AI development team with 8 specialized agents for requirements gathering, architecture design, UX design, implementation, and QA"
+      "source": "./",
+      "description": "Complete AI development team with 8 specialized agents for requirements gathering, architecture design, UX design, implementation, and QA",
+      "version": "1.0.0",
+      "category": "development",
+      "author": {
+        "name": "Guy Bary",
+        "email": "bgauryy@gmail.com"
+      },
+      "homepage": "https://github.com/bgauryy/octocode-mcp",
+      "repository": "https://github.com/bgauryy/octocode-mcp.git",
+      "license": "MIT",
+      "keywords": [
+        "development",
+        "ai-agents",
+        "multi-agent",
+        "architecture",
+        "workflow-automation"
+      ],
+      "tags": [
+        "productivity",
+        "automation",
+        "ai-agents",
+        "full-stack"
+      ]
     }
   ]
 }

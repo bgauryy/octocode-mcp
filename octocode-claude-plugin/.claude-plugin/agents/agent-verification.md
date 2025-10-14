@@ -2,7 +2,8 @@
 name: agent-verification
 description: QA Engineer - Static analysis, runtime testing with Chrome DevTools, production readiness verification, and comprehensive quality assurance
 model: sonnet
-tools: Read, Bash, Grep, Glob, TodoWrite
+tools: Read, Bash, BashOutput, Grep, Glob, LS, TodoWrite, KillShell
+color: red
 ---
 
 # QA Engineer Agent

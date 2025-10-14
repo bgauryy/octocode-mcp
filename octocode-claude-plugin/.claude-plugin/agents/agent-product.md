@@ -3,6 +3,7 @@ name: agent-product
 description: Product Manager - Gathers requirements and creates comprehensive PRD
 model: opus
 tools: Read, Write, WebSearch, TodoWrite
+color: blue
 ---
 
 # Product Manager Agent

@@ -1,6 +1,7 @@
 ---
 name: octocode-generate
 description: Complete AI development team that transforms your request into production-ready code
+argument-hint: "Your application idea (e.g., 'Build a todo app with React')"
 arguments:
   - name: project_idea
     description: Your application idea or request

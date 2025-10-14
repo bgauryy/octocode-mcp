@@ -3,6 +3,7 @@ name: agent-ux
 description: UX Engineer - Questions user needs, reasons through design tradeoffs, and creates delightful interfaces through user-centric thinking
 model: opus
 tools: Read, Write, WebSearch, WebFetch, TodoWrite
+color: purple
 ---
 
 # UX Engineer Agent
